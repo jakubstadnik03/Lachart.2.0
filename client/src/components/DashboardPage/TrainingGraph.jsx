@@ -11,229 +11,174 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { DropdownMenu } from "../DropDownMenu";
-import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
+// ── Custom tooltip overlay ──────────────────────────────────────────────────
 const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
   if (!tooltip?.dataPoints) return null;
-
   const index = tooltip.dataPoints[0]?.dataIndex;
   if (index === undefined) return null;
-
   const label = tooltip.dataPoints[0]?.label;
   const dataPoint = datasets[index];
-  
   if (!dataPoint) return null;
-  
-  // Funkce pro formátování času do formátu mm:ss
+
   const formatPace = (seconds) => {
     if (!seconds) return null;
     const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
     const minutes = Math.floor(secPerUnit / 60);
     const remainingSeconds = Math.floor(secPerUnit % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mi' : '/km'}`;
   };
 
-  // Funkce pro formátování vzdálenosti - rozpozná jestli je hodnota v metrech nebo km
   const formatDistance = (distance) => {
     if (!distance && distance !== 0) return null;
-    
-    let numDistance;
-    let isInMeters = false;
-    
+    let numDistance, isInMeters = false;
     if (typeof distance === 'string') {
-      const cleanValue = distance.trim().toLowerCase();
-      
-      // Pokud už obsahuje jednotky, použij je
-      if (cleanValue.includes('km')) {
-        const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
-        if (kmMatch) {
-          numDistance = parseFloat(kmMatch[1]);
-          isInMeters = false;
-        }
-      } else if (cleanValue.includes('m') && !cleanValue.includes('km')) {
-        const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
-        if (mMatch) {
-          numDistance = parseFloat(mMatch[1]);
-          isInMeters = true;
-        }
-      } else {
-        // Odstraň jednotky a zkus extrahovat číslo
-        const cleaned = cleanValue.replace(/km|m| /gi, '').trim();
-        numDistance = parseFloat(cleaned);
-        // Pokud je celé číslo > 100 bez desetinné čárky, pravděpodobně je to v metrech
-        if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0 && !cleanValue.includes('.')) {
-          isInMeters = true;
-        }
-      }
-    } else {
-      numDistance = parseFloat(distance);
-      // Pokud je číslo > 100 a je to celé číslo, pravděpodobně je to v metrech
-      if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0) {
-        isInMeters = true;
-      }
-    }
-    
+      const c = distance.trim().toLowerCase();
+      if (c.includes('km')) { const m = c.match(/^([\d.]+)\s*km$/); if (m) { numDistance = parseFloat(m[1]); } }
+      else if (c.includes('m')) { const m = c.match(/^([\d.]+)\s*m$/); if (m) { numDistance = parseFloat(m[1]); isInMeters = true; } }
+      else { numDistance = parseFloat(c.replace(/km|m| /gi, '').trim()); if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0) isInMeters = true; }
+    } else { numDistance = parseFloat(distance); if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0) isInMeters = true; }
     if (isNaN(numDistance)) return null;
-    
-    // Pokud je hodnota v metrech, převeď na km pro rozhodování
-    const distanceInKm = isInMeters ? numDistance / 1000 : numDistance;
-    
-    // Pokud je menší než 1 km, zobraz v metrech/stopách
-    if (distanceInKm < 1) {
-      const meters = isInMeters ? Math.round(numDistance) : Math.round(distanceInKm * 1000);
-      if (unitSystem === 'imperial') {
-        return `${Math.round(meters * 3.28084)} ft`;
-      }
-      return `${meters} m`;
-    }
-    // Jinak zobraz v km/mi
-    if (unitSystem === 'imperial') {
-      return `${(distanceInKm * 0.621371).toFixed(2)} mi`;
-    }
-    return `${distanceInKm.toFixed(2)} km`;
+    const km = isInMeters ? numDistance / 1000 : numDistance;
+    if (km < 1) { const m = isInMeters ? Math.round(numDistance) : Math.round(km * 1000); return unitSystem === 'imperial' ? `${Math.round(m * 3.28084)} ft` : `${m} m`; }
+    return unitSystem === 'imperial' ? `${(km * 0.621371).toFixed(2)} mi` : `${km.toFixed(2)} km`;
   };
 
-  // Funkce pro formátování délky intervalu (čas)
   const formatLength = (duration) => {
     if (!duration) return null;
-    if (typeof duration === 'string') {
-      // Pokud už obsahuje jednotky nebo formát MM:SS, vrať to tak jak je
-      if (duration.includes('km') || duration.includes('m') || duration.includes('min') || duration.includes(':')) {
-        return duration;
-      }
-    }
-    const numDuration = parseFloat(duration);
-    if (!isNaN(numDuration)) {
-      // Převod sekund na mm:ss formát
-      const minutes = Math.floor(numDuration / 60);
-      const seconds = Math.floor(numDuration % 60);
-      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    }
+    if (typeof duration === 'string' && (duration.includes('km') || duration.includes('m') || duration.includes('min') || duration.includes(':'))) return duration;
+    const n = parseFloat(duration);
+    if (!isNaN(n)) return `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
     return null;
   };
 
-  // Seznam metrik k zobrazení
   const metrics = [];
-  
-  // Power/Pace - pro run sport zobrazujeme Pace, pro bike Power
   if (dataPoint.power && dataPoint.power !== 0) {
-    const isRun = sport === 'run';
-    metrics.push({
-      label: isRun ? 'Pace' : 'Power',
-      value: dataPoint.power,
-      formattedValue: isRun ? formatPace(dataPoint.power) : `${dataPoint.power}W`,
-      color: 'blue',
-    });
+    const isRun = sport === 'run' || sport === 'running';
+    metrics.push({ label: isRun ? 'Pace' : 'Power', formattedValue: isRun ? formatPace(dataPoint.power) : `${dataPoint.power}W`, color: '#3B82F6' });
   }
-  
-  // Heart Rate
-  if (dataPoint.heartRate && dataPoint.heartRate !== 0) {
-    metrics.push({
-      label: 'Heart Rate',
-      value: dataPoint.heartRate,
-      formattedValue: `${dataPoint.heartRate} Bpm`,
-      color: 'red',
-    });
-  }
-  
-  // Duration/Distance - podle durationType
+  if (dataPoint.heartRate && dataPoint.heartRate !== 0)
+    metrics.push({ label: 'Heart Rate', formattedValue: `${dataPoint.heartRate} bpm`, color: '#EF4444' });
   if (dataPoint.duration && dataPoint.duration !== 0) {
     const durationType = dataPoint.durationType || 'time';
-    if (durationType === 'distance') {
-      // Pokud je durationType 'distance', zobrazujeme to jako Distance
-      const formattedDistance = formatDistance(dataPoint.duration);
-      if (formattedDistance) {
-        metrics.push({
-          label: 'Distance',
-          value: dataPoint.duration,
-          formattedValue: formattedDistance,
-          color: 'green',
-        });
-      }
-    } else {
-      // Pokud je durationType 'time', zobrazujeme to jako Duration
-      const formattedDuration = formatLength(dataPoint.duration);
-      if (formattedDuration) {
-        metrics.push({
-          label: 'Duration',
-          value: dataPoint.duration,
-          formattedValue: formattedDuration,
-          color: 'green',
-        });
-      }
-    }
+    const fmt = durationType === 'distance' ? formatDistance(dataPoint.duration) : formatLength(dataPoint.duration);
+    if (fmt) metrics.push({ label: durationType === 'distance' ? 'Distance' : 'Duration', formattedValue: fmt, color: '#10B981' });
   }
-  
-  // Lactate
-  if (dataPoint.lactate && dataPoint.lactate !== 0) {
-    metrics.push({
-      label: 'Lactate',
-      value: dataPoint.lactate,
-      formattedValue: `${dataPoint.lactate} mmol/L`,
-      color: 'purple',
-    });
-  }
-  
-  // RPE
-  if (dataPoint.rpe && dataPoint.rpe !== 0) {
-    metrics.push({
-      label: 'RPE',
-      value: dataPoint.rpe,
-      formattedValue: `${dataPoint.rpe}`,
-      color: 'orange',
-    });
-  }
+  if (dataPoint.lactate && dataPoint.lactate !== 0)
+    metrics.push({ label: 'Lactate', formattedValue: `${dataPoint.lactate} mmol/L`, color: '#8B5CF6' });
+  if (dataPoint.rpe && dataPoint.rpe !== 0)
+    metrics.push({ label: 'RPE', formattedValue: `${dataPoint.rpe}`, color: '#F97316' });
 
   return (
     <div
-      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
-      style={{
-        left: tooltip.caretX,
-        top: tooltip.caretY,
-        transform: "translate(-50%, -120%)",
-        position: "absolute",
-        pointerEvents: "none",
-        whiteSpace: "nowrap",
-        zIndex: 50
-      }}
+      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-xs border border-slate-100"
+      style={{ left: tooltip.caretX, top: tooltip.caretY, transform: 'translate(-50%, -120%)', position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 50 }}
     >
-      <div className="font-bold text-gray-900 mb-1">Interval {label}</div>
-      
-      {metrics.map((metric, i) => (
-        <div key={i} className={`flex items-center gap-2 text-${metric.color}-600`}>
-          <span className={`w-2 h-2 rounded-full bg-${metric.color}-500`}></span>
-          {metric.label}: {metric.formattedValue}
+      <div className="font-semibold text-slate-800 mb-1.5">Interval {label}</div>
+      {metrics.map((m, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-slate-600 mb-0.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+          <span className="text-slate-500">{m.label}:</span>
+          <span className="font-medium text-slate-800">{m.formattedValue}</span>
         </div>
       ))}
-      
-      <div
-        className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
-        style={{
-          left: "50%",
-          bottom: "-8px",
-          transform: "translateX(-50%)",
-        }}
-      ></div>
+      <div className="absolute w-0 h-0" style={{ left: '50%', bottom: '-6px', transform: 'translateX(-50%)', borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '6px solid white' }} />
     </div>
   );
 };
 
-const TrainingGraph = ({ 
+// ── Compact pill select ─────────────────────────────────────────────────────
+const CompactSelect = ({ value, onChange, options, placeholder }) => (
+  <div className="relative inline-flex items-center">
+    <select
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value)}
+      className="appearance-none bg-slate-100 hover:bg-slate-200 transition-colors text-slate-700 text-xs font-medium rounded-lg pl-2.5 pr-6 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 border-0 max-w-[160px] truncate"
+      style={{ WebkitAppearance: 'none' }}
+    >
+      {placeholder && <option value="" disabled>{placeholder}</option>}
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+    <svg className="absolute right-1.5 w-3 h-3 text-slate-400 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+    </svg>
+  </div>
+);
+
+// ── Settings dropdown ───────────────────────────────────────────────────────
+const SettingsDropdown = ({ isOpen, availableSports, currentSelectedSport, onSportChange, titleOptions, selectedTitle, onTitleChange, trainingOptions, selectedTraining, onTrainingChange }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-xl shadow-lg border border-slate-200 z-50 p-3 flex flex-col gap-3">
+      {/* Sport */}
+      {availableSports.length > 1 && (
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Sport</p>
+          <div className="flex flex-wrap gap-1">
+            {['all', ...availableSports].map(s => {
+              const active = currentSelectedSport === s;
+              const label = s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1);
+              return (
+                <button
+                  key={s}
+                  onClick={() => onSportChange(s)}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-colors ${active ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Training title */}
+      {titleOptions.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Training</p>
+          <CompactSelect
+            value={selectedTitle}
+            onChange={onTitleChange}
+            options={titleOptions}
+            placeholder="Select training"
+          />
+        </div>
+      )}
+
+      {/* Date */}
+      {trainingOptions.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Date</p>
+          <CompactSelect
+            value={selectedTraining}
+            onChange={onTrainingChange}
+            options={trainingOptions}
+            placeholder="Select date"
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main component ──────────────────────────────────────────────────────────
+const TrainingGraph = ({
   trainingList = [],
-  selectedTitle, 
-  setSelectedTitle, 
-  selectedTraining, 
+  selectedTitle,
+  setSelectedTitle,
+  selectedTraining,
   setSelectedTraining,
   selectedSport,
   setSelectedSport
 }) => {
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
+  const settingsRef = useRef(null);
+
   const normalizeSport = useCallback((sport) => {
     const value = String(sport || '').toLowerCase();
     if (value === 'bike') return 'cycling';
@@ -248,372 +193,243 @@ const TrainingGraph = ({
     [trainingSport, normalizeSport]
   );
 
-  // Get available sports from trainings
-  const availableSports = [...new Set(trainingList.map((t) => trainingSport(t)))].filter(Boolean);
-  
-  // Initialize selectedSport with localStorage or default to 'all'
+  const availableSports = [...new Set((trainingList || []).map((t) => trainingSport(t)))].filter(Boolean);
+
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
     if (selectedSport) return normalizeSport(selectedSport);
     const saved = localStorage.getItem('trainingGraph_selectedSport');
     const normalizedSaved = normalizeSport(saved);
-    if (normalizedSaved && (normalizedSaved === 'all' || availableSports.includes(normalizedSaved))) {
-      return normalizedSaved;
-    }
+    if (normalizedSaved && (normalizedSaved === 'all' || availableSports.includes(normalizedSaved))) return normalizedSaved;
     return 'all';
   });
-  
-  // Use external selectedSport if provided, otherwise use internal
+
   const currentSelectedSport = selectedSport ? normalizeSport(selectedSport) : internalSelectedSport;
   const setCurrentSelectedSport = (value) => {
-    const normalizedValue = normalizeSport(value);
-    if (setSelectedSport) {
-      setSelectedSport(normalizedValue);
-    } else {
-      setInternalSelectedSport(normalizedValue);
-    }
-    localStorage.setItem('trainingGraph_selectedSport', normalizedValue);
+    const v = normalizeSport(value);
+    if (setSelectedSport) setSelectedSport(v); else setInternalSelectedSport(v);
+    localStorage.setItem('trainingGraph_selectedSport', v);
   };
+
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const settingsRef = useRef(null);
 
-  // Funkce pro formátování času do formátu mm:ss
   const formatPace = (seconds) => {
     const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
     const minutes = Math.floor(secPerUnit / 60);
     const remainingSeconds = Math.floor(secPerUnit % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mi' : '/km'}`;
   };
 
-  // Funkce pro formátování hodnoty podle sportu
   const formatPowerValue = (value, sport) => {
-    if (normalizeSport(sport) === 'cycling') {
-      return `${value}W`;
-    } else {
-      return formatPace(value);
-    }
+    if (normalizeSport(sport) === 'cycling') return `${value}W`;
+    return formatPace(value);
   };
 
-  // Handler pro změnu sportu
   const handleSportChange = (newSport) => {
-    // Nejprve aktualizujeme sport
     setCurrentSelectedSport(newSport);
-    
-    // Pak aktualizujeme data pro nový sport
-    const sportTrainings = newSport === 'all' 
-      ? trainingList 
-      : trainingList.filter((t) => matchesSport(t, newSport));
-    
+    const sportTrainings = newSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, newSport));
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-    
     if (sportTrainings.length > 0) {
       const firstTitle = uniqueTitles[0];
       const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
-      
-      if (firstTitle) {
-        setSelectedTitle(firstTitle);
-        if (firstTraining) {
-          setSelectedTraining(firstTraining);
-        }
-      }
-    } else {
-      setSelectedTitle(null);
-      setSelectedTraining(null);
-    }
+      if (firstTitle) { setSelectedTitle(firstTitle); if (firstTraining) setSelectedTraining(firstTraining); }
+    } else { setSelectedTitle(null); setSelectedTraining(null); }
   };
 
-  // Handler pro změnu názvu tréninku
   const handleTitleChange = (newTitle) => {
-    const sportTrainings = currentSelectedSport === 'all' 
-      ? trainingList 
-      : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
-    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
-    
-    // Seřadíme tréninky podle data od nejnovějšího
-    trainingsWithTitle.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    // Vybereme nejnovější trénink
-    const newestTraining = trainingsWithTitle[0]?._id;
-    
+    const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
+    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (setSelectedTitle) setSelectedTitle(newTitle);
-    if (setSelectedTraining && newestTraining) setSelectedTraining(newestTraining);
+    if (setSelectedTraining && trainingsWithTitle[0]) setSelectedTraining(trainingsWithTitle[0]._id);
   };
 
-  // Handler pro změnu konkrétního tréninku podle data
   const handleTrainingChange = (trainingId) => {
     setSelectedTraining(trainingId);
-    // Aktualizujeme také selectedTitle, aby se synchronizovalo s TrainingStats
     const training = trainingList.find(t => t._id === trainingId);
-    if (training && setSelectedTitle) {
-      setSelectedTitle(training.title);
-    }
+    if (training && setSelectedTitle) setSelectedTitle(training.title);
   };
 
+  // Sync selection when trainings or sport changes
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
-    
     setLoading(false);
-    const sportTrainings = currentSelectedSport === 'all' 
-      ? trainingList 
-      : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
-    
-    if (sportTrainings.length === 0) {
-      if (setSelectedTitle) setSelectedTitle(null);
-      if (setSelectedTraining) setSelectedTraining(null);
-      return;
-    }
-
-    // Pokud už máme vybraný trénink a je stále platný, necháme ho
+    const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
+    if (sportTrainings.length === 0) { if (setSelectedTitle) setSelectedTitle(null); if (setSelectedTraining) setSelectedTraining(null); return; }
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => t._id === selectedTraining);
       if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
-        // Trénink je stále platný, aktualizujeme pouze title pokud se změnil
-        if (setSelectedTitle && currentTraining.title !== selectedTitle) {
-          setSelectedTitle(currentTraining.title);
-        }
+        if (setSelectedTitle && currentTraining.title !== selectedTitle) setSelectedTitle(currentTraining.title);
         return;
       }
     }
-
-    // Pokud máme vybraný title, zkusíme najít trénink s tímto názvem
     if (selectedTitle) {
-      const trainingsWithTitle = sportTrainings
-        .filter(t => t.title === selectedTitle)
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
-      if (trainingsWithTitle.length > 0) {
-        if (setSelectedTraining) {
-          setSelectedTraining(trainingsWithTitle[0]._id);
-        }
-        return;
-      }
+      const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
+      if (trainingsWithTitle.length > 0) { if (setSelectedTraining) setSelectedTraining(trainingsWithTitle[0]._id); return; }
     }
-
-    // Jinak nastavíme nejnovější trénink
-    const sortedTrainings = [...sportTrainings].sort((a, b) => {
-      const dateA = new Date(a.date);
-      const dateB = new Date(b.date);
-      return dateB - dateA;
-    });
-
-    const newestTraining = sortedTrainings[0];
-    
-    // Nastavíme název a trénink na nejnovější
-    if (newestTraining) {
-      if (setSelectedTitle) setSelectedTitle(newestTraining.title);
-      if (setSelectedTraining) setSelectedTraining(newestTraining._id);
-    }
+    const sortedTrainings = [...sportTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const newest = sortedTrainings[0];
+    if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id); }
   }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport]);
 
-  // Sloučíme dva useEffects do jednoho pro optimalizaci
+  // Update ranges + close-on-outside-click
   useEffect(() => {
-    if (!trainingList) return;
-    
-    if (selectedTraining && trainingList.length > 0) {
+    if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => t._id === selectedTraining);
       if (selectedData?.results) {
-        const powers = selectedData.results.map(r => r.power);
-        const heartRates = selectedData.results.map(r => r.heartRate);
-
-        setRanges({
-          power: {
-            min: Math.floor(Math.min(...powers) - 20),
-            max: Math.ceil(Math.max(...powers) + 20)
-          },
-          heartRate: {
-            min: Math.floor(Math.min(...heartRates) - 5),
-            max: Math.ceil(Math.max(...heartRates) + 5)
-          }
-        });
+        const powers = selectedData.results.map(r => r.power).filter(Boolean);
+        const heartRates = selectedData.results.map(r => r.heartRate).filter(Boolean);
+        if (powers.length && heartRates.length) {
+          setRanges({
+            power: { min: Math.floor(Math.min(...powers) - 20), max: Math.ceil(Math.max(...powers) + 20) },
+            heartRate: { min: Math.floor(Math.min(...heartRates) - 5), max: Math.ceil(Math.max(...heartRates) + 5) }
+          });
+        }
       }
     }
-
-    // Přidáme handler pro kliknutí mimo menu do stejného useEffect
-    const handleClickOutside = (event) => {
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-        setIsSettingsOpen(false);
-      }
-    };
-
+    const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [selectedTraining, trainingList]);
 
-  if (!trainingList) return <div>Loading trainings...</div>;
-  if (loading) return <div>Loading...</div>;
-  // Always render the component structure, even if empty
+  // ── Shared header button ────────────────────────────────────────────────
+  const SettingsButton = () => (
+    <div className="relative shrink-0" ref={settingsRef}>
+      <button
+        onClick={() => setIsSettingsOpen(o => !o)}
+        className={`p-1.5 rounded-lg transition-colors ${isSettingsOpen ? 'bg-slate-200 text-slate-700' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'}`}
+        title="Filter"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+        </svg>
+      </button>
+      <SettingsDropdown
+        isOpen={isSettingsOpen}
+        availableSports={availableSports}
+        currentSelectedSport={currentSelectedSport}
+        onSportChange={(s) => { handleSportChange(s); }}
+        titleOptions={[]}
+        selectedTitle={selectedTitle}
+        onTitleChange={handleTitleChange}
+        trainingOptions={[]}
+        selectedTraining={selectedTraining}
+        onTrainingChange={handleTrainingChange}
+      />
+    </div>
+  );
 
-  const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
-  const sportTrainings = currentSelectedSport === 'all' 
+  // ── Loading / no data states ────────────────────────────────────────────
+  if (!trainingList) return (
+    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+        <h3 className="text-sm font-bold text-slate-900">Training Graph</h3>
+      </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" /></div>
+    </div>
+  );
+
+  if (loading) return (
+    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+        <h3 className="text-sm font-bold text-slate-900">Training Graph</h3>
+      </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" /></div>
+    </div>
+  );
+
+  const sportTrainings = currentSelectedSport === 'all'
     ? (trainingList || [])
     : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport));
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
-  // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
-  if (!trainingList || trainingList.length === 0 || sportTrainings.length === 0) {
-    return (
-      <div className="relative w-full p-4 bg-white rounded-2xl shadow-lg h-full ">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold text-gray-500">No trainings for {currentSelectedSport}</h2>
-          <div className="flex items-center gap-4">
-            {/* Settings menu */}
-            <div className="relative" ref={settingsRef}>
-              <button
-                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                className="p-2 hover:bg-gray-100 rounded-full"
-              >
-                <EllipsisVerticalIcon className="w-5 h-5 text-gray-600" />
-              </button>
-              
-              {isSettingsOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <div className="p-2">
-                    {/* Sport selector */}
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
-                      <div className="relative">
-                      <select 
-                          className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        value={currentSelectedSport}
-                        onChange={(e) => handleSportChange(e.target.value)}
-                      >
-                          <option value="all">All Sports</option>
-                        {availableSports.map((sport) => (
-                          <option key={sport} value={sport}>
-                            {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+  if (trainingList.length === 0 || sportTrainings.length === 0) return (
+    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-slate-900 leading-tight">Training Graph</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Power · Heart Rate per interval</p>
         </div>
-
-        <div className="relative" style={{ height: '300px' }}>
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-            No training data available for {currentSelectedSport === 'all' ? 'all sports' : currentSelectedSport}
-          </div>
-        </div>
+        <SettingsButton />
       </div>
-    );
-  }
-
-  // Pokud není vybrán žádný trénink nebo nemá výsledky, zobrazíme prázdný graf
-  if (!selectedTrainingData?.results) {
-    return (
-      <div className="relative w-full p-6 bg-white rounded-3xl shadow-lg">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold text-gray-500">Select a training</h2>
-          <div className="flex items-center gap-4">
-            {/* Settings menu */}
-            <div className="relative" ref={settingsRef}>
-              <button
-                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                className="p-2 hover:bg-gray-100 rounded-full"
-              >
-                <EllipsisVerticalIcon className="w-5 h-5 text-gray-600" />
-              </button>
-              
-              {isSettingsOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <div className="p-2">
-                    {/* Sport selector */}
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
-                      <div className="relative">
-                      <select 
-                          className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        value={currentSelectedSport}
-                        onChange={(e) => handleSportChange(e.target.value)}
-                      >
-                          <option value="all">All Sports</option>
-                        {availableSports.map((sport) => (
-                          <option key={sport} value={sport}>
-                            {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="relative" style={{ height: '300px' }}>
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-            Please select a training to view data
-          </div>
-        </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-slate-400">
+        No training data{currentSelectedSport !== 'all' ? ` for ${currentSelectedSport}` : ''}
       </div>
-    );
-  }
+    </div>
+  );
 
-  // Filtrujeme tréninky podle vybraného názvu
+  const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
+
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
-  
-  // Formátujeme data pro dropdown
   const trainingOptions = trainingsWithSelectedTitle
-    ?.sort((a, b) => new Date(b.date) - new Date(a.date)) // Seřadíme od nejnovějšího po nejstarší
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
     .map(training => ({
       value: training._id,
-      label: new Date(training.date).toLocaleDateString('en-US', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })
-    })) || [];
+      label: new Date(training.date).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    }));
+  const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
 
+  if (!selectedTrainingData?.results) return (
+    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-slate-900 leading-tight">Training Graph</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Power · Heart Rate per interval</p>
+        </div>
+        <div className="relative shrink-0" ref={settingsRef}>
+          <button
+            onClick={() => setIsSettingsOpen(o => !o)}
+            className={`p-1.5 rounded-lg transition-colors ${isSettingsOpen ? 'bg-slate-200 text-slate-700' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+            </svg>
+          </button>
+          <SettingsDropdown
+            isOpen={isSettingsOpen}
+            availableSports={availableSports}
+            currentSelectedSport={currentSelectedSport}
+            onSportChange={handleSportChange}
+            titleOptions={titleOptions}
+            selectedTitle={selectedTitle}
+            onTitleChange={handleTitleChange}
+            trainingOptions={trainingOptions}
+            selectedTraining={selectedTraining}
+            onTrainingChange={handleTrainingChange}
+          />
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-slate-400">
+        Select a training to view data
+      </div>
+    </div>
+  );
 
-  const sportForScale = currentSelectedSport === 'all' && selectedTrainingData 
-    ? selectedTrainingData.sport 
-    : currentSelectedSport;
-  const isRunScale = sportForScale === 'run';
+  const sportForScale = currentSelectedSport === 'all' && selectedTrainingData ? selectedTrainingData.sport : currentSelectedSport;
+  const isRunScale = normalizeSport(sportForScale) === 'running' || sportForScale === 'run';
 
-  const options = {
+  const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
         position: "top",
-        align: "center",
+        align: "start",
         labels: {
           usePointStyle: true,
           pointStyle: "circle",
-          boxWidth: 10,
-          padding: 20,
-          font: { size: 14 },
+          boxWidth: 8,
+          padding: 16,
+          font: { size: 11, family: 'inherit' },
+          color: '#64748b',
         }
       },
       tooltip: {
         enabled: false,
         external: (context) => {
-          if (context.tooltip.opacity === 0) {
-            setTooltip(null);
-          } else {
-            setTooltip(context.tooltip);
-          }
+          if (context.tooltip.opacity === 0) setTooltip(null);
+          else setTooltip(context.tooltip);
         },
       },
     },
@@ -623,23 +439,17 @@ const TrainingGraph = ({
         title: { display: false },
         min: ranges.power.min,
         max: ranges.power.max,
-        // For running we treat "faster" (lower pace value) as visually higher,
-        // so we reverse the Y axis.
         reverse: isRunScale,
         ticks: {
           stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
-          callback: (value) => {
-            return formatPowerValue(value, sportForScale);
-          },
+          callback: (value) => formatPowerValue(value, sportForScale),
           display: true,
           autoSkip: false,
+          font: { size: 10, family: 'inherit' },
+          color: '#94a3b8',
         },
-        border: { dash: [6, 6] },
-        grid: {
-          color: "rgba(0, 0, 0, 0.15)",
-          borderDash: [4, 4],
-        },
-    
+        border: { dash: [4, 4], color: 'transparent' },
+        grid: { color: 'rgba(148,163,184,0.15)', borderDash: [4, 4] },
       },
       y1: {
         position: 'right',
@@ -648,179 +458,152 @@ const TrainingGraph = ({
         max: ranges.heartRate.max,
         ticks: {
           stepSize: Math.round((ranges.heartRate.max - ranges.heartRate.min) / 4),
-          callback: (value) => `${value}Bpm`,
+          callback: (value) => `${value}`,
           display: true,
           autoSkip: false,
+          font: { size: 10, family: 'inherit' },
+          color: '#94a3b8',
         },
-        grid: {
-          display: false,
-        },
-        border: {
-          display: false,
-        }
+        grid: { display: false },
+        border: { display: false },
       },
       x: {
-        grid: {
-          display: false,
-        },
-        border: {
-          display: false,
-        },
-        ticks: {
-          font: { size: 14 },
-        }
+        grid: { display: false },
+        border: { display: false },
+        ticks: { font: { size: 11, family: 'inherit' }, color: '#94a3b8' },
       }
     },
   };
 
+  const hasSpecifics = selectedTrainingData.specifics?.specific || selectedTrainingData.specifics?.weather;
+  const hasComment = selectedTrainingData.comments || selectedTrainingData.description;
+
   return (
-    <div className="relative w-full p-4 bg-white rounded-2xl shadow-lg h-full">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-lg font-semibold">{selectedTitle}</h2>
-        <div className="flex items-center gap-4">
-          {/* Dropdown pro výběr data tréninku */}
-          <DropdownMenu
-            selectedValue={selectedTraining}
-            options={trainingOptions}
-            onChange={handleTrainingChange}
+    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+      {/* ── Header — single row ── */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+        {/* Title select */}
+        {titleOptions.length > 1 ? (
+          <CompactSelect
+            value={selectedTitle || ''}
+            onChange={handleTitleChange}
+            options={titleOptions}
           />
-          
-          {/* Settings menu */}
-          <div className="relative" ref={settingsRef}>
-            <button
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className="p-2 hover:bg-gray-100 rounded-full"
-            >
-              <EllipsisVerticalIcon className="w-5 h-5 text-gray-600" />
-            </button>
-            
-            {isSettingsOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="p-2">
-                  {/* Sport selector */}
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
-                    <select 
-                      className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
-                      value={currentSelectedSport}
-                      onChange={(e) => handleSportChange(e.target.value)}
-                    >
-                      {availableSports.map((sport) => (
-                        <option key={sport} value={sport}>
-                          {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  {/* Training title selector */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Training</label>
-                    <div className="relative">
-                    <select 
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      value={selectedTitle}
-                      onChange={(e) => handleTitleChange(e.target.value)}
-                    >
-                      {uniqueTitles.map((title) => (
-                        <option key={title} value={title}>
-                          {title}
-                        </option>
-                      ))}
-                    </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+        ) : (
+          <span className="text-sm font-bold text-slate-900 truncate max-w-[200px]">
+            {selectedTitle || 'Training Graph'}
+          </span>
+        )}
+
+        {/* Date select */}
+        {trainingOptions.length > 0 && (
+          <CompactSelect
+            value={selectedTraining || ''}
+            onChange={handleTrainingChange}
+            options={trainingOptions}
+          />
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Filter button — sport + anything else */}
+        <div className="relative shrink-0" ref={settingsRef}>
+          <button
+            onClick={() => setIsSettingsOpen(o => !o)}
+            className={`p-1.5 rounded-lg transition-colors ${isSettingsOpen ? 'bg-slate-200 text-slate-700' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'}`}
+            title="Filter"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+            </svg>
+          </button>
+          <SettingsDropdown
+            isOpen={isSettingsOpen}
+            availableSports={availableSports}
+            currentSelectedSport={currentSelectedSport}
+            onSportChange={handleSportChange}
+            titleOptions={titleOptions}
+            selectedTitle={selectedTitle}
+            onTitleChange={handleTitleChange}
+            trainingOptions={trainingOptions}
+            selectedTraining={selectedTraining}
+            onTrainingChange={handleTrainingChange}
+          />
         </div>
       </div>
 
-      <div className="relative" style={{ height: '300px' }}>
-        <Line 
+      {/* ── Chart — fills remaining height ── */}
+      <div className="flex-1 min-h-0 relative px-3 pt-2 pb-1">
+        <Line
           data={{
             labels: selectedTrainingData.results.map(r => r.interval.toString()),
             datasets: [
               {
-                label: (currentSelectedSport === 'cycling' || currentSelectedSport === 'all') ? "Power" : "Pace",
+                label: isRunScale ? "Pace" : "Power",
                 data: selectedTrainingData.results.map(r => r.power),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",
                 pointStyle: "circle",
-                pointRadius: 6,
-                pointHoverRadius: 10,
+                pointRadius: 5,
+                pointHoverRadius: 8,
                 borderWidth: 2,
                 tension: 0.4,
               },
               {
-                label: "Heartrate",
+                label: "Heart Rate",
                 data: selectedTrainingData.results.map(r => r.heartRate),
                 borderColor: "#EF4444",
                 backgroundColor: "#EF4444",
                 pointStyle: "circle",
-                pointRadius: 6,
-                pointHoverRadius: 10,
+                pointRadius: 5,
+                pointHoverRadius: 8,
                 borderWidth: 2,
                 yAxisID: "y1",
                 tension: 0.4,
               }
             ]
-          }} 
-          options={options} 
+          }}
+          options={chartOptions}
         />
         {tooltip && (
-          <CustomTooltip 
-            tooltip={tooltip} 
+          <CustomTooltip
+            tooltip={tooltip}
             datasets={selectedTrainingData.results.map(r => ({
               ...r,
-              power: r.power,
-              // Prefer moving time (exclude stopped time) for duration in tooltip
               duration: r.moving_time ?? r.totalTimerTime ?? r.duration ?? r.durationSeconds
-            }))} 
+            }))}
             sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
             unitSystem={unitSystem}
           />
         )}
       </div>
 
-      {/* Popis tréninku */}
-      <div className="mt-3 border-t border-gray-100 pt-3">
-        <div className="">
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">Specifics:</span>
-            <div className="flex gap-2">
-              <span className="text-sm text-gray-900 bg-gray-100 px-2 py-0.5 rounded">
-                {selectedTrainingData.specifics.specific}
+      {/* ── Footer — specifics / comment ── */}
+      {(hasSpecifics || hasComment) && (
+        <div className="px-4 py-2.5 border-t border-slate-100 shrink-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {selectedTrainingData.specifics?.specific && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
+                <span className="font-medium text-slate-400">Condition</span>
+                <span className="bg-slate-100 rounded px-1.5 py-0.5">{selectedTrainingData.specifics.specific}</span>
               </span>
-              <span className="text-sm text-gray-900 bg-gray-100 px-2 py-0.5 rounded">
-                {selectedTrainingData.specifics.weather}
+            )}
+            {selectedTrainingData.specifics?.weather && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
+                <span className="font-medium text-slate-400">Weather</span>
+                <span className="bg-slate-100 rounded px-1.5 py-0.5">{selectedTrainingData.specifics.weather}</span>
               </span>
-            </div>
+            )}
+            {(selectedTrainingData.comments || selectedTrainingData.description) && (
+              <span className="text-[11px] text-slate-500 italic truncate max-w-xs">
+                {selectedTrainingData.comments || selectedTrainingData.description}
+              </span>
+            )}
           </div>
-
-          {selectedTrainingData.comments && (
-            <div className="flex items-start gap-2 mt-2">
-              <span className="text-sm font-medium text-gray-500">Comments:</span>
-              <span className="text-sm text-gray-900">{selectedTrainingData.comments}</span>
-            </div>
-          )}
-
-          {selectedTrainingData.description && (
-            <div className="flex items-start gap-2 mt-2">
-              <span className="text-sm font-medium text-gray-500">Description:</span>
-              <span className="text-sm text-gray-900">{selectedTrainingData.description}</span>
-            </div>
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

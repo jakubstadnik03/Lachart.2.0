@@ -6,6 +6,7 @@ const verifyToken = require("../middleware/verifyToken");
 const testController = require('../controllers/testController');
 const Test = require('../models/test');
 const User = require('../models/UserModel');
+const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 
 // H4 — 3 demo emails per hour per IP
 const demoEmailLimiter = rateLimit({
@@ -408,6 +409,41 @@ router.put("/:id", verifyToken, async (req, res) => {
         if (!updatedTest) {
             return res.status(404).json({ error: 'Test nenalezen' });
         }
+
+        // Notify the other party when coach edits athlete's test or athlete edits own test — fire-and-forget
+        ;(async () => {
+          try {
+            const actorName = `${requester.name} ${requester.surname}`.trim();
+            const hasZones = req.body.powerZones || req.body.heartRateZones || req.body.thresholds;
+
+            if (isPrivileged && requesterId !== ownerId) {
+              // Coach updated athlete's test/zones → notify athlete
+              if (hasZones) {
+                await notifyAthlete(ownerId, {
+                  type: 'zones_updated',
+                  title: '📊 Your training zones were updated',
+                  body: `${actorName} updated your zones based on your lactate test.`,
+                  resourceId: String(updatedTest._id),
+                  resourceType: 'test',
+                  fromName: actorName,
+                });
+              }
+            } else if (!isPrivileged || requesterId === ownerId) {
+              // Athlete saved their own test → notify coaches
+              await notifyCoachesOfAthlete(ownerId, {
+                type: 'test_updated',
+                title: '🧪 Lactate test updated',
+                body: `${actorName} updated a lactate test.`,
+                resourceId: String(updatedTest._id),
+                resourceType: 'test',
+                fromName: actorName,
+              });
+            }
+          } catch (e) {
+            console.error('[test PUT] notification error:', e.message);
+          }
+        })();
+
         res.json(updatedTest);
     } catch (error) {
         res.status(500).json({ error: 'Chyba při aktualizaci testu' });

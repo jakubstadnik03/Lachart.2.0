@@ -11,6 +11,7 @@ const Training = require('../models/training');
 const FitTraining = require('../models/fitTraining');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
+const { sendNotification } = require('../utils/notificationHelper');
 
 // GET /api/comments/test/:testId
 // Get all comments for a test (auth required, only coach or the athlete who owns the test)
@@ -82,6 +83,45 @@ router.post('/test/:testId', verifyToken, async (req, res) => {
     });
 
     await comment.save();
+
+    // ── Notify the other party (fire-and-forget) ─────────────────────────
+    (async () => {
+      try {
+        const authorName = `${user.name} ${user.surname}`.trim();
+        const notifBody = text.trim().slice(0, 100);
+        let recipientIds = [];
+
+        if (user.role === 'athlete') {
+          // Notify coaches of this athlete
+          const athlete = await User.findById(userId).select('coachIds coachId').lean();
+          const ids = [
+            ...(Array.isArray(athlete?.coachIds) ? athlete.coachIds.map(String) : []),
+            ...(athlete?.coachId ? [String(athlete.coachId)] : []),
+          ].filter(id => id && mongoose.Types.ObjectId.isValid(id));
+          recipientIds = [...new Set(ids)];
+        } else {
+          // Coach/admin → notify the athlete who owns the test
+          if (test.athleteId && mongoose.Types.ObjectId.isValid(String(test.athleteId))) {
+            recipientIds = [String(test.athleteId)];
+          }
+        }
+
+        if (recipientIds.length > 0) {
+          await sendNotification(recipientIds, {
+            type: 'test_comment',
+            title: '💬 New comment on your lactate test',
+            body: `${authorName}: ${notifBody}`,
+            resourceId: testId,
+            resourceType: 'test',
+            fromName: authorName,
+            pushData: { testId },
+          });
+        }
+      } catch (e) {
+        console.error('[TestComment] notification error:', e.message);
+      }
+    })();
+
     return res.status(201).json(comment);
   } catch (err) {
     console.error('POST /api/comments/test/:testId error:', err);
@@ -253,17 +293,16 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
 
         if (recipientIds.length === 0) return;
 
-        const notifDocs = recipientIds.map(rid => ({
-          recipientId: rid,
+        // In-app notification + Expo push (handled together by sendNotification)
+        await sendNotification(recipientIds, {
           type: 'training_comment',
           title: notifTitle,
           body: notifBody,
           resourceId: trainingId,
           resourceType: trainingType,
           fromName: authorName,
-          read: false,
-        }));
-        await Notification.insertMany(notifDocs);
+          pushData: { trainingId, trainingType },
+        });
 
         // ── Send email notifications ────────────────────────────────────────
         const recipients = await User.find({ _id: { $in: recipientIds } })

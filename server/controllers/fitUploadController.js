@@ -1,8 +1,10 @@
 const FitTraining = require('../models/fitTraining');
+const User = require('../models/UserModel');
 const fs = require('fs');
 const path = require('path');
 const FitParser = require('fit-file-parser').default;
 const TrainingAbl = require('../abl/trainingAbl');
+const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 
 /**
  * Parse FIT file and extract training data
@@ -546,8 +548,40 @@ async function updateLactate(req, res) {
       await TrainingAbl.syncTrainingFromSource('fit', training, userId);
     } catch (syncError) {
       console.error('Error syncing to Training model:', syncError);
-      // Don't fail the request if sync fails
     }
+
+    // Notify coaches (athlete just annotated their training with lactate) — fire-and-forget
+    ;(async () => {
+      try {
+        const actor = await User.findById(userId).select('name surname role').lean();
+        const actorName = actor ? `${actor.name} ${actor.surname}`.trim() : 'Your athlete';
+        const trainingTitle = training.name || training.title || 'a training';
+
+        if (!actor || actor.role !== 'coach') {
+          // Athlete added lactate → notify their coaches
+          await notifyCoachesOfAthlete(userId, {
+            type: 'lactate_added',
+            title: '💧 Lactate added to training',
+            body: `${actorName} added lactate values to "${trainingTitle}"`,
+            resourceId: String(training._id),
+            resourceType: 'fit',
+            fromName: actorName,
+          });
+        } else {
+          // Coach added lactate on athlete's training → notify athlete
+          await notifyAthlete(String(training.athleteId), {
+            type: 'lactate_added',
+            title: '💧 Lactate added to your training',
+            body: `${actorName} added lactate values to "${trainingTitle}"`,
+            resourceId: String(training._id),
+            resourceType: 'fit',
+            fromName: actorName,
+          });
+        }
+      } catch (e) {
+        console.error('[updateLactate] notification error:', e.message);
+      }
+    })();
 
     res.json({
       success: true,

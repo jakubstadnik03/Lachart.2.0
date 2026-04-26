@@ -49,6 +49,7 @@ const {
 
 /** Shared transporter: defaults to Zoho when only EMAIL_USER + APP_PASSWORD are set (avoids null transport). */
 const { createEmailTransporter } = require("../utils/createEmailTransporter");
+const { sendNotification, notifyCoachesOfAthlete } = require("../utils/notificationHelper");
 
 /** Safe subset of Nodemailer/SMTP errors for admin-only responses (no secrets). */
 function smtpDiagFromError(err) {

@@ -228,6 +228,53 @@ const TrainingComparison = ({ trainings }) => {
   useEffect(() => { localStorage.setItem('trainingComparison_snapshotSelectedIds', JSON.stringify(snapshotSelectedIds)); }, [snapshotSelectedIds]);
   useEffect(() => { localStorage.setItem('trainingComparison_tab', activeTab); }, [activeTab]);
 
+  // ── Auto-select best default title when trainings first load ────────────────
+  useEffect(() => {
+    if (!trainings || trainings.length === 0) return;
+    // Only auto-select if user hasn't already made a choice
+    const persisted = localStorage.getItem('trainingComparison_title');
+    if (persisted && persisted !== 'all') return;
+
+    // Count sessions per title (only those with results)
+    const withResults = trainings.filter(t => Array.isArray(t.results) && t.results.length > 0);
+    if (withResults.length === 0) return;
+
+    const counts = {};
+    withResults.forEach(t => {
+      if (t.title) counts[t.title] = (counts[t.title] || 0) + 1;
+    });
+
+    // Prefer title with most sessions (≥2); fall back to most recent with results
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1]).find(([, n]) => n >= 2);
+    const defaultTitle = best
+      ? best[0]
+      : withResults.sort((a, b) => new Date(b.date || b.timestamp || b.createdAt || 0) - new Date(a.date || a.timestamp || a.createdAt || 0))[0]?.title;
+
+    if (defaultTitle) {
+      setSelectedTitle(defaultTitle);
+      localStorage.setItem('trainingComparison_title', defaultTitle);
+    }
+  }, [trainings]);
+
+  // ── Listen for "compare same trainings" event from TrainingItem ─────────────
+  useEffect(() => {
+    const handler = (e) => {
+      const { title, category } = e.detail || {};
+      if (category && category !== 'all') {
+        setSelectedCategory(category);
+        localStorage.setItem('trainingComparison_category', category);
+      }
+      if (title) {
+        setSelectedTitle(title);
+        localStorage.setItem('trainingComparison_title', title);
+      }
+      setActiveTab('compare');
+      localStorage.setItem('trainingComparison_tab', 'compare');
+    };
+    window.addEventListener('lachart:compare', handler);
+    return () => window.removeEventListener('lachart:compare', handler);
+  }, []);
+
   // ── Progress stats ──────────────────────────────────────────────────────────
   const progressStats = useMemo(() => {
     if (filteredTrainings.length < 2) return null;
@@ -733,7 +780,7 @@ const TrainingComparison = ({ trainings }) => {
 
   // ── RENDER ──────────────────────────────────────────────────────────────────
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <motion.div id="training-comparison" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
       {/* ── Header ── */}
       <div className="px-4 pt-4 pb-3 md:px-6 md:pt-5">

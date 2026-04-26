@@ -717,8 +717,15 @@ const About = () => {
             <span className="text-lg font-bold text-primary-dark">LaChart</span>
           </a>
           <div className="hidden lg:flex items-center gap-1">
-            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['pricing','Pricing'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary transition-colors touch-manipulation">{label}</button>
+            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','Tutorials'],['pricing','Pricing'],['contact','Contact']].map(([id, label]) => (
+              <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary transition-colors touch-manipulation flex items-center gap-1">
+                {id === 'how-to-use' && (
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5v-11z"/>
+                  </svg>
+                )}
+                {label}
+              </button>
             ))}
           </div>
           <div className="hidden lg:flex items-center gap-3">
@@ -739,8 +746,15 @@ const About = () => {
         </div>
         {isMobileMenuOpen && (
           <div id="about-mobile-menu" className="lg:hidden border-t border-gray-100 px-4 py-2 flex flex-col gap-0.5 bg-white">
-            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-3 text-sm text-gray-600 hover:text-primary active:bg-gray-50 rounded-lg touch-manipulation">{label}</button>
+            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','Tutorials'],['contact','Contact']].map(([id, label]) => (
+              <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-3 text-sm text-gray-600 hover:text-primary active:bg-gray-50 rounded-lg touch-manipulation flex items-center gap-2">
+                {id === 'how-to-use' && (
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5v-11z"/>
+                  </svg>
+                )}
+                {label}
+              </button>
             ))}
             <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
               <a href="/login" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm text-gray-600 touch-manipulation">Login</a>

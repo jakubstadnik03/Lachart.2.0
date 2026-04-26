@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import TrainingForm from '../TrainingForm';
+import TrainingComments from '../TrainingComments';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -312,6 +313,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [editingCategory, setEditingCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // Resolve stable comment ID for the selected training (changes when training changes)
+  const commentTrainingId = useMemo(() => {
+    if (!trainingDetail) return null;
+    if (trainingDetail.type === 'strava') return String(trainingDetail.stravaId || trainingDetail.id || '');
+    return String(trainingDetail._id || '');
+  }, [trainingDetail?._id, trainingDetail?.stravaId, trainingDetail?.id, trainingDetail?.type]); // eslint-disable-line
+  const commentTrainingType = trainingDetail?.type || 'training';
+
   const [lactateFormOpen, setLactateFormOpen] = useState(false);
   const [lactateFormData, setLactateFormData] = useState(null);
   const [lactateFormLoading, setLactateFormLoading] = useState(false);
@@ -1781,6 +1790,16 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           />
                         </div>
                       )}
+
+                  {/* Comments */}
+                  {commentTrainingId && (
+                    <TrainingComments
+                      key={commentTrainingId}
+                      trainingId={commentTrainingId}
+                      trainingType={commentTrainingType}
+                      isMobile={false}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="text-lighterText text-center py-8">
@@ -2121,6 +2140,16 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       onOpenLactateForm={handleOpenLactateForm}
                     />
                   )}
+                  {/* Comments */}
+                  {commentTrainingId && (
+                    <TrainingComments
+                      key={commentTrainingId}
+                      trainingId={commentTrainingId}
+                      trainingType={commentTrainingType}
+                      isMobile={true}
+                    />
+                  )}
+
                   {/* Lactate form loading overlay */}
                   {lactateFormLoading && (
                     <div className="flex items-center justify-center py-6 gap-2 text-sm text-primary">

@@ -1,275 +1,742 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getStravaActivityDetail } from '../../services/api';
 
-const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
-  const navigate = useNavigate();
+const INTERVALS_PER_PAGE = 10;
 
-  if (!training) return null;
-  const { date, title, specifics, comments, results, sport, description } = training;
-  const safeSpecifics = specifics || {};
-  
-  // Ensure results is an array to prevent undefined errors
-  const safeResults = Array.isArray(results) ? results : [];
+/* ─── helpers ───────────────────────────────────────────────────────────────── */
+const getSportIcon = (sport) => {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run'))  return '/icon/run.svg';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '/icon/bike.svg';
+  if (s.includes('swim')) return '/icon/swim.svg';
+  if (s.includes('walk') || s.includes('hike')) return '/icon/walk.svg';
+  if (s.includes('workout') || s.includes('weight') || s.includes('strength') ||
+      s.includes('gym') || s.includes('crossfit') || s.includes('hiit') ||
+      s.includes('yoga') || s.includes('pilates') || s.includes('elliptical') ||
+      s.includes('rowing') || s.includes('ski') || s.includes('snow'))
+    return '/icon/workout.svg';
+  return '/icon/default.svg';
+};
 
-  const getSportIcon = (sport) => {
-    const s = String(sport || '').toLowerCase();
-    if (s === 'run' || s === 'running') {
-      return '/icon/run.svg';
-    }
-    if (
-      s === 'bike' ||
-      s === 'cycling' ||
-      s === 'ride' ||
-      s === 'virtualride' ||
-      s === 'mountainbikeride' ||
-      s === 'mountainbike' ||
-      s === 'gravelride' ||
-      s === 'ebikeride'
-    ) {
-      return '/icon/bike.svg';
-    }
-    if (s === 'swim' || s === 'swimming') {
-      return '/icon/swim.svg';
-    }
-    switch (s) {
-      case 'run':
-        return '/icon/run.svg';
-      default:
-        return '/icon/default.svg';
-    }
-  };
-  const getStatusIcon = (status) => {
-    const icons = {
-      up: "/icon/arrow-up.svg", 
-      down: "/icon/arrow-down.svg",
-      same: "/icon/arrow-same.svg"
-    };
-    return icons[status];
-  };
-  const getLactateStatus = (current, previous) => {
-    if (previous === undefined) return "same"; // První hodnota nemá s čím srovnat
-    return current > previous ? "up" : current < previous ? "down" : "same";
-  };
-  
-  const getPowerUnit = (sport) => {
-    switch (sport) {
-      case 'run':
-        return '/km';
-      case 'swim':
-        return '/100m';
-      case 'bike':
-        return 'W';
-      default:
-        return '';
-    }
-  };
+const sportColor = (sport) => {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run'))  return '#f97316';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#767EB5';
+  if (s.includes('swim')) return '#38bdf8';
+  if (s.includes('walk') || s.includes('hike')) return '#84cc16';
+  if (s.includes('workout') || s.includes('weight') || s.includes('strength') ||
+      s.includes('gym') || s.includes('crossfit') || s.includes('hiit') ||
+      s.includes('yoga') || s.includes('pilates') || s.includes('elliptical') ||
+      s.includes('rowing') || s.includes('ski') || s.includes('snow'))
+    return '#a855f7';
+  return '#9ca3af';
+};
 
-  // Funkce pro převod sekund na formát MM:SS
-  const formatSecondsToMMSS = (seconds) => {
-    if (!seconds) return "";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+const categoryLabel = (cat) => {
+  if (!cat) return null;
+  return cat.charAt(0).toUpperCase() + cat.slice(1);
+};
 
-  // Funkce pro formátování power/pace podle typu sportu
-  const formatPower = (power, sport) => {
-    if (!power) return "";
-    if (sport === 'bike') {
-      return `${power}W`;
+const categoryColor = (cat) => {
+  const map = {
+    endurance: '#4299e1',
+    tempo:     '#f6ad55',
+    threshold: '#ed8936',
+    vo2max:    '#e53e3e',
+    anaerobic: '#9f7aea',
+    recovery:  '#68d391',
+  };
+  return map[cat] || '#9ca3af';
+};
+
+/**
+ * Normalize FIT or Strava laps into the same shape as manual results[].
+ * Detects format by field names present on the first lap.
+ */
+const normalizeLaps = (laps, sport) => {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const s = String(sport || '').toLowerCase();
+  const isRun  = s.includes('run');
+  const isSwim = s.includes('swim');
+
+  return laps.map((lap, i) => {
+    // Detect format by which fields are present
+    // FIT: camelCase (avgPower, avgHeartRate, avgSpeed, totalElapsedTime)
+    // Strava: snake_case (average_watts, average_heartrate, average_speed, elapsed_time)
+    const fitHR   = lap.avgHeartRate;
+    const strHR   = lap.average_heartrate;
+    const fitPwr  = lap.avgPower ?? lap.normalizedPower;
+    const strPwr  = lap.average_watts;
+    const fitSpd  = lap.avgSpeed;
+    const strSpd  = lap.average_speed;
+
+    let power = null;
+    if (isRun || isSwim) {
+      // Convert m/s → pace sec/km (run) or sec/100m (swim)
+      const speedMs = fitSpd ?? strSpd;
+      if (speedMs && speedMs > 0) {
+        power = isSwim ? Math.round(100 / speedMs) : Math.round(1000 / speedMs);
+      }
     } else {
-      // Pro run a swim převedeme sekundy na MM:SS
-      return formatSecondsToMMSS(power);
+      // Bike/other → watts
+      power = fitPwr ?? strPwr ?? null;
     }
-  };
 
-  const renderIntervalsHeader = () => (
-    <div className="grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-2 bg-gray-50 text-gray-600 text-xs sm:text-sm font-medium border-b border-gray-200">
-      <div className="text-center w-8">#</div>
-      <div className="text-center w-12 sm:w-16">Power {getPowerUnit(sport)}</div>
-      <div className="w-16">HR (bpm)</div>
-      <div className="w-12">RPE</div>
-      <div className="w-12 sm:w-16">Lactate</div>
-      <div className="w-16">Duration</div>
+    const heartRate = fitHR ?? strHR ?? null;
+
+    const duration = lap.totalElapsedTime ?? lap.totalTimerTime
+                  ?? lap.elapsed_time ?? lap.moving_time ?? null;
+
+    return {
+      interval: i + 1,
+      power,
+      heartRate,
+      lactate: lap.lactate ?? null,
+      duration,
+      durationType: 'time',
+      RPE: null,
+      _fromLaps: true,
+    };
+  }).filter(r => r.power != null || r.heartRate != null); // keep if has any data
+};
+
+/** Convert any power/pace value to a comparable number (higher = more intense). */
+const toPowerNum = (val, sport) => {
+  if (!val && val !== 0) return 0;
+  const n = Number(val);
+  if (!isNaN(n) && n > 0) {
+    // For run/swim the stored value is pace (sec/km or sec/100m) — lower = faster = more intense
+    const s = String(sport || '').toLowerCase();
+    if (s.includes('run') || s.includes('swim')) return n > 0 ? 1 / n : 0; // invert so higher = faster
+    return n; // watts — higher = more intense
+  }
+  // "MM:SS" string pace
+  if (typeof val === 'string' && val.includes(':')) {
+    const [m, sec] = val.split(':').map(Number);
+    const secs = (m || 0) * 60 + (sec || 0);
+    return secs > 0 ? 1 / secs : 0; // invert
+  }
+  return 0;
+};
+
+const fmtDuration = (dur, type) => {
+  if (!dur && dur !== 0) return '';
+  const s = String(dur);
+  if (type === 'time') {
+    if (!s.includes(':')) {
+      const secs = parseInt(dur, 10);
+      if (!isNaN(secs)) return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    }
+    return s;
+  }
+  return `${s} m`;
+};
+
+const fmtPower = (val, sport) => {
+  if (!val) return '—';
+  const sp = String(sport || '').toLowerCase();
+  if (sp.includes('bike')) return `${val} W`;
+  if (typeof val === 'string' && val.includes(':')) return val;
+  const n = Number(val);
+  if (!isNaN(n) && n > 0) return `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`;
+  return String(val);
+};
+
+/* ─── zone colour by % of max ──────────────────────────────────────────────── */
+const zoneColor = (pct) => {
+  if (pct >= 0.92) return { fill: '#e53e3e', label: 'Z5' };
+  if (pct >= 0.82) return { fill: '#f97316', label: 'Z4' };
+  if (pct >= 0.72) return { fill: '#48bb78', label: 'Z3' };
+  if (pct >= 0.55) return { fill: '#4299e1', label: 'Z2' };
+  return { fill: '#a0aec0', label: 'Z1' };
+};
+
+/* ─── SVG Skyline chart ─────────────────────────────────────────────────────── */
+function SkylineChart({ results, sport, width = 180, height = 52 }) {
+  if (!results || results.length === 0) {
+    return <div style={{ width, height }} className="bg-gray-50 rounded flex items-center justify-center text-[10px] text-gray-300">—</div>;
+  }
+
+  const vals = results.map(r => toPowerNum(r.power, sport));
+  const maxVal = Math.max(...vals, 0.001);
+
+  const BAR_AREA_H = height - 16; // reserve top 16px for lactate labels
+  const gap = 2;
+  const barW = Math.max(4, (width - gap * (results.length - 1)) / results.length);
+  const totalW = results.length * barW + (results.length - 1) * gap;
+  const offsetX = Math.max(0, (width - totalW) / 2);
+
+  return (
+    <svg width={width} height={height} style={{ overflow: 'visible' }}>
+      {results.map((r, i) => {
+        const val = vals[i];
+        const pct = maxVal > 0 ? val / maxVal : 0;
+        const barH = Math.max(3, pct * BAR_AREA_H);
+        const x = offsetX + i * (barW + gap);
+        const y = BAR_AREA_H - barH + 12; // +12 to shift below label area
+        const { fill } = zoneColor(pct);
+        const lac = r.lactate != null && r.lactate !== '' ? Number(r.lactate) : null;
+
+        return (
+          <g key={i}>
+            {/* Bar */}
+            <rect x={x} y={y} width={barW} height={barH} fill={fill} rx={2} opacity={0.88} />
+            {/* Lactate badge */}
+            {lac != null && (
+              <>
+                <circle cx={x + barW / 2} cy={y - 6} r={7} fill="#fff" stroke={fill} strokeWidth={1.5} />
+                <text
+                  x={x + barW / 2}
+                  y={y - 6}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={7}
+                  fontWeight="700"
+                  fill={fill}
+                >
+                  {lac % 1 === 0 ? lac : lac.toFixed(1)}
+                </text>
+              </>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ─── SVG Mini sparkline (for Power / HR / Pace columns) ───────────────────── */
+function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
+  const nums = values.map(Number).filter(v => !isNaN(v) && v > 0);
+  if (nums.length === 0) return <div style={{ width, height }} />;
+
+  const max = Math.max(...nums);
+  const min = Math.min(...nums);
+  const range = max - min || 1;
+  const gap = 1.5;
+  const barW = Math.max(3, (width - gap * (nums.length - 1)) / nums.length);
+  const USABLE = height - 2;
+
+  return (
+    <svg width={width} height={height}>
+      {nums.map((v, i) => {
+        const h = Math.max(2, ((v - min) / range) * (USABLE - 2) + 2);
+        const x = i * (barW + gap);
+        return (
+          <rect key={i} x={x} y={height - h} width={barW} height={h} fill={color} rx={1} opacity={0.65} />
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ─── Metric column ─────────────────────────────────────────────────────────── */
+function MetricCol({ label, values, color, formatVal, unit }) {
+  const nums = values.filter(v => v != null && v !== '' && !isNaN(Number(v)) && Number(v) > 0);
+  if (nums.length === 0) return (
+    <div className="flex flex-col items-center gap-1">
+      <MiniSparkline values={[]} color={color} />
+      <span className="text-[9px] text-gray-300">—</span>
     </div>
   );
 
-  const renderWorkoutRow = (workout, index, array) => {
-    const isLastRow = index === array.length - 1;
-    const borderClass = isLastRow ? '' : 'border-solid border-b-[0.3px] border-b-[#686868]';
-    
-    const prevLactate = index > 0 ? array[index - 1].lactate : undefined;
-    const lactateStatus = getLactateStatus(workout.lactate, prevLactate);
-    const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null;
-  
-    const efficiencyColor = workout.lactate ? (
-      lactateStatus === "down" 
-        ? "text-red bg-red"
-        : lactateStatus === "up"
-        ? "text-green bg-green-600"
-        : "text-gray-500 bg-gray-400"
-    ) : "text-gray-500 bg-gray-400";
+  const avg = nums.reduce((a, b) => a + Number(b), 0) / nums.length;
 
-    const getDurationUnit = (durationType, duration) => {
-      if (!duration) return '';
-      
-      // Kontrola, zda hodnota obsahuje něco jiného než čísla a dvojtečku
-      const hasNonNumeric = /[^\d:]/.test(duration);
-      
-      // Pokud obsahuje něco jiného než čísla a dvojtečku, nezobrazujeme jednotku
-      if (hasNonNumeric) return '';
-      
-      return durationType === 'time' ? 'min' : 'm';
-    };
-
-    const formatDuration = (duration, durationType) => {
-      if (!duration && duration !== 0) return '';
-      
-      // Převést duration na string pro kontrolu
-      const durationStr = String(duration);
-      
-      if (durationType === 'time') {
-        // Pokud je duration ve formátu sekund (číslo nebo string bez dvojtečky), převedeme na MM:SS
-        if (typeof duration === 'number' || !durationStr.includes(':')) {
-          const seconds = parseInt(duration);
-          if (!isNaN(seconds)) {
-            const minutes = Math.floor(seconds / 60);
-            const remainingSeconds = seconds % 60;
-            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-          }
-        }
-        return durationStr;
-      }
-      
-      return durationStr;
-    };
-  
-    return (
-      <div key={workout.interval} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
-        <div className="text-center w-8">{workout.interval}</div>
-        <div className="text-center w-12 sm:w-16">{formatPower(workout.power, sport)}</div>
-        <div className="flex gap-0.5 items-center w-16">
-          <img
-            loading="lazy"
-            src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/a8b365ad7ccf1466c38d227be8da3cc68edda93357cc91f89de840d723c70bb4?"
-            className="w-3 h-3 sm:w-4 sm:h-4"
-            alt=""
-          />
-          <div>{workout.heartRate}</div>
-        </div>
-        <div className="flex gap-0.5 items-center text-secondary w-12">
-          <img
-            loading="lazy"
-            src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/560435bfa3d998398c37040f6c6463c35a70154d9fd9cd3f0f8d73ae6ed91ab4?"
-            className="w-3 h-3 sm:w-4 sm:h-4"
-            alt=""
-          />
-          <div>{workout.RPE}</div>
-        </div>
-        <div className={`flex gap-1 items-center p-1 w-12 sm:w-16 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
-          {workout.lactate && lactateIcon && <img
-            loading="lazy"
-            src={lactateIcon}
-            className="w-3 h-3"
-            alt=""
-          />}
-          <div>{workout.lactate || ''}</div>
-        </div>
-        <div className="w-18">
-          {formatDuration(workout.duration, workout.durationType)} {getDurationUnit(workout.durationType, workout.duration)}
-        </div>
-      </div>
-    );
-  };
-  
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="bg-white rounded-lg shadow-md p-4 mb-4 hover:shadow-lg transition-shadow"
-    >
-      {/* Header - vždy viditelný - upravený pro lepší zarovnání s hlavičkou tabulky */}
-      <div 
-        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center hover:bg-gray-50 cursor-pointer"
-        onClick={(e) => {
-          // Prevent navigation when clicking on buttons
-          if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
-            return;
-          }
-          onToggleExpand();
-        }}
-      >
-        <div className="text-sm">{date}</div>
-        <div className="flex justify-center">
-          <img
-            src={getSportIcon(sport)}
-            className="w-6 h-6 sm:w-8 sm:h-8"
-            alt={sport}
-          />
-        </div>
-        <div className="text-sm font-medium truncate">{title}</div>
-        
-        {/* Detaily viditelné pouze na větších obrazovkách */}
-        <div className="hidden sm:flex col-span-3 items-center justify-center">
-          {safeResults.length} intervals
-        </div>
-        <div className="hidden sm:block truncate">{safeSpecifics.specific || ''}</div>
-        <div className="hidden sm:block truncate">{safeSpecifics.weather || ''}</div>
-      </div>
+    <div className="flex flex-col items-center gap-0.5">
+      <MiniSparkline values={nums.map(Number)} color={color} />
+      <span className="text-[9px] font-medium text-gray-500">
+        Ø {formatVal ? formatVal(avg) : Math.round(avg)}{unit}
+      </span>
+    </div>
+  );
+}
 
-      {/* Expandovaný obsah */}
-      {isExpanded && (
-        <div className="p-4 border-t border-gray-200" onClick={(e) => e.stopPropagation()}>
-          {/* View Training button */}
-          <div className="flex justify-end mb-4">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                navigate(`/training-calendar?trainingId=${training._id}&title=${encodeURIComponent(title)}`);
-              }}
-              className="bg-secondary hover:bg-secondary-dark text-white px-4 py-2 rounded-md text-sm"
-            >
-              View Training
-            </button>
+/* ─── Interval table (expanded) ─────────────────────────────────────────────── */
+function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
+  const isRun  = String(sport || '').toLowerCase().includes('run');
+  const isSwim = String(sport || '').toLowerCase().includes('swim');
+  const paceUnit = isSwim ? '/100m' : '/km';
+
+  // Use provided globalMax so zone colours are consistent across pages
+  const maxV = globalMax ?? Math.max(...results.map(x => toPowerNum(x.power, sport)), 0.001);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs text-gray-600">
+        <thead>
+          <tr className="border-b border-gray-100 text-gray-400 text-[10px] uppercase tracking-wide">
+            <th className="py-2 text-left w-6">#</th>
+            <th className="py-2 text-center">{isRun || isSwim ? `Pace ${paceUnit}` : 'Power (W)'}</th>
+            <th className="py-2 text-center">HR</th>
+            <th className="py-2 text-center">RPE</th>
+            <th className="py-2 text-center">Lactate</th>
+            <th className="py-2 text-right">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((r, i) => {
+            const absIdx  = startIndex + i;
+            const prevLac = i > 0 ? Number(results[i - 1].lactate) : null;
+            const curLac  = r.lactate != null ? Number(r.lactate) : null;
+            const lacDelta = curLac != null && prevLac != null ? curLac - prevLac : null;
+            const lacColor = lacDelta == null ? 'text-gray-600' : lacDelta > 0 ? 'text-red-500' : lacDelta < 0 ? 'text-emerald-500' : 'text-gray-500';
+
+            const pct   = toPowerNum(r.power, sport) / maxV;
+            const { fill: zoneFill } = zoneColor(pct);
+
+            return (
+              <tr key={absIdx} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                <td className="py-1.5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold text-white" style={{ backgroundColor: zoneFill }}>
+                    {r.interval || absIdx + 1}
+                  </span>
+                </td>
+                <td className="py-1.5 text-center font-medium">{fmtPower(r.power, sport)}</td>
+                <td className="py-1.5 text-center">{r.heartRate ? `${r.heartRate} bpm` : '—'}</td>
+                <td className="py-1.5 text-center">{r.RPE || '—'}</td>
+                <td className={`py-1.5 text-center font-semibold ${lacColor}`}>
+                  {curLac != null ? (
+                    <span className="flex items-center justify-center gap-0.5">
+                      {lacDelta != null && lacDelta !== 0 && (
+                        <span className="text-[8px]">{lacDelta > 0 ? '▲' : '▼'}</span>
+                      )}
+                      {curLac % 1 === 0 ? curLac : curLac.toFixed(1)}
+                    </span>
+                  ) : '—'}
+                </td>
+                <td className="py-1.5 text-right text-gray-500">
+                  {fmtDuration(r.duration, r.durationType)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─── field normalisation helpers ───────────────────────────────────────────── */
+/** Pull the best title regardless of source (manual / Strava / FIT). */
+const resolveTitle = (t) =>
+  t.title || t.titleManual || t.name || t.titleAuto || null;
+
+/** Pull sport string regardless of source. */
+const resolveSport = (t) =>
+  t.sport || t.sport_type || t.type || '';
+
+/** Pull ISO date string regardless of source. */
+const resolveDate = (t) =>
+  t.date || t.startDate || t.start_date || t.startTime || t.timestamp || null;
+
+/** Format seconds → "h:mm:ss" or "mm:ss". */
+const fmtSeconds = (sec) => {
+  if (!sec) return null;
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+  return `${m}:${String(ss).padStart(2,'0')}`;
+};
+
+/** Format meters → "x.x km" or "x m". */
+const fmtDistance = (m) => {
+  if (!m) return null;
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+};
+
+/** Format m/s speed → pace string "m:ss /km" or "m:ss /100m". */
+const fmtSpeedAsPace = (mps, isSwim) => {
+  if (!mps || mps <= 0) return null;
+  const secPer = isSwim ? (100 / mps) : (1000 / mps);
+  const m = Math.floor(secPer / 60);
+  const s = Math.round(secPer % 60);
+  return `${m}:${String(s).padStart(2,'0')} ${isSwim ? '/100m' : '/km'}`;
+};
+
+/* ─── TrainingItem ──────────────────────────────────────────────────────────── */
+const TrainingItem = ({ training, isExpanded, onToggleExpand }) => {
+  const navigate = useNavigate();
+  const [intervalPage, setIntervalPage] = useState(0);
+  // Full detail loaded on expand (for Strava activities that don't include laps in list)
+  const [fullDetail, setFullDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isExpanded || fetchedRef.current) return;
+    // Strava activities in the list endpoint omit laps — lazy-load on expand
+    const isStrava = Boolean(training.stravaId);
+    const hasLaps  = Array.isArray(training.laps) && training.laps.length > 0;
+    const hasResults = Array.isArray(training.results) && training.results.length > 0;
+    if (!isStrava || hasLaps || hasResults) return;
+
+    fetchedRef.current = true;
+    setDetailLoading(true);
+    getStravaActivityDetail(training.stravaId)
+      .then(data => setFullDetail(data))
+      .catch(() => {/* silently ignore */ })
+      .finally(() => setDetailLoading(false));
+  }, [isExpanded, training.stravaId, training.laps, training.results]);
+
+  if (!training) return null;
+
+  // ── Merge lazy-loaded detail (Strava laps) with base training ────────────
+  const merged = fullDetail ? { ...training, ...fullDetail } : training;
+
+  // ── Normalise fields from manual / Strava / FIT sources ──────────────────
+  const title    = resolveTitle(merged);
+  const sport    = resolveSport(merged);
+  const date     = training.date; // already formatted by UserTrainingsTable
+
+  const { results, laps, specifics, description, comments, category } = merged;
+
+  // Use manual results if present; fall back to normalised FIT/Strava laps
+  const safeResults = (Array.isArray(results) && results.length > 0)
+    ? results
+    : normalizeLaps(laps, sport);
+  const safeSpec    = specifics || {};
+
+  const isRun   = sport.toLowerCase().includes('run');
+  const isSwim  = sport.toLowerCase().includes('swim');
+  const isBike  = !isRun && !isSwim;
+
+  const powerVals   = safeResults.map(r => r.power).filter(v => v != null && v !== '');
+  const hrVals      = safeResults.map(r => r.heartRate).filter(v => v != null && v !== '');
+  const lactateVals = safeResults.map(r => r.lactate).filter(v => v != null && v !== '');
+
+  const hasLactate = lactateVals.length > 0;
+  const accentColor = sportColor(sport);
+  const catColor    = category ? categoryColor(category) : accentColor;
+
+  // ── Activity-level summary stats (Strava / FIT top-level fields) ──────────
+  // Strava stores camelCase at activity level: averageHeartRate, averagePower, averageSpeed,
+  //   elapsedTime, movingTime, weightedAveragePower, total_elevation_gain
+  // FIT stores: avgHeartRate, avgPower, avgSpeed, totalElapsedTime, totalDistance, totalAscent
+  const activityStats = (() => {
+    const stats = [];
+
+    // Duration — Strava: movingTime / elapsedTime  |  FIT: totalElapsedTime
+    const dur = merged.movingTime || merged.elapsedTime
+              || merged.moving_time || merged.elapsed_time
+              || merged.totalElapsedTime;
+    if (dur) stats.push({ label: 'Time', value: fmtSeconds(dur) });
+
+    // Distance — Strava: distance  |  FIT: totalDistance
+    const dist = merged.distance || merged.totalDistance;
+    if (dist) stats.push({ label: 'Dist', value: fmtDistance(dist) });
+
+    // Elevation — Strava: total_elevation_gain  |  FIT: totalAscent
+    const elev = merged.total_elevation_gain || merged.totalAscent;
+    if (elev) stats.push({ label: 'Elev', value: `${Math.round(elev)} m` });
+
+    // Avg HR — Strava: averageHeartRate  |  FIT: avgHeartRate
+    const hr = merged.averageHeartRate || merged.avgHeartRate || merged.average_heartrate;
+    if (hr) stats.push({ label: 'Avg HR', value: `${Math.round(hr)} bpm` });
+
+    // Avg Power — Strava: weightedAveragePower / averagePower  |  FIT: avgPower
+    const pwr = merged.weightedAveragePower || merged.averagePower
+              || merged.average_watts || merged.avgPower;
+    if (pwr && isBike) stats.push({ label: 'Avg Power', value: `${Math.round(pwr)} W` });
+
+    // Avg Pace/Speed — Strava: averageSpeed  |  FIT: avgSpeed
+    const spd = merged.averageSpeed || merged.avgSpeed || merged.average_speed;
+    if (spd && !isBike) stats.push({ label: 'Avg Pace', value: fmtSpeedAsPace(spd, isSwim) });
+
+    return stats;
+  })();
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+      {/* Accent bar */}
+      <div className="h-0.5 w-full" style={{ backgroundColor: catColor }} />
+
+      {/* Main row */}
+      <div
+        className="flex items-center px-4 py-3 cursor-pointer select-none" style={{ gap: 16 }}
+        onClick={onToggleExpand}
+      >
+        {/* ── Activity info ── */}
+        <div className="flex items-center gap-3 flex-shrink-0" style={{ minWidth: 180, maxWidth: 240 }}>
+          <img src={getSportIcon(sport)} alt={sport} className="w-8 h-8 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-900 truncate leading-tight">
+              {title || <span className="text-gray-300 italic">Untitled</span>}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-0.5">{date}</div>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {category && (
+                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide text-white" style={{ backgroundColor: catColor }}>
+                  {categoryLabel(category)}
+                </span>
+              )}
+              {hasLactate && (
+                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                  lactate
+                </span>
+              )}
+              {safeResults.length > 0 && (
+                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] text-gray-400 bg-gray-50">
+                  {safeResults.length} {safeResults[0]?._fromLaps ? 'laps' : 'int.'}
+                </span>
+              )}
+              {/* Activity-level summary pills (distance / time / elev) */}
+              {activityStats.slice(0, 2).map(s => (
+                <span key={s.label} className="inline-block px-1.5 py-0.5 rounded text-[9px] text-gray-500 bg-gray-50">
+                  {s.value}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Metric sparklines — fixed-width columns so Skyline always aligns ── */}
+        <div className="hidden md:flex flex-1 items-center min-w-0" style={{ gap: 0 }}>
+          {/* Power / Pace */}
+          <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">
+              {isBike ? 'Power' : 'Pace'}
+            </span>
+            {powerVals.length > 0 ? (
+              <MetricCol
+                values={powerVals.map(v => {
+                  if (isBike) return Number(v) || 0;
+                  const n = Number(v);
+                  if (!isNaN(n)) return n;
+                  if (typeof v === 'string' && v.includes(':')) {
+                    const [m, s] = v.split(':').map(Number);
+                    return (m * 60 + s) || 0;
+                  }
+                  return 0;
+                })}
+                color={accentColor}
+                unit={isBike ? ' W' : ''}
+                formatVal={isBike ? (v => Math.round(v)) : (v => { const s = Math.round(v); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; })}
+              />
+            ) : (() => {
+              const stat = activityStats.find(s => s.label === 'Avg Power' || s.label === 'Avg Pace');
+              return stat
+                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[11px] font-semibold text-gray-500">{stat.value}</span></div>
+                : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>;
+            })()}
           </div>
 
-          {/* Training description */}
-          {description && (
-            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-              <h4 className="font-medium text-gray-900 mb-1">Description:</h4>
-              <p className="text-gray-700">{description}</p>
+          {/* Heart Rate */}
+          <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">HR</span>
+            {hrVals.length > 0 ? (
+              <MetricCol
+                values={hrVals}
+                color="#f87171"
+                unit=" bpm"
+                formatVal={v => Math.round(v)}
+              />
+            ) : (() => {
+              const avgHr = training.average_heartrate || training.avgHeartRate;
+              return avgHr
+                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[11px] font-semibold text-gray-500">{Math.round(avgHr)} bpm</span></div>
+                : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>;
+            })()}
+          </div>
+
+          {/* Lactate — always rendered to keep Skyline column aligned */}
+          <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">Lactate</span>
+            {lactateVals.length > 0 ? (
+              <MetricCol
+                values={lactateVals}
+                color="#fb923c"
+                unit=" mmol"
+                formatVal={v => Number(v).toFixed(1)}
+              />
+            ) : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>}
+          </div>
+        </div>
+
+        {/* ── Skyline ── */}
+        <div className="flex-shrink-0 flex flex-col items-center gap-0.5">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5 hidden md:block">Skyline</span>
+          {safeResults.length > 0 ? (
+            <SkylineChart results={safeResults} sport={sport} />
+          ) : detailLoading ? (
+            <div className="w-[180px] h-[52px] rounded bg-gray-50 flex items-center justify-center">
+              <svg className="w-4 h-4 text-gray-300 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+            </div>
+          ) : (
+            <div className="w-[180px] h-[52px] rounded bg-gray-50 flex items-center justify-center text-[10px] text-gray-300">
+              No intervals
             </div>
           )}
-          
-          {/* Intervals with header */}
-          <div className="space-y-0.5">
-            {renderIntervalsHeader()}
-            {safeResults.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
+        </div>
+
+        {/* ── Chevron ── */}
+        <div className="flex-shrink-0 ml-1">
+          <svg
+            className={`w-4 h-4 text-gray-300 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      {/* ── Expanded detail ── */}
+      {isExpanded && (
+        <div className="border-t border-gray-100 px-4 py-4 space-y-4" onClick={e => e.stopPropagation()}>
+          {detailLoading && (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              Loading lap data…
+            </div>
+          )}
+          {/* Zone legend + action buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {[
+              { label: 'Z1 Recovery',  fill: '#a0aec0' },
+              { label: 'Z2 Aerobic',   fill: '#4299e1' },
+              { label: 'Z3 Tempo',     fill: '#48bb78' },
+              { label: 'Z4 Threshold', fill: '#f97316' },
+              { label: 'Z5 Max',       fill: '#e53e3e' },
+            ].map(z => (
+              <span key={z.label} className="flex items-center gap-1 text-[10px] text-gray-500">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: z.fill }} />
+                {z.label}
+              </span>
+            ))}
+            <div className="ml-auto flex items-center gap-2">
+              {/* Compare same trainings */}
+              {title && (
+                <button
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('lachart:compare', {
+                      detail: { title, category: category || 'all' }
+                    }));
+                    // Scroll up to the comparison component
+                    setTimeout(() => {
+                      document.getElementById('training-comparison')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 80);
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors text-gray-600 border-gray-200 hover:border-gray-400 hover:bg-gray-50 flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Compare same
+                </button>
+              )}
+              <button
+                onClick={() => navigate(`/training-calendar?trainingId=${training._id}&title=${encodeURIComponent(title || '')}`)}
+                className="px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-colors"
+                style={{ backgroundColor: accentColor }}
+              >
+                View in calendar →
+              </button>
+            </div>
           </div>
-          
-          {/* Additional information - now for all screen sizes */}
-          <div className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="font-medium">Terrain/Pool:</span>
-              <span>{safeSpecifics.specific || '—'}</span>
+
+          {/* Description */}
+          {description && (
+            <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+              {description}
             </div>
-            <div className="flex justify-between">
-              <span className="font-medium">Weather:</span>
-              <span>{safeSpecifics.weather || '—'}</span>
-            </div>
-            {comments && (
-              <div className="flex flex-col">
-                <span className="font-medium">Comments:</span>
-                <span className="text-gray-600">{comments}</span>
+          )}
+
+          {/* Interval table with pagination */}
+          {safeResults.length > 0 && (() => {
+            const totalPages = Math.ceil(safeResults.length / INTERVALS_PER_PAGE);
+            const pageStart  = intervalPage * INTERVALS_PER_PAGE;
+            const pageSlice  = safeResults.slice(pageStart, pageStart + INTERVALS_PER_PAGE);
+            // Compute global max once so zone colours stay consistent across pages
+            const globalMax  = Math.max(...safeResults.map(r => toPowerNum(r.power, sport)), 0.001);
+            return (
+              <div>
+                <IntervalTable results={pageSlice} sport={sport} startIndex={pageStart} globalMax={globalMax} />
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
+                    <span className="text-[10px] text-gray-400">
+                      Intervals {pageStart + 1}–{Math.min(pageStart + INTERVALS_PER_PAGE, safeResults.length)} of {safeResults.length}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        disabled={intervalPage === 0}
+                        onClick={() => setIntervalPage(p => p - 1)}
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setIntervalPage(i)}
+                          className={`w-6 h-6 rounded-full text-[10px] font-semibold transition-colors ${
+                            intervalPage === i
+                              ? 'text-white'
+                              : 'text-gray-400 hover:bg-gray-100'
+                          }`}
+                          style={intervalPage === i ? { backgroundColor: accentColor } : {}}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                      <button
+                        disabled={intervalPage === totalPages - 1}
+                        onClick={() => setIntervalPage(p => p + 1)}
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
+
+          {/* Activity-level stats (full set — Strava/FIT) */}
+          {activityStats.length > 0 && (
+            <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-50">
+              {activityStats.map(s => (
+                <div key={s.label} className="flex flex-col items-center px-3 py-1.5 bg-gray-50 rounded-lg">
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">{s.label}</span>
+                  <span className="text-sm font-semibold text-gray-700">{s.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Meta */}
+          {(safeSpec.specific || safeSpec.weather || comments || description || training.description) && (
+            <div className="flex flex-wrap gap-4 text-xs text-gray-500 pt-2 border-t border-gray-50">
+              {safeSpec.specific && (
+                <span><span className="font-medium text-gray-700">Terrain:</span> {safeSpec.specific}</span>
+              )}
+              {safeSpec.weather && (
+                <span><span className="font-medium text-gray-700">Weather:</span> {safeSpec.weather}</span>
+              )}
+              {(comments || training.description || description) && (
+                <span className="w-full">
+                  <span className="font-medium text-gray-700">Notes:</span>{' '}
+                  {comments || training.description || description}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 };
 

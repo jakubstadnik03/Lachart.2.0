@@ -10,6 +10,7 @@ const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
+const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const router = express.Router();
 
 /** Resolve athlete user id for integration routes (pending lactate, lactate form). */
@@ -2727,6 +2728,40 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
       console.error('Error syncing to Training model:', syncError);
       // Don't fail the request if sync fails
     }
+
+    // Notify coaches (athlete annotated Strava training with lactate) — fire-and-forget
+    ;(async () => {
+      try {
+        const actorFull = await User.findById(user._id).select('name surname role').lean();
+        const actorName = actorFull ? `${actorFull.name} ${actorFull.surname}`.trim() : 'Your athlete';
+        const trainingTitle = activity.name || activity.titleManual || 'a Strava activity';
+
+        if (!actorFull || actorFull.role !== 'coach') {
+          await notifyCoachesOfAthlete(String(user._id), {
+            type: 'lactate_added',
+            title: '💧 Lactate added to training',
+            body: `${actorName} added lactate values to "${trainingTitle}"`,
+            resourceId: `strava-${stravaId}`,
+            resourceType: 'strava',
+            fromName: actorName,
+          });
+        } else {
+          // Coach adding on behalf of athlete — notify athlete (userId from activity)
+          if (activity.userId && String(activity.userId) !== String(user._id)) {
+            await notifyAthlete(String(activity.userId), {
+              type: 'lactate_added',
+              title: '💧 Lactate added to your training',
+              body: `${actorName} added lactate values to "${trainingTitle}"`,
+              resourceId: `strava-${stravaId}`,
+              resourceType: 'strava',
+              fromName: actorName,
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[StravaLactate] notification error:', e.message);
+      }
+    })();
 
     res.json({
       success: true,

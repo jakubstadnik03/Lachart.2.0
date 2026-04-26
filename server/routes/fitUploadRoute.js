@@ -388,6 +388,7 @@ router.post('/trainings/:id/laps', verifyToken, fitUploadController.createLap);
  *       401:
  *         description: Unauthorized
  */
+router.put('/trainings/:id/lactate', verifyToken, fitUploadController.updateLactate);
 router.delete('/trainings/:id', verifyToken, fitUploadController.deleteFitTraining);
 
 module.exports = router;

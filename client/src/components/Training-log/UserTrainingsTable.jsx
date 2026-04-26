@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import TrainingItem from "./TrainingItem";
 import TrainingForm from "../TrainingForm";
-import { deleteTraining, updateTraining } from "../../services/api";
+import { deleteTraining, updateTraining, deleteFitTraining } from "../../services/api";
 import { useTrainings } from "../../context/TrainingContext"; // Předpokládám, že máte kontext pro správu tréninků
 import { useNotification } from "../../context/NotificationContext"; // Přidáme import pro notifikace
 import { prepareTrainingForLactateEntry } from "../../utils/trainingLactateModal";
@@ -120,6 +120,48 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const { deleteTraining: removeTrainingFromContext } = useTrainings();
   const { addNotification } = useNotification(); // Přidáme hook pro notifikace
 
+  // Filter state — default to showing only "exported / curated" trainings
+  const [showExportedOnly, setShowExportedOnly] = useState(true);
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterSport,    setFilterSport]    = useState('all');
+
+  /** A training is "curated" if it has been exported, categorised, has lactate, or has a manual title. */
+  const isCurated = (t) => {
+    if (!t) return false;
+
+    const hasTitle    = Boolean(t.title && t.title.trim() && t.title.trim().toLowerCase() !== 'untitled');
+    const hasResults  = Array.isArray(t.results) && t.results.length > 0;
+    const hasLaps     = Array.isArray(t.laps)    && t.laps.length > 0;
+    const hasData     = hasResults || hasLaps;
+    const hasCategory = Boolean(t.category);
+    const hasManualTitle = Boolean(t.titleManual || t.customTitle);
+    const hasLactate  = (
+      (t.lactate != null && t.lactate !== '') ||
+      (hasResults && t.results.some(r => r?.lactate != null && r?.lactate !== '')) ||
+      (hasLaps    && t.laps.some(l    => l?.lactate != null && l?.lactate !== ''))
+    );
+    const isLinked = Boolean(t.sourceStravaActivityId || t.linkedTrainingId || t.isFromTrainingModel);
+
+    // Always discard: no real title AND no interval/lap data at all
+    if (!hasTitle && !hasData) return false;
+
+    // Has a real title → show if it also has at least one other signal
+    // (category, lactate, linked, or actual data)
+    if (hasTitle) return hasData || hasCategory || hasLactate || isLinked || hasManualTitle;
+
+    // Untitled: only show if it has actual interval/lap data
+    return hasData && (hasCategory || hasLactate || isLinked);
+  };
+
+  /** Detect the storage type of a training to call the right delete endpoint. */
+  const getTrainingType = (t) => {
+    if (!t) return 'unknown';
+    if (t.stravaId || t.sport_type) return 'strava';          // StravaActivity has stravaId / sport_type
+    if (t.titleAuto !== undefined || t.manufacturer !== undefined) return 'fit'; // FitTraining fields
+    if (t.sourceStravaActivityId && !t._id) return 'strava';
+    return 'manual';
+  };
+
   // Přidáme nový state pro sledování rozbalených položek
   const [expandedItems, setExpandedItems] = useState({});
 
@@ -145,8 +187,8 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const sortData = (trainings, config) => {
     return [...trainings].sort((a, b) => {
       if (config.key === 'date') {
-        const dateA = new Date(a[config.key] || a.timestamp || a.startDate || 0);
-        const dateB = new Date(b[config.key] || b.timestamp || b.startDate || 0);
+        const dateA = new Date(a.date || a.startDate || a.start_date || a.startTime || a.timestamp || 0);
+        const dateB = new Date(b.date || b.startDate || b.start_date || b.startTime || b.timestamp || 0);
         const tsA = Number.isNaN(dateA.getTime()) ? 0 : dateA.getTime();
         const tsB = Number.isNaN(dateB.getTime()) ? 0 : dateB.getTime();
         return config.direction === "asc" 
@@ -163,37 +205,56 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     });
   };
 
-  const hasLactateData = (training) => {
-    if (!training) return false;
-    if (training.lactate !== null && training.lactate !== undefined && training.lactate !== '') return true;
-    if (Array.isArray(training.results) && training.results.some((r) => r?.lactate !== null && r?.lactate !== undefined && r?.lactate !== '')) return true;
-    if (Array.isArray(training.laps) && training.laps.some((lap) => lap?.lactate !== null && lap?.lactate !== undefined && lap?.lactate !== '')) return true;
-    return false;
-  };
+  // Derive unique categories and sports from the incoming trainings
+  const availableCategories = useMemo(() => {
+    const cats = new Set();
+    trainings.forEach(t => { if (t.category) cats.add(t.category); });
+    return Array.from(cats).sort();
+  }, [trainings]);
 
-  const isCuratedTraining = (training) => {
-    if (!training) return false;
-    const hasCategory = Boolean(training.category);
-    const hasLactate = hasLactateData(training);
-    const isExported = Boolean(
-      training.sourceStravaActivityId ||
-      training.linkedTrainingId ||
-      training.isFromTrainingModel
-    );
-    const hasManualTitle = Boolean(training.titleManual || training.customTitle);
-    return hasCategory || hasLactate || isExported || hasManualTitle;
-  };
+  const availableSports = useMemo(() => {
+    const set = new Set();
+    trainings.forEach(t => {
+      const s = (t.sport || t.sport_type || t.type || '').toLowerCase();
+      if (!s) return;
+      // Normalise to top-level bucket
+      if (s.includes('run'))    set.add('run');
+      else if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) set.add('bike');
+      else if (s.includes('swim')) set.add('swim');
+      else set.add(s);
+    });
+    return Array.from(set).sort();
+  }, [trainings]);
 
-  const curatedTrainings = trainings.filter(isCuratedTraining);
-  const sortedTrainings = sortData(curatedTrainings, sortConfig);
+  const sortedTrainings = sortData(trainings, sortConfig);
 
-  const filteredTrainings = sortedTrainings.filter((training) =>
-    (
-      training.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      training.sport?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (training.specifics?.specific || '').toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  );
+  const filteredTrainings = useMemo(() => {
+    return sortedTrainings.filter((training) => {
+      // exported-only toggle
+      if (showExportedOnly && !isCurated(training)) return false;
+      // text search
+      const q = searchQuery.toLowerCase();
+      if (q && !(
+        (training.title || training.name || training.titleManual || training.titleAuto || '').toLowerCase().includes(q) ||
+        (training.sport || training.sport_type || training.type || '').toLowerCase().includes(q) ||
+        (training.specifics?.specific || '').toLowerCase().includes(q)
+      )) return false;
+      // category chip
+      if (filterCategory !== 'all') {
+        if (filterCategory === 'none' && training.category) return false;
+        if (filterCategory !== 'none' && training.category !== filterCategory) return false;
+      }
+      // sport chip
+      if (filterSport !== 'all') {
+        const s = (training.sport || training.sport_type || training.type || '').toLowerCase();
+        if (filterSport === 'run'  && !s.includes('run'))  return false;
+        if (filterSport === 'bike' && !s.includes('ride') && !s.includes('cycle') && !s.includes('bike')) return false;
+        if (filterSport === 'swim' && !s.includes('swim')) return false;
+        if (!['run','bike','swim'].includes(filterSport) && !s.includes(filterSport)) return false;
+      }
+      return true;
+    });
+  }, [sortedTrainings, searchQuery, filterCategory, filterSport, showExportedOnly]);
 
   const handleSort = (key) => {
     setSortConfig((prevConfig) => {
@@ -223,7 +284,21 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!trainingToDelete || !trainingToDelete._id) {
+    if (!trainingToDelete) {
+      setError("Nelze smazat trénink bez dat");
+      return;
+    }
+
+    const trainingType = getTrainingType(trainingToDelete);
+    const id = trainingToDelete._id;
+
+    // Strava activities can't be deleted from LaChart (they live on Strava)
+    if (trainingType === 'strava') {
+      setError("Strava aktivity nelze smazat z LaChart — odstraňte je přímo na Strava.cz");
+      return;
+    }
+
+    if (!id) {
       setError("Nelze smazat trénink bez ID");
       return;
     }
@@ -232,24 +307,19 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     setError(null);
 
     try {
-      // Volání API pro smazání tréninku
-      await deleteTraining(trainingToDelete._id);
-      
-      // Aktualizace kontextu
-      removeTrainingFromContext(trainingToDelete._id);
-      
-      // Zavřít modální okno
+      if (trainingType === 'fit') {
+        await deleteFitTraining(id);
+      } else {
+        await deleteTraining(id);
+      }
+
+      removeTrainingFromContext(id);
       setShowDeleteModal(false);
       setTrainingToDelete(null);
-      
-      // Zobrazit notifikaci
-      addNotification(`Trénink "${trainingToDelete.title}" byl úspěšně smazán`, 'success');
-      
-      // Obnovit stránku po krátké prodlevě
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-      
+      addNotification(`Trénink "${trainingToDelete.title || 'Untitled'}" byl úspěšně smazán`, 'success');
+
+      setTimeout(() => { window.location.reload(); }, 1000);
+
     } catch (error) {
       console.error("Error deleting training:", error);
       setError("Nepodařilo se smazat trénink. " + (error.response?.data?.message || error.message));
@@ -292,50 +362,174 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     return <div className="text-center text-lg font-semibold mt-5">No trainings available.</div>;
   }
 
-  if (curatedTrainings.length === 0) {
-    return (
-      <div className="text-center text-lg font-semibold mt-5">
-        No exported or categorized trainings available.
-      </div>
-    );
-  }
-
   return (
-    <div className="training-table rounded-2xl shadow-lg mx-auto bg-white m-5 max-w-[1600px] p-4 sm:p-5">
-      <div className="mb-4 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Training Log</h2>
-        <input
-          type="text"
-          placeholder="Find training by title"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full sm:w-1/3 p-2 border border-gray-300 rounded-2xl bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-        />
+    <div className="rounded-2xl shadow-lg mx-auto bg-white m-5 max-w-[1600px] p-4 sm:p-5">
+      {/* ── Header bar ── */}
+      <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Training Log</h2>
+          <span className="hidden sm:inline-block text-xs text-gray-400 bg-gray-100 rounded-full px-2.5 py-0.5">
+            {filteredTrainings.length} sessions
+          </span>
+          {/* Exported-only toggle */}
+          <button
+            onClick={() => { setShowExportedOnly(v => !v); setCurrentPage(1); }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+              showExportedOnly
+                ? 'bg-primary text-white border-primary'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+            }`}
+            title={showExportedOnly ? 'Showing exported / curated trainings only — click to show all' : 'Showing all trainings — click to show only exported'}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+            </svg>
+            {showExportedOnly ? 'Exported only' : 'All trainings'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Sort buttons */}
+          <div className="hidden sm:flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+            {[
+              { key: 'date',  label: 'Date' },
+              { key: 'sport', label: 'Sport' },
+              { key: 'title', label: 'Title' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  sortConfig.key === key
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {label}
+                {sortConfig.key === key && (
+                  <span className="ml-1 opacity-60">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            placeholder="Search trainings…"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full sm:w-56 pl-8 pr-3 py-1.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary relative"
+            style={{ WebkitAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' class='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='%239ca3af' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: '0.6rem center', backgroundSize: '1rem' }}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 bg-gray-100 border-b border-gray-300 text-sm font-medium rounded-t-2xl">
-        <div key="date-header" className="cursor-pointer" onClick={() => handleSort("date")}>
-          Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
+      {/* ── Filter chips ── */}
+      {(availableSports.length > 1 || availableCategories.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {/* Sport chips */}
+          {availableSports.length > 1 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {[{ key: 'all', label: 'All sports' }, ...availableSports.map(s => ({
+                key: s,
+                label: s.charAt(0).toUpperCase() + s.slice(1),
+              }))].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => { setFilterSport(key); setCurrentPage(1); }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+                    filterSport === key
+                      ? 'bg-gray-800 text-white border-gray-800'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                  }`}
+                >
+                  {key === 'run'  && '🏃 '}
+                  {key === 'bike' && '🚴 '}
+                  {key === 'swim' && '🏊 '}
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Divider */}
+          {availableSports.length > 1 && availableCategories.length > 0 && (
+            <div className="h-5 w-px bg-gray-200" />
+          )}
+
+          {/* Category chips */}
+          {availableCategories.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {[
+                { key: 'all',  label: 'All categories', color: null },
+                ...availableCategories.map(c => ({
+                  key: c,
+                  label: c.charAt(0).toUpperCase() + c.slice(1),
+                  color: { endurance: '#4299e1', tempo: '#f6ad55', threshold: '#ed8936', vo2max: '#e53e3e', anaerobic: '#9f7aea', recovery: '#68d391' }[c] || '#9ca3af',
+                })),
+                { key: 'none', label: 'No category', color: '#e5e7eb' },
+              ].map(({ key, label, color }) => (
+                <button
+                  key={key}
+                  onClick={() => { setFilterCategory(key); setCurrentPage(1); }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                    filterCategory === key
+                      ? 'text-white border-transparent'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                  }`}
+                  style={filterCategory === key && color ? { backgroundColor: color, borderColor: color } : {}}
+                >
+                  {filterCategory === key && color && key !== 'all' && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/70 mr-1 mb-px" />
+                  )}
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Active filter count badge */}
+          {(filterSport !== 'all' || filterCategory !== 'all') && (
+            <button
+              onClick={() => { setFilterSport('all'); setFilterCategory('all'); setCurrentPage(1); }}
+              className="ml-1 px-2 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Clear filters
+            </button>
+          )}
         </div>
-        <div key="sport-header" className="flex justify-center cursor-pointer" onClick={() => handleSort("sport")}>
-          Sport {sortConfig.key === "sport" && (sortConfig.direction === "asc" ? "↑" : "↓")}
+      )}
+
+      {/* ── Column hint bar (desktop only) ── */}
+      <div className="hidden md:flex items-center px-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-300" style={{ gap: 16 }}>
+        <div style={{ minWidth: 180, maxWidth: 240, flexShrink: 0 }}>Activity</div>
+        {/* 3 metric cols — same flex:1 1 0 as in TrainingItem */}
+        <div className="flex-1 flex" style={{ gap: 0 }}>
+          <span style={{ flex: '1 1 0', textAlign: 'center' }}>Power / Pace</span>
+          <span style={{ flex: '1 1 0', textAlign: 'center' }}>Heart Rate</span>
+          <span style={{ flex: '1 1 0', textAlign: 'center' }}>Lactate</span>
         </div>
-        <div key="title-header" className="cursor-pointer" onClick={() => handleSort("title")}>
-          Title {sortConfig.key === "title" && (sortConfig.direction === "asc" ? "↑" : "↓")}
-        </div>
-        <div key="intervals-header" className="hidden sm:block col-span-3 text-center">Intervals</div>
-        <div key="terrain-header" className="hidden sm:block">Terrain</div>
-        <div key="weather-header" className="hidden sm:block">Weather</div>
+        <div style={{ width: 180, flexShrink: 0, textAlign: 'center' }}>Skyline</div>
+        <div style={{ width: 24, flexShrink: 0 }} />
       </div>
 
-      <div className="space-y-2 mt-2">
+      {filteredTrainings.length === 0 && (
+        <div className="py-12 text-center text-sm text-gray-400">
+          No trainings match the current filters.{' '}
+          <button className="underline hover:text-gray-600" onClick={() => { setFilterSport('all'); setFilterCategory('all'); setSearchQuery(''); setShowExportedOnly(false); setCurrentPage(1); }}>
+            Clear all filters
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-2">
         {paginatedTrainings.map((training) => (
           <div key={training._id} className="relative group">
             <TrainingItem 
               training={{
                 ...training,
-                date: formatDate(training.date || training.timestamp || training.startDate)
+                date: formatDate(training.date || training.startDate || training.start_date || training.startTime || training.timestamp)
               }}
               isExpanded={expandedItems[training._id] || false}
               onToggleExpand={() => toggleExpand(training._id)}

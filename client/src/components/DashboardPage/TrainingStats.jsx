@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
@@ -57,8 +58,8 @@ function parseDurationSecs(r) {
 }
 
 /* ── Bar tooltip ───────────────────────────────────────────────────────────── */
-function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user }) {
-  const [pos, setPos] = useState({ top: 0, left: 0, above: true, barCenterX: 0 });
+function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user }) {
+  const [pos, setPos] = useState({ top: 0, left: 0, barCenterX: 0 });
   const tooltipRef = useRef(null);
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
 
@@ -67,19 +68,20 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     const upd = () => {
       const r = barRef.current?.getBoundingClientRect();
       if (!r) return;
-      const TIP_H = 140, TIP_W = 170, GAP = 6, MARGIN = 8;
-      const above = r.top - TIP_H - GAP - MARGIN > 0;
-      const top = above ? r.top - GAP : r.bottom + GAP;
-      // clamp horizontally so it never goes off-screen
+      const TIP_W = 170, GAP = 8, MARGIN = 8;
+      // bar is bottom-aligned inside the column container → compute its actual top edge
+      const actualBarH = Math.max(barHeight || 0, 3);
+      const barTop = r.bottom - actualBarH;
+      const top = barTop - GAP; // tooltip sits just above the bar top
       const idealLeft = r.left + r.width / 2;
       const left = Math.max(TIP_W / 2 + MARGIN, Math.min(idealLeft, window.innerWidth - TIP_W / 2 - MARGIN));
-      setPos({ top, left, above, barCenterX: idealLeft });
+      setPos({ top, left, barCenterX: idealLeft });
     };
     upd();
     window.addEventListener("scroll", upd, true);
     window.addEventListener("resize", upd);
     return () => { window.removeEventListener("scroll", upd, true); window.removeEventListener("resize", upd); };
-  }, [visible, barRef]);
+  }, [visible, barRef, barHeight]);
 
   if (!visible || !pos.top) return null;
 
@@ -112,46 +114,33 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     lactate                   ? { label: "Lactate", value: `${lactate} mmol/L`, isLactate: true } : null,
   ].filter(Boolean);
 
-  // Arrow horizontal offset: clamp arrow to stay within tooltip
-  const arrowLeft = Math.max(16, Math.min(pos.barCenterX - pos.left + 85, 154)); // 85 = half tip width approx
+  // Arrow offset: use actual measured tooltip width so the arrow points exactly at the bar center
+  const tipW = tooltipRef.current?.offsetWidth || 160;
+  const arrowLeft = Math.max(10, Math.min(pos.barCenterX - (pos.left - tipW / 2), tipW - 10));
 
-  return (
+  const tooltip = (
     <div
       ref={tooltipRef}
       className="pointer-events-none fixed z-[99999]"
       style={{
         top:  `${pos.top}px`,
         left: `${pos.left}px`,
-        transform: pos.above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+        transform: "translate(-50%, -100%)", // always above
       }}
     >
       <div className="relative bg-white rounded-xl shadow-2xl border border-gray-100 overflow-visible"
            style={{ minWidth: 150, maxWidth: 190 }}>
 
-        {/* Arrow pointing toward the bar */}
-        {pos.above ? (
-          /* Arrow below tooltip (bar is below) */
-          <div style={{
-            position: "absolute", bottom: -7, left: `${arrowLeft}px`,
-            width: 0, height: 0,
-            borderLeft: "7px solid transparent",
-            borderRight: "7px solid transparent",
-            borderTop: "7px solid white",
-            filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.08))",
-            transform: "translateX(-50%)",
-          }} />
-        ) : (
-          /* Arrow above tooltip (bar is above) */
-          <div style={{
-            position: "absolute", top: -7, left: `${arrowLeft}px`,
-            width: 0, height: 0,
-            borderLeft: "7px solid transparent",
-            borderRight: "7px solid transparent",
-            borderBottom: "7px solid white",
-            filter: "drop-shadow(0 -2px 2px rgba(0,0,0,0.06))",
-            transform: "translateX(-50%)",
-          }} />
-        )}
+        {/* Arrow pointing down toward the bar top */}
+        <div style={{
+          position: "absolute", bottom: -7, left: `${arrowLeft}px`,
+          width: 0, height: 0,
+          borderLeft: "7px solid transparent",
+          borderRight: "7px solid transparent",
+          borderTop: "7px solid white",
+          filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.08))",
+          transform: "translateX(-50%)",
+        }} />
 
         {/* Header */}
         <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100">
@@ -179,6 +168,10 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
       </div>
     </div>
   );
+
+  // Render via portal so position: fixed is always relative to the viewport,
+  // regardless of any CSS transform on ancestor elements.
+  return ReactDOM.createPortal(tooltip, document.body);
 }
 
 /* ── VerticalBar ───────────────────────────────────────────────────────────── */
@@ -219,6 +212,7 @@ function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lacta
       </div>
       <BarTooltip
         barRef={barRef}
+        barHeight={Math.max(height, 3)}
         visible={isHovered}
         index={index}
         power={power}

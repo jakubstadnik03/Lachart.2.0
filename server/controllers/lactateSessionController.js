@@ -1,6 +1,7 @@
 const LactateSession = require('../models/lactateSession');
 const fs = require('fs');
 const path = require('path');
+const { notifyCoachesOfAthlete } = require('../utils/notificationHelper');
 
 const lactateSessionController = {
   // Create new lactate session
@@ -204,6 +205,26 @@ const lactateSessionController = {
       notifyUserLactateTestCompleted(session.athleteId).catch((e) =>
         console.error('[completeSession] lactate push:', e.message || e)
       );
+
+      // Notify coaches that their athlete completed a lactate test — fire-and-forget
+      ;(async () => {
+        try {
+          const User = require('../models/UserModel');
+          const athlete = await User.findById(session.athleteId).select('name surname').lean();
+          const athleteName = athlete ? `${athlete.name} ${athlete.surname}`.trim() : 'Your athlete';
+          const sportLabel = session.sport === 'bike' ? 'cycling' : session.sport === 'run' ? 'running' : session.sport || 'training';
+          await notifyCoachesOfAthlete(session.athleteId, {
+            type: 'lactate_test_completed',
+            title: '🧪 Lactate test completed',
+            body: `${athleteName} completed a ${sportLabel} lactate test. Zones have been updated.`,
+            resourceId: String(session._id),
+            resourceType: 'lactate_session',
+            fromName: athleteName,
+          });
+        } catch (e) {
+          console.error('[completeSession] coach notification error:', e.message);
+        }
+      })();
       
       // Automatically save power zones to user profile if this is a cycling test with zones
       if (session.sport === 'bike' && session.trainingZones && session.trainingZones.length > 0) {
@@ -523,6 +544,22 @@ const lactateSessionController = {
       };
 
       await user.save();
+
+      // Notify coaches that athlete's zones were updated — fire-and-forget
+      ;(async () => {
+        try {
+          const userName = `${user.name} ${user.surname}`.trim();
+          await notifyCoachesOfAthlete(userId, {
+            type: 'zones_updated',
+            title: '📊 Training zones updated',
+            body: `${userName} updated their training zones.`,
+            resourceType: 'profile',
+            fromName: userName,
+          });
+        } catch (e) {
+          console.error('[saveZonesToProfile] notification error:', e.message);
+        }
+      })();
 
       res.json({
         success: true,
