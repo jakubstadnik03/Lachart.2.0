@@ -11,9 +11,12 @@ interface TrainerConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
   options?: TrainerClientOptions;
+  /** Pass the parent's useTrainer instance so the connection persists after the modal closes. */
+  trainer?: ReturnType<typeof useTrainer>;
 }
 
-export function TrainerConnectModal({ isOpen, onClose, options }: TrainerConnectModalProps) {
+export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainerProp }: TrainerConnectModalProps) {
+  const internalTrainer = useTrainer(trainerProp ? null : options);
   const {
     devices,
     connectedDevice,
@@ -27,7 +30,7 @@ export function TrainerConnectModal({ isOpen, onClose, options }: TrainerConnect
     setErgWatts,
     requestControl,
     start,
-  } = useTrainer(options);
+  } = trainerProp ?? internalTrainer;
 
   const [targetWatts, setTargetWatts] = useState(100);
   const [isScanning, setIsScanning] = useState(false);
@@ -45,12 +48,9 @@ export function TrainerConnectModal({ isOpen, onClose, options }: TrainerConnect
 
   const handleConnect = async (deviceId: string) => {
     try {
-      // connect() already handles requestControl() internally — no need to call again
       await connect(deviceId);
-      // Send start/resume command so the trainer begins broadcasting
-      if (start) {
-        await start();
-      }
+      if (requestControl) await requestControl();
+      if (start) await start();
     } catch (err) {
       console.error('Connection error:', err);
     }
