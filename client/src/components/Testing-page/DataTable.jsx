@@ -576,12 +576,28 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         );
       if (!sustainedRise) continue;
       if (isLtp1FalseStartRise(sorted, j)) continue;
-      const laOut = Math.min(Math.max(la1, MIN_LTP1_LACTATE), MAX_LTP1_LACTATE_PACE);
-      const pOut = Number(curr.power);
-      const hrOut =
-        curr.heartRate != null && Number.isFinite(Number(curr.heartRate))
-          ? Number(curr.heartRate)
-          : null;
+
+      // If the rise is a single large jump from a dip (e.g. trough 1.50 → 2.10 in one step),
+      // don't snap LT1 to the full la1 — interpolate near the onset of the rise instead.
+      // This mirrors shiftLt1AfterImmediateDropBike for pace sports.
+      const DIP_RISE_THRESHOLD = 0.45; // mmol/L: if a single step rises more than this from a below-zone trough
+      const DIP_TROUGH_MAX_LA = 1.85;  // trough must be below expected LT1 zone to qualify as a dip
+      let laOut, pOut, hrOut;
+      if (inc > DIP_RISE_THRESHOLD && la0 < DIP_TROUGH_MAX_LA) {
+        // Interpolate at trough + 0.25 on the ascending segment (same logic as shiftLt1AfterImmediateDropBike)
+        const targetLa = Math.max(la0 + 0.25, MIN_LTP1_LACTATE);
+        const tInterp = Math.min(1, (targetLa - la0) / (la1 - la0));
+        pOut = Number(prev.power) + tInterp * (Number(curr.power) - Number(prev.power));
+        laOut = Math.min(targetLa, MAX_LTP1_LACTATE_PACE);
+        // Interpolate HR proportionally
+        const h0 = prev.heartRate != null && Number.isFinite(Number(prev.heartRate)) ? Number(prev.heartRate) : null;
+        const h1 = curr.heartRate != null && Number.isFinite(Number(curr.heartRate)) ? Number(curr.heartRate) : null;
+        hrOut = (h0 != null && h1 != null) ? h0 + tInterp * (h1 - h0) : (h1 ?? h0 ?? null);
+      } else {
+        laOut = Math.min(Math.max(la1, MIN_LTP1_LACTATE), MAX_LTP1_LACTATE_PACE);
+        pOut = Number(curr.power);
+        hrOut = curr.heartRate != null && Number.isFinite(Number(curr.heartRate)) ? Number(curr.heartRate) : null;
+      }
       return { power: pOut, lactate: laOut, heartRate: hrOut };
     }
     return null;
