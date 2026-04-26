@@ -3,6 +3,7 @@ import { SearchInput } from "./SearchInput";
 import { UserDropdown } from "./UserDropdown";
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
+import NotificationBell from './NotificationBell';
 
 const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -38,6 +39,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
           <div className="hidden lg:block flex-1 max-w-xl">
             <SearchInput />
           </div>
+          <NotificationBell />
           <UserDropdown
             isOpen={isDropdownOpen}
             setIsOpen={setIsDropdownOpen}

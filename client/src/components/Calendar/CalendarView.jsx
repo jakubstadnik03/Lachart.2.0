@@ -94,6 +94,7 @@ export default function CalendarView({
   onMonthChange = null,
   onVisiblePeriodChange = null,
   onAddLactate = null,
+  commentCounts = {},
 }) {
   const { getCategory } = useCategories();
 
@@ -725,6 +726,9 @@ export default function CalendarView({
                               {tss > 0 && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{Math.round(tss)} TSS</span></>}
                             </div>
                           </div>
+                          {(commentCounts[String(a._id || a.id)] || 0) > 0 && (
+                            <span className="text-xs text-gray-400 flex-shrink-0">💬 {commentCounts[String(a._id || a.id)]}</span>
+                          )}
                           <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         </div>
                         {a.category && (
@@ -852,6 +856,11 @@ export default function CalendarView({
                                 >
                                   {catLabel(a.category).substring(0, 4)}
                                 </div>
+                              )}
+                              {(commentCounts[String(a._id || a.id)] || 0) > 0 && (
+                                <span className="text-[8px] text-gray-400 flex items-center gap-0.5 mt-0.5">
+                                  💬 {commentCounts[String(a._id || a.id)]}
+                                </span>
                               )}
                             </button>
                             {onAddLactate && a.type === 'strava' && (

@@ -243,6 +243,8 @@ const userSchema = new mongoose.Schema({
     pushStravaImport: { type: Boolean, default: true },
     /** Mobile push + scheduled local reminders around lactate tests (Expo / Capacitor) */
     pushLactateTest: { type: Boolean, default: true },
+    /** Email when coach or athlete comments on a training */
+    trainingComments: { type: Boolean, default: true },
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },

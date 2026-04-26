@@ -1435,3 +1435,15 @@ export const reactivateSubscription = async () => {
   const { data } = await api.post('/api/subscription/reactivate');
   return data;
 };
+
+// Training Comments
+export const getTrainingComments = (trainingId) => api.get(`/api/comments/training/${trainingId}`);
+export const addTrainingComment = (trainingId, text, trainingType = 'training') => api.post(`/api/comments/training/${trainingId}`, { text, trainingType });
+export const deleteTrainingComment = (commentId) => api.delete(`/api/comments/training-comment/${commentId}`);
+export const getTrainingCommentCounts = (ids) => api.get(`/api/comments/training/counts?ids=${ids.join(',')}`);
+
+// In-app Notifications
+export const getNotifications = () => api.get('/api/notifications');
+export const markAllNotificationsRead = () => api.patch('/api/notifications/read');
+export const markNotificationRead = (id) => api.patch(`/api/notifications/${id}/read`);
+export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`);

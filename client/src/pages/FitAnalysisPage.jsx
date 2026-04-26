@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PencilIcon, CheckIcon, XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { useCategories } from '../context/CategoryContext';
-import { getFitTrainings, getFitTraining, deleteFitTraining, createLap } from '../services/api';
+import { getFitTrainings, getFitTraining, deleteFitTraining, createLap, getTrainingCommentCounts } from '../services/api';
+import TrainingComments from '../components/TrainingComments';
 import { motion } from 'framer-motion';
 import CalendarView from '../components/Calendar/CalendarView';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
@@ -1350,6 +1351,7 @@ const FitAnalysisPage = () => {
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const [trainings, setTrainings] = useState([]);
+  const [commentCounts, setCommentCounts] = useState({});
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -2399,7 +2401,13 @@ const FitAnalysisPage = () => {
       
       
       setTrainings(uniqueTrainings);
-      
+
+      // Fetch comment counts for all trainings
+      const ids = uniqueTrainings.filter(t => t._id).map(t => String(t._id));
+      if (ids.length > 0) {
+        getTrainingCommentCounts(ids).then(r => setCommentCounts(r.data || {})).catch(() => {});
+      }
+
       // Check if we should restore training selection
       const savedTrainingId = localStorage.getItem('fitAnalysis_selectedTrainingId');
       const savedTrainingModelId = localStorage.getItem('fitAnalysis_selectedTrainingModelId');
@@ -3631,6 +3639,7 @@ const FitAnalysisPage = () => {
           }, [])}
           onVisiblePeriodChange={handleCalendarPeriodChange}
           user={user}
+          commentCounts={commentCounts}
         />
         </motion.div>
 
@@ -4594,6 +4603,14 @@ const FitAnalysisPage = () => {
                       onSelectWorkout={(id) => loadTrainingDetail(id)}
                     />
                   )}
+                  {/* Training Comments */}
+                  <TrainingComments
+                    trainingId={selectedTraining?.isFromTrainingModel
+                      ? (localStorage.getItem('fitAnalysis_selectedTrainingModelId') || selectedTraining._id)
+                      : String(selectedTraining._id)}
+                    trainingType={selectedTraining?.isRegularTraining ? 'training' : 'fitTraining'}
+                    isMobile={isMobile}
+                  />
                   </div>
             </motion.div>
                         </div>
@@ -5617,6 +5634,12 @@ const FitAnalysisPage = () => {
                   onSelectLapNumber={setSelectedLapNumber}
                 />
               </div>
+              {/* Training Comments */}
+              <TrainingComments
+                trainingId={String(selectedStrava?.id || selectedStrava?._id)}
+                trainingType="strava"
+                isMobile={isMobile}
+              />
               </div>
             </div>
           );

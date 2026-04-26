@@ -18,6 +18,7 @@ const DEFAULT_NOTIFICATION_PREFS = {
   trainingReminders: true,
   weeklyReports: true,
   achievementAlerts: true,
+  trainingComments: true,
   pushStravaImport: true,
   pushLactateTest: true
 };
@@ -1795,7 +1796,8 @@ const SettingsPage = () => {
                             emailNotifications: false,
                             trainingReminders: false,
                             weeklyReports: false,
-                            achievementAlerts: false
+                            achievementAlerts: false,
+                            trainingComments: false
                           };
                       saveNotifications(next);
                     }}
@@ -1847,7 +1849,7 @@ const SettingsPage = () => {
                 </label>
               </div>
 
-              <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'}`}>
+              <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
                 <div className="flex-1 min-w-0 pr-2">
                   <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Achievement Alerts</label>
                   <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>Get notified about your achievements</p>
@@ -1861,8 +1863,29 @@ const SettingsPage = () => {
                     className="sr-only peer"
                   />
                   <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
-                    !notifications.emailNotifications 
-                      ? 'bg-gray-100 cursor-not-allowed' 
+                    !notifications.emailNotifications
+                      ? 'bg-gray-100 cursor-not-allowed'
+                      : 'bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 peer-checked:bg-primary'
+                  }`}></div>
+                </label>
+              </div>
+
+              <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-t mt-2 pt-2`}>
+                <div className="flex-1 min-w-0 pr-2">
+                  <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Training Comments</label>
+                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>Email me when coach or athlete comments on a training</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notifications.trainingComments !== false}
+                    onChange={(e) => saveNotifications({ ...notifications, trainingComments: e.target.checked })}
+                    disabled={!notifications.emailNotifications}
+                    className="sr-only peer"
+                  />
+                  <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
+                    !notifications.emailNotifications
+                      ? 'bg-gray-100 cursor-not-allowed'
                       : 'bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 peer-checked:bg-primary'
                   }`}></div>
                 </label>
