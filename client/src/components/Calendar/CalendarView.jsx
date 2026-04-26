@@ -402,19 +402,21 @@ export default function CalendarView({
           runSeconds: 0,
           bikeSeconds: 0,
           swimSeconds: 0,
+          strengthSeconds: 0,
           distanceRun: 0,
           distanceBike: 0,
           distanceSwim: 0,
           tssRun: 0,
           tssBike: 0,
           tssSwim: 0,
+          tssStrength: 0,
           totalTSS: 0,
           hasTss: false
         };
       }
 
       const entry = acc[key];
-      const sport = (act.sport || '').toLowerCase();
+      const sport = (act.sport || act.sport_type || act.type || '').toLowerCase();
       const duration = Number(act.totalTimerTime || act.moving_time || act.movingTime || act.totalElapsedTime || act.elapsedTime || act.duration || 0);
       const distance = Number(act.distance || 0);
       
@@ -482,6 +484,21 @@ export default function CalendarView({
         entry.distanceBike += distance;
         if (!isNaN(tssVal) && tssVal > 0) {
           entry.tssBike += tssVal;
+          entry.totalTSS += tssVal;
+        }
+      } else if (
+        sport.includes('strength') || sport.includes('gym') || sport.includes('weight') ||
+        sport.includes('crossfit') || sport.includes('workout') || sport.includes('yoga') ||
+        sport.includes('pilates') || sport.includes('hiit') || sport.includes('elliptical') ||
+        sport.includes('rowing') || sport.includes('alpineski') || sport.includes('nordicski') ||
+        sport.includes('iceskate') || sport.includes('inlineskate') || sport.includes('skateboard') ||
+        sport.includes('soccer') || sport.includes('football') || sport.includes('basketball') ||
+        sport.includes('tennis') || sport.includes('volleyball') || sport.includes('handball') ||
+        sport.includes('boxing') || sport.includes('martial') || sport.includes('climbing')
+      ) {
+        entry.strengthSeconds += duration;
+        if (!isNaN(tssVal) && tssVal > 0) {
+          entry.tssStrength += tssVal;
           entry.totalTSS += tssVal;
         }
       }
@@ -975,6 +992,21 @@ export default function CalendarView({
                             <span className="text-xs text-gray-500">•</span>
                             <FireIcon className="w-3.5 h-3.5 text-primary" />
                             <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssSwim)} TSS</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {weekSummary.strengthSeconds > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h2m0 0V4m0 2v2m0 0h2M4 6h2m14 0h-2m0 0V4m0 2v2m0 0h-2m0 0h2M8 12h8m-8 0H6m2 0v2m8-2v2m0 0h2m-2 0h-2" />
+                        </svg>
+                        <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.strengthSeconds)}</span>
+                        {weekSummary.tssStrength > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">•</span>
+                            <FireIcon className="w-3.5 h-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssStrength)} TSS</span>
                           </>
                         )}
                       </div>
