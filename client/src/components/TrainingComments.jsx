@@ -8,6 +8,7 @@ export default function TrainingComments({ trainingId, trainingType = 'training'
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [activeCommentId, setActiveCommentId] = useState(null); // for mobile tap-to-show-delete
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -77,38 +78,44 @@ export default function TrainingComments({ trainingId, trainingType = 'training'
         {!loading && comments.length === 0 && (
           <p className="text-xs text-gray-400 italic">No comments yet. Be the first to add one.</p>
         )}
-        {comments.map(c => (
-          <div key={c._id} className={`flex gap-3 group ${String(c.authorId) === String(user?._id) ? 'flex-row-reverse' : ''}`}>
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${c.authorRole === 'coach' ? 'bg-violet-500' : 'bg-blue-500'}`}>
-              {(c.authorName || '?')[0].toUpperCase()}
-            </div>
-            <div className={`flex-1 min-w-0 ${String(c.authorId) === String(user?._id) ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
-              <div className={`flex items-center gap-2 ${String(c.authorId) === String(user?._id) ? 'flex-row-reverse' : ''}`}>
-                <span className="text-[10px] font-semibold text-gray-700">{c.authorName}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${c.authorRole === 'coach' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.authorRole}</span>
-                <span className="text-[9px] text-gray-400">{fmtTime(c.createdAt)}</span>
+        {comments.map(c => {
+          const isOwn = String(c.authorId) === String(user?._id);
+          const showDelete = canDelete(c) && (activeCommentId === c._id);
+          return (
+            <div
+              key={c._id}
+              className={`flex gap-2.5 group ${isOwn ? 'flex-row-reverse' : ''}`}
+              onTouchStart={() => canDelete(c) && setActiveCommentId(id => id === c._id ? null : c._id)}
+            >
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${c.authorRole === 'coach' ? 'bg-violet-500' : 'bg-blue-500'}`}>
+                {(c.authorName || '?')[0].toUpperCase()}
               </div>
-              <div className={`relative max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
-                String(c.authorId) === String(user?._id)
-                  ? 'bg-primary text-white rounded-tr-sm'
-                  : 'bg-gray-100 text-gray-800 rounded-tl-sm'
-              }`}>
-                {c.text}
-                {canDelete(c) && (
-                  <button
-                    onClick={() => handleDelete(c._id)}
-                    className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 items-center justify-center bg-red-100 text-red-500 rounded-full hover:bg-red-200 transition-colors"
-                    title="Delete"
-                  >
-                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
+              <div className={`flex-1 min-w-0 flex flex-col gap-0.5 ${isOwn ? 'items-end' : 'items-start'}`}>
+                <div className={`flex items-center gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                  <span className="text-[10px] font-semibold text-gray-700">{c.authorName}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${c.authorRole === 'coach' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.authorRole}</span>
+                  <span className="text-[9px] text-gray-400">{fmtTime(c.createdAt)}</span>
+                </div>
+                <div className={`relative max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
+                  isOwn ? 'bg-primary text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                }`}>
+                  {c.text}
+                  {canDelete(c) && (
+                    <button
+                      onClick={() => handleDelete(c._id)}
+                      className={`absolute -top-1.5 -right-1.5 w-4 h-4 items-center justify-center bg-red-100 text-red-500 rounded-full hover:bg-red-200 transition-colors ${showDelete || !isMobile ? 'flex' : 'hidden group-hover:flex'}`}
+                      title="Delete"
+                    >
+                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={bottomRef} />
       </div>
       <form onSubmit={handleSubmit} className={`${isMobile ? 'mt-3' : 'px-5 pb-4 mt-2'} flex gap-2`}>

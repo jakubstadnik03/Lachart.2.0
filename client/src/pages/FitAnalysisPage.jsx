@@ -3698,8 +3698,8 @@ const FitAnalysisPage = () => {
                   className={`bg-white ${isMobile ? 'rounded-none border-0' : 'rounded-2xl border border-gray-200 shadow-sm'} ${isMobile ? 'p-4' : 'p-5 md:p-8'} ${isMobile ? 'space-y-4' : 'space-y-5 md:space-y-8'}`}
                 >
                   {/* Header Stats */}
-              <TrainingStats 
-                training={selectedTraining} 
+              <TrainingStats
+                training={selectedTraining}
                 onDelete={handleDeleteTraining}
                 onUpdate={async (id) => {
                   await loadTrainingDetail(id);
@@ -3708,6 +3708,15 @@ const FitAnalysisPage = () => {
                 user={user}
                 isMobile={isMobile}
               />
+
+                  {/* Training Comments — right below stats */}
+                  <TrainingComments
+                    trainingId={selectedTraining?.isFromTrainingModel
+                      ? (localStorage.getItem('fitAnalysis_selectedTrainingModelId') || String(selectedTraining._id))
+                      : String(selectedTraining._id)}
+                    trainingType={selectedTraining?.isRegularTraining ? 'training' : 'fitTraining'}
+                    isMobile={isMobile}
+                  />
 
                   {/* Route Map for FIT/regular training when GPS is available */}
                   {getGpsData.length > 0 && (
@@ -4603,14 +4612,6 @@ const FitAnalysisPage = () => {
                       onSelectWorkout={(id) => loadTrainingDetail(id)}
                     />
                   )}
-                  {/* Training Comments */}
-                  <TrainingComments
-                    trainingId={selectedTraining?.isFromTrainingModel
-                      ? (localStorage.getItem('fitAnalysis_selectedTrainingModelId') || selectedTraining._id)
-                      : String(selectedTraining._id)}
-                    trainingType={selectedTraining?.isRegularTraining ? 'training' : 'fitTraining'}
-                    isMobile={isMobile}
-                  />
                   </div>
             </motion.div>
                         </div>

@@ -528,6 +528,18 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
 
   if (!training) return null;
 
+  /** Compact self-sizing stat chip — does not stretch to fill grid */
+  const StatBox = ({ icon, iconBg, iconColor, label, value, sub }) => (
+    <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm shrink-0">
+      <div className={`flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase`}>
+        <span className={`inline-flex h-5 w-5 items-center justify-center rounded ${iconBg} ${iconColor}`}>{icon}</span>
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-bold text-gray-900 whitespace-nowrap">{value}</div>
+      {sub && <div className="text-[10px] text-gray-400 leading-tight whitespace-nowrap">{sub}</div>}
+    </div>
+  );
+
   const handleSaveDescription = async () => {
     const trimmedDescription = description.trim();
     initiateSave({ description: trimmedDescription || null });
@@ -971,124 +983,34 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
           ))}
         </div>
       ) : (
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 sm:gap-2">
-        <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-primary">
-              <ClockIcon className="h-3 w-3" />
-            </span>
-            Duration
-          </div>
-          <div className="mt-0.5 text-sm font-bold text-gray-900">{formatDuration(totalTime)}</div>
-          <div className="text-[10px] text-gray-400 leading-tight">&nbsp;</div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-primary">
-              <MapPinIcon className="h-3 w-3" />
-            </span>
-            Distance
-          </div>
-          <div className="mt-0.5 text-sm font-bold text-gray-900">{formatDistance(training.totalDistance, user)}</div>
-          <div className="text-[10px] text-gray-400 leading-tight">&nbsp;</div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-red/10 text-red">
-              <HeartIcon className="h-3 w-3" />
-            </span>
-            Avg HR
-          </div>
-          <div className="mt-0.5 text-sm font-bold text-gray-900">
-            {training.avgHeartRate ? `${Math.round(training.avgHeartRate)} bpm` : '-'}
-          </div>
-          <div className="text-[10px] text-gray-400 leading-tight">
-            {maxHeartRate ? `Max ${Math.round(maxHeartRate)} bpm` : '\u00A0'}
-          </div>
-        </div>
-
-        {displayPower != null && displayPower > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-purple-500/10 text-purple-600">
-                <BoltIcon className="h-3 w-3" />
-              </span>
-              {isNormalizedPower ? 'NP' : 'Avg Power'}
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">{Math.round(displayPower)} W</div>
-            <div className="text-[10px] text-gray-400 leading-tight">{maxPower ? `Max ${Math.round(maxPower)} W` : '\u00A0'}</div>
-          </div>
-        )}
-
-        {avgCadence && (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500/10 text-blue-600">
-                <CpuChipIcon className="h-3 w-3" />
-              </span>
-              Cadence
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">{Math.round(avgCadence)} rpm</div>
-            <div className="text-[10px] text-gray-400 leading-tight">{maxCadence ? `Max ${Math.round(maxCadence)} rpm` : '\u00A0'}</div>
-          </div>
-        )}
-
-        {calculateTSS !== null && (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-purple-500/10 text-purple-600">
-                <BoltIcon className="h-3 w-3" />
-              </span>
-              TSS
-              {typeof calculateTSS === 'object' && calculateTSS.estimated && (
-                <span className="text-[11px] text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
-              )}
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">
-              {typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
-            </div>
-            <div className="text-[10px] text-gray-400 leading-tight">{calculateIF !== null ? `IF ${calculateIF}` : '\u00A0'}</div>
-          </div>
-        )}
-
-        {isRun && avgPace ? (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-greenos/10 text-greenos">
-                <MapPinIcon className="h-3 w-3" />
-              </span>
-              Avg Pace
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">{avgPace} /km</div>
-            <div className="text-[10px] text-gray-400 leading-tight">{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
-          </div>
-        ) : training.avgSpeed && !isRun ? (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-greenos/10 text-greenos">
-                <MapPinIcon className="h-3 w-3" />
-              </span>
-              Avg Speed
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">{formatSpeedForUser(training.avgSpeed, user)}</div>
-            <div className="text-[10px] text-gray-400 leading-tight">&nbsp;</div>
-          </div>
+      <div className="flex flex-wrap gap-2">
+        <StatBox icon={<ClockIcon className="h-3 w-3" />} iconBg="bg-primary/10" iconColor="text-primary" label="Duration" value={formatDuration(totalTime)} />
+        <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-primary/10" iconColor="text-primary" label="Distance" value={formatDistance(training.totalDistance, user)} />
+        {training.avgHeartRate ? (
+          <StatBox icon={<HeartIcon className="h-3 w-3" />} iconBg="bg-red-500/10" iconColor="text-red-500" label="Avg HR" value={`${Math.round(training.avgHeartRate)} bpm`} sub={maxHeartRate ? `Max ${Math.round(maxHeartRate)}` : null} />
         ) : null}
-
-        {training.totalAscent && training.totalAscent > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-orange-500/10 text-orange-600">
-                <MapPinIcon className="h-3 w-3" />
-              </span>
-              Elevation
-            </div>
-            <div className="mt-0.5 text-sm font-bold text-gray-900">+{Math.round(training.totalAscent)} m</div>
-            <div className="text-[10px] text-gray-400 leading-tight">&nbsp;</div>
-          </div>
+        {displayPower != null && displayPower > 0 && (
+          <StatBox icon={<BoltIcon className="h-3 w-3" />} iconBg="bg-purple-500/10" iconColor="text-purple-600" label={isNormalizedPower ? 'NP' : 'Avg Power'} value={`${Math.round(displayPower)} W`} sub={maxPower ? `Max ${Math.round(maxPower)} W` : null} />
         )}
+        {avgCadence ? (
+          <StatBox icon={<CpuChipIcon className="h-3 w-3" />} iconBg="bg-blue-500/10" iconColor="text-blue-600" label="Cadence" value={`${Math.round(avgCadence)} rpm`} sub={maxCadence ? `Max ${Math.round(maxCadence)} rpm` : null} />
+        ) : null}
+        {calculateTSS !== null && (
+          <StatBox
+            icon={<BoltIcon className="h-3 w-3" />} iconBg="bg-purple-500/10" iconColor="text-purple-600"
+            label={<>TSS{typeof calculateTSS === 'object' && calculateTSS.estimated && <span className="ml-0.5 text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>}</>}
+            value={typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
+            sub={calculateIF !== null ? `IF ${calculateIF}` : null}
+          />
+        )}
+        {isRun && avgPace ? (
+          <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-greenos/10" iconColor="text-greenos" label="Avg Pace" value={`${avgPace} /km`} sub={maxPace ? `Max ${maxPace} /km` : null} />
+        ) : training.avgSpeed && !isRun ? (
+          <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-greenos/10" iconColor="text-greenos" label="Avg Speed" value={formatSpeedForUser(training.avgSpeed, user)} />
+        ) : null}
+        {training.totalAscent && training.totalAscent > 0 ? (
+          <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-orange-500/10" iconColor="text-orange-600" label="Elevation" value={`+${Math.round(training.totalAscent)} m`} />
+        ) : null}
       </div>
       )}
     </>

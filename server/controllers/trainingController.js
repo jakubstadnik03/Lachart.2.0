@@ -1,6 +1,7 @@
 const TrainingAbl = require('../abl/trainingAbl');
 const mongoose    = require('mongoose');
 const User        = require('../models/UserModel');
+const Notification = require('../models/Notification');
 // Use the already-compiled model (loaded by trainingDao via ../models/training)
 // Avoids Mongoose OverwriteModelError from case-mismatch on macOS module cache
 const getTraining = () => mongoose.models.Training || require('../models/training');
@@ -53,6 +54,30 @@ const trainingController = {
 
             const newTraining = await TrainingAbl.createTraining(req.body);
             res.status(201).json(newTraining);
+
+            // Notify coach(es) that athlete logged a new training (fire-and-forget)
+            try {
+              const athlete = await User.findById(req.body.athleteId).select('name surname coachIds');
+              if (athlete && Array.isArray(athlete.coachIds) && athlete.coachIds.length > 0) {
+                const athleteName = `${athlete.name || ''} ${athlete.surname || ''}`.trim() || 'Athlete';
+                const sportLabel  = String(req.body.sport || 'training').charAt(0).toUpperCase() + String(req.body.sport || '').slice(1);
+                const title       = String(req.body.title || 'New training');
+                await Notification.insertMany(
+                  athlete.coachIds.map(coachId => ({
+                    recipientId:  coachId,
+                    type:         'training_logged',
+                    title:        `${athleteName} logged a new training`,
+                    body:         `${title} · ${sportLabel}`,
+                    resourceId:   String(newTraining._id),
+                    resourceType: 'training',
+                    fromName:     athleteName,
+                    read:         false,
+                  }))
+                );
+              }
+            } catch (notifErr) {
+              console.error('[TrainingNotif] failed to create coach notification:', notifErr.message);
+            }
         } catch (error) {
             res.status(400).json({ 
                 error: 'Invalid data format',
