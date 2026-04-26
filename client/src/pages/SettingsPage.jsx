@@ -150,7 +150,6 @@ const SettingsPage = () => {
     { id: 'units', name: 'Units', icon: Settings },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
-    { id: 'account', name: 'Account', icon: User },
     { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },
@@ -1660,6 +1659,133 @@ const SettingsPage = () => {
             </div>
 
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
+              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Change Password</h3>
+                <form onSubmit={handlePasswordChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
+                  <div className="relative">
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Current Password</label>
+                    <input
+                      type={showPasswords.current ? "text" : "password"}
+                      value={formData.currentPassword}
+                      onChange={(e) => setFormData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('current')}
+                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
+                    >
+                      <img
+                        src={showPasswords.current ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.current ? "Hide password" : "Show password"}
+                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
+                      />
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>New Password</label>
+                    <input
+                      type={showPasswords.new ? "text" : "password"}
+                      value={formData.newPassword}
+                      onChange={(e) => setFormData(prev => ({ ...prev, newPassword: e.target.value }))}
+                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('new')}
+                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
+                    >
+                      <img
+                        src={showPasswords.new ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.new ? "Hide password" : "Show password"}
+                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
+                      />
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Confirm New Password</label>
+                    <input
+                      type={showPasswords.confirm ? "text" : "password"}
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('confirm')}
+                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
+                    >
+                      <img
+                        src={showPasswords.confirm ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.confirm ? "Hide password" : "Show password"}
+                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
+                      />
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    className={`w-full flex justify-center ${isMobile ? 'py-1.5 px-2.5 text-[10px]' : 'py-2 px-4 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
+                  >
+                    Change Password
+                  </button>
+                </form>
+              </div>
+
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
+              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Change Email</h3>
+                <form onSubmit={handleEmailChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
+                  <div>
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>New Email</label>
+                    <input
+                      type="email"
+                      value={formData.newEmail}
+                      onChange={(e) => setFormData(prev => ({ ...prev, newEmail: e.target.value }))}
+                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary`}
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className={`w-full flex justify-center ${isMobile ? 'py-1.5 px-2.5 text-[10px]' : 'py-2 px-4 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
+                  >
+                    Change Email
+                  </button>
+                </form>
+              </div>
+
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
+              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Linked Social Accounts</h3>
+                <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2' : ''}`}>
+                  <div className="flex items-center">
+                    <img src="/icon/google.svg" alt="Google" className={isMobile ? 'h-4 w-4 mr-1' : 'h-6 w-6 mr-2'} />
+                    <span className={isMobile ? 'text-xs' : ''}>Google</span>
+                  </div>
+                  {linkedAccounts.google ? (
+                    <span className={`${isMobile ? 'text-xs' : ''} text-green-500`}>Connected</span>
+                  ) : isCapacitorNative() ? (
+                    <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
+                      Link Google on lachart.net in a browser
+                    </span>
+                  ) : (
+                    <div className={isMobile ? 'w-full' : ''}>
+                    <GoogleLogin
+                      onSuccess={handleGoogleSuccess}
+                      onError={() => addNotification('Google authentication failed', 'error')}
+                      useOneTap={false}
+                        width={isMobile ? "100%" : "200"}
+                      theme="outline"
+                        size={isMobile ? "medium" : "large"}
+                      text="signin_with"
+                      shape="rectangular"
+                    />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>Danger Zone</h3>
               <div className={`border border-red-200 ${isMobile ? 'rounded-md p-2' : 'rounded-lg p-4'} bg-red-50`}>
                 <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2' : ''}`}>
@@ -2252,213 +2378,6 @@ const SettingsPage = () => {
           </div>
         );
       }
-
-      case 'account':
-        return (
-          <div className={`${isMobile ? 'space-y-2.5' : 'space-y-6'}`}>
-            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Change Password</h3>
-                <form onSubmit={handlePasswordChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
-                  <div className="relative">
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Current Password</label>
-                    <input
-                      type={showPasswords.current ? "text" : "password"}
-                      value={formData.currentPassword}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility('current')}
-                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
-                    >
-                      <img
-                        src={showPasswords.current ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
-                        alt={showPasswords.current ? "Hide password" : "Show password"}
-                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
-                      />
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>New Password</label>
-                    <input
-                      type={showPasswords.new ? "text" : "password"}
-                      value={formData.newPassword}
-                      onChange={(e) => setFormData(prev => ({ ...prev, newPassword: e.target.value }))}
-                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility('new')}
-                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
-                    >
-                      <img
-                        src={showPasswords.new ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
-                        alt={showPasswords.new ? "Hide password" : "Show password"}
-                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
-                      />
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Confirm New Password</label>
-                    <input
-                      type={showPasswords.confirm ? "text" : "password"}
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${isMobile ? 'pr-7' : 'pr-10'}`}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility('confirm')}
-                      className={`absolute inset-y-0 right-0 ${isMobile ? 'pr-1.5' : 'pr-3'} flex items-center ${isMobile ? 'mt-4' : 'mt-6'}`}
-                    >
-                      <img
-                        src={showPasswords.confirm ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
-                        alt={showPasswords.confirm ? "Hide password" : "Show password"}
-                        className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5 text-gray-400'}
-                      />
-                    </button>
-                  </div>
-                  <button
-                    type="submit"
-                    className={`w-full flex justify-center ${isMobile ? 'py-1.5 px-2.5 text-[10px]' : 'py-2 px-4 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
-                  >
-                    Change Password
-                  </button>
-                </form>
-              </div>
-
-            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Change Email</h3>
-                <form onSubmit={handleEmailChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
-                  <div>
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>New Email</label>
-                    <input
-                      type="email"
-                      value={formData.newEmail}
-                      onChange={(e) => setFormData(prev => ({ ...prev, newEmail: e.target.value }))}
-                      className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary`}
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className={`w-full flex justify-center ${isMobile ? 'py-1.5 px-2.5 text-[10px]' : 'py-2 px-4 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
-                  >
-                    Change Email
-                  </button>
-                </form>
-              </div>
-
-            {user?.role === 'athlete' && (
-            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Coach Management</h3>
-                <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                  You can connect multiple coaches. Each must accept the invitation (email).
-                </p>
-
-                {myCoaches.length > 0 ? (
-                  <div className={`${isMobile ? 'space-y-2 mb-2' : 'space-y-3 mb-6'}`}>
-                    <h4 className={`${isMobile ? 'text-xs' : 'text-base'} font-medium text-gray-900`}>Your coaches</h4>
-                    {myCoaches.map((c) => (
-                      <div
-                        key={String(c._id)}
-                        className={`${isMobile ? 'p-1.5' : 'p-4'} bg-gray-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}
-                      >
-                        <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-1.5' : 'gap-2'}`}>
-                          <div>
-                            <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 break-words`}>
-                              {c.name} {c.surname}
-                            </p>
-                            <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 break-words`}>{c.email}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCoach(c._id)}
-                            disabled={isLoading}
-                            className={`flex items-center ${isMobile ? 'justify-center w-full' : 'gap-2'} ${isMobile ? 'px-2.5 py-1 text-[10px]' : 'px-4 py-2 text-sm'} font-medium text-red-600 hover:text-red-700 focus:outline-none shrink-0`}
-                          >
-                            <UserMinus className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {myCoaches.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCoach(null)}
-                        disabled={isLoading}
-                        className={`text-red-600 hover:text-red-700 ${isMobile ? 'text-[10px]' : 'text-sm'} underline`}
-                      >
-                        Remove all coaches
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
-                    You don&apos;t have any linked coaches yet. Invite one by email below, or ask a coach to invite you from their dashboard.
-                  </p>
-                )}
-
-                <form onSubmit={handleCoachChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
-                  <div>
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Coach email (invite)</label>
-                      <input
-                        type="email"
-                        value={formData.newCoachEmail}
-                        onChange={(e) => setFormData(prev => ({ ...prev, newCoachEmail: e.target.value }))}
-                    className={`${isMobile ? 'mt-0.5 text-xs' : 'mt-1'} block w-full ${isMobile ? 'rounded-md' : 'rounded-md'} border-gray-300 shadow-sm focus:border-primary focus:ring-primary`}
-                        placeholder="coach@email.com"
-                        required
-                      />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className={`w-full flex items-center justify-center ${isMobile ? 'gap-1 px-2.5 py-1.5 text-[10px]' : 'gap-2 px-4 py-2 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
-                  >
-                    <UserPlus className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-                    {isLoading ? 'Sending...' : 'Send invitation'}
-                  </button>
-                </form>
-              </div>
-            )}
-
-            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Linked Social Accounts</h3>
-                <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2' : ''}`}>
-                  <div className="flex items-center">
-                    <img src="/icon/google.svg" alt="Google" className={isMobile ? 'h-4 w-4 mr-1' : 'h-6 w-6 mr-2'} />
-                    <span className={isMobile ? 'text-xs' : ''}>Google</span>
-                  </div>
-                  {linkedAccounts.google ? (
-                    <span className={`${isMobile ? 'text-xs' : ''} text-green-500`}>Connected</span>
-                  ) : isCapacitorNative() ? (
-                    <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
-                      Link Google on lachart.net in a browser
-                    </span>
-                  ) : (
-                    <div className={isMobile ? 'w-full' : ''}>
-                    <GoogleLogin
-                      onSuccess={handleGoogleSuccess}
-                      onError={() => addNotification('Google authentication failed', 'error')}
-                      useOneTap={false}
-                        width={isMobile ? "100%" : "200"}
-                      theme="outline"
-                        size={isMobile ? "medium" : "large"}
-                      text="signin_with"
-                      shape="rectangular"
-                    />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-        );
 
       case 'integrations':
         return (

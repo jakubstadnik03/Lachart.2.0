@@ -1,9 +1,92 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
+
+/** Matches LapsBarChart / TrainingItem palette exactly. */
+const INTERVAL_TYPE_BAR = {
+  warmup:   { normal: '#fbbf24', hovered: '#f59e0b' },
+  recovery: { normal: '#d1d5db', hovered: '#9ca3af' },
+  cooldown: { normal: '#38bdf8', hovered: '#0ea5e9' },
+};
+
+/** Return only work intervals (or all if no types set). */
+function workOnly(results) {
+  if (!results || results.length === 0) return [];
+  const hasTypes = results.some(r => r.intervalType);
+  if (!hasTypes) return results;
+  const work = results.filter(r => r.intervalType === 'work');
+  return work.length > 0 ? work : results;
+}
+
+/* ── Searchable title dropdown ─────────────────────────────────────────────── */
+function SearchableSelect({ value, options, onChange, placeholder = "Select…" }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const filtered = options.filter(o =>
+    !query || o.label.toLowerCase().includes(query.toLowerCase())
+  );
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => { setOpen(o => !o); setQuery(''); }}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 max-w-[180px] transition-colors"
+      >
+        <span className="truncate">{selected?.label || placeholder}</span>
+        <svg className="w-3 h-3 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+          {/* Search input */}
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search training…"
+              className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 outline-none focus:ring-2 focus:ring-primary/30 placeholder-gray-400"
+            />
+          </div>
+          {/* Scrollable list */}
+          <div className="overflow-y-auto max-h-52 py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-gray-400 text-center">No results</div>
+            ) : filtered.map(o => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+                className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                  o.value === value
+                    ? 'font-semibold text-primary bg-primary/5'
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const GRAPH_H = 200;
 
@@ -180,10 +263,19 @@ const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa",
 // Amber/orange shades for bars with lactate data
 const BAR_LACTATE_COLORS = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
 
-function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
+function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
-  const palette = lactate ? BAR_LACTATE_COLORS : BAR_COLORS;
-  const bg = palette[Math.min(Math.max(colorIdx, 0), palette.length - 1)];
+
+  /* intervalType-based color overrides (warmup / recovery / cooldown) */
+  let bg;
+  if (intervalType && INTERVAL_TYPE_BAR[intervalType]) {
+    bg = isHovered ? INTERVAL_TYPE_BAR[intervalType].hovered : INTERVAL_TYPE_BAR[intervalType].normal;
+  } else {
+    const palette = lactate ? BAR_LACTATE_COLORS : BAR_COLORS;
+    bg = palette[Math.min(Math.max(colorIdx, 0), palette.length - 1)];
+  }
+
+  const hoverOpacity = (intervalType && INTERVAL_TYPE_BAR[intervalType]) ? 1 : (isHovered ? 1 : 0.75);
 
   const style = widthPercent != null
     ? { flexBasis: `${Math.max(widthPercent, 0.3)}%`, width: `${Math.max(widthPercent, 0.3)}%`, minWidth: "2px", flexShrink: 1, flexGrow: 0 }
@@ -205,7 +297,7 @@ function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lacta
           style={{
             height: `${Math.max(height, 3)}px`,
             backgroundColor: bg,
-            opacity: isHovered ? 1 : 0.75,
+            opacity: hoverOpacity,
             transition: "opacity 0.15s",
           }}
         />
@@ -256,15 +348,19 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   const isRun  = (sport || "").toLowerCase() === "run";
   const isBike = ["bike","ride","cycle","cycling"].some(s => (sport || "").toLowerCase().includes(s));
 
+  /* Use only work intervals for averages (falls back to all if no types set) */
+  const workResults  = workOnly(results);
+  const workPrevRes  = workOnly(prevRes);
+
   const avg = (arr, fn) => {
     const vals = arr.map(fn).filter(x => x != null && x > 0);
     return vals.length ? Math.round(vals.reduce((a, b) => a + b) / vals.length) : 0;
   };
 
-  const curPow  = avg(results,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
-  const prevPow = avg(prevRes,   r => { const p = Number(r.power); return isNaN(p) ? null : p; });
-  const curPace  = avg(results, r => parsePaceSecs(r.power));
-  const prevPace = avg(prevRes,  r => parsePaceSecs(r.power));
+  const curPow  = avg(workResults,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
+  const prevPow = avg(workPrevRes,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
+  const curPace  = avg(workResults, r => parsePaceSecs(r.power));
+  const prevPace = avg(workPrevRes, r => parsePaceSecs(r.power));
 
   const fmtPace = (s) => {
     if (!s) return "—";
@@ -497,12 +593,10 @@ export function TrainingStats({
         </div>
 
         <div className="flex items-center gap-2">
-          <DropdownMenu
-            selectedValue={currentSelectedTitle}
+          <SearchableSelect
+            value={currentSelectedTitle}
             options={trainingOptions}
             onChange={handleTitleChange}
-            displayKey="label"
-            valueKey="value"
           />
           {/* settings gear */}
           <div className="relative" ref={settingsRef}>
@@ -622,6 +716,7 @@ export function TrainingStats({
                           key={`${training._id||tIdx}-${rIdx}`}
                           height={height}
                           colorIdx={colorMap.get(rIdx) ?? rIdx}
+                          intervalType={r.intervalType || null}
                           power={r.power}
                           pace={isRun ? r.power : r.pace}
                           distance={r.distance || (isRun && r.durationType === "distance" ? r.duration : null)}

@@ -48,7 +48,8 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
         else { value = speedMps * 100; metric = 'speed'; }
       } else if (hr > 0) { value = hr; metric = 'hr'; }
 
-      return { lapNumber, value, metric, hr, power, speedMps, lactate, duration, distanceM, isPause, lap };
+      const intervalType = lap.intervalType ?? null; // 'work' | 'warmup' | 'cooldown' | 'recovery' | null
+      return { lapNumber, value, metric, hr, power, speedMps, lactate, duration, distanceM, isPause, intervalType, lap };
     });
   }, [laps, isRun, isSwim]);
 
@@ -125,6 +126,14 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
 
   const barColor = (entry, isSelected) => {
     if (entry.isPause) return '#d1d5db';
+
+    // Interval-type colouring (overrides metric colour when type is set)
+    const itype = entry.intervalType;
+    if (itype === 'warmup')   return isSelected ? '#d97706' : '#fbbf24'; // amber
+    if (itype === 'cooldown') return isSelected ? '#0284c7' : '#38bdf8'; // sky
+    if (itype === 'recovery') return isSelected ? '#6b7280' : '#d1d5db'; // gray
+
+    // 'work' or no type → metric-based colour (existing logic)
     if (entry.lactate != null) return isSelected ? '#7c3aed' : '#a78bfa';
     if (entry.metric === 'power') return isSelected ? '#3b5bdb' : '#74c0fc';
     if (entry.metric === 'pace' || entry.metric === 'speed') return isSelected ? '#2f9e44' : '#8ce99a';
@@ -403,13 +412,36 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
       )}
 
       {/* Legend row */}
-      <div className="flex items-center justify-between px-1 mt-1">
-        <span className="text-[10px] text-gray-400">
-          {firstActive?.metric === 'power' ? '⚡ Avg power' :
-           firstActive?.metric === 'pace' ? '🏊 Avg pace' :
-           firstActive?.metric === 'speed' ? '🏃 Avg pace' :
-           '❤️ Avg HR'}
-        </span>
+      <div className="flex items-center justify-between px-1 mt-1 gap-2 flex-wrap">
+        {/* Interval-type legend — only shown when multiple types are present */}
+        {(() => {
+          const types = [...new Set(entries.filter(e => !e.isPause && e.intervalType).map(e => e.intervalType))];
+          const hasMultiple = types.length > 1;
+          const TYPE_META = {
+            warmup:   { label: 'Warm-up',   color: '#fbbf24' },
+            work:     { label: 'Work',       color: '#74c0fc' },
+            recovery: { label: 'Rest',       color: '#d1d5db' },
+            cooldown: { label: 'Cool-down',  color: '#38bdf8' },
+          };
+          if (!hasMultiple) return (
+            <span className="text-[10px] text-gray-400">
+              {firstActive?.metric === 'power' ? '⚡ Avg power' :
+               firstActive?.metric === 'pace' ? '🏊 Avg pace' :
+               firstActive?.metric === 'speed' ? '🏃 Avg pace' : '❤️ Avg HR'}
+            </span>
+          );
+          return (
+            <div className="flex items-center gap-2 flex-wrap">
+              {['warmup','work','recovery','cooldown'].filter(t => types.includes(t)).map(t => (
+                <span key={t} className="flex items-center gap-1 text-[10px] text-gray-500">
+                  <span className="w-2 h-2 rounded-sm inline-block shrink-0" style={{ backgroundColor: TYPE_META[t].color }} />
+                  {TYPE_META[t].label}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
+
         <div className="flex items-center gap-2">
           {entries.some(e => e.lactate != null) && (
             <span className="text-[10px] text-violet-500 flex items-center gap-1">

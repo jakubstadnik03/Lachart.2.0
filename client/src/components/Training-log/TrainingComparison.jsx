@@ -35,15 +35,28 @@ function parseResultDurationSec(result) {
 }
 
 /**
- * From a results array, return only the "work" intervals by clustering on
- * distance (preferred) or duration.  Returns [{result, originalIdx}] so
- * callers can always show the original interval number.
- * If no meaningful filtering is possible the full array is returned as-is.
+ * From a results array, return only the "work" intervals.
+ * Returns [{result, originalIdx}] so callers always show the original interval number.
+ *
+ * Priority:
+ *  1. If ≥ half the results have an explicit `intervalType`, filter by 'work'.
+ *  2. Fall back to distance clustering (best for swim/run repeats).
+ *  3. Fall back to duration clustering (best for timed bike intervals).
+ *  4. If nothing helps, return everything.
  */
 function detectWorkIntervals(results) {
   if (!results || results.length <= 2) return results.map((r, i) => ({ result: r, originalIdx: i }));
 
-  // ── distance clustering (best for swim / run by distance) ───────────────
+  // ── 1. Explicit intervalType (set by TrainingForm auto-detect or manually) ──
+  const withType = results.filter(r => r.intervalType);
+  if (withType.length >= Math.ceil(results.length * 0.5)) {
+    const workOnly = results
+      .map((r, i) => ({ result: r, originalIdx: i }))
+      .filter(({ result: r }) => r.intervalType === 'work');
+    if (workOnly.length >= 1) return workOnly;
+  }
+
+  // ── 2. Distance clustering (swim / run by distance) ─────────────────────
   const withDist = results.map((r, i) => {
     const raw = r.distanceMeters ?? r.distance;
     const n = Number(raw);
@@ -57,7 +70,7 @@ function detectWorkIntervals(results) {
     if (matched.length >= 2 && matched.length < results.length) return matched;
   }
 
-  // ── duration clustering (fallback for time-based intervals) ────────────
+  // ── 3. Duration clustering (time-based intervals) ────────────────────────
   const withDur = results.map((r, i) => ({ result: r, originalIdx: i, dur: parseResultDurationSec(r) }));
   const durValues = withDur.map(x => x.dur).filter(d => d > 0);
   if (durValues.length >= 2) {

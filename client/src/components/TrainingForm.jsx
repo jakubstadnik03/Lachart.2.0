@@ -79,69 +79,222 @@ function parseIntervalDurSec(r) {
 
 /**
  * Auto-classify results into warmup / work / recovery / cooldown.
- * Only sets intervalType on rows that don't already have it set.
- * Migrates legacy isRecovery:true → intervalType:'recovery'.
+ *
+ * Detection priority:
+ *   1. Keep any manually-set intervalType as-is.
+ *   2. Migrate legacy isRecovery:true → 'recovery'.
+ *   3. Find the "work cluster" — intervals with similar distance, then
+ *      similar duration, then similar HR/power intensity.
+ *      Clustering picks the value that appears most often (within tolerance).
+ *   4. Intervals BEFORE the first work interval → warmup.
+ *   5. Intervals AFTER the last work interval  → cooldown.
+ *   6. Intervals INSIDE the work range but NOT in the cluster AND significantly
+ *      shorter than the average work duration → recovery; otherwise → work.
+ *   7. If no cluster can be found at all → everything is work.
  */
 function autoDetectIntervalTypes(results) {
   if (!results || results.length === 0) return results;
 
-  // Migrate legacy isRecovery and keep manually-set types
+  // Step 0 — migrate legacy flag; honour already-set manual types
   const migrated = results.map(r => ({
     ...r,
     intervalType: r.intervalType || (r.isRecovery ? 'recovery' : undefined),
   }));
-
-  // If everything is already classified don't touch it
   if (migrated.every(r => r.intervalType)) return migrated;
 
-  // ── Distance clustering (best for swim/run by distance) ─────────────────
-  const withDist = migrated.map((r, i) => {
-    const raw = r.distanceMeters ?? r.distance;
-    const n = Number(raw);
-    return { i, dist: Number.isFinite(n) && n > 0 ? n : null };
-  });
-  const distVals = withDist.map(x => x.dist).filter(Boolean);
-  let workSet = new Set();
+  const n = migrated.length;
+  // Too few intervals to classify meaningfully → all work
+  if (n <= 2) return migrated.map(r => ({ ...r, intervalType: r.intervalType || 'work' }));
 
-  if (distVals.length >= 2) {
-    const sorted = [...distVals].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const matched = withDist.filter(x => x.dist && Math.abs(x.dist - median) / median <= 0.25);
-    if (matched.length >= 2 && matched.length < migrated.length) {
-      matched.forEach(x => workSet.add(x.i));
+  // Helper: extract per-interval metadata
+  const meta = migrated.map(r => {
+    const dist = Number(r.distanceMeters ?? r.distance ?? 0);
+    const dur  = parseIntervalDurSec(r);
+    const hr   = Number(r.heartRate) || 0;
+    const pw   = Number(r.power)     || 0;
+    return {
+      dist:  dist > 0 ? dist : null,
+      dur:   dur  > 0 ? dur  : null,
+      hr:    hr   > 0 ? hr   : null,
+      power: pw   > 0 ? pw   : null,
+    };
+  });
+
+  /**
+   * Given an array of nullable numbers (one per interval), find the largest
+   * group of intervals whose values are within `tol` (relative) of each other.
+   * Returns a Set of indices, or null if no valid cluster found (< 2 members,
+   * or the cluster contains ALL intervals with data).
+   */
+  function findCluster(vals, tol) {
+    const pairs = vals.map((v, i) => ({ i, v })).filter(x => x.v !== null);
+    if (pairs.length < 2) return null;
+    let best = [];
+    for (const pivot of pairs) {
+      const cluster = pairs.filter(x => Math.abs(x.v - pivot.v) / pivot.v <= tol);
+      if (cluster.length > best.length) best = cluster;
+    }
+    if (best.length < 2) return null;
+    // If every data-carrying interval is in the cluster they're all "work"
+    // — still useful, just return the full set so we mark them all work.
+    return new Set(best.map(x => x.i));
+  }
+
+  // Step 1 — distance cluster (best signal for swim/run repeats)
+  let workSet = findCluster(meta.map(m => m.dist), 0.15);
+
+  // Step 2 — duration cluster (best signal for bike intervals)
+  if (!workSet) workSet = findCluster(meta.map(m => m.dur), 0.25);
+
+  // Step 3 — intensity cluster (HR or power)
+  if (!workSet) {
+    const intensities = meta.map(m => m.power || m.hr);
+    if (intensities.filter(Boolean).length >= Math.ceil(n / 2)) {
+      workSet = findCluster(intensities, 0.12);
     }
   }
 
-  // ── Duration clustering fallback ─────────────────────────────────────────
-  if (workSet.size === 0) {
-    const withDur = migrated.map((r, i) => ({ i, dur: parseIntervalDurSec(r) }));
-    const durVals = withDur.map(x => x.dur).filter(d => d > 0);
-    if (durVals.length >= 2) {
-      const sorted = [...durVals].sort((a, b) => a - b);
-      const median = sorted[Math.floor(sorted.length / 2)];
-      const matched = withDur.filter(x => x.dur > 0 && Math.abs(x.dur - median) / median <= 0.35);
-      if (matched.length >= 2 && matched.length < migrated.length) {
-        matched.forEach(x => workSet.add(x.i));
+  // Step 4 — positional heuristic: if the edge intervals look very different
+  //          from the bulk by duration, peel them off as warmup/cooldown.
+  if (!workSet) {
+    const durs = meta.map(m => m.dur);
+    const midDurs = durs.slice(1, -1).filter(Boolean);
+    if (midDurs.length >= 2) {
+      const midAvg = midDurs.reduce((a, b) => a + b, 0) / midDurs.length;
+      const firstDur = durs[0], lastDur = durs[n - 1];
+      const edgeTol = 0.4; // 40 % different from bulk avg → it's an edge
+      const firstIsEdge = firstDur != null && (firstDur < midAvg * (1 - edgeTol) || firstDur > midAvg * (1 + edgeTol));
+      const lastIsEdge  = lastDur  != null && (lastDur  < midAvg * (1 - edgeTol) || lastDur  > midAvg * (1 + edgeTol));
+      const start = firstIsEdge ? 1 : 0;
+      const end   = lastIsEdge  ? n - 2 : n - 1;
+      if (start <= end && (firstIsEdge || lastIsEdge)) {
+        workSet = new Set(Array.from({ length: end - start + 1 }, (_, i) => i + start));
       }
     }
   }
 
-  // No cluster found → all work
-  if (workSet.size === 0) {
-    return migrated.map(r => ({ ...r, intervalType: r.intervalType || 'work' }));
-  }
+  // No cluster at all → everything is work
+  if (!workSet) return migrated.map(r => ({ ...r, intervalType: r.intervalType || 'work' }));
 
   const firstWork = Math.min(...workSet);
   const lastWork  = Math.max(...workSet);
 
+  // Average duration of confirmed work intervals (used to spot recovery gaps)
+  const workDurs = [...workSet].map(i => parseIntervalDurSec(migrated[i])).filter(d => d > 0);
+  const avgWorkDur = workDurs.length ? workDurs.reduce((a, b) => a + b, 0) / workDurs.length : 0;
+
+  // Step 5 — assign final types
   return migrated.map((r, i) => {
-    if (r.intervalType) return r;                           // already set manually
-    if (workSet.has(i)) return { ...r, intervalType: 'work' };
+    if (r.intervalType) return r;                 // manually set → never overwrite
     if (i < firstWork)  return { ...r, intervalType: 'warmup' };
     if (i > lastWork)   return { ...r, intervalType: 'cooldown' };
-    return { ...r, intervalType: 'recovery' };
+    if (workSet.has(i)) return { ...r, intervalType: 'work' };
+
+    // Inside work range but not in cluster
+    const dur = parseIntervalDurSec(r);
+    const isShort = avgWorkDur > 0 && dur > 0 && dur < avgWorkDur * 0.65;
+    return { ...r, intervalType: isShort ? 'recovery' : 'work' };
   });
 }
+
+/* ─── Default-title detection ──────────────────────────────────────────────── */
+const DEFAULT_TITLE_PATTERNS = [
+  /^(morning|afternoon|evening|lunch|night)\s+(run|ride|swim|workout|activity|bike|cycle|cycling)$/i,
+  /^(easy|slow|long|hard|quick)\s+(run|ride|swim|workout)$/i,
+  /^(run|ride|swim|bike|cycle|workout|activity|training|session)$/i,
+  /^virtual\s+ride$/i,
+  /^indoor\s+(cycling|trainer|ride|run|rowing)$/i,
+  /^treadmill\s+(run|workout)$/i,
+  /^zwift.*$/i,
+];
+
+function isDefaultTitle(title) {
+  if (!title) return false;
+  return DEFAULT_TITLE_PATTERNS.some(p => p.test(title.trim()));
+}
+
+/* ─── Smart title generator ─────────────────────────────────────────────────── */
+function generateTrainingTitle(sport, category, results) {
+  const sportLabel = { bike: 'Ride', run: 'Run', swim: 'Swim' }[sport] || 'Workout';
+
+  // Category-only shortcuts (no structured intervals needed)
+  const CAT_MAP = {
+    recovery: { bike: 'Recovery Ride', run: 'Recovery Run', swim: 'Recovery Swim' },
+    endurance: { bike: 'Long Ride', run: 'Long Run', swim: 'Long Swim' },
+    hills: { bike: 'Hill Ride', run: 'Hill Run', swim: null },
+  };
+  if (CAT_MAP[category]?.[sport]) return CAT_MAP[category][sport];
+
+  // Work intervals
+  const workResults = (results || []).filter(r => !r.intervalType || r.intervalType === 'work');
+  if (workResults.length === 0) {
+    // Fallback: category → sport label
+    const catLabel = {
+      tempo: 'Tempo', threshold: 'Threshold', vo2max: 'VO₂max',
+      anaerobic: 'Anaerobic', hills: 'Hills',
+    }[category];
+    return catLabel ? `${catLabel} ${sportLabel}` : sportLabel;
+  }
+
+  // Total reps (honoring repeatCount)
+  const totalReps = workResults.reduce((s, r) => s + (Number(r.repeatCount) || 1), 0);
+  const first = workResults[0];
+
+  // Format interval distance
+  const fmtDist = (d) => {
+    if (!d) return null;
+    const s = String(d).trim().toLowerCase().replace(/\s/g, '');
+    if (s.endsWith('km')) return s;
+    if (s.endsWith('m') && !s.endsWith('km')) return s;
+    const n = parseFloat(s);
+    if (isNaN(n)) return null;
+    if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}km`;
+    return `${Math.round(n)}m`;
+  };
+
+  // Format interval duration
+  const fmtDurLabel = (dur) => {
+    if (!dur) return null;
+    if (typeof dur === 'string' && dur.includes(':')) {
+      const parts = dur.split(':');
+      const mins = parseInt(parts[0], 10);
+      const secs = parseInt(parts[1], 10);
+      if (secs === 0) return `${mins}'`;
+      return `${mins}:${String(secs).padStart(2, '0')}'`;
+    }
+    const n = parseFloat(dur);
+    if (isNaN(n)) return null;
+    const mins = Math.round(n / 60);
+    return mins > 0 ? `${mins}'` : `${Math.round(n)}s`;
+  };
+
+  let intervalStr = null;
+
+  if (first.durationType === 'distance' && first.duration) {
+    const d = fmtDist(first.duration);
+    if (d) intervalStr = `${totalReps}×${d}`;
+  } else if (first.distance) {
+    const d = fmtDist(first.distance);
+    if (d) intervalStr = `${totalReps}×${d}`;
+  }
+
+  if (!intervalStr && first.duration) {
+    const t = fmtDurLabel(first.duration);
+    if (t) intervalStr = `${totalReps}×${t}`;
+  }
+
+  if (!intervalStr) intervalStr = `${totalReps}× intervals`;
+
+  // Optional category suffix
+  const catSuffix = {
+    tempo: ' Tempo', threshold: ' Threshold', vo2max: ' VO₂max',
+    anaerobic: ' Anaerobic', hills: ' Hills',
+  }[category] || '';
+
+  return `${intervalStr}${catSuffix} ${sportLabel}`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 const TrainingForm = ({
   onClose,
@@ -170,6 +323,7 @@ const TrainingForm = ({
   });
 
   const [trainingTitles, setTrainingTitles] = useState([]);
+  const [autoDetectEnabled, setAutoDetectEnabled] = useState(true);
   const [isCustomTitle, setIsCustomTitle] = useState(initialData?.customTitle ? true : false);
   const [isCustomWeather, setIsCustomWeather] = useState(initialData?.specifics?.customWeather ? true : false);
   const [isCustomSpecific, setIsCustomSpecific] = useState(initialData?.specifics?.customSpecific ? true : false);
@@ -270,11 +424,36 @@ const TrainingForm = ({
         };
       }),
     };
-    setFormData({
-      ...formattedData,
-      results: autoDetectIntervalTypes(formattedData.results),
-    });
-  }, [initialData]);
+    const processedResults = autoDetectEnabled
+      ? autoDetectIntervalTypes(formattedData.results)
+      : formattedData.results;
+
+    // Auto-generate title if empty or a generic default name
+    const existingTitle = formattedData.customTitle || formattedData.title || '';
+    const needsTitle = !existingTitle || isDefaultTitle(existingTitle);
+    if (needsTitle) {
+      const generated = generateTrainingTitle(sportKey, formattedData.category, processedResults);
+      setIsCustomTitle(true);
+      setFormData({
+        ...formattedData,
+        results: processedResults,
+        customTitle: generated,
+        title: '',
+      });
+    } else {
+      setFormData({ ...formattedData, results: processedResults });
+    }
+  }, [initialData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-generate title for brand-new (non-edit) forms with no title
+  useEffect(() => {
+    if (initialData) return; // handled above
+    if (formData.title || formData.customTitle) return;
+    if (formData.results.length === 0) return;
+    const generated = generateTrainingTitle(formData.sport, formData.category, formData.results);
+    setIsCustomTitle(true);
+    setFormData(prev => ({ ...prev, customTitle: generated, title: '' }));
+  }, [formData.results.length, formData.sport, formData.category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePaceChange = (index, value) => {
     // Povolíme pouze čísla a dvojtečku
@@ -539,6 +718,7 @@ const TrainingForm = ({
       distance: interval.distanceMeters || 0,
       moving_time: interval.durationSeconds || 0,
       elapsed_time: interval.durationSeconds || 0,
+      intervalType: interval.intervalType || (interval.isRecovery ? 'recovery' : 'work'),
     };
   });
 
@@ -593,10 +773,20 @@ const TrainingForm = ({
     setTypePickerOpenIdx(null);
   };
 
-  /** Re-run interval type auto-detection from scratch. */
+  /** Re-run interval type auto-detection from scratch (ignores manual overrides). */
   const handleAutoDetect = () => {
     const cleared = formData.results.map((r) => ({ ...r, intervalType: undefined, isRecovery: false }));
     setFormData((prev) => ({ ...prev, results: autoDetectIntervalTypes(cleared) }));
+  };
+
+  /** Toggle auto-detect on/off. When turned on, immediately re-run detection. */
+  const handleToggleAutoDetect = () => {
+    const next = !autoDetectEnabled;
+    setAutoDetectEnabled(next);
+    if (next) {
+      const cleared = formData.results.map(r => ({ ...r, intervalType: undefined, isRecovery: false }));
+      setFormData(prev => ({ ...prev, results: autoDetectIntervalTypes(cleared) }));
+    }
   };
 
   // Shared input classes
@@ -721,15 +911,59 @@ const TrainingForm = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className={labelBase} style={{ marginBottom: 0 }}>Training title</label>
-                  {!formData.title && !formData.customTitle && (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 animate-pulse">
-                      <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <div className="flex items-center gap-1.5">
+                    {/* Auto-generate button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const generated = generateTrainingTitle(formData.sport, formData.category, formData.results);
+                        setIsCustomTitle(true);
+                        setFormData(prev => ({ ...prev, customTitle: generated }));
+                      }}
+                      title="Auto-generate title from intervals"
+                      className="flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/8 hover:bg-primary/15 border border-primary/20 rounded-full px-2 py-0.5 transition-colors"
+                    >
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                      </svg>
+                      Generate
+                    </button>
+                    {!formData.title && !formData.customTitle && (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 animate-pulse">
+                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+                        </svg>
+                        Set a title
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Default-name banner */}
+                {isDefaultTitle(formData.title || formData.customTitle) && (
+                  <div className="flex items-center justify-between gap-2 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <svg className="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
                       </svg>
-                      Set a title
-                    </span>
-                  )}
-                </div>
+                      <span className="text-[11px] text-amber-700 font-medium truncate">
+                        Generic name detected — give it a better title
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const generated = generateTrainingTitle(formData.sport, formData.category, formData.results);
+                        setIsCustomTitle(true);
+                        setFormData(prev => ({ ...prev, customTitle: generated, title: '' }));
+                      }}
+                      className="shrink-0 text-[11px] font-semibold text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
+                    >
+                      Auto-rename →
+                    </button>
+                  </div>
+                )}
+
                 {!isCustomTitle ? (
                   <div className="relative">
                     <select
@@ -978,20 +1212,43 @@ const TrainingForm = ({
                 </button>
               )}
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-semibold text-gray-700">Intervals</h3>
-                  {formData.results.length > 2 && (
+
+                  {/* Auto-detect toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleAutoDetect}
+                    title={autoDetectEnabled ? 'Auto-classify is ON — click to disable' : 'Auto-classify is OFF — click to enable'}
+                    className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                      autoDetectEnabled
+                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    }`}
+                  >
+                    {/* Magic wand icon */}
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l1.5 1.5M12 3v2M19 3l-1.5 1.5M3 12h2M19 12h2M5 21l1.5-1.5M12 19v2M19 21l-1.5-1.5M9 9l6 6" />
+                    </svg>
+                    Auto
+                    {/* On/off dot */}
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${autoDetectEnabled ? 'bg-primary' : 'bg-gray-300'}`} />
+                  </button>
+
+                  {/* Manual re-run — only shown when auto is ON and there are intervals */}
+                  {autoDetectEnabled && formData.results.length > 2 && (
                     <button
                       type="button"
                       onClick={handleAutoDetect}
-                      title="Auto-detect warmup / work / recovery / cooldown"
-                      className="text-[11px] px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors font-medium"
+                      title="Re-run auto-detection (resets all manual overrides)"
+                      className="text-[11px] px-2 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors font-medium"
                     >
-                      Auto-detect
+                      Re-detect
                     </button>
                   )}
                 </div>
+
                 <button
                   type="button"
                   onClick={handleAddInterval}

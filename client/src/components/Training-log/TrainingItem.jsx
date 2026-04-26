@@ -152,6 +152,15 @@ const zoneColor = (pct) => {
   return { fill: '#a0aec0', label: 'Z1' };
 };
 
+/** Colour for a given intervalType — matches LapsBarChart palette exactly. */
+const INTERVAL_TYPE_COLOR = {
+  warmup:   { fill: '#fbbf24', text: '#92400e', bg: '#fffbeb' }, // amber
+  recovery: { fill: '#d1d5db', text: '#6b7280', bg: '#f9fafb' }, // gray
+  cooldown: { fill: '#38bdf8', text: '#0369a1', bg: '#f0f9ff' }, // sky
+  work:     null, // null = use zoneColor
+};
+const intervalTypeMeta = (itype) => INTERVAL_TYPE_COLOR[itype] ?? null;
+
 /* ─── SVG Skyline chart ─────────────────────────────────────────────────────── */
 function SkylineChart({ results, sport, width = 180, height = 52 }) {
   if (!results || results.length === 0) {
@@ -175,7 +184,8 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
         const barH = Math.max(3, pct * BAR_AREA_H);
         const x = offsetX + i * (barW + gap);
         const y = BAR_AREA_H - barH + 12; // +12 to shift below label area
-        const { fill } = zoneColor(pct);
+        const typeMeta = intervalTypeMeta(r.intervalType);
+        const { fill } = typeMeta ? { fill: typeMeta.fill } : zoneColor(pct);
         const lac = r.lactate != null && r.lactate !== '' ? Number(r.lactate) : null;
 
         return (
@@ -285,11 +295,15 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
 
             const pct   = toPowerNum(r.power, sport) / maxV;
             const { fill: zoneFill } = zoneColor(pct);
+            const typeMeta = intervalTypeMeta(r.intervalType);
+            const badgeFill = typeMeta ? typeMeta.fill : zoneFill;
+            const badgeText = typeMeta ? typeMeta.text : '#ffffff';
+            const rowBg = typeMeta ? typeMeta.bg : undefined;
 
             return (
-              <tr key={absIdx} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+              <tr key={absIdx} className="border-b border-gray-50 hover:bg-gray-50 transition-colors" style={rowBg ? { backgroundColor: rowBg } : undefined}>
                 <td className="py-1.5">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold text-white" style={{ backgroundColor: zoneFill }}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold" style={{ backgroundColor: badgeFill, color: badgeText }}>
                     {r.interval || absIdx + 1}
                   </span>
                 </td>
@@ -326,10 +340,6 @@ const resolveTitle = (t) =>
 /** Pull sport string regardless of source. */
 const resolveSport = (t) =>
   t.sport || t.sport_type || t.type || '';
-
-/** Pull ISO date string regardless of source. */
-const resolveDate = (t) =>
-  t.date || t.startDate || t.start_date || t.startTime || t.timestamp || null;
 
 /** Format seconds → "h:mm:ss" or "mm:ss". */
 const fmtSeconds = (sec) => {

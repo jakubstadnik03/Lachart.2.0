@@ -165,6 +165,25 @@ const SettingsDropdown = ({ isOpen, availableSports, currentSelectedSport, onSpo
   );
 };
 
+// ── Parse "MM:SS" pace string → seconds (or return numeric value as-is) ───
+function parsePowerToNumber(value, isRun) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isFinite(value) && value > 0 ? value : null;
+  if (typeof value === 'string') {
+    if (value.includes(':')) {
+      const parts = value.split(':');
+      if (parts.length === 2) {
+        const m = parseInt(parts[0], 10);
+        const s = parseFloat(parts[1]);
+        if (!isNaN(m) && !isNaN(s)) return m * 60 + s;
+      }
+    }
+    const n = parseFloat(value);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
 // ── Main component ──────────────────────────────────────────────────────────
 const TrainingGraph = ({
   trainingList = [],
@@ -278,20 +297,35 @@ const TrainingGraph = ({
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => t._id === selectedTraining);
       if (selectedData?.results) {
-        const powers = selectedData.results.map(r => r.power).filter(Boolean);
-        const heartRates = selectedData.results.map(r => r.heartRate).filter(Boolean);
-        if (powers.length && heartRates.length) {
-          setRanges({
-            power: { min: Math.floor(Math.min(...powers) - 20), max: Math.ceil(Math.max(...powers) + 20) },
-            heartRate: { min: Math.floor(Math.min(...heartRates) - 5), max: Math.ceil(Math.max(...heartRates) + 5) }
-          });
+        const sportKey = normalizeSport(selectedData.sport);
+        const isRun = sportKey === 'running' || sportKey === 'run';
+        const powers = selectedData.results
+          .map(r => parsePowerToNumber(r.power, isRun))
+          .filter(v => v !== null && v > 0);
+        const heartRates = selectedData.results
+          .map(r => { const n = Number(r.heartRate); return isFinite(n) && n > 0 ? n : null; })
+          .filter(v => v !== null);
+        const newRanges = { power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } };
+        if (powers.length > 0) {
+          const pad = isRun ? 30 : 20;
+          newRanges.power = {
+            min: Math.floor(Math.min(...powers) - pad),
+            max: Math.ceil(Math.max(...powers) + pad),
+          };
         }
+        if (heartRates.length > 0) {
+          newRanges.heartRate = {
+            min: Math.floor(Math.min(...heartRates) - 5),
+            max: Math.ceil(Math.max(...heartRates) + 5),
+          };
+        }
+        setRanges(newRanges);
       }
     }
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList]);
+  }, [selectedTraining, trainingList, normalizeSport]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
@@ -415,7 +449,7 @@ const TrainingGraph = ({
     plugins: {
       legend: {
         position: "top",
-        align: "start",
+        align: "center",
         labels: {
           usePointStyle: true,
           pointStyle: "circle",
@@ -538,11 +572,15 @@ const TrainingGraph = ({
       <div className="flex-1 min-h-0 relative px-3 pt-2 pb-1">
         <Line
           data={{
-            labels: selectedTrainingData.results.map(r => r.interval.toString()),
+            labels: selectedTrainingData.results.map((r, i) =>
+              r.interval != null ? String(r.interval) : String(i + 1)
+            ),
             datasets: [
               {
                 label: isRunScale ? "Pace" : "Power",
-                data: selectedTrainingData.results.map(r => r.power),
+                data: selectedTrainingData.results.map(r =>
+                  parsePowerToNumber(r.power, isRunScale)
+                ),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",
                 pointStyle: "circle",
@@ -550,10 +588,14 @@ const TrainingGraph = ({
                 pointHoverRadius: 8,
                 borderWidth: 2,
                 tension: 0.4,
+                spanGaps: true,
               },
               {
                 label: "Heart Rate",
-                data: selectedTrainingData.results.map(r => r.heartRate),
+                data: selectedTrainingData.results.map(r => {
+                  const n = Number(r.heartRate);
+                  return isFinite(n) && n > 0 ? n : null;
+                }),
                 borderColor: "#EF4444",
                 backgroundColor: "#EF4444",
                 pointStyle: "circle",
@@ -562,6 +604,7 @@ const TrainingGraph = ({
                 borderWidth: 2,
                 yAxisID: "y1",
                 tension: 0.4,
+                spanGaps: true,
               }
             ]
           }}
