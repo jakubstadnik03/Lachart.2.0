@@ -58,7 +58,8 @@ function parseDurationSecs(r) {
 
 /* ── Bar tooltip ───────────────────────────────────────────────────────────── */
 function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user }) {
-  const [pos, setPos] = useState({ top: 0, left: 0, above: true });
+  const [pos, setPos] = useState({ top: 0, left: 0, above: true, barCenterX: 0 });
+  const tooltipRef = useRef(null);
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
 
   useEffect(() => {
@@ -66,8 +67,13 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     const upd = () => {
       const r = barRef.current?.getBoundingClientRect();
       if (!r) return;
-      const above = r.top > 130;
-      setPos({ top: above ? r.top - 8 : r.bottom + 8, left: r.left + r.width / 2, above });
+      const TIP_H = 140, TIP_W = 170, GAP = 6, MARGIN = 8;
+      const above = r.top - TIP_H - GAP - MARGIN > 0;
+      const top = above ? r.top - GAP : r.bottom + GAP;
+      // clamp horizontally so it never goes off-screen
+      const idealLeft = r.left + r.width / 2;
+      const left = Math.max(TIP_W / 2 + MARGIN, Math.min(idealLeft, window.innerWidth - TIP_W / 2 - MARGIN));
+      setPos({ top, left, above, barCenterX: idealLeft });
     };
     upd();
     window.addEventListener("scroll", upd, true);
@@ -93,43 +99,83 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
   const fmtDist = (v) => {
     const m = parseDistMeters(v);
     if (!m) return null;
-    return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}km`;
+    return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)} km`;
   };
 
   const rows = [
-    { label: `Interval #${index + 1}`, value: null, header: true },
     durationType === "distance" && duration ? { label: "Distance", value: fmtDist(duration) } : null,
-    durationType !== "distance" && duration ? { label: "Time", value: fmtDur(duration) } : null,
-    distance && durationType !== "distance" ? { label: "Distance", value: fmtDist(distance) } : null,
-    sport === "run" && power ? { label: "Pace", value: fmtPace(power) } : null,
-    sport !== "run" && power ? { label: "Power", value: `${power} W` } : null,
-    heartRate ? { label: "HR", value: `${heartRate} bpm` } : null,
-    lactate ? { label: "Lactate", value: `${lactate} mmol/L` } : null,
+    durationType !== "distance" && duration ? { label: "Time",     value: fmtDur(duration)  } : null,
+    distance && durationType !== "distance"  ? { label: "Distance", value: fmtDist(distance) } : null,
+    sport === "run"  && power ? { label: "Pace",    value: fmtPace(power)      } : null,
+    sport !== "run"  && power ? { label: "Power",   value: `${power} W`        } : null,
+    heartRate                 ? { label: "HR",      value: `${heartRate} bpm`  } : null,
+    lactate                   ? { label: "Lactate", value: `${lactate} mmol/L`, isLactate: true } : null,
   ].filter(Boolean);
+
+  // Arrow horizontal offset: clamp arrow to stay within tooltip
+  const arrowLeft = Math.max(16, Math.min(pos.barCenterX - pos.left + 85, 154)); // 85 = half tip width approx
 
   return (
     <div
+      ref={tooltipRef}
       className="pointer-events-none fixed z-[99999]"
       style={{
-        top: `${pos.top}px`,
+        top:  `${pos.top}px`,
         left: `${pos.left}px`,
-        transform: pos.above ? "translate(-50%,-100%)" : "translate(-50%,0)",
+        transform: pos.above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
       }}
     >
-      <div className="bg-white rounded-xl shadow-xl border border-gray-100 px-3 py-2 text-xs min-w-[130px]">
-        {rows.map((row, i) => (
-          <div
-            key={i}
-            className={`flex justify-between gap-4 ${
-              row.header
-                ? "font-semibold text-gray-900 pb-1 mb-1 border-b border-gray-100"
-                : "text-gray-500 leading-relaxed"
-            }`}
-          >
-            <span>{row.label}</span>
-            {row.value && <span className="font-medium text-gray-800">{row.value}</span>}
-          </div>
-        ))}
+      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-100 overflow-visible"
+           style={{ minWidth: 150, maxWidth: 190 }}>
+
+        {/* Arrow pointing toward the bar */}
+        {pos.above ? (
+          /* Arrow below tooltip (bar is below) */
+          <div style={{
+            position: "absolute", bottom: -7, left: `${arrowLeft}px`,
+            width: 0, height: 0,
+            borderLeft: "7px solid transparent",
+            borderRight: "7px solid transparent",
+            borderTop: "7px solid white",
+            filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.08))",
+            transform: "translateX(-50%)",
+          }} />
+        ) : (
+          /* Arrow above tooltip (bar is above) */
+          <div style={{
+            position: "absolute", top: -7, left: `${arrowLeft}px`,
+            width: 0, height: 0,
+            borderLeft: "7px solid transparent",
+            borderRight: "7px solid transparent",
+            borderBottom: "7px solid white",
+            filter: "drop-shadow(0 -2px 2px rgba(0,0,0,0.06))",
+            transform: "translateX(-50%)",
+          }} />
+        )}
+
+        {/* Header */}
+        <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100">
+          <span className="text-[11px] font-bold text-gray-700 tracking-wide">
+            Interval #{index + 1}
+          </span>
+        </div>
+
+        {/* Rows */}
+        <div className="px-3 py-2 space-y-1">
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center justify-between gap-3">
+              <span className="text-[10px] text-gray-400 whitespace-nowrap">{row.label}</span>
+              <span className={`text-[11px] font-semibold whitespace-nowrap ${
+                row.isLactate ? "text-orange-500" : "text-gray-800"
+              }`}>
+                {row.value}
+              </span>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <span className="text-[10px] text-gray-400">No data</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -138,10 +184,13 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
 /* ── VerticalBar ───────────────────────────────────────────────────────────── */
 // Violet shades from darkest (rank 0 = highest value) to lightest
 const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
+// Amber/orange shades for bars with lactate data
+const BAR_LACTATE_COLORS = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
 
 function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
-  const bg = BAR_COLORS[Math.min(Math.max(colorIdx, 0), BAR_COLORS.length - 1)];
+  const palette = lactate ? BAR_LACTATE_COLORS : BAR_COLORS;
+  const bg = palette[Math.min(Math.max(colorIdx, 0), palette.length - 1)];
 
   const style = widthPercent != null
     ? { flexBasis: `${Math.max(widthPercent, 0.3)}%`, width: `${Math.max(widthPercent, 0.3)}%`, minWidth: "2px", flexShrink: 1, flexGrow: 0 }
@@ -155,6 +204,8 @@ function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lacta
         style={style}
         onMouseEnter={() => onHover(true)}
         onMouseLeave={() => onHover(false)}
+        onTouchStart={(e) => { e.preventDefault(); onHover(true); }}
+        onTouchEnd={() => setTimeout(() => onHover(false), 1800)}
       >
         <div
           className="absolute bottom-0 w-full rounded-t-sm"
