@@ -5117,31 +5117,31 @@ const FitAnalysisPage = () => {
                 
                 if (isStravaRun) {
                   return (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3">
-                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                        <div className="text-xs text-gray-500 font-medium mb-1">Duration</div>
-                        <div className="text-base font-bold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Duration</div>
+                        <div className="text-sm font-bold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
                       </div>
-                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                        <div className="text-xs text-gray-500 font-medium mb-1">Distance</div>
-                        <div className="text-base font-bold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
+                      <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Distance</div>
+                        <div className="text-sm font-bold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
                       </div>
                       {avgPace && (
-                        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                          <div className="text-xs text-gray-500 font-medium mb-1">Avg Pace</div>
-                          <div className="text-base font-bold text-gray-900">{avgPace} /km</div>
-                          <div className="text-xs text-gray-400">{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
+                        <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                          <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Avg Pace</div>
+                          <div className="text-sm font-bold text-gray-900">{avgPace} /km</div>
+                          <div className="text-[10px] text-gray-400">{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
                         </div>
                       )}
-                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                        <div className="text-xs text-gray-500 font-medium mb-1">Avg Heart Rate</div>
-                        <div className="text-base font-bold text-gray-900">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
-                        <div className="text-xs text-gray-400">{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
+                      <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Avg Heart Rate</div>
+                        <div className="text-sm font-bold text-gray-900">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                        <div className="text-[10px] text-gray-400">{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
                       </div>
                       {elevation && elevation > 0 && (
-                        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                          <div className="text-xs text-gray-500 font-medium mb-1">Elevation</div>
-                          <div className="text-base font-bold text-gray-900">+{elevation} m</div>
+                        <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                          <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Elevation</div>
+                          <div className="text-sm font-bold text-gray-900">+{elevation} m</div>
                         </div>
                       )}
                     </div>
@@ -5153,18 +5153,18 @@ const FitAnalysisPage = () => {
               {/* Detailed Statistics - hidden on mobile (already shown above) */}
               {selectedStrava && !isMobile && (
                 <div className="w-full">
-                  <div className="grid w-full gap-2 md:gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,10rem),1fr))]">
+                  <div className="flex flex-wrap gap-2">
                     {!isStravaRun && (
                       <>
-                        <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                           <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Duration</div>
                           <div className="text-sm font-semibold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
                         </div>
-                        <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                           <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Distance</div>
                           <div className="text-sm font-semibold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
                         </div>
-                        <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                           <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Heart Rate</div>
                           <div className="text-sm font-semibold text-gray-900">
                             {selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}
@@ -5175,79 +5175,79 @@ const FitAnalysisPage = () => {
                         </div>
                       </>
                     )}
-                    <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Date</div>
                       <div className="text-sm font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
                     </div>
-                    <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Sport</div>
                       <div className="text-sm font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
                     </div>
                     {!isStravaRun && stravaWorkKj != null && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Work</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaWorkKj)} kJ</div>
                       </div>
                     )}
                     {!isStravaRun && stravaPwHrPct != null && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Pw:Hr</div>
                         <div className="text-sm font-semibold text-gray-900">{Number(stravaPwHrPct).toFixed(2)}%</div>
                       </div>
                     )}
                     {!isStravaRun && stravaWkg != null && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">W/kg</div>
                         <div className="text-sm font-semibold text-gray-900">{Number(stravaWkg).toFixed(2)} W/kg</div>
                       </div>
                     )}
                     {!isStravaRun && stravaVI != null && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">VI</div>
                         <div className="text-sm font-semibold text-gray-900">{Number(stravaVI).toFixed(2)}</div>
                       </div>
                     )}
                     {!isStravaRun && stravaEF != null && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">EF</div>
                         <div className="text-sm font-semibold text-gray-900">{Number(stravaEF).toFixed(2)}</div>
                       </div>
                     )}
                     {!isStravaRun && stravaAvgSpeedKmh && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Speed</div>
                         <div className="text-sm font-semibold text-gray-900">{stravaAvgSpeedKmh} km/h</div>
                         {stravaMaxSpeedKmh && <div className="text-xs text-gray-400 mt-0.5">Max: {stravaMaxSpeedKmh} km/h</div>}
                       </div>
                     )}
                     {stravaAvgPower && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Power</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaAvgPower)} W</div>
                         {stravaMaxPower && <div className="text-xs text-gray-400 mt-0.5">Max: {Math.round(stravaMaxPower)} W</div>}
                       </div>
                     )}
                     {stravaAvgCadence && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Cadence</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaAvgCadence)} rpm</div>
                       </div>
                     )}
                     {stravaNormalizedPower && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">NP</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaNormalizedPower)} W</div>
                       </div>
                     )}
                     {calculateStravaTSS && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1 flex items-center gap-1">TSS{calculateStravaTSS.estimated && <span className="text-xs text-gray-400">*</span>}</div>
                         <div className="text-sm font-semibold text-gray-900">{calculateStravaTSS.value}</div>
                         {calculateStravaIF && <div className="text-xs text-gray-400 mt-0.5">IF: {calculateStravaIF}</div>}
                       </div>
                     )}
                     {hasStravaElevation && (
-                      <div className="min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Elevation</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
                       </div>
@@ -5281,6 +5281,13 @@ const FitAnalysisPage = () => {
                   </button>
                 </div>
               )}
+
+              {/* Training Comments — right below stats */}
+              <TrainingComments
+                trainingId={String(selectedStrava?.id || selectedStrava?._id)}
+                trainingType="strava"
+                isMobile={isMobile}
+              />
 
               {/* Training Chart - Modern SVG Version for Strava */}
               {(() => {
@@ -5635,12 +5642,7 @@ const FitAnalysisPage = () => {
                   onSelectLapNumber={setSelectedLapNumber}
                 />
               </div>
-              {/* Training Comments */}
-              <TrainingComments
-                trainingId={String(selectedStrava?.id || selectedStrava?._id)}
-                trainingType="strava"
-                isMobile={isMobile}
-              />
+
               </div>
             </div>
           );
