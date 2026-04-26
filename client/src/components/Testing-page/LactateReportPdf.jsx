@@ -528,23 +528,23 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
     const lt2HrStr = lt2Hr ? `${Math.round(lt2Hr)} bpm` : null;
     const lt1HrStr = lt1Hr ? `${Math.round(lt1Hr)} bpm` : null;
 
-    let text = `The lactate curve shows the relationship between exercise intensity and blood lactate concentration recorded during this ${sportLabel(sport).toLowerCase()} test on ${testDate}. `;
+    let text = `Lactate curve recorded during this ${sportLabel(sport).toLowerCase()} test on ${testDate}. `;
 
     if (lt1Str) {
-      text += `The aerobic threshold (LT1) was identified at ${lt1Str}${lt1HrStr ? `, corresponding to a heart rate of ${lt1HrStr}` : ''}. Below this point, lactate remains stable and the body relies primarily on aerobic metabolism. `;
+      text += `Aerobic threshold (LT1): ${lt1Str}${lt1HrStr ? ` · ${lt1HrStr}` : ''}. Below this point lactate remains stable and aerobic metabolism dominates. `;
     }
     if (lt2Str) {
-      text += `The anaerobic threshold (LT2) was identified at ${lt2Str}${lt2HrStr ? `, with a heart rate of ${lt2HrStr}` : ''}. This is the intensity at which lactate begins to accumulate faster than it can be cleared — the highest sustainable effort for longer race efforts. `;
+      text += `Anaerobic threshold (LT2): ${lt2Str}${lt2HrStr ? ` · ${lt2HrStr}` : ''}. Above this intensity lactate accumulates faster than it can be cleared — the upper limit of sustainable race efforts. `;
     }
     if (hasPrev && prevLt2 && lt2) {
       const diff = Number(lt2) - Number(prevLt2);
       const improved = isBike ? diff > 0 : diff < 0;
       const diffStr  = isBike ? `${Math.abs(Math.round(diff))} W` : fmtPace(Math.abs(diff));
       text += improved
-        ? `Compared to the previous test (${prevDate}), the anaerobic threshold improved by ${diffStr}, indicating a positive training adaptation. `
-        : (diff === 0 ? `Compared to the previous test (${prevDate}), the anaerobic threshold remained stable. ` : `Compared to the previous test (${prevDate}), the anaerobic threshold shifted by ${diffStr} — monitor training load and recovery to evaluate the cause. `);
+        ? `vs. previous test (${prevDate}): LT2 improved by ${diffStr} — positive training adaptation. `
+        : (diff === 0 ? `vs. previous test (${prevDate}): LT2 remained stable. ` : `vs. previous test (${prevDate}): LT2 shifted by ${diffStr} — monitor training load and recovery. `);
     }
-    text += `Training in the zones derived from these thresholds will help optimise aerobic base development, lactate clearance capacity, and overall endurance performance.`;
+    text += `Training in the zones derived from these thresholds will support aerobic base development and overall endurance performance.`;
     return text;
   })();
 
@@ -655,7 +655,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           }
 
           {/* Analysis paragraph */}
-          <View style={{ marginTop: 10, padding: 12, backgroundColor: C.lightGray, borderRadius: 6 }}>
+          <View wrap={false} style={{ marginTop: 10, padding: 12, backgroundColor: C.lightGray, borderRadius: 6 }}>
             <Text style={{ fontSize: 7.5, color: C.gray, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 5, fontFamily: 'Helvetica-Bold' }}>
               Analysis
             </Text>
