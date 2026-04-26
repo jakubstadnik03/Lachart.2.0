@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const TestComment = require('../models/TestComment');
@@ -198,86 +199,115 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
     });
     await comment.save();
 
-    // ── Create in-app notifications ──────────────────────────────────────────
-    const notifTitle = 'New comment on your training';
-    const notifBody = text.trim().slice(0, 100);
-
-    let recipientIds = [];
-
-    if (user.role === 'athlete') {
-      // Notify each coach on this athlete's coachIds list
-      const coachIdList = (user.coachIds || []).map(String);
-      if (coachIdList.length > 0) recipientIds = coachIdList;
-    } else {
-      // Coach/admin commenting → notify the athlete who owns the training
-      let athleteId = null;
+    // ── Create in-app notifications (fire-and-forget – never block the response) ──
+    (async () => {
       try {
-        const training = await Training.findById(trainingId).select('athleteId');
-        if (training) athleteId = String(training.athleteId);
-      } catch {}
-      if (!athleteId) {
-        try {
-          const fitT = await FitTraining.findById(trainingId).select('athleteId');
-          if (fitT) athleteId = String(fitT.athleteId);
-        } catch {}
-      }
-      if (athleteId) recipientIds = [athleteId];
-    }
+        const notifTitle = 'New comment on your training';
+        const notifBody = text.trim().slice(0, 100);
 
-    if (recipientIds.length > 0) {
-      const notifDocs = recipientIds.map(rid => ({
-        recipientId: rid,
-        type: 'training_comment',
-        title: notifTitle,
-        body: notifBody,
-        resourceId: trainingId,
-        resourceType: trainingType,
-        fromName: authorName,
-        read: false,
-      }));
-      await Notification.insertMany(notifDocs);
+        let recipientIds = [];
 
-      // ── Send email notifications ──────────────────────────────────────────
-      const recipients = await User.find({ _id: { $in: recipientIds } })
-        .select('email name notifications');
+        if (user.role === 'athlete') {
+          // Notify each coach on this athlete's coachIds list
+          const coachIdList = (user.coachIds || [])
+            .map(String)
+            .filter(id => mongoose.Types.ObjectId.isValid(id));
+          if (coachIdList.length > 0) recipientIds = coachIdList;
+        } else {
+          // Coach/admin commenting → notify the athlete who owns the training
+          let athleteId = null;
 
-      const CLIENT_URL = getClientUrl();
-      const transporter = await createEmailTransporter().catch(() => null);
+          if (mongoose.Types.ObjectId.isValid(trainingId)) {
+            try {
+              const training = await Training.findById(trainingId).select('athleteId');
+              if (training) athleteId = String(training.athleteId);
+            } catch {}
+          }
 
-      for (const recipient of recipients) {
-        const prefs = recipient.notifications || {};
-        if (prefs.trainingComments === false) continue;
-        if (prefs.emailNotifications === false) continue;
-        if (!transporter) continue;
-        try {
-          await transporter.sendMail({
-            to: recipient.email,
-            subject: '💬 New comment on your training – LaChart',
-            html: `
-              <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
-                <h2 style="color:#767EB5;margin-bottom:8px;">New comment on your training</h2>
-                <p style="color:#374151;margin-bottom:16px;">
-                  <strong>${authorName}</strong> left a comment:
-                </p>
-                <blockquote style="background:#fff;border-left:4px solid #767EB5;padding:12px 16px;border-radius:0 8px 8px 0;color:#1f2937;margin:0 0 24px;">
-                  ${text.trim().slice(0, 300)}
-                </blockquote>
-                <a href="${CLIENT_URL}/training-calendar"
-                   style="display:inline-block;background:#767EB5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
-                  Reply in LaChart
-                </a>
-                <p style="color:#9ca3af;font-size:12px;margin-top:24px;">
-                  You can manage email preferences in
-                  <a href="${CLIENT_URL}/settings" style="color:#767EB5;">Settings</a>.
-                </p>
-              </div>
-            `,
-          });
-        } catch (emailErr) {
-          console.error('Training comment email send error:', emailErr.message);
+          if (!athleteId && mongoose.Types.ObjectId.isValid(trainingId)) {
+            try {
+              const fitT = await FitTraining.findById(trainingId).select('athleteId');
+              if (fitT) athleteId = String(fitT.athleteId);
+            } catch {}
+          }
+
+          // For Strava IDs (non-ObjectId numeric strings) try finding the athlete
+          // who has this strava activity by looking up the requester's athletes list.
+          // If commenter is a coach, we can search for the athlete among their athletes.
+          if (!athleteId && !mongoose.Types.ObjectId.isValid(trainingId)) {
+            try {
+              // Find the athlete whose stravaActivityId matches (stored as string)
+              const athleteUser = await User.findOne({
+                coachIds: userId,
+                // No direct strava field – skip for now, rely on alternative approach
+              }).select('_id').lean();
+              // Fallback: can't reliably determine athlete from Strava-only ID without scanning
+            } catch {}
+          }
+
+          if (athleteId && mongoose.Types.ObjectId.isValid(athleteId)) {
+            recipientIds = [athleteId];
+          }
         }
+
+        if (recipientIds.length === 0) return;
+
+        const notifDocs = recipientIds.map(rid => ({
+          recipientId: rid,
+          type: 'training_comment',
+          title: notifTitle,
+          body: notifBody,
+          resourceId: trainingId,
+          resourceType: trainingType,
+          fromName: authorName,
+          read: false,
+        }));
+        await Notification.insertMany(notifDocs);
+
+        // ── Send email notifications ────────────────────────────────────────
+        const recipients = await User.find({ _id: { $in: recipientIds } })
+          .select('email name notifications');
+
+        const CLIENT_URL = getClientUrl();
+        const transporter = await createEmailTransporter().catch(() => null);
+
+        for (const recipient of recipients) {
+          const prefs = recipient.notifications || {};
+          if (prefs.trainingComments === false) continue;
+          if (prefs.emailNotifications === false) continue;
+          if (!transporter) continue;
+          try {
+            await transporter.sendMail({
+              to: recipient.email,
+              subject: '💬 New comment on your training – LaChart',
+              html: `
+                <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
+                  <h2 style="color:#767EB5;margin-bottom:8px;">New comment on your training</h2>
+                  <p style="color:#374151;margin-bottom:16px;">
+                    <strong>${authorName}</strong> left a comment:
+                  </p>
+                  <blockquote style="background:#fff;border-left:4px solid #767EB5;padding:12px 16px;border-radius:0 8px 8px 0;color:#1f2937;margin:0 0 24px;">
+                    ${text.trim().slice(0, 300)}
+                  </blockquote>
+                  <a href="${CLIENT_URL}/training-calendar"
+                     style="display:inline-block;background:#767EB5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
+                    Reply in LaChart
+                  </a>
+                  <p style="color:#9ca3af;font-size:12px;margin-top:24px;">
+                    You can manage email preferences in
+                    <a href="${CLIENT_URL}/settings" style="color:#767EB5;">Settings</a>.
+                  </p>
+                </div>
+              `,
+            });
+          } catch (emailErr) {
+            console.error('Training comment email send error:', emailErr.message);
+          }
+        }
+      } catch (notifErr) {
+        console.error('[TrainingComment] notification error:', notifErr.message);
       }
-    }
+    })();
 
     return res.status(201).json(comment);
   } catch (err) {
