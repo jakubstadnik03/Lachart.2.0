@@ -47,6 +47,7 @@ const {
   sendMilestoneEmail,
   sendLT2ImprovementEmail,
   sendAnniversaryEmail,
+  sendInviteCoachEmail,
   estimateLT2,
   getRecentTests,
 } = require('./retentionEmailService');
@@ -226,7 +227,16 @@ async function buildEventCandidates(users, countMap, latestMap) {
       }
     }
 
-    // ── Priority 4: re-engagement ──
+    // ── Priority 4: invite coach (athletes only, ≥1 test, no coach yet) ──
+    const isAthleteRole = !user.role || String(user.role).toLowerCase() === 'athlete';
+    const hasNoCoach    = !user.coachIds || user.coachIds.length === 0;
+    const inviteCoachSent = milestones.inviteCoachSent;
+    if (isAthleteRole && hasNoCoach && !inviteCoachSent && totalTests >= 1) {
+      candidates.push({ user, type: 'inviteCoach' });
+      continue;
+    }
+
+    // ── Priority 5: re-engagement ──
     const inactiveDays = daysSince(user.lastLogin);
     if (inactiveDays >= CFG.REENG_MIN_DAYS && inactiveDays <= CFG.REENG_MAX_DAYS) {
       const lastReeng = user.retentionEmails?.reengagementLastSent;
@@ -340,6 +350,7 @@ async function drainQueue(limit) {
           case 'reEngagement': ok = await sendReengagementEmail(user);                                  break;
           case 'milestone':    ok = await sendMilestoneEmail(user, extra);                              break;
           case 'anniversary':  ok = await sendAnniversaryEmail(user, extra);                            break;
+          case 'inviteCoach':  ok = await sendInviteCoachEmail(user);                                   break;
           case 'lt2Improvement':
             ok = await sendLT2ImprovementEmail(user, extra.gain, extra.value, extra.sport);
             break;
@@ -376,7 +387,7 @@ async function tick() {
   // ── Step 1: Load users (lean, only fields we need) ──
   const users = await User
     .find({ email: { $exists: true, $ne: null } })
-    .select('name surname email isActive lastLogin createdAt sport notifications retentionEmails')
+    .select('name surname email isActive lastLogin createdAt sport role notifications retentionEmails coachIds')
     .lean();
 
   // ── Step 2: Bulk-fetch test data (2 aggregations, not N queries) ──

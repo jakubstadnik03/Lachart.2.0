@@ -3761,6 +3761,7 @@ router.post("/admin/send-retention-email/:userId", verifyToken, async (req, res)
             sendMilestoneEmail,
             sendAnniversaryEmail,
             sendLT2ImprovementEmail,
+            sendInviteCoachEmail,
             estimateLT2,
             getRecentTests,
         } = require('../services/retentionEmailService');
@@ -3776,6 +3777,8 @@ router.post("/admin/send-retention-email/:userId", verifyToken, async (req, res)
         else if (type.startsWith('milestone_')) {
             const key = type.replace('milestone_', '');
             ok = await sendMilestoneEmail(targetUser, key);
+        } else if (type === 'inviteCoach') {
+            ok = await sendInviteCoachEmail(targetUser);
         } else if (type === 'lt2Improvement') {
             const tests = await getRecentTests(targetUser._id, 5);
             const lt2   = tests.length ? estimateLT2(tests[0]) : null;

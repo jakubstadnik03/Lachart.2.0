@@ -262,6 +262,7 @@ const userSchema = new mongoose.Schema({
       lt2ImprovementBaseline:     { type: Number,  default: null  },
       lt2Improvement5Sent:        { type: Boolean, default: false },
       lt2Improvement10Sent:       { type: Boolean, default: false },
+      inviteCoachSent:            { type: Boolean, default: false },
     }
   },
   // Thank you email tracking

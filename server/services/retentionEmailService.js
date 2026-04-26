@@ -835,6 +835,77 @@ async function sendAnniversaryEmail(user, months) {
   return ok;
 }
 
+// ─── 8. INVITE YOUR COACH ────────────────────────────────────────────────────
+/**
+ * Sent once to athletes who have ≥ 1 test logged but no coach connected.
+ * Encourages them to invite their coach into LaChart.
+ */
+async function sendInviteCoachEmail(user) {
+  if (!user.email) return false;
+  const CLIENT_URL = getClientUrl();
+  const firstName  = esc(user.name || 'Athlete');
+
+  const benefits = [
+    { icon: '📊', title: 'Shared test results', desc: 'Your coach sees every lactate curve in real time — no more emailing spreadsheets.' },
+    { icon: '🎯', title: 'Personalised zones', desc: 'Your coach can set exact training zones based on your real LT1 & LT2 values.' },
+    { icon: '💬', title: 'In-app notes', desc: 'Coaches can add notes and comments directly on each test.' },
+    { icon: '📈', title: 'Progress tracking', desc: 'Both of you see your LT2 trend evolve over time — the clearest measure of fitness.' },
+  ];
+
+  const benefitRows = benefits.map(b => `
+    <tr>
+      <td style="padding:12px 0;border-bottom:1px solid #f3f4f6;vertical-align:top;">
+        <span style="font-size:20px;margin-right:12px;vertical-align:middle;">${b.icon}</span>
+        <strong style="font-size:14px;color:${DARK};">${esc(b.title)}</strong>
+        <p style="margin:4px 0 0 34px;font-size:13px;color:${GRAY};line-height:1.5;">${esc(b.desc)}</p>
+      </td>
+    </tr>
+  `).join('');
+
+  const body = `
+    <h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:${DARK};">Take your training to the next level, ${firstName} 🚀</h2>
+    <p style="margin:0 0 20px;color:${GRAY};font-size:15px;">
+      You've already logged your lactate data in LaChart — now unlock the full picture by
+      inviting your coach. It takes 30 seconds and gives them direct access to everything you've measured.
+    </p>
+
+    <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+      ${benefitRows}
+    </table>
+
+    <div style="background:linear-gradient(135deg,${PRIMARY}12 0%,${SECONDARY}12 100%);border-radius:10px;padding:18px 20px;margin-bottom:20px;text-align:center;">
+      <p style="margin:0;font-size:15px;font-weight:600;color:${PRIMARY_DARK};">How it works</p>
+      <p style="margin:8px 0 0;font-size:13px;color:${GRAY};line-height:1.6;">
+        Click the button below → enter your coach's email → they receive an invite and join your team.
+        If they're not on LaChart yet, they'll be guided through a quick setup.
+      </p>
+    </div>
+  `;
+
+  const html = layout({
+    preheader: `Invite your coach to see your lactate data — it takes 30 seconds`,
+    hero: 'Train Smarter With a Coach',
+    body,
+    cta: 'Invite Your Coach',
+    ctaUrl: `${CLIENT_URL}/settings?tab=coach`,
+    footer: "You're receiving this because you have a test logged but no coach connected yet. Update preferences in Settings."
+  });
+
+  const ok = await send({
+    to:      user.email,
+    subject: `🚀 ${firstName}, invite your coach to see your lactate data`,
+    html
+  });
+
+  if (ok) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { 'retentionEmails.milestones.inviteCoachSent': true } }
+    );
+  }
+  return ok;
+}
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   sendWeeklyProgressEmail,
@@ -844,6 +915,7 @@ module.exports = {
   sendMilestoneEmail,
   sendLT2ImprovementEmail,
   sendAnniversaryEmail,
+  sendInviteCoachEmail,
   estimateLT2,
   getRecentTests,
   MILESTONES,
