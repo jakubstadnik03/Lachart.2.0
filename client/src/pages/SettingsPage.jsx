@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
@@ -150,6 +150,7 @@ const SettingsPage = () => {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
     { id: 'account', name: 'Account', icon: User },
+    { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },
   ];
@@ -203,6 +204,7 @@ const SettingsPage = () => {
       const tab = q.get('tab');
       if (tab === 'integrations') setActiveTab('integrations');
       if (tab === 'subscription') setActiveTab('subscription');
+      if (tab === 'coach') setActiveTab('coach');
       // Stripe redirect feedback
       if (tab === 'subscription' && q.get('success') === '1') {
         addNotification({ type: 'success', message: 'Payment successful! Your subscription is now active.' });
@@ -2840,6 +2842,136 @@ const SettingsPage = () => {
                     onSyncComplete={handleSyncComplete}
                   />
               </div>
+            </div>
+          </div>
+        );
+
+      case 'coach':
+        return (
+          <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+            {/* Header card */}
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+              <div className="flex items-center gap-3 mb-1">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900`}>Coach Management</h3>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-500`}>
+                    Connect with your coach to share test results and training zones.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Connected coaches */}
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+              <h4 className={`${isMobile ? 'text-xs' : 'text-base'} font-semibold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                Connected Coaches
+              </h4>
+
+              {myCoaches.length > 0 ? (
+                <div className={`${isMobile ? 'space-y-2' : 'space-y-3'}`}>
+                  {myCoaches.map((c) => (
+                    <div
+                      key={String(c._id)}
+                      className={`flex items-center justify-between ${isMobile ? 'p-2' : 'p-4'} bg-gray-50 rounded-lg border border-gray-100`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-900 truncate`}>
+                            {c.name} {c.surname}
+                          </p>
+                          <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 truncate`}>{c.email}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCoach(c._id)}
+                        disabled={isLoading}
+                        className={`flex items-center gap-1.5 ${isMobile ? 'text-[10px] px-2 py-1' : 'text-sm px-3 py-1.5'} text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors shrink-0 ml-2`}
+                      >
+                        <UserMinus className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  {myCoaches.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCoach(null)}
+                      disabled={isLoading}
+                      className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-red-500 hover:text-red-700 underline mt-1`}
+                    >
+                      Remove all coaches
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className={`${isMobile ? 'py-4' : 'py-8'} text-center`}>
+                  <Users className={`${isMobile ? 'w-8 h-8' : 'w-12 h-12'} text-gray-300 mx-auto mb-3`} />
+                  <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
+                    No coach connected yet.
+                  </p>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>
+                    Invite your coach below, or ask your coach to invite you from their dashboard.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Invite form */}
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+              <h4 className={`${isMobile ? 'text-xs' : 'text-base'} font-semibold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                Invite a Coach
+              </h4>
+              <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                Enter your coach's email. They will receive an invitation to join your team on LaChart.
+                If they don't have an account yet, they'll be guided to create one.
+              </p>
+              <form onSubmit={handleCoachChange} className={`${isMobile ? 'space-y-2' : 'space-y-4'}`}>
+                <div>
+                  <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>
+                    Coach email address
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.newCoachEmail}
+                    onChange={(e) => setFormData(prev => ({ ...prev, newCoachEmail: e.target.value }))}
+                    className={`block w-full ${isMobile ? 'text-xs' : 'text-sm'} rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary`}
+                    placeholder="coach@example.com"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className={`w-full flex items-center justify-center gap-2 ${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2.5 text-sm'} font-semibold text-white bg-primary hover:bg-primary-dark rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50`}
+                >
+                  <UserPlus className={isMobile ? 'w-3.5 h-3.5' : 'w-5 h-5'} />
+                  {isLoading ? 'Sending invitation…' : 'Send Invitation'}
+                </button>
+              </form>
+            </div>
+
+            {/* Info card */}
+            <div className={`bg-primary/5 border border-primary/20 ${isMobile ? 'rounded-md p-3' : 'rounded-xl p-5'}`}>
+              <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-primary mb-2`}>How it works</p>
+              <ul className={`${isMobile ? 'text-[10px] space-y-1' : 'text-sm space-y-2'} text-gray-600 list-none`}>
+                {[
+                  '📊 Your coach sees all your lactate test results in real time',
+                  '🎯 They can set personalised training zones based on your LT1 & LT2',
+                  '💬 Coaches can add notes and feedback on each test',
+                  '📈 Both of you track your LT2 progression over time',
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         );
