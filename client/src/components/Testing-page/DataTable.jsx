@@ -706,6 +706,66 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return null;
   };
 
+  /**
+   * Pace sports: after detecting an initial LT1 candidate on an early rise,
+   * check if lactate immediately plateaus (flat for 1+ steps, Δ ≤ PLATEAU_MAX_DELTA)
+   * and then has a bigger breakout (Δ ≥ BREAKOUT_MIN_DELTA).
+   * If yes, defer LT1 to the END of the plateau (last flat step before breakout).
+   * sortedDesc: sorted descending by pace (slowest first = largest seconds value first).
+   */
+  const deferPaceLt1PastPlateau = (sortedDesc, ltp1Power, ltp1Lactate) => {
+    if (!sortedDesc || sortedDesc.length < 3) return null;
+    const p1 = Number(ltp1Power);
+    const la1 = Number(ltp1Lactate);
+    if (!Number.isFinite(p1) || !Number.isFinite(la1)) return null;
+
+    // Find index of the current LT1 candidate in the sorted array (within 5 s tolerance)
+    let startIdx = -1;
+    for (let i = 0; i < sortedDesc.length; i++) {
+      if (Math.abs(Number(sortedDesc[i].power) - p1) <= 5) {
+        startIdx = i;
+        break;
+      }
+    }
+    if (startIdx < 0 || startIdx >= sortedDesc.length - 1) return null;
+
+    const PLATEAU_MAX_DELTA = 0.25; // mmol/L: step counts as "flat" if rise ≤ this
+    const BREAKOUT_MIN_DELTA = 0.45; // mmol/L: next step must jump at least this
+    let plateauEndIdx = -1;
+    let lastPlateauLa = la1;
+
+    for (let i = startIdx + 1; i < sortedDesc.length; i++) {
+      const currLa = Number(sortedDesc[i].lactate);
+      if (!Number.isFinite(currLa)) break;
+      const delta = currLa - lastPlateauLa;
+      if (delta >= -0.05 && delta <= PLATEAU_MAX_DELTA) {
+        // Still within the flat plateau
+        lastPlateauLa = currLa;
+        // Check if the NEXT step is a real breakout
+        if (i + 1 < sortedDesc.length) {
+          const nextLa = Number(sortedDesc[i + 1].lactate);
+          if (Number.isFinite(nextLa) && (nextLa - currLa) >= BREAKOUT_MIN_DELTA) {
+            plateauEndIdx = i;
+            break;
+          }
+        }
+      } else {
+        // Jumped immediately — no flat plateau after LT1 candidate
+        break;
+      }
+    }
+
+    if (plateauEndIdx < 0) return null;
+
+    const endPoint = sortedDesc[plateauEndIdx];
+    const laOut = Math.min(Math.max(Number(endPoint.lactate), MIN_LTP1_LACTATE), MAX_LTP1_LACTATE_PACE);
+    return {
+      power: Number(endPoint.power),
+      lactate: laOut,
+      heartRate: endPoint.heartRate != null ? Number(endPoint.heartRate) : null
+    };
+  };
+
   // LT1 helper: first sustained rise above baseline + delta, confirmed by next point.
   const findFirstSustainedRise = (points, baseline, sport = 'bike') => {
     if (!points || points.length < 3) return null;
@@ -1517,10 +1577,14 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             pickLt1PaceFirstRiseAfterMin(sortedResults) ||
             pickLt1FromMeasuredStepsForPace(sortedResults, effectiveBaseLactate, 1.75);
           if (rawMeas != null) {
-            ltp1Power = Number(rawMeas.power);
-            ltp1Lactate = Number(rawMeas.lactate);
-            if (rawMeas.heartRate != null && Number.isFinite(Number(rawMeas.heartRate))) {
-              ltp1HR = Number(rawMeas.heartRate);
+            // If the initial candidate sits on an early rise followed by a flat plateau
+            // and then a real breakout, defer LT1 to the END of that plateau.
+            const deferred = deferPaceLt1PastPlateau(sortedResults, rawMeas.power, rawMeas.lactate);
+            const effectiveMeas = deferred || rawMeas;
+            ltp1Power = Number(effectiveMeas.power);
+            ltp1Lactate = Number(effectiveMeas.lactate);
+            if (effectiveMeas.heartRate != null && Number.isFinite(Number(effectiveMeas.heartRate))) {
+              ltp1HR = Number(effectiveMeas.heartRate);
             } else {
               const h1 = interpolateHRAtPowerPoly(ltp1Power);
               if (h1 != null) ltp1HR = h1;
