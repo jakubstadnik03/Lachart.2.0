@@ -1585,6 +1585,12 @@ const FitAnalysisPage = () => {
   const [trainingFormData, setTrainingFormData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Manual add / edit training
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualFormInitialData, setManualFormInitialData] = useState(null); // null → new, object → edit
+  const [manualFormSubmitting, setManualFormSubmitting] = useState(false);
+  const [manualFormError, setManualFormError] = useState(null);
+
   // Calendar "Add Lactate" loading/error state (while fetching Strava detail)
   const [calendarLactateLoading, setCalendarLactateLoading] = useState(false);
   const [calendarLactateError, setCalendarLactateError] = useState(null);
@@ -3589,15 +3595,84 @@ const FitAnalysisPage = () => {
     setShowTrainingForm(true);
   }, [selectedTraining]);
 
+  // ── Manual add / edit training ─────────────────────────────────────────────
+  const handleOpenAddTraining = () => {
+    setManualFormInitialData(null);
+    setManualFormError(null);
+    setShowManualForm(true);
+  };
+
+  const handleOpenEditTraining = () => {
+    if (!selectedTraining) return;
+    // Pass the raw training data; TrainingForm normalises sport/date internally
+    const initData = {
+      ...selectedTraining,
+      // Resolve the MongoDB _id (may be on _id or via localStorage for regular trainings)
+      _id: selectedTraining._id || localStorage.getItem('fitAnalysis_selectedRegularTrainingId') || localStorage.getItem('fitAnalysis_selectedTrainingModelId'),
+      title: selectedTraining.titleManual || selectedTraining.title || selectedTraining.titleAuto || '',
+      date: selectedTraining.timestamp
+        ? new Date(selectedTraining.timestamp).toISOString().slice(0, 16)
+        : new Date(selectedTraining.date || Date.now()).toISOString().slice(0, 16),
+      results: Array.isArray(selectedTraining.results) ? selectedTraining.results : [],
+    };
+    setManualFormInitialData(initData);
+    setManualFormError(null);
+    setShowManualForm(true);
+  };
+
+  const handleManualFormSubmit = async (formData) => {
+    try {
+      setManualFormSubmitting(true);
+      setManualFormError(null);
+      const athleteId = selectedAthleteId || user._id;
+      const payload = { ...formData, athleteId };
+      if (formData._id) {
+        await updateTraining(formData._id, payload);
+      } else {
+        await addTraining(payload);
+      }
+      setShowManualForm(false);
+      setManualFormInitialData(null);
+      // Reload trainings so the calendar reflects the change
+      await loadTrainings();
+      // If we were editing, refresh the detail view
+      if (formData._id && selectedTraining) {
+        await loadRegularTrainingDetail(formData._id);
+      }
+    } catch (err) {
+      setManualFormError(err.response?.data?.error || err.message || 'Save failed');
+    } finally {
+      setManualFormSubmitting(false);
+    }
+  };
+
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
       <UpgradeModal {...UpgradeModalProps} />
       <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
-        {!isMobile && <motion.h1 initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</motion.h1>}
+        {!isMobile && (
+          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="flex items-center justify-between mb-4 md:mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Training Calendar</h1>
+            <button
+              onClick={handleOpenAddTraining}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add Training
+            </button>
+          </motion.div>
+        )}
         {isMobile && !(selectedTraining || selectedStrava) && (
-          <div className="px-4 pt-4 pb-2">
+          <div className="px-4 pt-4 pb-2 flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">Training Calendar</h1>
+            <button
+              onClick={handleOpenAddTraining}
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add
+            </button>
           </div>
         )}
 
@@ -3668,7 +3743,7 @@ const FitAnalysisPage = () => {
           <div className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
             {isMobile ? (
-              <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-3 py-2.5 flex items-center gap-2 shadow-sm">
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-3 py-2.5 flex items-center justify-between gap-2 shadow-sm">
                 <button
                   type="button"
                   onClick={handleCloseTrainingDetail}
@@ -3678,6 +3753,17 @@ const FitAnalysisPage = () => {
                   <ChevronLeftIcon className="w-4 h-4" />
                   <span>Calendar</span>
                 </button>
+                {selectedTraining.isRegularTraining && (
+                  <button
+                    type="button"
+                    onClick={handleOpenEditTraining}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-primary border border-primary/30 bg-primary/5 rounded-lg active:bg-primary/10 touch-manipulation"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    Edit
+                  </button>
+                )}
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2 mb-4">
@@ -3689,6 +3775,18 @@ const FitAnalysisPage = () => {
                   <ChevronLeftIcon className="w-4 h-4" />
                   Back to Calendar
                 </button>
+                <div className="flex items-center gap-2">
+                  {selectedTraining.isRegularTraining && (
+                    <button
+                      type="button"
+                      onClick={handleOpenEditTraining}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold text-primary border border-primary/30 bg-primary/5 hover:bg-primary/10 shadow-sm transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      Edit Training
+                    </button>
+                  )}
+                </div>
               </div>
             )}
                 <motion.div
@@ -5668,6 +5766,27 @@ const FitAnalysisPage = () => {
         )}
 
           </div>
+
+      {/* Manual Add / Edit Training Modal */}
+      {showManualForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4">
+          <div className="w-full sm:max-w-2xl">
+            {manualFormError && (
+              <div className="mb-2 mx-4 sm:mx-0 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                {manualFormError}
+              </div>
+            )}
+            <TrainingForm
+              key={manualFormInitialData?._id || 'new'}
+              onClose={() => { setShowManualForm(false); setManualFormInitialData(null); setManualFormError(null); }}
+              onSubmit={handleManualFormSubmit}
+              initialData={manualFormInitialData}
+              isEditing={!!manualFormInitialData?._id}
+              isLoading={manualFormSubmitting}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Training Form Modal - Export to training */}
       {showTrainingForm && trainingFormData && (
