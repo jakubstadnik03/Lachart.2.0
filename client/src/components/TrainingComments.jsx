@@ -87,9 +87,13 @@ export default function TrainingComments({ trainingId, trainingType = 'training'
               className={`flex gap-2.5 group ${isOwn ? 'flex-row-reverse' : ''}`}
               onTouchStart={() => canDelete(c) && setActiveCommentId(id => id === c._id ? null : c._id)}
             >
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${c.authorRole === 'coach' ? 'bg-violet-500' : 'bg-blue-500'}`}>
-                {(c.authorName || '?')[0].toUpperCase()}
-              </div>
+              {(() => {
+                const avatarUrl = isOwn ? (user?.avatar || c.authorAvatar) : c.authorAvatar;
+                const colorCls = c.authorRole === 'coach' ? 'bg-violet-500' : 'bg-blue-500';
+                return avatarUrl
+                  ? <img src={avatarUrl} alt={c.authorName} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                  : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${colorCls}`}>{(c.authorName || '?')[0].toUpperCase()}</div>;
+              })()}
               <div className={`flex-1 min-w-0 flex flex-col gap-0.5 ${isOwn ? 'items-end' : 'items-start'}`}>
                 <div className={`flex items-center gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
                   <span className="text-[10px] font-semibold text-gray-700">{c.authorName}</span>

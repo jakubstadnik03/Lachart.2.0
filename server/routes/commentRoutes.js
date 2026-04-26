@@ -179,7 +179,7 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Comment text is required' });
     }
 
-    const user = await User.findById(userId).select('name surname role coachIds');
+    const user = await User.findById(userId).select('name surname role coachIds avatar');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const allowedRoles = ['coach', 'athlete', 'admin'];
@@ -195,6 +195,7 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
       authorId: userId,
       authorName,
       authorRole: user.role,
+      authorAvatar: user.avatar || null,
       text: text.trim(),
     });
     await comment.save();
