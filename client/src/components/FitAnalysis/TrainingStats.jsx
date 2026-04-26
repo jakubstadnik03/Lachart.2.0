@@ -983,7 +983,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
           ))}
         </div>
       ) : (
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
         <StatBox icon={<ClockIcon className="h-3 w-3" />} iconBg="bg-primary/10" iconColor="text-primary" label="Duration" value={formatDuration(totalTime)} />
         <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-primary/10" iconColor="text-primary" label="Distance" value={formatDistance(training.totalDistance, user)} />
         {training.avgHeartRate ? (

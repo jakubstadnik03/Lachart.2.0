@@ -5117,7 +5117,7 @@ const FitAnalysisPage = () => {
                 
                 if (isStravaRun) {
                   return (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
                       <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
                         <div className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Duration</div>
                         <div className="text-sm font-bold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
@@ -5153,7 +5153,7 @@ const FitAnalysisPage = () => {
               {/* Detailed Statistics - hidden on mobile (already shown above) */}
               {selectedStrava && !isMobile && (
                 <div className="w-full">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
                     {!isStravaRun && (
                       <>
                         <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
