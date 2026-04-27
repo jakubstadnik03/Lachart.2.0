@@ -5,14 +5,16 @@ import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
 const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
-const ZONE_LABELS = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'];
 const PROFILE_SPORTS = ['cycling', 'running', 'swimming'];
 const SPORT_LABEL = { cycling: 'Bike', running: 'Run', swimming: 'Swim' };
-const SPORT_STACK_COLOR = { cycling: '#3b82f6', running: '#f97316', swimming: '#06b6d4' };
 
-// Zone palette (roughly aligned with the app styling)
-const POWER_ZONE_FILL = ['#7dd3fc', '#38bdf8', '#0ea5e9', '#0369a1', '#082f49']; // Z1..Z5
-const HR_ZONE_FILL = ['#fecaca', '#f87171', '#ef4444', '#dc2626', '#991b1b']; // Z1..Z5
+const POWER_ZONE_FILL = ['#7dd3fc', '#38bdf8', '#0ea5e9', '#0369a1', '#082f49'];
+const HR_ZONE_FILL = ['#fecaca', '#f87171', '#ef4444', '#dc2626', '#991b1b'];
+
+const POWER_ZONE_NAMES = ['Endurance', 'Moderate', 'Tempo', 'Threshold', 'VO₂max'];
+const HR_ZONE_NAMES = ['Easy', 'Aerobic', 'Tempo', 'Threshold', 'Max'];
+
+const BUCKET_COLOR = { bike: '#3b82f6', run: '#f97316', swim: '#06b6d4', other: '#9ca3af' };
 
 const UNCATEGORIZED_KEY = '__uncategorized__';
 
@@ -109,7 +111,6 @@ function computeTssForAct(act, profile) {
   const seconds = actDurationSec(act);
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
 
-  // Prefer provided TSS if present
   const existing =
     Number(act.tss ?? act.TSS ?? act.totalTSS ?? act.totalTss ?? act.totalTssValue ?? 0);
   if (Number.isFinite(existing) && existing > 0) return existing;
@@ -134,21 +135,19 @@ function computeTssForAct(act, profile) {
         0
     );
     if (!ftp || ftp <= 0 || !Number.isFinite(avgPower) || avgPower <= 0) return 0;
-    // TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
     return Math.round((seconds * Math.pow(avgPower, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
   }
 
   if (ps === 'running') {
     const speedMps = Number(act.avgSpeed ?? act.averageSpeed ?? act.average_speed ?? 0);
     if (!Number.isFinite(speedMps) || speedMps <= 0) return 0;
-    const avgPaceSeconds = Math.round(1000 / speedMps); // sec/km
+    const avgPaceSeconds = Math.round(1000 / speedMps);
     const thresholdPace =
       parseZoneNumber(profile?.powerZones?.running?.lt2) ||
       parseZoneNumber(profile?.runningZones?.lt2) ||
       null;
     const referencePace = thresholdPace && thresholdPace > 0 ? thresholdPace : avgPaceSeconds;
     if (!referencePace || referencePace <= 0) return 0;
-    // TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
     const intensityRatio = referencePace / avgPaceSeconds;
     return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
   }
@@ -156,7 +155,7 @@ function computeTssForAct(act, profile) {
   if (ps === 'swimming') {
     const speedMps = Number(act.avgSpeed ?? act.averageSpeed ?? act.average_speed ?? 0);
     if (!Number.isFinite(speedMps) || speedMps <= 0) return 0;
-    const avgPaceSeconds = Math.round(100 / speedMps); // sec/100m
+    const avgPaceSeconds = Math.round(100 / speedMps);
     const thresholdSwimPace =
       parseZoneNumber(profile?.powerZones?.swimming?.lt2) ||
       parseZoneNumber(profile?.swimmingZones?.lt2) ||
@@ -168,6 +167,18 @@ function computeTssForAct(act, profile) {
   }
 
   return 0;
+}
+
+/** Return ISO week number (Monday-based) and year as a string key "YYYY-WW" */
+function isoWeekKey(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  // Set to nearest Thursday: current date + 4 - current day number (Mon=1)
+  const day = d.getDay() || 7; // convert Sunday(0) to 7
+  d.setDate(d.getDate() + 4 - day);
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNum = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-${String(weekNum).padStart(2, '0')}`;
 }
 
 function categoryLabel(category) {
@@ -194,24 +205,43 @@ function categoryChipClass(category) {
   return colors[category] || 'bg-gray-100 border-gray-300 text-gray-700';
 }
 
-function emptyChart(title, message) {
-  return {
-    title: { text: title, left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-    graphic: {
-      type: 'text',
-      left: 'center',
-      top: 'middle',
-      style: { text: message, fill: '#9ca3af', fontSize: 12 },
-    },
-  };
-}
-
-function chartTextTheme() {
-  return {
-    textStyle: { color: '#4b5563' },
-    axisLine: { lineStyle: { color: '#e5e7eb' } },
-    splitLine: { lineStyle: { color: 'rgba(229,231,235,0.6)' } },
-  };
+function ZoneRows({ secMap, colors, zoneNames }) {
+  const total = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
+  if (total <= 0)
+    return (
+      <p className="text-xs text-gray-400 text-center py-4">
+        No data — add zones in profile
+      </p>
+    );
+  return (
+    <div className="space-y-2">
+      {ZONE_KEYS.map((zk, zi) => {
+        const sec = secMap[zk] || 0;
+        const pct = total > 0 ? (sec / total) * 100 : 0;
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+        return (
+          <div key={zk} className="flex items-center gap-2">
+            <span className="w-6 text-xs font-bold text-gray-400 shrink-0">Z{zi + 1}</span>
+            <span className="w-16 text-[10px] text-gray-500 shrink-0">{zoneNames[zi]}</span>
+            <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${pct}%`, backgroundColor: colors[zi] }}
+              />
+            </div>
+            <span className="w-8 text-[10px] text-right text-gray-500 shrink-0">
+              {pct.toFixed(0)}%
+            </span>
+            <span className="w-10 text-[10px] text-right text-gray-600 font-medium shrink-0">
+              {sec > 0 ? timeStr : '—'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -226,6 +256,9 @@ export default function CalendarPeriodStats({
   onSelectActivity = null,
 }) {
   const periodView = period?.view === 'week' ? 'week' : 'month';
+
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showZoneDetails, setShowZoneDetails] = useState(false);
 
   const filtered = useMemo(() => {
     if (!period?.periodStart || !period?.periodEnd) return [];
@@ -263,6 +296,14 @@ export default function CalendarPeriodStats({
       swimming: Object.fromEntries(ZONE_KEYS.map((k) => [k, 0])),
     };
 
+    // For daily stacked bar by sport
+    const byDaySportSec = new Map();
+
+    // Intensity totals across all zone data
+    let intensityEasySec = 0;
+    let intensityModSec = 0;
+    let intensityHardSec = 0;
+
     filtered.forEach((act) => {
       const sec = actDurationSec(act);
       const dist = Number(act.distance || 0);
@@ -294,6 +335,13 @@ export default function CalendarPeriodStats({
       if (dk) {
         byDaySec.set(dk, (byDaySec.get(dk) || 0) + sec);
         byDayCount.set(dk, (byDayCount.get(dk) || 0) + 1);
+
+        ['bike', 'run', 'swim'].forEach((sport) => {
+          if (b === sport) {
+            const key = `${dk}-${sport}`;
+            byDaySportSec.set(key, (byDaySportSec.get(key) || 0) + sec);
+          }
+        });
       }
 
       if (userProfile && ps) {
@@ -302,12 +350,26 @@ export default function CalendarPeriodStats({
         const metric = getPowerOrPaceMetric(act, ps);
         if (metric != null && hasZoneDefinitions(powerZones)) {
           const zk = findZoneKeyForValue(metric, powerZones);
-          if (zk) powerZoneSec[ps][zk] += sec;
+          if (zk) {
+            powerZoneSec[ps][zk] += sec;
+            // Accumulate intensity from power zones
+            if (zk === 'zone1' || zk === 'zone2') intensityEasySec += sec;
+            else if (zk === 'zone3') intensityModSec += sec;
+            else if (zk === 'zone4' || zk === 'zone5') intensityHardSec += sec;
+          }
         }
         const hr = getHeartRate(act);
         if (hr != null && hasZoneDefinitions(hrZones)) {
           const zk = findZoneKeyForValue(hr, hrZones);
-          if (zk) hrZoneSec[ps][zk] += sec;
+          if (zk) {
+            hrZoneSec[ps][zk] += sec;
+            // If no power zone data was found, accumulate from HR zones
+            if (!(metric != null && hasZoneDefinitions(powerZones))) {
+              if (zk === 'zone1' || zk === 'zone2') intensityEasySec += sec;
+              else if (zk === 'zone3') intensityModSec += sec;
+              else if (zk === 'zone4' || zk === 'zone5') intensityHardSec += sec;
+            }
+          }
         }
       }
     });
@@ -326,6 +388,10 @@ export default function CalendarPeriodStats({
     const dailyHours = dayKeys.map((k) => Number(((byDaySec.get(k) || 0) / 3600).toFixed(2)));
     const dailyCounts = dayKeys.map((k) => byDayCount.get(k) || 0);
 
+    const dailyHoursBike = dayKeys.map((k) => +((byDaySportSec.get(`${k}-bike`) || 0) / 3600).toFixed(2));
+    const dailyHoursRun = dayKeys.map((k) => +((byDaySportSec.get(`${k}-run`) || 0) / 3600).toFixed(2));
+    const dailyHoursSwim = dayKeys.map((k) => +((byDaySportSec.get(`${k}-swim`) || 0) / 3600).toFixed(2));
+
     const zoneSportsWithPower = PROFILE_SPORTS.filter((ps) => {
       if (!hasZoneDefinitions(userProfile?.powerZones?.[ps])) return false;
       return ZONE_KEYS.some((zk) => powerZoneSec[ps][zk] > 0);
@@ -334,6 +400,16 @@ export default function CalendarPeriodStats({
       if (!hasZoneDefinitions(userProfile?.heartRateZones?.[ps])) return false;
       return ZONE_KEYS.some((zk) => hrZoneSec[ps][zk] > 0);
     });
+
+    // Combined "all sports" zone totals
+    const powerZoneSecAll = Object.fromEntries(ZONE_KEYS.map(zk => [
+      zk,
+      PROFILE_SPORTS.reduce((s, ps) => s + (powerZoneSec[ps][zk] || 0), 0)
+    ]));
+    const hrZoneSecAll = Object.fromEntries(ZONE_KEYS.map(zk => [
+      zk,
+      PROFILE_SPORTS.reduce((s, ps) => s + (hrZoneSec[ps][zk] || 0), 0)
+    ]));
 
     return {
       count: filtered.length,
@@ -344,16 +420,66 @@ export default function CalendarPeriodStats({
       dayKeys,
       dailyHours,
       dailyCounts,
+      dailyHoursBike,
+      dailyHoursRun,
+      dailyHoursSwim,
       tssByProfileSport,
       distByProfileSport,
       maxTssAct,
       maxDurAct,
       powerZoneSec,
       hrZoneSec,
+      powerZoneSecAll,
+      hrZoneSecAll,
       zoneSportsWithPower,
       zoneSportsWithHr,
+      intensityEasySec,
+      intensityModSec,
+      intensityHardSec,
     };
   }, [filtered, period?.periodStart, period?.periodEnd, userProfile]);
+
+  // Weekly trend for the last 12 completed weeks + current week
+  const weeklyTrend = useMemo(() => {
+    if (!activities.length) return [];
+
+    // Determine current period's week key for highlighting
+    const currentPeriodWeekKey = period?.periodStart
+      ? isoWeekKey(period.periodStart)
+      : null;
+
+    // Build a map of weekKey -> { tss, hours }
+    const weekMap = new Map();
+    activities.forEach((act) => {
+      const raw = act.date || act.timestamp || act.startDate || act.start_time;
+      if (!raw) return;
+      const wk = isoWeekKey(raw);
+      if (!wk) return;
+      if (!weekMap.has(wk)) weekMap.set(wk, { tss: 0, hours: 0, weekNum: 0 });
+      const entry = weekMap.get(wk);
+      const tssVal = computeTssForAct(act, userProfile);
+      if (tssVal > 0) entry.tss += tssVal;
+      entry.hours += actDurationSec(act) / 3600;
+    });
+
+    // Sort all week keys
+    const sortedKeys = Array.from(weekMap.keys()).sort();
+
+    // Take last 13 (12 completed + current)
+    const recentKeys = sortedKeys.slice(-13);
+
+    return recentKeys.map((wk) => {
+      const entry = weekMap.get(wk) || { tss: 0, hours: 0 };
+      const weekNum = Number(wk.split('-')[1]);
+      return {
+        weekKey: wk,
+        label: `W${weekNum}`,
+        tss: Math.round(entry.tss),
+        hours: +entry.hours.toFixed(1),
+        isCurrent: wk === currentPeriodWeekKey,
+      };
+    });
+  }, [activities, userProfile, period?.periodStart]);
 
   const weekComparison = useMemo(() => {
     if (periodView !== 'week') return null;
@@ -401,6 +527,116 @@ export default function CalendarPeriodStats({
     };
   }, [periodView, period?.periodStart, period?.periodEnd, activities, userProfile, aggregates.totalTss]);
 
+  // Performance Management Chart (CTL / ATL / TSB) — built from ALL activities
+  const pmc = useMemo(() => {
+    const dailyTssMap = new Map();
+    activities.forEach(act => {
+      const raw = act.date || act.timestamp || act.startDate || act.start_time;
+      const dk = getLocalDateString(raw);
+      if (!dk) return;
+      const tss = computeTssForAct(act, userProfile);
+      if (tss > 0) dailyTssMap.set(dk, (dailyTssMap.get(dk) || 0) + tss);
+    });
+    if (!dailyTssMap.size) return null;
+
+    const allDays = Array.from(dailyTssMap.keys()).sort();
+    const ctl_k = 1 - Math.exp(-1 / 42);
+    const atl_k = 1 - Math.exp(-1 / 7);
+    let ctl = 0, atl = 0;
+    const results = [];
+    const startDate = new Date(allDays[0]);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cur = new Date(startDate);
+    while (cur <= today) {
+      const dk = getLocalDateString(cur);
+      const tss = dailyTssMap.get(dk) || 0;
+      ctl = ctl + ctl_k * (tss - ctl);
+      atl = atl + atl_k * (tss - atl);
+      results.push({ date: dk, ctl: +ctl.toFixed(1), atl: +atl.toFixed(1), tsb: +(ctl - atl).toFixed(1), tss });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return results;
+  }, [activities, userProfile]);
+
+  const pmcOption = useMemo(() => {
+    if (!pmc || pmc.length === 0) return null;
+    const last90 = pmc.slice(-90);
+    const labels = last90.map(d => {
+      const [, m, day] = d.date.split('-');
+      return `${day}.${m}.`;
+    });
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        formatter(params) {
+          if (!Array.isArray(params) || !params[0]) return '';
+          const idx = params[0].dataIndex;
+          const d = last90[idx];
+          let html = `<div style="font-size:11px"><b>${d.date}</b>`;
+          params.forEach(p => {
+            html += `<br/>${p.marker}${p.seriesName}: ${p.value}`;
+          });
+          if (d.tss > 0) html += `<br/>Daily TSS: ${d.tss}`;
+          html += '</div>';
+          return html;
+        },
+      },
+      grid: { left: 36, right: 8, top: 8, bottom: 24, containLabel: false },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        axisLabel: { fontSize: 9, color: '#9ca3af', interval: 6 },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { fontSize: 9, color: '#9ca3af' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
+      series: [
+        {
+          name: 'CTL (Fitness)',
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          lineStyle: { color: '#3b82f6', width: 2 },
+          itemStyle: { color: '#3b82f6' },
+          data: last90.map(d => d.ctl),
+        },
+        {
+          name: 'ATL (Fatigue)',
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          lineStyle: { color: '#f97316', width: 2 },
+          itemStyle: { color: '#f97316' },
+          data: last90.map(d => d.atl),
+        },
+        {
+          name: 'TSB (Form)',
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          lineStyle: { color: '#10b981', width: 1.5 },
+          areaStyle: { color: '#10b981', opacity: 0.1 },
+          itemStyle: { color: '#10b981' },
+          markLine: {
+            data: [{ yAxis: 0 }],
+            lineStyle: { color: '#e5e7eb', type: 'solid' },
+            label: { show: false },
+            symbol: 'none',
+          },
+          data: last90.map(d => d.tsb),
+        },
+      ],
+    };
+  }, [pmc]);
+
   const byCategory = useMemo(() => {
     const m = new Map();
     filtered.forEach((act) => {
@@ -416,7 +652,6 @@ export default function CalendarPeriodStats({
       return { key, acts, totalSec, count: acts.length };
     });
 
-    // Uncategorized always last; otherwise sort by total time desc
     items.sort((a, b) => {
       if (a.key === UNCATEGORIZED_KEY) return 1;
       if (b.key === UNCATEGORIZED_KEY) return -1;
@@ -434,643 +669,1096 @@ export default function CalendarPeriodStats({
   const [expandedCategoryKeys, setExpandedCategoryKeys] = useState(() => new Set());
   const MAX_CATEGORIES_VISIBLE = 3;
   const MAX_ACTIVITIES_PER_CATEGORY = 5;
-  const visibleCategoryKeys = showAllCategories ? byCategory.keys : byCategory.keys.slice(0, MAX_CATEGORIES_VISIBLE);
+  const visibleCategoryKeys = showAllCategories
+    ? byCategory.keys
+    : byCategory.keys.slice(0, MAX_CATEGORIES_VISIBLE);
   const hasMoreCategories = byCategory.keys.length > MAX_CATEGORIES_VISIBLE;
 
-  const sportBarOption = useMemo(() => {
-    const keys = ['bike', 'run', 'swim', 'other'].filter((k) => aggregates.bySportSec[k] > 0);
-    if (keys.length === 0) return emptyChart('Time by sport', 'No activities');
-    const hours = keys.map((k) => Number((aggregates.bySportSec[k] / 3600).toFixed(2)));
-    const BUCKET_LABEL = { bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
-    const BUCKET_COLOR = { bike: '#3b82f6', run: '#f97316', swim: '#06b6d4', other: '#9ca3af' };
+  // Zone sport toggle state — default to 'all'
+  const [zoneSport, setZoneSport] = useState('all');
+
+  // Daily stacked load chart option
+  const dailyStackedOption = useMemo(() => {
+    if (!aggregates.dayKeys.length) return null;
+    const labels = aggregates.dayKeys.map((k) => {
+      const [, m, d] = k.split('-');
+      return `${d}.${m}.`;
+    });
     return {
       backgroundColor: 'transparent',
-      title: { text: 'Time by sport (h)', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: '14%', right: '8%', bottom: '10%', top: '22%', containLabel: true },
-      xAxis: { type: 'value', ...chartTextTheme() },
-      yAxis: { type: 'category', data: keys.map((k) => BUCKET_LABEL[k]), axisLabel: { color: '#374151' } },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter(params) {
+          if (!Array.isArray(params)) return '';
+          let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel || ''}</b>`;
+          params.forEach((p) => {
+            if (p.value > 0)
+              html += `<br/>${p.marker}${p.seriesName}: ${p.value}h`;
+          });
+          html += '</div>';
+          return html;
+        },
+      },
+      grid: { left: 0, right: 0, top: 4, bottom: 24, containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        axisLabel: {
+          fontSize: 9,
+          color: '#9ca3af',
+          rotate: periodView === 'month' ? 35 : 0,
+        },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { fontSize: 9, color: '#9ca3af' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
       series: [
         {
+          name: 'Bike',
           type: 'bar',
-          data: keys.map((k, i) => ({ value: hours[i], itemStyle: { color: BUCKET_COLOR[k], borderRadius: [0, 6, 6, 0] } })),
-          barMaxWidth: 26,
+          stack: 'd',
+          barMaxWidth: 14,
+          itemStyle: { color: '#3b82f6', borderRadius: 0 },
+          data: aggregates.dailyHoursBike,
+        },
+        {
+          name: 'Run',
+          type: 'bar',
+          stack: 'd',
+          barMaxWidth: 14,
+          itemStyle: { color: '#f97316', borderRadius: 0 },
+          data: aggregates.dailyHoursRun,
+        },
+        {
+          name: 'Swim',
+          type: 'bar',
+          stack: 'd',
+          barMaxWidth: 14,
+          itemStyle: { color: '#06b6d4', borderRadius: 0 },
+          data: aggregates.dailyHoursSwim,
         },
       ],
     };
-  }, [aggregates.bySportSec]);
+  }, [aggregates.dayKeys, aggregates.dailyHoursBike, aggregates.dailyHoursRun, aggregates.dailyHoursSwim, periodView]);
 
-  const dailyLineOption = useMemo(() => {
-    if (!aggregates.dayKeys.length) return emptyChart('Daily time', 'No range');
-    const labels = aggregates.dayKeys.map((k) => {
-      const [, m, d] = k.split('-');
-      return `${d}.${m}.`;
-    });
+  // Weekly trend chart option
+  const weeklyTrendOption = useMemo(() => {
+    if (!weeklyTrend.length) return null;
+    const labels = weeklyTrend.map((w) => w.label);
+    const tssData = weeklyTrend.map((w) => ({
+      value: w.tss,
+      itemStyle: {
+        color: w.isCurrent ? '#1d4ed8' : '#3b82f6',
+        borderRadius: [2, 2, 0, 0],
+      },
+    }));
+    const hoursData = weeklyTrend.map((w) => w.hours);
+
     return {
       backgroundColor: 'transparent',
-      title: { text: 'Daily time (h)', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: { trigger: 'axis' },
-      grid: { left: '10%', right: '6%', bottom: periodView === 'month' ? '20%' : '12%', top: '22%', containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter(params) {
+          if (!Array.isArray(params)) return '';
+          const tssP = params.find((p) => p.seriesName === 'TSS');
+          const hrP = params.find((p) => p.seriesName === 'Hours');
+          const label = params[0]?.axisValueLabel || '';
+          let html = `<div style="font-size:11px"><b>${label}</b>`;
+          if (tssP) html += `<br/>${tssP.marker}TSS: ${tssP.value}`;
+          if (hrP) html += `<br/>${hrP.marker}Volume: ${hrP.value}h`;
+          html += '</div>';
+          return html;
+        },
+      },
+      grid: { left: 36, right: 36, top: 8, bottom: 28, containLabel: false },
       xAxis: {
         type: 'category',
         data: labels,
-        axisLabel: { color: '#6b7280', rotate: periodView === 'month' ? 38 : 0, fontSize: 10 },
+        axisLabel: { fontSize: 9, color: '#9ca3af', rotate: 0 },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
       },
-      yAxis: { type: 'value', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
+      yAxis: [
+        {
+          type: 'value',
+          name: 'TSS',
+          nameTextStyle: { fontSize: 8, color: '#9ca3af' },
+          axisLabel: { fontSize: 8, color: '#9ca3af' },
+          splitLine: { lineStyle: { color: '#f3f4f6' } },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+        {
+          type: 'value',
+          name: 'h',
+          nameTextStyle: { fontSize: 8, color: '#9ca3af' },
+          axisLabel: { fontSize: 8, color: '#9ca3af' },
+          splitLine: { show: false },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+      ],
       series: [
         {
+          name: 'TSS',
+          type: 'bar',
+          yAxisIndex: 0,
+          barMaxWidth: 18,
+          data: tssData,
+        },
+        {
+          name: 'Hours',
           type: 'line',
+          yAxisIndex: 1,
           smooth: true,
-          data: aggregates.dailyHours,
-          areaStyle: { color: 'rgba(118, 126, 181, 0.18)' },
-          lineStyle: { color: '#767EB5', width: 2 },
           symbol: 'circle',
-          symbolSize: 5,
-          itemStyle: { color: '#767EB5' },
+          symbolSize: 4,
+          lineStyle: { color: '#f97316', width: 2 },
+          itemStyle: { color: '#f97316' },
+          data: hoursData,
         },
       ],
     };
-  }, [aggregates.dayKeys, aggregates.dailyHours, periodView]);
+  }, [weeklyTrend]);
 
-  const dailyCountOption = useMemo(() => {
-    if (!aggregates.dayKeys.length) return emptyChart('Activities per day', 'No range');
-    const labels = aggregates.dayKeys.map((k) => {
-      const [, m, d] = k.split('-');
-      return `${d}.${m}.`;
-    });
+  // Intensity donut option
+  const intensityDonutOption = useMemo(() => {
+    const { intensityEasySec, intensityModSec, intensityHardSec } = aggregates;
+    const total = intensityEasySec + intensityModSec + intensityHardSec;
+    if (total <= 0) return null;
     return {
       backgroundColor: 'transparent',
-      title: { text: 'Activities per day', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: { trigger: 'axis' },
-      grid: { left: '8%', right: '6%', bottom: periodView === 'month' ? '20%' : '12%', top: '22%', containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLabel: { color: '#6b7280', rotate: periodView === 'month' ? 38 : 0, fontSize: 10 },
-      },
-      yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
-      series: [{ type: 'bar', data: aggregates.dailyCounts, itemStyle: { color: '#a5b4fc', borderRadius: [4, 4, 0, 0] } }],
-    };
-  }, [aggregates.dayKeys, aggregates.dailyCounts, periodView]);
-
-  const tssPieOption = useMemo(() => {
-    const data = PROFILE_SPORTS.map((ps) => ({
-      name: SPORT_LABEL[ps],
-      value: Math.round(aggregates.tssByProfileSport[ps] || 0),
-    })).filter((d) => d.value > 0);
-    if (data.length === 0) return emptyChart('TSS by sport', 'No TSS data');
-    return {
-      backgroundColor: 'transparent',
-      title: { text: 'TSS by sport', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      legend: { bottom: 0, textStyle: { color: '#6b7280', fontSize: 10 } },
+      tooltip: { formatter: '{b}: {d}%' },
       series: [
         {
           type: 'pie',
-          radius: ['38%', '62%'],
-          center: ['50%', '52%'],
-          data,
-          label: { color: '#374151', fontSize: 10 },
-          itemStyle: {
-            borderRadius: 6,
-            borderColor: 'rgba(255,255,255,0.8)',
-            borderWidth: 2,
-          },
-          color: [SPORT_STACK_COLOR.cycling, SPORT_STACK_COLOR.running, SPORT_STACK_COLOR.swimming],
+          radius: ['55%', '85%'],
+          center: ['50%', '50%'],
+          data: [
+            { value: intensityEasySec, name: 'Easy', itemStyle: { color: '#3b82f6' } },
+            { value: intensityModSec, name: 'Moderate', itemStyle: { color: '#f97316' } },
+            { value: intensityHardSec, name: 'Hard', itemStyle: { color: '#ef4444' } },
+          ],
+          label: { show: true, formatter: '{b}\n{d}%', fontSize: 10 },
+          labelLine: { length: 6, length2: 4 },
         },
       ],
     };
-  }, [aggregates.tssByProfileSport]);
+  }, [aggregates]);
 
-  const distBarOption = useMemo(() => {
-    const data = PROFILE_SPORTS.map((ps) => ({
-      name: SPORT_LABEL[ps],
-      value: Number(((aggregates.distByProfileSport[ps] || 0) / 1000).toFixed(1)),
-    })).filter((d) => d.value > 0);
-    if (data.length === 0) return emptyChart('Distance by sport', 'No distance');
+  // Zone horizontal bar chart options (power and HR) for Zones tab
+  const zoneBarOptions = useMemo(() => {
+    const isAll = zoneSport === 'all';
+    const powerSec = isAll ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {});
+    const hrSec = isAll ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {});
+
+    const powerTotal = ZONE_KEYS.reduce((s, k) => s + (powerSec[k] || 0), 0);
+    const hrTotal = ZONE_KEYS.reduce((s, k) => s + (hrSec[k] || 0), 0);
+
+    const makeOption = (secMap, total, fills) => {
+      if (total <= 0) return null;
+      // y-axis data reversed so Z5 is top, Z1 is bottom
+      const reversed = [...ZONE_KEYS].reverse(); // zone5 -> zone1
+      const reversedFills = [...fills].reverse();
+      return {
+        backgroundColor: 'transparent',
+        tooltip: {
+          trigger: 'axis',
+          formatter(params) {
+            if (!Array.isArray(params) || !params[0]) return '';
+            const p = params[0];
+            const sec = secMap[reversed[params[0].dataIndex]] || 0;
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+            return `<div style="font-size:11px"><b>${p.name}</b><br/>${p.value}% · ${timeStr}</div>`;
+          },
+        },
+        grid: { left: 60, right: 30, top: 4, bottom: 4, containLabel: false },
+        xAxis: {
+          type: 'value',
+          max: 100,
+          axisLabel: { formatter: (v) => v + '%', fontSize: 9, color: '#9ca3af' },
+          splitLine: { lineStyle: { color: '#f3f4f6' } },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+        yAxis: {
+          type: 'category',
+          data: reversed.map((_, i) => `Z${5 - i}`),
+          axisLabel: { fontSize: 9, color: '#9ca3af' },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+        series: [
+          {
+            type: 'bar',
+            barMaxWidth: 16,
+            data: reversed.map((zk, i) => ({
+              value: total > 0 ? +(((secMap[zk] || 0) / total) * 100).toFixed(1) : 0,
+              itemStyle: { color: reversedFills[i], borderRadius: [0, 4, 4, 0] },
+            })),
+            label: {
+              show: true,
+              position: 'right',
+              fontSize: 9,
+              color: '#6b7280',
+              formatter: (v) => (v.value > 0 ? v.value + '%' : ''),
+            },
+          },
+        ],
+      };
+    };
+
+    return {
+      power: makeOption(powerSec, powerTotal, POWER_ZONE_FILL),
+      hr: makeOption(hrSec, hrTotal, HR_ZONE_FILL),
+    };
+  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
+
+  // Activity effort scatter / timeline option
+  const effortTimelineOption = useMemo(() => {
+    if (filtered.length < 3 || filtered.length > 50) return null;
+
+    const data = filtered.map((act) => {
+      const raw = act.date || act.timestamp || act.startDate;
+      const d = raw ? new Date(raw) : null;
+      if (!d || Number.isNaN(d.getTime())) return null;
+      const tss = computeTssForAct(act, userProfile);
+      const sec = actDurationSec(act);
+      const yVal = tss > 0 ? tss : sec > 0 ? +(sec / 3600).toFixed(2) : 0;
+      const bucket = sportBucket(act.sport);
+      const dist = Number(act.distance || 0);
+      const size = dist > 0 ? Math.min(20, Math.max(6, Math.round(dist / 2000))) : 8;
+      return {
+        value: [d.getTime(), yVal],
+        symbolSize: size,
+        itemStyle: { color: BUCKET_COLOR[bucket] || '#9ca3af', opacity: 0.85 },
+        _act: act,
+        _tss: tss,
+        _sec: sec,
+      };
+    }).filter(Boolean);
+
+    if (!data.length) return null;
+
+    const hasTss = data.some((d) => d._tss > 0);
+
     return {
       backgroundColor: 'transparent',
-      title: { text: 'Distance by sport (km)', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: { trigger: 'axis' },
-      grid: { left: '12%', right: '8%', bottom: '12%', top: '22%', containLabel: true },
-      xAxis: { type: 'category', data: data.map((d) => d.name), axisLabel: { color: '#374151' } },
-      yAxis: { type: 'value', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
+      tooltip: {
+        trigger: 'item',
+        formatter(params) {
+          const raw = params.data?._act;
+          if (!raw) return '';
+          const tss = params.data._tss;
+          const sec = params.data._sec;
+          const h = Math.floor(sec / 3600);
+          const m = Math.floor((sec % 3600) / 60);
+          const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          const dateStr = getLocalDateString(raw.date || raw.timestamp || raw.startDate) || '';
+          let html = `<div style="font-size:11px"><b>${raw.title || 'Activity'}</b><br/>${dateStr}`;
+          if (tss > 0) html += `<br/>TSS: ${Math.round(tss)}`;
+          html += `<br/>${timeStr}`;
+          html += '</div>';
+          return html;
+        },
+      },
+      grid: { left: 40, right: 10, top: 8, bottom: 28, containLabel: false },
+      xAxis: {
+        type: 'time',
+        axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => {
+          const d = new Date(v);
+          return `${d.getDate()}.${d.getMonth() + 1}`;
+        }},
+        splitLine: { show: false },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        name: hasTss ? 'TSS' : 'h',
+        nameTextStyle: { fontSize: 8, color: '#9ca3af' },
+        axisLabel: { fontSize: 9, color: '#9ca3af' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
       series: [
         {
-          type: 'bar',
-          data: data.map((d) => {
-            const psKey = PROFILE_SPORTS.find((ps) => SPORT_LABEL[ps] === d.name) || 'cycling';
-            return {
-              value: d.value,
-              itemStyle: {
-                color: SPORT_STACK_COLOR[psKey],
-                borderRadius: [6, 6, 0, 0],
-              },
-            };
-          }),
-          barMaxWidth: 36,
+          type: 'scatter',
+          data,
         },
       ],
     };
-  }, [aggregates.distByProfileSport]);
+  }, [filtered, userProfile]);
 
-  const powerZonesStackedOption = useMemo(() => {
-    if (!aggregates.zoneSportsWithPower.length) {
-      return emptyChart(
-        'Time in power / pace zones',
-        userProfile ? 'Add zones in profile or record avg power/pace' : 'Load profile for zones'
-      );
-    }
-    const series = aggregates.zoneSportsWithPower.map((ps) => ({
-      name: SPORT_LABEL[ps],
-      type: 'bar',
-      stack: 'zones',
-      emphasis: { focus: 'series' },
-      itemStyle: { color: SPORT_STACK_COLOR[ps], borderRadius: 2 },
-      data: ZONE_KEYS.map((zk) => Number((aggregates.powerZoneSec[ps][zk] / 3600).toFixed(2))),
-    }));
-    return {
-      backgroundColor: 'transparent',
-      title: {
-        text: 'Time in power / pace zones (h)',
-        left: 'center',
-        top: 8,
-        textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 },
-      },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter(params) {
-          if (!Array.isArray(params)) return '';
-          let h = params[0]?.axisValueLabel || '';
-          params.forEach((p) => {
-            if (p.value > 0) h += `<br/>${p.marker}${p.seriesName}: ${p.value} h`;
-          });
-          return h;
-        },
-      },
-      legend: { bottom: 0, textStyle: { fontSize: 10, color: '#6b7280' } },
-      grid: { left: '10%', right: '8%', bottom: aggregates.zoneSportsWithPower.length > 1 ? '18%' : '14%', top: '22%', containLabel: true },
-      xAxis: { type: 'category', data: ZONE_LABELS, axisLabel: { color: '#374151', fontWeight: 600 } },
-      yAxis: { type: 'value', name: 'h', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
-      series,
-    };
-  }, [aggregates.zoneSportsWithPower, aggregates.powerZoneSec, userProfile]);
-
-  const hrZonesStackedOption = useMemo(() => {
-    if (!aggregates.zoneSportsWithHr.length) {
-      return emptyChart('Time in HR zones', userProfile ? 'Add HR zones or record average HR' : 'Load profile for zones');
-    }
-    const series = aggregates.zoneSportsWithHr.map((ps) => ({
-      name: SPORT_LABEL[ps],
-      type: 'bar',
-      stack: 'hr',
-      emphasis: { focus: 'series' },
-      itemStyle: { color: SPORT_STACK_COLOR[ps], opacity: 0.88, borderRadius: 2 },
-      data: ZONE_KEYS.map((zk) => Number((aggregates.hrZoneSec[ps][zk] / 3600).toFixed(2))),
-    }));
-    return {
-      backgroundColor: 'transparent',
-      title: { text: 'Time in HR zones (h)', left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter(params) {
-          if (!Array.isArray(params)) return '';
-          let h = params[0]?.axisValueLabel || '';
-          params.forEach((p) => {
-            if (p.value > 0) h += `<br/>${p.marker}${p.seriesName}: ${p.value} h`;
-          });
-          return h;
-        },
-      },
-      legend: { bottom: 0, textStyle: { fontSize: 10, color: '#6b7280' } },
-      grid: { left: '10%', right: '8%', bottom: aggregates.zoneSportsWithHr.length > 1 ? '18%' : '14%', top: '22%', containLabel: true },
-      xAxis: { type: 'category', data: ZONE_LABELS, axisLabel: { color: '#374151', fontWeight: 600 } },
-      yAxis: { type: 'value', name: 'h', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
-      series,
-    };
-  }, [aggregates.zoneSportsWithHr, aggregates.hrZoneSec, userProfile]);
-
-  const powerZonesBySportOption = (ps) => {
-    const zonesObj = userProfile?.powerZones?.[ps] || {};
-    if (!hasZoneDefinitions(zonesObj)) {
-      return emptyChart(`Power/Pace zones - ${SPORT_LABEL[ps]}`, 'No zone definitions');
-    }
-
-    const secMap = aggregates.powerZoneSec?.[ps] || {};
-    const totalSec = ZONE_KEYS.reduce((sum, zk) => sum + (secMap[zk] || 0), 0);
-    if (totalSec <= 0) return emptyChart(`Power/Pace zones - ${SPORT_LABEL[ps]}`, 'No time in zones');
-
-    const data = ZONE_KEYS.map((zk, zi) => {
-      const sec = secMap[zk] || 0;
-      const hours = Number((sec / 3600).toFixed(2));
-      const percent = totalSec > 0 ? (sec / totalSec) * 100 : 0;
-      return { value: hours, percent, itemStyle: { color: POWER_ZONE_FILL[zi] } };
-    });
-
-    return {
-      backgroundColor: 'transparent',
-      title: { text: `Power/Pace zones - ${SPORT_LABEL[ps]}`, left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter(params) {
-          if (!Array.isArray(params) || !params[0]) return '';
-          const p = params[0];
-          const zone = p.axisValueLabel || p.name || '';
-          const h = p.value ?? 0;
-          const pct = p.data?.percent ?? 0;
-          return `${zone}<br/>Time: ${h} h<br/>${pct.toFixed(1)}%`;
-        },
-      },
-      grid: { left: '12%', right: '8%', bottom: '14%', top: '22%', containLabel: true },
-      xAxis: { type: 'category', data: ZONE_LABELS, axisLabel: { color: '#374151', fontWeight: 600 } },
-      yAxis: { type: 'value', name: 'h', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
-      series: [{ type: 'bar', data, barMaxWidth: 26, itemStyle: { borderRadius: [6, 6, 0, 0] } }],
-    };
-  };
-
-  const hrZonesBySportOption = (ps) => {
-    const zonesObj = userProfile?.heartRateZones?.[ps] || {};
-    if (!hasZoneDefinitions(zonesObj)) {
-      return emptyChart(`HR zones - ${SPORT_LABEL[ps]}`, 'No zone definitions');
-    }
-
-    const secMap = aggregates.hrZoneSec?.[ps] || {};
-    const totalSec = ZONE_KEYS.reduce((sum, zk) => sum + (secMap[zk] || 0), 0);
-    if (totalSec <= 0) return emptyChart(`HR zones - ${SPORT_LABEL[ps]}`, 'No time in zones');
-
-    const data = ZONE_KEYS.map((zk, zi) => {
-      const sec = secMap[zk] || 0;
-      const hours = Number((sec / 3600).toFixed(2));
-      const percent = totalSec > 0 ? (sec / totalSec) * 100 : 0;
-      return { value: hours, percent, itemStyle: { color: HR_ZONE_FILL[zi] } };
-    });
-
-    return {
-      backgroundColor: 'transparent',
-      title: { text: `HR zones - ${SPORT_LABEL[ps]}`, left: 'center', top: 8, textStyle: { fontSize: 12, color: '#6b7280', fontWeight: 600 } },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter(params) {
-          if (!Array.isArray(params) || !params[0]) return '';
-          const p = params[0];
-          const zone = p.axisValueLabel || p.name || '';
-          const h = p.value ?? 0;
-          const pct = p.data?.percent ?? 0;
-          return `${zone}<br/>Time: ${h} h<br/>${pct.toFixed(1)}%`;
-        },
-      },
-      grid: { left: '12%', right: '8%', bottom: '14%', top: '22%', containLabel: true },
-      xAxis: { type: 'category', data: ZONE_LABELS, axisLabel: { color: '#374151', fontWeight: 600 } },
-      yAxis: { type: 'value', name: 'h', axisLabel: { color: '#6b7280' }, splitLine: { lineStyle: { color: 'rgba(229,231,235,0.7)' } } },
-      series: [{ type: 'bar', data, barMaxWidth: 26, itemStyle: { borderRadius: [6, 6, 0, 0] } }],
-    };
-  };
+  // --- Zone polarization computation ---
+  const zonePolarization = useMemo(() => {
+    const isAll = zoneSport === 'all';
+    const powerSec = isAll ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {});
+    const hrSec = isAll ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {});
+    // Use power if available, else HR
+    const secMap =
+      ZONE_KEYS.some((zk) => (powerSec[zk] || 0) > 0) ? powerSec : hrSec;
+    const totalSec = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
+    if (totalSec <= 0) return null;
+    const easyPct = ((secMap.zone1 || 0) + (secMap.zone2 || 0)) / totalSec * 100;
+    const midPct = (secMap.zone3 || 0) / totalSec * 100;
+    const hardPct = ((secMap.zone4 || 0) + (secMap.zone5 || 0)) / totalSec * 100;
+    let badge = { label: 'Balanced', color: 'bg-blue-100 text-blue-800' };
+    if (easyPct > 75 && hardPct >= 5) badge = { label: 'Polarized', color: 'bg-green-100 text-green-800' };
+    else if (midPct > 40) badge = { label: 'High threshold load', color: 'bg-yellow-100 text-yellow-800' };
+    return { easyPct, midPct, hardPct, badge };
+  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
 
   if (!period?.label) return null;
 
-  const cardCls =
-    'min-w-0 px-2 py-1.5 sm:px-3 sm:py-3 rounded-lg sm:rounded-xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-sm';
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
-  const chartWrap = 'bg-white/5 rounded-xl border border-white/10 p-2 sm:p-3 min-h-[240px]';
 
   const fmtActDate = (act) => {
     const raw = act.date || act.timestamp || act.startDate;
     if (!raw) return '';
     try {
-      return new Date(raw).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      return new Date(raw).toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
     } catch {
       return '';
     }
   };
 
-  const sportDotClass = (sport) => {
-    const b = sportBucket(sport);
-    if (b === 'run') return 'bg-orange-500';
-    if (b === 'swim') return 'bg-cyan-500';
-    if (b === 'bike') return 'bg-blue-500';
-    return 'bg-gray-400';
+  const sportIconSrc = (bucket) => {
+    if (bucket === 'bike') return '/icon/bike.svg';
+    if (bucket === 'run') return '/icon/run.svg';
+    if (bucket === 'swim') return '/icon/swim.svg';
+    return null;
   };
 
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'zones', label: 'Zones' },
+    { id: 'activities', label: 'Activities' },
+  ];
+
   return (
-    <div
-      className={`w-full ${isMobile ? 'mt-2' : 'mt-3 sm:mt-4 md:mt-5'} space-y-4 sm:space-y-5`}
-    >
-      <div className="bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-white/20 shadow-md p-3 sm:p-4 md:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="w-full mt-3 space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div>
-            <h2 className="text-sm sm:text-base md:text-lg font-bold text-gray-900">Period summary</h2>
-            <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+            <h2 className="text-sm sm:text-base font-bold text-gray-900">Period summary</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
               {period.label}
-              <span className="text-gray-400 ml-1">({periodView === 'week' ? 'week' : 'month'})</span>
+              <span className="text-gray-400 ml-1">
+                ({periodView === 'week' ? 'week' : 'month'})
+              </span>
             </p>
           </div>
-          <div className="text-xs text-gray-500 font-medium">
+          <span className="text-xs text-gray-400 font-medium">
             {aggregates.count} {aggregates.count === 1 ? 'activity' : 'activities'}
-          </div>
+          </span>
         </div>
 
-        <p className="text-[10px] sm:text-xs text-gray-500 leading-relaxed border border-white/15 rounded-lg px-2.5 py-2 bg-white/5">
-          Zone times are <span className="font-semibold text-gray-600">estimates</span>: each activity is counted using its
-          average power, pace, or HR against your profile zones (not second-by-second files).
-        </p>
+        {/* Tab bar */}
+        <div className="flex gap-1.5 mb-5 flex-wrap">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                activeTab === t.id
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {weekComparison && (
-          <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-sm p-3 sm:p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm sm:text-base font-bold text-gray-900">Weekly progress</h3>
-              <div className="text-xs text-gray-600">
-                Prev: <span className="font-semibold text-gray-900">{Math.round(weekComparison.prevTss || 0)} TSS</span>
-                <span className="text-gray-400 mx-1">•</span>
-                This: <span className="font-semibold text-gray-900">{Math.round(aggregates.totalTss || 0)} TSS</span>
-              </div>
-            </div>
-
-            <div className={`mt-3 grid gap-1.5 sm:gap-2 ${isMobile ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'}`}>
-              <div className={cardCls}>
-                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Current TSS</div>
-                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 tabular-nums">{Math.round(aggregates.totalTss || 0)} </div>
-              </div>
-              <div className={cardCls}>
-                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Previous TSS</div>
-                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 tabular-nums">{Math.round(weekComparison.prevTss || 0)} </div>
-              </div>
-              <div className={cardCls}>
-                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Delta</div>
-                <div
-                  className={`text-xs sm:text-base font-bold mt-0.5 sm:mt-1 tabular-nums ${
-                    weekComparison.deltaTss >= 0 ? 'text-greenos' : 'text-red-600'
-                  }`}
-                >
-                  {weekComparison.deltaTss >= 0 ? '+' : ''}
-                  {Math.round(weekComparison.deltaTss || 0)}
-                </div>
-              </div>
-              <div className={cardCls}>
-                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Overload</div>
-                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1">
-                  {weekComparison.overload ? (
-                    <span className="text-red-600">Risk</span>
-                  ) : (
-                    <span className="text-greenos">OK</span>
+        {/* ===================== OVERVIEW TAB ===================== */}
+        {activeTab === 'overview' && (
+          <div className="space-y-5">
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {[
+                {
+                  label: 'Total time',
+                  value: formatDuration(aggregates.totalSec),
+                },
+                {
+                  label: 'Distance',
+                  value:
+                    aggregates.totalDist > 0
+                      ? formatDistance(aggregates.totalDist, user)
+                      : '—',
+                },
+                {
+                  label: 'Total TSS',
+                  value:
+                    aggregates.totalTss > 0
+                      ? Math.round(aggregates.totalTss)
+                      : '—',
+                },
+                {
+                  label: 'Activities',
+                  value: aggregates.count,
+                },
+                {
+                  label: 'Avg / activity',
+                  value:
+                    aggregates.count > 0
+                      ? formatDuration(Math.round(aggregates.totalSec / aggregates.count))
+                      : '—',
+                },
+                {
+                  label: 'Peak TSS',
+                  value: aggregates.maxTssAct
+                    ? Math.round(
+                        Number(
+                          aggregates.maxTssAct.tss ||
+                            aggregates.maxTssAct.TSS ||
+                            aggregates.maxTssAct.totalTSS ||
+                            0
+                        )
+                      )
+                    : '—',
+                  sub: aggregates.maxTssAct?.title || null,
+                },
+              ].map((card) => (
+                <div key={card.label} className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">
+                    {card.label}
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 mt-1 leading-tight tabular-nums">
+                    {card.value}
+                  </div>
+                  {card.sub && (
+                    <div className="text-[10px] text-gray-400 truncate mt-0.5">{card.sub}</div>
                   )}
                 </div>
-              </div>
+              ))}
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {['cycling', 'running', 'swimming'].map((ps) => {
-                const cur = aggregates.distByProfileSport?.[ps] || 0;
-                const prev = weekComparison.prevDistByProfileSport?.[ps] || 0;
-                const label = SPORT_LABEL[ps];
-                const dotCls = sportDotClass(ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim');
-                return (
-                  <div key={ps} className="min-w-0 rounded-xl border border-white/20 bg-white/5 p-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${dotCls}`} />
-                      <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">{label} mileage</div>
-                    </div>
-                    <div className="text-sm sm:text-base font-bold text-gray-900 mt-1 truncate">
-                      {cur > 0 ? formatDistance(cur, user) : '—'}
-                    </div>
-                    <div className="text-[10px] text-gray-500">
-                      Prev: {prev > 0 ? formatDistance(prev, user) : '—'}
+            {/* Performance Management Chart */}
+            {Chart && pmcOption && pmc && pmc.length > 0 && (() => {
+              const lastEntry = pmc[pmc.length - 1];
+              const tsbColor = lastEntry.tsb >= -10 ? 'text-green-600' : lastEntry.tsb >= -25 ? 'text-yellow-600' : 'text-red-600';
+              return (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Training Load (CTL / ATL / TSB)
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <Chart
+                      option={pmcOption}
+                      style={{ height: 180, width: '100%' }}
+                      notMerge
+                    />
+                    <div className="flex gap-3 mt-2 flex-wrap">
+                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">CTL (Fitness)</div>
+                        <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{lastEntry.ctl}</div>
+                      </div>
+                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">ATL (Fatigue)</div>
+                        <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{lastEntry.atl}</div>
+                      </div>
+                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">TSB (Form)</div>
+                        <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })()}
+
+            {/* Weekly comparison */}
+            {weekComparison && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                      Current TSS
+                    </div>
+                    <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
+                      {Math.round(aggregates.totalTss || 0)}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                      Previous TSS
+                    </div>
+                    <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
+                      {Math.round(weekComparison.prevTss || 0)}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                      Delta
+                    </div>
+                    <div
+                      className={`text-sm font-bold mt-1 tabular-nums ${
+                        weekComparison.deltaTss >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}
+                    >
+                      {weekComparison.deltaTss >= 0 ? '+' : ''}
+                      {Math.round(weekComparison.deltaTss || 0)}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                      Overload risk
+                    </div>
+                    <div className="text-sm font-bold mt-1">
+                      {weekComparison.overload ? (
+                        <span className="text-red-600">Risk</span>
+                      ) : (
+                        <span className="text-green-600">OK</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sport mileage comparison */}
+                <div className="grid grid-cols-3 gap-2">
+                  {['cycling', 'running', 'swimming'].map((ps) => {
+                    const cur = aggregates.distByProfileSport?.[ps] || 0;
+                    const prev = weekComparison.prevDistByProfileSport?.[ps] || 0;
+                    const bucket =
+                      ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                    return (
+                      <div key={ps} className="bg-gray-50 rounded-xl p-3">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <img
+                            src={`/icon/${bucket}.svg`}
+                            alt={bucket}
+                            className="w-4 h-4 object-contain"
+                          />
+                          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                            {SPORT_LABEL[ps]}
+                          </span>
+                        </div>
+                        <div className="text-sm font-bold text-gray-900 truncate">
+                          {cur > 0 ? formatDistance(cur, user) : '—'}
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">
+                          Prev: {prev > 0 ? formatDistance(prev, user) : '—'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Sport split + Intensity distribution side by side */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Sport split */}
+              {aggregates.totalSec > 0 && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    Sport split
+                  </div>
+                  <div className="space-y-2.5">
+                    {(['bike', 'run', 'swim', 'other']).map((b) => {
+                      const sec = aggregates.bySportSec[b] || 0;
+                      if (sec <= 0) return null;
+                      const pct = (sec / aggregates.totalSec) * 100;
+                      const h = Math.floor(sec / 3600);
+                      const m = Math.floor((sec % 3600) / 60);
+                      const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                      const sportBucketLabel = { bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
+                      const icon = sportIconSrc(b);
+                      const psKey = b === 'bike' ? 'cycling' : b === 'run' ? 'running' : b === 'swim' ? 'swimming' : null;
+                      const dist = psKey ? (aggregates.distByProfileSport?.[psKey] || 0) : 0;
+                      return (
+                        <div key={b} className="flex items-center gap-2">
+                          <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+                            {icon ? (
+                              <img src={icon} alt={b} className="w-4 h-4 object-contain" />
+                            ) : (
+                              <span
+                                className="w-3 h-3 rounded-full block"
+                                style={{ backgroundColor: BUCKET_COLOR[b] }}
+                              />
+                            )}
+                          </div>
+                          <span className="w-8 text-xs text-gray-500 shrink-0">
+                            {sportBucketLabel[b]}
+                          </span>
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${pct}%`, backgroundColor: BUCKET_COLOR[b] }}
+                            />
+                          </div>
+                          <span className="w-10 text-[11px] font-semibold text-gray-700 shrink-0 text-right">
+                            {timeStr}
+                          </span>
+                          {dist > 0 && (
+                            <span className="w-14 text-[10px] text-gray-400 shrink-0 text-right">
+                              {formatDistance(dist, user)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Intensity distribution donut */}
+              {Chart && intensityDonutOption && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Intensity distribution
+                  </div>
+                  <Chart
+                    option={intensityDonutOption}
+                    style={{ height: 160, width: '100%' }}
+                    notMerge
+                  />
+                </div>
+              )}
             </div>
+
+            {/* Daily load stacked bar */}
+            {aggregates.dayKeys.length > 0 && Chart && dailyStackedOption && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Daily training load (h)
+                </div>
+                <Chart
+                  option={dailyStackedOption}
+                  style={{ height: 180, width: '100%' }}
+                  notMerge
+                />
+              </div>
+            )}
+
+            {/* Load trend — last 12 weeks */}
+            {Chart && weeklyTrendOption && weeklyTrend.length >= 2 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Load trend (last 12 weeks)
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="flex gap-3 mb-1 text-[10px] text-gray-400">
+                    <span>
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1" style={{ backgroundColor: '#3b82f6' }} />
+                      TSS (bars)
+                    </span>
+                    <span>
+                      <span className="inline-block w-2.5 h-2.5 rounded-full mr-1" style={{ backgroundColor: '#f97316' }} />
+                      Volume h (line)
+                    </span>
+                    <span className="text-[9px] text-gray-300">
+                      Current period highlighted
+                    </span>
+                  </div>
+                  <Chart
+                    option={weeklyTrendOption}
+                    style={{ height: 180, width: '100%' }}
+                    notMerge
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        <div
-          className={
-            isMobile
-              ? 'grid grid-cols-3 gap-1.5'
-              : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,8.5rem),1fr))]'
-          }
-        >
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Total time</div>
-            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">{formatDuration(aggregates.totalSec)}</div>
-          </div>
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Distance</div>
-            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">
-              {aggregates.totalDist > 0 ? formatDistance(aggregates.totalDist, user) : '—'}
-            </div>
-          </div>
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Total TSS</div>
-            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight tabular-nums">
-              {aggregates.totalTss > 0 ? Math.round(aggregates.totalTss) : '—'}
-            </div>
-          </div>
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Avg / activity</div>
-            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">
-              {aggregates.count > 0 ? formatDuration(Math.round(aggregates.totalSec / aggregates.count)) : '—'}
-            </div>
-          </div>
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Longest</div>
-            <div className="text-[11px] sm:text-sm font-bold text-gray-900 mt-0.5 sm:mt-1 leading-snug line-clamp-2">
-              {aggregates.maxDurAct ? (
-                <>
-                  {formatDuration(actDurationSec(aggregates.maxDurAct))}
-                  <span className="block text-[8px] sm:text-[10px] font-normal text-gray-500 truncate">{aggregates.maxDurAct.title}</span>
-                </>
-              ) : (
-                '—'
+        {/* ===================== ZONES TAB ===================== */}
+        {activeTab === 'zones' && (
+          <div className="space-y-4">
+            {/* Disclaimer */}
+            <p className="text-[10px] text-gray-400 leading-relaxed border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
+              Zone times are <span className="font-semibold text-gray-500">estimates</span>: each
+              activity is counted using its average power, pace, or HR against your profile zones
+              (not second-by-second files).
+            </p>
+
+            {/* Sport toggle — always show All + all 3 sports */}
+            {(() => {
+              const zoneSportOptions = [
+                { id: 'all', label: 'All', bucket: null },
+                { id: 'cycling', label: 'Bike', bucket: 'bike' },
+                { id: 'running', label: 'Run', bucket: 'run' },
+                { id: 'swimming', label: 'Swim', bucket: 'swim' },
+              ];
+              return (
+                <div className="flex gap-1.5 flex-wrap">
+                  {zoneSportOptions.map((opt) => {
+                    const hasData = opt.id === 'all'
+                      ? (ZONE_KEYS.some(zk => (aggregates.powerZoneSecAll?.[zk] || 0) > 0 || (aggregates.hrZoneSecAll?.[zk] || 0) > 0))
+                      : (aggregates.zoneSportsWithPower.includes(opt.id) || aggregates.zoneSportsWithHr.includes(opt.id));
+                    const isActive = zoneSport === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setZoneSport(opt.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                          isActive
+                            ? 'bg-gray-900 text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        } ${!hasData && !isActive ? 'opacity-50' : ''}`}
+                      >
+                        {opt.bucket ? (
+                          <img
+                            src={`/icon/${opt.bucket}.svg`}
+                            alt={opt.bucket}
+                            className={`w-3.5 h-3.5 object-contain ${isActive ? 'invert' : ''}`}
+                          />
+                        ) : (
+                          <span className="text-xs leading-none">⊕</span>
+                        )}
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Zone distribution horizontal bar charts */}
+            {(zoneBarOptions.power || zoneBarOptions.hr) && Chart && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {zoneBarOptions.power && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-600 mb-2">
+                      Power / Pace
+                    </div>
+                    <Chart
+                      option={zoneBarOptions.power}
+                      style={{ height: 130, width: '100%' }}
+                      notMerge
+                    />
+                  </div>
+                )}
+                {zoneBarOptions.hr && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-600 mb-2">
+                      Heart Rate
+                    </div>
+                    <Chart
+                      option={zoneBarOptions.hr}
+                      style={{ height: 130, width: '100%' }}
+                      notMerge
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sport breakdown table — only shown in "All" mode */}
+            {zoneSport === 'all' && (() => {
+              const sportRows = [
+                { id: 'cycling', label: 'Bike', bucket: 'bike', isHr: false },
+                { id: 'running', label: 'Run', bucket: 'run', isHr: false },
+                { id: 'swimming', label: 'Swim', bucket: 'swim', isHr: false },
+              ].map(row => {
+                const powerTotal = ZONE_KEYS.reduce((s, zk) => s + (aggregates.powerZoneSec?.[row.id]?.[zk] || 0), 0);
+                const hrTotal = ZONE_KEYS.reduce((s, zk) => s + (aggregates.hrZoneSec?.[row.id]?.[zk] || 0), 0);
+                const total = powerTotal > 0 ? powerTotal : hrTotal;
+                return { ...row, total, isPower: powerTotal > 0 };
+              }).filter(row => row.total > 0);
+
+              if (sportRows.length === 0) return null;
+              return (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-gray-600 mb-3">Time by sport</div>
+                  <div className="space-y-2">
+                    {sportRows.map(row => {
+                      const h = Math.floor(row.total / 3600);
+                      const m = Math.floor((row.total % 3600) / 60);
+                      const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                      return (
+                        <div key={row.id} className="flex items-center gap-2">
+                          <img src={`/icon/${row.bucket}.svg`} alt={row.bucket} className="w-4 h-4 object-contain shrink-0" />
+                          <span className="text-xs text-gray-600 font-medium w-10 shrink-0">{row.label}</span>
+                          <span className="text-xs font-bold text-gray-800 tabular-nums">{timeStr}</span>
+                          <span className="text-[10px] text-gray-400 ml-1">({row.isPower ? 'power/pace zones' : 'HR zones'})</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Collapsible zone detail rows */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowZoneDetails((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors mb-3"
+              >
+                {showZoneDetails ? 'Hide details' : 'Show details'}
+                <span className="text-[10px] text-gray-400">
+                  {showZoneDetails ? '▲' : '▼'}
+                </span>
+              </button>
+
+              {showZoneDetails && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-600 mb-3">
+                      Power / Pace zones
+                    </div>
+                    <ZoneRows
+                      secMap={zoneSport === 'all' ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {})}
+                      colors={POWER_ZONE_FILL}
+                      zoneNames={POWER_ZONE_NAMES}
+                    />
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-600 mb-3">Heart Rate zones</div>
+                    <ZoneRows
+                      secMap={zoneSport === 'all' ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {})}
+                      colors={HR_ZONE_FILL}
+                      zoneNames={HR_ZONE_NAMES}
+                    />
+                  </div>
+                </div>
               )}
             </div>
+
+            {/* Polarization badge */}
+            {zonePolarization && (
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                <div className="text-xs font-semibold text-gray-600">Training polarization</div>
+                {/* Stacked bar */}
+                <div className="flex h-3 rounded-full overflow-hidden gap-px">
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${zonePolarization.easyPct}%`,
+                      backgroundColor: '#3b82f6',
+                    }}
+                  />
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${zonePolarization.midPct}%`,
+                      backgroundColor: '#f97316',
+                    }}
+                  />
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${zonePolarization.hardPct}%`,
+                      backgroundColor: '#ef4444',
+                    }}
+                  />
+                </div>
+                <div className="flex gap-3 text-[10px] text-gray-500">
+                  <span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1" />
+                    Easy {zonePolarization.easyPct.toFixed(0)}%
+                  </span>
+                  <span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />
+                    Tempo {zonePolarization.midPct.toFixed(0)}%
+                  </span>
+                  <span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1" />
+                    Hard {zonePolarization.hardPct.toFixed(0)}%
+                  </span>
+                </div>
+                <span
+                  className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${zonePolarization.badge.color}`}
+                >
+                  {zonePolarization.badge.label}
+                </span>
+              </div>
+            )}
           </div>
-          <div className={cardCls}>
-            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Peak TSS</div>
-            <div className="text-[11px] sm:text-sm font-bold text-gray-900 mt-0.5 sm:mt-1 leading-snug line-clamp-2 tabular-nums">
-              {aggregates.maxTssAct ? (
-                <>
-                  {Math.round(Number(aggregates.maxTssAct.tss || aggregates.maxTssAct.TSS || aggregates.maxTssAct.totalTSS || 0))}
-                  <span className="block text-[8px] sm:text-[10px] font-normal text-gray-500 truncate">{aggregates.maxTssAct.title}</span>
-                </>
-              ) : (
-                '—'
-              )}
-            </div>
-          </div>
-        </div>
+        )}
 
-        {aggregates.dayKeys.length > 0 && (
-          <div className={`grid gap-3 sm:gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={sportBarOption} style={{ height: 240, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={dailyLineOption} style={{ height: 240, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={dailyCountOption} style={{ height: 240, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={tssPieOption} style={{ height: 260, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={distBarOption} style={{ height: 240, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={chartWrap}>
-              {Chart ? <Chart option={powerZonesStackedOption} style={{ height: 280, width: '100%' }} notMerge /> : null}
-            </div>
-            <div className={`${chartWrap} ${isMobile ? '' : 'lg:col-span-2'}`}>
-              {Chart ? <Chart option={hrZonesStackedOption} style={{ height: 280, width: '100%' }} notMerge /> : null}
-            </div>
-
-            {/* Per-sport distribution (power/pace) */}
-            {aggregates.zoneSportsWithPower.includes('cycling') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={powerZonesBySportOption('cycling')} style={{ height: 240, width: '100%' }} notMerge /> : null}
-              </div>
-            )}
-            {aggregates.zoneSportsWithPower.includes('running') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={powerZonesBySportOption('running')} style={{ height: 240, width: '100%' }} notMerge /> : null}
-              </div>
-            )}
-            {aggregates.zoneSportsWithPower.includes('swimming') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={powerZonesBySportOption('swimming')} style={{ height: 240, width: '100%' }} notMerge /> : null}
-              </div>
+        {/* ===================== ACTIVITIES TAB ===================== */}
+        {activeTab === 'activities' && (
+          <div className="space-y-5">
+            {byCategory.keys.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-8">
+                No activities in this period
+              </p>
             )}
 
-            {/* Per-sport distribution (HR) */}
-            {aggregates.zoneSportsWithHr.includes('cycling') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={hrZonesBySportOption('cycling')} style={{ height: 240, width: '100%' }} notMerge /> : null}
-              </div>
+            {visibleCategoryKeys.map((catKey) => {
+              const acts = byCategory.map.get(catKey) || [];
+              const isExpanded = expandedCategoryKeys.has(catKey);
+              const visibleActs = isExpanded ? acts : acts.slice(0, MAX_ACTIVITIES_PER_CATEGORY);
+              const hiddenCount = Math.max(0, acts.length - MAX_ACTIVITIES_PER_CATEGORY);
+              const displayCat = catKey === UNCATEGORIZED_KEY ? null : catKey;
+              const meta = byCategory.meta.get(catKey);
+              return (
+                <div key={catKey} className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-xl border ${categoryChipClass(displayCat)}`}
+                    >
+                      {categoryLabel(displayCat)}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {acts.length} {acts.length === 1 ? 'activity' : 'activities'}
+                    </span>
+                    {meta?.totalSec > 0 && (
+                      <span className="text-xs text-gray-400">
+                        · {formatDuration(meta.totalSec)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {visibleActs.map((act, idx) => {
+                      const sec = actDurationSec(act);
+                      const tss = computeTssForAct(act, userProfile);
+                      const dist = Number(act.distance || 0);
+                      const bucket = sportBucket(act.sport);
+                      const icon = sportIconSrc(bucket);
+                      return (
+                        <button
+                          key={`${act.id}-${idx}`}
+                          type="button"
+                          disabled={!onSelectActivity}
+                          onClick={() => onSelectActivity && onSelectActivity(act)}
+                          className={`text-left bg-white border border-gray-100 rounded-xl p-3 shadow-sm transition-colors ${
+                            onSelectActivity
+                              ? 'cursor-pointer hover:border-gray-200 hover:shadow-md'
+                              : 'cursor-default'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="mt-0.5 w-5 h-5 shrink-0 flex items-center justify-center">
+                              {icon ? (
+                                <img
+                                  src={icon}
+                                  alt={bucket}
+                                  className="w-4 h-4 object-contain"
+                                />
+                              ) : (
+                                <span
+                                  className="w-3 h-3 rounded-full block"
+                                  style={{ backgroundColor: BUCKET_COLOR[bucket] }}
+                                />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-gray-900 truncate">
+                                {act.title || 'Activity'}
+                              </div>
+                              <div className="text-[11px] text-gray-400 mt-0.5">
+                                {fmtActDate(act)}
+                              </div>
+                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">
+                                {sec > 0 && <span>{formatDuration(sec)}</span>}
+                                {dist > 0 && <span>{formatDistance(dist, user)}</span>}
+                                {tss > 0 && (
+                                  <span className="text-primary font-medium">
+                                    {Math.round(tss)} TSS
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {hiddenCount > 0 && !isExpanded && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedCategoryKeys((prev) => {
+                          const next = new Set(prev);
+                          next.add(catKey);
+                          return next;
+                        })
+                      }
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                    >
+                      Show more ({hiddenCount})
+                    </button>
+                  )}
+                  {acts.length > MAX_ACTIVITIES_PER_CATEGORY && isExpanded && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedCategoryKeys((prev) => {
+                          const next = new Set(prev);
+                          next.delete(catKey);
+                          return next;
+                        })
+                      }
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                    >
+                      Show fewer
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {hasMoreCategories && !showAllCategories && (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories(true)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+              >
+                Show more ({byCategory.keys.length - MAX_CATEGORIES_VISIBLE})
+              </button>
             )}
-            {aggregates.zoneSportsWithHr.includes('running') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={hrZonesBySportOption('running')} style={{ height: 240, width: '100%' }} notMerge /> : null}
-              </div>
+
+            {hasMoreCategories && showAllCategories && (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories(false)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+              >
+                Show fewer
+              </button>
             )}
-            {aggregates.zoneSportsWithHr.includes('swimming') && (
-              <div className={chartWrap}>
-                {Chart ? <Chart option={hrZonesBySportOption('swimming')} style={{ height: 240, width: '100%' }} notMerge /> : null}
+
+            {/* Effort timeline scatter */}
+            {Chart && effortTimelineOption && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Effort timeline
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="flex gap-3 mb-1 text-[10px] text-gray-400">
+                    {['bike', 'run', 'swim', 'other'].map((b) => (
+                      <span key={b} className="flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: BUCKET_COLOR[b] }} />
+                        {b.charAt(0).toUpperCase() + b.slice(1)}
+                      </span>
+                    ))}
+                  </div>
+                  <Chart
+                    option={effortTimelineOption}
+                    style={{ height: 140, width: '100%' }}
+                    notMerge
+                  />
+                </div>
               </div>
             )}
           </div>
         )}
       </div>
-
-      {byCategory.keys.length > 0 && (
-        <div className="bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-white/20 shadow-md p-3 sm:p-4 md:p-6 space-y-5">
-          <h3 className="text-sm sm:text-base font-bold text-gray-900 border-b border-white/20 pb-2">By category</h3>
-          {visibleCategoryKeys.map((catKey) => {
-            const acts = byCategory.map.get(catKey) || [];
-            const isExpanded = expandedCategoryKeys.has(catKey);
-            const visibleActs = isExpanded ? acts : acts.slice(0, MAX_ACTIVITIES_PER_CATEGORY);
-            const hiddenCount = Math.max(0, acts.length - MAX_ACTIVITIES_PER_CATEGORY);
-            const displayCat = catKey === UNCATEGORIZED_KEY ? null : catKey;
-            return (
-              <div key={catKey} className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`text-[10px] sm:text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-lg border ${categoryChipClass(displayCat)}`}
-                  >
-                    {categoryLabel(displayCat)}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {acts.length} {acts.length === 1 ? 'activity' : 'activities'}
-                  </span>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {visibleActs.map((act, idx) => {
-                    const sec = actDurationSec(act);
-                    const tss = computeTssForAct(act, userProfile);
-                    const dist = Number(act.distance || 0);
-                    return (
-                      <button
-                        key={`${act.id}-${idx}`}
-                        type="button"
-                        disabled={!onSelectActivity}
-                        onClick={() => onSelectActivity && onSelectActivity(act)}
-                        className={`text-left rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 backdrop-blur-md shadow-sm p-3 transition-colors ${
-                          onSelectActivity ? 'cursor-pointer' : 'cursor-default opacity-90'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${sportDotClass(act.sport)}`} />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
-                            <div className="text-[11px] text-gray-500 mt-0.5">{fmtActDate(act)}</div>
-                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-2 text-[11px] text-gray-600">
-                              {sec > 0 && <span>{formatDuration(sec)}</span>}
-                              {dist > 0 && <span>{formatDistance(dist, user)}</span>}
-                              {tss > 0 && <span className="text-primary font-medium">{Math.round(tss)} TSS</span>}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {hiddenCount > 0 && !isExpanded && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedCategoryKeys((prev) => {
-                        const next = new Set(prev);
-                        next.add(catKey);
-                        return next;
-                      })
-                    }
-                    className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
-                  >
-                    Show more ({hiddenCount})
-                  </button>
-                )}
-                {acts.length > MAX_ACTIVITIES_PER_CATEGORY && isExpanded && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedCategoryKeys((prev) => {
-                        const next = new Set(prev);
-                        next.delete(catKey);
-                        return next;
-                      })
-                    }
-                    className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
-                  >
-                    Show fewer
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          {hasMoreCategories && !showAllCategories && (
-            <button
-              type="button"
-              onClick={() => setShowAllCategories(true)}
-              className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
-            >
-              Show more ({byCategory.keys.length - MAX_CATEGORIES_VISIBLE})
-            </button>
-          )}
-
-          {hasMoreCategories && showAllCategories && (
-            <button
-              type="button"
-              onClick={() => setShowAllCategories(false)}
-              className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
-            >
-              Show fewer
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -459,11 +459,12 @@ export default function TrainingPage() {
           {/* Category filter — scrollable pills */}
           <div
             className="flex items-center gap-1.5 min-w-0"
-            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', flexShrink: 1 }}
+            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', flexShrink: 1, touchAction: 'pan-x' }}
           >
             {/* All pill */}
             <button
               onClick={() => setSelectedCategory('all')}
+              style={{ touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedCategory === 'all'
                   ? 'bg-gray-800 border-gray-800 text-white'
@@ -482,8 +483,8 @@ export default function TrainingPage() {
                   onClick={() => setSelectedCategory(isActive ? 'all' : cat.id)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0"
                   style={isActive
-                    ? { backgroundColor: cat.color, borderColor: cat.color, color: '#fff' }
-                    : { backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color }
+                    ? { backgroundColor: cat.color, borderColor: cat.color, color: '#fff', touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }
+                    : { backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color, touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }
                   }
                 >
                   {cat.label}

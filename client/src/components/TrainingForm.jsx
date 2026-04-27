@@ -311,7 +311,10 @@ function TitleCombobox({ value, options, onChange, placeholder, hasWarning }) {
           className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
           style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 99999 }}
         >
-          <div className="overflow-y-auto max-h-56 py-1">
+          <div
+            className="overflow-y-auto max-h-56 py-1"
+            style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}
+          >
             {filtered.map(o => (
               <button
                 key={o}
@@ -1076,7 +1079,7 @@ const TrainingForm = ({
                 <label className={labelBase}>Category</label>
                 <div
                   className="flex gap-2 pb-0.5"
-                  style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
+                  style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', touchAction: 'pan-x' }}
                 >
                   {CATEGORY_CONFIG.map(({ id, label, idle, on }) => {
                     const isActive = formData.category === id;
@@ -1085,7 +1088,7 @@ const TrainingForm = ({
                         key={id}
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, category: isActive ? '' : id }))}
-                        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', flexShrink: 0 }}
+                        style={{ touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent', flexShrink: 0 }}
                         className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all min-h-[40px] whitespace-nowrap ${
                           isActive ? on : idle
                         }`}
