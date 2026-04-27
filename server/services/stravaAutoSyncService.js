@@ -89,7 +89,11 @@ async function syncStravaForUser(user) {
     
     const per_page = 100;
     let page = 1;
-    const maxPages = 10; // Limit to 10 pages for auto-sync (1000 activities max)
+    // For incremental syncs (user already has a lastSyncDate) we only need a few
+    // pages at most — real-world athletes rarely upload 200+ activities in one go.
+    // For first-time syncs we allow more pages to back-fill history.
+    const isFirstSync = !user.strava?.lastSyncDate;
+    const maxPages = isFirstSync ? 10 : 3;
     
     const params = { per_page };
     if (since) {
@@ -185,12 +189,10 @@ async function syncStravaForUser(user) {
       }
     }
     
-    // Update last sync date
-    if (imported > 0 || updated > 0) {
-      await User.findByIdAndUpdate(user._id, {
-        'strava.lastSyncDate': new Date()
-      });
-    }
+    // Always update lastSyncDate so next run doesn't re-fetch the same window
+    await User.findByIdAndUpdate(user._id, {
+      'strava.lastSyncDate': new Date()
+    });
     
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
 
@@ -234,13 +236,28 @@ async function syncStravaForUser(user) {
  */
 async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 } = {}) {
   try {
-    // Find all users with Strava connected and auto-sync enabled
+    // Only sync users whose lastSyncDate is older than (intervalMs - 2 min buffer).
+    // This prevents hammering Strava when the scheduler fires more often than expected
+    // (e.g. multiple server instances, restarts).
+    const syncIntervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 30 * 60 * 1000);
+    const minAgeMs = Math.max(syncIntervalMs - 2 * 60 * 1000, 5 * 60 * 1000); // at least 5 min
+    const cutoff = new Date(Date.now() - minAgeMs);
+
+    // Find users with Strava connected and auto-sync enabled,
+    // sorted by lastSyncDate ascending so the least-recently-synced users go first.
+    // .limit(batchSize) now rotates fairly because users are ordered by sync age.
     const users = await User.find({
       'strava.accessToken': { $exists: true, $ne: null },
       'strava.autoSync': true,
-      isActive: { $ne: false }
+      isActive: { $ne: false },
+      $or: [
+        { 'strava.lastSyncDate': { $exists: false } },
+        { 'strava.lastSyncDate': null },
+        { 'strava.lastSyncDate': { $lt: cutoff } },
+      ],
     })
       .select('_id strava email name')
+      .sort({ 'strava.lastSyncDate': 1 }) // oldest first → fair rotation
       .limit(batchSize)
       .lean();
     

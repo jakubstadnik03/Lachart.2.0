@@ -11,13 +11,16 @@ function startStravaAutoSyncScheduler() {
     return;
   }
 
-  // Interval in milliseconds (default: 30 minutes)
-  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 30 * 60 * 1000);
-  
-  // Smaller default batch reduces peak memory / Strava load on small Render instances
-  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 4);
+  // Interval in milliseconds (default: 60 minutes — gives Strava rate limits time to recover)
+  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000);
 
-  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 8000);
+  // Process a small batch per tick; users rotate via lastSyncDate ordering.
+  // With 51 athletes and batchSize=6 every 60 min, all users cycle every ~8–9 hours.
+  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 6);
+
+  // 10 s between users → spreads API calls; combined with 2 s between pages keeps
+  // us well under Strava's 100 req/15-min limit even with full-history syncs.
+  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 10000);
 
   const tick = async () => {
     try {
