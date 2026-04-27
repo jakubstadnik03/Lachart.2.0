@@ -2,14 +2,13 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 
 // ─── Built-in default categories ───────────────────────────────────────────────
 export const DEFAULT_CATEGORIES = [
-  { id: 'endurance',  label: 'Endurance',  color: '#3b82f6', builtIn: true },
-  { id: 'tempo',      label: 'Tempo',      color: '#22c55e', builtIn: true },
-  { id: 'threshold',  label: 'Threshold',  color: '#eab308', builtIn: true },
-  { id: 'vo2max',     label: 'VO2max',     color: '#f97316', builtIn: true },
-  { id: 'anaerobic',  label: 'Anaerobic',  color: '#ef4444', builtIn: true },
-  { id: 'recovery',   label: 'Recovery',   color: '#6b7280', builtIn: true },
-  { id: 'hills',      label: 'Hills',      color: '#10b981', builtIn: true },
-  { id: 'race',       label: 'Race',       color: '#8b5cf6', builtIn: true },
+  { id: 'endurance', label: 'Endurance', color: '#3b82f6', builtIn: true },
+  { id: 'lt1',       label: 'LT1',       color: '#0ea5e9', builtIn: true },
+  { id: 'tempo',     label: 'Tempo',     color: '#f97316', builtIn: true },
+  { id: 'lt2',       label: 'LT2',       color: '#8b5cf6', builtIn: true },
+  { id: 'zone2',     label: 'Zone 2',    color: '#22c55e', builtIn: true },
+  { id: 'vo2max',    label: 'VO₂max',    color: '#ef4444', builtIn: true },
+  { id: 'hills',     label: 'Hills',     color: '#f59e0b', builtIn: true },
 ];
 
 /** Preset color palette for the color picker (matches LacTrace-style grid). */

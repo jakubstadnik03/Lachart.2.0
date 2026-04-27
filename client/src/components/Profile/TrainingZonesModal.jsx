@@ -286,39 +286,29 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
           <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <h3 className="text-lg font-bold text-gray-900 sm:text-xl">Training Zones</h3>
             <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedSport('cycling')}
-                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
-                  selectedSport === 'cycling'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Cycling
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSport('running')}
-                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
-                  selectedSport === 'running'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Running
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSport('swimming')}
-                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
-                  selectedSport === 'swimming'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Swimming
-              </button>
+              {[
+                { id: 'cycling',  label: 'Cycling',  icon: '/icon/bike.svg' },
+                { id: 'running',  label: 'Running',  icon: '/icon/run.svg'  },
+                { id: 'swimming', label: 'Swimming', icon: '/icon/swim.svg' },
+              ].map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSelectedSport(s.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
+                    selectedSport === s.id
+                      ? 'bg-primary text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <img
+                    src={s.icon}
+                    alt=""
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0 ${selectedSport === s.id ? 'brightness-0 invert' : ''}`}
+                  />
+                  {s.label}
+                </button>
+              ))}
             </div>
           </div>
           

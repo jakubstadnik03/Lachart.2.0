@@ -12,11 +12,12 @@
  *   └─ NativeBottomTabBar   (shrink-0, paddingBottom = safe-area-bottom)
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
+import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -42,6 +43,8 @@ const Icon = ({ d, size = 24, stroke = 'currentColor', fill = 'none', strokeWidt
 );
 
 const ICONS = {
+  bell:         'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+  bellAlert:    ['M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9', 'M12 2a1 1 0 011 1v.341'],
   dashboard:    'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
   testing:      ['M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18'],
   calendar:     ['M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'],
@@ -81,8 +84,129 @@ function getTabsForRole(user, effectiveAthleteId) {
   ];
 }
 
+// ─── Notification helpers ──────────────────────────────────────────────────────
+const notifTypeIcon = (type) => {
+  if (!type) return '🔔';
+  if (type.includes('comment'))  return '💬';
+  if (type.includes('lactate'))  return '🩸';
+  if (type.includes('strava'))   return '🔗';
+  if (type.includes('fit'))      return '📁';
+  if (type.includes('training')) return '🏋️';
+  if (type.includes('test'))     return '📊';
+  return '🔔';
+};
+
+const fmtNotifTime = (d) => {
+  const diff = Date.now() - new Date(d).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+
+// ─── Notifications bottom sheet ────────────────────────────────────────────────
+function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick, onDelete, onMarkAllRead }) {
+  const unread = notifs.filter(n => !n.read).length;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl"
+            style={{ maxHeight: '75vh', display: 'flex', flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom)' }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-10 h-1 rounded-full bg-gray-200" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-semibold text-gray-900">Notifications</span>
+                {unread > 0 && (
+                  <span className="min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </div>
+              {unread > 0 && (
+                <button
+                  onClick={onMarkAllRead}
+                  style={{ touchAction: 'manipulation' }}
+                  className="text-xs text-primary font-semibold active:opacity-60"
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+
+            {/* List */}
+            <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {loading && notifs.length === 0 && (
+                <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+              )}
+              {!loading && notifs.length === 0 && (
+                <div className="py-12 text-center">
+                  <div className="text-4xl mb-3">🔔</div>
+                  <p className="text-sm text-gray-400 font-medium">No notifications yet</p>
+                </div>
+              )}
+              {notifs.map(n => (
+                <button
+                  key={n._id}
+                  onClick={() => onNotifClick(n)}
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                  className={`w-full flex items-start gap-3 px-5 py-3.5 border-b border-gray-50 active:bg-gray-50 text-left ${!n.read ? 'bg-primary/[0.03]' : ''}`}
+                >
+                  {/* Icon circle */}
+                  <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-base ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                    {notifTypeIcon(n.type)}
+                  </div>
+
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 leading-snug truncate">{n.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{n.body}</p>
+                    {n.fromName && <p className="text-[11px] text-gray-400 mt-0.5">from {n.fromName}</p>}
+                    <p className="text-[11px] text-gray-400 mt-1">{fmtNotifTime(n.createdAt)}</p>
+                  </div>
+
+                  {/* Unread dot */}
+                  {!n.read && <div className="w-2.5 h-2.5 bg-primary rounded-full flex-shrink-0 mt-1.5" />}
+
+                  {/* Delete */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(n._id); }}
+                    style={{ touchAction: 'manipulation' }}
+                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full active:bg-gray-200 text-gray-300"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── Top Bar ───────────────────────────────────────────────────────────────────
-function NativeTopBar({ user, onProfileTap }) {
+function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
   const avatar = user ? getAvatarBySportAndGender(user) : null;
   return (
     <div
@@ -96,19 +220,41 @@ function NativeTopBar({ user, onProfileTap }) {
           <span className="text-base font-bold text-primary tracking-tight">LaChart</span>
         </div>
 
-        {/* Profile avatar */}
-        <button
-          onClick={onProfileTap}
-          style={{ touchAction: 'manipulation' }}
-          className="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/20 active:opacity-70"
-        >
-          {avatar
-            ? <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
-            : <div className="w-full h-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-                {(user?.name?.[0] || 'U').toUpperCase()}
-              </div>
-          }
-        </button>
+        {/* Right side: bell + avatar */}
+        <div className="flex items-center gap-2">
+          {/* Notification bell */}
+          <button
+            onClick={onBellTap}
+            style={{ touchAction: 'manipulation' }}
+            className="relative w-9 h-9 flex items-center justify-center rounded-xl active:bg-gray-100"
+          >
+            <Icon
+              d={ICONS.bell}
+              size={22}
+              stroke={unreadCount > 0 ? 'var(--color-primary, #6366f1)' : '#9ca3af'}
+              strokeWidth={unreadCount > 0 ? 2.2 : 1.8}
+            />
+            {unreadCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Profile avatar */}
+          <button
+            onClick={onProfileTap}
+            style={{ touchAction: 'manipulation' }}
+            className="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/20 active:opacity-70"
+          >
+            {avatar
+              ? <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
+              : <div className="w-full h-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                  {(user?.name?.[0] || 'U').toUpperCase()}
+                </div>
+            }
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -291,9 +437,76 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
 
 // ─── Main NativeLayout ─────────────────────────────────────────────────────────
 const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId, onAthleteSelect }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifs, setNotifs]     = useState([]);
+  const [notifsLoading, setNotifsLoading] = useState(false);
+
+  const unreadCount = notifs.filter(n => !n.read).length;
+
+  // Fetch notifications
+  const loadNotifs = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setNotifsLoading(true);
+    try {
+      const r = await getNotifications();
+      setNotifs(r.data || []);
+    } catch {}
+    setNotifsLoading(false);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadNotifs();
+    const t = setInterval(loadNotifs, 60000);
+    const onPush = () => loadNotifs();
+    window.addEventListener('pushNotificationReceived', onPush);
+    return () => { clearInterval(t); window.removeEventListener('pushNotificationReceived', onPush); };
+  }, [isAuthenticated, loadNotifs]);
+
+  // Auto-mark all read 1.5s after opening the sheet
+  const handleBellTap = () => {
+    setShowNotifs(true);
+    if (unreadCount > 0) {
+      setTimeout(async () => {
+        try {
+          await markAllNotificationsRead();
+          setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+        } catch {}
+      }, 1500);
+    }
+  };
+
+  const handleNotifClick = async (n) => {
+    if (!n.read) {
+      try { await markNotificationRead(n._id); } catch {}
+      setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
+    }
+    setShowNotifs(false);
+    if (n.resourceId && n.resourceType === 'training') {
+      navigate(`/training-calendar/training-${n.resourceId}`);
+    } else if (n.resourceId) {
+      navigate(`/training-calendar/${n.resourceId}`);
+    } else {
+      navigate('/training-calendar');
+    }
+  };
+
+  const handleNotifDelete = async (id) => {
+    try {
+      await deleteNotification(id);
+      setNotifs(prev => prev.filter(n => n._id !== id));
+    } catch {}
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+    } catch {}
+  };
 
   // Lock html/body scroll — WKWebView ignores overflow:hidden on a div
   useEffect(() => {
@@ -326,7 +539,12 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       overflow: 'hidden',
     }}>
       {/* Top bar — safe-area top is on the bar itself */}
-      <NativeTopBar user={user} onProfileTap={() => setShowProfile(true)} />
+      <NativeTopBar
+        user={user}
+        onProfileTap={() => setShowProfile(true)}
+        onBellTap={handleBellTap}
+        unreadCount={unreadCount}
+      />
 
       {/* Coach athlete selector */}
       {isCoach && (
@@ -362,6 +580,17 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         user={user}
         logout={logout}
         navigate={navigate}
+      />
+
+      {/* Notifications sheet */}
+      <NativeNotificationsSheet
+        open={showNotifs}
+        onClose={() => setShowNotifs(false)}
+        notifs={notifs}
+        loading={notifsLoading}
+        onNotifClick={handleNotifClick}
+        onDelete={handleNotifDelete}
+        onMarkAllRead={handleMarkAllRead}
       />
     </div>
   );

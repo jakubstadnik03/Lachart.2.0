@@ -142,8 +142,8 @@ const TrainingZonesCalculatorPage = () => {
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6"
               >
                 <div className="flex items-center gap-2.5 mb-4">
-                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-base flex-shrink-0">
-                    ⚡
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                    <img src="/icon/bike.svg" alt="" className="w-4 h-4" />
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-gray-900 leading-tight">Bike Power Zones</h2>
@@ -185,8 +185,8 @@ const TrainingZonesCalculatorPage = () => {
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6"
               >
                 <div className="flex items-center gap-2.5 mb-4">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-base flex-shrink-0">
-                    🏃
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <img src="/icon/run.svg" alt="" className="w-4 h-4" />
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-gray-900 leading-tight">Run Pace Zones</h2>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
-import { PlusIcon, ChevronDownIcon, ListBulletIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ListBulletIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
@@ -455,44 +455,48 @@ export default function TrainingPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Category filter */}
-          <div className="relative">
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none shadow-sm"
-              style={{ WebkitAppearance: 'none', appearance: 'none' }}
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Category filter — scrollable pills */}
+          <div
+            className="flex items-center gap-1.5 min-w-0"
+            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', flexShrink: 1 }}
+          >
+            {/* All pill */}
+            <button
+              onClick={() => setSelectedCategory('all')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedCategory === 'all'
+                  ? 'bg-gray-800 border-gray-800 text-white'
+                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
             >
-              <option value="all">All categories</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.label}</option>
-              ))}
-              <option value="uncategorized">Uncategorized</option>
-            </select>
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-              <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400" />
-            </div>
+              All
+            </button>
+
+            {categories.map(cat => {
+              const isActive = selectedCategory === cat.id;
+              const style = getCategoryStyle(cat.id);
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(isActive ? 'all' : cat.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0"
+                  style={isActive
+                    ? { backgroundColor: cat.color, borderColor: cat.color, color: '#fff' }
+                    : { backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color }
+                  }
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Active category badge */}
-          {selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && (() => {
-            const cat = categories.find(c => c.id === selectedCategory);
-            if (!cat) return null;
-            return (
-              <span
-                className="hidden sm:inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold"
-                style={getCategoryStyle(selectedCategory)}
-              >
-                {cat.label}
-              </span>
-            );
-          })()}
-
+          {/* Add Training button — never shrinks */}
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60"
+            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60 flex-shrink-0 ml-1"
             disabled={isSubmitting}
           >
             {isSubmitting ? (

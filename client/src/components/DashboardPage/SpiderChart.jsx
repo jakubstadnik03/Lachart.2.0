@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
-import { DropdownMenu } from "../DropDownMenu";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
 import {
@@ -15,950 +14,872 @@ import {
   Legend,
 } from "chart.js";
 
-// Register Chart.js plugins once
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-const POWER_INTERVAL_KEYS = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+// ── Bike axes ─────────────────────────────────────────────────────────────────
+const BIKE_KEYS = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+const BIKE_AXES = [
+  { id: 'sprint5s',       label: '5s',    name: 'Sprint',    unit: 'W' },
+  { id: 'attack1min',     label: '1min',  name: 'Attack',    unit: 'W' },
+  { id: 'vo2max5min',     label: '5min',  name: 'VO₂max',    unit: 'W' },
+  { id: 'threshold20min', label: '20min', name: 'Threshold', unit: 'W' },
+  { id: 'endurance60min', label: '60min', name: 'Endurance', unit: 'W' },
+];
 
-/** API must return allTime with each interval present (object or number). */
-function isUsablePowerMetricsPayload(m) {
+// ── Run axes ──────────────────────────────────────────────────────────────────
+const RUN_AXES = [
+  { id: 'run400m',  label: '400m',  name: 'Sprint',    unit: '/km', minDist: 200,   maxDist: 700   },
+  { id: 'run1km',   label: '1km',   name: '1km',       unit: '/km', minDist: 700,   maxDist: 2500  },
+  { id: 'run5km',   label: '5km',   name: '5km',       unit: '/km', minDist: 2500,  maxDist: 9000  },
+  { id: 'run10km',  label: '10km',  name: '10km',      unit: '/km', minDist: 9000,  maxDist: 18000 },
+  { id: 'runHalf',  label: 'Half+', name: 'Endurance', unit: '/km', minDist: 18000, maxDist: null  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function parseDurSec(v) {
+  if (!v && v !== 0) return 0;
+  if (typeof v === 'number') return v;
+  const s = String(v);
+  const parts = s.split(':');
+  if (parts.length === 2) return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
+  if (parts.length === 3) return (parseInt(parts[0], 10) || 0) * 3600 + (parseInt(parts[1], 10) || 0) * 60 + (parseFloat(parts[2]) || 0);
+  return parseFloat(s) || 0;
+}
+
+function fmtPace(secPerKm) {
+  if (!secPerKm || secPerKm <= 0) return '—';
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Compute run pace metrics from training objects (manual training form data). */
+function computeRunMetrics(trainings) {
+  const runT = (trainings || []).filter(t =>
+    t.sport === 'run' || t.sport === 'running'
+  );
+
+  const intervals = [];
+  runT.forEach(training => {
+    const date = new Date(training.date || training.timestamp || Date.now());
+    (training.results || []).forEach(r => {
+      if (r.intervalType && !['work', undefined, null, ''].includes(r.intervalType)) return;
+      if (r.isRecovery) return;
+
+      const distMeters = parseFloat(r.distanceMeters) || 0;
+      const durSec = parseDurSec(r.durationSeconds || r.duration);
+
+      let paceSecPerKm = 0;
+      const rawPower = r.power != null ? String(r.power) : '';
+      if (rawPower.includes(':')) {
+        paceSecPerKm = parseDurSec(rawPower);
+      } else if (rawPower && !isNaN(parseFloat(rawPower))) {
+        paceSecPerKm = parseFloat(rawPower);
+      } else if (distMeters > 0 && durSec > 0) {
+        paceSecPerKm = durSec / (distMeters / 1000);
+      }
+
+      // Infer distance from pace+duration if missing
+      let effDist = distMeters;
+      if (effDist === 0 && paceSecPerKm > 60 && durSec > 0) {
+        effDist = (durSec / paceSecPerKm) * 1000;
+      }
+
+      // Sanity: pace must be realistic (2:00–15:00 /km = 120–900 sec/km)
+      if (paceSecPerKm >= 120 && paceSecPerKm <= 900 && effDist > 0) {
+        intervals.push({ date, distMeters: effDist, paceSecPerKm, trainingId: training._id });
+      }
+    });
+  });
+
+  const getBest = (list, axis) => {
+    const f = list.filter(i => {
+      if (i.distMeters < axis.minDist) return false;
+      if (axis.maxDist !== null && i.distMeters > axis.maxDist) return false;
+      return true;
+    });
+    if (!f.length) return null;
+    return f.reduce((a, b) => a.paceSecPerKm < b.paceSecPerKm ? a : b);
+  };
+
+  const now = new Date();
+  const ago90 = new Date(now - 90 * 86400000);
+  const ago30 = new Date(now - 30 * 86400000);
+
+  const allTimeBest = {}, best90 = {}, best30 = {};
+  const monthlyBests = {};
+
+  RUN_AXES.forEach(axis => {
+    const a = getBest(intervals, axis);
+    const b90 = getBest(intervals.filter(i => i.date >= ago90), axis);
+    const b30 = getBest(intervals.filter(i => i.date >= ago30), axis);
+    allTimeBest[axis.id] = a ? a.paceSecPerKm : null;
+    best90[axis.id] = b90 ? b90.paceSecPerKm : null;
+    best30[axis.id] = b30 ? b30.paceSecPerKm : null;
+  });
+
+  // Monthly
+  intervals.forEach(i => {
+    const mk = `${i.date.getFullYear()}-${String(i.date.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyBests[mk]) monthlyBests[mk] = {};
+    RUN_AXES.forEach(axis => {
+      if (i.distMeters >= axis.minDist && (axis.maxDist === null || i.distMeters <= axis.maxDist)) {
+        if (!monthlyBests[mk][axis.id] || i.paceSecPerKm < monthlyBests[mk][axis.id]) {
+          monthlyBests[mk][axis.id] = i.paceSecPerKm;
+        }
+      }
+    });
+  });
+
+  const hasData = Object.values(allTimeBest).some(v => v !== null);
+
+  return { allTimeBest, compareBest: { '90days': best90, '30days': best30 }, monthlyBests, hasData };
+}
+
+/** Validate bike power metrics API response shape. */
+function isBikePayload(m) {
   if (!m || typeof m !== 'object') return false;
   if (typeof m.error === 'string' && m.error) return false;
   if (!m.allTime || typeof m.allTime !== 'object') return false;
-  return POWER_INTERVAL_KEYS.every((k) => m.allTime[k] !== undefined && m.allTime[k] !== null);
+  return BIKE_KEYS.every(k => m.allTime[k] !== undefined && m.allTime[k] !== null);
 }
 
-export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [], athleteId = null }) {
+// ── Palette for monthly datasets ─────────────────────────────────────────────
+const MONTH_COLORS = [
+  '#2596be', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+];
+
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function SpiderChart({
+  trainings = [],
+  userTrainings = [],
+  selectedSport,
+  setSelectedSport,
+  calendarData = [],
+  athleteId = null,
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  
-  // Determine target athlete ID for API calls
-  // Must match isCoachRole pattern: admin/coach/tester/testing can all view athlete data
+
   const isCoachLike =
     ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
     (user?.admin === true && user?.role !== 'athlete');
   const targetAthleteId = isCoachLike && athleteId ? athleteId : null;
 
-  // Load comparePeriod from localStorage or default to '90days'
+  // ── Local state ─────────────────────────────────────────────────────────────
+  const [sport, setSport] = useState(() => {
+    try { return localStorage.getItem('powerRadar_sport') || 'bike'; } catch { return 'bike'; }
+  });
   const [comparePeriod, setComparePeriod] = useState(() => {
-    try {
-      const saved = localStorage.getItem('powerRadar_comparePeriod');
-      return saved || '90days';
-    } catch (e) {
-      return '90days';
-    }
+    try { return localStorage.getItem('powerRadar_comparePeriod') || '90days'; } catch { return '90days'; }
   });
-
-  // Save comparePeriod to localStorage when it changes
-  useEffect(() => {
-        try {
-      localStorage.setItem('powerRadar_comparePeriod', comparePeriod);
-        } catch (e) {
-      console.warn('[SpiderChart] Error saving comparePeriod to localStorage:', e);
-    }
-  }, [comparePeriod]);
-  
-  const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  
-  // Load selectedMonths from localStorage
   const [selectedMonths, setSelectedMonths] = useState(() => {
-    try {
-      const saved = localStorage.getItem('powerRadar_selectedMonths');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
+    try { const s = localStorage.getItem('powerRadar_selectedMonths'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
-  
-  // Save selectedMonths to localStorage when it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('powerRadar_selectedMonths', JSON.stringify(selectedMonths));
-    } catch (e) {
-      console.warn('[SpiderChart] Error saving selectedMonths to localStorage:', e);
-    }
-  }, [selectedMonths]);
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
 
-  // Power metrics state
-  const [powerMetrics, setPowerMetrics] = useState({
-    allTime: { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 },
-    compare: { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 },
-    personalRecords: {
-      sprint5s: { value: 0, date: null },
-      attack1min: { value: 0, date: null },
-      vo2max5min: { value: 0, date: null },
-      threshold20min: { value: 0, date: null },
-      endurance60min: { value: 0, date: null }
-    },
-    improvements: {
-      sprint5s: null,
-      attack1min: null,
-      vo2max5min: null,
-      threshold20min: null,
-      endurance60min: null
-    },
-    monthlyMetrics: {}
+  // Bike API state
+  const [bikeMetrics, setBikeMetrics] = useState({
+    allTime: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: 0 }), {}),
+    compare: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: { value: 0, trainingId: null, trainingType: null, stravaId: null } }), {}),
+    personalRecords: {},
+    improvements: {},
+    monthlyMetrics: {},
   });
+  const [bikeAllTimeRef, setBikeAllTimeRef] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
-  // Stable "all time" reference used for normalization so the max doesn't jump
-  // when user changes compare period / selected months.
-  const [allTimeRef, setAllTimeRef] = useState(null);
-  const allTimeRequestIdRef = useRef(0);
+  // Persist prefs
+  useEffect(() => { try { localStorage.setItem('powerRadar_sport', sport); } catch {} }, [sport]);
+  useEffect(() => { try { localStorage.setItem('powerRadar_comparePeriod', comparePeriod); } catch {} }, [comparePeriod]);
+  useEffect(() => { try { localStorage.setItem('powerRadar_selectedMonths', JSON.stringify(selectedMonths)); } catch {} }, [selectedMonths]);
 
+  // ── Run metrics (client-side) ─────────────────────────────────────────────
+  const runMetrics = useMemo(() => computeRunMetrics(trainings), [trainings]);
+
+  // ── Bike: all-time reference load ─────────────────────────────────────────
+  const allTimeReqRef = useRef(0);
   useEffect(() => {
-    // Reset stale normalization data when the viewed athlete changes
-    setAllTimeRef(null);
-
-    const loadAllTimeRef = async () => {
-      const reqId = ++allTimeRequestIdRef.current;
-      const CACHE_DURATION = 60 * 60 * 1000; // 1h
-      const athletePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
-      const cacheKey = `powerRadar_allTimeRef_v2${athletePart}`;
-      const cacheTsKey = `powerRadar_allTimeRef_v2_ts${athletePart}`;
+    if (sport !== 'bike') return;
+    setBikeAllTimeRef(null);
+    const load = async () => {
+      const reqId = ++allTimeReqRef.current;
+      const cacheKey = `powerRadar_allTimeRef_v2${targetAthleteId ? `_${targetAthleteId}` : ''}`;
+      const cacheTsKey = cacheKey + '_ts';
       try {
         const now = Date.now();
         const cached = localStorage.getItem(cacheKey);
         const ts = Number(localStorage.getItem(cacheTsKey) || 0);
-        if (cached && ts && (now - ts) < CACHE_DURATION) {
+        if (cached && (now - ts) < 3600000) {
           try {
             const parsed = JSON.parse(cached);
-            if (isUsablePowerMetricsPayload(parsed)) {
-              setAllTimeRef(parsed);
-            }
-          } catch {
-            // ignore parse errors
-          }
+            if (isBikePayload(parsed)) setBikeAllTimeRef(parsed);
+          } catch {}
         }
-
-        const paramsAllTime = new URLSearchParams();
-        paramsAllTime.append('comparePeriod', 'alltime');
-        if (targetAthleteId) {
-          paramsAllTime.append('athleteId', targetAthleteId);
+        const params = new URLSearchParams({ comparePeriod: 'alltime' });
+        if (targetAthleteId) params.append('athleteId', targetAthleteId);
+        const resp = await api.get(`/api/fit/power-metrics?${params}`, { noCache: true });
+        if (reqId !== allTimeReqRef.current) return;
+        if (isBikePayload(resp.data)) {
+          setBikeAllTimeRef(resp.data);
+          try { localStorage.setItem(cacheKey, JSON.stringify(resp.data)); localStorage.setItem(cacheTsKey, String(Date.now())); } catch {}
         }
-        // Bypass api.js global GET cache (long TTL) so dashboard is not stuck on stale zeros.
-        const resp = await api.get(`/api/fit/power-metrics?${paramsAllTime.toString()}`, { noCache: true });
-        if (reqId !== allTimeRequestIdRef.current) return;
-        const metrics = resp.data;
-        if (isUsablePowerMetricsPayload(metrics)) {
-          setAllTimeRef(metrics);
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify(metrics));
-            localStorage.setItem(cacheTsKey, String(Date.now()));
-          } catch {
-            // ignore cache errors
-          }
-        }
-      } catch (e) {
-        // keep last known ref if any
-      }
+      } catch {}
     };
+    load();
+  }, [sport, targetAthleteId]);
 
-    loadAllTimeRef();
-  }, [targetAthleteId]);
-  
-  const metricsRequestIdRef = useRef(0);
-
-  // Load power metrics from backend or cache
+  // ── Bike: compare metrics load ────────────────────────────────────────────
+  const metricsReqRef = useRef(0);
   useEffect(() => {
-    const loadPowerMetrics = async () => {
-      const reqId = ++metricsRequestIdRef.current;
-      // Include athleteId in cache so coach switching athletes gets correct data
-      const athleteCachePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
-      const cacheKey = `powerRadar_metrics_v3_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
-      const cacheTimestampKey = `powerRadar_metrics_v3_timestamp_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
-      // Keep cache shorter so new uploads/syncs show quickly
-      const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-      
+    if (sport !== 'bike') return;
+    const load = async () => {
+      const reqId = ++metricsReqRef.current;
+      const athletePart = targetAthleteId ? `_${targetAthleteId}` : '';
+      const cacheKey = `powerRadar_metrics_v3_${comparePeriod}_${selectedMonths.join(',')}${athletePart}`;
+      const cacheTsKey = cacheKey + '_ts';
+      const CACHE_DUR = 600000;
       try {
-        let usedCachedData = false;
-        // Check localStorage cache first
-        const cachedData = localStorage.getItem(cacheKey);
-        const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
         const now = Date.now();
-        
-        // Use cache for fast paint, but still revalidate via API (stale-while-revalidate)
-        if (cachedData && cacheTimestamp) {
-          const cacheAge = now - parseInt(cacheTimestamp, 10);
-          if (cacheAge < CACHE_DURATION) {
-            try {
-              const parsed = JSON.parse(cachedData);
-              if (isUsablePowerMetricsPayload(parsed)) {
-                setPowerMetrics(parsed);
-                setLoadError(null);
-                usedCachedData = true;
-              } else {
-                console.warn('[SpiderChart] Cached data has invalid structure, loading from API');
-              }
-            } catch (e) {
-              console.error('[SpiderChart] Error parsing cached power metrics:', e);
-            }
-          } else {
-            // Cache exists but is expired - use it as fallback while loading
-            try {
-              const parsed = JSON.parse(cachedData);
-              if (isUsablePowerMetricsPayload(parsed)) {
-                setPowerMetrics(parsed);
-                setLoadError(null);
-                usedCachedData = true;
-              }
-            } catch (e) {
-              // Ignore parse errors
-            }
-          }
+        let usedCache = false;
+        const cached = localStorage.getItem(cacheKey);
+        const ts = Number(localStorage.getItem(cacheTsKey) || 0);
+        if (cached && ts && (now - ts) < CACHE_DUR) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (isBikePayload(parsed)) { setBikeMetrics(parsed); setLoadError(null); usedCache = true; }
+          } catch {}
         }
-        
-        // Set loading state before API call (if we already painted from cache, refresh in background)
-        if (usedCachedData) {
-          setLoading(false);
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-          setRefreshing(false);
-        }
-        
-        // Load from API
+        usedCache ? setRefreshing(true) : setLoading(true);
+
         const params = new URLSearchParams();
         if (comparePeriod) params.append('comparePeriod', comparePeriod);
-        if (selectedMonths.length > 0) {
-          selectedMonths.forEach(month => params.append('selectedMonths', month));
-        }
-        if (targetAthleteId) {
-          params.append('athleteId', targetAthleteId);
-        }
-        
+        selectedMonths.forEach(m => params.append('selectedMonths', m));
+        if (targetAthleteId) params.append('athleteId', targetAthleteId);
+
         setLoadError(null);
-        const response = await api.get(`/api/fit/power-metrics?${params.toString()}`, { noCache: true });
-        if (reqId !== metricsRequestIdRef.current) return;
-        const metrics = response.data;
+        const resp = await api.get(`/api/fit/power-metrics?${params}`, { noCache: true });
+        if (reqId !== metricsReqRef.current) return;
+        const metrics = resp.data;
 
-        // HTTP 200 s tělem { error: 'Access denied' } apod.
-        if (metrics && typeof metrics.error === 'string' && metrics.error) {
-          if (reqId !== metricsRequestIdRef.current) return;
-          const emptyCompare = {
-            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
-          };
-          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
+        if (metrics?.error) {
           setLoadError(metrics.error);
-          setPowerMetrics({
-            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
-            compare: emptyCompare,
-            personalRecords: {},
-            improvements: {},
-            monthlyMetrics: {},
-            trainingsCount: 0
-          });
-          setLoading(false);
-          setRefreshing(false);
+          setLoading(false); setRefreshing(false);
           return;
         }
-        
-        // Validate full shape (avoid wiping UI on truncated/cached HTML/error payloads)
-        if (!isUsablePowerMetricsPayload(metrics)) {
-          if (reqId !== metricsRequestIdRef.current) return;
-          console.warn('[SpiderChart] Invalid API response structure (keeping previous chart data):', metrics);
-          setLoadError('Could not load power metrics (unexpected response).');
+        if (!isBikePayload(metrics)) {
+          setLoadError('Could not load power metrics.');
+          setLoading(false); setRefreshing(false);
           return;
         }
-        const hasCompare = metrics?.compare && typeof metrics.compare === 'object';
-        if (!hasCompare) {
-          metrics.compare = {
-            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
-          };
+        if (!metrics.compare) {
+          metrics.compare = BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: { value: 0, trainingId: null, trainingType: null, stravaId: null } }), {});
         }
-        
-        // Cache the result (only well-formed payloads)
         try {
-          const metricsCacheData = JSON.stringify(metrics);
-          if (metricsCacheData.length < 50000) {
-            localStorage.setItem(cacheKey, metricsCacheData);
-            localStorage.setItem(cacheTimestampKey, now.toString());
+          if (JSON.stringify(metrics).length < 50000) {
+            localStorage.setItem(cacheKey, JSON.stringify(metrics));
+            localStorage.setItem(cacheTsKey, String(Date.now()));
           }
-        } catch (e) {
-          // Ignore cache errors
+        } catch {}
+        if (reqId !== metricsReqRef.current) return;
+        setBikeMetrics(metrics);
+      } catch (err) {
+        const status = err.response?.status;
+        if (status === 404 || status === 403) {
+          setLoadError(err.response?.data?.error || (status === 404 ? 'Athlete not found' : 'Access denied'));
         }
-
-        if (reqId !== metricsRequestIdRef.current) return;
-        setPowerMetrics(metrics);
-      } catch (error) {
-        if (reqId !== metricsRequestIdRef.current) return;
-        const status = error.response?.status;
-        const isNotFoundOrForbidden = status === 404 || status === 403;
-        if (isNotFoundOrForbidden) {
-          setLoadError(error.response?.data?.error || (status === 404 ? 'Athlete not found' : 'Access denied'));
-          const emptyCompare = {
-            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
-          };
-          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
-          setPowerMetrics({
-            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
-            compare: emptyCompare,
-            personalRecords: {},
-            improvements: {},
-            monthlyMetrics: {},
-            trainingsCount: 0
-          });
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
-        // If network error or empty response, try to use cached data even if expired
-        if (error.code === 'ERR_NETWORK' || error.code === 'ERR_EMPTY_RESPONSE' || error.message?.includes('Network Error')) {
-          try {
-            const cachedData = localStorage.getItem(cacheKey);
-            if (cachedData) {
-              const cachedMetrics = JSON.parse(cachedData);
-              if (isUsablePowerMetricsPayload(cachedMetrics)) {
-                setPowerMetrics(cachedMetrics);
-                setLoadError(null);
-                setLoading(false);
-                setRefreshing(false);
-                return;
-              }
-            }
-          } catch (e) {
-            // Ignore cache parse errors
-          }
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
-        
-        // Only log non-network errors
-        console.error('[SpiderChart] Error loading power metrics:', error);
-
-        // If we get here, keep existing data (from previous load or default)
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        setLoading(false); setRefreshing(false);
       }
     };
-    
-    loadPowerMetrics();
-  }, [comparePeriod, selectedMonths, targetAthleteId]);
+    load();
+  }, [sport, comparePeriod, selectedMonths, targetAthleteId]);
 
-  // Get available months from powerMetrics.monthlyMetrics
-  const availableMonths = useMemo(() => {
-    const months = [];
-    Object.keys(powerMetrics.monthlyMetrics || {}).forEach(monthKey => {
-      const date = new Date(monthKey + '-01');
-      if (!isNaN(date.getTime())) {
-        months.push({
-          key: monthKey,
-          label: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-          date
-        });
-    }
-    });
-    return months.sort((a, b) => b.date - a.date);
-  }, [powerMetrics.monthlyMetrics]);
-
-  // Monthly metrics
-  const monthlyMetrics = useMemo(() => {
-    return powerMetrics.monthlyMetrics || {};
-  }, [powerMetrics.monthlyMetrics]);
-
-  // Prefer best-known All Time values (stable reference; does NOT depend on selected months)
-  const allTimeBest = useMemo(() => {
-    const src = allTimeRef || powerMetrics;
-    const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+  // ── Derived: bike all-time best (stable normalisation) ────────────────────
+  const bikeAllTimeBest = useMemo(() => {
+    const src = bikeAllTimeRef || bikeMetrics;
     const best = {};
-    const allTime = src?.allTime || {};
-    const pr = src?.personalRecords || {};
-
-    keys.forEach((k) => {
-      const prVal = Number(pr?.[k]?.value || 0);
-      const allTimeVal = typeof allTime?.[k] === 'object' ? Number(allTime[k]?.value || 0) : Number(allTime?.[k] || 0);
-      best[k] = Math.max(allTimeVal, prVal, 0);
+    BIKE_KEYS.forEach(k => {
+      const atVal = typeof src?.allTime?.[k] === 'object' ? Number(src.allTime[k]?.value || 0) : Number(src?.allTime?.[k] || 0);
+      const prVal = Number(src?.personalRecords?.[k]?.value || 0);
+      best[k] = Math.max(atVal, prVal, 0);
     });
-
     return best;
-  }, [powerMetrics, allTimeRef]);
+  }, [bikeMetrics, bikeAllTimeRef]);
 
-  // Use allTimeRef for All Time column when available so value and link match true all-time
-  const allTimeSource = allTimeRef || powerMetrics;
-
-  // Prepare chart data
-  const chartData = useMemo(() => {
-    if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
-      return null;
+  // ── Available months (bike or run) ────────────────────────────────────────
+  const availableMonths = useMemo(() => {
+    if (sport === 'bike') {
+      return Object.keys(bikeMetrics.monthlyMetrics || {})
+        .map(mk => { const d = new Date(mk + '-01'); return { key: mk, label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), date: d }; })
+        .filter(m => !isNaN(m.date))
+        .sort((a, b) => b.date - a.date);
     }
-    
-    const labels = ['5s', '1min', '5min', '20min', '60min'];
-    
-    const normalize = (value, intervalKey) => {
-      const max = Number(allTimeBest?.[intervalKey] || 0);
-      const v = typeof value === 'object' ? Number(value?.value || 0) : Number(value || 0);
-      return max > 0 ? (v / max) * 100 : 0;
-    };
-    
-    // For monthly view
-    if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
-  const monthColors = [
-        '#2596be', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-        '#14b8a6', '#a855f7'
-      ];
-      
-      const datasets = [
-        {
-          label: 'All Time',
-          data: [
-            100, 100, 100, 100, 100
-          ],
-          borderColor: '#60a5fa',
-          backgroundColor: 'rgba(96, 165, 250, 0.2)',
-          borderWidth: 2,
-          pointBackgroundColor: '#60a5fa',
-          pointRadius: 4,
-          fill: true,
-          __kind: 'alltime'
-        },
-        ...selectedMonths.map((monthKey, index) => {
-          const monthData = monthlyMetrics[monthKey];
-          const monthLabel = availableMonths.find(m => m.key === monthKey)?.label || monthKey;
-          if (!monthData) return null;
-          
-          return {
-            label: monthLabel,
-            data: [
-              normalize(monthData.sprint5s, 'sprint5s'),
-              normalize(monthData.attack1min, 'attack1min'),
-              normalize(monthData.vo2max5min, 'vo2max5min'),
-              normalize(monthData.threshold20min, 'threshold20min'),
-              normalize(monthData.endurance60min, 'endurance60min')
-            ],
-            borderColor: monthColors[index % monthColors.length],
-            backgroundColor: `${monthColors[index % monthColors.length]}33`,
-            borderWidth: 2,
-            pointBackgroundColor: monthColors[index % monthColors.length],
-            pointRadius: 3,
-            fill: true,
-            __kind: 'month',
-            __monthKey: monthKey
-          };
-        }).filter(Boolean)
-      ];
-      
-      return { labels, datasets };
-    }
+    return Object.keys(runMetrics?.monthlyBests || {})
+      .map(mk => { const d = new Date(mk + '-01'); return { key: mk, label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), date: d }; })
+      .filter(m => !isNaN(m.date))
+      .sort((a, b) => b.date - a.date);
+  }, [sport, bikeMetrics, runMetrics]);
 
-    return {
-      labels,
-    datasets: [
-        {
-          label: 'All Time',
-          data: [
-            100, 100, 100, 100, 100
-          ],
-          borderColor: '#60a5fa',
-          backgroundColor: 'rgba(96, 165, 250, 0.2)',
-      borderWidth: 2,
-          pointBackgroundColor: '#60a5fa',
-      pointRadius: 4,
-          fill: true,
-          __kind: 'alltime'
-        },
-        ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
-          label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
-          data: [
-            normalize(powerMetrics.compare?.sprint5s, 'sprint5s'),
-            normalize(powerMetrics.compare?.attack1min, 'attack1min'),
-            normalize(powerMetrics.compare?.vo2max5min, 'vo2max5min'),
-            normalize(powerMetrics.compare?.threshold20min, 'threshold20min'),
-            normalize(powerMetrics.compare?.endurance60min, 'endurance60min')
-          ],
-          borderColor: 'rgba(239, 68, 68, 0.8)',
-          backgroundColor: 'rgba(239, 68, 68, 0.2)',
-          borderWidth: 2,
-          pointBackgroundColor: 'rgba(239, 68, 68, 1)',
-          pointRadius: 4,
-          fill: true,
-          __kind: 'compare'
-        }] : [])
-      ]
-    };
-  }, [powerMetrics, comparePeriod, monthlyMetrics, selectedMonths, availableMonths, allTimeBest]);
-
-  // Chart options
-  const chartOptions = useMemo(() => {
-    if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
-      return null;
-    }
-    
-    return {
-    responsive: true,
-    maintainAspectRatio: false,
-      animation: {
-        duration: 0
-      },
-      layout: {
-        padding: {
-          top: -20,
-          bottom: -10,
-          left: 0,
-          right: 0
-      }
-    },
-    scales: {
-      r: {
-          beginAtZero: true,
-          max: 100,
-        ticks: {
-            stepSize: 20,
-            font: { size: 10 },
-            callback: function(value) {
-              return value + '%';
-          },
-            backdropPadding: 0
-        },
-        pointLabels: {
-            font: { size: 11, weight: 'bold' },
-            padding: 0
-          },
-          grid: {
-            lineWidth: 1
-          }
-        }
-    },
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        titleColor: '#111827',
-          titleFont: { weight: 'bold', size: 13 },
-        bodyColor: '#111827',
-          bodyFont: { size: 12 },
-          borderColor: '#E5E7EB',
-        borderWidth: 1,
-          padding: 10,
-          cornerRadius: 8,
-        displayColors: true,
-        callbacks: {
-            title: (tooltipItems) => {
-              if (!tooltipItems || !tooltipItems[0]) return '';
-              const fullLabels = ['Sprint - 5s', 'Attack - 1min', 'VO2 Max - 5min', 'Threshold - 20min', 'Endurance - 60min'];
-              return fullLabels[tooltipItems[0].dataIndex] || '';
-            },
-          label: (tooltipItem) => {
-              // Show individual dataset label with value
-              if (!tooltipItem || !tooltipItem.dataset) return '';
-              const label = tooltipItem.dataset.label || '';
-              const kind = tooltipItem.dataset.__kind;
-              const monthKey = tooltipItem.dataset.__monthKey;
-              const index = tooltipItem.dataIndex;
-              const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
-              const k = keys[index];
-              const allTimeValue = Number(allTimeBest?.[k] || 0);
-
-              let raw = 0;
-              if (kind === 'alltime') raw = allTimeValue;
-              else if (kind === 'compare') {
-                const compareMetric = powerMetrics?.compare?.[k];
-                raw = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
-              } else if (kind === 'month') raw = Number(monthlyMetrics?.[monthKey]?.[k] || 0);
-              else {
-                const compareMetric = powerMetrics?.compare?.[k];
-                raw = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
-              }
-
-              return `${label}: ${Math.round(raw)}W`;
-            },
-            afterBody: (tooltipItems) => {
-              // Always show percentage comparison if compare period is available
-              if (!tooltipItems || !tooltipItems[0]) return [];
-              const index = tooltipItems[0].dataIndex;
-              const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
-              const k = keys[index];
-              const allTimeValue = Number(allTimeBest?.[k] || 0);
-              
-              // Only show percentage if we have a compare period (not alltime or monthly)
-              if (comparePeriod !== 'alltime' && comparePeriod !== 'monthly') {
-                const compareMetric = powerMetrics?.compare?.[k];
-                const compareValue = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
-                if (compareValue > 0 && allTimeValue > 0) {
-                  const pct = Math.round((compareValue / allTimeValue) * 100);
-                  return [`${pct}% of All Time`];
-                }
-              }
-              
-              return [];
-            },
-            filter: (tooltipItem) => {
-              // Always show all datasets in tooltip (both All Time and compare period)
-              return true;
-            }
-          }
-        }
-      }
-    };
-  }, [powerMetrics, allTimeBest, monthlyMetrics, comparePeriod]);
-
-  // Helper to get value from metric (handles both old number format and new object format)
-  const getMetricValue = (metric) => {
-    if (typeof metric === 'object' && metric !== null) {
-      return metric.value || 0;
-    }
-    return Number(metric || 0);
-  };
-
-  // Helper to get training ID from metric
-  const getMetricTrainingId = (metric) => {
-    if (typeof metric === 'object' && metric !== null) {
-      return metric.trainingId || null;
-    }
-    return null;
-  };
-
-  // Helper to get training type from metric
-  const getMetricTrainingType = (metric) => {
-    if (typeof metric === 'object' && metric !== null) {
-      return metric.trainingType || null;
-    }
-    return null;
-  };
-
-  // Helper to get strava ID from metric
-  const getMetricStravaId = (metric) => {
-    if (typeof metric === 'object' && metric !== null) {
-      return metric.stravaId || null;
-    }
-    return null;
-  };
-
-  // Table data (use optional chaining so missing compare/allTime doesn't crash)
-  const compareObj = powerMetrics?.compare ?? {};
-  const allTimeObj = allTimeSource?.allTime ?? {};
-  const improvementsObj = powerMetrics?.improvements ?? {};
-  const personalRecordsObj = powerMetrics?.personalRecords ?? {};
-  const keys = [
-    { label: '5s', name: 'Sprint', key: 'sprint5s' },
-    { label: '1min', name: 'Attack', key: 'attack1min' },
-    { label: '5min', name: 'VO2 Max', key: 'vo2max5min' },
-    { label: '20min', name: 'Threshold', key: 'threshold20min' },
-    { label: '60min', name: 'Endurance', key: 'endurance60min' }
-  ];
-  const tableData = keys.map(({ label, name, key }) => {
-    const compareVal = getMetricValue(compareObj[key]);
-    const allTimeVal = Number(allTimeBest?.[key] ?? 0);
-    return {
-      label,
-      name,
-      key,
-      compareValue: compareVal,
-      allTimeValue: allTimeVal,
-      compareTrainingId: getMetricTrainingId(compareObj[key]),
-      compareTrainingType: getMetricTrainingType(compareObj[key]),
-      compareStravaId: getMetricStravaId(compareObj[key]),
-      allTimeTrainingId: getMetricTrainingId(allTimeObj[key]),
-      allTimeTrainingType: getMetricTrainingType(allTimeObj[key]),
-      allTimeStravaId: getMetricStravaId(allTimeObj[key]),
-      percentage: allTimeVal > 0 ? Math.round((compareVal / allTimeVal) * 100) : 0,
-      improvement: improvementsObj[key] ?? null,
-      pr: personalRecordsObj[key] ?? null
-    };
-  });
-
-  // Auto-select all months when switching to monthly view
+  // Auto-select all months when switching to monthly
   useEffect(() => {
     if (comparePeriod === 'monthly' && availableMonths.length > 0 && selectedMonths.length === 0) {
       setSelectedMonths(availableMonths.map(m => m.key));
     }
   }, [comparePeriod, availableMonths, selectedMonths.length]);
 
-  // Format date
-  const formatDate = (date) => {
-    if (!date) return 'N/A';
-    return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // ── Chart data ────────────────────────────────────────────────────────────
+  const chartData = useMemo(() => {
+    if (sport === 'bike') {
+      if (!bikeMetrics?.allTime || typeof bikeMetrics.allTime !== 'object') return null;
+      const labels = BIKE_AXES.map(a => a.label);
+      const normBike = (val, k) => {
+        const max = bikeAllTimeBest[k] || 0;
+        const v = typeof val === 'object' ? Number(val?.value || 0) : Number(val || 0);
+        return max > 0 ? (v / max) * 100 : 0;
+      };
+
+      if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
+        return {
+          labels,
+          datasets: [
+            { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+            ...selectedMonths.map((mk, i) => {
+              const md = bikeMetrics.monthlyMetrics?.[mk];
+              const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
+              if (!md) return null;
+              return {
+                label: lbl,
+                data: BIKE_KEYS.map(k => normBike(md[k], k)),
+                borderColor: MONTH_COLORS[i % MONTH_COLORS.length],
+                backgroundColor: MONTH_COLORS[i % MONTH_COLORS.length] + '26',
+                borderWidth: 2, pointBackgroundColor: MONTH_COLORS[i % MONTH_COLORS.length], pointRadius: 3, fill: true,
+                __kind: 'month', __monthKey: mk,
+              };
+            }).filter(Boolean),
+          ],
+        };
+      }
+
+      return {
+        labels,
+        datasets: [
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+          ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
+            label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
+            data: BIKE_KEYS.map(k => normBike(bikeMetrics.compare?.[k], k)),
+            borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
+            borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+          }] : []),
+        ],
+      };
+    }
+
+    // ── Run ──
+    if (!runMetrics?.hasData) return null;
+    const labels = RUN_AXES.map(a => a.label);
+
+    // For run: normalize as (allTimeBestPace / currentPace) * 100
+    // so fastest pace = 100%
+    const normRun = (paceSecPerKm, axisId) => {
+      const best = runMetrics.allTimeBest[axisId];
+      if (!best || !paceSecPerKm) return 0;
+      return (best / paceSecPerKm) * 100;
+    };
+
+    if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
+      return {
+        labels,
+        datasets: [
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+          ...selectedMonths.map((mk, i) => {
+            const md = runMetrics.monthlyBests?.[mk];
+            const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
+            if (!md) return null;
+            return {
+              label: lbl,
+              data: RUN_AXES.map(a => normRun(md[a.id], a.id)),
+              borderColor: MONTH_COLORS[i % MONTH_COLORS.length],
+              backgroundColor: MONTH_COLORS[i % MONTH_COLORS.length] + '26',
+              borderWidth: 2, pointBackgroundColor: MONTH_COLORS[i % MONTH_COLORS.length], pointRadius: 3, fill: true,
+              __kind: 'month', __monthKey: mk,
+            };
+          }).filter(Boolean),
+        ],
+      };
+    }
+
+    const comparePaces = comparePeriod === '30days'
+      ? runMetrics.compareBest['30days']
+      : runMetrics.compareBest['90days'];
+
+    return {
+      labels,
+      datasets: [
+        { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+        ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
+          label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
+          data: RUN_AXES.map(a => normRun(comparePaces?.[a.id], a.id)),
+          borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
+          borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+        }] : []),
+      ],
+    };
+  }, [sport, bikeMetrics, bikeAllTimeBest, runMetrics, comparePeriod, selectedMonths, availableMonths]);
+
+  // ── Chart options ─────────────────────────────────────────────────────────
+  const chartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    layout: { padding: { top: -16, bottom: -8, left: 0, right: 0 } },
+    scales: {
+      r: {
+        beginAtZero: true,
+        max: 100,
+        ticks: {
+          stepSize: 25,
+          font: { size: 9 },
+          callback: v => v + '%',
+          backdropPadding: 0,
+          color: '#9ca3af',
+        },
+        pointLabels: { font: { size: 11, weight: '600' }, color: '#374151', padding: 4 },
+        grid: { color: 'rgba(0,0,0,0.06)', lineWidth: 1 },
+        angleLines: { color: 'rgba(0,0,0,0.06)' },
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+        backgroundColor: 'rgba(255,255,255,0.97)',
+        titleColor: '#111827',
+        titleFont: { weight: '700', size: 12 },
+        bodyColor: '#374151',
+        bodyFont: { size: 12 },
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 10,
+        displayColors: true,
+        callbacks: {
+          title: items => {
+            if (!items?.[0]) return '';
+            const axes = sport === 'bike' ? BIKE_AXES : RUN_AXES;
+            return axes[items[0].dataIndex]?.name || '';
+          },
+          label: item => {
+            if (!item?.dataset) return '';
+            const lbl = item.dataset.label || '';
+            const kind = item.dataset.__kind;
+            const mk = item.dataset.__monthKey;
+            const axes = sport === 'bike' ? BIKE_AXES : RUN_AXES;
+            const axis = axes[item.dataIndex];
+            if (!axis) return lbl;
+
+            if (sport === 'bike') {
+              const k = axis.id;
+              let raw = 0;
+              if (kind === 'alltime') raw = bikeAllTimeBest[k] || 0;
+              else if (kind === 'compare') {
+                const cm = bikeMetrics?.compare?.[k];
+                raw = typeof cm === 'object' ? Number(cm?.value || 0) : Number(cm || 0);
+              } else if (kind === 'month') raw = Number(bikeMetrics.monthlyMetrics?.[mk]?.[k] || 0);
+              return `${lbl}: ${Math.round(raw)} W`;
+            } else {
+              const id = axis.id;
+              let pace = null;
+              if (kind === 'alltime') pace = runMetrics?.allTimeBest?.[id];
+              else if (kind === 'compare') {
+                const cp = comparePeriod === '30days' ? runMetrics?.compareBest?.['30days'] : runMetrics?.compareBest?.['90days'];
+                pace = cp?.[id];
+              } else if (kind === 'month') pace = runMetrics?.monthlyBests?.[mk]?.[id];
+              return pace ? `${lbl}: ${fmtPace(pace)} /km` : `${lbl}: —`;
+            }
+          },
+          afterBody: items => {
+            if (!items?.[0] || comparePeriod === 'alltime' || comparePeriod === 'monthly') return [];
+            const axes = sport === 'bike' ? BIKE_AXES : RUN_AXES;
+            const axis = axes[items[0].dataIndex];
+            if (!axis) return [];
+            if (sport === 'bike') {
+              const k = axis.id;
+              const allV = bikeAllTimeBest[k] || 0;
+              const cm = bikeMetrics?.compare?.[k];
+              const cmpV = typeof cm === 'object' ? Number(cm?.value || 0) : Number(cm || 0);
+              if (cmpV > 0 && allV > 0) return [`${Math.round((cmpV / allV) * 100)}% of All Time`];
+            }
+            return [];
+          },
+        },
+      },
+    },
+  }), [sport, bikeMetrics, bikeAllTimeBest, runMetrics, comparePeriod]);
+
+  // ── Table data ────────────────────────────────────────────────────────────
+  const tableRows = useMemo(() => {
+    if (sport === 'bike') {
+      const at = bikeAllTimeRef?.allTime || bikeMetrics?.allTime || {};
+      return BIKE_AXES.map(ax => {
+        const k = ax.id;
+        const allTimeVal = bikeAllTimeBest[k] || 0;
+        const cmpMetric = bikeMetrics?.compare?.[k];
+        const cmpVal = typeof cmpMetric === 'object' ? Number(cmpMetric?.value || 0) : Number(cmpMetric || 0);
+        const pct = allTimeVal > 0 ? Math.round((cmpVal / allTimeVal) * 100) : 0;
+        const delta = cmpVal - allTimeVal;
+        return {
+          ...ax,
+          allTimeVal,
+          compareVal: cmpVal,
+          pct,
+          delta,
+          allTimeTrainingId: typeof at[k] === 'object' ? at[k]?.trainingId : null,
+          allTimeTrainingType: typeof at[k] === 'object' ? at[k]?.trainingType : null,
+          allTimeStravaId: typeof at[k] === 'object' ? at[k]?.stravaId : null,
+          cmpTrainingId: typeof cmpMetric === 'object' ? cmpMetric?.trainingId : null,
+          cmpTrainingType: typeof cmpMetric === 'object' ? cmpMetric?.trainingType : null,
+          cmpStravaId: typeof cmpMetric === 'object' ? cmpMetric?.stravaId : null,
+          pr: bikeMetrics?.personalRecords?.[k] || null,
+        };
+      });
+    }
+
+    // Run
+    const comparePaces = comparePeriod === '30days'
+      ? runMetrics?.compareBest?.['30days']
+      : runMetrics?.compareBest?.['90days'];
+
+    return RUN_AXES.map(ax => {
+      const atPace = runMetrics?.allTimeBest?.[ax.id];
+      const cmpPace = comparePaces?.[ax.id];
+      // Pct for run: lower pace = faster = better; cmpPace <= atPace means better
+      const pct = atPace && cmpPace ? Math.round((atPace / cmpPace) * 100) : 0;
+      const delta = (cmpPace && atPace) ? (atPace - cmpPace) : null; // positive = faster (good)
+      return {
+        ...ax,
+        allTimeVal: atPace,
+        compareVal: cmpPace,
+        pct,
+        delta,
+      };
+    });
+  }, [sport, bikeMetrics, bikeAllTimeBest, bikeAllTimeRef, runMetrics, comparePeriod]);
+
+  // ── Navigation helper (bike) ──────────────────────────────────────────────
+  const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts) => {
+    if (!trainingId && !stravaId) return;
+    try {
+      const athletePart = targetAthleteId ? `/${targetAthleteId}` : '';
+      const params = new URLSearchParams();
+      if (metricKey) params.set('highlightMetric', metricKey);
+      if (claimedWatts) params.set('radarWatts', String(Math.round(claimedWatts)));
+      const qs = params.toString() ? `?${params}` : '';
+      const base = `/training-calendar${athletePart}`;
+      if (stravaId) navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${qs}`);
+      else if (trainingType === 'strava' && trainingId) navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${qs}`);
+      else navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
+    } catch {}
   };
 
-  if (loading) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-6">
-        <p className="text-gray-500 text-center">Loading power data...</p>
-      </div>
-    );
-  }
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const periodOptions = [
+    { value: '30days',  label: '30d' },
+    { value: '90days',  label: '90d' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'alltime', label: 'All time' },
+  ];
+
+  const runHasData = runMetrics?.hasData;
+
+  const isEmpty = sport === 'run' ? !runHasData : !chartData;
 
   return (
-    <div className="w-full h-full flex flex-col backdrop-blur-xl  border p-2 bg-white rounded-2xl p-4 sm:p-6 shadow-lg ">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 mb-1.5">
-        <h2 className="text-lg md:text-xl font-semibold text-gray-900">Power Radar</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-600">COMPARE TO</span>
-          <DropdownMenu
-            selectedValue={comparePeriod}
-            options={[
-              { value: '90days', label: 'Past 90 days' },
-              { value: '30days', label: 'Past 30 days' },
-              { value: 'monthly', label: 'Monthly' },
-              { value: 'alltime', label: 'All Time' }
-            ]}
-            onChange={(value) => {
-              setComparePeriod(value);
-              if (value !== 'monthly') {
-              setSelectedMonths([]);
-              }
-            }}
-            displayKey="label"
-            valueKey="value"
-          />
-          {refreshing && (
-            <span className="text-[10px] text-gray-500">Refreshing…</span>
-          )}
-                      </div>
-                    </div>
+    <div className="w-full h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
-      <div className="flex flex-col gap-1 flex-1 min-h-0">
-        {/* Month Selection for Monthly View */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="px-4 pt-4 pb-3 border-b border-gray-50">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div>
+            <h2 className="text-base font-bold text-gray-900 leading-tight">
+              {sport === 'bike' ? 'Power Radar' : 'Pace Radar'}
+            </h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {sport === 'bike' ? 'Peak power across durations' : 'Best pace across distances'}
+            </p>
+          </div>
+
+          {/* Sport toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 shrink-0">
+            {[{ id: 'bike', label: 'Bike', icon: '/icon/bike.svg' }, { id: 'run', label: 'Run', icon: '/icon/run.svg' }].map(s => (
+              <button
+                key={s.id}
+                onClick={() => setSport(s.id)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  sport === s.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+                style={{ touchAction: 'manipulation' }}
+              >
+                <img
+                  src={s.icon}
+                  alt=""
+                  className={`w-3.5 h-3.5 ${sport === s.id ? '' : 'opacity-50'}`}
+                />
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Period pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mr-0.5">Compare</span>
+          {periodOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { setComparePeriod(opt.value); if (opt.value !== 'monthly') setSelectedMonths([]); }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                comparePeriod === opt.value
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+              }`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {refreshing && (
+            <span className="text-[10px] text-gray-400 ml-1">↻</span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Body ───────────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 pb-4">
+
+        {/* Month picker */}
         {comparePeriod === 'monthly' && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-lg p-2 mb-1">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-semibold text-gray-900">Select Months</span>
-                        <button
-                          onClick={() => {
-                  if (selectedMonths.length === availableMonths.length) {
-                              setSelectedMonths([]);
-                            } else {
-                    setSelectedMonths(availableMonths.map(m => m.key));
-                            }
-                          }}
-                className="text-xs text-gray-600 hover:text-gray-900"
-                        >
-                {selectedMonths.length === availableMonths.length ? 'Deselect All' : 'Select All'}
-                        </button>
-                      </div>
-            <div className="flex flex-wrap gap-2">
-              {availableMonths.map(month => (
-                <label key={month.key} className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                    checked={selectedMonths.includes(month.key)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                        setSelectedMonths([...selectedMonths, month.key]);
-                              } else {
-                        setSelectedMonths(selectedMonths.filter(m => m !== month.key));
-                              }
-                            }}
-                    className="w-3 h-3 text-primary focus:ring-primary border-gray-300 rounded"
-                          />
-                  <span className="text-xs text-gray-700">{month.label}</span>
-                          </label>
-                      ))}
-                    </div>
-                  </div>
+          <div className="mt-3 mb-1 bg-gray-50 rounded-xl border border-gray-100 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-600">Select Months</span>
+              <button
+                onClick={() => setSelectedMonths(
+                  selectedMonths.length === availableMonths.length ? [] : availableMonths.map(m => m.key)
+                )}
+                className="text-[11px] text-primary font-semibold hover:underline"
+              >
+                {selectedMonths.length === availableMonths.length ? 'Deselect all' : 'Select all'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {availableMonths.map(m => (
+                <label key={m.key} className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedMonths.includes(m.key)}
+                    onChange={e => setSelectedMonths(
+                      e.target.checked ? [...selectedMonths, m.key] : selectedMonths.filter(k => k !== m.key)
+                    )}
+                    className="w-3 h-3 text-primary rounded border-gray-300 focus:ring-primary"
+                  />
+                  <span className="text-xs text-gray-700">{m.label}</span>
+                </label>
+              ))}
+              {availableMonths.length === 0 && (
+                <span className="text-xs text-gray-400">No monthly data available</span>
+              )}
+            </div>
+          </div>
         )}
 
+        {/* Error banner */}
         {loadError && (
-          <div className="mb-2 p-2 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-sm">
+          <div className="mt-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
             {loadError}
           </div>
         )}
-        {/* Radar Chart */}
-        <div className="w-full relative" style={{ height: '320px' }}>
-          {chartData && chartOptions ? (
-            <Radar
-              data={chartData}
-              options={chartOptions}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-500">
-              {loadError
-                ? null
-                : comparePeriod === 'monthly' && selectedMonths.length === 0
-                  ? 'Select months to display'
-                  : (powerMetrics?.trainingsCount === 0 ? 'No power data for this period. Add cycling activities with power.' : 'No data available')}
-            </div>
-          )}
-        </div>
 
-        {/* Custom legend — stacked vertically */}
-        {chartData && (
-          <div className="flex flex-col items-center gap-1 pb-1">
-            {chartData.datasets.map((ds, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <span
-                  className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: ds.borderColor }}
-                />
-                <span className="text-xs text-gray-600">{ds.label}</span>
-              </div>
-            ))}
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="mt-4 flex items-center justify-center h-56 text-gray-400 text-sm">
+            <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            Loading…
           </div>
         )}
 
+        {/* Empty state */}
+        {!loading && isEmpty && (
+          <div className="mt-4 flex flex-col items-center justify-center h-48 text-center gap-2">
+            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.5l4-4 4 3 4-7 4 4.5"/>
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-gray-500">No {sport === 'bike' ? 'power' : 'pace'} data yet</p>
+            <p className="text-xs text-gray-400 max-w-[200px]">
+              {sport === 'bike'
+                ? 'Upload cycling activities with power data to see your radar.'
+                : 'Log run training sessions with interval data to see your pace radar.'}
+            </p>
+          </div>
+        )}
 
-        {/* Power Table - Collapsible */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg overflow-hidden">
-                      <button
-            onClick={() => setIsTableExpanded(!isTableExpanded)}
-            className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
-          >
-            <h3 className="text-sm font-semibold text-gray-900">Power</h3>
-            <svg
-              className={`w-5 h-5 text-gray-600 transition-transform ${isTableExpanded ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-                      </button>
-          <div className={`overflow-hidden transition-all duration-300 ${isTableExpanded ? 'max-h-[800px]' : 'max-h-0'}`}>
-            <div className="p-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-white/20">
-                      <th className="text-left py-2 px-2 text-gray-600 font-medium"></th>
-                      {comparePeriod !== 'alltime' && (
-                        <>
-                          <th className="text-right py-2 px-2 text-gray-600 font-medium">
-                            {comparePeriod === '90days' ? '90 days' : '30 days'}
-                          </th>
-                          <th className="text-right py-2 px-2 text-gray-600 font-medium">All Time</th>
-                          <th className="text-right py-2 px-2 text-gray-600 font-medium">%</th>
-                        </>
-                      )}
-                      {comparePeriod === 'alltime' && (
-                        <th className="text-right py-2 px-2 text-gray-600 font-medium">All Time</th>
-                      )}
-                      <th className="text-left py-2 px-2 text-gray-600 font-medium">Info</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableData.map((row, index) => {
-                      const periodText = comparePeriod === '90days' ? 'past 90 days' : comparePeriod === '30days' ? 'past 30 days' : '';
-                      // Use displayed values (period vs all-time) to avoid inverted messaging from stale/backfilled improvements.
-                      const diffVsAllTime = (Number(row.compareValue || 0) - Number(row.allTimeValue || 0));
-                      const pctVsAllTime = row.allTimeValue > 0 ? Math.round((diffVsAllTime / row.allTimeValue) * 100) : 0;
-                      const improvement = {
-                        improvement: diffVsAllTime,
-                        percentage: pctVsAllTime,
-                      };
-                      const pr = row.pr;
-                      
-                      const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts) => {
-                        try {
-                          if (!trainingId && !stravaId) return;
-                          const athleteParam = targetAthleteId ? `/${targetAthleteId}` : '';
-                          const params = new URLSearchParams();
-                          if (metricKey) params.set('highlightMetric', metricKey);
-                          if (claimedWatts) params.set('radarWatts', String(Math.round(claimedWatts)));
-                          const qs = params.toString() ? `?${params.toString()}` : '';
-                          const base = `/training-calendar${athleteParam}`;
-                          if (stravaId) {
-                            navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${qs}`);
-                          } else if (trainingType === 'fit' && trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
-                          } else if (trainingType === 'strava' && trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${qs}`);
-                          } else if (trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
-                          }
-                        } catch (err) {
-                          console.warn('[SpiderChart] Navigation error:', err);
-                        }
-                      };
-                      
-                      return (
-                        <tr key={index} className="border-b border-white/10">
-                          <td className="py-2 px-2 text-gray-700 font-medium">{row.label} ({row.name})</td>
-                          {comparePeriod !== 'alltime' && (
-                            <>
-                              <td className="text-right py-2 px-2">
-                                {(row.compareTrainingId || row.compareStravaId) ? (
-                                  <button
-                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId, row.key, row.compareValue)}
-                                    className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
-                                    title="Click to view training"
-                                  >
-                                    {row.compareValue} W
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-900 font-semibold">{row.compareValue} W</span>
-                                )}
-                              </td>
-                              <td className="text-right py-2 px-2">
-                                {(row.allTimeTrainingId || row.allTimeStravaId) ? (
-                                  <button
-                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key, row.allTimeValue)}
-                                    className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
-                                    title="Click to view training"
-                                  >
-                                    {row.allTimeValue} W
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-900 font-semibold">{row.allTimeValue} W</span>
-                                )}
-                              </td>
-                              <td className="text-right py-2 px-2 text-gray-600">{row.percentage}%</td>
-                            </>
+        {/* Radar chart */}
+        {!loading && !isEmpty && (
+          <>
+            <div className="w-full relative mt-2" style={{ height: '280px' }}>
+              {chartData && (
+                <Radar data={chartData} options={chartOptions} />
+              )}
+              {(!chartData && comparePeriod === 'monthly' && selectedMonths.length === 0) && (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
+                  Select months to display
+                </div>
+              )}
+            </div>
+
+            {/* Legend */}
+            {chartData && (
+              <div className="flex items-center justify-center gap-4 mt-1 mb-2 flex-wrap">
+                {chartData.datasets.map((ds, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: typeof ds.borderColor === 'string' ? ds.borderColor.replace('rgba(', 'rgb(').replace(/, *[\d.]+\)$/, ')') : ds.borderColor }}
+                    />
+                    <span className="text-[11px] text-gray-600 font-medium">{ds.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Stats table */}
+            <div className="rounded-2xl border border-gray-100 overflow-hidden mt-2">
+              <button
+                onClick={() => setIsTableExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+              >
+                <span className="text-sm font-semibold text-gray-800">
+                  {sport === 'bike' ? 'Power Bests' : 'Pace Bests'}
+                </span>
+                <svg
+                  className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isTableExpanded ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <div className={`overflow-hidden transition-all duration-300 ${isTableExpanded ? 'max-h-[900px]' : 'max-h-0'}`}>
+                <div className="divide-y divide-gray-50">
+                  {tableRows.map((row, i) => {
+                    const hasAllTime = row.allTimeVal && row.allTimeVal > 0;
+                    const hasCmp = row.compareVal && row.compareVal > 0;
+                    const showPeriod = comparePeriod !== 'alltime' && comparePeriod !== 'monthly';
+
+                    // Format display values
+                    const allTimeDisplay = sport === 'bike'
+                      ? (hasAllTime ? `${Math.round(row.allTimeVal)} W` : '—')
+                      : (hasAllTime ? `${fmtPace(row.allTimeVal)} /km` : '—');
+                    const cmpDisplay = sport === 'bike'
+                      ? (hasCmp ? `${Math.round(row.compareVal)} W` : '—')
+                      : (hasCmp ? `${fmtPace(row.compareVal)} /km` : '—');
+
+                    // Delta: positive = improvement
+                    const deltaPositive = row.delta !== null && row.delta > 0;
+                    const deltaDisplay = row.delta !== null && row.delta !== 0
+                      ? (sport === 'bike'
+                          ? `${row.delta > 0 ? '+' : ''}${Math.round(row.delta)} W`
+                          : `${row.delta > 0 ? '+' : ''}${fmtPace(Math.abs(row.delta))} faster`)
+                      : null;
+
+                    return (
+                      <div key={i} className="px-4 py-3 bg-white">
+                        {/* Row header */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-gray-900 w-10 shrink-0">{row.label}</span>
+                            <span className="text-xs text-gray-500">{row.name}</span>
+                          </div>
+                          {showPeriod && hasCmp && hasAllTime && (
+                            <div className="flex items-center gap-1.5">
+                              {deltaDisplay && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                                  deltaPositive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                                }`}>
+                                  {deltaPositive ? '↑' : '↓'} {deltaDisplay}
+                                </span>
+                              )}
+                            </div>
                           )}
-                          {comparePeriod === 'alltime' && (
-                            <td className="text-right py-2 px-2">
-                              {(row.allTimeTrainingId || row.allTimeStravaId) ? (
+                        </div>
+
+                        {/* Values row */}
+                        <div className="flex items-center gap-3 mb-1.5">
+                          {showPeriod && (
+                            <div className="flex-1">
+                              <div className="text-[10px] text-gray-400 mb-0.5 uppercase tracking-wide">
+                                {comparePeriod === '90days' ? '90 days' : '30 days'}
+                              </div>
+                              {sport === 'bike' && (row.cmpTrainingId || row.cmpStravaId) ? (
                                 <button
-                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key, row.allTimeValue)}
-                                  className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
-                                  title="Click to view training"
+                                  onClick={() => handleTrainingClick(row.cmpTrainingId, row.cmpTrainingType, row.cmpStravaId, row.id, row.compareVal)}
+                                  className="text-xs font-semibold text-primary hover:underline"
                                 >
-                                  {row.allTimeValue} W
+                                  {cmpDisplay}
                                 </button>
                               ) : (
-                                <span className="text-gray-900 font-semibold">{row.allTimeValue} W</span>
+                                <span className="text-xs font-semibold text-gray-800">{cmpDisplay}</span>
                               )}
-                            </td>
+                            </div>
                           )}
-                          <td className="py-2 px-2 text-gray-600">
-                            <div className="space-y-1">
-                              {pr && pr.date && pr.value > 0 && (
-                                <div className="text-xs">
-                                  <span className="font-semibold">PR:</span> {pr.value}W ({formatDate(pr.date)})
-                                </div>
-                              )}
-                              {comparePeriod !== 'alltime' && improvement && improvement.improvement !== 0 && (
-                                <div className={`text-xs ${improvement.improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  In the {periodText}, your {row.label} power {improvement.improvement > 0 ? 'increased' : 'decreased'} by{' '}
-                                  <span className="font-semibold">{Math.abs(improvement.improvement)}W</span>
-                                  {improvement.percentage !== 0 && (
-                                    <span> ({improvement.percentage > 0 ? '+' : ''}{improvement.percentage}% vs All Time)</span>
-                                  )}
-                    </div>
-                              )}
-                              {comparePeriod !== 'alltime' && improvement && improvement.improvement === 0 && (
-                                <div className="text-xs text-gray-500">No change in the {periodText}</div>
-                              )}
+                          <div className="flex-1">
+                            <div className="text-[10px] text-gray-400 mb-0.5 uppercase tracking-wide">All time</div>
+                            {sport === 'bike' && (row.allTimeTrainingId || row.allTimeStravaId) ? (
+                              <button
+                                onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.id, row.allTimeVal)}
+                                className="text-xs font-semibold text-primary hover:underline"
+                              >
+                                {allTimeDisplay}
+                              </button>
+                            ) : (
+                              <span className="text-xs font-semibold text-gray-800">{allTimeDisplay}</span>
+                            )}
+                          </div>
                         </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                    </div>
-                  </div>
+
+                        {/* Progress bar */}
+                        {showPeriod && hasAllTime && hasCmp && (
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${row.pct >= 90 ? 'bg-green-400' : row.pct >= 70 ? 'bg-blue-400' : 'bg-orange-400'}`}
+                              style={{ width: `${Math.min(100, Math.max(0, row.pct))}%` }}
+                            />
+                          </div>
+                        )}
+
+                        {/* PR info (bike only) */}
+                        {sport === 'bike' && row.pr?.value > 0 && row.pr?.date && (
+                          <div className="mt-1.5 text-[10px] text-gray-400">
+                            <span className="font-semibold text-amber-600">PR</span>{' '}
+                            {row.pr.value} W · {new Date(row.pr.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-        </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

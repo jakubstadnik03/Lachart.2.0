@@ -32,7 +32,64 @@ const TERRAIN_OPTIONS = {
 };
 
 const WEATHER_OPTIONS = ["sunny", "indoor", "rainy", "windy"];
-const CATEGORY_OPTIONS = ["endurance", "tempo", "threshold", "vo2max", "anaerobic", "recovery", "hills"];
+// ── Category icon components ──────────────────────────────────────────────────
+const CatIcon = ({ children, size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+       style={{ flexShrink: 0, display: 'block' }}>
+    {children}
+  </svg>
+);
+
+const CAT_ICONS = {
+  // Sine wave = steady aerobic rhythm
+  endurance: <CatIcon><path d="M2 12 C5.5 6 8.5 6 12 12 C15.5 18 18.5 18 22 12" /></CatIcon>,
+  // Lactate curve: gentle bend + circle at LT1 inflection
+  lt1: <CatIcon>
+    <polyline points="3,19 9,16 14,10 20,5" />
+    <circle cx="14" cy="10" r="2.2" fill="currentColor" stroke="none" />
+  </CatIcon>,
+  // Stopwatch
+  tempo: <CatIcon>
+    <circle cx="12" cy="13" r="8" />
+    <polyline points="12,9 12,13 15,15" />
+    <line x1="9" y1="2" x2="15" y2="2" />
+    <line x1="12" y1="2" x2="12" y2="5" />
+  </CatIcon>,
+  // Lactate curve: steeper bend + circle at LT2
+  lt2: <CatIcon>
+    <polyline points="3,19 7,18 10,15 13,9 19,4" />
+    <circle cx="13" cy="9" r="2.2" fill="currentColor" stroke="none" />
+  </CatIcon>,
+  // Heart with small EKG pulse inside
+  zone2: <CatIcon strokeWidth="1.8">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <polyline points="8,12 10,10 11,14 13,10 14,12" strokeWidth="1.2" />
+  </CatIcon>,
+  // Upward arrow burst = VO2max
+  vo2max: <CatIcon>
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5,12 12,5 19,12" />
+    <line x1="8" y1="19" x2="8" y2="16" strokeWidth="1.2" />
+    <line x1="12" y1="21" x2="12" y2="19" strokeWidth="1.2" />
+    <line x1="16" y1="19" x2="16" y2="16" strokeWidth="1.2" />
+  </CatIcon>,
+  // Mountain elevation profile
+  hills: <CatIcon>
+    <polyline points="2,20 7,10 11,15 15,8 19,13 22,20" />
+    <line x1="2" y1="20" x2="22" y2="20" />
+  </CatIcon>,
+};
+
+const CATEGORY_CONFIG = [
+  { id: 'endurance', label: 'Endurance', idle: 'bg-blue-50   border-blue-200   text-blue-700',   on: 'bg-blue-500   border-blue-500   text-white' },
+  { id: 'lt1',       label: 'LT1',       idle: 'bg-sky-50    border-sky-200     text-sky-700',    on: 'bg-sky-500    border-sky-500     text-white' },
+  { id: 'tempo',     label: 'Tempo',     idle: 'bg-orange-50  border-orange-200  text-orange-700', on: 'bg-orange-500  border-orange-500  text-white' },
+  { id: 'lt2',       label: 'LT2',       idle: 'bg-violet-50  border-violet-200  text-violet-700', on: 'bg-violet-500  border-violet-500  text-white' },
+  { id: 'zone2',     label: 'Zone 2',    idle: 'bg-green-50   border-green-200   text-green-700',  on: 'bg-green-500   border-green-500   text-white' },
+  { id: 'vo2max',    label: 'VO₂max',    idle: 'bg-red-50     border-red-200     text-red-700',    on: 'bg-red-500     border-red-500     text-white' },
+  { id: 'hills',     label: 'Hills',     idle: 'bg-amber-50   border-amber-200   text-amber-700',  on: 'bg-amber-500   border-amber-500   text-white' },
+];
 
 /** Pace/duration display: avoid float garbage (e.g. 14.699999999999989) from JS % and division. */
 const formatSecondsToMMSS = (seconds) => {
@@ -195,6 +252,135 @@ function autoDetectIntervalTypes(results) {
     const isShort = avgWorkDur > 0 && dur > 0 && dur < avgWorkDur * 0.65;
     return { ...r, intervalType: isShort ? 'recovery' : 'work' };
   });
+}
+
+/* ─── Title combobox ───────────────────────────────────────────────────────── */
+function TitleCombobox({ value, options, onChange, placeholder, hasWarning }) {
+  const [open, setOpen]       = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef(null);
+  const panelRef = useRef(null);
+
+  // Filter options
+  const filtered = !value
+    ? options.slice(0, 10)
+    : options.filter(o => o.toLowerCase().includes(value.toLowerCase())).slice(0, 10);
+
+  const showCreate = value && !options.some(o => o.toLowerCase() === value.toLowerCase());
+
+  // Update dropdown position (fixed → no scrollY needed)
+  const updatePos = () => {
+    if (!inputRef.current) return;
+    const r = inputRef.current.getBoundingClientRect();
+    setDropPos({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  // Reposition on open
+  useEffect(() => {
+    if (!open) return;
+    updatePos();
+  }, [open]);
+
+  // Reposition on scroll/resize (keep dropdown anchored to input while scrolling)
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('scroll', updatePos, true);
+    window.addEventListener('resize', updatePos);
+    return () => {
+      window.removeEventListener('scroll', updatePos, true);
+      window.removeEventListener('resize', updatePos);
+    };
+  }, [open]);
+
+  // Close only on outside CLICK — not on mousedown/pointerdown so scroll gestures
+  // never accidentally trigger a close + re-render that interrupts the scroll.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (inputRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('click', close, true);
+    return () => document.removeEventListener('click', close, true);
+  }, [open]);
+
+  const dropdown = open && (filtered.length > 0 || showCreate)
+    ? ReactDOM.createPortal(
+        <div
+          ref={panelRef}
+          className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+          style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 99999 }}
+        >
+          <div className="overflow-y-auto max-h-56 py-1">
+            {filtered.map(o => (
+              <button
+                key={o}
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(o); setOpen(false); }}
+                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
+                  o === value ? 'font-semibold text-primary bg-primary/5' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {o}
+              </button>
+            ))}
+            {showCreate && (
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(value); setOpen(false); }}
+                className="w-full text-left px-3 py-2.5 text-sm text-primary font-semibold hover:bg-primary/5 border-t border-gray-100 flex items-center gap-2"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="truncate">Use &ldquo;{value}&rdquo;</span>
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={e => { onChange(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className={`w-full rounded-xl border bg-white pl-3 pr-9 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary min-h-[44px] transition-colors ${
+            hasWarning ? 'border-amber-300' : 'border-gray-200'
+          }`}
+        />
+        {/* Search chevron / clear */}
+        {value ? (
+          <button
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => { onChange(''); inputRef.current?.focus(); setOpen(true); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        ) : (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-300">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        )}
+      </div>
+      {dropdown}
+    </>
+  );
 }
 
 /* ─── Default-title detection ──────────────────────────────────────────────── */
@@ -874,36 +1060,41 @@ const TrainingForm = ({
           {/* ── Top section ── */}
           <div className="px-4 pt-4 pb-2 space-y-4">
 
-              {/* Date + Category row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelBase}>Date</label>
-                  <input
-                    type="datetime-local"
-                    value={formData.date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                    className={inputBase}
-                  />
-                </div>
-                <div>
-                  <label className={labelBase}>Category</label>
-                  <div className="relative">
-                    <select
-                      value={formData.category || ""}
-                      onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                      className={selectBase}
-                    >
-                      <option value="">Select</option>
-                      {CATEGORY_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option.charAt(0).toUpperCase() + option.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <ChevronDown />
-                    </span>
-                  </div>
+              {/* Date — full width */}
+              <div>
+                <label className={labelBase}>Date</label>
+                <input
+                  type="datetime-local"
+                  value={formData.date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  className={inputBase}
+                />
+              </div>
+
+              {/* Category — pill selector */}
+              <div>
+                <label className={labelBase}>Category</label>
+                <div
+                  className="flex gap-2 pb-0.5"
+                  style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
+                >
+                  {CATEGORY_CONFIG.map(({ id, label, idle, on }) => {
+                    const isActive = formData.category === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, category: isActive ? '' : id }))}
+                        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', flexShrink: 0 }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all min-h-[40px] whitespace-nowrap ${
+                          isActive ? on : idle
+                        }`}
+                      >
+                        {CAT_ICONS[id]}
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -918,7 +1109,7 @@ const TrainingForm = ({
                       onClick={() => {
                         const generated = generateTrainingTitle(formData.sport, formData.category, formData.results);
                         setIsCustomTitle(true);
-                        setFormData(prev => ({ ...prev, customTitle: generated }));
+                        setFormData(prev => ({ ...prev, customTitle: generated, title: '' }));
                       }}
                       title="Auto-generate title from intervals"
                       className="flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/8 hover:bg-primary/15 border border-primary/20 rounded-full px-2 py-0.5 transition-colors"
@@ -964,51 +1155,17 @@ const TrainingForm = ({
                   </div>
                 )}
 
-                {!isCustomTitle ? (
-                  <div className="relative">
-                    <select
-                      value={formData.title}
-                      onChange={(e) => {
-                        if (e.target.value === "custom") {
-                          setIsCustomTitle(true);
-                        } else {
-                          setFormData(prev => ({ ...prev, title: e.target.value }));
-                        }
-                      }}
-                      className={`${selectBase} ${!formData.title ? 'border-amber-300 ring-1 ring-amber-200 focus:ring-primary focus:border-primary' : ''}`}
-                    >
-                      <option value="">Select training…</option>
-                      {trainingTitles.map((title) => (
-                        <option key={title} value={title}>{title}</option>
-                      ))}
-                      <option value="custom">+ Add custom title</option>
-                    </select>
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <ChevronDown />
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={formData.customTitle}
-                      onChange={(e) => setFormData(prev => ({ ...prev, customTitle: e.target.value }))}
-                      placeholder="Enter custom title"
-                      className={inputBase}
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCustomTitle(false);
-                        setFormData(prev => ({ ...prev, customTitle: "" }));
-                      }}
-                      className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-xl hover:bg-gray-100 min-h-[44px]"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
+                {/* Combobox — type freely or pick from existing titles */}
+                <TitleCombobox
+                  value={formData.customTitle || formData.title || ''}
+                  options={trainingTitles}
+                  hasWarning={!formData.title && !formData.customTitle}
+                  placeholder="Type or select a training title…"
+                  onChange={(val) => {
+                    setIsCustomTitle(true);
+                    setFormData(prev => ({ ...prev, customTitle: val, title: '' }));
+                  }}
+                />
               </div>
 
               {/* Description — collapsible */}
