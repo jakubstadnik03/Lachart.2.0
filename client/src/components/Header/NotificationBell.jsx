@@ -4,6 +4,18 @@ import { BellAlertIcon } from '@heroicons/react/24/solid';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 
+// Emoji icon based on notification type
+const typeIcon = (type) => {
+  if (!type) return '🔔';
+  if (type.includes('comment'))  return '💬';
+  if (type.includes('lactate'))  return '🩸';
+  if (type.includes('strava'))   return '🔗';
+  if (type.includes('fit'))      return '📁';
+  if (type.includes('training')) return '🏋️';
+  if (type.includes('test'))     return '📊';
+  return '🔔';
+};
+
 export default function NotificationBell() {
   const [notifs, setNotifs] = useState([]);
   const [open, setOpen] = useState(false);
@@ -25,7 +37,13 @@ export default function NotificationBell() {
   useEffect(() => {
     load();
     const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    // Reload when a push notification arrives in foreground (dispatched by initCapacitorShell)
+    const onPush = () => load();
+    window.addEventListener('pushNotificationReceived', onPush);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('pushNotificationReceived', onPush);
+    };
   }, []);
 
   // Close on outside click
@@ -129,8 +147,8 @@ export default function NotificationBell() {
                 onClick={() => handleNotifClick(n)}
                 className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors group ${!n.read ? 'bg-primary/5' : ''}`}
               >
-                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white ${!n.read ? 'bg-primary' : 'bg-gray-300'}`}>
-                  💬
+                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-sm ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                  {typeIcon(n.type)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-gray-900 truncate">{n.title}</p>

@@ -1447,3 +1447,7 @@ export const getNotifications = () => api.get('/api/notifications');
 export const markAllNotificationsRead = () => api.patch('/api/notifications/read');
 export const markNotificationRead = (id) => api.patch(`/api/notifications/${id}/read`);
 export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`);
+
+// Mobile push token registration (Capacitor / Expo)
+export const registerPushToken = (expoPushToken) =>
+  api.post('/user/push-token', { expoPushToken });

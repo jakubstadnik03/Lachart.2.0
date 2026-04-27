@@ -5,6 +5,7 @@ import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
@@ -365,7 +366,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                 { name: 'TSS Calculator', path: '/tss-calculator', icon: '/icon/dashboard.svg', variant: 'default' },
                 { name: 'Zone 2 Helper', path: '/zone2-calculator', icon: '/icon/training.svg', variant: 'default' },
                 { name: 'Training Zones Calculator', path: '/training-zones-calculator', icon: '/icon/testing.svg', variant: 'default' },
-                { name: 'About LaChart', path: '/about', icon: '/icon/info.svg', variant: 'ghost' },
+                ...(!isCapacitorNative() ? [{ name: 'About LaChart', path: '/about', icon: '/icon/info.svg', variant: 'ghost' }] : []),
                 { name: 'Lactate Guide', path: '/lactate-guide', icon: '/icon/testing.svg', variant: 'ghost' },
                 { name: 'Sign up for free', path: '/signup', icon: '/icon/register-white.svg', variant: 'primary' },
               ].map((item) => (

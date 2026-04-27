@@ -32,7 +32,11 @@ export function SearchableSelect({ value, options, onChange, placeholder = "Sele
         panelRef.current && !panelRef.current.contains(e.target)
       ) setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = () => {
+      // Don't close if the user is typing in the search input (mobile keyboard causes a viewport scroll)
+      if (panelRef.current && panelRef.current.contains(document.activeElement)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onMouse);
     window.addEventListener('scroll', onScroll, true); // capture phase catches nested scrollers too
     return () => {
@@ -84,7 +88,6 @@ export function SearchableSelect({ value, options, onChange, placeholder = "Sele
     >
       <div className="p-2 border-b border-gray-100">
         <input
-          autoFocus
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}

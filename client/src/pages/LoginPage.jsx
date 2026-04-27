@@ -1103,9 +1103,9 @@ const LoginPage = () => {
               <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
               <ul className="mt-4 space-y-4">
                 <li>
-                  <a href="/lactate-curve-calculator" className="text-base text-gray-600 hover:text-primary">
+                  <Link to="/lactate-curve-calculator" className="text-base text-gray-600 hover:text-primary">
                     Try Demo
-                  </a>
+                  </Link>
                 </li>
                 <li>
                   <a href="/lactate-guide" className="text-base text-gray-600 hover:text-primary">

@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 let backListenerHandle;
 
 /**
- * One-time setup for Capacitor iOS/Android WebView: splash, status bar, hardware back.
+ * One-time setup for Capacitor iOS/Android WebView: splash, status bar, hardware back, push notifications.
  */
 export async function initCapacitorShell() {
   if (!Capacitor.isNativePlatform()) return;
@@ -40,5 +40,69 @@ export async function initCapacitorShell() {
     }
   } catch {
     // ignore
+  }
+
+  // ── Push notifications ─────────────────────────────────────────────────────
+  try {
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+    const { registerPushToken } = await import('../services/api');
+
+    // Check current permission (no prompt)
+    let permStatus = await PushNotifications.checkPermissions();
+
+    // Only request permission if not yet decided
+    if (permStatus.receive === 'prompt') {
+      permStatus = await PushNotifications.requestPermissions();
+    }
+
+    if (permStatus.receive === 'granted') {
+      // Register with APNs (iOS) / FCM (Android)
+      await PushNotifications.register();
+
+      // Send token to our backend once received
+      await PushNotifications.addListener('registration', async (token) => {
+        console.log('[Push] Device token:', token.value);
+        try {
+          await registerPushToken(token.value);
+          console.log('[Push] Token registered on server');
+        } catch (err) {
+          console.warn('[Push] Failed to register token on server:', err);
+        }
+      });
+
+      await PushNotifications.addListener('registrationError', (err) => {
+        console.error('[Push] Registration error:', err);
+      });
+
+      // Foreground notification — show in-app via NotificationContext is not available here,
+      // so we dispatch a custom event that NotificationBell can listen for
+      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        console.log('[Push] Received in foreground:', notification);
+        window.dispatchEvent(new CustomEvent('pushNotificationReceived', {
+          detail: notification,
+        }));
+      });
+
+      // Notification tap — navigate to the relevant screen
+      await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        console.log('[Push] Tapped:', action);
+        const data = action.notification?.data || {};
+        const resourceId   = data.resourceId   || data.resource_id;
+        const resourceType = data.resourceType || data.resource_type || 'training';
+
+        let path = '/training-calendar';
+        if (resourceId) {
+          // Match the convention used in NotificationBell & TrainingStats
+          path = resourceType === 'training'
+            ? `/training-calendar/training-${resourceId}`
+            : `/training-calendar/${resourceId}`;
+        }
+
+        // Use replace to avoid stacking history entries from notification taps
+        window.location.replace(`${window.location.origin}${path}`);
+      });
+    }
+  } catch (err) {
+    console.warn('[Push] Plugin init failed:', err);
   }
 }

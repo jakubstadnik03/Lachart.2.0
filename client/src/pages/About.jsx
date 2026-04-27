@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import ContactUs from '../components/ContactUs';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { useAuth } from '../context/AuthProvider';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
@@ -539,6 +540,7 @@ const VideoTutorialsSection = () => {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const About = () => {
+  const { isAuthenticated } = useAuth();
   const [showCookieBar, setShowCookieBar] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isScrolled, setIsScrolled] = useState(false);
@@ -645,8 +647,9 @@ const About = () => {
       : { initial, whileInView, transition, viewport }
   );
 
-  // About is web-only – redirect to login on native iOS/Android
-  if (isCapacitorNative()) return <Navigate to="/login" replace />;
+  // About is a marketing/web page – redirect away on native iOS/Android
+  // Authenticated users go to dashboard; unauthenticated users go to the login page
+  if (isCapacitorNative()) return <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />;
 
   return (
     <main className="min-h-screen bg-white">
