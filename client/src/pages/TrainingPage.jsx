@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
+import { PlusIcon, ChevronDownIcon, ListBulletIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
@@ -445,7 +446,10 @@ export default function TrainingPage() {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"
       >
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Training Log</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+            <ListBulletIcon className="w-6 h-6 text-primary" />
+            Training Log
+          </h1>
           {filteredTrainings.length > 0 && (
             <p className="text-xs text-gray-400 mt-0.5">{filteredTrainings.length} training{filteredTrainings.length !== 1 ? 's' : ''}</p>
           )}
@@ -467,9 +471,7 @@ export default function TrainingPage() {
               <option value="uncategorized">Uncategorized</option>
             </select>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              <ChevronDownIcon className="w-3.5 h-3.5 text-gray-400" />
             </div>
           </div>
 
@@ -496,9 +498,7 @@ export default function TrainingPage() {
             {isSubmitting ? (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
             ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              <PlusIcon className="w-4 h-4" />
             )}
             {isSubmitting ? 'Adding…' : 'Add Training'}
           </motion.button>

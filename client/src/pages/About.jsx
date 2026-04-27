@@ -6,6 +6,14 @@ import { Helmet } from 'react-helmet';
 import ContactUs from '../components/ContactUs';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { useAuth } from '../context/AuthProvider';
+import {
+  AcademicCapIcon,
+  TrophyIcon,
+  BoltIcon,
+  ArrowPathRoundedSquareIcon,
+  BeakerIcon,
+  SparklesIcon,
+} from '@heroicons/react/24/outline';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
@@ -608,10 +616,10 @@ const About = () => {
   const filteredFeatures = selectedCategory === 'All' ? features : features.filter(f => categoryMap[f.category] === selectedCategory);
 
   const audiences = [
-    { title: 'Coaches', description: 'Manage multiple athletes, view historical lactate tests, track training calendars, and monitor lactate values from workouts.', icon: '👨‍🏫' },
-    { title: 'Athletes', description: 'Generate lactate curves, calculate training zones, track progress over time, and record lactate to intervals.', icon: '🏃‍♂️' },
-    { title: 'Cyclists', description: 'Test with power, calculate zones, sync from Strava, and analyze TSS and training load.', icon: '🚴' },
-    { title: 'Triathletes', description: 'Test with pace, track improvements in same workouts over time, and compare historical tests.', icon: '🏊' },
+    { title: 'Coaches',     description: 'Manage multiple athletes, view historical lactate tests, track training calendars, and monitor lactate values from workouts.', Icon: AcademicCapIcon,           color: 'text-violet-600',  bg: 'bg-violet-50'  },
+    { title: 'Athletes',    description: 'Generate lactate curves, calculate training zones, track progress over time, and record lactate to intervals.',               Icon: TrophyIcon,               color: 'text-amber-600',   bg: 'bg-amber-50'   },
+    { title: 'Cyclists',    description: 'Test with power, calculate zones, sync from Strava, and analyze TSS and training load.',                                     Icon: BoltIcon,                 color: 'text-primary',     bg: 'bg-primary/8'  },
+    { title: 'Triathletes', description: 'Test with pace, track improvements in same workouts over time, and compare historical tests.',                               Icon: ArrowPathRoundedSquareIcon, color: 'text-emerald-600', bg: 'bg-emerald-50' },
   ];
 
   const faqStructuredData = {
@@ -700,7 +708,7 @@ const About = () => {
       {/* ── Demo Banner ────────────────────────────────────────────────────── */}
       <div className="w-full bg-gradient-to-r from-primary to-secondary py-2.5 px-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3">
-          <span className="text-white text-sm font-medium text-center">✨ Try calculating lactate thresholds for free — no sign up needed</span>
+          <span className="text-white text-sm font-medium text-center">Try calculating lactate thresholds for free — no sign up needed</span>
           <a href="/lactate-curve-calculator" className="inline-block px-5 py-1.5 rounded-lg bg-white text-primary-dark font-bold text-sm shadow hover:bg-gray-50 transition-all whitespace-nowrap">Try Demo</a>
         </div>
       </div>
@@ -944,7 +952,7 @@ const About = () => {
                 className="absolute top-1/2 -translate-y-1/2 -right-3 sm:-right-6 bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 hidden sm:flex items-center gap-2.5"
               >
                 <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                  <span className="text-sm">🧪</span>
+                  <BeakerIcon className="w-4 h-4 text-amber-600" />
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">La baseline</p>
@@ -1389,7 +1397,9 @@ const About = () => {
             {audiences.map((a, i) => (
               <motion.div key={a.title} {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 })}
                 className="group rounded-2xl border border-gray-200 bg-white p-6 text-center hover:border-primary/40 hover:shadow-md transition-all">
-                <div className="text-4xl mb-4">{a.icon}</div>
+                <div className={`w-14 h-14 rounded-2xl ${a.bg} flex items-center justify-center mx-auto mb-4`}>
+                  <a.Icon className={`w-7 h-7 ${a.color}`} />
+                </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-3">{a.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed">{a.description}</p>
               </motion.div>
@@ -1587,7 +1597,9 @@ const About = () => {
           {/* Early access banner */}
           <motion.div {...revealProps({ opacity: 0, y: 16 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.05 }, { once: true, margin: '-40px' })}
             className="mb-8 rounded-2xl bg-gradient-to-r from-primary/10 via-purple-50 to-primary/5 border border-primary/20 p-5 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="text-4xl shrink-0">🎉</div>
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+              <SparklesIcon className="w-6 h-6 text-primary" />
+            </div>
             <div>
               <p className="font-bold text-gray-900 text-base">Free during demo &amp; early access</p>
               <p className="text-sm text-gray-600 mt-0.5">All features — lactate testing, FIT analysis, Strava sync, coaching tools — are fully available at no cost. When paid plans launch, existing users will get a generous discount.</p>
@@ -1628,7 +1640,7 @@ const About = () => {
                   <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$9.99</span>
                   <span className="text-gray-300 text-sm mb-1">/ month</span>
                 </div>
-                <p className="text-xs text-primary font-medium mt-1">✨ Free during early access</p>
+                <p className="text-xs text-primary font-medium mt-1">Free during early access</p>
               </div>
               <ul className="space-y-2 flex-1">
                 {['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support'].map(f => (
@@ -1651,7 +1663,7 @@ const About = () => {
                   <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$19.99</span>
                   <span className="text-gray-300 text-sm mb-1">/ month</span>
                 </div>
-                <p className="text-xs text-primary font-medium mt-1">✨ Free during early access</p>
+                <p className="text-xs text-primary font-medium mt-1">Free during early access</p>
               </div>
               <ul className="space-y-2 flex-1">
                 {['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export'].map(f => (

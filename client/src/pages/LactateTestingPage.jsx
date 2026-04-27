@@ -16,6 +16,10 @@ import {
   PlayIcon, PauseIcon, StopIcon, ChartBarIcon,
   ArrowDownTrayIcon as DownloadIcon, TrashIcon, HeartIcon,
   CheckCircleIcon, Cog6ToothIcon, ArrowPathIcon,
+  BeakerIcon, ClipboardDocumentListIcon, FireIcon,
+  ExclamationTriangleIcon, WrenchScrewdriverIcon, LinkIcon,
+  BoltIcon, FolderIcon, FlagIcon, CpuChipIcon,
+  SignalIcon, SunIcon, SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid, BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 
@@ -164,8 +168,9 @@ const LactateTestingPage = () => {
   });
 
   // ── Historical & lactate ──────────────────────────────────
-  const [historicalData, setHistoricalData] = useState([]);
-  const [lactateValues,  setLactateValues]  = useState([]);
+  const [historicalData,  setHistoricalData]  = useState([]);
+  const [lactateValues,   setLactateValues]   = useState([]);
+  const [savedSessionId,  setSavedSessionId]  = useState(null);
 
   // ── Inline lactate form ───────────────────────────────────
   const [lactateInput, setLactateInput] = useState('');
@@ -361,7 +366,7 @@ const LactateTestingPage = () => {
     if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
       setTimeout(() => Promise.resolve(trainer.setErgWatts(cd.power)).catch(console.error), 100);
     }
-    addNotification(`❄️ Cooldown: ${cd.power}W for ${fmtTime(cd.duration)}`, 'info');
+    addNotification(`Cooldown: ${cd.power}W for ${fmtTime(cd.duration)}`, 'info');
 
     cooldownTimerRef.current = setInterval(() => {
       setCooldownTimer(prev => {
@@ -563,7 +568,7 @@ const LactateTestingPage = () => {
           });
         }, 1000);
       }
-      addNotification(`🔥 Test started — Warmup phase`, 'success');
+      addNotification('Test started — Warmup phase', 'success');
     } else {
       setPhase('work');
       startIntervalTimer();
@@ -700,7 +705,7 @@ const LactateTestingPage = () => {
       .forEach(r => { if (r) clearInterval(r); });
     setTestState('idle'); setCurrentStep(0); setIntervalTimer(0); setTotalTestTime(0);
     setPhase('work'); setCountdown(0); setRecoveryTimer(0);
-    setHistoricalData([]); setLactateValues([]);
+    setHistoricalData([]); setLactateValues([]); setSavedSessionId(null);
     setLactateInput(''); setBorgInput('');
     setWattOffset(0); wattOffsetRef.current = 0;
     setWarmupStep(0); warmupStepRef.current = 0;
@@ -757,6 +762,7 @@ const LactateTestingPage = () => {
           }),
         };
         await completeLactateSession(sessionId, { fitFileData: fitData });
+        setSavedSessionId(sessionId);
         addNotification('Test saved ✓', 'success');
       }
     } catch (err) {
@@ -884,7 +890,7 @@ const LactateTestingPage = () => {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-              🧪 Lactate Threshold Testing
+              <BeakerIcon className="inline w-7 h-7 mr-2 text-primary align-middle" />Lactate Threshold Testing
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {testState === 'idle'
@@ -912,7 +918,7 @@ const LactateTestingPage = () => {
             <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-                  <span className="w-7 h-7 bg-primary/10 rounded-lg flex items-center justify-center text-sm">📋</span>
+                  <span className="w-7 h-7 bg-primary/10 rounded-lg flex items-center justify-center"><ClipboardDocumentListIcon className="w-4 h-4 text-primary" /></span>
                   Protocol Setup
                 </h2>
                 {protocol.steps.length > 0 && (
@@ -974,7 +980,7 @@ const LactateTestingPage = () => {
               {/* ── Warmup Settings ─────────────────────── */}
               <div className="border-t border-gray-100 pt-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700">🔥 Warmup</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5"><FireIcon className="w-4 h-4 text-amber-500" />Warmup</h3>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <div
                       onClick={() => setWarmup(prev => ({ ...prev, enabled: !prev.enabled }))}
@@ -1049,8 +1055,8 @@ const LactateTestingPage = () => {
                     {/* Warmup preview */}
                     <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
                       {warmup.type === 'fixed'
-                        ? `🔥 ${warmup.power}W · ${fmtTime(warmup.duration)}`
-                        : `🔥 ${warmup.stepCount} steps ${warmup.startPower}→${warmup.endPower}W · ${fmtTime(warmup.stepDuration)}/step · ${fmtTime(warmup.stepCount * warmup.stepDuration)} total`
+                        ? `Warmup: ${warmup.power}W · ${fmtTime(warmup.duration)}`
+                        : `Warmup: ${warmup.stepCount} steps ${warmup.startPower}→${warmup.endPower}W · ${fmtTime(warmup.stepDuration)}/step · ${fmtTime(warmup.stepCount * warmup.stepDuration)} total`
                       }
                     </div>
                   </div>
@@ -1060,7 +1066,7 @@ const LactateTestingPage = () => {
               {/* ── Cooldown Settings ────────────────────── */}
               <div className="border-t border-gray-100 pt-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700">❄️ Cooldown</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5"><SparklesIcon className="w-4 h-4 text-sky-500" />Cooldown</h3>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <div
                       onClick={() => setCooldown(prev => ({ ...prev, enabled: !prev.enabled }))}
@@ -1089,7 +1095,7 @@ const LactateTestingPage = () => {
                       </div>
                     </div>
                     <div className="text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2">
-                      ❄️ {cooldown.power}W · {fmtTime(cooldown.duration)} after last step
+                      Cooldown: {cooldown.power}W · {fmtTime(cooldown.duration)} after last step
                     </div>
                   </div>
                 )}
@@ -1103,7 +1109,7 @@ const LactateTestingPage = () => {
               </button>
 
               {!trainerConnected && (
-                <p className="text-xs text-amber-600 text-center">⚠ Connect trainer for automatic ERG control</p>
+                <p className="text-xs text-amber-600 text-center flex items-center justify-center gap-1"><ExclamationTriangleIcon className="w-3.5 h-3.5" />Connect trainer for automatic ERG control</p>
               )}
             </div>
 
@@ -1118,7 +1124,7 @@ const LactateTestingPage = () => {
               }`}>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">🚴</div>
+                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0"><CpuChipIcon className="w-5 h-5 text-gray-500" /></div>
                     <div>
                       <div className="font-semibold text-gray-900 text-sm">Smart Trainer</div>
                       <div className="text-xs text-gray-500">Bluetooth FTMS · ERG Mode</div>
@@ -1164,7 +1170,10 @@ const LactateTestingPage = () => {
                       : 'bg-primary text-white hover:bg-primary/90 shadow-sm shadow-primary/20'
                   }`}
                 >
-                  {trainerConnected ? '⚙ Manage Trainer' : '🔗 Connect Trainer'}
+                  {trainerConnected
+                    ? <><WrenchScrewdriverIcon className="inline w-4 h-4 mr-1" />Manage Trainer</>
+                    : <><LinkIcon className="inline w-4 h-4 mr-1" />Connect Trainer</>
+                  }
                 </button>
               </div>
 
@@ -1173,16 +1182,16 @@ const LactateTestingPage = () => {
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Additional Sensors</h3>
                 <div className="space-y-2">
                   {[
-                    { key: 'heartRate', icon: '💓', label: 'Heart Rate Monitor', val: devices.heartRate?.data?.heartRate, unit: 'bpm'         },
-                    { key: 'moxy',      icon: '📊', label: 'Moxy (SmO₂ / tHb)',  val: devices.moxy?.data?.smo2,          unit: '% SmO₂'       },
-                    { key: 'coreTemp',  icon: '🌡',  label: 'Core Temperature',   val: devices.coreTemp?.data?.coreTemp,  unit: '°C'           },
-                    { key: 'vo2master', icon: '💨', label: 'VO₂ Master',          val: devices.vo2master?.data?.vo2,      unit: 'ml/kg/min'    },
-                  ].map(({ key, icon, label, val, unit }) => {
+                    { key: 'heartRate', Icon: HeartIcon,   iconCls: 'text-rose-500',  label: 'Heart Rate Monitor', val: devices.heartRate?.data?.heartRate, unit: 'bpm'         },
+                    { key: 'moxy',      Icon: ChartBarIcon, iconCls: 'text-blue-500', label: 'Moxy (SmO₂ / tHb)',  val: devices.moxy?.data?.smo2,          unit: '% SmO₂'       },
+                    { key: 'coreTemp',  Icon: SunIcon,      iconCls: 'text-orange-500',label: 'Core Temperature',  val: devices.coreTemp?.data?.coreTemp,  unit: '°C'           },
+                    { key: 'vo2master', Icon: SignalIcon,   iconCls: 'text-purple-500',label: 'VO₂ Master',        val: devices.vo2master?.data?.vo2,      unit: 'ml/kg/min'    },
+                  ].map(({ key, Icon, iconCls, label, val, unit }) => {
                     const conn = devices[key]?.connected;
                     return (
                       <div key={key} className={`flex items-center justify-between p-2.5 rounded-xl transition-colors ${conn ? 'bg-emerald-50/60 border border-emerald-100' : 'bg-gray-50/60'}`}>
                         <div className="flex items-center gap-2.5">
-                          <span className="text-base">{icon}</span>
+                          <Icon className={`w-5 h-5 ${iconCls}`} />
                           <div>
                             <div className="text-xs font-medium text-gray-700">{label}</div>
                             {conn && val != null && (
@@ -1357,7 +1366,7 @@ const LactateTestingPage = () => {
                     <span className="ml-auto text-xs text-gray-400">
                       Next: {protocol.steps[currentStep + 1]?.targetPower
                         ? `${protocol.steps[currentStep + 1].targetPower}W`
-                        : cooldown.enabled ? '❄️ Cooldown' : 'Last step'}
+                        : cooldown.enabled ? 'Cooldown' : 'Last step'}
                     </span>
                   </div>
 
@@ -1509,7 +1518,10 @@ const LactateTestingPage = () => {
                     <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
                     {isLastStep && (
                       <span className="ml-2 text-xs font-semibold text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full">
-                        {cooldown.enabled ? '❄️ Cooldown next' : '🏁 Last step'}
+                        {cooldown.enabled
+                          ? <><SparklesIcon className="inline w-3.5 h-3.5 mr-0.5" />Cooldown next</>
+                          : <><FlagIcon className="inline w-3.5 h-3.5 mr-0.5" />Last step</>
+                        }
                       </span>
                     )}
                     <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
@@ -1527,8 +1539,8 @@ const LactateTestingPage = () => {
                   {/* Interval summary */}
                   <div className="flex items-center gap-4 p-3 bg-white/70 rounded-xl text-sm flex-wrap">
                     <span className="text-gray-500 font-medium">Interval {currentStep + 1} complete</span>
-                    {avgStepPower != null && <span className="font-bold text-gray-800">⚡ {avgStepPower}W avg</span>}
-                    {avgStepHR   != null && <span className="font-bold text-rose-600">❤ {avgStepHR} bpm</span>}
+                    {avgStepPower != null && <span className="font-bold text-gray-800 flex items-center gap-1"><BoltIcon className="w-3.5 h-3.5 text-amber-500" />{avgStepPower}W avg</span>}
+                    {avgStepHR   != null && <span className="font-bold text-rose-600 flex items-center gap-1"><HeartIcon className="w-3.5 h-3.5" />{avgStepHR} bpm</span>}
                   </div>
 
                   {/* Lactate entry */}
@@ -1592,8 +1604,8 @@ const LactateTestingPage = () => {
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
                       {isLastStep
                         ? cooldown.enabled
-                          ? <><span>❄️</span> Start Cooldown</>
-                          : <><span>🏁</span> Finish Test</>
+                          ? <><SparklesIcon className="w-4 h-4" /> Start Cooldown</>
+                          : <><FlagIcon className="w-4 h-4" /> Finish Test</>
                         : <><PlayIcon className="w-4 h-4" /> Start Next Interval</>
                       }
                     </button>
@@ -1674,22 +1686,22 @@ const LactateTestingPage = () => {
             {/* Device status chips */}
             <div className="flex flex-wrap gap-2">
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${trainerConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                🚴 {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
+                <CpuChipIcon className="w-3.5 h-3.5" /> {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
                 {ergActive && <span className="ml-1">· ERG ✓</span>}
               </div>
               {devices.heartRate?.connected && liveData.heartRate > 0 && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-700">
-                  💓 {Math.round(liveData.heartRate)} bpm
+                  <HeartIcon className="w-3.5 h-3.5" /> {Math.round(liveData.heartRate)} bpm
                 </div>
               )}
               {devices.moxy?.connected && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-100 text-blue-700">
-                  📊 SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
+                  <ChartBarIcon className="w-3.5 h-3.5" /> SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
                 </div>
               )}
               {devices.coreTemp?.connected && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700">
-                  🌡 {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
+                  <SunIcon className="w-3.5 h-3.5" /> {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
                 </div>
               )}
             </div>
@@ -1728,16 +1740,36 @@ const LactateTestingPage = () => {
             <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">Test Complete 🎉</h2>
+                  <h2 className="text-xl font-bold text-gray-900">Test Complete</h2>
                   <p className="text-sm text-gray-500 mt-0.5">
                     {new Date().toLocaleDateString()} · {fmtTime(totalTestTime)} total
                   </p>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
+                <div className="flex gap-2 flex-shrink-0 flex-wrap">
                   <button onClick={handleSaveTest}
                     className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20">
                     <ChartBarIcon className="w-4 h-4" /> Save
                   </button>
+                  {savedSessionId && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const blob = await downloadLactateSessionFit(savedSessionId);
+                          const url  = URL.createObjectURL(blob);
+                          const a    = document.createElement('a');
+                          a.href     = url;
+                          a.download = `lachart-${new Date().toISOString().slice(0,10)}.fit`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          addNotification('FIT file downloaded ✓', 'success');
+                        } catch {
+                          addNotification('Failed to download FIT file', 'error');
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                      <DownloadIcon className="w-4 h-4" /> Export FIT
+                    </button>
+                  )}
                   <button onClick={handleClearTest}
                     className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">
                     <TrashIcon className="w-4 h-4" /> Clear
@@ -1843,7 +1875,7 @@ const LactateTestingPage = () => {
         <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-              <span className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center text-sm">📁</span>
+              <span className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center"><FolderIcon className="w-4 h-4 text-gray-500" /></span>
               Previous Sessions
             </h2>
             {previousSessions.length > 0 && (
@@ -1885,19 +1917,20 @@ const LactateTestingPage = () => {
                 ))}
               </div>
 
-              {selectedSession.fitFile && (
+              {selectedSession?._id && (
                 <button
                   onClick={async () => {
                     try {
-                      const blob = await downloadLactateSessionFit(selectedSession._id);
-                      const url  = URL.createObjectURL(blob);
-                      const a    = Object.assign(document.createElement('a'), {
+                      const blob     = await downloadLactateSessionFit(selectedSession._id);
+                      const url      = URL.createObjectURL(blob);
+                      const dateStr  = new Date(selectedSession.completedAt ?? selectedSession.createdAt).toISOString().slice(0,10);
+                      const a        = Object.assign(document.createElement('a'), {
                         href:     url,
-                        download: selectedSession.fitFile.originalName ?? `lactate-${selectedSession._id}.fit`,
+                        download: `lachart-${selectedSession.sport || 'bike'}-${dateStr}.fit`,
                       });
                       document.body.appendChild(a); a.click();
                       URL.revokeObjectURL(url); document.body.removeChild(a);
-                      addNotification('FIT file downloaded', 'success');
+                      addNotification('FIT file downloaded ✓', 'success');
                     } catch { addNotification('Download failed', 'error'); }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors w-fit shadow-sm"

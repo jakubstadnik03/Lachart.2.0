@@ -1,17 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
-import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
-import TrainingZonesGenerator from '../components/Testing-page/TrainingZonesGenerator';
 import { useNotification } from '../context/NotificationContext';
 import Header from '../components/Header/Header';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
-import { trackEvent, trackDemoUsage, trackConversionFunnel, trackUserRegistration } from '../utils/analytics';
+import { trackEvent, trackConversionFunnel, trackUserRegistration } from '../utils/analytics';
 import { Helmet } from 'react-helmet';
-import { sendDemoTestEmail, register } from '../services/api';
+import { register } from '../services/api';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -560,6 +558,18 @@ const SEO_META = {
   weight:  { title:'Free Weight vs Power Calculator — W/kg Impact on Performance | LaChart', desc:'See how losing or gaining body weight affects your W/kg, flat speed and climbing performance. Free cycling power-to-weight calculator.', canonical:'https://lachart.net/weight-calculator' },
 };
 
+// Per-tab hero H1 + subtitle (SEO-optimised, unique per URL)
+const SEO_H1 = {
+  lactate: { h1: 'Free Lactate Threshold Calculator',         sub: 'LT1, LT2 & OBLA from blood lactate step tests — instant training zones' },
+  ftp:     { h1: 'FTP & Power Zones Calculator',              sub: 'Functional Threshold Power, W/kg and Coggan 7-zone model' },
+  vo2max:  { h1: 'VO2max Calculator',                         sub: 'Estimate maximal oxygen uptake from a 5-minute all-out effort' },
+  race:    { h1: 'Race Time Predictor',                       sub: 'Predict 5K to marathon finish times using the Riegel formula' },
+  tss:     { h1: 'Training Stress Score Calculator',          sub: 'TSS and Intensity Factor for any cycling or running session' },
+  zones:   { h1: 'Training Zones Calculator',                 sub: 'Power, heart rate and run pace zones from your threshold values' },
+  env:     { h1: 'Heat & Altitude Performance Calculator',    sub: 'Adjust race pace targets for temperature, humidity and elevation' },
+  weight:  { h1: 'Weight & Power Calculator',                 sub: 'See how body weight changes affect your W/kg and climbing speed' },
+};
+
 // ─── Main component ───────────────────────────────────────────────────────────
 const TestingWithoutLogin = () => {
   const navigate = useNavigate();
@@ -733,10 +743,10 @@ const TestingWithoutLogin = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>Free tools · No login required
                 </div>
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight mb-3 leading-tight">
-                  Sports Science<br/>Calculators
+                  {(SEO_H1[activeTab] || SEO_H1.lactate).h1}
                 </h1>
                 <p className="text-white/80 text-sm sm:text-base max-w-xl mb-6">
-                  Professional-grade tools used by coaches and athletes worldwide. Enter your data, get instant analysis — sign up free to save results and track progress over time.
+                  {(SEO_H1[activeTab] || SEO_H1.lactate).sub}
                 </p>
                 <div className="flex flex-wrap gap-3">
                   {isAuthenticated ? (

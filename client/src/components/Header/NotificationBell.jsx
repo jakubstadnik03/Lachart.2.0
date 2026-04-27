@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BellIcon } from '@heroicons/react/24/outline';
 import { BellAlertIcon } from '@heroicons/react/24/solid';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
@@ -27,7 +27,7 @@ export default function NotificationBell() {
 
   const unreadCount = notifs.filter(n => !n.read).length;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!isAuthenticated) return;
     setLoading(true);
     try {
@@ -35,7 +35,7 @@ export default function NotificationBell() {
       setNotifs(r.data || []);
     } catch {}
     setLoading(false);
-  };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -48,7 +48,7 @@ export default function NotificationBell() {
       clearInterval(t);
       window.removeEventListener('pushNotificationReceived', onPush);
     };
-  }, []);
+  }, [isAuthenticated, load]);
 
   // Close on outside click
   useEffect(() => {

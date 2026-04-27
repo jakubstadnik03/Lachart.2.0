@@ -2,6 +2,7 @@ const LactateSession = require('../models/lactateSession');
 const fs = require('fs');
 const path = require('path');
 const { notifyCoachesOfAthlete } = require('../utils/notificationHelper');
+const { generateFitFile } = require('../utils/fitGenerator');
 
 const lactateSessionController = {
   // Create new lactate session
@@ -375,52 +376,33 @@ const lactateSessionController = {
     }
   },
 
-  // Download FIT file for session
+  // Download FIT file for session — returns a real binary .fit file
   downloadFitFile: async (req, res) => {
     try {
       const { id } = req.params;
-      const session = await LactateSession.findById(id);
-      
+      const session = await LactateSession.findById(id).lean();
+
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
 
-      if (!session.fitFile || !session.fitFile.fitData) {
-        return res.status(404).json({ error: 'FIT file not found for this session' });
-      }
+      // Generate binary FIT file (works even if no fitFile was saved yet,
+      // falling back to session.measurements[])
+      const fitBuffer = generateFitFile(session);
 
-      // Generate FIT file from fitData
-      // Note: This is a simplified approach - in production, you'd use a proper FIT file generator library
-      const fitData = session.fitFile.fitData;
-      
-      // Log FIT data structure before download
-      console.log('[downloadFitFile] FIT data structure:', {
-        hasRecords: !!fitData.records,
-        recordsCount: fitData.records?.length || 0,
-        hasLaps: !!fitData.laps,
-        lapsCount: fitData.laps?.length || 0,
-        firstRecord: fitData.records?.[0],
-        lastRecord: fitData.records?.[fitData.records?.length - 1]
-      });
-      
-      // Convert fitData to a JSON string that can be downloaded
-      // For actual .fit binary format, you'd need a library like @garmin/fitsdk
-      const fitJson = JSON.stringify(fitData, null, 2);
-      
-      // Set headers for download
-      const fileName = session.fitFile.originalName || `lactate-session-${session._id}.fit`;
-      
+      const dateStr = session.completedAt
+        ? new Date(session.completedAt).toISOString().slice(0, 10)
+        : new Date(session.startedAt || Date.now()).toISOString().slice(0, 10);
+      const sport = session.sport || 'bike';
+      const fileName = `lachart-${sport}-${dateStr}.fit`;
+
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.setHeader('Content-Length', Buffer.byteLength(fitJson, 'utf8'));
-      
-      res.send(fitJson);
+      res.setHeader('Content-Length', fitBuffer.length);
+      res.send(fitBuffer);
     } catch (error) {
-      console.error('Error downloading FIT file:', error);
-      res.status(500).json({
-        error: 'Error downloading FIT file',
-        message: error.message
-      });
+      console.error('[downloadFitFile] Error:', error);
+      res.status(500).json({ error: 'Error generating FIT file', message: error.message });
     }
   },
 
