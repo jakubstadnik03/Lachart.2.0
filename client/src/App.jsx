@@ -49,11 +49,6 @@ const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
 const LactateStatisticsPage = lazy(() => import('./pages/LactateStatisticsPage'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Terms = lazy(() => import('./pages/Terms'));
-const Zone2CalculatorPage = lazy(() => import('./pages/Zone2CalculatorPage'));
-const FtpCalculatorPage = lazy(() => import('./pages/FtpCalculatorPage'));
-const TssCalculatorPage = lazy(() => import('./pages/TssCalculatorPage'));
-const TrainingZonesCalculatorPage = lazy(() => import('./pages/TrainingZonesCalculatorPage'));
-const RacePredictorPage = lazy(() => import('./pages/RacePredictorPage'));
 // Loading component for Suspense fallback
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -178,9 +173,17 @@ function AppRoutes() {
       '/login',
       '/signup',
       '/lactate-curve-calculator',
+      '/ftp-calculator',
+      '/vo2max-calculator',
+      '/race-predictor',
+      '/tss-calculator',
+      '/training-zones-calculator',
+      '/zone2-calculator',
+      '/heat-altitude-calculator',
+      '/weight-calculator',
       '/forgot-password',
       '/documentation',
-      '/lactate-guide'
+      '/lactate-guide',
     ];
     
     const isPublicRoute = publicRoutes.some(route => 
@@ -215,11 +218,14 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/lactate-curve-calculator" element={<TestingWithoutLogin />} />
-        <Route path="/zone2-calculator" element={<Zone2CalculatorPage />} />
-        <Route path="/ftp-calculator" element={<FtpCalculatorPage />} />
-        <Route path="/tss-calculator" element={<TssCalculatorPage />} />
-        <Route path="/training-zones-calculator" element={<TrainingZonesCalculatorPage />} />
-        <Route path="/race-predictor" element={<RacePredictorPage />} />
+        <Route path="/ftp-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/vo2max-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/race-predictor" element={<TestingWithoutLogin />} />
+        <Route path="/tss-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/training-zones-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/zone2-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/heat-altitude-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/weight-calculator" element={<TestingWithoutLogin />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />

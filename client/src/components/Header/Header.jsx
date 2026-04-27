@@ -39,7 +39,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
           <div className="hidden lg:block flex-1 max-w-xl">
             <SearchInput />
           </div>
-          <NotificationBell />
+          {user?.role && <NotificationBell />}
           <UserDropdown
             isOpen={isDropdownOpen}
             setIsOpen={setIsDropdownOpen}

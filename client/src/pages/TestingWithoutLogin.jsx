@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
@@ -19,6 +19,16 @@ import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import {
+  BeakerIcon,
+  BoltIcon,
+  HeartIcon,
+  TrophyIcon,
+  ChartBarIcon,
+  AdjustmentsHorizontalIcon,
+  SunIcon,
+  ScaleIcon,
+} from '@heroicons/react/24/outline';
 
 // ─── Calculator helpers ────────────────────────────────────────────────────────
 const secsToHMS = (s) => {
@@ -357,9 +367,9 @@ function ZonesCalc({ onUnlock }) {
       {result && (
         <LockedResult onUnlock={onUnlock}>
           <div className="mt-4 grid grid-cols-1 gap-4">
-            {result.pw && <div><p className="text-xs font-bold text-gray-700 mb-2">⚡ Power Zones (Coggan 7-zone)</p><ZTable rows={result.pw}/></div>}
-            {result.hr && <div><p className="text-xs font-bold text-gray-700 mb-2">❤️ Heart Rate Zones</p><ZTable rows={result.hr}/></div>}
-            {result.run && <div><p className="text-xs font-bold text-gray-700 mb-2">🏃 Run Pace Zones</p><ZTable rows={result.run}/></div>}
+            {result.pw && <div><p className="text-xs font-bold text-gray-700 mb-2">Power Zones (Coggan 7-zone)</p><ZTable rows={result.pw}/></div>}
+            {result.hr && <div><p className="text-xs font-bold text-gray-700 mb-2">Heart Rate Zones</p><ZTable rows={result.hr}/></div>}
+            {result.run && <div><p className="text-xs font-bold text-gray-700 mb-2">Run Pace Zones</p><ZTable rows={result.run}/></div>}
           </div>
         </LockedResult>
       )}
@@ -379,7 +389,7 @@ function EnvCalc({ onUnlock }) {
   return (
     <div>
       <div className="flex gap-2 mb-4">
-        {[{k:'heat',l:'🌡️ Heat & Humidity'},{k:'alt',l:'⛰️ Altitude'}].map(t=>(
+        {[{k:'heat',l:'Heat & Humidity'},{k:'alt',l:'Altitude'}].map(t=>(
           <button key={t.k} onClick={()=>{setTab(t.k);setResult(null);}} className={`flex-1 py-2 rounded-xl text-xs font-semibold transition ${tab===t.k?'bg-primary text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{t.l}</button>
         ))}
       </div>
@@ -471,7 +481,9 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
         {/* Header */}
         <div className="bg-gradient-to-br from-primary to-violet-600 px-6 pt-6 pb-8 text-white relative">
           <button onClick={onClose} className="absolute top-4 right-4 w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition">×</button>
-          <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl mb-3">🔬</div>
+          <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-3">
+            <BeakerIcon className="w-6 h-6 text-white" />
+          </div>
           <h2 className="text-xl font-bold">Unlock your results</h2>
           <p className="text-sm text-white/80 mt-1">Free account — takes 30 seconds. Save all your tests and track progress over time.</p>
         </div>
@@ -525,15 +537,28 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
 
 // ─── Calculator tabs config ───────────────────────────────────────────────────
 const TABS = [
-  { id:'lactate',  icon:'🩸', label:'Lactate Test',    desc:'LT1, LT2, OBLA & training zones from blood lactate data' },
-  { id:'ftp',      icon:'⚡', label:'FTP & Power',     desc:'Functional Threshold Power, W/kg & Coggan zones' },
-  { id:'vo2max',   icon:'🫁', label:'VO2max',          desc:'Maximal oxygen uptake from 5-min all-out effort' },
-  { id:'race',     icon:'🏁', label:'Race Predictor',  desc:'Predict 5K–marathon times via Riegel model' },
-  { id:'tss',      icon:'📊', label:'Training Load',   desc:'TSS, Intensity Factor & session stress score' },
-  { id:'zones',    icon:'🏋️', label:'Training Zones',  desc:'Power, HR & run pace zones from threshold values' },
-  { id:'env',      icon:'⛰️', label:'Heat & Altitude', desc:'Performance adjustments for conditions' },
-  { id:'weight',   icon:'⚖️', label:'Weight & Power',  desc:'Impact of body weight change on performance' },
+  { id:'lactate', path:'/lactate-curve-calculator',    Icon:BeakerIcon,                  label:'Lactate Test',    desc:'LT1, LT2, OBLA & training zones from blood lactate data' },
+  { id:'ftp',     path:'/ftp-calculator',              Icon:BoltIcon,                    label:'FTP & Power',     desc:'Functional Threshold Power, W/kg & Coggan zones' },
+  { id:'vo2max',  path:'/vo2max-calculator',           Icon:HeartIcon,                   label:'VO2max',          desc:'Maximal oxygen uptake from 5-min all-out effort' },
+  { id:'race',    path:'/race-predictor',              Icon:TrophyIcon,                  label:'Race Predictor',  desc:'Predict 5K–marathon times via Riegel model' },
+  { id:'tss',     path:'/tss-calculator',              Icon:ChartBarIcon,                label:'Training Load',   desc:'TSS, Intensity Factor & session stress score' },
+  { id:'zones',   path:'/training-zones-calculator',   Icon:AdjustmentsHorizontalIcon,   label:'Training Zones',  desc:'Power, HR & run pace zones from threshold values' },
+  { id:'env',     path:'/heat-altitude-calculator',    Icon:SunIcon,                     label:'Heat & Altitude', desc:'Performance adjustments for conditions' },
+  { id:'weight',  path:'/weight-calculator',           Icon:ScaleIcon,                   label:'Weight & Power',  desc:'Impact of body weight change on performance' },
 ];
+
+const PATH_TO_TAB = Object.fromEntries(TABS.map(t => [t.path, t.id]));
+
+const SEO_META = {
+  lactate: { title:'Free Lactate Threshold Calculator — LT1, LT2 & Training Zones | LaChart', desc:'Calculate your lactate threshold (LT1 & LT2) from step test data. Get training zones, OBLA and PDF reports. Free, no login required.', canonical:'https://lachart.net/lactate-curve-calculator' },
+  ftp:     { title:'Free FTP Calculator — Functional Threshold Power & Coggan Zones | LaChart', desc:'Calculate your FTP from a 20-minute test, get W/kg, 7 Coggan power zones and your cycling performance profile. Free online tool.', canonical:'https://lachart.net/ftp-calculator' },
+  vo2max:  { title:'Free VO2max Estimator — Maximal Oxygen Uptake Calculator | LaChart', desc:'Estimate your VO2max from a 5-minute all-out cycling effort. See your aerobic classification and compare to world-class standards.', canonical:'https://lachart.net/vo2max-calculator' },
+  race:    { title:'Free Race Time Predictor — 5K to Marathon Riegel Formula | LaChart', desc:'Predict your 5K, 10K, half-marathon and marathon time from any race result using the Riegel model. Free online race predictor.', canonical:'https://lachart.net/race-predictor' },
+  tss:     { title:'Free TSS Calculator — Training Stress Score & Intensity Factor | LaChart', desc:'Calculate Training Stress Score (TSS) and Intensity Factor (IF) for any workout. Understand session intensity relative to your FTP.', canonical:'https://lachart.net/tss-calculator' },
+  zones:   { title:'Free Training Zones Calculator — Power, HR & Run Pace Zones | LaChart', desc:'Generate personalised power, heart rate and run pace training zones from your FTP, LTHR and threshold pace. Free zone calculator.', canonical:'https://lachart.net/training-zones-calculator' },
+  env:     { title:'Free Heat & Altitude Performance Calculator | LaChart', desc:'Calculate expected performance loss from heat and altitude. Adjust your race pace targets for temperature and elevation automatically.', canonical:'https://lachart.net/heat-altitude-calculator' },
+  weight:  { title:'Free Weight vs Power Calculator — W/kg Impact on Performance | LaChart', desc:'See how losing or gaining body weight affects your W/kg, flat speed and climbing performance. Free cycling power-to-weight calculator.', canonical:'https://lachart.net/weight-calculator' },
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const TestingWithoutLogin = () => {
@@ -542,7 +567,9 @@ const TestingWithoutLogin = () => {
   const { login, isAuthenticated } = useAuth();
   const menuRef = useRef(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('lactate');
+  const location = useLocation();
+  const activeTab = PATH_TO_TAB[location.pathname] || 'lactate';
+  const activeTabMeta = SEO_META[activeTab] || SEO_META.lactate;
   const [showRegister, setShowRegister] = useState(false);
 
   // Lactate test state
@@ -629,8 +656,9 @@ const TestingWithoutLogin = () => {
             if (saved?.data?._id) { addNotification('Lactate test saved to your account!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
           } catch(e) { console.warn('Test save failed:',e); }
         }
-        addNotification('Welcome to LaChart! 🎉','success');
+        addNotification('Welcome to LaChart!','success');
         setShowRegister(false);
+        localStorage.setItem('lastRoute', '/testing');
         await login(null,null,token,user);
       } else { setEmailError('Google authentication failed. Please try again.'); }
     } catch(err) { console.error(err); setEmailError('Failed to authenticate with Google. Please try again.'); }
@@ -661,8 +689,9 @@ const TestingWithoutLogin = () => {
           if (saved?.data?._id) { addNotification('Lactate test saved!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
         } catch(e) { console.warn('Test save failed:',e); }
       }
-      addNotification('Welcome to LaChart! 🎉','success');
+      addNotification('Welcome to LaChart!','success');
       setShowRegister(false);
+      localStorage.setItem('lastRoute', '/testing');
       if (token && user) await login(emailFormData.email, emailFormData.password, token, user);
     } catch(err) {
       if (err.response?.data?.error?.includes('already exist')) setEmailError('An account with this email already exists. Please sign in instead.');
@@ -673,12 +702,12 @@ const TestingWithoutLogin = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex overflow-x-hidden w-full relative">
       <Helmet>
-        <title>Free Sports Science Calculators | Lactate, FTP, VO2max, Race Predictor | LaChart</title>
-        <link rel="canonical" href="https://lachart.net/lactate-curve-calculator" />
-        <meta name="description" content="Free sports science calculators: lactate threshold, FTP, VO2max estimator, race time predictor, training zones, TSS, heat & altitude adjustments. No login required — sign up to save results." />
-        <meta property="og:title" content="Free Sports Science Calculators — LaChart" />
+        <title>{activeTabMeta.title}</title>
+        <link rel="canonical" href={activeTabMeta.canonical} />
+        <meta name="description" content={activeTabMeta.desc} />
+        <meta property="og:title" content={activeTabMeta.title} />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://lachart.net/lactate-curve-calculator" />
+        <meta property="og:url" content={activeTabMeta.canonical} />
       </Helmet>
 
       {/* Menu */}
@@ -743,44 +772,18 @@ const TestingWithoutLogin = () => {
             {TABS.map(t=>(
               <button
                 key={t.id}
-                onClick={()=>setActiveTab(t.id)}
+                onClick={()=>navigate(t.path)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.id?'bg-primary text-white shadow-md shadow-primary/30':'bg-white text-gray-600 border border-gray-200 hover:border-primary/40 hover:text-primary'}`}
               >
-                <span>{t.icon}</span>{t.label}
+                <t.Icon className="w-4 h-4 flex-shrink-0" />{t.label}
               </button>
             ))}
           </div>
 
           {/* ── Calculator area ── */}
-          <div className="grid lg:grid-cols-[340px_1fr] gap-6 items-start">
+          <div>
 
-            {/* Left: tab info + quick links */}
-            <div className="hidden lg:flex flex-col gap-4">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="text-3xl mb-2">{TABS.find(t=>t.id===activeTab)?.icon}</div>
-                <h2 className="text-base font-bold text-gray-900 mb-1">{TABS.find(t=>t.id===activeTab)?.label}</h2>
-                <p className="text-xs text-gray-500 mb-4">{TABS.find(t=>t.id===activeTab)?.desc}</p>
-                <div className="h-px bg-gray-100 mb-4"/>
-                <p className="text-xs font-semibold text-gray-700 mb-2">All calculators</p>
-                <div className="space-y-1">
-                  {TABS.map(t=>(
-                    <button key={t.id} onClick={()=>setActiveTab(t.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-left transition ${activeTab===t.id?'bg-primary/10 text-primary font-semibold':'text-gray-600 hover:bg-gray-50'}`}>
-                      <span className="w-5 text-center">{t.icon}</span>{t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Sign up CTA card */}
-              <div className="bg-gradient-to-br from-primary to-violet-600 rounded-2xl p-5 text-white">
-                <div className="text-xl font-bold mb-1">Save everything</div>
-                <p className="text-xs text-white/80 mb-4">Create a free account to store all tests, track trends, and share results with your coach.</p>
-                <button onClick={()=>navigate('/signup')} className="w-full py-2.5 rounded-xl bg-white text-primary text-sm font-bold hover:bg-white/90 transition">
-                  Sign up free →
-                </button>
-              </div>
-            </div>
-
-            {/* Right: calculator content */}
+            {/* Calculator content */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
 
               {/* Lactate Test */}
@@ -788,7 +791,7 @@ const TestingWithoutLogin = () => {
                 <div>
                   <div className="flex items-center justify-between mb-5">
                     <div>
-                      <h2 className="text-lg font-bold text-gray-900">🩸 Lactate Threshold Test</h2>
+                      <h2 className="text-lg font-bold text-gray-900">Lactate Threshold Test</h2>
                       <p className="text-xs text-gray-500 mt-0.5">Enter your step test data — we'll calculate LT1, LT2 and training zones</p>
                     </div>
                     <div className="relative">
@@ -800,7 +803,7 @@ const TestingWithoutLogin = () => {
                           <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1">
                             {['bike','run','swim'].map(s=>(
                               <button key={s} onClick={()=>{handleTestDataChange(mockData[s]);setIsDemoDropdownOpen(false);addNotification(`${s} demo data loaded`,'success');}} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 capitalize">
-                                {s==='bike'?'🚴':s==='run'?'🏃':'🏊'} {s.charAt(0).toUpperCase()+s.slice(1)}
+                                {s.charAt(0).toUpperCase()+s.slice(1)}
                               </button>
                             ))}
                           </motion.div>
@@ -826,7 +829,9 @@ const TestingWithoutLogin = () => {
                           <LactateCurve testData={prepareCalculatorData()} isDemo={true} />
                         </div>
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85 backdrop-blur-md rounded-2xl p-6 text-center">
-                          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl mb-3">🔬</div>
+                          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+                            <BeakerIcon className="w-7 h-7 text-primary" />
+                          </div>
                           <p className="text-lg font-bold text-gray-900 mb-1">Your lactate curve is ready</p>
                           <p className="text-xs text-gray-500 mb-4 max-w-xs">Create a free account to see LT1, LT2, OBLA thresholds and full training zones</p>
                           <button onClick={()=>setShowRegister(true)} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-violet-500 text-white text-sm font-semibold shadow hover:opacity-90 transition">
@@ -846,26 +851,28 @@ const TestingWithoutLogin = () => {
                 </div>
               )}
 
-              {activeTab==='ftp'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">⚡ FTP & Power Zones</h2><p className="text-xs text-gray-500 mb-5">Coggan 7-zone model from your 20-minute best power</p><FTPCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='vo2max' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">🫁 VO2max Estimator</h2><p className="text-xs text-gray-500 mb-5">Estimate maximal oxygen uptake from a 5-min all-out cycling effort</p><VO2maxCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='race'   && <div><h2 className="text-lg font-bold text-gray-900 mb-1">🏁 Race Time Predictor</h2><p className="text-xs text-gray-500 mb-5">Predict race times across all distances using the Riegel model</p><RaceCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='tss'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">📊 Training Load (TSS)</h2><p className="text-xs text-gray-500 mb-5">Calculate Training Stress Score and Intensity Factor for any session</p><TSSCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='zones'  && <div><h2 className="text-lg font-bold text-gray-900 mb-1">🏋️ Training Zones</h2><p className="text-xs text-gray-500 mb-5">Generate power, heart rate and run pace zones from threshold values</p><ZonesCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='env'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">⛰️ Environment Adjustments</h2><p className="text-xs text-gray-500 mb-5">Adjust race pacing targets for heat, humidity and altitude</p><EnvCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='weight' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">⚖️ Weight & Performance</h2><p className="text-xs text-gray-500 mb-5">How does body weight change affect your W/kg, flat speed and climbing?</p><WeightCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='ftp'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">FTP &amp; Power Zones</h2><p className="text-xs text-gray-500 mb-5">Coggan 7-zone model from your 20-minute best power</p><FTPCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='vo2max' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">VO2max Estimator</h2><p className="text-xs text-gray-500 mb-5">Estimate maximal oxygen uptake from a 5-min all-out cycling effort</p><VO2maxCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='race'   && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Race Time Predictor</h2><p className="text-xs text-gray-500 mb-5">Predict race times across all distances using the Riegel model</p><RaceCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='tss'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Training Load (TSS)</h2><p className="text-xs text-gray-500 mb-5">Calculate Training Stress Score and Intensity Factor for any session</p><TSSCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='zones'  && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Training Zones</h2><p className="text-xs text-gray-500 mb-5">Generate power, heart rate and run pace zones from threshold values</p><ZonesCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='env'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Environment Adjustments</h2><p className="text-xs text-gray-500 mb-5">Adjust race pacing targets for heat, humidity and altitude</p><EnvCalc onUnlock={()=>setShowRegister(true)}/></div>}
+              {activeTab==='weight' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Weight &amp; Performance</h2><p className="text-xs text-gray-500 mb-5">How does body weight change affect your W/kg, flat speed and climbing?</p><WeightCalc onUnlock={()=>setShowRegister(true)}/></div>}
             </div>
           </div>
 
           {/* ── Feature strip ── */}
           <section className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              {icon:'🩸',title:'Lactate Analysis',desc:'LT1, LT2, OBLA from blood lactate step tests'},
-              {icon:'📈',title:'Progress Tracking',desc:'Track fitness trends across weeks and months'},
-              {icon:'🎯',title:'Training Zones',desc:'7-zone power, HR and pace zones for every sport'},
-              {icon:'👥',title:'Coach Tools',desc:'Manage multiple athletes and share test reports'},
+              {Icon:BeakerIcon,  title:'Lactate Analysis',  desc:'LT1, LT2, OBLA from blood lactate step tests'},
+              {Icon:ChartBarIcon,title:'Progress Tracking',  desc:'Track fitness trends across weeks and months'},
+              {Icon:AdjustmentsHorizontalIcon,title:'Training Zones',desc:'7-zone power, HR and pace zones for every sport'},
+              {Icon:HeartIcon,   title:'Coach Tools',        desc:'Manage multiple athletes and share test reports'},
             ].map(f=>(
               <div key={f.title} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <div className="text-2xl mb-2">{f.icon}</div>
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-2">
+                  <f.Icon className="w-4 h-4 text-primary" />
+                </div>
                 <div className="text-sm font-semibold text-gray-900 mb-1">{f.title}</div>
                 <div className="text-xs text-gray-500">{f.desc}</div>
               </div>

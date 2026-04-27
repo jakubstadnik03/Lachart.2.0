@@ -2,43 +2,61 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://lachart.net/</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://lachart.net/about</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://lachart.net/lactate-guide</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://lachart.net/race-predictor</loc>
-    <lastmod>2026-04-15</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://lachart.net/blog/how-lachart-calculates-lt1-lt2</loc>
+    <lastmod>2026-04-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.75</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/lactate-testing-protocol-guide</loc>
+    <lastmod>2026-04-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.75</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/lt1-vs-lt2-training-zones</loc>
+    <lastmod>2026-04-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.75</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/obla-dmax-iat-methods-compared</loc>
+    <lastmod>2026-04-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.75</priority>
   </url>
   <url>
     <loc>https://lachart.net/documentation</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://lachart.net/privacy</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
     <loc>https://lachart.net/terms</loc>
-    <lastmod>2026-04-15</lastmod>
+    <lastmod>2026-04-27</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.5</priority>
   </url>

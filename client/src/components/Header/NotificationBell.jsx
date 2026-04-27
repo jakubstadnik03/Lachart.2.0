@@ -3,6 +3,7 @@ import { BellIcon } from '@heroicons/react/24/outline';
 import { BellAlertIcon } from '@heroicons/react/24/solid';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthProvider';
 
 // Emoji icon based on notification type
 const typeIcon = (type) => {
@@ -17,6 +18,7 @@ const typeIcon = (type) => {
 };
 
 export default function NotificationBell() {
+  const { isAuthenticated } = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,6 +28,7 @@ export default function NotificationBell() {
   const unreadCount = notifs.filter(n => !n.read).length;
 
   const load = async () => {
+    if (!isAuthenticated) return;
     setLoading(true);
     try {
       const r = await getNotifications();
@@ -35,6 +38,7 @@ export default function NotificationBell() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     load();
     const t = setInterval(load, 60000);
     // Reload when a push notification arrives in foreground (dispatched by initCapacitorShell)
