@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from 'react-router-dom';
 // import SportsSelector from "../components/Header/SportsSelector";
-import TrainingTable from "../components/DashboardPage/TrainingTable";
+import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
 import { TrainingStats } from "../components/DashboardPage/TrainingStats";
 import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -1122,23 +1122,11 @@ export default function DashboardPage() {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
-          className="lg:col-span-3 md:col-span-2"
+          className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
-          <TrainingTable
-            trainings={recentTrainings}
+          <TrainingLoadHeatmap
             calendarData={calendarData}
-            selectedSport={selectedSport}
-            onSportChange={setSelectedSport}
-            onActivitySelect={(activity) => {
-              // Find the activity in calendarData and trigger selection in WeeklyCalendar
-              const foundActivity = calendarData.find(a => 
-                (a.type === 'fit' && a._id === activity._id) ||
-                (a.type === 'strava' && (a.stravaId === activity.stravaId || a.id === activity.stravaId || a.id === activity.id))
-              );
-              if (foundActivity && window.dispatchEvent) {
-                window.dispatchEvent(new CustomEvent('selectCalendarActivity', { detail: foundActivity }));
-              }
-            }}
+            trainings={recentTrainings}
           />
         </motion.div>
 

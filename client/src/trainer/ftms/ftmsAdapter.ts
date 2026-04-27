@@ -19,10 +19,14 @@ import {
   CPS_CONTROL_POINT_UUID_STRING,
   CSC_MEASUREMENT_UUID_STRING,
   TACX_FEC_SERVICE_UUID,
-  TACX_FEC_TX_CHAR_UUID,
-  TACX_FEC_RX_CHAR_UUID,
+  TACX_FEC_CHAR2_UUID,
+  TACX_FEC_CHAR3_UUID,
+  WAHOO_KICKR_CONTROL_UUID,
+  WAHOO_KICKR_ERG_OPCODE,
   FTMS_OPCODE_REQUEST_CONTROL,
+  FTMS_OPCODE_RESET,
   FTMS_OPCODE_SET_TARGET_POWER,
+  FTMS_OPCODE_SET_INDOOR_BIKE_SIMULATION_PARAMETERS,
 } from './ftmsUuids.ts';
 import { parseIndoorBikeData } from './ftmsParser.ts';
 import {
@@ -48,7 +52,12 @@ export class FTMSAdapter implements TrainerAdapter {
   private controlPointChar: BluetoothRemoteGATTCharacteristic | null = null;
   private cpsControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // CPS Control Point (calibration only — NOT for ERG)
   private cscControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // CSC Control Point
-  private tacxFecTxChar: BluetoothRemoteGATTCharacteristic | null = null;       // Tacx FE-C proprietary write channel
+  private tacxFecTxChar: BluetoothRemoteGATTCharacteristic | null = null;       // Tacx FE-C primary write channel
+  private tacxFecFallbackChar: BluetoothRemoteGATTCharacteristic | null = null; // Tacx FE-C fallback write channel (tried if primary fails)
+  private wahooControlChar: BluetoothRemoteGATTCharacteristic | null = null;    // Wahoo KICKR proprietary ERG channel
+  // FE-C keepalive: ANT+ FE-C requires continuous commands (~4 Hz) or trainer reverts to free-wheel
+  private fecKeepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private fecLastTargetWatts: number | null = null;
   private state: TrainerState = 'disconnected';
   private capabilities: TrainerCapabilities | null = null;
   private telemetryCallbacks: Set<(t: Telemetry) => void> = new Set();
@@ -57,6 +66,12 @@ export class FTMSAdapter implements TrainerAdapter {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private useFTMS: boolean = false; // Track which service we're using
   private cscPreviousValues: { wheelRevolutions: number | null; lastWheelTime: number | null; crankRevolutions: number | null; lastCrankTime: number | null; timestamp: number } | null = null;
+  // CPS crank revolution tracking for cadence calculation
+  private cpsCrankRevs: number | null = null;
+  private cpsCrankTime: number | null = null;
+  // CPS wheel revolution tracking for speed calculation
+  private cpsWheelRevs: number | null = null;
+  private cpsWheelTime: number | null = null;
 
   // Pending promise callbacks for FTMS control-point responses
   private pendingControlResolve: (() => void) | null = null;
@@ -87,7 +102,8 @@ export class FTMSAdapter implements TrainerAdapter {
       CPS_MEASUREMENT_UUID_STRING,
       CPS_CONTROL_POINT_UUID_STRING,
       CSC_MEASUREMENT_UUID_STRING,
-      TACX_FEC_SERVICE_UUID,   // Tacx/Garmin proprietary FE-C BLE service
+      TACX_FEC_SERVICE_UUID,        // Tacx/Garmin proprietary FE-C BLE service
+      WAHOO_KICKR_CONTROL_UUID,     // Wahoo KICKR proprietary ERG characteristic
     ];
 
     try {
@@ -246,7 +262,7 @@ export class FTMSAdapter implements TrainerAdapter {
           // Add event listener before starting notifications
           this.powerMeasurementChar.addEventListener('characteristicvaluechanged', (event: any) => {
             const value = event.target.value as DataView;
-            logger.debug('Power measurement event received, byteLength:', value.byteLength);
+            logger.info('CPS notification fired, byteLength:', value.byteLength);
             this.handlePowerMeasurement(value);
           });
           
@@ -264,31 +280,78 @@ export class FTMSAdapter implements TrainerAdapter {
             indicate: properties.indicate
           });
 
-          // Try Tacx proprietary FE-C BLE service for ERG control
-          // (0x2A66 CPS Control Point is NOT for ERG — writing to it causes trainer disconnect)
+          // Try Tacx proprietary FE-C BLE service for ERG control.
+          // (0x2A66 CPS Control Point is NOT for ERG — writing to it causes trainer disconnect.)
+          // Which of FEC2/FEC3 is write vs. notify varies by firmware; auto-detect via GATT properties.
           try {
             const tacxFecService = await this.server!.getPrimaryService(TACX_FEC_SERVICE_UUID);
-            this.tacxFecTxChar = await tacxFecService.getCharacteristic(TACX_FEC_TX_CHAR_UUID);
-            // Subscribe to trainer responses on RX characteristic
+            const fecChar2 = await tacxFecService.getCharacteristic(TACX_FEC_CHAR2_UUID);
+            const fecChar3 = await tacxFecService.getCharacteristic(TACX_FEC_CHAR3_UUID);
+
+            const c2write  = fecChar2.properties.writeWithoutResponse || fecChar2.properties.write;
+            const c2notify = fecChar2.properties.notify || fecChar2.properties.indicate;
+            const c3write  = fecChar3.properties.writeWithoutResponse || fecChar3.properties.write;
+            const c3notify = fecChar3.properties.notify || fecChar3.properties.indicate;
+
+            logger.info('FE-C char2 props: write=' + c2write + ' notify=' + c2notify);
+            logger.info('FE-C char3 props: write=' + c3write + ' notify=' + c3notify);
+
+            let writeChar: BluetoothRemoteGATTCharacteristic;
+            let notifyChar: BluetoothRemoteGATTCharacteristic;
+
+            // Per Tacx FE-C BLE spec (confirmed in Tacx iOS BLE example):
+            //   FEC3 = write to trainer (app → trainer, TX from app)
+            //   FEC2 = notify from trainer (trainer → app, RX for app)
+            // Only override if GATT properties definitively show otherwise.
+            if (c2write && !c3write) {
+              // FEC2 is writable and FEC3 is not → unusual, use FEC2 as write
+              writeChar  = fecChar2;
+              notifyChar = fecChar3;
+              logger.info('FE-C direction (auto): write→FEC2, notify←FEC3');
+            } else {
+              // Default (and correct per Tacx spec): FEC3 = write, FEC2 = notify
+              writeChar  = fecChar3;
+              notifyChar = fecChar2;
+              logger.info('FE-C direction (default): write→FEC3, notify←FEC2');
+            }
+
+            this.tacxFecTxChar = writeChar;
+            // Keep the other char as a fallback — if the primary char rejects writes
+            // at GATT level, we automatically retry on the fallback.
+            this.tacxFecFallbackChar = (writeChar === fecChar3) ? fecChar2 : fecChar3;
+
+            // Subscribe to trainer responses (optional)
             try {
-              const tacxFecRxChar = await tacxFecService.getCharacteristic(TACX_FEC_RX_CHAR_UUID);
-              await tacxFecRxChar.startNotifications();
-              tacxFecRxChar.addEventListener('characteristicvaluechanged', (event: any) => {
+              await notifyChar.startNotifications();
+              notifyChar.addEventListener('characteristicvaluechanged', (event: any) => {
                 const val: DataView = event.target.value;
-                logger.debug('Tacx FE-C response:', Array.from(new Uint8Array(val.buffer)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+                logger.info('Tacx FE-C response:', Array.from(new Uint8Array(val.buffer)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
               });
-            } catch (_) { /* RX optional */ }
+              logger.info('Tacx FE-C notifications subscribed');
+            } catch (_) { /* notify subscription optional */ }
+
             logger.info('Tacx FE-C service found — ERG control available');
           } catch (_) {
             logger.info('Tacx FE-C service not available — ERG control not supported on this connection');
           }
 
+          // Try Wahoo KICKR proprietary ERG characteristic (inside CPS service)
+          if (!this.tacxFecTxChar) {
+            try {
+              const wahooChar = await this.powerService!.getCharacteristic(WAHOO_KICKR_CONTROL_UUID);
+              this.wahooControlChar = wahooChar;
+              logger.info('Wahoo KICKR proprietary characteristic found — ERG control available');
+            } catch (_) {
+              logger.info('Wahoo KICKR characteristic not found');
+            }
+          }
+
           // Set basic capabilities
           this.capabilities = {
-            erg: !!this.tacxFecTxChar,  // ERG only via Tacx FE-C service, not CPS Control Point
+            erg: !!(this.tacxFecTxChar || this.wahooControlChar),
             resistance: false,
-            slope: false,
-            supportsControlPoint: !!this.tacxFecTxChar,
+            slope: !!this.tacxFecTxChar, // FE-C supports grade/simulation mode
+            supportsControlPoint: !!(this.tacxFecTxChar || this.wahooControlChar),
             telemetry: {
               power: true,
               cadence: false,
@@ -420,7 +483,16 @@ export class FTMSAdapter implements TrainerAdapter {
       this.cscMeasurementChar = null;
     }
 
+    // Stop FE-C keepalive
+    if (this.fecKeepAliveTimer) {
+      clearInterval(this.fecKeepAliveTimer);
+      this.fecKeepAliveTimer = null;
+    }
+    this.fecLastTargetWatts = null;
+
     this.tacxFecTxChar = null;
+    this.tacxFecFallbackChar = null;
+    this.wahooControlChar = null;
     this.cpsControlPointChar = null;
     this.cscControlPointChar = null;
 
@@ -463,6 +535,38 @@ export class FTMSAdapter implements TrainerAdapter {
     };
   }
 
+  /**
+   * Build a full 13-byte ANT+ broadcast packet from 8 bytes of FE-C page data.
+   *
+   * The Tacx FE-C BLE service (6e40fec1) does NOT strip the ANT+ radio wrapper —
+   * it passes raw ANT+ frames verbatim over BLE in both directions.  The trainer
+   * sends full ANT+ packets on the notify characteristic (confirmed: every frame
+   * starts with 0xa4 0x09 0x4e 0x05), and it expects exactly the same framing on
+   * the write characteristic.  Sending only the 8-byte page payload causes the
+   * trainer to reply with page 71 (Command Status) status=0xFF ("not applicable"),
+   * meaning it ignored the write entirely.
+   *
+   * Packet layout (13 bytes):
+   *   [0]    SYNC        0xa4
+   *   [1]    LENGTH      0x09  (9 = 1 channel byte + 8 data bytes)
+   *   [2]    MSG TYPE    0x4e  (broadcast data)
+   *   [3]    CHANNEL     0x05  (matches trainer's broadcast channel)
+   *   [4–11] FE-C page   8 bytes of ANT+ FE-C page data
+   *   [12]   CHECKSUM    XOR of bytes [0]–[11]
+   */
+  private buildFecAntPacket(pageData: Uint8Array): Uint8Array {
+    const packet = new Uint8Array(13);
+    packet[0] = 0xa4; // SYNC
+    packet[1] = 0x09; // LENGTH
+    packet[2] = 0x4e; // MSG TYPE: broadcast data
+    packet[3] = 0x05; // CHANNEL (same as trainer's broadcast channel)
+    packet.set(pageData.slice(0, 8), 4);
+    let checksum = 0;
+    for (let i = 0; i < 12; i++) checksum ^= packet[i];
+    packet[12] = checksum;
+    return packet;
+  }
+
   async setErgWatts(watts: number): Promise<void> {
     if (!this.isConnected()) {
       throw new Error('Not connected');
@@ -473,6 +577,14 @@ export class FTMSAdapter implements TrainerAdapter {
       : Math.max(0, Math.min(2000, watts));
 
     logger.info(`Setting ERG power to ${clampedWatts}W`);
+
+    // Stop FE-C keepalive if setting to 0
+    if (clampedWatts === 0 && this.fecKeepAliveTimer) {
+      clearInterval(this.fecKeepAliveTimer);
+      this.fecKeepAliveTimer = null;
+      this.fecLastTargetWatts = null;
+      logger.info('FE-C keepalive stopped (power set to 0)');
+    }
 
     try {
       // Use FTMS control point if available
@@ -511,31 +623,117 @@ export class FTMSAdapter implements TrainerAdapter {
         this.state = 'erg_active';
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
       } else if (this.tacxFecTxChar) {
-        // Tacx proprietary FE-C BLE service — ANT+ page 49 (Set Target Power)
-        // Resolution: 0.25 W/bit, unused bytes = 0xFF (per ANT+ FE-C spec)
+        // Tacx proprietary FE-C BLE service — ANT+ FE-C page 49 (Set Target Power).
+        // The Tacx FE-C BLE bridge passes full ANT+ frames verbatim in both directions.
+        // Raw page bytes must be wrapped with ANT+ framing via buildFecAntPacket() before
+        // writing, otherwise the trainer ignores the write (replies with CommandStatus=0xFF).
+        // ANT+ FE-C Device Profile spec, page 49 layout:
+        //   byte 0: page number 0x31
+        //   bytes 1–5: reserved, all 0xFF  (5 bytes per spec)
+        //   bytes 6–7: target power uint16 LE at 0.25 W/bit resolution
         const powerInQuarterWatts = Math.round(clampedWatts * 4);
-        const fecPage49 = new Uint8Array([
-          0x31,                                   // Data page 49: Set Target Power
-          0xFF, 0xFF, 0xFF, 0xFF,                 // Not used
-          powerInQuarterWatts & 0xFF,             // Target power LSB
-          (powerInQuarterWatts >> 8) & 0xFF,      // Target power MSB
-          0xFF,                                   // Not used
+        const buildFecPage49 = (): Uint8Array => new Uint8Array([
+          0x31,                                // Data page 49: Set Target Power
+          0xFF, 0xFF, 0xFF, 0xFF, 0xFF,        // 5 reserved bytes (per ANT+ FE-C spec)
+          powerInQuarterWatts & 0xFF,          // Target power LSB (byte 6)
+          (powerInQuarterWatts >> 8) & 0xFF,   // Target power MSB (byte 7)
         ]);
 
-        logger.info(`Sending FE-C page 49: Set Target Power ${clampedWatts}W (${powerInQuarterWatts} × 0.25 W, Tacx FE-C service)`);
-        await this.tacxFecTxChar.writeValueWithoutResponse(fecPage49);
+        logger.info(`FE-C page 49: ${clampedWatts}W (raw=${powerInQuarterWatts}) → char ${this.tacxFecTxChar.uuid}`);
+
+        // Helper: write to a char, try with-response first, fall back to without-response
+        const writeFec = async (char: BluetoothRemoteGATTCharacteristic, data: Uint8Array): Promise<boolean> => {
+          try {
+            if (char.properties.write) {
+              await char.writeValueWithResponse(data);
+            } else {
+              await char.writeValueWithoutResponse(data);
+            }
+            return true;
+          } catch (e: any) {
+            // write-with-response might fail on some firmwares — retry without
+            try {
+              await char.writeValueWithoutResponse(data);
+              return true;
+            } catch {
+              logger.warn(`FE-C write to ${char.uuid} failed: ${e.message}`);
+              return false;
+            }
+          }
+        };
+
+        // Wrap the raw FE-C page in a full ANT+ broadcast packet.
+        // The Tacx BLE service passes ANT+ frames verbatim — the trainer ignores
+        // bare 8-byte page writes and replies with CommandStatus page 71 = 0xFF
+        // ("not applicable"). Wrapping adds: SYNC(a4) LEN(09) MSG(4e) CHAN(05) + XOR checksum.
+        const page = this.buildFecAntPacket(buildFecPage49());
+        let ok = await writeFec(this.tacxFecTxChar, page);
+
+        // If primary char rejected the write, swap to the fallback char automatically
+        if (!ok && this.tacxFecFallbackChar) {
+          logger.warn(`Primary FE-C char failed — trying fallback char ${this.tacxFecFallbackChar.uuid}`);
+          ok = await writeFec(this.tacxFecFallbackChar, page);
+          if (ok) {
+            logger.info(`Fallback char works — making it primary for future writes`);
+            [this.tacxFecTxChar, this.tacxFecFallbackChar] = [this.tacxFecFallbackChar, this.tacxFecTxChar];
+          }
+        }
+
+        // Store target and start keepalive.
+        // ANT+ FE-C protocol expects continuous commands at ~4 Hz or the trainer
+        // reverts to free-wheel. We send at 2 Hz (every 500 ms) as a safe default.
+        // Each keepalive is a full ANT+ packet (same framing as the initial command).
+        this.fecLastTargetWatts = clampedWatts;
+        if (!this.fecKeepAliveTimer) {
+          this.fecKeepAliveTimer = setInterval(async () => {
+            if (this.fecLastTargetWatts == null || !this.tacxFecTxChar) return;
+            const qw = Math.round(this.fecLastTargetWatts * 4);
+            const rawPage = new Uint8Array([
+              0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+              qw & 0xFF, (qw >> 8) & 0xFF,
+            ]);
+            const ka = this.buildFecAntPacket(rawPage);
+            try {
+              if (this.tacxFecTxChar.properties.write) {
+                await this.tacxFecTxChar.writeValueWithResponse(ka);
+              } else {
+                await this.tacxFecTxChar.writeValueWithoutResponse(ka);
+              }
+            } catch {
+              // Keepalive failed silently — avoid log spam
+            }
+          }, 500);
+          logger.info('FE-C keepalive started (500 ms interval, full ANT+ framing)');
+        }
 
         this.state = 'erg_active';
-        logger.info(`ERG power set to ${clampedWatts}W (Tacx FE-C service)`);
+        logger.info(`ERG power set to ${clampedWatts}W (Tacx FE-C${ok ? '' : ' — write may have failed'})`);
+      } else if (this.wahooControlChar) {
+        // Wahoo KICKR / KICKR CORE / KICKR SNAP proprietary ERG command.
+        // Opcode 0x42 = Set ERG Target Power, payload = uint16 LE watts.
+        const wahooCmd = new Uint8Array(3);
+        wahooCmd[0] = WAHOO_KICKR_ERG_OPCODE; // 0x42
+        wahooCmd[1] = clampedWatts & 0xFF;
+        wahooCmd[2] = (clampedWatts >> 8) & 0xFF;
+
+        logger.info(`Sending Wahoo ERG: ${clampedWatts}W bytes: ${Array.from(wahooCmd).map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ')}`);
+        try {
+          await this.wahooControlChar.writeValueWithResponse(wahooCmd);
+        } catch {
+          await this.wahooControlChar.writeValueWithoutResponse(wahooCmd);
+        }
+
+        this.state = 'erg_active';
+        logger.info(`ERG power set to ${clampedWatts}W (Wahoo KICKR)`);
       } else if (this.cscControlPointChar) {
         // ANT+ FE-C page 49 (0x31) — Set Target Power (CSC fallback path)
+        // Same byte layout as Tacx FE-C: 5 reserved bytes, power at bytes 6–7
         const powerInQuarterWatts = Math.round(clampedWatts * 4);
         const fecPage49 = new Uint8Array([
           0x31,
-          0xFF, 0xFF, 0xFF, 0xFF,
-          powerInQuarterWatts & 0xFF,
-          (powerInQuarterWatts >> 8) & 0xFF,
-          0xFF,
+          0xFF, 0xFF, 0xFF, 0xFF, 0xFF,      // 5 reserved bytes
+          powerInQuarterWatts & 0xFF,         // power LSB (byte 6)
+          (powerInQuarterWatts >> 8) & 0xFF,  // power MSB (byte 7)
         ]);
 
         logger.info(`Sending FE-C page 49: Set Target Power ${clampedWatts}W (${powerInQuarterWatts} × 0.25 W, via CSC)`);
@@ -598,6 +796,15 @@ export class FTMSAdapter implements TrainerAdapter {
           };
         });
 
+        // Send RESET before REQUEST_CONTROL — clears any lingering state on the trainer.
+        // Many trainers (Tacx Neo, Elite, Wahoo FTMS) require this for a clean handshake.
+        try {
+          await this.controlPointChar.writeValueWithResponse(new Uint8Array([FTMS_OPCODE_RESET]));
+          logger.info('FTMS RESET sent');
+        } catch (_) {
+          logger.warn('FTMS RESET skipped (not supported or timed out)');
+        }
+
         const command = buildRequestControlCommand();
         await this.controlPointChar.writeValueWithResponse(command);
 
@@ -610,9 +817,9 @@ export class FTMSAdapter implements TrainerAdapter {
         logger.error('Failed to request control:', error);
         throw new Error(`Failed to request control: ${error.message}`);
       }
-    } else if (this.tacxFecTxChar || this.cpsControlPointChar || this.cscControlPointChar) {
-      // For FE-C / Tacx, control is granted automatically — no explicit request needed
-      logger.info('FE-C / Tacx control — granted automatically');
+    } else if (this.tacxFecTxChar || this.wahooControlChar || this.cpsControlPointChar || this.cscControlPointChar) {
+      // For FE-C / Wahoo / Tacx, control is granted automatically — no explicit request needed
+      logger.info('FE-C / Tacx / Wahoo control — granted automatically');
       this.controlRequested = true;
       this.state = 'controlled';
     } else {
@@ -636,15 +843,75 @@ export class FTMSAdapter implements TrainerAdapter {
       }
     }
 
-    // For FE-C (Tacx proprietary, CPS, or CSC), start command is not needed —
-    // the trainer begins responding to power commands as soon as target power is set.
-    if (this.tacxFecTxChar || this.cpsControlPointChar || this.cscControlPointChar) {
-      logger.info('FE-C trainer - start command not required (trainer starts when power is set)');
+    // For FE-C / Wahoo / CPS / CSC, no explicit start command is needed —
+    // the trainer responds to power commands as soon as target power is set.
+    if (this.tacxFecTxChar || this.wahooControlChar || this.cpsControlPointChar || this.cscControlPointChar) {
+      logger.info('FE-C / Wahoo trainer - start command not required (trainer starts when power is set)');
       return;
     }
 
     // No control point available
     throw new Error('Control Point not available');
+  }
+
+  /**
+   * Set slope / grade for simulation mode (non-ERG).
+   * Only supported on trainers with Tacx FE-C (ANT+ page 51) or FTMS simulation params.
+   * @param gradePercent Grade in percent (positive = uphill, negative = downhill)
+   */
+  async setSlope(gradePercent: number): Promise<void> {
+    if (!this.isConnected()) throw new Error('Not connected');
+
+    const clampedGrade = Math.max(-20, Math.min(20, gradePercent));
+    logger.info(`Setting slope to ${clampedGrade}%`);
+
+    if (this.tacxFecTxChar) {
+      // ANT+ FE-C page 51 (0x33) — Track Resistance
+      // Grade: sint16 at bytes 4–5, 0.01% resolution (e.g. 5.0% → 500 = 0x01F4)
+      // Rolling resistance coefficient: byte 6, 0.00005 per bit (0xFF = use trainer default)
+      const gradeRaw = Math.round(clampedGrade * 100); // 0.01% per bit
+      const fecPage51 = new Uint8Array([
+        0x33,                          // Data page 51: Track Resistance
+        0xFF, 0xFF,                    // Incline (reserved, use 0xFF)
+        gradeRaw & 0xFF,               // Grade LSB (0.01% resolution)
+        (gradeRaw >> 8) & 0xFF,        // Grade MSB
+        0xFF,                          // Rolling resistance coefficient (0xFF = default)
+        0xFF,                          // Wind resistance (reserved)
+        0xFF,                          // Wind speed (reserved)
+      ]);
+      const fecPage51Packet = this.buildFecAntPacket(fecPage51);
+      logger.info(`Sending FE-C page 51 (Track Resistance): ${clampedGrade}% bytes: ${Array.from(fecPage51Packet).map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ')}`);
+      try {
+        if (this.tacxFecTxChar.properties.write) {
+          await this.tacxFecTxChar.writeValueWithResponse(fecPage51Packet);
+        } else {
+          await this.tacxFecTxChar.writeValueWithoutResponse(fecPage51Packet);
+        }
+      } catch {
+        await this.tacxFecTxChar.writeValueWithoutResponse(fecPage51Packet);
+      }
+      this.state = 'erg_active';
+    } else if (this.useFTMS && this.controlPointChar) {
+      // FTMS opcode 0x11 — Set Indoor Bike Simulation Parameters
+      // wind speed (sint16, 0.001 m/s), grade (sint16, 0.01%), crr (uint8), crw (uint8)
+      const gradeRaw = Math.round(clampedGrade * 100); // 0.01% per bit
+      const cmd = new Uint8Array(7);
+      cmd[0] = FTMS_OPCODE_SET_INDOOR_BIKE_SIMULATION_PARAMETERS; // 0x11
+      // Wind speed: 0 (no wind)
+      cmd[1] = 0x00; cmd[2] = 0x00;
+      // Grade
+      cmd[3] = gradeRaw & 0xFF;
+      cmd[4] = (gradeRaw >> 8) & 0xFF;
+      // Rolling resistance (0x28 = 0.0040 — typical road bike default)
+      cmd[5] = 0x28;
+      // Wind resistance (0x28 = 0.40 kg/m — typical upright position)
+      cmd[6] = 0x28;
+      logger.info(`Sending FTMS simulation params: ${clampedGrade}% grade`);
+      await this.controlPointChar.writeValueWithResponse(cmd);
+      this.state = 'erg_active';
+    } else {
+      throw new Error('Slope control not available on this trainer connection');
+    }
   }
 
   private async readCapabilities(): Promise<void> {
@@ -742,41 +1009,85 @@ export class FTMSAdapter implements TrainerAdapter {
   }
 
   private handlePowerMeasurement(value: DataView): void {
-    // Parse Cycling Power Service Measurement
-    // Format: [Flags (2 bytes), Instantaneous Power (2 bytes, signed), ...]
+    // Parse Cycling Power Measurement (GATT 0x2A63)
+    // Layout: [flags: uint16 LE] [power: sint16 LE] [optional fields per flag bits...]
+    // Instantaneous Power is MANDATORY (always at bytes 2–3).
     if (value.byteLength < 4) {
-      logger.warn('Power measurement data too short:', value.byteLength);
+      logger.warn('CPS data too short:', value.byteLength);
       return;
     }
 
-    const flags = value.getUint16(0, true);
-    const powerPresent = flags & 0x01;
-    
-    let power: number | undefined = undefined;
-    if (powerPresent && value.byteLength >= 4) {
-      power = value.getInt16(2, true); // Signed 16-bit, watts
-      logger.debug('Power measurement received:', power, 'W');
-    } else {
-      logger.debug('Power measurement received but power not present, flags:', flags.toString(16));
+    const flags  = value.getUint16(0, true);
+    const power  = value.getInt16(2, true);
+
+    // Walk optional fields to find crank/wheel revolution data
+    // Bit 0: Pedal Power Balance Present → 1 byte (uint8)
+    // Bit 1: Pedal Power Balance Reference → 0 bytes (flag only)
+    // Bit 2: Accumulated Torque Source → 0 bytes (flag only)
+    // Bit 3: Accumulated Torque Present → 2 bytes (uint16)
+    // Bit 4: Wheel Revolution Data Present → 6 bytes (uint32 revs + uint16 event time)
+    // Bit 5: Crank Revolution Data Present → 4 bytes (uint16 revs + uint16 event time)
+    let offset = 4; // start right after mandatory power field
+
+    if (flags & 0x01) offset += 1; // pedal power balance
+    if (flags & 0x08) offset += 2; // accumulated torque
+
+    // ── Wheel Revolution Data (speed) ──────────────────────────
+    let speed: number | undefined = undefined;
+    if (flags & 0x10) {
+      if (value.byteLength >= offset + 6) {
+        const wheelRevs = value.getUint32(offset, true);
+        const wheelTime = value.getUint16(offset + 4, true); // 1/2048 s per unit
+        if (this.cpsWheelRevs !== null && this.cpsWheelTime !== null) {
+          const dRevs = (wheelRevs - this.cpsWheelRevs + 0x100000000) % 0x100000000;
+          const dTime = (wheelTime  - this.cpsWheelTime  + 0x10000)     % 0x10000;
+          if (dTime > 0 && dRevs > 0 && dRevs < 100) {
+            const wheelCircumference = 2.105; // m — standard 700c × 25mm
+            const speedMs = (dRevs * wheelCircumference) / (dTime / 2048);
+            const speedKmh = speedMs * 3.6;
+            if (speedKmh >= 0 && speedKmh <= 120) speed = speedKmh;
+          }
+        }
+        this.cpsWheelRevs = wheelRevs;
+        this.cpsWheelTime = wheelTime;
+      }
+      offset += 6;
     }
+
+    // ── Crank Revolution Data (cadence) ────────────────────────
+    let cadence: number | undefined = undefined;
+    if (flags & 0x20) {
+      if (value.byteLength >= offset + 4) {
+        const crankRevs = value.getUint16(offset,     true);
+        const crankTime = value.getUint16(offset + 2, true); // 1/1024 s per unit
+        if (this.cpsCrankRevs !== null && this.cpsCrankTime !== null) {
+          const dRevs = (crankRevs - this.cpsCrankRevs + 0x10000) % 0x10000;
+          const dTime = (crankTime  - this.cpsCrankTime  + 0x10000) % 0x10000;
+          if (dTime > 0 && dRevs >= 0 && dRevs < 30) {
+            const rpm = (dRevs / (dTime / 1024)) * 60;
+            if (rpm >= 0 && rpm <= 200) cadence = Math.round(rpm);
+          }
+        }
+        this.cpsCrankRevs = crankRevs;
+        this.cpsCrankTime = crankTime;
+      }
+    }
+
+    const rawHex = Array.from(new Uint8Array(value.buffer))
+      .map(b => b.toString(16).padStart(2, '0')).join(' ');
+    logger.info(`CPS: power=${power}W cadence=${cadence ?? '—'} rpm speed=${speed != null ? speed.toFixed(1) + 'km/h' : '—'} flags=0x${flags.toString(16)} raw=[${rawHex}]`);
 
     const telemetry: Telemetry = {
       ts: Date.now(),
       connected: true,
       power,
-      cadence: undefined,
-      speed: undefined,
+      cadence,
+      speed,
       hr: undefined,
     };
 
-    // Notify all subscribers
-    logger.debug('Sending telemetry to', this.telemetryCallbacks.size, 'subscribers');
     this.telemetryCallbacks.forEach(cb => {
-      try {
-        cb(telemetry);
-      } catch (e) {
-        logger.error('Error in telemetry callback:', e);
-      }
+      try { cb(telemetry); } catch (e) { logger.error('Telemetry cb error:', e); }
     });
   }
 

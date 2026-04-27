@@ -35,6 +35,7 @@ const TrainingHistory = () => {
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user);
   const runPaceUnit = paceUnit(unitSystem, 'running');
+  const swimPaceUnit = unitSystem === 'metric' ? '/100m' : '/100yd';
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -42,6 +43,11 @@ const TrainingHistory = () => {
   const [allTrainingTitles, setAllTrainingTitles] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedSport, setSelectedSport] = useState(null);
+
+  // Derived from selectedSport — must be top-level so labels are correct even with 1 training
+  const isPaceSport = selectedSport === 'run' || selectedSport === 'swim';
+  const activePaceUnit = selectedSport === 'swim' ? swimPaceUnit : runPaceUnit;
+  const powerOrPaceLabel = isPaceSport ? `Pace (${activePaceUnit})` : 'Power (W)';
   const [trainingToEdit, setTrainingToEdit] = useState(null);
   const [trainingToDelete, setTrainingToDelete] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -210,15 +216,15 @@ const TrainingHistory = () => {
     labels: progress ? progress.dates : trainings.map(t => formatDate(t.date)),
     datasets: [
       {
-        label: progress?.isPaceSport ? `Pace (${runPaceUnit})` : 'Power (W)',
+        label: powerOrPaceLabel,
         data: progress ? progress.powerData : trainings.map(t => {
           const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
           if (validPowers.length === 0) return null;
-          
+
           const avgPower = validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length;
-          
+
           // For pace sports, keep as seconds for calculations
-          if (progress?.isPaceSport) {
+          if (isPaceSport) {
             return avgPower;
           }
           
@@ -302,12 +308,12 @@ const TrainingHistory = () => {
     },
     scales: {
       y: {
-        title: { 
-          display: true, 
-          text: progress?.isPaceSport ? `Pace (${runPaceUnit})` : 'Power (W)'
+        title: {
+          display: true,
+          text: powerOrPaceLabel
         },
         min: 0,
-        max: progress?.isPaceSport 
+        max: isPaceSport
           ? Math.max(...(progress ? progress.powerData : trainings.map(t => {
               const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
               return validPowers.length > 0 
@@ -323,7 +329,7 @@ const TrainingHistory = () => {
         ticks: { 
           display: true,
           callback: function(value) {
-            if (progress?.isPaceSport) {
+            if (isPaceSport) {
               return secondsToPace(value);
             }
             return value;
@@ -381,8 +387,8 @@ const TrainingHistory = () => {
 
     const date = tooltip.dataPoints[0]?.label || "N/A";
     const powerValue = datasets[0]?.data?.[index];
-    const power = progress?.isPaceSport 
-      ? (powerValue ? secondsToPace(powerValue) : "N/A") 
+    const power = isPaceSport
+      ? (powerValue ? secondsToPace(powerValue) : "N/A")
       : (powerValue ?? "N/A");
     const hr = datasets[1]?.data?.[index] ?? "N/A";
     const lactate = datasets[2]?.data?.[index] ?? "N/A";
@@ -403,7 +409,7 @@ const TrainingHistory = () => {
         <div className="font-bold text-gray-900 mb-1">{date}</div>
         <div className="flex items-center gap-2 text-blue-600">
           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          {progress?.isPaceSport ? 'Pace' : 'Power'}: {power} {progress?.isPaceSport ? runPaceUnit : 'W'}
+          {isPaceSport ? 'Pace' : 'Power'}: {power} {isPaceSport ? activePaceUnit : 'W'}
         </div>
         <div className="flex items-center gap-2 text-red-600">
           <span className="w-2 h-2 rounded-full bg-red-500"></span>
@@ -632,12 +638,12 @@ const TrainingHistory = () => {
           <h2 className="text-xl font-semibold mb-4">Progress Summary</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-blue-700 font-medium">{progress.isPaceSport ? 'Pace' : 'Power'}</h3>
+              <h3 className="text-blue-700 font-medium">{isPaceSport ? 'Pace' : 'Power'}</h3>
               <div className="flex items-center justify-between mt-2">
                 <span className="text-2xl font-bold text-blue-600">
-                  {progress.isPaceSport 
-                    ? secondsToPace(progress.powerData[progress.powerData.length - 1] || 0) 
-                    : (progress.powerData[progress.powerData.length - 1] || '-')} {progress.isPaceSport ? runPaceUnit : 'W'}
+                  {isPaceSport
+                    ? secondsToPace(progress.powerData[progress.powerData.length - 1] || 0)
+                    : (progress.powerData[progress.powerData.length - 1] || '-')} {isPaceSport ? activePaceUnit : 'W'}
                 </span>
                 {progress.powerProgress && (
                   <span className={`text-sm font-medium ${progress.powerProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -645,7 +651,7 @@ const TrainingHistory = () => {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">Latest average {progress.isPaceSport ? 'pace' : 'power'}</p>
+              <p className="text-sm text-gray-500 mt-1">Latest average {isPaceSport ? 'pace' : 'power'}</p>
             </div>
             <div className="bg-red-50 p-4 rounded-lg">
               <h3 className="text-red-700 font-medium">Heart Rate</h3>

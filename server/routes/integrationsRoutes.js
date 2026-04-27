@@ -64,6 +64,8 @@ const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
 const stravaBackfillLocks = new Set();
 const stravaManualSyncLocks = new Set();
+// Max simultaneous historical backfills — keeps total API calls predictable
+const MAX_CONCURRENT_BACKFILLS = 2;
 
 // Cache middleware for activities
 const activitiesCacheMiddleware = (req, res, next) => {
@@ -242,14 +244,20 @@ async function requestGarminToken({
 function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.now() / 1000)) {
   const lockKey = String(userId);
   if (stravaBackfillLocks.has(lockKey)) return;
+  // Global concurrency cap — prevent multiple simultaneous backfills from burning rate limits
+  if (stravaBackfillLocks.size >= MAX_CONCURRENT_BACKFILLS) {
+    // Retry after a delay so the backfill eventually starts once a slot opens up
+    setTimeout(() => startStravaHistoricalBackfill(userId, initialBefore), 5 * 60 * 1000);
+    return;
+  }
   stravaBackfillLocks.add(lockKey);
 
   const perPage = 100;
   const maxPagesPerBatch = 3;
-  const delayBetweenPagesMs = 2200;
-  const delayBetweenBatchesMs = 15000;
+  const delayBetweenPagesMs = 2500;
+  const delayBetweenBatchesMs = 20000; // 20 s between batches — well within rate limits
 
-  const runBatch = async (beforeCursor) => {
+  const runBatch = async (beforeCursor, retryDelay = delayBetweenBatchesMs) => {
     let nextCursor = beforeCursor;
     let shouldContinue = true;
 
@@ -322,8 +330,19 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
     } catch (error) {
       const status = error?.response?.status;
       console.error('[StravaBackfill] Batch failed:', status || '', error?.response?.data || error?.message);
-      // On rate limit or transient upstream error, keep backfill alive and retry later.
-      if (status === 429 || (status >= 500 && status < 600)) {
+      if (status === 429) {
+        // Rate limited — exponential backoff: double the delay each time, cap at 30 minutes
+        const nextRetry = Math.min(retryDelay * 2, 30 * 60 * 1000);
+        console.log(`[StravaBackfill] Rate limited for user ${userId}, backing off ${Math.round(nextRetry / 1000)}s`);
+        setTimeout(() => {
+          runBatch(nextCursor, nextRetry).catch((e) => {
+            console.error('[StravaBackfill] Retry error:', e?.message || e);
+            stravaBackfillLocks.delete(lockKey);
+          });
+        }, nextRetry);
+        return; // don't fall through to the normal continue/stop logic below
+      } else if (status >= 500 && status < 600) {
+        // Transient server error — retry once after a longer pause, then give up
         shouldContinue = true;
       } else {
         shouldContinue = false;
@@ -332,7 +351,7 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
 
     if (shouldContinue) {
       setTimeout(() => {
-        runBatch(nextCursor).catch((e) => {
+        runBatch(nextCursor, delayBetweenBatchesMs).catch((e) => {
           console.error('[StravaBackfill] Unhandled async error:', e?.message || e);
           stravaBackfillLocks.delete(lockKey);
         });

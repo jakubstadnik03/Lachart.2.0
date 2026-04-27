@@ -20,26 +20,18 @@ export function useTrainer(options) {
   const adapterRef = useRef(null);
   const unsubscribeTelemetryRef = useRef(null);
 
-  // Initialize adapter
+  // Initialize adapter — run once on mount only.
+  // options is captured at mount time; passing a new {} every render would
+  // re-run this effect on every render and kill the telemetry subscription.
+  const optionsRef = useRef(options);
   useEffect(() => {
     if (!adapterRef.current) {
-      adapterRef.current = createTrainerClient(options);
+      adapterRef.current = createTrainerClient(optionsRef.current);
     }
-
-    // Only cleanup on actual unmount, not on dependency changes
-    // We use a ref to track if this is a real unmount
-    return () => {
-      // Don't disconnect on cleanup - let the connection persist
-      // The user should manually disconnect, or it will disconnect when the page closes
-      // This prevents disconnection during re-renders or dependency changes
-      if (unsubscribeTelemetryRef.current) {
-        unsubscribeTelemetryRef.current();
-        unsubscribeTelemetryRef.current = null;
-      }
-      // Note: We intentionally don't call disconnect() here to prevent
-      // disconnection during component re-renders or dependency changes
-    };
-  }, [options]);
+    // Telemetry cleanup is owned exclusively by the subscription effect below.
+    // We intentionally don't disconnect or unsubscribe here to prevent
+    // connection drops on component re-renders.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Subscribe to telemetry
   useEffect(() => {
@@ -249,5 +241,6 @@ export function useTrainer(options) {
     setSlope: adapterRef.current?.setSlope ? setSlope : undefined,
     requestControl,
     start: adapterRef.current?.start ? start : undefined,
+    adapter: adapterRef.current, // expose raw adapter for advanced use
   };
 }

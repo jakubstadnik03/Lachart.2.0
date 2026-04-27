@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { SearchableSelect } from '../SearchableSelect';
 import {
   ComposedChart,
   Line,
@@ -802,22 +803,34 @@ const TrainingComparison = ({ trainings }) => {
         {/* Filters row */}
         <div className="flex flex-wrap gap-2 mb-3">
           {/* Category */}
-          <div className="relative">
-            <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); localStorage.setItem('trainingComparison_category', e.target.value); setSelectedTitle('all'); localStorage.setItem('trainingComparison_title', 'all'); }}
-              className="pl-3 pr-7 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30">
-              {categories.map(cat => <option key={cat} value={cat}>{cat === 'all' ? 'All categories' : cat.charAt(0).toUpperCase() + cat.slice(1)}</option>)}
-            </select>
-            <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"><svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>
-          </div>
+          <SearchableSelect
+            value={selectedCategory}
+            onChange={(val) => {
+              setSelectedCategory(val);
+              localStorage.setItem('trainingComparison_category', val);
+              setSelectedTitle('all');
+              localStorage.setItem('trainingComparison_title', 'all');
+            }}
+            options={categories.map(cat => ({
+              value: cat,
+              label: cat === 'all' ? 'All categories' : cat.charAt(0).toUpperCase() + cat.slice(1),
+            }))}
+            placeholder="All categories"
+          />
 
           {/* Title */}
-          <div className="relative flex-1 min-w-[140px]">
-            <select value={selectedTitle} onChange={e => { setSelectedTitle(e.target.value); localStorage.setItem('trainingComparison_title', e.target.value); }}
-              className="w-full pl-3 pr-7 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30">
-              {titles.map(title => <option key={title} value={title}>{title === 'all' ? 'All titles' : title}</option>)}
-            </select>
-            <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"><svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>
-          </div>
+          <SearchableSelect
+            value={selectedTitle}
+            onChange={(val) => {
+              setSelectedTitle(val);
+              localStorage.setItem('trainingComparison_title', val);
+            }}
+            options={titles.map(title => ({
+              value: title,
+              label: title === 'all' ? 'All titles' : title,
+            }))}
+            placeholder="All titles"
+          />
         </div>
 
         {/* Metric pills */}

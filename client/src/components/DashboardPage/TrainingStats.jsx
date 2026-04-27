@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
+import { SearchableSelect } from "../SearchableSelect";
 
 /** Matches LapsBarChart / TrainingItem palette exactly. */
 const INTERVAL_TYPE_BAR = {
@@ -18,74 +19,6 @@ function workOnly(results) {
   if (!hasTypes) return results;
   const work = results.filter(r => r.intervalType === 'work');
   return work.length > 0 ? work : results;
-}
-
-/* ── Searchable title dropdown ─────────────────────────────────────────────── */
-function SearchableSelect({ value, options, onChange, placeholder = "Select…" }) {
-  const [open, setOpen]   = useState(false);
-  const [query, setQuery] = useState('');
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  const filtered = options.filter(o =>
-    !query || o.label.toLowerCase().includes(query.toLowerCase())
-  );
-  const selected = options.find(o => o.value === value);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => { setOpen(o => !o); setQuery(''); }}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 max-w-[180px] transition-colors"
-      >
-        <span className="truncate">{selected?.label || placeholder}</span>
-        <svg className="w-3 h-3 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
-          {/* Search input */}
-          <div className="p-2 border-b border-gray-100">
-            <input
-              autoFocus
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search training…"
-              className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 outline-none focus:ring-2 focus:ring-primary/30 placeholder-gray-400"
-            />
-          </div>
-          {/* Scrollable list */}
-          <div className="overflow-y-auto max-h-52 py-1">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-xs text-gray-400 text-center">No results</div>
-            ) : filtered.map(o => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
-                className={`w-full text-left px-3 py-2 text-xs transition-colors ${
-                  o.value === value
-                    ? 'font-semibold text-primary bg-primary/5'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 const GRAPH_H = 200;
@@ -181,6 +114,11 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
     const adj = unitSystem === "imperial" ? s * 1.60934 : s;
     return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
   };
+  const fmtSwimPace = (v) => {
+    const s = parsePaceSecs(v);
+    if (!s) return null;
+    return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/100yd" : "/100m"}`;
+  };
   const fmtDist = (v) => {
     const m = parseDistMeters(v);
     if (!m) return null;
@@ -191,8 +129,9 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
     durationType === "distance" && duration ? { label: "Distance", value: fmtDist(duration) } : null,
     durationType !== "distance" && duration ? { label: "Time",     value: fmtDur(duration)  } : null,
     distance && durationType !== "distance"  ? { label: "Distance", value: fmtDist(distance) } : null,
-    sport === "run"  && power ? { label: "Pace",    value: fmtPace(power)      } : null,
-    sport !== "run"  && power ? { label: "Power",   value: `${power} W`        } : null,
+    sport === "run"                     && power ? { label: "Pace",  value: fmtPace(power)     } : null,
+    sport === "swim"                    && power ? { label: "Pace",  value: fmtSwimPace(power) } : null,
+    sport !== "run" && sport !== "swim" && power ? { label: "Power", value: `${power} W`       } : null,
     heartRate                 ? { label: "HR",      value: `${heartRate} bpm`  } : null,
     lactate                   ? { label: "Lactate", value: `${lactate} mmol/L`, isLactate: true } : null,
   ].filter(Boolean);
@@ -346,6 +285,7 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   const prevRes    = trainingResultsOf(previousTraining);
 
   const isRun  = (sport || "").toLowerCase() === "run";
+  const isSwim = (sport || "").toLowerCase() === "swim";
   const isBike = ["bike","ride","cycle","cycling"].some(s => (sport || "").toLowerCase().includes(s));
 
   /* Use only work intervals for averages (falls back to all if no types set) */
@@ -367,16 +307,23 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
     const adj = unitSystem === "imperial" ? s * 1.60934 : s;
     return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
   };
+  const fmtSwimPace = (s) => {
+    if (!s) return "—";
+    return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/100yd" : "/100m"}`;
+  };
 
   const avgSpeed = Number(training.avgSpeed || 0);
   const metricStr = isRun
     ? fmtPace(curPace)
-    : isBike && avgSpeed > 0
-      ? formatSpeedForUser(avgSpeed, user)
-      : `${curPow} W`;
+    : isSwim
+      ? fmtSwimPace(curPace)
+      : isBike && avgSpeed > 0
+        ? formatSpeedForUser(avgSpeed, user)
+        : `${curPow} W`;
 
-  const rawDiff  = isRun ? (prevPace ? curPace - prevPace : null) : (prevPow ? curPow - prevPow : null);
-  const improved = rawDiff == null ? null : isRun ? rawDiff < 0 : rawDiff > 0;
+  const isPaceMetric = isRun || isSwim;
+  const rawDiff  = isPaceMetric ? (prevPace ? curPace - prevPace : null) : (prevPow ? curPow - prevPow : null);
+  const improved = rawDiff == null ? null : isPaceMetric ? rawDiff < 0 : rawDiff > 0;
   const icon     = rawDiff == null || rawDiff === 0 ? null : improved ? "↑" : "↓";
   const iconCls  = improved == null ? "" : improved ? "text-green-500" : "text-red-400";
 
@@ -512,8 +459,11 @@ export function TrainingStats({
   const canProgR = progressIndex + 2 < filteredTrainings.length;
 
   /* scale values */
-  const hasRunTrainings = filteredTrainings.some(t => t.sport === "run");
-  const isRun = currentSelectedSport === "run" || (currentSelectedSport === "all" && hasRunTrainings);
+  const hasRunTrainings  = filteredTrainings.some(t => t.sport === "run");
+  const hasSwimTrainings = filteredTrainings.some(t => t.sport === "swim");
+  const isRun  = currentSelectedSport === "run"  || (currentSelectedSport === "all" && hasRunTrainings);
+  const isSwim = currentSelectedSport === "swim" || (currentSelectedSport === "all" && !hasRunTrainings && hasSwimTrainings);
+  const isPaceSport = isRun || isSwim;
 
   const formatPaceVal = (s) => {
     const adj = unitSystem === "imperial" ? s * 1.60934 : s;
@@ -523,7 +473,7 @@ export function TrainingStats({
   const { powerValues, paceValues, minPower, maxPower, minPace, maxPace } = useMemo(() => {
     if (!filteredTrainings.length) return { powerValues:[], paceValues:[], minPower:0, maxPower:100, minPace:0, maxPace:600 };
 
-    if (isRun) {
+    if (isPaceSport) {
       const allPaces = filteredTrainings.flatMap(t =>
         trainingResultsOf(t).map(r => parsePaceSecs(r.power))
       ).filter(p => p != null && p > 0);
@@ -550,7 +500,7 @@ export function TrainingStats({
         minPower: minP, maxPower: maxP, minPace: 0, maxPace: 600,
       };
     }
-  }, [filteredTrainings, isRun]);
+  }, [filteredTrainings, isPaceSport]);
 
   /* per-column width in px */
   const colCount         = Math.max(visibleTrainings.length, 1);
@@ -637,14 +587,14 @@ export function TrainingStats({
       {/* Chart */}
       <div className="flex gap-1 sm:gap-2 items-stretch w-full min-w-0" style={{ minHeight: `${GRAPH_H + 24}px` }}>
         <Scale
-          values={isRun ? paceValues : powerValues}
-          formatValue={isRun ? formatPaceVal : null}
+          values={isPaceSport ? paceValues : powerValues}
+          formatValue={isPaceSport ? formatPaceVal : null}
         />
 
         <div ref={containerRef} className="relative flex flex-1 min-w-0 flex-col" style={{ overflow: "visible" }}>
           {/* grid lines */}
           <div className="pointer-events-none absolute left-0 right-0 top-0 z-0" style={{ height: GRAPH_H }}>
-            {(isRun ? paceValues : powerValues).map((_, i, arr) => (
+            {(isPaceSport ? paceValues : powerValues).map((_, i, arr) => (
               <div
                 key={i}
                 className="absolute left-0 right-0 border-t border-gray-100"
@@ -688,11 +638,11 @@ export function TrainingStats({
 
               /* color ranking: highest power/pace = darkest */
               const powerPaceVals = results.map((r, i) => ({
-                val: isRun ? parsePaceSecs(r.power) : Number(r.power),
+                val: isPaceSport ? parsePaceSecs(r.power) : Number(r.power),
                 i,
               })).filter(x => x.val != null && x.val > 0);
-              if (isRun) powerPaceVals.sort((a,b) => a.val - b.val); // lowest pace = fastest = darkest
-              else       powerPaceVals.sort((a,b) => b.val - a.val); // highest power = darkest
+              if (isPaceSport) powerPaceVals.sort((a,b) => a.val - b.val); // lowest pace = fastest = darkest
+              else             powerPaceVals.sort((a,b) => b.val - a.val); // highest power = darkest
               const colorMap = new Map(powerPaceVals.map((x, rank) => [x.i, rank]));
 
               return (
@@ -703,7 +653,7 @@ export function TrainingStats({
                   >
                     {results.map((r, rIdx) => {
                       let height = 0;
-                      if (isRun) {
+                      if (isPaceSport) {
                         const pace = parsePaceSecs(r.power);
                         if (pace && pace > 0) height = ((maxPace - pace) / (maxPace - minPace)) * GRAPH_H;
                       } else {
@@ -718,8 +668,8 @@ export function TrainingStats({
                           colorIdx={colorMap.get(rIdx) ?? rIdx}
                           intervalType={r.intervalType || null}
                           power={r.power}
-                          pace={isRun ? r.power : r.pace}
-                          distance={r.distance || (isRun && r.durationType === "distance" ? r.duration : null)}
+                          pace={isPaceSport ? r.power : r.pace}
+                          distance={r.distance || (isPaceSport && r.durationType === "distance" ? r.duration : null)}
                           lactate={r.lactate}
                           heartRate={r.heartRate}
                           duration={r.duration}

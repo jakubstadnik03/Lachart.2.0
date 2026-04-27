@@ -3,6 +3,7 @@ import api, { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZo
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { SearchableSelect } from '../SearchableSelect';
 
 // Power zones definition (based on FTP) - using app colors with different shades
 const POWER_ZONES = [
@@ -728,30 +729,17 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
               return (
                 <div key={month.monthKey} className="bg-white backdrop-blur-xl rounded-2xl  shadow-lg p-4">
                   {/* Header with Month Selector */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 pb-1.5 border-b border-gray-100">
                     <h2 className="text-sm font-semibold text-text">Monthly Analysis</h2>
                     {availableMonths.length > 0 && (
-                      <select
+                      <SearchableSelect
                         value={selectedMonth || ''}
-                        onChange={(e) => setSelectedMonth(e.target.value || null)}
-                        className="px-2 py-0.5 text-xs border rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text appearance-none cursor-pointer"
-                        style={{
-                          WebkitAppearance: 'none',
-                          MozAppearance: 'none',
-                          appearance: 'none',
-                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 0.5rem center',
-                          backgroundSize: '1em',
-                          paddingRight: '1.75rem'
-                        }}
-                      >
-                        {availableMonths.map((m) => (
-                          <option key={m.monthKey} value={m.monthKey}>
-                            {m.month} ({m.trainings})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => setSelectedMonth(value || null)}
+                        options={[...availableMonths]
+                          .sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+                          .map(m => ({ value: m.monthKey, label: `${m.month} (${m.trainings})` }))}
+                        placeholder="Select month…"
+                      />
                     )}
                   </div>
 

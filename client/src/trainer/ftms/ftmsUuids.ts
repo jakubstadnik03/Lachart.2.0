@@ -41,10 +41,22 @@ export const CSC_CONTROL_POINT_UUID_STRING = '00002a5b-0000-1000-8000-00805f9b34
 
 // Tacx/Garmin proprietary FE-C over BLE service
 // Used when FTMS is not available (older firmware or non-training-mode startup).
-// Protocol: write raw 8-byte ANT+ FE-C data pages to TX char; responses on RX char.
+// Protocol: write raw 8-byte ANT+ FE-C data pages to the WRITE char; subscribe to NOTIFY char.
+// Which UUID is write and which is notify varies by firmware version — we auto-detect at runtime
+// by reading GATT characteristic properties (writeWithoutResponse vs notify).
 export const TACX_FEC_SERVICE_UUID   = '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e';
-export const TACX_FEC_TX_CHAR_UUID   = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e'; // write → trainer
-export const TACX_FEC_RX_CHAR_UUID   = '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e'; // notify ← trainer
+export const TACX_FEC_CHAR2_UUID     = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e';
+export const TACX_FEC_CHAR3_UUID     = '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e';
+// Legacy aliases kept for any remaining references:
+export const TACX_FEC_TX_CHAR_UUID   = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e';
+export const TACX_FEC_RX_CHAR_UUID   = '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e';
+
+// Wahoo KICKR / KICKR CORE / KICKR SNAP proprietary ERG characteristic
+// Sits inside the standard Cycling Power Service (0x1818).
+// Write [0x42, watts_lsb, watts_msb] to set ERG target power.
+export const WAHOO_KICKR_SERVICE_UUID = '00001818-0000-1000-8000-00805f9b34fb'; // same as CPS
+export const WAHOO_KICKR_CONTROL_UUID = 'a026e005-0a7d-4ab3-97fa-f1500f9feb8b';
+export const WAHOO_KICKR_ERG_OPCODE  = 0x42; // Set ERG target power (uint16 LE watts)
 
 // Control Point Opcodes
 export const FTMS_OPCODE_REQUEST_CONTROL = 0x00;

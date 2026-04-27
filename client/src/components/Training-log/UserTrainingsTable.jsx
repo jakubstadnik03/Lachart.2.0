@@ -5,6 +5,7 @@ import { deleteTraining, updateTraining, deleteFitTraining } from "../../service
 import { useTrainings } from "../../context/TrainingContext"; // Předpokládám, že máte kontext pro správu tréninků
 import { useNotification } from "../../context/NotificationContext"; // Přidáme import pro notifikace
 import { prepareTrainingForLactateEntry } from "../../utils/trainingLactateModal";
+import { SearchableSelect } from "../SearchableSelect";
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
   const getVisiblePages = () => {
@@ -425,30 +426,50 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       {/* ── Filter chips ── */}
       {(availableSports.length > 1 || availableCategories.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          {/* Sport chips */}
-          {availableSports.length > 1 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              {[{ key: 'all', label: 'All sports' }, ...availableSports.map(s => ({
-                key: s,
-                label: s.charAt(0).toUpperCase() + s.slice(1),
-              }))].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => { setFilterSport(key); setCurrentPage(1); }}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
-                    filterSport === key
-                      ? 'bg-gray-800 text-white border-gray-800'
-                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                  }`}
-                >
-                  {key === 'run'  && '🏃 '}
-                  {key === 'bike' && '🚴 '}
-                  {key === 'swim' && '🏊 '}
-                  {label}
+          {/* Sport chips — Bike / Run / Swim first, rest in a "More" dropdown */}
+          {availableSports.length > 1 && (() => {
+            const PRIORITY = ['bike', 'run', 'swim'];
+            const ICONS    = { bike: '🚴', run: '🏃', swim: '🏊' };
+            const LABELS   = { bike: 'Bike', run: 'Run', swim: 'Swim' };
+            const prioritySports = PRIORITY.filter(s => availableSports.includes(s));
+            const otherSports    = availableSports.filter(s => !PRIORITY.includes(s));
+            const isOtherActive  = filterSport !== 'all' && !PRIORITY.includes(filterSport);
+
+            const chipCls = (active) =>
+              `px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+                active
+                  ? 'bg-gray-800 text-white border-gray-800'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+              }`;
+
+            return (
+              <div className="flex items-center gap-1 flex-wrap">
+                {/* All sports */}
+                <button onClick={() => { setFilterSport('all'); setCurrentPage(1); }} className={chipCls(filterSport === 'all')}>
+                  All sports
                 </button>
-              ))}
-            </div>
-          )}
+
+                {/* Bike · Run · Swim */}
+                {prioritySports.map(key => (
+                  <button key={key} onClick={() => { setFilterSport(key); setCurrentPage(1); }} className={chipCls(filterSport === key)}>
+                    {ICONS[key]} {LABELS[key]}
+                  </button>
+                ))}
+
+                {/* Other sports — compact searchable dropdown */}
+                {otherSports.length > 0 && (
+                  <SearchableSelect
+                    value={isOtherActive ? filterSport : ''}
+                    onChange={(val) => { setFilterSport(val || 'all'); setCurrentPage(1); }}
+                    options={otherSports.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
+                    placeholder={isOtherActive
+                      ? filterSport.charAt(0).toUpperCase() + filterSport.slice(1)
+                      : 'More…'}
+                  />
+                )}
+              </div>
+            );
+          })()}
 
           {/* Divider */}
           {availableSports.length > 1 && availableCategories.length > 0 && (

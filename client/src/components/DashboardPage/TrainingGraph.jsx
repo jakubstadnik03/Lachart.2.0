@@ -13,6 +13,7 @@ import {
 } from "chart.js";
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { SearchableSelect } from '../SearchableSelect';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -31,6 +32,12 @@ const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
     const minutes = Math.floor(secPerUnit / 60);
     const remainingSeconds = Math.floor(secPerUnit % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mi' : '/km'}`;
+  };
+  const formatSwimPace = (seconds) => {
+    if (!seconds) return null;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/100yd' : '/100m'}`;
   };
 
   const formatDistance = (distance) => {
@@ -58,8 +65,14 @@ const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
 
   const metrics = [];
   if (dataPoint.power && dataPoint.power !== 0) {
-    const isRun = sport === 'run' || sport === 'running';
-    metrics.push({ label: isRun ? 'Pace' : 'Power', formattedValue: isRun ? formatPace(dataPoint.power) : `${dataPoint.power}W`, color: '#3B82F6' });
+    const isRun  = sport === 'run'  || sport === 'running';
+    const isSwim = sport === 'swim' || sport === 'swimming';
+    const isPace = isRun || isSwim;
+    metrics.push({
+      label: isPace ? 'Pace' : 'Power',
+      formattedValue: isSwim ? formatSwimPace(dataPoint.power) : isPace ? formatPace(dataPoint.power) : `${dataPoint.power}W`,
+      color: '#3B82F6',
+    });
   }
   if (dataPoint.heartRate && dataPoint.heartRate !== 0)
     metrics.push({ label: 'Heart Rate', formattedValue: `${dataPoint.heartRate} bpm`, color: '#EF4444' });
@@ -92,23 +105,6 @@ const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
 };
 
 // ── Compact pill select ─────────────────────────────────────────────────────
-const CompactSelect = ({ value, onChange, options, placeholder }) => (
-  <div className="relative inline-flex items-center">
-    <select
-      value={value || ''}
-      onChange={(e) => onChange(e.target.value)}
-      className="appearance-none bg-slate-100 hover:bg-slate-200 transition-colors text-slate-700 text-xs font-medium rounded-lg pl-2.5 pr-6 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 border-0 max-w-[160px] truncate"
-      style={{ WebkitAppearance: 'none' }}
-    >
-      {placeholder && <option value="" disabled>{placeholder}</option>}
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-    <svg className="absolute right-1.5 w-3 h-3 text-slate-400 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-    </svg>
-  </div>
-);
-
 // ── Settings dropdown ───────────────────────────────────────────────────────
 const SettingsDropdown = ({ isOpen, availableSports, currentSelectedSport, onSportChange, titleOptions, selectedTitle, onTitleChange, trainingOptions, selectedTraining, onTrainingChange }) => {
   if (!isOpen) return null;
@@ -140,7 +136,7 @@ const SettingsDropdown = ({ isOpen, availableSports, currentSelectedSport, onSpo
       {titleOptions.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Training</p>
-          <CompactSelect
+          <SearchableSelect
             value={selectedTitle}
             onChange={onTitleChange}
             options={titleOptions}
@@ -153,7 +149,7 @@ const SettingsDropdown = ({ isOpen, availableSports, currentSelectedSport, onSpo
       {trainingOptions.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Date</p>
-          <CompactSelect
+          <SearchableSelect
             value={selectedTraining}
             onChange={onTrainingChange}
             options={trainingOptions}
@@ -241,8 +237,16 @@ const TrainingGraph = ({
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mi' : '/km'}`;
   };
 
+  const formatSwimPace = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/100yd' : '/100m'}`;
+  };
+
   const formatPowerValue = (value, sport) => {
-    if (normalizeSport(sport) === 'cycling') return `${value}W`;
+    const normalized = normalizeSport(sport);
+    if (normalized === 'cycling') return `${value}W`;
+    if (normalized === 'swimming') return formatSwimPace(value);
     return formatPace(value);
   };
 
@@ -298,16 +302,18 @@ const TrainingGraph = ({
       const selectedData = trainingList.find(t => t._id === selectedTraining);
       if (selectedData?.results) {
         const sportKey = normalizeSport(selectedData.sport);
-        const isRun = sportKey === 'running' || sportKey === 'run';
+        const isRun  = sportKey === 'running' || sportKey === 'run';
+        const isSwim = sportKey === 'swimming' || sportKey === 'swim';
+        const isPace = isRun || isSwim;
         const powers = selectedData.results
-          .map(r => parsePowerToNumber(r.power, isRun))
+          .map(r => parsePowerToNumber(r.power, isPace))
           .filter(v => v !== null && v > 0);
         const heartRates = selectedData.results
           .map(r => { const n = Number(r.heartRate); return isFinite(n) && n > 0 ? n : null; })
           .filter(v => v !== null);
         const newRanges = { power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } };
         if (powers.length > 0) {
-          const pad = isRun ? 30 : 20;
+          const pad = isPace ? 30 : 20;
           newRanges.power = {
             min: Math.floor(Math.min(...powers) - pad),
             max: Math.ceil(Math.max(...powers) + pad),
@@ -441,7 +447,9 @@ const TrainingGraph = ({
   );
 
   const sportForScale = currentSelectedSport === 'all' && selectedTrainingData ? selectedTrainingData.sport : currentSelectedSport;
-  const isRunScale = normalizeSport(sportForScale) === 'running' || sportForScale === 'run';
+  const isRunScale  = normalizeSport(sportForScale) === 'running'  || sportForScale === 'run';
+  const isSwimScale = normalizeSport(sportForScale) === 'swimming' || sportForScale === 'swim';
+  const isPaceScale = isRunScale || isSwimScale;
 
   const chartOptions = {
     responsive: true,
@@ -473,7 +481,7 @@ const TrainingGraph = ({
         title: { display: false },
         min: ranges.power.min,
         max: ranges.power.max,
-        reverse: isRunScale,
+        reverse: isPaceScale,
         ticks: {
           stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
           callback: (value) => formatPowerValue(value, sportForScale),
@@ -517,25 +525,21 @@ const TrainingGraph = ({
 
       {/* ── Header — single row ── */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
-        {/* Title select */}
-        {titleOptions.length > 1 ? (
-          <CompactSelect
-            value={selectedTitle || ''}
-            onChange={handleTitleChange}
-            options={titleOptions}
-          />
-        ) : (
-          <span className="text-sm font-bold text-slate-900 truncate max-w-[200px]">
-            {selectedTitle || 'Training Graph'}
-          </span>
-        )}
+        {/* Title select — searchable dropdown */}
+        <SearchableSelect
+          value={selectedTitle || ''}
+          onChange={handleTitleChange}
+          options={titleOptions}
+          placeholder="Select training…"
+        />
 
         {/* Date select */}
         {trainingOptions.length > 0 && (
-          <CompactSelect
+          <SearchableSelect
             value={selectedTraining || ''}
             onChange={handleTrainingChange}
             options={trainingOptions}
+            placeholder="Select date…"
           />
         )}
 
@@ -577,9 +581,9 @@ const TrainingGraph = ({
             ),
             datasets: [
               {
-                label: isRunScale ? "Pace" : "Power",
+                label: isPaceScale ? "Pace" : "Power",
                 data: selectedTrainingData.results.map(r =>
-                  parsePowerToNumber(r.power, isRunScale)
+                  parsePowerToNumber(r.power, isPaceScale)
                 ),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",

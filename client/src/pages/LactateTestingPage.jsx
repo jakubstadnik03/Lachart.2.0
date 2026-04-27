@@ -118,6 +118,29 @@ const LactateTestingPage = () => {
   const [countdown,     setCountdown]     = useState(0);
   const [recoveryTimer, setRecoveryTimer] = useState(0);
 
+  // ── Warmup / Cooldown state ───────────────────────────────
+  const [warmup, setWarmup] = useState({
+    enabled:      false,
+    type:         'fixed',  // 'fixed' | 'steps'
+    duration:     600,      // seconds (fixed)
+    power:        100,      // watts  (fixed)
+    stepCount:    3,
+    stepDuration: 120,
+    startPower:   80,
+    endPower:     150,
+  });
+  const [cooldown, setCooldown] = useState({
+    enabled:  false,
+    duration: 300,
+    power:    80,
+  });
+  const [warmupStep,    setWarmupStep]    = useState(0);   // current warmup step index (step-type)
+  const [warmupTimer,   setWarmupTimer]   = useState(0);   // seconds into current warmup step
+  const [cooldownTimer, setCooldownTimer] = useState(0);   // seconds into cooldown
+
+  // ── Live watt offset ──────────────────────────────────────
+  const [wattOffset, setWattOffset] = useState(0);
+
   // ── Devices ───────────────────────────────────────────────
   const [devices, setDevices] = useState({
     bikeTrainer: { connected: false, data: null },
@@ -155,6 +178,8 @@ const LactateTestingPage = () => {
   const testTimerRef           = useRef(null);
   const countdownRef           = useRef(null);
   const recoveryTimerRef       = useRef(null);
+  const warmupTimerRef         = useRef(null);
+  const cooldownTimerRef       = useRef(null);
   const liveDataRef            = useRef(liveData);
   const currentStepRef         = useRef(currentStep);
   const intervalTimerRef2      = useRef(intervalTimer);
@@ -164,6 +189,15 @@ const LactateTestingPage = () => {
   const protocolRef            = useRef(protocol);
   const handleStartIntervalRef = useRef(null);
 
+  // Function refs (avoid stale closures in timers)
+  const warmupRef           = useRef(warmup);
+  const cooldownRef         = useRef(cooldown);
+  const wattOffsetRef       = useRef(wattOffset);
+  const warmupStepRef       = useRef(warmupStep);
+  const startMainTestRef    = useRef(null);
+  const startCooldownRef    = useRef(null);
+  const advanceWarmupStepRef = useRef(null);
+
   // Keep refs in sync
   useEffect(() => { liveDataRef.current       = liveData;      }, [liveData]);
   useEffect(() => { currentStepRef.current    = currentStep;   }, [currentStep]);
@@ -172,6 +206,17 @@ const LactateTestingPage = () => {
   useEffect(() => { testStateRef.current      = testState;     }, [testState]);
   useEffect(() => { phaseRef.current          = phase;         }, [phase]);
   useEffect(() => { protocolRef.current       = protocol;      }, [protocol]);
+  useEffect(() => { warmupRef.current         = warmup;        }, [warmup]);
+  useEffect(() => { cooldownRef.current       = cooldown;      }, [cooldown]);
+  useEffect(() => { wattOffsetRef.current     = wattOffset;    }, [wattOffset]);
+  useEffect(() => { warmupStepRef.current     = warmupStep;    }, [warmupStep]);
+
+  // ── Warmup step power helper ──────────────────────────────
+  const getWarmupStepPower = (stepIdx, wu) => {
+    const w = wu ?? warmupRef.current;
+    if (!w || w.stepCount <= 1) return w?.startPower ?? 0;
+    return Math.round(w.startPower + stepIdx * (w.endPower - w.startPower) / Math.max(w.stepCount - 1, 1));
+  };
 
   // ── Initialize protocol steps ─────────────────────────────
   useEffect(() => {
@@ -223,9 +268,6 @@ const LactateTestingPage = () => {
   }, [trainer.telemetry]);
 
   // ── Auto-request ERG control when trainer connects ─────────
-  // useTrainer.connect() already calls requestControl() automatically.
-  // This effect is a safety-net: if somehow status is still 'ready' after connect
-  // (e.g. control request timed out silently), retry here once.
   useEffect(() => {
     if (trainer.status !== 'ready') return;
     let cancelled = false;
@@ -236,7 +278,6 @@ const LactateTestingPage = () => {
         if (!cancelled) addNotification('Trainer ERG control established ✓', 'success');
       } catch (err) {
         if (!cancelled) console.warn('Trainer control retry failed:', err);
-        // Don't show error notification — useTrainer already handles error state
       }
     })();
     return () => { cancelled = true; };
@@ -302,7 +343,7 @@ const LactateTestingPage = () => {
           setIntervalTimer(0);
           setPhase('recovery');
           if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-            setTimeout(() => trainer.setErgWatts(0).catch(console.error), 100);
+            setTimeout(() => Promise.resolve(trainer.setErgWatts(0)).catch(console.error), 100);
           }
           return 0;
         }
@@ -310,6 +351,78 @@ const LactateTestingPage = () => {
       });
     }, 1000);
   }, [trainer]);
+
+  // ── Start cooldown phase ───────────────────────────────────
+  const startCooldown = useCallback(() => {
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    setCooldownTimer(0);
+    setPhase('cooldown');
+    const cd = cooldownRef.current;
+    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+      setTimeout(() => Promise.resolve(trainer.setErgWatts(cd.power)).catch(console.error), 100);
+    }
+    addNotification(`❄️ Cooldown: ${cd.power}W for ${fmtTime(cd.duration)}`, 'info');
+
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownTimer(prev => {
+        const dur = cooldownRef.current.duration || 300;
+        if (prev + 1 >= dur) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          setTimeout(() => {
+            testStateRef.current = 'completed';
+            setTestState('completed');
+            setPhase('work');
+            if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+            addNotification('Cooldown complete. Test finished ✓', 'success');
+          }, 100);
+          return dur;
+        }
+        return prev + 1;
+      });
+    }, 1000);
+  }, [trainer, addNotification]);
+  useEffect(() => { startCooldownRef.current = startCooldown; }, [startCooldown]);
+
+  // ── Advance warmup step (step-type warmup) ─────────────────
+  const advanceWarmupStep = useCallback(() => {
+    const wu = warmupRef.current;
+    const nextStep = warmupStepRef.current + 1;
+    if (nextStep >= wu.stepCount) {
+      // All warmup steps done
+      if (warmupTimerRef.current) { clearInterval(warmupTimerRef.current); warmupTimerRef.current = null; }
+      addNotification('Warmup complete! Starting main test…', 'success');
+      setTimeout(() => startMainTestRef.current?.(), 500);
+      return;
+    }
+    // Advance to next warmup step — the interval keeps running, just reset display timer
+    setWarmupStep(nextStep);
+    warmupStepRef.current = nextStep;
+    const power = getWarmupStepPower(nextStep, wu);
+    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+      Promise.resolve(trainer.setErgWatts(power)).catch(console.error);
+    }
+    addNotification(`Warmup step ${nextStep + 1}/${wu.stepCount}: ${power}W`, 'info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainer, addNotification]);
+  useEffect(() => { advanceWarmupStepRef.current = advanceWarmupStep; }, [advanceWarmupStep]);
+
+  // ── Start main test (after warmup or directly) ─────────────
+  const startMainTest = useCallback(() => {
+    setPhase('work');
+    setWattOffset(0); wattOffsetRef.current = 0;
+    setCurrentStep(0); currentStepRef.current = 0;
+    setIntervalTimer(0); intervalTimerRef2.current = 0;
+    startIntervalTimer();
+    const firstPower = protocolRef.current.steps[0]?.targetPower ?? protocolRef.current.startPower;
+    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+      setTimeout(() => {
+        Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
+        addNotification(`ERG set to ${firstPower}W`, 'info');
+      }, 500);
+    }
+  }, [trainer, startIntervalTimer, addNotification]);
+  useEffect(() => { startMainTestRef.current = startMainTest; }, [startMainTest]);
 
   // ── Start next interval (after recovery) ───────────────────
   const handleStartInterval = useCallback(() => {
@@ -319,9 +432,27 @@ const LactateTestingPage = () => {
     setRecoveryTimer(0);
     setLactateInput('');
     setBorgInput('');
+    setIntervalTimer(0);
+
+    // Detect last step
+    const isLastStep = currentStepRef.current + 1 >= protocolRef.current.steps.length;
+    if (isLastStep) {
+      if (cooldownRef.current?.enabled) {
+        startCooldownRef.current?.();
+      } else {
+        testStateRef.current = 'completed';
+        setTestState('completed');
+        setPhase('work');
+        if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+        addNotification('Test complete ✓', 'success');
+      }
+      return;
+    }
+
+    // Reset watt offset for new step
+    setWattOffset(0); wattOffsetRef.current = 0;
     setPhase('countdown');
     setCountdown(3);
-    setIntervalTimer(0);
 
     countdownRef.current = setInterval(() => {
       setCountdown(prev => {
@@ -332,7 +463,7 @@ const LactateTestingPage = () => {
             currentStepRef.current = next;
             const targetPower = protocolRef.current.steps[next]?.targetPower;
             if (targetPower && trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-              setTimeout(() => trainer.setErgWatts(targetPower).catch(console.error), 500);
+              setTimeout(() => Promise.resolve(trainer.setErgWatts(targetPower)).catch(console.error), 500);
             }
             return next;
           });
@@ -350,14 +481,30 @@ const LactateTestingPage = () => {
 
   useEffect(() => { handleStartIntervalRef.current = handleStartInterval; }, [handleStartInterval]);
 
+  // ── Live watt adjustment ───────────────────────────────────
+  const adjustWatts = useCallback((delta) => {
+    setWattOffset(prev => {
+      const newOffset = prev + delta;
+      wattOffsetRef.current = newOffset;
+      const effective = (protocolRef.current.steps[currentStepRef.current]?.targetPower ?? 0) + newOffset;
+      if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+        Promise.resolve(trainer.setErgWatts(Math.max(0, effective))).catch(console.error);
+      }
+      return newOffset;
+    });
+  }, [trainer]);
+
   // ── Start test ─────────────────────────────────────────────
   const handleStartTest = () => {
     setCurrentStep(0); currentStepRef.current = 0;
     setIntervalTimer(0); intervalTimerRef2.current = 0;
     setTotalTestTime(0); totalTestTimeRef.current = 0;
     setHistoricalData([]); setLactateValues([]);
-    setPhase('work'); setCountdown(0);
+    setCountdown(0);
     setLactateInput(''); setBorgInput('');
+    setWattOffset(0); wattOffsetRef.current = 0;
+    setWarmupStep(0); warmupStepRef.current = 0;
+    setWarmupTimer(0); setCooldownTimer(0);
     testStateRef.current = 'running';
     setTestState('running');
 
@@ -372,22 +519,77 @@ const LactateTestingPage = () => {
       if (testStateRef.current === 'running') collectDataPoint();
     }, 1000);
 
-    startIntervalTimer();
-
-    const firstPower = protocol.steps[0]?.targetPower ?? protocol.startPower;
-    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-      setTimeout(() => {
-        trainer.setErgWatts(firstPower).catch(console.error);
-        addNotification(`ERG set to ${firstPower}W`, 'info');
-      }, 1000);
+    const wu = warmup;
+    if (wu.enabled) {
+      setPhase('warmup');
+      if (wu.type === 'fixed') {
+        // Fixed-power warmup
+        if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+          setTimeout(() => {
+            Promise.resolve(trainer.setErgWatts(wu.power)).catch(console.error);
+          }, 500);
+        }
+        if (warmupTimerRef.current) clearInterval(warmupTimerRef.current);
+        warmupTimerRef.current = setInterval(() => {
+          setWarmupTimer(prev => {
+            const dur = warmupRef.current.duration || 600;
+            if (prev + 1 >= dur) {
+              clearInterval(warmupTimerRef.current);
+              warmupTimerRef.current = null;
+              addNotification('Warmup complete! Starting main test…', 'success');
+              setTimeout(() => startMainTestRef.current?.(), 500);
+              return dur;
+            }
+            return prev + 1;
+          });
+        }, 1000);
+      } else {
+        // Step-type warmup
+        const firstPower = getWarmupStepPower(0, wu);
+        if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+          setTimeout(() => {
+            Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
+          }, 500);
+        }
+        if (warmupTimerRef.current) clearInterval(warmupTimerRef.current);
+        warmupTimerRef.current = setInterval(() => {
+          setWarmupTimer(prev => {
+            const dur = warmupRef.current.stepDuration || 120;
+            if (prev + 1 >= dur) {
+              setTimeout(() => advanceWarmupStepRef.current?.(), 0);
+              return 0;
+            }
+            return prev + 1;
+          });
+        }, 1000);
+      }
+      addNotification(`🔥 Test started — Warmup phase`, 'success');
+    } else {
+      setPhase('work');
+      startIntervalTimer();
+      const firstPower = protocol.steps[0]?.targetPower ?? protocol.startPower;
+      if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+        setTimeout(() => {
+          Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
+          addNotification(`ERG set to ${firstPower}W`, 'info');
+        }, 1000);
+      }
+      setTimeout(() => addNotification('Test started!', 'success'), 0);
     }
-    setTimeout(() => addNotification('Test started!', 'success'), 0);
+  };
+
+  // ── Skip warmup ────────────────────────────────────────────
+  const handleSkipWarmup = () => {
+    if (warmupTimerRef.current) { clearInterval(warmupTimerRef.current); warmupTimerRef.current = null; }
+    addNotification('Warmup skipped, starting main test…', 'info');
+    startMainTestRef.current?.();
   };
 
   // ── Pause ──────────────────────────────────────────────────
   const handlePauseTest = () => {
     setTestState('paused'); testStateRef.current = 'paused';
-    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current,
+     countdownRef.current, recoveryTimerRef.current, warmupTimerRef.current, cooldownTimerRef.current]
       .forEach(r => { if (r) clearInterval(r); });
     setTimeout(() => addNotification('Test paused', 'info'), 0);
   };
@@ -395,7 +597,53 @@ const LactateTestingPage = () => {
   // ── Resume ─────────────────────────────────────────────────
   const handleResumeTest = () => {
     setTestState('running'); testStateRef.current = 'running';
-    if (phaseRef.current === 'work') startIntervalTimer();
+    const currentPhase = phaseRef.current;
+
+    if (currentPhase === 'work') {
+      startIntervalTimer();
+    } else if (currentPhase === 'warmup') {
+      const wu = warmupRef.current;
+      if (warmupTimerRef.current) clearInterval(warmupTimerRef.current);
+      warmupTimerRef.current = setInterval(() => {
+        setWarmupTimer(prev => {
+          const dur = wu.type === 'fixed' ? (wu.duration || 600) : (wu.stepDuration || 120);
+          if (prev + 1 >= dur) {
+            if (wu.type === 'fixed') {
+              clearInterval(warmupTimerRef.current);
+              warmupTimerRef.current = null;
+              addNotification('Warmup complete! Starting main test…', 'success');
+              setTimeout(() => startMainTestRef.current?.(), 500);
+              return dur;
+            } else {
+              setTimeout(() => advanceWarmupStepRef.current?.(), 0);
+              return 0;
+            }
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else if (currentPhase === 'cooldown') {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = setInterval(() => {
+        setCooldownTimer(prev => {
+          const dur = cooldownRef.current.duration || 300;
+          if (prev + 1 >= dur) {
+            clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+            setTimeout(() => {
+              testStateRef.current = 'completed';
+              setTestState('completed');
+              setPhase('work');
+              if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+              addNotification('Cooldown complete. Test finished ✓', 'success');
+            }, 100);
+            return dur;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+
     testTimerRef.current = setInterval(() => setTotalTestTime(p => p + 1), 1000);
     dataCollectionRef.current = setInterval(() => {
       if (testStateRef.current === 'running') collectDataPoint();
@@ -407,9 +655,10 @@ const LactateTestingPage = () => {
   const handleStopTest = () => {
     setTestState('completed'); testStateRef.current = 'completed';
     setPhase('work');
-    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current,
+     countdownRef.current, recoveryTimerRef.current, warmupTimerRef.current, cooldownTimerRef.current]
       .forEach(r => { if (r) clearInterval(r); });
-    if (trainer.setErgWatts) trainer.setErgWatts(0).catch(console.error);
+    if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
     setTimeout(() => addNotification('Test complete ✓', 'success'), 0);
   };
 
@@ -420,7 +669,7 @@ const LactateTestingPage = () => {
     setIntervalTimer(0);
     setPhase('recovery');
     if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-      trainer.setErgWatts(0).catch(console.error);
+      Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
     }
     setTimeout(() => addNotification('Interval ended. Enter lactate.', 'info'), 0);
   };
@@ -446,12 +695,16 @@ const LactateTestingPage = () => {
   // ── Clear ──────────────────────────────────────────────────
   const handleClearTest = () => {
     if (!window.confirm('Clear all test data? This cannot be undone.')) return;
-    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current,
+     countdownRef.current, recoveryTimerRef.current, warmupTimerRef.current, cooldownTimerRef.current]
       .forEach(r => { if (r) clearInterval(r); });
     setTestState('idle'); setCurrentStep(0); setIntervalTimer(0); setTotalTestTime(0);
     setPhase('work'); setCountdown(0); setRecoveryTimer(0);
     setHistoricalData([]); setLactateValues([]);
     setLactateInput(''); setBorgInput('');
+    setWattOffset(0); wattOffsetRef.current = 0;
+    setWarmupStep(0); warmupStepRef.current = 0;
+    setWarmupTimer(0); setCooldownTimer(0);
     testStateRef.current = 'idle'; currentStepRef.current = 0;
     totalTestTimeRef.current = 0; intervalTimerRef2.current = 0;
     setTimeout(() => addNotification('Test cleared', 'info'), 0);
@@ -514,7 +767,8 @@ const LactateTestingPage = () => {
 
   // ── Cleanup on unmount ─────────────────────────────────────
   useEffect(() => () => {
-    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current,
+     countdownRef.current, recoveryTimerRef.current, warmupTimerRef.current, cooldownTimerRef.current]
       .forEach(r => { if (r) clearInterval(r); });
   }, []);
 
@@ -571,21 +825,37 @@ const LactateTestingPage = () => {
   }, [selectedSessionId]);
 
   // ── Derived ────────────────────────────────────────────────
-  const currentStepData   = protocol.steps[currentStep] ?? {};
-  const targetPower       = currentStepData.targetPower ?? 0;
-  const actualPower       = Math.round(liveData.power ?? 0);
-  const powerDelta        = actualPower - targetPower;
-  const trainerConnected  = ['ready', 'controlled', 'erg_active'].includes(trainer.status);
-  const ergActive         = ['controlled', 'erg_active'].includes(trainer.status);
-  const stepProgress      = Math.min(intervalTimer / (currentStepData.duration || 360), 1);
-  const recoveryProgress  = Math.min(recoveryTimer   / (protocol.recoveryDuration   || 60),  1);
-  const stepLactateEntered = lactateValues.some(l => l.step === currentStep + 1);
-  const stepHistorical    = historicalData.filter(d => d.step === currentStep);
-  const avgStepPower      = stepHistorical.length
+  const currentStepData      = protocol.steps[currentStep] ?? {};
+  const targetPower          = currentStepData.targetPower ?? 0;
+  const effectiveTargetPower = targetPower + wattOffset;
+  const actualPower          = Math.round(liveData.power ?? 0);
+  const powerDelta           = actualPower - effectiveTargetPower;
+  const trainerConnected     = ['ready', 'controlled', 'erg_active'].includes(trainer.status);
+  const ergActive            = ['controlled', 'erg_active'].includes(trainer.status);
+  const stepProgress         = Math.min(intervalTimer / (currentStepData.duration || 360), 1);
+  const recoveryProgress     = Math.min(recoveryTimer   / (protocol.recoveryDuration   || 60),  1);
+  const cooldownProgress     = Math.min(cooldownTimer   / (cooldown.duration || 1), 1);
+  const warmupDuration       = warmup.type === 'fixed' ? warmup.duration : warmup.stepDuration;
+  const warmupProgress       = Math.min(warmupTimer / (warmupDuration || 1), 1);
+  const stepLactateEntered   = lactateValues.some(l => l.step === currentStep + 1);
+  const stepHistorical       = historicalData.filter(d => d.step === currentStep);
+  const avgStepPower         = stepHistorical.length
     ? Math.round(stepHistorical.reduce((s, d) => s + (d.power || 0), 0) / stepHistorical.length) : null;
-  const hrPoints          = stepHistorical.filter(d => d.heartRate && d.heartRate > 0);
-  const avgStepHR         = hrPoints.length
+  const hrPoints             = stepHistorical.filter(d => d.heartRate && d.heartRate > 0);
+  const avgStepHR            = hrPoints.length
     ? Math.round(hrPoints.reduce((s, d) => s + d.heartRate, 0) / hrPoints.length) : null;
+  const isLastStep           = currentStep + 1 >= protocol.steps.length;
+
+  // ── Estimated total time ───────────────────────────────────
+  const estimatedMainTime = protocol.steps.length * (protocol.workDuration + protocol.recoveryDuration);
+  const estimatedWarmupTime = warmup.enabled
+    ? (warmup.type === 'fixed' ? warmup.duration : warmup.stepCount * warmup.stepDuration)
+    : 0;
+  const estimatedCooldownTime = cooldown.enabled ? cooldown.duration : 0;
+  const estimatedTotal = estimatedMainTime + estimatedWarmupTime + estimatedCooldownTime;
+
+  // ── Warmup power for current warmup step ──────────────────
+  const currentWarmupPower = warmup.type === 'fixed' ? warmup.power : getWarmupStepPower(warmupStep, warmup);
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
@@ -680,7 +950,7 @@ const LactateTestingPage = () => {
               {protocol.steps.length > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Preview</div>
-                  <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                  <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
                     {protocol.steps.map((step, idx) => (
                       <div key={idx} className="flex items-center gap-3 px-3 py-2 bg-gray-50 hover:bg-gray-100/80 rounded-xl text-sm transition-colors">
                         <span className="w-6 h-6 bg-primary/10 text-primary rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{idx + 1}</span>
@@ -691,10 +961,139 @@ const LactateTestingPage = () => {
                     ))}
                   </div>
                   <p className="text-xs text-gray-400 text-right mt-1.5">
-                    ~{fmtTime(protocol.steps.length * (protocol.workDuration + protocol.recoveryDuration))} estimated
+                    ~{fmtTime(estimatedTotal)} estimated
+                    {(warmup.enabled || cooldown.enabled) && (
+                      <span className="ml-1 text-primary/60">
+                        (incl. {[warmup.enabled && 'warmup', cooldown.enabled && 'cooldown'].filter(Boolean).join(' + ')})
+                      </span>
+                    )}
                   </p>
                 </div>
               )}
+
+              {/* ── Warmup Settings ─────────────────────── */}
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-700">🔥 Warmup</h3>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <div
+                      onClick={() => setWarmup(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${warmup.enabled ? 'bg-primary' : 'bg-gray-200'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${warmup.enabled ? 'translate-x-4' : ''}`} />
+                    </div>
+                    <span className="text-xs text-gray-500">{warmup.enabled ? 'On' : 'Off'}</span>
+                  </label>
+                </div>
+
+                {warmup.enabled && (
+                  <div className="space-y-3 pl-1">
+                    {/* Type selector */}
+                    <div className="flex gap-2">
+                      {[['fixed', 'Fixed Power'], ['steps', 'Step Test']].map(([t, label]) => (
+                        <button key={t}
+                          onClick={() => setWarmup(prev => ({ ...prev, type: t }))}
+                          className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                            warmup.type === t ? 'bg-primary text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {warmup.type === 'fixed' ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Duration (sec)</label>
+                          <input type="number" min={60} max={3600} value={warmup.duration}
+                            onChange={e => setWarmup(prev => ({ ...prev, duration: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Power (W)</label>
+                          <input type="number" min={20} max={500} value={warmup.power}
+                            onChange={e => setWarmup(prev => ({ ...prev, power: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Steps</label>
+                          <input type="number" min={2} max={10} value={warmup.stepCount}
+                            onChange={e => setWarmup(prev => ({ ...prev, stepCount: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Step Duration (sec)</label>
+                          <input type="number" min={30} max={600} value={warmup.stepDuration}
+                            onChange={e => setWarmup(prev => ({ ...prev, stepDuration: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Start Power (W)</label>
+                          <input type="number" min={20} max={400} value={warmup.startPower}
+                            onChange={e => setWarmup(prev => ({ ...prev, startPower: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">End Power (W)</label>
+                          <input type="number" min={20} max={500} value={warmup.endPower}
+                            onChange={e => setWarmup(prev => ({ ...prev, endPower: Number(e.target.value) }))}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Warmup preview */}
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                      {warmup.type === 'fixed'
+                        ? `🔥 ${warmup.power}W · ${fmtTime(warmup.duration)}`
+                        : `🔥 ${warmup.stepCount} steps ${warmup.startPower}→${warmup.endPower}W · ${fmtTime(warmup.stepDuration)}/step · ${fmtTime(warmup.stepCount * warmup.stepDuration)} total`
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Cooldown Settings ────────────────────── */}
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-700">❄️ Cooldown</h3>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <div
+                      onClick={() => setCooldown(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${cooldown.enabled ? 'bg-primary' : 'bg-gray-200'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${cooldown.enabled ? 'translate-x-4' : ''}`} />
+                    </div>
+                    <span className="text-xs text-gray-500">{cooldown.enabled ? 'On' : 'Off'}</span>
+                  </label>
+                </div>
+
+                {cooldown.enabled && (
+                  <div className="space-y-3 pl-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Duration (sec)</label>
+                        <input type="number" min={60} max={3600} value={cooldown.duration}
+                          onChange={e => setCooldown(prev => ({ ...prev, duration: Number(e.target.value) }))}
+                          className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Power (W)</label>
+                        <input type="number" min={20} max={300} value={cooldown.power}
+                          onChange={e => setCooldown(prev => ({ ...prev, power: Number(e.target.value) }))}
+                          className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                      </div>
+                    </div>
+                    <div className="text-xs text-sky-700 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2">
+                      ❄️ {cooldown.power}W · {fmtTime(cooldown.duration)} after last step
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={handleStartTest}
@@ -814,26 +1213,131 @@ const LactateTestingPage = () => {
         {(testState === 'running' || testState === 'paused') && (
           <div className="space-y-4">
 
-            {/* Step progress */}
-            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 px-4 pt-3 pb-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Step {currentStep + 1} / {protocol.steps.length}
-                </span>
-                <div className="flex items-center gap-3 text-xs">
-                  {ergActive && (
-                    <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-                      <BoltSolid className="w-3 h-3" /> ERG {targetPower}W
-                    </span>
-                  )}
-                  <span className="text-gray-400">{fmtTime(totalTestTime)} elapsed</span>
+            {/* Step progress — hide during warmup */}
+            {phase !== 'warmup' && (
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 px-4 pt-3 pb-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {phase === 'cooldown' ? 'Cooldown' : `Step ${currentStep + 1} / ${protocol.steps.length}`}
+                  </span>
+                  <div className="flex items-center gap-3 text-xs">
+                    {ergActive && phase !== 'cooldown' && (
+                      <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                        <BoltSolid className="w-3 h-3" /> ERG {effectiveTargetPower}W
+                      </span>
+                    )}
+                    <span className="text-gray-400">{fmtTime(totalTestTime)} elapsed</span>
+                  </div>
                 </div>
+                {phase !== 'cooldown' && (
+                  <StepProgressBar steps={protocol.steps} currentStep={currentStep} lactateValues={lactateValues} />
+                )}
               </div>
-              <StepProgressBar steps={protocol.steps} currentStep={currentStep} lactateValues={lactateValues} />
-            </div>
+            )}
 
             {/* Phase panels */}
             <AnimatePresence mode="wait">
+
+              {/* WARMUP */}
+              {phase === 'warmup' && (
+                <motion.div key="warmup"
+                  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-amber-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-amber-200 p-5 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Warmup</span>
+                    {warmup.type === 'steps' && (
+                      <span className="text-xs text-amber-600 font-semibold ml-1">
+                        Step {warmupStep + 1} / {warmup.stepCount}
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-amber-600">{fmtTime(totalTestTime)} elapsed</span>
+                  </div>
+
+                  {/* Warmup step indicators (step-type only) */}
+                  {warmup.type === 'steps' && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                      {Array.from({ length: warmup.stepCount }, (_, i) => {
+                        const p = getWarmupStepPower(i, warmup);
+                        const done   = i < warmupStep;
+                        const active = i === warmupStep;
+                        return (
+                          <React.Fragment key={i}>
+                            <div className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl text-center transition-all ${
+                              active ? 'bg-amber-500 text-white shadow-md scale-105' :
+                              done   ? 'bg-amber-100 text-amber-600' :
+                                       'bg-white/60 text-gray-400 border border-gray-100'
+                            }`}>
+                              {done
+                                ? <CheckCircleSolid className="w-3.5 h-3.5 text-amber-500" />
+                                : <span className={`text-xs font-bold ${active ? 'text-white' : 'text-gray-400'}`}>{i + 1}</span>
+                              }
+                              <span className={`text-[11px] font-semibold ${active ? 'text-white' : done ? 'text-amber-600' : 'text-gray-400'}`}>{p}W</span>
+                            </div>
+                            {i < warmup.stepCount - 1 && (
+                              <div className={`flex-shrink-0 w-3 h-px mb-3 ${i < warmupStep ? 'bg-amber-300' : 'bg-gray-200'}`} />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Power display */}
+                  <div className="flex items-center justify-center gap-4">
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Target</div>
+                      <div className="text-6xl font-black text-amber-600 tabular-nums leading-none">{currentWarmupPower}</div>
+                      <div className="text-xs text-amber-400 mt-1.5">watts</div>
+                    </div>
+                    {trainerConnected && (
+                      <div className="text-center">
+                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
+                        <div className="text-4xl font-black text-gray-600 tabular-nums leading-none">{actualPower}</div>
+                        <div className="text-xs text-gray-400 mt-1.5">watts</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Timer bar */}
+                  <div>
+                    <div className="flex justify-between text-xs text-amber-600 mb-1.5">
+                      <span className="font-medium">{warmup.type === 'fixed' ? 'Warmup progress' : `Step ${warmupStep + 1} progress`}</span>
+                      <span className="font-bold tabular-nums">
+                        {fmtTime(warmupTimer)} / {fmtTime(warmup.type === 'fixed' ? warmup.duration : warmup.stepDuration)}
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-amber-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-amber-400 rounded-full"
+                        animate={{ width: `${warmupProgress * 100}%` }}
+                        transition={{ duration: 0.8, ease: 'linear' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {testState === 'running' ? (
+                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-200 text-amber-800 rounded-xl text-sm font-bold hover:bg-amber-300 transition-colors">
+                        <PauseIcon className="w-4 h-4" /> Pause
+                      </button>
+                    ) : (
+                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                        <PlayIcon className="w-4 h-4" /> Resume
+                      </button>
+                    )}
+                    <button onClick={handleSkipWarmup} className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors">
+                      Skip Warmup →
+                    </button>
+                    <button onClick={handleStopTest} className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
+                      <StopIcon className="w-4 h-4" /> Stop Test
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
               {/* WORK */}
               {phase === 'work' && (
@@ -851,7 +1355,9 @@ const LactateTestingPage = () => {
                       {testState === 'running' ? 'Work Interval' : 'Paused'}
                     </span>
                     <span className="ml-auto text-xs text-gray-400">
-                      Next: {protocol.steps[currentStep + 1]?.targetPower ? `${protocol.steps[currentStep + 1].targetPower}W` : 'Last step'}
+                      Next: {protocol.steps[currentStep + 1]?.targetPower
+                        ? `${protocol.steps[currentStep + 1].targetPower}W`
+                        : cooldown.enabled ? '❄️ Cooldown' : 'Last step'}
                     </span>
                   </div>
 
@@ -860,8 +1366,13 @@ const LactateTestingPage = () => {
                     {/* Target */}
                     <div className="bg-primary/8 border border-primary/20 rounded-2xl p-4 text-center">
                       <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-1">Target</div>
-                      <div className="text-4xl sm:text-5xl font-black text-primary tabular-nums leading-none">{targetPower}</div>
-                      <div className="text-xs text-primary/50 mt-1.5">watts</div>
+                      <div className="text-4xl sm:text-5xl font-black text-primary tabular-nums leading-none">{effectiveTargetPower}</div>
+                      {wattOffset !== 0 && (
+                        <div className={`text-[10px] font-semibold mt-1 ${wattOffset > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          base {targetPower}W {wattOffset > 0 ? `+${wattOffset}` : wattOffset}
+                        </div>
+                      )}
+                      {wattOffset === 0 && <div className="text-xs text-primary/50 mt-1.5">watts</div>}
                     </div>
                     {/* Actual */}
                     <div className={`rounded-2xl p-4 text-center border transition-colors ${
@@ -904,6 +1415,33 @@ const LactateTestingPage = () => {
                       <div className="text-xs text-sky-300 mt-1.5">rpm</div>
                     </div>
                   </div>
+
+                  {/* ── Live watt adjustment ────────────── */}
+                  {ergActive && testState === 'running' && (
+                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500 flex-shrink-0 w-16">Adjust W:</span>
+                      <div className="flex gap-1.5 flex-1">
+                        {[-20, -10, -5].map(d => (
+                          <button key={d} onClick={() => adjustWatts(d)}
+                            className="flex-1 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-bold hover:bg-red-200 active:scale-95 transition-all">
+                            {d}
+                          </button>
+                        ))}
+                        {[5, 10, 20].map(d => (
+                          <button key={d} onClick={() => adjustWatts(d)}
+                            className="flex-1 py-2 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-200 active:scale-95 transition-all">
+                            +{d}
+                          </button>
+                        ))}
+                      </div>
+                      {wattOffset !== 0 && (
+                        <button onClick={() => adjustWatts(-wattOffset)}
+                          className="flex-shrink-0 px-2.5 py-2 bg-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-300 transition-colors">
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Interval progress bar */}
                   <div>
@@ -969,6 +1507,11 @@ const LactateTestingPage = () => {
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
                     <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
+                    {isLastStep && (
+                      <span className="ml-2 text-xs font-semibold text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full">
+                        {cooldown.enabled ? '❄️ Cooldown next' : '🏁 Last step'}
+                      </span>
+                    )}
                     <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
                       {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
                     </span>
@@ -1047,11 +1590,81 @@ const LactateTestingPage = () => {
                   <div className="flex gap-2 pt-1">
                     <button onClick={handleStartInterval}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                      <PlayIcon className="w-4 h-4" /> Start Next Interval
+                      {isLastStep
+                        ? cooldown.enabled
+                          ? <><span>❄️</span> Start Cooldown</>
+                          : <><span>🏁</span> Finish Test</>
+                        : <><PlayIcon className="w-4 h-4" /> Start Next Interval</>
+                      }
                     </button>
                     <button onClick={handleStopTest}
                       className="flex items-center gap-1.5 px-3 py-2.5 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
                       <StopIcon className="w-4 h-4" /> Finish Test
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* COOLDOWN */}
+              {phase === 'cooldown' && (
+                <motion.div key="cooldown"
+                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                  className="bg-teal-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-teal-200 p-5 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse flex-shrink-0" />
+                    <span className="text-xs font-black text-teal-700 uppercase tracking-widest">Cooldown</span>
+                    <span className="ml-auto text-sm font-black text-teal-700 tabular-nums">
+                      {fmtTime(cooldownTimer)} / {fmtTime(cooldown.duration)}
+                    </span>
+                  </div>
+
+                  {/* Power display */}
+                  <div className="flex items-center justify-center gap-6">
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-1">Target</div>
+                      <div className="text-6xl font-black text-teal-600 tabular-nums leading-none">{cooldown.power}</div>
+                      <div className="text-xs text-teal-400 mt-1.5">watts</div>
+                    </div>
+                    {trainerConnected && (
+                      <div className="text-center">
+                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
+                        <div className="text-4xl font-black text-gray-600 tabular-nums leading-none">{actualPower}</div>
+                        <div className="text-xs text-gray-400 mt-1.5">watts</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Progress bar */}
+                  <div>
+                    <div className="flex justify-between text-xs text-teal-600 mb-1.5">
+                      <span className="font-medium">Cooldown progress</span>
+                      <span className="font-bold tabular-nums">{fmtTime(cooldownTimer)} / {fmtTime(cooldown.duration)}</span>
+                    </div>
+                    <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-teal-400 rounded-full"
+                        animate={{ width: `${cooldownProgress * 100}%` }}
+                        transition={{ duration: 0.8, ease: 'linear' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex gap-2 pt-1">
+                    {testState === 'running' ? (
+                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-200 text-teal-800 rounded-xl text-sm font-bold hover:bg-teal-300 transition-colors">
+                        <PauseIcon className="w-4 h-4" /> Pause
+                      </button>
+                    ) : (
+                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                        <PlayIcon className="w-4 h-4" /> Resume
+                      </button>
+                    )}
+                    <button onClick={handleStopTest}
+                      className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
+                      <StopIcon className="w-4 h-4" /> Finish Now
                     </button>
                   </div>
                 </motion.div>
