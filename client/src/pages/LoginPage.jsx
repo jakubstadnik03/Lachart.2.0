@@ -404,10 +404,10 @@ const LoginPage = () => {
 
           {/* Logo */}
           <div className="mb-8 text-center">
-            <div className="mx-auto h-16 w-16 rounded-2xl overflow-hidden shadow-md mb-3 bg-primary/10 flex items-center justify-center">
+            <div className="mx-auto h-16 w-16 rounded-2xl overflow-hidden shadow-md mb-3">
               <picture>
                 <source type="image/webp" srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w" sizes="64px" />
-                <img className="h-11 w-11 object-contain" src="/images/LaChart.png" alt="LaChart" />
+                <img className="h-16 w-16 object-cover" src="/images/LaChart.png" alt="LaChart" />
               </picture>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">LaChart</h1>

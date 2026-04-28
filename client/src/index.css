@@ -112,3 +112,21 @@ button, a, [role="button"] {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+/* Modern Leaflet map overrides */
+.leaflet-tooltip-clean {
+  background: rgba(255,255,255,0.92) !important;
+  border: none !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
+  color: #1f2937 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 3px 8px !important;
+  backdrop-filter: blur(4px) !important;
+}
+.leaflet-tooltip-clean::before {
+  display: none !important;
+}
+.leaflet-container {
+  font-family: inherit !important;
+}

@@ -113,9 +113,32 @@ async function notifyUserLactateTestFollowUp(userId) {
   }
 }
 
+/**
+ * Notify all admin users when a new user registers.
+ */
+async function notifyAdminNewUserRegistered(newUser) {
+  try {
+    const admins = await User.find({ admin: true }).select('expoPushTokens').lean();
+    const tokens = admins.flatMap(a => Array.isArray(a.expoPushTokens) ? a.expoPushTokens : []);
+    if (tokens.length === 0) return;
+
+    const name = [newUser?.name, newUser?.surname].filter(Boolean).join(' ') || newUser?.email || 'Someone';
+    const sport = newUser?.sport ? ` (${newUser.sport})` : '';
+
+    await sendExpoPushToTokens(tokens, {
+      title: '🆕 New user registered',
+      body: `${name}${sport} just signed up to LaChart.`,
+      data: { type: 'admin_new_user', userId: String(newUser?._id || '') },
+    });
+  } catch (e) {
+    console.error('[ExpoPush] notifyAdminNewUserRegistered:', e.message || e);
+  }
+}
+
 module.exports = {
   sendExpoPushToTokens,
   notifyUserStravaActivitiesImported,
   notifyUserLactateTestCompleted,
   notifyUserLactateTestFollowUp,
+  notifyAdminNewUserRegistered,
 };

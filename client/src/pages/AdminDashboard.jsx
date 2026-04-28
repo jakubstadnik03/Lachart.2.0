@@ -1603,6 +1603,21 @@ const AdminDashboard = () => {
                         </>
                       )}
                       <div className="mt-2 flex flex-col gap-2">
+                        {!user.stravaConnected && (
+                          <button
+                            type="button"
+                            disabled={stravaReminderEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                            onClick={() => handleSendStravaReminderEmail(user)}
+                            className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center gap-1.5 ${
+                              user.notifications?.emailNotifications === false
+                                ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                                : 'border-orange-500 text-orange-600 hover:bg-orange-50'
+                            } ${stravaReminderEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                          >
+                            <span>🔗</span>
+                            {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send Strava reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={emailLoadingUserId === user._id || user.notifications?.emailNotifications === false}

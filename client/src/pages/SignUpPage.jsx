@@ -495,14 +495,14 @@ const SignUpPage = () => {
             transition={{ duration: 0.5, delay: 0.6 }}
           >
             <div className="mx-auto flex items-center gap-2 justify-center">
-              <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
+              <div className="h-11 w-11 rounded-2xl overflow-hidden shadow-sm">
                 <picture>
                   <source
                     type="image/webp"
                     srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-                    sizes="28px"
+                    sizes="44px"
                   />
-                  <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                  <img className="h-11 w-11 object-cover" src="/images/LaChart.png" alt="LaChart" />
                 </picture>
               </div>
               <h1 className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</h1>

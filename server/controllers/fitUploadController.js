@@ -351,6 +351,28 @@ async function uploadFitFile(req, res) {
 
     console.log(`Successfully processed FIT file: ${fitTraining._id}`);
 
+    // In-app notification: confirm upload to the uploader + notify coach (fire-and-forget)
+    const sportLabel = trainingData.sport ? ` (${trainingData.sport})` : '';
+    const durationMin = trainingData.totalElapsedTime ? Math.round(trainingData.totalElapsedTime / 60) : null;
+    const durationStr = durationMin ? ` · ${durationMin} min` : '';
+    const notifBody = `FIT file uploaded${sportLabel}${durationStr}.`;
+
+    notifyAthlete(String(userId), {
+      type: 'fit_uploaded',
+      title: 'Training uploaded',
+      body: notifBody,
+      resourceId: String(fitTraining._id),
+      resourceType: 'fit',
+    }).catch(() => {});
+
+    notifyCoachesOfAthlete(String(userId), {
+      type: 'fit_uploaded',
+      title: 'New training uploaded',
+      body: notifBody,
+      resourceId: String(fitTraining._id),
+      resourceType: 'fit',
+    }).catch(() => {});
+
     res.status(201).json({
       success: true,
       training: fitTraining,

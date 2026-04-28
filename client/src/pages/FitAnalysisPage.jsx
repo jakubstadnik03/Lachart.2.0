@@ -24,7 +24,7 @@ import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw, lapSpeedMpsForChart } from '../utils/fitAnalysisUtils';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
-import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -611,9 +611,9 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
         </div>
 
         {showHr && (
-          <div className="p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
-            <h4 className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">Time in Heart Rate Zone</h4>
-            <div className={isMobileTable ? 'space-y-3' : 'space-y-2'}>
+          <div className={`bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md ${isMobileTable ? 'p-2' : 'p-2'}`}>
+            <h4 className={`font-semibold text-gray-900 ${isMobileTable ? 'text-[11px] mb-1.5' : 'text-xs sm:text-sm mb-2'}`}>Time in Heart Rate Zone</h4>
+            <div className={isMobileTable ? 'space-y-1.5' : 'space-y-2'}>
               {zoneKeys.map((zKey) => {
                 const percent = timeInZones.hrPercents[zKey] ?? 0;
                 const barWidth = percent > 0 ? percent : 5;
@@ -651,13 +651,20 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                 );
 
                 return isMobileTable ? (
-                  <div key={zKey} className="rounded-lg border border-white/15 bg-white/5 p-2.5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-gray-900">{zKey.replace('zone', 'Z')}</div>
-                      <div className="text-sm font-semibold tabular-nums text-gray-900">{percent.toFixed(0)}%</div>
+                  <div key={zKey} className="flex items-center gap-2"
+                    onMouseEnter={(e) => setZoneTooltipData({ x: e.clientX, y: e.clientY, content: tooltipContent })}
+                    onMouseMove={(e) => setZoneTooltipData({ x: e.clientX, y: e.clientY, content: tooltipContent })}
+                    onMouseLeave={() => setZoneTooltipData(null)}
+                  >
+                    <div className="w-6 shrink-0 text-xs font-bold text-gray-700">{zKey.replace('zone', 'Z')}</div>
+                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, barWidth)}%`, backgroundColor: hrRedColor, opacity: percent > 0 ? 0.9 : 0.2 }}
+                      />
                     </div>
-                    {barTrack}
-                    <div className="text-[11px] leading-snug text-gray-500 break-words">{formatHrZoneRange(zKey)}</div>
+                    <div className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-800">{percent.toFixed(0)}%</div>
+                    <div className="w-20 shrink-0 text-right text-[10px] text-gray-400 leading-tight">{formatHrZoneRange(zKey)}</div>
                   </div>
                 ) : (
                   <div key={zKey} className="flex items-center gap-3">
@@ -673,11 +680,11 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
         )}
 
         {showPower && (
-          <div className="p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
-            <h4 className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">
+          <div className={`bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md ${isMobileTable ? 'p-2' : 'p-2'}`}>
+            <h4 className={`font-semibold text-gray-900 ${isMobileTable ? 'text-[11px] mb-1.5' : 'text-xs sm:text-sm mb-2'}`}>
               Time in {stravaSportType === 'cycling' ? 'Power' : 'Pace'} Zone
             </h4>
-            <div className={isMobileTable ? 'space-y-3' : 'space-y-2'}>
+            <div className={isMobileTable ? 'space-y-1.5' : 'space-y-2'}>
               {zoneKeys.map((zKey) => {
                 const percent = timeInZones.powerPercents[zKey] ?? 0;
                 const barWidth = percent > 0 ? percent : 5;
@@ -721,13 +728,20 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                 );
 
                 return isMobileTable ? (
-                  <div key={zKey} className="rounded-lg border border-white/15 bg-white/5 p-2.5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-gray-900">{zKey.replace('zone', 'Z')}</div>
-                      <div className="text-sm font-semibold tabular-nums text-gray-900">{percent.toFixed(0)}%</div>
+                  <div key={zKey} className="flex items-center gap-2"
+                    onMouseEnter={(e) => setZoneTooltipData({ x: e.clientX, y: e.clientY, content: tooltipContent })}
+                    onMouseMove={(e) => setZoneTooltipData({ x: e.clientX, y: e.clientY, content: tooltipContent })}
+                    onMouseLeave={() => setZoneTooltipData(null)}
+                  >
+                    <div className="w-6 shrink-0 text-xs font-bold text-gray-700">{zKey.replace('zone', 'Z')}</div>
+                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, barWidth)}%`, backgroundColor: getPowerBarColor(zKey), opacity: percent > 0 ? 0.85 : 0.2 }}
+                      />
                     </div>
-                    {barTrack}
-                    <div className="text-[11px] leading-snug text-gray-500 break-words">{formatPowerZoneRange(zKey)}</div>
+                    <div className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-800">{percent.toFixed(0)}%</div>
+                    <div className="w-20 shrink-0 text-right text-[10px] text-gray-400 leading-tight">{formatPowerZoneRange(zKey)}</div>
                   </div>
                 ) : (
                   <div key={zKey} className="flex items-center gap-3">
@@ -3719,13 +3733,22 @@ const FitAnalysisPage = () => {
         {isMobile && !(selectedTraining || selectedStrava) && (
           <div className="px-4 pt-4 pb-2 flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">Training Calendar</h1>
-            <button
-              onClick={handleOpenAddTraining}
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Add
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAutoClassify(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-all shadow-sm"
+                title="Auto-categorize activities"
+              >
+                <SparklesIcon className="w-3.5 h-3.5 text-primary" />
+              </button>
+              <button
+                onClick={handleOpenAddTraining}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add
+              </button>
+            </div>
           </div>
         )}
 
@@ -3871,38 +3894,40 @@ const FitAnalysisPage = () => {
 
                   {/* Route Map for FIT/regular training when GPS is available */}
                   {getGpsData.length > 0 && (
-                    <div className={`${isMobile ? '-mx-4 px-4 py-3 border-t border-gray-100' : ''}`}>
-                      <div className={`${isMobile ? '' : 'rounded-2xl border border-gray-200 overflow-hidden'}`}>
-                        <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-800 ${isMobile ? 'mb-2' : 'px-4 pt-4 pb-3 border-b border-gray-100'}`}>
-                          Route Map
-                        </h3>
-                        <div className={`relative overflow-hidden ${isMobile ? 'rounded-xl' : ''} border border-gray-200 ${isMobile ? 'h-[200px]' : 'h-[300px] md:h-[420px]'}`}>
-                          <MapContainer
-                            center={getGpsData[Math.floor(getGpsData.length / 2)]}
-                            zoom={13}
-                            style={{ height: '100%', width: '100%', zIndex: 0 }}
-                            scrollWheelZoom={true}
+                    <div className={`${isMobile ? '-mx-4' : ''}`}>
+                      <div className={`relative overflow-hidden ${isMobile ? '' : 'rounded-2xl'} ${isMobile ? 'h-[220px]' : 'h-[320px] md:h-[400px]'}`}>
+                        <MapContainer
+                          center={getGpsData[Math.floor(getGpsData.length / 2)]}
+                          zoom={13}
+                          style={{ height: '100%', width: '100%', zIndex: 0 }}
+                          scrollWheelZoom={true}
+                          zoomControl={false}
+                          attributionControl={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                          />
+                          <Polyline
+                            positions={getGpsData}
+                            pathOptions={{ color: '#6366f1', weight: 4, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
+                          />
+                          <CircleMarker
+                            center={getGpsData[0]}
+                            radius={7}
+                            pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#22c55e', fillOpacity: 1 }}
                           >
-                            <TileLayer
-                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            />
-                            <Polyline
-                              positions={getGpsData}
-                              pathOptions={{
-                                color: '#767EB5',
-                                weight: 4,
-                                opacity: 0.85
-                              }}
-                            />
-                            <Marker position={getGpsData[0]}>
-                              <Popup>Start</Popup>
-                            </Marker>
-                            <Marker position={getGpsData[getGpsData.length - 1]}>
-                              <Popup>Finish</Popup>
-                            </Marker>
-                          </MapContainer>
-                        </div>
+                            <Tooltip permanent direction="top" offset={[0, -10]} className="leaflet-tooltip-clean">Start</Tooltip>
+                          </CircleMarker>
+                          <CircleMarker
+                            center={getGpsData[getGpsData.length - 1]}
+                            radius={7}
+                            pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#ef4444', fillOpacity: 1 }}
+                          >
+                            <Tooltip permanent direction="top" offset={[0, -10]} className="leaflet-tooltip-clean">Finish</Tooltip>
+                          </CircleMarker>
+                        </MapContainer>
+                        {/* subtle vignette */}
+                        <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_0_30px_rgba(0,0,0,0.06)]" />
                       </div>
                     </div>
                   )}
@@ -5206,40 +5231,40 @@ const FitAnalysisPage = () => {
 
               {/* Map Section */}
               {getGpsData.length > 0 && (
-                <div className={`${isMobile ? '-mx-4 px-4 py-3 border-t border-gray-100' : ''}`}>
-                  <div className={`${isMobile ? '' : 'rounded-2xl border border-gray-200 overflow-hidden'}`}>
-                    <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-800 ${isMobile ? 'mb-2' : 'px-4 pt-4 pb-3 border-b border-gray-100'}`}>Route Map</h3>
-                    <div className={`relative overflow-hidden ${isMobile ? 'rounded-xl' : ''} border border-gray-200 ${isMobile ? 'h-[200px]' : 'h-[300px] md:h-[420px]'}`}>
-                      <MapContainer
-                        center={getGpsData.length > 0 ? getGpsData[Math.floor(getGpsData.length / 2)] : [50.0755, 14.4378]}
-                        zoom={13}
-                        style={{ height: '100%', width: '100%', zIndex: 0 }}
-                        scrollWheelZoom={true}
+                <div className={`${isMobile ? '-mx-4' : ''}`}>
+                  <div className={`relative overflow-hidden ${isMobile ? '' : 'rounded-2xl'} ${isMobile ? 'h-[220px]' : 'h-[320px] md:h-[400px]'}`}>
+                    <MapContainer
+                      center={getGpsData[Math.floor(getGpsData.length / 2)]}
+                      zoom={13}
+                      style={{ height: '100%', width: '100%', zIndex: 0 }}
+                      scrollWheelZoom={true}
+                      zoomControl={false}
+                      attributionControl={false}
+                    >
+                      <TileLayer
+                        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                      />
+                      <Polyline
+                        positions={getGpsData}
+                        pathOptions={{ color: '#6366f1', weight: 4, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
+                      />
+                      <CircleMarker
+                        center={getGpsData[0]}
+                        radius={7}
+                        pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#22c55e', fillOpacity: 1 }}
                       >
-                        <TileLayer
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
-                        <Polyline
-                          positions={getGpsData}
-                          pathOptions={{
-                            color: '#767EB5',
-                            weight: 4,
-                            opacity: 0.8
-                          }}
-                        />
-                        {getGpsData.length > 0 && (
-                          <>
-                            <Marker position={getGpsData[0]}>
-                              <Popup>Start</Popup>
-                            </Marker>
-                            <Marker position={getGpsData[getGpsData.length - 1]}>
-                              <Popup>Finish</Popup>
-                            </Marker>
-                          </>
-                        )}
-                      </MapContainer>
-                </div>
+                        <Tooltip permanent direction="top" offset={[0, -10]} className="leaflet-tooltip-clean">Start</Tooltip>
+                      </CircleMarker>
+                      <CircleMarker
+                        center={getGpsData[getGpsData.length - 1]}
+                        radius={7}
+                        pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#ef4444', fillOpacity: 1 }}
+                      >
+                        <Tooltip permanent direction="top" offset={[0, -10]} className="leaflet-tooltip-clean">Finish</Tooltip>
+                      </CircleMarker>
+                    </MapContainer>
+                    {/* subtle vignette */}
+                    <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_0_30px_rgba(0,0,0,0.06)]" />
                   </div>
                 </div>
               )}

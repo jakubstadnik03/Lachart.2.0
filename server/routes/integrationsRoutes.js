@@ -596,10 +596,24 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 function notifyStravaImportedPush(userId, imported) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
+
+  // Expo push (mobile)
   const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
   notifyUserStravaActivitiesImported(userId, n).catch((e) =>
     console.error('[Strava sync push]', e.message || e)
   );
+
+  // In-app notification (bell in header)
+  const { sendNotification } = require('../utils/notificationHelper');
+  const body = n === 1
+    ? '1 new activity imported from Strava.'
+    : `${n} new activities imported from Strava.`;
+  sendNotification(String(userId), {
+    type: 'strava_import',
+    title: 'Strava sync',
+    body,
+    resourceType: 'strava',
+  }).catch((e) => console.error('[Strava sync notification]', e.message || e));
 }
 
 // POST /api/integrations/strava/sync (basic history fetch)

@@ -280,11 +280,14 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               }
 
               return (
-                <button
+                <div
                   key={index}
                   ref={el => { lapRefs.current[lapNumber] = el; }}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleSelectLap(isSelected ? null : lapNumber)}
-                  className={`w-full text-left px-3 py-3.5 flex items-center gap-3 transition-colors touch-manipulation ${
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleSelectLap(isSelected ? null : lapNumber); }}
+                  className={`w-full text-left px-3 py-3.5 flex items-center gap-3 transition-colors touch-manipulation cursor-pointer ${
                     isSelected
                       ? 'bg-primary/10 border-l-[3px] border-primary'
                       : lap.lactate
@@ -342,7 +345,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                   >
                     {lap.lactate ? lap.lactate.toFixed(1) : '+ La'}
                   </button>
-                </button>
+                </div>
               );
             })}
           </div>

@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../../config/jwt.config");
 const { sendEmailVerificationEmail } = require("../../services/emailVerificationService");
 const { saveRegistrationLocation } = require("../../utils/geoip");
+const { notifyAdminNewUserRegistered } = require("../../utils/expoPushNotifications");
 
 class RegisterAbl {
     constructor() {
@@ -85,6 +86,9 @@ class RegisterAbl {
 
             // Save registration location (fire-and-forget)
             saveRegistrationLocation(this.userDao, newUser._id, req);
+
+            // Notify admins about new registration (fire-and-forget)
+            notifyAdminNewUserRegistered(newUser).catch(() => {});
 
             // Po úspěšné registraci pošleme verifikační e‑mail (best effort, neblokuje registraci)
             try {
