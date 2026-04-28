@@ -60,7 +60,12 @@ const testSchema = new mongoose.Schema({
       heartRateZones: mongoose.Schema.Types.Mixed,
       source: { type: String, default: 'set-zones' },
       updatedAt: { type: Date, default: null }
-    }
+    },
+    // Manual LT1/LT2 override — set by coach/athlete to pin thresholds (overrides auto-calculation)
+    thresholdOverrides: {
+      LTP1: { type: Number, default: null },
+      LTP2: { type: Number, default: null },
+    },
 }, {
     timestamps: true,
 });

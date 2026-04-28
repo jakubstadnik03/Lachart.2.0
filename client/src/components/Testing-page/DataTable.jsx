@@ -3535,6 +3535,17 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       });
     }
 
+    // ── Manual override: if coach/athlete pinned LT1 or LT2, apply now ──────────
+    const ovr = mockData?.thresholdOverrides;
+    if (ovr) {
+      if (ovr.LTP1 != null && Number.isFinite(Number(ovr.LTP1))) {
+        thresholds['LTP1'] = Number(ovr.LTP1);
+      }
+      if (ovr.LTP2 != null && Number.isFinite(Number(ovr.LTP2))) {
+        thresholds['LTP2'] = Number(ovr.LTP2);
+      }
+    }
+
     if (isThresholdDebugEnabled()) {
       console.groupCollapsed('[LaChart] calculateThresholds — finální LTP1/LTP2 (po všech guardách)');
       const r4 = (x) => (x == null || !Number.isFinite(Number(x)) ? x : Number(Number(x).toFixed(4)));

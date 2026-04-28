@@ -3465,5 +3465,108 @@ router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
   }
 });
 
+// ─── Apple Health ─────────────────────────────────────────────────────────────
+const AppleHealthActivity = require('../models/AppleHealthActivity');
+
+const APPLE_HEALTH_SPORT_MAP = {
+  Running: 'running',
+  Cycling: 'cycling',
+  Swimming: 'swimming',
+  Walking: 'running',
+  Hiking: 'running',
+  Rowing: 'other',
+  Elliptical: 'other',
+  StairClimbing: 'other',
+  CrossTraining: 'other',
+  Other: 'other',
+};
+
+/**
+ * POST /api/integrations/apple-health/sync
+ * Receives workouts from the iOS app and upserts them as StravaActivity-like docs.
+ * Body: { workouts: HealthWorkout[] }
+ */
+router.post('/apple-health/sync', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { workouts } = req.body;
+
+    if (!Array.isArray(workouts) || workouts.length === 0) {
+      return res.json({ imported: 0, message: 'No workouts provided' });
+    }
+
+    let imported = 0;
+
+    for (const w of workouts) {
+      if (!w.id || !w.startDate) continue;
+
+      const sport = APPLE_HEALTH_SPORT_MAP[w.type] ?? 'other';
+      const startDate = new Date(w.startDate);
+      const durationSec = Number(w.durationSeconds) || 0;
+      const distanceMeters = Number(w.distanceMeters) || 0;
+
+      // Use StravaActivity model with source=apple_health to reuse existing pipeline
+      const doc = {
+        userId,
+        healthKitId: w.id,
+        name: w.type ? `${w.type} (Apple Health)` : 'Apple Health Workout',
+        type: w.type ?? 'Other',
+        sport,
+        startDate,
+        endDate: w.endDate ? new Date(w.endDate) : null,
+        durationSeconds: durationSec,
+        distanceMeters,
+        calories: Number(w.calories) || null,
+        avgHeartRate: w.avgHeartRate ?? null,
+        sourceName: w.sourceName ?? 'Apple Health',
+      };
+
+      const result = await AppleHealthActivity.updateOne(
+        { userId, healthKitId: doc.healthKitId },
+        { $setOnInsert: doc },
+        { upsert: true }
+      );
+
+      if (result.upsertedCount > 0) imported++;
+    }
+
+    // Notify coaches (fire-and-forget)
+    if (imported > 0) {
+      const body = imported === 1
+        ? '1 Apple Health workout synced.'
+        : `${imported} Apple Health workouts synced.`;
+      notifyCoachesOfAthlete(String(userId), {
+        type: 'apple_health_sync',
+        title: 'Apple Health sync',
+        body,
+        resourceType: 'strava',
+      }).catch(() => {});
+    }
+
+    res.json({ imported, total: workouts.length });
+  } catch (err) {
+    console.error('[apple-health] sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/integrations/apple-health/status
+ * Returns last sync date and count for this user.
+ */
+router.get('/apple-health/status', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const count = await AppleHealthActivity.countDocuments({ userId });
+    const last = await AppleHealthActivity.findOne({ userId })
+      .sort({ createdAt: -1 })
+      .select('createdAt startDate')
+      .lean();
+    res.json({ count, lastSync: last?.createdAt ?? null, lastActivity: last?.startDate ?? null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;

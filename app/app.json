@@ -13,7 +13,15 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "LaChart reads your Apple Health workouts to track training data and analyze performance.",
+        "NSHealthUpdateUsageDescription": "LaChart can write workout summaries to Apple Health."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
     },
     "android": {
       "adaptiveIcon": {

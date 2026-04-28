@@ -50,6 +50,7 @@ const AdminDashboard = () => {
   const [composeBody, setComposeBody] = useState('');
   const [composeSending, setComposeSending] = useState(false);
   const [composePreviewSending, setComposePreviewSending] = useState(false);
+  const [copiedContactId, setCopiedContactId] = useState(null);
 
   // ── Retention email preview ──────────────────────────────────────────────────
   const [retentionSearch,    setRetentionSearch]    = useState('');
@@ -2630,14 +2631,28 @@ const AdminDashboard = () => {
                               {isSent ? '↩ Follow-up' : '✉ Send'}
                             </button>
                           ) : (
-                            <a
-                              href={contact.website}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors whitespace-nowrap text-center"
-                            >
-                              🌐 Form
-                            </a>
+                            <>
+                              <a
+                                href={contact.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors whitespace-nowrap text-center"
+                              >
+                                🌐 Form
+                              </a>
+                              <button
+                                onClick={() => {
+                                  const { body } = buildOutreachEmail(contact);
+                                  navigator.clipboard.writeText(body);
+                                  setCopiedContactId(contact.id);
+                                  setTimeout(() => setCopiedContactId(null), 2000);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all"
+                                title="Copy outreach message to clipboard"
+                              >
+                                {copiedContactId === contact.id ? '✓ Copied' : '📋 Copy msg'}
+                              </button>
+                            </>
                           )}
                           <a
                             href={contact.website}

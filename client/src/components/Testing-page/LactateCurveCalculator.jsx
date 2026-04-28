@@ -793,6 +793,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [allPrevTests, setAllPrevTests] = useState([]);       // all previous same-sport tests (desc)
   const [selectedCompareIds, setSelectedCompareIds] = useState([]); // up to 2 test IDs for PDF comparison
   const [zoneOverride, setZoneOverride] = useState(null);
+  // Manual LT1/LT2 threshold override
+  const [ltOverrides, setLtOverrides] = useState({ LTP1: null, LTP2: null });
+  const [ltEditValues, setLtEditValues] = useState({ LTP1: '', LTP2: '' }); // raw input strings
+  const [showLtOverridePanel, setShowLtOverridePanel] = useState(false);
+  const [savingLtOverride, setSavingLtOverride] = useState(false);
+  const [ltOverrideStatus, setLtOverrideStatus] = useState(null); // {type:'success'|'error', msg}
   const [showDataTable, setShowDataTable] = useState(window.innerWidth >= 768); // Hidden by default on mobile
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
@@ -879,6 +885,25 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return () => { cancelled = true; };
   }, [mockData?._id, mockData?.athleteId, mockData?.date, mockData?.sport, user]);
 
+  const serverOverrideLt1 = mockData?.thresholdOverrides?.LTP1 ?? null;
+  const serverOverrideLt2 = mockData?.thresholdOverrides?.LTP2 ?? null;
+
+  // Merge local threshold overrides into mockData so calculations pick them up
+  const mockDataWithOverrides = React.useMemo(() => {
+    if (!mockData) return mockData;
+    if (!ltOverrides.LTP1 && !ltOverrides.LTP2) return mockData;
+    return { ...mockData, thresholdOverrides: ltOverrides };
+  }, [mockData, ltOverrides]);
+
+  // Sync ltOverrides from server data when test/overrides change
+  useEffect(() => {
+    setLtOverrides({ LTP1: serverOverrideLt1, LTP2: serverOverrideLt2 });
+    setLtEditValues({
+      LTP1: serverOverrideLt1 != null ? String(serverOverrideLt1) : '',
+      LTP2: serverOverrideLt2 != null ? String(serverOverrideLt2) : '',
+    });
+  }, [mockData?._id, serverOverrideLt1, serverOverrideLt2]);
+
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   /** How run pace was saved on this test (sec/mile vs sec/km) — independent of user display override. */
@@ -912,8 +937,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   }
 
   const openEmailModal = () => {
-    const zones = calculateZonesFromTest(mockData);
-    const thr = calculateThresholds(mockData);
+    const mdWithOvr = (!ltOverrides.LTP1 && !ltOverrides.LTP2) ? mockData : { ...mockData, thresholdOverrides: ltOverrides };
+    const zones = calculateZonesFromTest(mdWithOvr);
+    const thr = calculateThresholds(mdWithOvr);
     const lt1La = Number(thr?.lactates?.['LTP1']);
     const lt2La = Number(thr?.lactates?.['LTP2']);
     const baseLa = Number(mockData?.baseLactate || 1.0);
@@ -966,6 +992,54 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   };
 
+  // ── Save manual LT1/LT2 overrides to server ─────────────────────────────────
+  const handleSaveLtOverrides = async () => {
+    const testId = mockData?._id;
+    if (!testId) return;
+    // Parse input values — accept watts (int) for bike, sec (float) for run/swim
+    const parse = (v) => {
+      const s = String(v || '').trim();
+      if (!s) return null;
+      // Accept mm:ss format for pace
+      const mmssParts = s.match(/^(\d+):(\d{1,2})$/);
+      if (mmssParts) return Number(mmssParts[1]) * 60 + Number(mmssParts[2]);
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const lt1 = parse(ltEditValues.LTP1);
+    const lt2 = parse(ltEditValues.LTP2);
+    const overrides = { LTP1: lt1, LTP2: lt2 };
+    try {
+      setSavingLtOverride(true);
+      setLtOverrideStatus(null);
+      await api.put(`/test/${testId}`, { thresholdOverrides: overrides });
+      setLtOverrides(overrides);
+      setLtOverrideStatus({ type: 'success', msg: 'Saved' });
+      setTimeout(() => setLtOverrideStatus(null), 3000);
+    } catch (e) {
+      setLtOverrideStatus({ type: 'error', msg: e?.response?.data?.error || 'Save failed' });
+    } finally {
+      setSavingLtOverride(false);
+    }
+  };
+
+  const handleClearLtOverrides = async () => {
+    const testId = mockData?._id;
+    if (!testId) return;
+    try {
+      setSavingLtOverride(true);
+      await api.put(`/test/${testId}`, { thresholdOverrides: { LTP1: null, LTP2: null } });
+      setLtOverrides({ LTP1: null, LTP2: null });
+      setLtEditValues({ LTP1: '', LTP2: '' });
+      setLtOverrideStatus({ type: 'success', msg: 'Overrides cleared' });
+      setTimeout(() => setLtOverrideStatus(null), 3000);
+    } catch (e) {
+      setLtOverrideStatus({ type: 'error', msg: 'Clear failed' });
+    } finally {
+      setSavingLtOverride(false);
+    }
+  };
+
   // Toggle a test ID in/out of selectedCompareIds (max 2)
   const toggleCompareId = (id) => {
     setSelectedCompareIds(prev => {
@@ -999,6 +1073,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       prevTest2:       compTest2,
       prevThresholds2: compTest2 ? calculateThresholds(compTest2) : null,
       customNote:      note,
+      creatorEmail:    user?.email || null,
     };
   };
 
@@ -1051,7 +1126,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   };
 
-  const thresholds = calculateThresholds(mockData);
+  const thresholds = calculateThresholds(mockDataWithOverrides);
   if (isThresholdDebugEnabled()) {
     console.log('[LactateCurveCalculator] thresholds (tabulka + graf)', {
       LTP1_W: thresholds['LTP1'],
@@ -1061,9 +1136,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     });
   }
   const results = mockData.results;
-  
+
   // Calculate training zones for visualization
-  const zones = calculateZonesFromTest(mockData);
+  const zones = calculateZonesFromTest(mockDataWithOverrides);
   
   // First, filter out only truly invalid results (empty, missing, zero values)
   // Keep all valid numeric values for display, even if they might be filtered later for calculations
@@ -2681,7 +2756,117 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               </span>
             )}
           </div>
+
+          {/* Manual LT1/LT2 override toggle */}
+          {!demoMode && (
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setShowLtOverridePanel(v => !v)}
+                className={`min-h-[36px] px-3 py-1.5 text-xs rounded-lg border transition-colors flex items-center gap-1.5 ${
+                  (ltOverrides.LTP1 || ltOverrides.LTP2)
+                    ? 'bg-violet-50 border-violet-300 text-violet-800 font-semibold'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+                title="Manually pin LT1/LT2 threshold values"
+              >
+                <span>✏️</span>
+                <span>
+                  {(ltOverrides.LTP1 || ltOverrides.LTP2) ? 'LT1/LT2 overridden' : 'Set LT1/LT2'}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* LT1/LT2 manual override panel */}
+        {showLtOverridePanel && !demoMode && (
+          <div className="mx-0 mb-3 p-3 rounded-xl border border-violet-200 bg-violet-50 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-violet-900">
+                Manual threshold override
+              </p>
+              <p className="text-xs text-violet-600">
+                {isPaceSport ? 'Enter pace as mm:ss' : 'Enter watts (W)'}
+              </p>
+            </div>
+
+            {/* Auto-calculated values for reference */}
+            <div className="text-xs text-violet-700 flex gap-4">
+              <span>
+                Auto LT1:{' '}
+                <span className="font-semibold">
+                  {thresholds['LTP1'] != null
+                    ? (isPaceSport && inputMode === 'pace'
+                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(thresholds['LTP1'], { isSwimming, unitSystem, testRunPerMileStorage }))
+                        : `${Math.round(thresholds['LTP1'])} W`)
+                    : '—'}
+                </span>
+              </span>
+              <span>
+                Auto LT2:{' '}
+                <span className="font-semibold">
+                  {thresholds['LTP2'] != null
+                    ? (isPaceSport && inputMode === 'pace'
+                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(thresholds['LTP2'], { isSwimming, unitSystem, testRunPerMileStorage }))
+                        : `${Math.round(thresholds['LTP2'])} W`)
+                    : '—'}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              {[
+                { key: 'LTP1', label: 'LT1 (Aerobic)', color: 'text-green-700' },
+                { key: 'LTP2', label: 'LT2 (Anaerobic)', color: 'text-red-700' },
+              ].map(({ key, label, color }) => (
+                <div key={key} className="flex flex-col gap-1 min-w-[120px]">
+                  <label className={`text-xs font-semibold ${color}`}>{label}</label>
+                  <input
+                    type="text"
+                    value={ltEditValues[key]}
+                    onChange={e => setLtEditValues(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={isPaceSport ? 'e.g. 4:15' : 'e.g. 280'}
+                    className="w-full px-2 py-1.5 text-sm border border-violet-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  />
+                  {ltOverrides[key] != null && (
+                    <span className="text-[10px] text-violet-600">
+                      Pinned: {isPaceSport && inputMode === 'pace'
+                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(ltOverrides[key], { isSwimming, unitSystem, testRunPerMileStorage }))
+                        : `${Math.round(ltOverrides[key])} W`}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleSaveLtOverrides}
+                disabled={savingLtOverride}
+                className="px-3 py-1.5 text-xs font-semibold bg-violet-700 text-white rounded-lg hover:bg-violet-800 disabled:opacity-50 transition-colors"
+              >
+                {savingLtOverride ? 'Saving…' : 'Save & apply'}
+              </button>
+              {(ltOverrides.LTP1 != null || ltOverrides.LTP2 != null) && (
+                <button
+                  onClick={handleClearLtOverrides}
+                  disabled={savingLtOverride}
+                  className="px-3 py-1.5 text-xs font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 disabled:opacity-50 transition-colors"
+                >
+                  Reset to auto
+                </button>
+              )}
+              {ltOverrideStatus && (
+                <span className={`text-xs font-medium ${ltOverrideStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {ltOverrideStatus.msg}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-violet-500 leading-relaxed">
+              Pinned values override the automatic algorithm and update training zones. Leave blank to keep auto-calculated value.
+            </p>
+          </div>
+        )}
         
         <div className="flex flex-col lg:flex-row gap-4">
           <div
@@ -2731,7 +2916,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 </div>
               )}
               <div className="w-full lg:w-[400px] shrink-0">
-                <DataTable mockData={mockData} />
+                <DataTable mockData={mockDataWithOverrides} />
                 {Number.isFinite(thresholds?.confidence) && (
                   <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-100 bg-white/60 text-xs text-gray-600">
                     <span className="font-medium text-gray-700">Threshold confidence:</span>

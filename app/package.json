@@ -28,7 +28,8 @@
     "react-native-gesture-handler": "*",
     "react-native-reanimated": "*",
     "react-native-safe-area-context": "*",
-    "react-native-screens": "*"
+    "react-native-screens": "*",
+    "react-native-health": "^1.21.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

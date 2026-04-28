@@ -477,6 +477,13 @@ function calculateThresholds(testData) {
     }
   }
 
+  // Manual override: if coach/athlete pinned LT1 or LT2, apply over auto-calculation
+  const ovr = testData?.thresholdOverrides;
+  if (ovr) {
+    if (ovr.LTP1 != null && Number.isFinite(Number(ovr.LTP1))) thresholds['LTP1'] = Number(ovr.LTP1);
+    if (ovr.LTP2 != null && Number.isFinite(Number(ovr.LTP2))) thresholds['LTP2'] = Number(ovr.LTP2);
+  }
+
   return thresholds;
 }
 

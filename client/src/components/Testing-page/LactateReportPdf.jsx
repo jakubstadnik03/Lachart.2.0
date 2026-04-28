@@ -458,12 +458,13 @@ const Header = ({ title, date }) => (
 );
 
 // ── Footer ─────────────────────────────────────────────────────────────────────
-const Footer = ({ athlete }) => (
+const Footer = ({ athlete, creatorEmail }) => (
   <View style={s.footer} fixed>
     <View style={s.footerBrand}>
       <Image src={LOGO_URL} style={s.footerLogo} />
       <Text style={s.footerName}>LaChart</Text>
       <Text style={s.footerText}> · lachart.net</Text>
+      {creatorEmail ? <Text style={s.footerText}> · Contact: {creatorEmail}</Text> : null}
     </View>
     <Text style={s.footerText}
       render={({ pageNumber, totalPages }) => `${athlete || ''} · Page ${pageNumber} / ${totalPages}`} />
@@ -479,7 +480,7 @@ const SectionHeader = ({ title }) => (
 );
 
 // ── Main Document ───────────────────────────────────────────────────────────────
-export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
+export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
   if (!test) return null;
 
   const sport       = test.sport || 'bike';
@@ -553,7 +554,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
       {/* ── PAGE 1: Cover + Lactate Curve + Stage Results ── */}
       <Page size="A4" style={s.page}>
-        <Header title={`${sportLabel(sport)} · Lactate Report`} date={testDate} />
+        {/* No Header on page 1 — cover band already shows logo + title */}
 
         {/* Cover band */}
         <View style={s.coverBand}>
@@ -694,7 +695,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </View>
         </View>
 
-        <Footer athlete={athleteName} />
+        <Footer athlete={athleteName} creatorEmail={creatorEmail} />
       </Page>
 
       {/* ── PAGE 2: Thresholds + Zones + Comparison ── */}
@@ -864,14 +865,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </>}
         </View>
 
-        <Footer athlete={athleteName} />
+        <Footer athlete={athleteName} creatorEmail={creatorEmail} />
       </Page>
     </Document>
   );
 }
 
 // ── Download helper ─────────────────────────────────────────────────────────────
-export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
+export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
   const doc = (
     <LactateReportPdf
       test={test}
@@ -883,13 +884,14 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       prevTest2={prevTest2}
       prevThresholds2={prevThresholds2}
       customNote={customNote}
+      creatorEmail={creatorEmail}
     />
   );
   return pdf(doc).toBlob();
 }
 
-export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
-  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote });
+export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
+  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail });
   const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';

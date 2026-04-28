@@ -24,9 +24,20 @@ import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw, lapSpeedMpsForChart } from '../utils/fitAnalysisUtils';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+/** Calls map.invalidateSize() after mount + after a short delay — fixes blank map on mobile */
+function MapInvalidator() {
+  const map = useMap();
+  React.useEffect(() => {
+    map.invalidateSize();
+    const t = setTimeout(() => map.invalidateSize(), 300);
+    return () => clearTimeout(t);
+  }, [map]);
+  return null;
+}
 
 // Fix Leaflet default icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -3897,6 +3908,7 @@ const FitAnalysisPage = () => {
                     <div className={`${isMobile ? '-mx-4' : ''}`}>
                       <div className={`relative overflow-hidden ${isMobile ? '' : 'rounded-2xl'} ${isMobile ? 'h-[220px]' : 'h-[320px] md:h-[400px]'}`}>
                         <MapContainer
+                          key={`fit-map-${getGpsData[0]?.[0]}-${getGpsData[0]?.[1]}`}
                           center={getGpsData[Math.floor(getGpsData.length / 2)]}
                           zoom={13}
                           style={{ height: '100%', width: '100%', zIndex: 0 }}
@@ -3904,6 +3916,7 @@ const FitAnalysisPage = () => {
                           zoomControl={false}
                           attributionControl={false}
                         >
+                          <MapInvalidator />
                           <TileLayer
                             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                           />
@@ -5234,6 +5247,7 @@ const FitAnalysisPage = () => {
                 <div className={`${isMobile ? '-mx-4' : ''}`}>
                   <div className={`relative overflow-hidden ${isMobile ? '' : 'rounded-2xl'} ${isMobile ? 'h-[220px]' : 'h-[320px] md:h-[400px]'}`}>
                     <MapContainer
+                      key={`strava-map-${getGpsData[0]?.[0]}-${getGpsData[0]?.[1]}`}
                       center={getGpsData[Math.floor(getGpsData.length / 2)]}
                       zoom={13}
                       style={{ height: '100%', width: '100%', zIndex: 0 }}
@@ -5241,6 +5255,7 @@ const FitAnalysisPage = () => {
                       zoomControl={false}
                       attributionControl={false}
                     >
+                      <MapInvalidator />
                       <TileLayer
                         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                       />
