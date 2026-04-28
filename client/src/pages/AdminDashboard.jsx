@@ -930,7 +930,7 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 py-4 sm:py-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Admin Dashboard</h1>
@@ -953,7 +953,7 @@ const AdminDashboard = () => {
 
       {/* Tabs */}
       <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6">
           <nav className="flex space-x-2 sm:space-x-8 overflow-x-auto">
             {tabs.map((tab) => (
               <button
@@ -974,7 +974,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+      <div className="w-full px-4 sm:px-6 py-4 sm:py-6 lg:py-8">
         {activeTab === 'overview' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

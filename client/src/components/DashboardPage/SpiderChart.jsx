@@ -644,7 +644,7 @@ export default function SpiderChart({
               onClick={() => { setComparePeriod(opt.value); if (opt.value !== 'monthly') setSelectedMonths([]); }}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                 comparePeriod === opt.value
-                  ? 'bg-gray-900 text-white'
+                  ? 'bg-primary text-white'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
               }`}
               style={{ touchAction: 'manipulation' }}

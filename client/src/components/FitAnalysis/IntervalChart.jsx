@@ -671,30 +671,60 @@ const IntervalChart = ({
   };
 
   /**
-   * Y-axis domain centered on the mean so typical laps sit mid-chart (not anchored only to the fastest lap).
+   * Y-axis domain for lap charts.
+   *
+   * For PACE (inverted axis — fast = top, slow = bottom):
+   *   - Fast end (adjustedMinValue): fastest lap − small padding
+   *   - Slow end (adjustedMaxValue): max of "non-outlier" laps × 1.15 + 20 s
+   *     where "outlier" = pace > median × 1.2.
+   *     This means a single very slow recovery lap (18:31/km) won't stretch the whole
+   *     axis — it just renders as a very short bar pinned to the bottom.
+   *
+   * For other metrics (power, HR, speed, cadence):
+   *   - Mean-centred symmetric domain so typical laps sit mid-chart.
+   *
    * @param {number[]} values — lap metric values (>0)
    * @param {'pace'|'heartRate'|'power'|'speed'|'cadence'} metric
    */
   const symmetricAxisFromMean = (values, metric) => {
     if (!values.length) return null;
-    const lo = Math.min(...values);
-    const hi = Math.max(...values);
+    const sorted = [...values].sort((a, b) => a - b);
+    const n = sorted.length;
+
+    if (metric === 'pace') {
+      const lo = sorted[0];
+      const median = sorted[Math.floor(n / 2)];
+
+      // Any lap slower than median × 1.2 is considered a clear recovery/rest outlier.
+      const outlierThreshold = median * 1.2;
+      const nonOutliers = sorted.filter(v => v <= outlierThreshold);
+      // Fallback: if filtering removes everything, use the median itself.
+      const effectiveMax = nonOutliers.length > 0
+        ? nonOutliers[nonOutliers.length - 1]
+        : median;
+
+      // Slow axis end: effectiveMax + 15 % + 20 s flat buffer
+      const slowEnd = effectiveMax * 1.15 + 20;
+
+      // Fast axis end: fastest lap − 8 % − 5 s buffer, minimum 22 s/km (≈ 0:22/km)
+      const fastEnd = Math.max(22, lo * 0.92 - 5);
+
+      return { adjustedMinValue: fastEnd, adjustedMaxValue: slowEnd };
+    }
+
+    // ── Non-pace metrics: mean-centred symmetric domain ──
+    const lo = sorted[0];
+    const hi = sorted[n - 1];
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
     const spanData = hi - lo;
-    const minHalf =
-      metric === 'pace'
-        ? Math.max(12, spanData * 0.12, mean * 0.06)
-        : Math.max((hi + lo) * 0.02, spanData * 0.08, 1e-6);
+    const minHalf = Math.max((hi + lo) * 0.02, spanData * 0.08, 1e-6);
     const halfRaw = Math.max(hi - mean, mean - lo, spanData > 0 ? spanData * 0.06 : minHalf);
-    const pad = Math.max(halfRaw * 0.18, spanData * 0.04, metric === 'pace' ? 4 : 0);
+    const pad = Math.max(halfRaw * 0.18, spanData * 0.04);
     let low = mean - halfRaw - pad;
     let high = mean + halfRaw + pad;
-    if (metric === 'pace') {
-      low = Math.max(22, low);
-    }
     if (metric === 'heartRate') low = Math.max(35, low);
     if (metric === 'power' || metric === 'speed' || metric === 'cadence') low = Math.max(0, low);
-    if (high <= low) high = low + (metric === 'pace' ? 15 : 1);
+    if (high <= low) high = low + 1;
     return { adjustedMinValue: low, adjustedMaxValue: high };
   };
 
@@ -930,10 +960,10 @@ const IntervalChart = ({
               {bars.map((bar, index) => {
               const isSelectedBar = selectedBarIndex === index;
               // For pace, reverse the height calculation (smaller pace = faster = higher bar)
-              const height = adjustedMaxValue > adjustedMinValue 
-                ? reversed
+              const height = adjustedMaxValue > adjustedMinValue
+                ? Math.min(100, Math.max(2, reversed
                   ? ((adjustedMaxValue - bar.value) / (adjustedMaxValue - adjustedMinValue)) * 100
-                  : ((bar.value - adjustedMinValue) / (adjustedMaxValue - adjustedMinValue)) * 100
+                  : ((bar.value - adjustedMinValue) / (adjustedMaxValue - adjustedMinValue)) * 100))
                 : 0;
               const speedMps = lapSpeedMpsForChart(bar.lap);
               const avgSpeed = speedMps > 0 

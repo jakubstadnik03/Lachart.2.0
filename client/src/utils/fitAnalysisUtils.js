@@ -114,14 +114,20 @@ export function normalizeStravaLapDistanceRaw(lap, opts = {}) {
       const errMeters = Math.abs(d - expectedMeters) / expectedMeters;
       const errKilometers = Math.abs(d * 1000 - expectedMeters) / expectedMeters;
       if (errMeters <= errKilometers) {
-        if (d < 1000 && !Number.isInteger(d)) return d / 1000;
+        // d is in meters — return as-is regardless of whether it's integer or not
         return d;
+      }
+      // d is likely in km — convert to meters
+      if (errKilometers < errMeters) {
+        return d * 1000;
       }
     }
   }
 
-  if (d < 1000 && d >= 1 && !Number.isInteger(d) && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
-    return d / 1000;
+  // No speed data — only convert if the value looks like km (between 0.01 and 99.9, non-integer).
+  // Values >= 1 could be valid metre distances (e.g. 500.5 m), so don't divide those.
+  if (d > 0 && d < 1 && !Number.isInteger(d)) {
+    return d * 1000;
   }
   return distance;
 }

@@ -275,11 +275,18 @@ export default function CalendarView({
     }
   }, [effectiveSelectedId, activities]);
 
-  const uniqueSports = useMemo(() => {
+  function sportToBucket(sport) {
+    const s = String(sport || '').toLowerCase();
+    if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
+    if (s.includes('swim')) return 'swim';
+    if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'bike';
+    return 'other';
+  }
+
+  const uniqueSportBuckets = useMemo(() => {
     const set = new Set();
-    // Normalise to lowercase so "Swim" and "swim" don't produce duplicate filter options
-    activities.forEach(a => { if (a?.sport) set.add(String(a.sport).toLowerCase()); });
-    return ['all', ...Array.from(set).sort()];
+    activities.forEach(a => { if (a?.sport) set.add(sportToBucket(a.sport)); });
+    return ['all', ...['bike', 'run', 'swim', 'other'].filter(b => set.has(b))];
   }, [activities]);
 
   // Optimistic handler — mark selected immediately, then call parent
@@ -291,8 +298,7 @@ export default function CalendarView({
 
   const filteredActivities = useMemo(() => {
     if (sportFilter === 'all') return activities;
-    // Case-insensitive match so "Swim" and "swim" both match the "swim" filter key
-    return activities.filter(a => String(a.sport).toLowerCase() === sportFilter);
+    return activities.filter(a => sportToBucket(a.sport) === sportFilter);
   }, [activities, sportFilter]);
 
   const activitiesByDay = useMemo(() => {
@@ -598,17 +604,35 @@ export default function CalendarView({
           {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
-          <div className="relative">
-            <select
-              value={sportFilter}
-              onChange={(e) => setSportFilter(e.target.value)}
-              className="appearance-none pr-6 md:pr-8 pl-2 md:pl-3 py-1 md:py-1.5 text-xs md:text-sm border border-gray-200 bg-white hover:bg-gray-50 rounded-lg md:rounded-xl text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-            >
-              {uniqueSports.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
-              ))}
-            </select>
-            <ChevronDownIcon className="pointer-events-none absolute inset-y-0 right-1 md:right-2 flex items-center text-gray-400 w-4 h-4 md:w-5 md:h-5" />
+          {/* Sport filter pills */}
+          <div className="flex items-center gap-1">
+            {uniqueSportBuckets.map(bucket => {
+              const isActive = sportFilter === bucket;
+              const iconMap = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
+              const labelMap = { all: 'All', bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
+              const icon = iconMap[bucket];
+              return (
+                <button
+                  key={bucket}
+                  type="button"
+                  onClick={() => setSportFilter(bucket)}
+                  className={`inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-xs font-semibold border transition-all ${
+                    isActive
+                      ? 'bg-primary text-white border-primary shadow-sm'
+                      : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {icon ? (
+                    <img
+                      src={icon}
+                      alt={bucket}
+                      className={`w-3 h-3 md:w-3.5 md:h-3.5 object-contain ${isActive ? 'invert' : ''}`}
+                    />
+                  ) : null}
+                  <span>{labelMap[bucket]}</span>
+                </button>
+              );
+            })}
           </div>
           <button
             onClick={() => setView('week')}

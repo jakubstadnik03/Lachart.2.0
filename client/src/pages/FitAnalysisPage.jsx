@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { PencilIcon, CheckIcon, XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, CheckIcon, XMarkIcon, ChevronLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import AutoClassifyModal from '../components/FitAnalysis/AutoClassifyModal';
 import { useCategories } from '../context/CategoryContext';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap, getTrainingCommentCounts } from '../services/api';
 import TrainingComments from '../components/TrainingComments';
@@ -171,7 +172,7 @@ const deduplicateFitTrainingLaps = (laps = []) => {
     const elapsedTime = Math.round(lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0);
     const distance = Math.round((lap.totalDistance || lap.total_distance || lap.distance || 0) * 10) / 10;
     const power = Math.round((lap.avgPower || lap.avg_power || lap.average_watts || 0) * 10) / 10;
-    const hr = Math.round((lap.avgHeartRate || lap.avg_heart_rate || lap.average_heartrate || 0) * 10) / 10;
+    const hr = Math.round((lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? 0) * 10) / 10;
     
     const key = `t${elapsedTime}_d${distance}_p${power}_hr${hr}`;
     
@@ -311,21 +312,44 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
   const findZoneKeyForValue = useCallback((value, zonesObj) => {
     const val = Number(value);
     if (!Number.isFinite(val)) return null;
+
+    // Build normalised boundaries: if a zone has no min, inherit it from the previous zone's max
+    // so gaps between zones don't silently swallow data.
+    let prevMax = null;
+    let lastValidKey = null;
+    let lastValidMax = null; // highest defined max across all zones
+
     for (const zKey of zoneKeys) {
       const def = zonesObj?.[zKey];
       if (!def) continue;
-      const min = parseZoneNumber(def?.min);
+
+      let min = parseZoneNumber(def?.min);
       const max = def?.max === undefined ? null : parseZoneNumber(def?.max);
-      if (min === null) continue;
-      // Pace zones can be stored in reverse order (slower->faster), so match by normalized range.
+
+      // Auto-fill missing min from previous zone's max
+      if (min === null && prevMax !== null) min = prevMax;
+      if (min === null) { prevMax = max ?? prevMax; continue; }
+
+      // Pace zones can be stored in reverse order (slower->faster), so match by normalised range.
       if (max === null || max === Infinity) {
         if (val >= min) return zKey;
+        prevMax = min;
         continue;
       }
       const low = Math.min(min, max);
       const high = Math.max(min, max);
       if (val >= low && val <= high) return zKey;
+
+      prevMax = high;
+      lastValidKey = zKey;
+      if (lastValidMax === null || high > lastValidMax) lastValidMax = high;
     }
+
+    // Catch-all: value is above all defined zone maxes → assign to the last zone
+    if (lastValidKey !== null && lastValidMax !== null && val > lastValidMax) {
+      return lastValidKey;
+    }
+
     return null;
   }, [zoneKeys, parseZoneNumber]);
 
@@ -461,8 +485,18 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
   const formatPowerZoneRange = (zKey) => {
     const def = powerZonesForSport?.[zKey];
     if (!def) return '-';
-    const min = parseZoneNumber(def?.min);
+    let min = parseZoneNumber(def?.min);
     const max = parseZoneNumber(def?.max);
+
+    // If min is not set, inherit from the previous zone's max
+    if (min === null) {
+      const idx = zoneKeys.indexOf(zKey);
+      for (let i = idx - 1; i >= 0; i--) {
+        const prevDef = powerZonesForSport?.[zoneKeys[i]];
+        const prevMax = parseZoneNumber(prevDef?.max);
+        if (prevMax !== null && prevMax !== Infinity) { min = prevMax; break; }
+      }
+    }
     if (min === null) return '-';
 
     if (stravaSportType === 'cycling') {
@@ -1399,6 +1433,7 @@ const FitAnalysisPage = () => {
   const [selectedTimeRange, setSelectedTimeRange] = useState({ start: 0, end: 0 });
   const [selectionStats, setSelectionStats] = useState(null);
   const dragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
+  const [showAutoClassify, setShowAutoClassify] = useState(false);
   const [, setGarminConnected] = useState(false);
   const [externalActivities, setExternalActivities] = useState([]);
   const [selectedStrava, setSelectedStrava] = useState(null);
@@ -1896,6 +1931,8 @@ const FitAnalysisPage = () => {
       // Streams can be empty if Strava rejects stream keys for this activity; still show detail & laps
       const streamsPayload =
         data.streams && typeof data.streams === 'object' ? data.streams : {};
+      console.log('[Map debug] streams keys:', Object.keys(streamsPayload));
+      console.log('[Map debug] latlng length:', streamsPayload?.latlng?.data?.length ?? streamsPayload?.latlng?.length ?? 'N/A');
       setSelectedStrava(detailWithMeta);
       setSelectedStravaStreams(streamsPayload);
       setSelectedTraining(null);
@@ -3031,7 +3068,7 @@ const FitAnalysisPage = () => {
       const isRecovery = isRecoveryMap.get(idx) || false;
       const duration = lap.moving_time ?? lap.elapsed_time ?? 0;
       const power = lap.average_watts || lap.average_power || null;
-      const heartRate = lap.average_heartrate || lap.average_hr || null;
+      const heartRate = lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? null;
       const lactate = lap.lactate || null;
       const distance = lap.distance || null; // distance in meters
       const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.total_ascent ?? null;
@@ -3241,7 +3278,7 @@ const FitAnalysisPage = () => {
     }
     
     // Check heart rate - if HR is very low compared to average, might be recovery
-    const avgHR = lap.average_heartrate || lap.average_hr || null;
+    const avgHR = lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? null;
     if (avgHR && avgHR < 100) {
       // Very low HR might indicate recovery, but not always
       // Only mark as recovery if combined with low power/speed
@@ -3546,7 +3583,7 @@ const FitAnalysisPage = () => {
       const rawSpeed = lap.avgSpeed ?? lap.average_speed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? lap.enhanced_avg_speed ?? lap.speed ?? 0;
       const effectiveSpeed = rawSpeed > 0.05 ? rawSpeed : (distance > 0 && duration > 0 ? distance / duration : 0);
       const power = lap.avgPower ?? lap.avg_power ?? lap.average_watts ?? null;
-      const hr = lap.avgHeartRate ?? lap.avg_heart_rate ?? lap.average_heartrate ?? null;
+      const hr = lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? null;
       const lactate = lap.lactate ?? null;
 
       let powerValue = '';
@@ -3650,17 +3687,33 @@ const FitAnalysisPage = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
       <UpgradeModal {...UpgradeModalProps} />
+      {showAutoClassify && (
+        <AutoClassifyModal
+          onClose={() => setShowAutoClassify(false)}
+          onApplied={() => { loadExternalActivities(); }}
+        />
+      )}
       <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
         {!isMobile && (
           <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="flex items-center justify-between mb-4 md:mb-6">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Training Calendar</h1>
-            <button
-              onClick={handleOpenAddTraining}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-sm"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Add Training
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAutoClassify(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-all shadow-sm"
+                title="Auto-categorize activities"
+              >
+                <SparklesIcon className="w-4 h-4 text-primary" />
+                Auto-categorize
+              </button>
+              <button
+                onClick={handleOpenAddTraining}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Training
+              </button>
+            </div>
           </motion.div>
         )}
         {isMobile && !(selectedTraining || selectedStrava) && (
@@ -4884,10 +4937,12 @@ const FitAnalysisPage = () => {
               }
             };
 
-            const handleSaveCategory = async () => {
+            const handleSaveCategory = async (catId) => {
+              // catId may be passed directly (from pill click) or fall back to state
+              const valueToSave = catId !== undefined ? catId : category;
               try {
                 setSaving(true);
-                await updateStravaActivity(selectedStrava.id, { category: category || null });
+                await updateStravaActivity(selectedStrava.id, { category: valueToSave || null });
                 setIsEditingCategory(false);
                 await loadStravaDetail(selectedStrava.id);
                 await loadExternalActivities(); // Reload to update calendar
@@ -4897,7 +4952,7 @@ const FitAnalysisPage = () => {
                     type: 'strava',
                     id: selectedStrava.id,
                     stravaId: selectedStrava.id,
-                    category: category
+                    category: valueToSave
                   }
                 }));
               } catch (error) {
@@ -4942,38 +4997,69 @@ const FitAnalysisPage = () => {
                       {formatStravaDate(stravaDate)}
                     </span>
                     {/* Category badge — click to edit */}
-                    {isEditingCategory ? (
-                      <div className="flex items-center gap-1">
-                        <select
-                          value={category}
-                          onChange={(e) => setCategory(e.target.value)}
-                          className="px-2 py-0.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                          autoFocus
-                        >
-                          <option value="">None</option>
-                          {categories.map(cat => (
-                            <option key={cat.id} value={cat.id}>{cat.label}</option>
-                          ))}
-                        </select>
-                        <button onClick={handleSaveCategory} disabled={saving} className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-50 transition-colors">
-                          <CheckIcon className="w-3 h-3" />
+                    {(() => {
+                      const CATEGORY_ICONS = {
+                        recovery: '💤', endurance: '🏃', zone2: '🌿',
+                        lt1: '📊', tempo: '⚡', lt2: '🎯',
+                        threshold: '🔶', vo2max: '🔥', anaerobic: '💥',
+                        hills: '⛰️', race: '🏆',
+                      };
+                      return isEditingCategory ? (
+                        <div className="relative">
+                          <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[220px]">
+                            <div className="grid grid-cols-2 gap-1 mb-1.5">
+                              {/* None option */}
+                              <button
+                                onClick={() => { setCategory(''); handleSaveCategory(''); }}
+                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${!category ? 'bg-gray-100 border-gray-400 text-gray-700' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                              >
+                                <span>✕</span> None
+                              </button>
+                              {categories.map(cat => {
+                                const isActive = category === cat.id;
+                                const icon = CATEGORY_ICONS[cat.id] || '🏷️';
+                                return (
+                                  <button
+                                    key={cat.id}
+                                    onClick={() => { setCategory(cat.id); handleSaveCategory(cat.id); setIsEditingCategory(false); }}
+                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-90"
+                                    style={isActive
+                                      ? { backgroundColor: cat.color, color: '#fff', borderColor: cat.color }
+                                      : { backgroundColor: `${cat.color}18`, color: cat.color, borderColor: `${cat.color}40` }
+                                    }
+                                  >
+                                    <span>{icon}</span>
+                                    <span>{cat.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <button
+                              onClick={() => { setIsEditingCategory(false); setCategory(selectedStrava?.category || ''); }}
+                              className="w-full text-[10px] text-gray-400 hover:text-gray-600 py-0.5 text-center"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {/* backdrop */}
+                          <div className="fixed inset-0 z-40" onClick={() => { setIsEditingCategory(false); setCategory(selectedStrava?.category || ''); }} />
+                        </div>
+                      ) : (
+                        <button onClick={() => setIsEditingCategory(true)} title="Click to set category" className="flex items-center gap-1">
+                          <span
+                            className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80 flex items-center gap-1"
+                            style={getCategoryStyle(category)}
+                          >
+                            {category && CATEGORY_ICONS[category] && (
+                              <span>{CATEGORY_ICONS[category]}</span>
+                            )}
+                            {category
+                              ? (categories.find(c => c.id === category)?.label || category)
+                              : '+ Category'}
+                          </span>
                         </button>
-                        <button onClick={() => { setIsEditingCategory(false); setCategory(selectedStrava?.category || ''); }} className="p-1 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition-colors">
-                          <XMarkIcon className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setIsEditingCategory(true)} title="Click to set category" className="flex items-center gap-1">
-                        <span
-                          className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80"
-                          style={getCategoryStyle(category)}
-                        >
-                          {category
-                            ? (categories.find(c => c.id === category)?.label || category)
-                            : '+ Category'}
-                        </span>
-                      </button>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   {/* Editable title */}

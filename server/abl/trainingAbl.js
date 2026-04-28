@@ -545,7 +545,7 @@ class TrainingAbl {
                 ) {
                     intervalPower = lapPaceSeconds(lap, lapDistM, durationSecondsValue);
                 }
-                const lapHeartRate = lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null;
+                const lapHeartRate = lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? null;
                 const lapElev = sport === 'swim' ? undefined : lapElevationMeters(lap);
 
                 // Swim rest: distance < 10m means it's a rest/turnaround lap.

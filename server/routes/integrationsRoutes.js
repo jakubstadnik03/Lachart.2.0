@@ -567,6 +567,7 @@ async function fetchStravaActivityStreams(token, stravaId) {
   const url = `https://www.strava.com/api/v3/activities/${stravaId}/streams`;
   const base = { headers: { Authorization: `Bearer ${token}` }, timeout: 45000 };
   const variants = [
+    { keys: 'time,velocity_smooth,heartrate,watts,altitude,latlng', key_by_type: true },
     { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true },
     { keys: 'time,heartrate,watts,velocity_smooth', key_by_type: true },
     { keys: 'time,distance,heartrate,watts', key_by_type: true },
@@ -2398,7 +2399,9 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     // Always use saved laps from database as base (they include manually created laps)
     // Then enrich with API lap data where available
     let mergedLaps = laps;
-    if (savedActivity?.laps && savedActivity.laps.length > 0) {
+    // Convert saved laps to plain objects so spreading works correctly with Mongoose subdocuments
+    const savedLapsPlain = (savedActivity?.laps || []).map(l => (typeof l.toObject === 'function' ? l.toObject() : { ...l }));
+    if (savedLapsPlain.length > 0) {
       // Build helper function for lap key matching (same as deduplication)
       // Must be defined before deduplication to use consistent key format
       const buildLapKeyForMatching = (lap) => {
@@ -2421,17 +2424,17 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // Deduplicate saved laps first to prevent duplicates using the same key format
       const seenSavedLaps = new Map();
       const uniqueSavedLaps = [];
-      savedActivity.laps.forEach((savedLap, idx) => {
+      savedLapsPlain.forEach((savedLap) => {
         const key = buildLapKeyForMatching(savedLap);
-        
+
         if (!seenSavedLaps.has(key)) {
           seenSavedLaps.set(key, true);
           uniqueSavedLaps.push(savedLap);
         }
       });
-      
-      if (uniqueSavedLaps.length !== savedActivity.laps.length) {
-        console.log(`Backend: Removed ${savedActivity.laps.length - uniqueSavedLaps.length} duplicate saved laps. Original: ${savedActivity.laps.length}, Unique: ${uniqueSavedLaps.length}`);
+
+      if (uniqueSavedLaps.length !== savedLapsPlain.length) {
+        console.log(`Backend: Removed ${savedLapsPlain.length - uniqueSavedLaps.length} duplicate saved laps. Original: ${savedLapsPlain.length}, Unique: ${uniqueSavedLaps.length}`);
       }
       
       // Track which API laps have been matched to avoid duplicates
@@ -3247,6 +3250,204 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
       return res.status(429).json({ error: 'Strava API rate limit exceeded' });
     }
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── Auto-classify Strava activities ────────────────────────────────────────
+
+/** Normalise sport string to 'cycling' | 'running' | 'swimming' | null */
+function _acNormSport(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'running';
+  if (s.includes('swim')) return 'swimming';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'cycling';
+  return null;
+}
+
+function _acParseNum(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Find which zone key a metric value falls in, using the same robust logic as the client */
+function _acFindZone(metric, zonesObj) {
+  if (!metric || !zonesObj) return null;
+  const keys = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+  let prevMax = null;
+  let lastValidKey = null;
+  let lastValidMax = null;
+  for (const zKey of keys) {
+    const def = zonesObj[zKey];
+    if (!def) continue;
+    let min = _acParseNum(def.min);
+    const max = def.max === undefined ? null : _acParseNum(def.max);
+    if (min === null && prevMax !== null) min = prevMax;
+    if (min === null) { prevMax = max ?? prevMax; continue; }
+    if (max === null || max === Infinity) {
+      if (metric >= min) return zKey;
+      prevMax = min; continue;
+    }
+    const lo = Math.min(min, max), hi = Math.max(min, max);
+    if (metric >= lo && metric <= hi) return zKey;
+    prevMax = hi;
+    lastValidKey = zKey;
+    if (lastValidMax === null || hi > lastValidMax) lastValidMax = hi;
+  }
+  if (lastValidKey && lastValidMax !== null && metric > lastValidMax) return lastValidKey;
+  return null;
+}
+
+const _AC_ZONE_CAT = { zone1: 'recovery', zone2: 'zone2', zone3: 'lt1', zone4: 'lt2', zone5: 'vo2max' };
+const _AC_CAT_LABEL = { recovery: 'Recovery', zone2: 'Zone 2', lt1: 'LT1', lt2: 'LT2', vo2max: 'VO₂max', endurance: 'Endurance', tempo: 'Tempo', threshold: 'Threshold' };
+const _AC_SPORT_LABEL = { cycling: 'Ride', running: 'Run', swimming: 'Swim' };
+
+/** Build a human-readable title for the activity */
+function _acBuildTitle(category, sport, movingTimeSec, distanceM, laps) {
+  const sLabel = _AC_SPORT_LABEL[sport] || 'Workout';
+  const cLabel = _AC_CAT_LABEL[category] || '';
+  const movMin = Math.round((movingTimeSec || 0) / 60);
+
+  // Detect repeating interval structure from laps
+  if (Array.isArray(laps) && laps.length >= 4) {
+    const active = laps.filter(l => (l.elapsed_time || l.moving_time || 0) > 20);
+    if (active.length >= 3 && active.length <= 20) {
+      const durations = active.map(l => l.elapsed_time || l.moving_time || 0).sort((a, b) => a - b);
+      const medDur = durations[Math.floor(durations.length / 2)];
+      const workLaps = active.filter(l => {
+        const d = l.elapsed_time || l.moving_time || 0;
+        return d >= medDur * 0.7 && d <= medDur * 1.3;
+      });
+      if (workLaps.length >= 2) {
+        const dMin = Math.floor(medDur / 60);
+        const dSec = Math.round(medDur % 60);
+        const dStr = dSec > 0 ? `${dMin}:${String(dSec).padStart(2, '0')}'` : `${dMin}'`;
+        return cLabel ? `${workLaps.length}×${dStr} ${cLabel} ${sLabel}` : `${workLaps.length}×${dStr} ${sLabel}`;
+      }
+    }
+  }
+
+  // Distance-based title for longer efforts
+  if (distanceM > 2000) {
+    if (sport === 'cycling' && distanceM >= 10000) {
+      const km = Math.round(distanceM / 1000);
+      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
+    }
+    if (sport === 'running' && distanceM >= 3000) {
+      const km = (distanceM / 1000).toFixed(1).replace('.0', '');
+      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
+    }
+    if (sport === 'swimming' && distanceM >= 1000) {
+      const km = (distanceM / 1000).toFixed(1).replace('.0', '');
+      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
+    }
+  }
+
+  // Duration-based fallback
+  return cLabel ? `${movMin}' ${cLabel} ${sLabel}` : `${movMin}' ${sLabel}`;
+}
+
+/**
+ * GET /api/integrations/strava/auto-classify
+ * Returns proposed category + title for uncategorised activities.
+ * Query params: sport (all|cycling|running|swimming), skipCategorized (true|false), limit (int)
+ */
+router.get('/strava/auto-classify', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).lean();
+    if (!user) return res.status(401).json({ error: 'User not found' });
+
+    const { sport = 'all', skipCategorized = 'true', limit = '300' } = req.query;
+
+    const query = { userId: user._id };
+    if (skipCategorized === 'true') query.category = { $in: [null, undefined, ''] };
+
+    const activities = await StravaActivity.find(query)
+      .select('_id stravaId name sport startDate movingTime elapsedTime distance averageHeartRate averagePower weightedAveragePower titleManual category laps')
+      .sort({ startDate: -1 })
+      .limit(Math.min(parseInt(limit) || 300, 1000))
+      .lean();
+
+    const powerZones = user.powerZones || {};
+    const hrZones = user.heartRateZones || {};
+
+    const proposals = [];
+    for (const act of activities) {
+      const normSport = _acNormSport(act.sport);
+      if (!normSport) continue;
+      if (sport !== 'all' && normSport !== sport) continue;
+
+      const pZones = powerZones[normSport] || {};
+      const hZones = hrZones[normSport] || {};
+
+      // Prefer weighted avg power for cycling; HR for run/swim
+      const powerMetric = normSport === 'cycling'
+        ? (act.weightedAveragePower || act.averagePower || null)
+        : (act.averagePower || null);
+      const hrMetric = act.averageHeartRate || null;
+
+      let dominantZone = null;
+      if (powerMetric) dominantZone = _acFindZone(powerMetric, pZones);
+      if (!dominantZone && hrMetric) dominantZone = _acFindZone(hrMetric, hZones);
+      if (!dominantZone) continue; // can't classify without zone data
+
+      const category = _AC_ZONE_CAT[dominantZone] || null;
+      const title = _acBuildTitle(category, normSport, act.movingTime || act.elapsedTime, act.distance, act.laps);
+
+      proposals.push({
+        _id: String(act._id),
+        stravaId: act.stravaId,
+        name: act.name,
+        titleManual: act.titleManual || null,
+        sport: normSport,
+        startDate: act.startDate,
+        movingTime: act.movingTime || act.elapsedTime || 0,
+        currentCategory: act.category || null,
+        dominantZone,
+        proposedCategory: category,
+        proposedTitle: title,
+      });
+    }
+
+    res.json({ proposals, total: activities.length });
+  } catch (err) {
+    console.error('[auto-classify] preview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/integrations/strava/auto-classify/apply
+ * Applies selected category + title changes.
+ * Body: { items: [{ _id, category, title }] }
+ */
+router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).lean();
+    if (!user) return res.status(401).json({ error: 'User not found' });
+
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) return res.json({ updated: 0 });
+
+    let updated = 0;
+    for (const item of items) {
+      if (!item._id) continue;
+      const patch = {};
+      if (item.applyCategory && item.category !== undefined) patch.category = item.category || null;
+      if (item.applyTitle && item.title) patch.titleManual = item.title;
+      if (!Object.keys(patch).length) continue;
+      const result = await StravaActivity.updateOne(
+        { _id: item._id, userId: user._id },
+        { $set: patch }
+      );
+      if (result.modifiedCount > 0) updated++;
+    }
+
+    res.json({ updated });
+  } catch (err) {
+    console.error('[auto-classify] apply error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

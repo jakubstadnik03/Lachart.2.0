@@ -406,28 +406,21 @@ function isDefaultTitle(title) {
 function generateTrainingTitle(sport, category, results) {
   const sportLabel = { bike: 'Ride', run: 'Run', swim: 'Swim' }[sport] || 'Workout';
 
-  // Category-only shortcuts (no structured intervals needed)
-  const CAT_MAP = {
-    recovery: { bike: 'Recovery Ride', run: 'Recovery Run', swim: 'Recovery Swim' },
-    endurance: { bike: 'Long Ride', run: 'Long Run', swim: 'Long Swim' },
-    hills: { bike: 'Hill Ride', run: 'Hill Run', swim: null },
+  // Full zone label map — covers all categories including LT1/LT2/Zone2
+  const CAT_ZONE = {
+    recovery:  'Recovery',
+    endurance: 'Endurance',
+    zone2:     'Z2',
+    lt1:       'LT1',
+    tempo:     'Tempo',
+    lt2:       'LT2',
+    threshold: 'Threshold',
+    vo2max:    'VO₂max',
+    anaerobic: 'Anaerobic',
+    hills:     'Hills',
+    race:      'Race',
   };
-  if (CAT_MAP[category]?.[sport]) return CAT_MAP[category][sport];
-
-  // Work intervals
-  const workResults = (results || []).filter(r => !r.intervalType || r.intervalType === 'work');
-  if (workResults.length === 0) {
-    // Fallback: category → sport label
-    const catLabel = {
-      tempo: 'Tempo', threshold: 'Threshold', vo2max: 'VO₂max',
-      anaerobic: 'Anaerobic', hills: 'Hills',
-    }[category];
-    return catLabel ? `${catLabel} ${sportLabel}` : sportLabel;
-  }
-
-  // Total reps (honoring repeatCount)
-  const totalReps = workResults.reduce((s, r) => s + (Number(r.repeatCount) || 1), 0);
-  const first = workResults[0];
+  const zoneLabel = CAT_ZONE[category] || null;
 
   // Format interval distance
   const fmtDist = (d) => {
@@ -441,7 +434,7 @@ function generateTrainingTitle(sport, category, results) {
     return `${Math.round(n)}m`;
   };
 
-  // Format interval duration
+  // Format duration as compact label: "10'", "1:30'", "45s"
   const fmtDurLabel = (dur) => {
     if (!dur) return null;
     if (typeof dur === 'string' && dur.includes(':')) {
@@ -457,30 +450,78 @@ function generateTrainingTitle(sport, category, results) {
     return mins > 0 ? `${mins}'` : `${Math.round(n)}s`;
   };
 
-  let intervalStr = null;
+  // Format power/pace target from first work interval
+  const fmtTarget = (r) => {
+    const pw = r?.power;
+    if (pw === '' || pw === null || pw === undefined) return null;
+    if (sport === 'bike') {
+      const w = parseFloat(pw);
+      if (!isNaN(w) && w > 0) return `@${Math.round(w)}W`;
+    } else {
+      // run / swim: pace stored as MM:SS string or raw seconds
+      if (typeof pw === 'string' && pw.includes(':')) {
+        const unit = sport === 'swim' ? '/100m' : '/km';
+        return `@${pw}${unit}`;
+      }
+      const secs = parseFloat(pw);
+      if (!isNaN(secs) && secs > 0) {
+        const m = Math.floor(secs / 60);
+        const s = Math.round(secs % 60);
+        const unit = sport === 'swim' ? '/100m' : '/km';
+        return `@${m}:${String(s).padStart(2, '0')}${unit}`;
+      }
+    }
+    return null;
+  };
 
+  // Work and rest intervals
+  const workResults = (results || []).filter(r => !r.intervalType || r.intervalType === 'work');
+  const restResults = (results || []).filter(r => r.intervalType === 'recovery');
+
+  // No structured intervals → simple label
+  if (workResults.length === 0) {
+    if (category === 'recovery') return `Recovery ${sportLabel}`;
+    if (category === 'endurance') return `Long ${sportLabel}`;
+    if (category === 'hills') return `Hill ${sportLabel}`;
+    return zoneLabel ? `${zoneLabel} ${sportLabel}` : sportLabel;
+  }
+
+  // Total reps
+  const totalReps = workResults.reduce((s, r) => s + (Number(r.repeatCount) || 1), 0);
+  const first = workResults[0];
+
+  // Build work interval string: e.g. "8×10'" or "5×1km"
+  let workStr = null;
   if (first.durationType === 'distance' && first.duration) {
     const d = fmtDist(first.duration);
-    if (d) intervalStr = `${totalReps}×${d}`;
+    if (d) workStr = `${totalReps}×${d}`;
   } else if (first.distance) {
     const d = fmtDist(first.distance);
-    if (d) intervalStr = `${totalReps}×${d}`;
+    if (d) workStr = `${totalReps}×${d}`;
   }
-
-  if (!intervalStr && first.duration) {
+  if (!workStr && first.duration) {
     const t = fmtDurLabel(first.duration);
-    if (t) intervalStr = `${totalReps}×${t}`;
+    if (t) workStr = `${totalReps}×${t}`;
+  }
+  if (!workStr) workStr = `${totalReps}× int`;
+
+  // Append rest: "8×10'/2'"
+  const firstRest = restResults[0];
+  if (firstRest?.duration) {
+    const rt = fmtDurLabel(firstRest.duration);
+    if (rt) workStr += `/${rt}`;
   }
 
-  if (!intervalStr) intervalStr = `${totalReps}× intervals`;
+  // Power/pace target
+  const targetStr = fmtTarget(first);
 
-  // Optional category suffix
-  const catSuffix = {
-    tempo: ' Tempo', threshold: ' Threshold', vo2max: ' VO₂max',
-    anaerobic: ' Anaerobic', hills: ' Hills',
-  }[category] || '';
+  // Assemble: "8×10'/2' @280W LT2 Ride"
+  const parts = [workStr];
+  if (targetStr) parts.push(targetStr);
+  if (zoneLabel) parts.push(zoneLabel);
+  parts.push(sportLabel);
 
-  return `${intervalStr}${catSuffix} ${sportLabel}`;
+  return parts.join(' ');
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */

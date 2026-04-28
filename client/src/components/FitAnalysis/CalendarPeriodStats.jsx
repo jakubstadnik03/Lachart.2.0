@@ -1079,7 +1079,7 @@ export default function CalendarPeriodStats({
               onClick={() => setActiveTab(t.id)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === t.id
-                  ? 'bg-gray-900 text-white'
+                  ? 'bg-primary text-white'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -1413,7 +1413,7 @@ export default function CalendarPeriodStats({
                         onClick={() => setZoneSport(opt.id)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                           isActive
-                            ? 'bg-gray-900 text-white'
+                            ? 'bg-primary text-white'
                             : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                         } ${!hasData && !isActive ? 'opacity-50' : ''}`}
                       >

@@ -467,7 +467,7 @@ export default function TrainingPage() {
               style={{ touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedCategory === 'all'
-                  ? 'bg-gray-800 border-gray-800 text-white'
+                  ? 'bg-primary border-primary text-white'
                   : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
               }`}
             >

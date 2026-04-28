@@ -678,16 +678,28 @@ const [selectedTitle, setSelectedTitle] = useState(null);
               </h4>
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Sport tabs */}
-                <div className="flex gap-1 bg-gray-100/80 p-0.5 rounded-lg">
-                  {['cycling', 'running', 'swimming'].filter(s => hasConfiguredZonesForSport(s)).map((s) => (
+                <div className="flex gap-1.5">
+                  {[
+                    { id: 'cycling',  label: 'Bike', icon: '/icon/bike.svg' },
+                    { id: 'running',  label: 'Run',  icon: '/icon/run.svg'  },
+                    { id: 'swimming', label: 'Swim', icon: '/icon/swim.svg' },
+                  ].filter(s => hasConfiguredZonesForSport(s.id)).map((s) => (
                     <button
-                      key={s}
-                      onClick={() => setSelectedZoneSport(s)}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all capitalize ${
-                        selectedZoneSport === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      key={s.id}
+                      type="button"
+                      onClick={() => setSelectedZoneSport(s.id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                        selectedZoneSport === s.id
+                          ? 'bg-primary text-white border-primary shadow-sm'
+                          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
                       }`}
                     >
-                      {s === 'cycling' ? '🚴' : s === 'running' ? '🏃' : '🏊'} {s.charAt(0).toUpperCase() + s.slice(1)}
+                      <img
+                        src={s.icon}
+                        alt={s.label}
+                        className={`w-3.5 h-3.5 object-contain ${selectedZoneSport === s.id ? 'invert' : ''}`}
+                      />
+                      {s.label}
                     </button>
                   ))}
                 </div>
