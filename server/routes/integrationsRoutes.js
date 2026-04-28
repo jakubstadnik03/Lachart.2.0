@@ -2642,7 +2642,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     // Update category if provided
     // Ensure category is either a valid enum value or null (empty string becomes null)
     if (category !== undefined) {
-      const validCategories = ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', 'hills'];
+      const validCategories = ['endurance', 'lt1', 'tempo', 'lt2', 'zone2', 'vo2max', 'hills'];
       if (category === null || category === '' || category === undefined) {
         activity.category = null;
       } else if (validCategories.includes(category)) {
@@ -2775,7 +2775,7 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
         if (!actorFull || actorFull.role !== 'coach') {
           await notifyCoachesOfAthlete(String(user._id), {
             type: 'lactate_added',
-            title: '💧 Lactate added to training',
+            title: 'Lactate added to training',
             body: `${actorName} added lactate values to "${trainingTitle}"`,
             resourceId: `strava-${stravaId}`,
             resourceType: 'strava',
@@ -2786,7 +2786,7 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
           if (activity.userId && String(activity.userId) !== String(user._id)) {
             await notifyAthlete(String(activity.userId), {
               type: 'lactate_added',
-              title: '💧 Lactate added to your training',
+              title: 'Lactate added to your training',
               body: `${actorName} added lactate values to "${trainingTitle}"`,
               resourceId: `strava-${stravaId}`,
               resourceType: 'strava',
@@ -3313,9 +3313,51 @@ function _acFindZone(metric, zonesObj) {
   return null;
 }
 
-const _AC_ZONE_CAT = { zone1: 'recovery', zone2: 'zone2', zone3: 'lt1', zone4: 'lt2', zone5: 'vo2max' };
-const _AC_CAT_LABEL = { recovery: 'Recovery', zone2: 'Zone 2', lt1: 'LT1', lt2: 'LT2', vo2max: 'VO₂max', endurance: 'Endurance', tempo: 'Tempo', threshold: 'Threshold' };
+const _AC_ZONE_CAT = { zone1: 'endurance', zone2: 'zone2', zone3: 'lt1', zone4: 'lt2', zone5: 'vo2max' };
+const _AC_CAT_LABEL = { endurance: 'Endurance', zone2: 'Zone 2', lt1: 'LT1', lt2: 'LT2', vo2max: 'VO₂max', tempo: 'Tempo', hills: 'Hills' };
 const _AC_SPORT_LABEL = { cycling: 'Ride', running: 'Run', swimming: 'Swim' };
+
+/**
+ * Interval-aware dominant zone detection.
+ * If the activity has repeating lap intervals, classify based on the work laps
+ * (not the overall average which is diluted by warmup/recovery laps).
+ */
+function _acFindDominantZone(act, normSport, pZones, hZones) {
+  // Try interval-aware classification first
+  if (Array.isArray(act.laps) && act.laps.length >= 3) {
+    const significantLaps = act.laps.filter(l => (l.elapsed_time || l.moving_time || 0) >= 60);
+    if (significantLaps.length >= 3) {
+      const durations = significantLaps.map(l => l.elapsed_time || l.moving_time || 0).sort((a, b) => a - b);
+      const medDur = durations[Math.floor(durations.length / 2)];
+      // Work laps: within 70–130% of median duration
+      const workLaps = significantLaps.filter(l => {
+        const d = l.elapsed_time || l.moving_time || 0;
+        return d >= medDur * 0.7 && d <= medDur * 1.3;
+      });
+      if (workLaps.length >= 2) {
+        const avgPowers = workLaps.map(l => l.average_watts || null).filter(v => v != null && v > 0);
+        const avgHRs = workLaps.map(l => l.average_heartrate || null).filter(v => v != null && v > 0);
+        const workPower = avgPowers.length ? avgPowers.reduce((a, b) => a + b) / avgPowers.length : null;
+        const workHR = avgHRs.length ? avgHRs.reduce((a, b) => a + b) / avgHRs.length : null;
+        let zone = null;
+        if (workPower && normSport === 'cycling') zone = _acFindZone(workPower, pZones);
+        if (!zone && workHR) zone = _acFindZone(workHR, hZones);
+        if (!zone && workPower && normSport !== 'cycling') zone = _acFindZone(workPower, pZones);
+        if (zone) return zone;
+      }
+    }
+  }
+  // Fall back to overall averages
+  const powerMetric = normSport === 'cycling'
+    ? (act.weightedAveragePower || act.averagePower || null)
+    : (act.averagePower || null);
+  const hrMetric = act.averageHeartRate || null;
+  let zone = null;
+  if (powerMetric && normSport === 'cycling') zone = _acFindZone(powerMetric, pZones);
+  if (!zone && hrMetric) zone = _acFindZone(hrMetric, hZones);
+  if (!zone && powerMetric && normSport !== 'cycling') zone = _acFindZone(powerMetric, pZones);
+  return zone;
+}
 
 /** Build a human-readable title for the activity */
 function _acBuildTitle(category, sport, movingTimeSec, distanceM, laps) {
@@ -3378,7 +3420,7 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
     if (skipCategorized === 'true') query.category = { $in: [null, undefined, ''] };
 
     const activities = await StravaActivity.find(query)
-      .select('_id stravaId name sport startDate movingTime elapsedTime distance averageHeartRate averagePower weightedAveragePower titleManual category laps')
+      .select('_id stravaId name sport startDate movingTime elapsedTime distance averageHeartRate averagePower weightedAveragePower total_elevation_gain titleManual category laps')
       .sort({ startDate: -1 })
       .limit(Math.min(parseInt(limit) || 300, 1000))
       .lean();
@@ -3395,18 +3437,29 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
       const pZones = powerZones[normSport] || {};
       const hZones = hrZones[normSport] || {};
 
-      // Prefer weighted avg power for cycling; HR for run/swim
-      const powerMetric = normSport === 'cycling'
-        ? (act.weightedAveragePower || act.averagePower || null)
-        : (act.averagePower || null);
-      const hrMetric = act.averageHeartRate || null;
+      // Elevation-based hills detection (>20m gain per km)
+      const elevPerKm = act.total_elevation_gain && act.distance > 0
+        ? (act.total_elevation_gain / (act.distance / 1000))
+        : 0;
+      const isHillsWorkout = elevPerKm > 20;
 
-      let dominantZone = null;
-      if (powerMetric) dominantZone = _acFindZone(powerMetric, pZones);
-      if (!dominantZone && hrMetric) dominantZone = _acFindZone(hrMetric, hZones);
-      if (!dominantZone) continue; // can't classify without zone data
+      // Use interval-aware zone detection
+      const dominantZone = _acFindDominantZone(act, normSport, pZones, hZones);
 
-      const category = _AC_ZONE_CAT[dominantZone] || null;
+      let category = null;
+      if (isHillsWorkout && !dominantZone) {
+        // Only hills when no zone data available
+        category = 'hills';
+      } else if (dominantZone) {
+        category = _AC_ZONE_CAT[dominantZone] || null;
+        // If significant elevation and classified as endurance/zone2, override to hills
+        if (isHillsWorkout && elevPerKm > 35 && (category === 'endurance' || category === 'zone2')) {
+          category = 'hills';
+        }
+      }
+
+      if (!category) continue; // can't classify without zone data
+
       const title = _acBuildTitle(category, normSport, act.movingTime || act.elapsedTime, act.distance, act.laps);
 
       proposals.push({
@@ -3418,7 +3471,7 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         startDate: act.startDate,
         movingTime: act.movingTime || act.elapsedTime || 0,
         currentCategory: act.category || null,
-        dominantZone,
+        dominantZone: dominantZone || 'hills',
         proposedCategory: category,
         proposedTitle: title,
       });
@@ -3530,11 +3583,17 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       if (result.upsertedCount > 0) imported++;
     }
 
-    // Notify coaches (fire-and-forget)
+    // Notify athlete + coaches (fire-and-forget)
     if (imported > 0) {
       const body = imported === 1
         ? '1 Apple Health workout synced.'
         : `${imported} Apple Health workouts synced.`;
+      notifyAthlete(String(userId), {
+        type: 'apple_health_sync',
+        title: 'Apple Health synced',
+        body,
+        resourceType: 'strava',
+      }).catch(() => {});
       notifyCoachesOfAthlete(String(userId), {
         type: 'apple_health_sync',
         title: 'Apple Health sync',

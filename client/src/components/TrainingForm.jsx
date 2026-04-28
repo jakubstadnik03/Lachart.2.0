@@ -1098,20 +1098,21 @@ const TrainingForm = ({
       </div>
 
       {/* ── Scrollable body ── */}
-      <div ref={scrollBodyRef} className="flex-1 overflow-y-auto min-h-0">
+      <div ref={scrollBodyRef} className="flex-1 overflow-y-auto min-h-0 overflow-x-hidden">
         <form id="training-form" noValidate onSubmit={handleFormSubmit}>
 
           {/* ── Top section ── */}
-          <div className="px-4 pt-4 pb-2 space-y-4">
+          <div className="px-4 pt-4 pb-2 space-y-4 min-w-0">
 
               {/* Date — full width */}
-              <div>
+              <div className="min-w-0 w-full">
                 <label className={labelBase}>Date</label>
                 <input
                   type="datetime-local"
                   value={formData.date}
                   onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
                   className={inputBase}
+                  style={{ maxWidth: '100%', boxSizing: 'border-box' }}
                 />
               </div>
 

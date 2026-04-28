@@ -592,16 +592,28 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
     setSelectedLapIndices([]);
   };
 
-  // Sport icon mapping
-  const getSportIcon = (sport) => {
+  // Sport icon component
+  const SportIcon = ({ sport, className = "w-5 h-5" }) => {
     const s = (sport || '').toLowerCase();
-    if (s.includes('run')) return '🏃';
-    if (s.includes('swim')) return '🏊';
-    if (s.includes('walk')) return '🚶';
-    if (s.includes('hike')) return '🥾';
-    if (s.includes('ski')) return '⛷️';
-    if (s.includes('row')) return '🚣';
-    return '🚴';
+    if (s.includes('run') || s.includes('walk') || s.includes('hike')) {
+      return (
+        <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center shrink-0`}>
+          <img src="/icon/run.svg" alt="Run" className="w-full h-full" />
+        </div>
+      );
+    }
+    if (s.includes('swim') || s.includes('row')) {
+      return (
+        <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center shrink-0`}>
+          <img src="/icon/swim.svg" alt="Swim" className="w-full h-full" />
+        </div>
+      );
+    }
+    return (
+      <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/bike.svg" alt="Bike" className="w-full h-full" />
+      </div>
+    );
   };
 
   const formatTrainingDate = (dateStr) => {
@@ -775,7 +787,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
           <div className="min-w-0 flex-1">
             {/* Sport + Date + Category row */}
             <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="text-lg leading-none">{getSportIcon(training.sport)}</span>
+              <SportIcon sport={training.sport} className="w-5 h-5" />
               <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-gray-400 font-medium`}>
                 {formatTrainingDate(training.timestamp || training.uploadDate || training.date)}
               </span>

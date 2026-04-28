@@ -5036,11 +5036,21 @@ const FitAnalysisPage = () => {
                     </span>
                     {/* Category badge — click to edit */}
                     {(() => {
+                      // SVG icons matching TrainingForm / AutoClassifyModal
+                      const CatSvg = ({ children, size = 10 }) => (
+                        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          {children}
+                        </svg>
+                      );
                       const CATEGORY_ICONS = {
-                        recovery: '💤', endurance: '🏃', zone2: '🌿',
-                        lt1: '📊', tempo: '⚡', lt2: '🎯',
-                        threshold: '🔶', vo2max: '🔥', anaerobic: '💥',
-                        hills: '⛰️', race: '🏆',
+                        endurance: <CatSvg><path d="M2 12 C5.5 6 8.5 6 12 12 C15.5 18 18.5 18 22 12" /></CatSvg>,
+                        lt1: <CatSvg><polyline points="3,19 9,16 14,10 20,5" /><circle cx="14" cy="10" r="2.2" fill="currentColor" stroke="none" /></CatSvg>,
+                        tempo: <CatSvg><circle cx="12" cy="13" r="8" /><polyline points="12,9 12,13 15,15" /><line x1="9" y1="2" x2="15" y2="2" /><line x1="12" y1="2" x2="12" y2="5" /></CatSvg>,
+                        lt2: <CatSvg><polyline points="3,19 7,18 10,15 13,9 19,4" /><circle cx="13" cy="9" r="2.2" fill="currentColor" stroke="none" /></CatSvg>,
+                        zone2: <CatSvg strokeWidth="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /><polyline points="8,12 10,10 11,14 13,10 14,12" strokeWidth="1.2" /></CatSvg>,
+                        vo2max: <CatSvg><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5,12 12,5 19,12" /></CatSvg>,
+                        hills: <CatSvg><polyline points="2,20 7,10 11,15 15,8 19,13 22,20" /><line x1="2" y1="20" x2="22" y2="20" /></CatSvg>,
                       };
                       return isEditingCategory ? (
                         <div className="relative">
@@ -5055,7 +5065,7 @@ const FitAnalysisPage = () => {
                               </button>
                               {categories.map(cat => {
                                 const isActive = category === cat.id;
-                                const icon = CATEGORY_ICONS[cat.id] || '🏷️';
+                                const icon = CATEGORY_ICONS[cat.id] || null;
                                 return (
                                   <button
                                     key={cat.id}
@@ -5066,7 +5076,7 @@ const FitAnalysisPage = () => {
                                       : { backgroundColor: `${cat.color}18`, color: cat.color, borderColor: `${cat.color}40` }
                                     }
                                   >
-                                    <span>{icon}</span>
+                                    {icon && <span className="flex-shrink-0">{icon}</span>}
                                     <span>{cat.label}</span>
                                   </button>
                                 );
@@ -5089,7 +5099,7 @@ const FitAnalysisPage = () => {
                             style={getCategoryStyle(category)}
                           >
                             {category && CATEGORY_ICONS[category] && (
-                              <span>{CATEGORY_ICONS[category]}</span>
+                              <span className="flex-shrink-0">{CATEGORY_ICONS[category]}</span>
                             )}
                             {category
                               ? (categories.find(c => c.id === category)?.label || category)

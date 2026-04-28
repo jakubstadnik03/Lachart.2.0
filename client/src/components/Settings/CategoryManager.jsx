@@ -2,6 +2,47 @@ import React, { useState } from 'react';
 import { useCategories, PRESET_COLORS, hexToRgba } from '../../context/CategoryContext';
 import { PlusIcon, TrashIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
+// ── Category icon SVGs (matching TrainingForm) ────────────────────────────────
+const CatSvg = ({ children, size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, display: 'block' }}>
+    {children}
+  </svg>
+);
+
+const CATEGORY_ICONS = {
+  endurance: <CatSvg><path d="M2 12 C5.5 6 8.5 6 12 12 C15.5 18 18.5 18 22 12" /></CatSvg>,
+  lt1: <CatSvg>
+    <polyline points="3,19 9,16 14,10 20,5" />
+    <circle cx="14" cy="10" r="2.2" fill="currentColor" stroke="none" />
+  </CatSvg>,
+  tempo: <CatSvg>
+    <circle cx="12" cy="13" r="8" />
+    <polyline points="12,9 12,13 15,15" />
+    <line x1="9" y1="2" x2="15" y2="2" />
+    <line x1="12" y1="2" x2="12" y2="5" />
+  </CatSvg>,
+  lt2: <CatSvg>
+    <polyline points="3,19 7,18 10,15 13,9 19,4" />
+    <circle cx="13" cy="9" r="2.2" fill="currentColor" stroke="none" />
+  </CatSvg>,
+  zone2: <CatSvg strokeWidth="1.8">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <polyline points="8,12 10,10 11,14 13,10 14,12" strokeWidth="1.2" />
+  </CatSvg>,
+  vo2max: <CatSvg>
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5,12 12,5 19,12" />
+    <line x1="8" y1="19" x2="8" y2="16" strokeWidth="1.2" />
+    <line x1="12" y1="21" x2="12" y2="19" strokeWidth="1.2" />
+    <line x1="16" y1="19" x2="16" y2="16" strokeWidth="1.2" />
+  </CatSvg>,
+  hills: <CatSvg>
+    <polyline points="2,20 7,10 11,15 15,8 19,13 22,20" />
+    <line x1="2" y1="20" x2="22" y2="20" />
+  </CatSvg>,
+};
+
 /** Color picker grid — same style as LacTrace tag creation dialog. */
 function ColorPicker({ value, onChange }) {
   return (
@@ -92,9 +133,10 @@ function CategoryRow({ cat, onUpdate, onDelete }) {
       ) : (
         <div className="flex items-center gap-3">
           <span
-            className="rounded-full border px-2.5 py-0.5 text-xs font-semibold"
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold"
             style={tagStyle}
           >
+            {cat.builtIn && CATEGORY_ICONS[cat.id] ? CATEGORY_ICONS[cat.id] : null}
             {cat.label}
           </span>
           {cat.builtIn && (

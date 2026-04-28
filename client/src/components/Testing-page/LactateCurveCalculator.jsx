@@ -19,7 +19,7 @@ import DataTable, {
   calculatePolynomialRegressionLactateToHR,
   isThresholdDebugEnabled,
 } from './DataTable';
-import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
@@ -795,7 +795,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [zoneOverride, setZoneOverride] = useState(null);
   // Manual LT1/LT2 threshold override
   const [ltOverrides, setLtOverrides] = useState({ LTP1: null, LTP2: null });
-  const [ltEditValues, setLtEditValues] = useState({ LTP1: '', LTP2: '' }); // raw input strings
+  const [ltEditValues, setLtEditValues] = useState({ LTP1: '', LTP2: '' }); // pace/watts raw strings
+  const [ltEditLactates, setLtEditLactates] = useState({ LTP1: '', LTP2: '' }); // lactate mmol/L raw strings
   const [showLtOverridePanel, setShowLtOverridePanel] = useState(false);
   const [savingLtOverride, setSavingLtOverride] = useState(false);
   const [ltOverrideStatus, setLtOverrideStatus] = useState(null); // {type:'success'|'error', msg}
@@ -885,8 +886,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return () => { cancelled = true; };
   }, [mockData?._id, mockData?.athleteId, mockData?.date, mockData?.sport, user]);
 
-  const serverOverrideLt1 = mockData?.thresholdOverrides?.LTP1 ?? null;
-  const serverOverrideLt2 = mockData?.thresholdOverrides?.LTP2 ?? null;
+  const serverOverrideLt1         = mockData?.thresholdOverrides?.LTP1         ?? null;
+  const serverOverrideLt2         = mockData?.thresholdOverrides?.LTP2         ?? null;
+  const serverOverrideLt1Lactate  = mockData?.thresholdOverrides?.LTP1_lactate ?? null;
+  const serverOverrideLt2Lactate  = mockData?.thresholdOverrides?.LTP2_lactate ?? null;
 
   // Merge local threshold overrides into mockData so calculations pick them up
   const mockDataWithOverrides = React.useMemo(() => {
@@ -902,7 +905,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       LTP1: serverOverrideLt1 != null ? String(serverOverrideLt1) : '',
       LTP2: serverOverrideLt2 != null ? String(serverOverrideLt2) : '',
     });
-  }, [mockData?._id, serverOverrideLt1, serverOverrideLt2]);
+    setLtEditLactates({
+      LTP1: serverOverrideLt1Lactate != null ? String(serverOverrideLt1Lactate) : '',
+      LTP2: serverOverrideLt2Lactate != null ? String(serverOverrideLt2Lactate) : '',
+    });
+  }, [mockData?._id, serverOverrideLt1, serverOverrideLt2, serverOverrideLt1Lactate, serverOverrideLt2Lactate]);
 
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
@@ -935,6 +942,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     console.error('mockData or mockData.results is not defined');
     return null;
   }
+
+  // Auto thresholds WITHOUT any overrides — used in the panel to show "go back" values
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const rawThresholds = React.useMemo(() => {
+    try {
+      return calculateThresholds({ ...mockData, thresholdOverrides: null });
+    } catch { return null; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mockData?._id, mockData?.results?.length]);
 
   const openEmailModal = () => {
     const mdWithOvr = (!ltOverrides.LTP1 && !ltOverrides.LTP2) ? mockData : { ...mockData, thresholdOverrides: ltOverrides };
@@ -993,22 +1009,27 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   };
 
   // ── Save manual LT1/LT2 overrides to server ─────────────────────────────────
+  // Parse pace (mm:ss → seconds) or watts
+  const parseLtInput = (v) => {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    const mmssParts = s.match(/^(\d+):(\d{1,2})$/);
+    if (mmssParts) return Number(mmssParts[1]) * 60 + Number(mmssParts[2]);
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
   const handleSaveLtOverrides = async () => {
     const testId = mockData?._id;
     if (!testId) return;
-    // Parse input values — accept watts (int) for bike, sec (float) for run/swim
-    const parse = (v) => {
-      const s = String(v || '').trim();
-      if (!s) return null;
-      // Accept mm:ss format for pace
-      const mmssParts = s.match(/^(\d+):(\d{1,2})$/);
-      if (mmssParts) return Number(mmssParts[1]) * 60 + Number(mmssParts[2]);
-      const n = Number(s);
-      return Number.isFinite(n) && n > 0 ? n : null;
+    const lt1 = parseLtInput(ltEditValues.LTP1);
+    const lt2 = parseLtInput(ltEditValues.LTP2);
+    const la1 = ltEditLactates.LTP1 !== '' ? Number(ltEditLactates.LTP1) || null : null;
+    const la2 = ltEditLactates.LTP2 !== '' ? Number(ltEditLactates.LTP2) || null : null;
+    const overrides = {
+      LTP1: lt1, LTP2: lt2,
+      LTP1_lactate: la1, LTP2_lactate: la2,
     };
-    const lt1 = parse(ltEditValues.LTP1);
-    const lt2 = parse(ltEditValues.LTP2);
-    const overrides = { LTP1: lt1, LTP2: lt2 };
     try {
       setSavingLtOverride(true);
       setLtOverrideStatus(null);
@@ -1028,9 +1049,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     if (!testId) return;
     try {
       setSavingLtOverride(true);
-      await api.put(`/test/${testId}`, { thresholdOverrides: { LTP1: null, LTP2: null } });
+      await api.put(`/test/${testId}`, { thresholdOverrides: { LTP1: null, LTP2: null, LTP1_lactate: null, LTP2_lactate: null } });
       setLtOverrides({ LTP1: null, LTP2: null });
       setLtEditValues({ LTP1: '', LTP2: '' });
+      setLtEditLactates({ LTP1: '', LTP2: '' });
       setLtOverrideStatus({ type: 'success', msg: 'Overrides cleared' });
       setTimeout(() => setLtOverrideStatus(null), 3000);
     } catch (e) {
@@ -2646,7 +2668,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5 relative">
       <UpgradeModal {...UpgradeModalProps} />
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {/* Left: title + chart-type toggle + icon buttons */}
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             <h2 className="text-base sm:text-xl font-bold truncate">
               Lactate Curve
@@ -2681,7 +2704,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </div>
             <button
               onClick={() => setShowGlossary(true)}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
+              className="h-9 w-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
               aria-label="Show glossary"
               title="Training Glossary"
             >
@@ -2689,7 +2712,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </button>
             <button
               onClick={() => setShowDataTable(!showDataTable)}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
+              className="h-9 w-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
               aria-label={showDataTable ? "Expand curve" : "Show table"}
               title={showDataTable ? "Expand curve to full width" : "Show data table"}
             >
@@ -2700,173 +2723,286 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               )}
             </button>
           </div>
-          {!demoMode && (
-            <div data-tour="tour-lactate-share" className="flex flex-row flex-wrap items-start gap-2">
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={openEmailModal}
-                  disabled={sendingEmail}
-                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-2 ${
-                    sendingEmail
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
-                  }`}
-                  title="Send report to email"
-                >
-                  <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">{sendingEmail ? 'Sending…' : 'Email'}</span>
-                </button>
-                {emailStatus?.message && (
-                  <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {emailStatus.message}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={handleDownloadPdf}
-                  disabled={pdfPreviewLoading || downloadingPdf}
-                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-2 ${
-                    (pdfPreviewLoading || downloadingPdf)
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
-                  }`}
-                  title="Preview and download full report as PDF"
-                >
-                  <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">{pdfPreviewLoading ? 'Preparing…' : 'PDF'}</span>
-                </button>
-                {pdfStatus?.message && (
-                  <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {pdfStatus.message}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-          <p className="text-sm sm:text-base text-gray-500">
-              Base Lactate: <span className={`font-medium ${(!mockData.baseLactate || mockData.baseLactate === 0) ? 'text-red-500' : 'text-blue-500'}`}>
-                {mockData.baseLactate || 0} mmol/L
-              </span>
-            </p>
-            {(!mockData.baseLactate || mockData.baseLactate === 0) && (
-              <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md font-semibold">
-                ⚠️ Missing
-              </span>
-            )}
-          </div>
 
-          {/* Manual LT1/LT2 override toggle */}
-          {!demoMode && (
-            <div className="flex flex-col gap-2">
+          {/* Right: Base Lactate + Set LT1/LT2 + Email + PDF — all in one compact row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Base Lactate */}
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+                Base Lactate:{' '}
+                <span className={`font-medium ${(!mockData.baseLactate || mockData.baseLactate === 0) ? 'text-red-500' : 'text-blue-500'}`}>
+                  {mockData.baseLactate || 0} mmol/L
+                </span>
+              </p>
+              {(!mockData.baseLactate || mockData.baseLactate === 0) && (
+                <span className="px-1.5 py-0.5 text-xs bg-red-100 text-red-700 rounded font-semibold whitespace-nowrap">
+                  ⚠️ Missing
+                </span>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
+
+            {/* Set LT1/LT2 */}
+            {!demoMode && (
               <button
                 onClick={() => setShowLtOverridePanel(v => !v)}
-                className={`min-h-[36px] px-3 py-1.5 text-xs rounded-lg border transition-colors flex items-center gap-1.5 ${
+                className={`h-9 px-3 text-xs rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                   (ltOverrides.LTP1 || ltOverrides.LTP2)
                     ? 'bg-violet-50 border-violet-300 text-violet-800 font-semibold'
                     : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
                 title="Manually pin LT1/LT2 threshold values"
               >
-                <span>✏️</span>
-                <span>
-                  {(ltOverrides.LTP1 || ltOverrides.LTP2) ? 'LT1/LT2 overridden' : 'Set LT1/LT2'}
-                </span>
+                <PencilSquareIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{(ltOverrides.LTP1 || ltOverrides.LTP2) ? 'LT1/LT2 overridden' : 'Set LT1/LT2'}</span>
               </button>
-            </div>
-          )}
+            )}
+
+            {/* Email + PDF */}
+            {!demoMode && (
+              <div data-tour="tour-lactate-share" className="flex items-center gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={openEmailModal}
+                    disabled={sendingEmail}
+                    className={`h-9 px-3 text-xs rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5 ${
+                      sendingEmail
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
+                    }`}
+                    title="Send report to email"
+                  >
+                    <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
+                    <span className="hidden sm:inline">{sendingEmail ? 'Sending…' : 'Email'}</span>
+                  </button>
+                  {emailStatus?.message && (
+                    <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {emailStatus.message}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={handleDownloadPdf}
+                    disabled={pdfPreviewLoading || downloadingPdf}
+                    className={`h-9 px-3 text-xs rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5 ${
+                      (pdfPreviewLoading || downloadingPdf)
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
+                    }`}
+                    title="Preview and download full report as PDF"
+                  >
+                    <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
+                    <span className="hidden sm:inline">{pdfPreviewLoading ? 'Preparing…' : 'PDF'}</span>
+                  </button>
+                  {pdfStatus?.message && (
+                    <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {pdfStatus.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* LT1/LT2 manual override panel */}
-        {showLtOverridePanel && !demoMode && (
-          <div className="mx-0 mb-3 p-3 rounded-xl border border-violet-200 bg-violet-50 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-violet-900">
-                Manual threshold override
-              </p>
-              <p className="text-xs text-violet-600">
-                {isPaceSport ? 'Enter pace as mm:ss' : 'Enter watts (W)'}
-              </p>
-            </div>
+        {showLtOverridePanel && !demoMode && (() => {
+          // ── Curve-lookup helpers (closures over polyPointsRaw / hrPolyPoints) ──
+          const interpY = (x, pts) => {
+            if (!pts || pts.length < 2) return null;
+            const s = [...pts].sort((a, b) => a.x - b.x);
+            if (x <= s[0].x) return s[0].y;
+            if (x >= s[s.length - 1].x) return s[s.length - 1].y;
+            for (let i = 0; i < s.length - 1; i++) {
+              if (x >= s[i].x && x <= s[i + 1].x) {
+                const t = (x - s[i].x) / (s[i + 1].x - s[i].x);
+                return s[i].y + t * (s[i + 1].y - s[i].y);
+              }
+            }
+            return null;
+          };
 
-            {/* Auto-calculated values for reference */}
-            <div className="text-xs text-violet-700 flex gap-4">
-              <span>
-                Auto LT1:{' '}
-                <span className="font-semibold">
-                  {thresholds['LTP1'] != null
+          // Given user's typed input → internal units → look up lactate on the poly curve
+          const lookupLactate = (rawInput) => {
+            const x = parseLtInput(rawInput);
+            if (x == null) return null;
+            const la = interpY(x, polyPointsRaw);
+            return la != null ? Math.max(0, la) : null;
+          };
+
+          // Given a lactate value → look up HR on the HR poly curve (x=lactate, y=HR)
+          const lookupHR = (lactate) => {
+            if (lactate == null || !hrPolyPoints || hrPolyPoints.length < 2) return null;
+            return interpY(lactate, hrPolyPoints);
+          };
+
+          // Effective lactate for each key: prefer manual edit, else curve lookup
+          const effectiveLactate = (key) => {
+            const manual = ltEditLactates[key] !== '' ? Number(ltEditLactates[key]) : null;
+            if (manual != null && Number.isFinite(manual)) return manual;
+            return lookupLactate(ltEditValues[key]);
+          };
+
+          return (
+            <div className="mx-0 mb-3 p-3 rounded-xl border border-violet-200 bg-violet-50 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-violet-900">Manual threshold override</p>
+                <p className="text-xs text-violet-500">{isPaceSport ? 'Pace mm:ss · lactate mmol/L' : 'Watts · lactate mmol/L'}</p>
+              </div>
+
+              {/* Auto reference row — clickable to restore auto values */}
+              <div className="flex gap-3 text-xs">
+                {[
+                  { key: 'LTP1', label: 'Auto LT1', accent: 'green' },
+                  { key: 'LTP2', label: 'Auto LT2', accent: 'red' },
+                ].map(({ key, label, accent }) => {
+                  const autoX = rawThresholds?.[key] ?? thresholds[key];
+                  const autoLa = rawThresholds?.lactates?.[key];
+                  const autoHR = rawThresholds?.heartRates?.[key];
+                  const autoXStr = autoX != null
                     ? (isPaceSport && inputMode === 'pace'
-                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(thresholds['LTP1'], { isSwimming, unitSystem, testRunPerMileStorage }))
-                        : `${Math.round(thresholds['LTP1'])} W`)
-                    : '—'}
-                </span>
-              </span>
-              <span>
-                Auto LT2:{' '}
-                <span className="font-semibold">
-                  {thresholds['LTP2'] != null
-                    ? (isPaceSport && inputMode === 'pace'
-                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(thresholds['LTP2'], { isSwimming, unitSystem, testRunPerMileStorage }))
-                        : `${Math.round(thresholds['LTP2'])} W`)
-                    : '—'}
-                </span>
-              </span>
-            </div>
+                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(autoX, { isSwimming, unitSystem, testRunPerMileStorage }))
+                        : `${Math.round(autoX)} W`)
+                    : null;
+                  const isActive = ltOverrides[key] != null;
+                  const borderC = accent === 'green' ? 'border-green-200 hover:border-green-400' : 'border-red-200 hover:border-red-400';
+                  const textC = accent === 'green' ? 'text-green-700' : 'text-red-700';
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      title="Click to use this auto value"
+                      onClick={() => {
+                        if (autoX == null) return;
+                        const displayStr = autoXStr;
+                        setLtEditValues(prev => ({ ...prev, [key]: isPaceSport && inputMode === 'pace' ? displayStr : String(Math.round(autoX)) }));
+                        setLtEditLactates(prev => ({ ...prev, [key]: autoLa != null ? autoLa.toFixed(2) : '' }));
+                      }}
+                      className={`flex-1 text-left px-2 py-1.5 rounded-lg border bg-white transition-colors ${isActive ? 'opacity-60' : ''} ${borderC}`}
+                    >
+                      <div className={`font-semibold mb-0.5 ${textC}`}>{label}</div>
+                      <div className="text-violet-700">
+                        {autoXStr ?? '—'}
+                        {autoLa != null ? <span className="text-violet-500"> · {autoLa.toFixed(2)} mmol/L</span> : ''}
+                        {autoHR != null ? <span className="text-violet-400"> · {Math.round(autoHR)} bpm</span> : ''}
+                      </div>
+                      <div className="text-[9px] text-violet-400 mt-0.5">click to use</div>
+                    </button>
+                  );
+                })}
+              </div>
 
-            <div className="flex flex-wrap gap-3">
-              {[
-                { key: 'LTP1', label: 'LT1 (Aerobic)', color: 'text-green-700' },
-                { key: 'LTP2', label: 'LT2 (Anaerobic)', color: 'text-red-700' },
-              ].map(({ key, label, color }) => (
-                <div key={key} className="flex flex-col gap-1 min-w-[120px]">
-                  <label className={`text-xs font-semibold ${color}`}>{label}</label>
-                  <input
-                    type="text"
-                    value={ltEditValues[key]}
-                    onChange={e => setLtEditValues(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={isPaceSport ? 'e.g. 4:15' : 'e.g. 280'}
-                    className="w-full px-2 py-1.5 text-sm border border-violet-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
-                  />
-                  {ltOverrides[key] != null && (
-                    <span className="text-[10px] text-violet-600">
-                      Pinned: {isPaceSport && inputMode === 'pace'
-                        ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(ltOverrides[key], { isSwimming, unitSystem, testRunPerMileStorage }))
-                        : `${Math.round(ltOverrides[key])} W`}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+              {/* Input columns */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'LTP1', label: 'LT1 (Aerobic)', accent: 'green' },
+                  { key: 'LTP2', label: 'LT2 (Anaerobic)', accent: 'red' },
+                ].map(({ key, label, accent }) => {
+                  const la = effectiveLactate(key);
+                  const hr = lookupHR(la);
+                  const textAccent = accent === 'green' ? 'text-green-700' : 'text-red-700';
+                  const borderAccent = accent === 'green' ? 'border-green-300 focus:ring-green-400' : 'border-red-300 focus:ring-red-400';
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={handleSaveLtOverrides}
-                disabled={savingLtOverride}
-                className="px-3 py-1.5 text-xs font-semibold bg-violet-700 text-white rounded-lg hover:bg-violet-800 disabled:opacity-50 transition-colors"
-              >
-                {savingLtOverride ? 'Saving…' : 'Save & apply'}
-              </button>
-              {(ltOverrides.LTP1 != null || ltOverrides.LTP2 != null) && (
+                  return (
+                    <div key={key} className="flex flex-col gap-1.5">
+                      <span className={`text-xs font-semibold ${textAccent}`}>{label}</span>
+
+                      {/* Pace / Watts */}
+                      <div>
+                        <label className="text-[10px] text-violet-600 font-medium uppercase tracking-wide mb-0.5 block">
+                          {isPaceSport ? 'Pace' : 'Power (W)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={ltEditValues[key]}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setLtEditValues(prev => ({ ...prev, [key]: v }));
+                            // Auto-populate lactate from curve when user types a valid pace/watts
+                            const la = lookupLactate(v);
+                            if (la != null) {
+                              setLtEditLactates(prev => ({ ...prev, [key]: la.toFixed(2) }));
+                            } else if (!v.trim()) {
+                              setLtEditLactates(prev => ({ ...prev, [key]: '' }));
+                            }
+                          }}
+                          placeholder={isPaceSport ? 'e.g. 4:15' : 'e.g. 280'}
+                          className={`w-full px-2 py-1.5 text-sm border ${borderAccent} rounded-lg bg-white focus:outline-none focus:ring-2`}
+                        />
+                      </div>
+
+                      {/* Lactate — editable, auto-filled from curve */}
+                      <div>
+                        <label className="text-[10px] text-violet-600 font-medium uppercase tracking-wide mb-0.5 block">
+                          Lactate (mmol/L)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={ltEditLactates[key]}
+                          onChange={e => setLtEditLactates(prev => ({ ...prev, [key]: e.target.value }))}
+                          placeholder="auto"
+                          className="w-full px-2 py-1.5 text-sm border border-violet-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
+                      </div>
+
+                      {/* HR — read-only, derived from lactate via HR curve */}
+                      {hr != null && (
+                        <div className="flex items-center gap-1.5 text-xs text-violet-700">
+                          <svg className="w-3.5 h-3.5 text-red-400 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                          </svg>
+                          <span className="font-semibold">{Math.round(hr)} bpm</span>
+                          <span className="text-violet-400">from curve</span>
+                        </div>
+                      )}
+
+                      {/* Pinned badge */}
+                      {ltOverrides[key] != null && (
+                        <span className="text-[10px] text-violet-600 bg-violet-100 rounded px-1.5 py-0.5 self-start">
+                          Pinned: {isPaceSport && inputMode === 'pace'
+                            ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(ltOverrides[key], { isSwimming, unitSystem, testRunPerMileStorage }))
+                            : `${Math.round(ltOverrides[key])} W`}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={handleClearLtOverrides}
+                  onClick={handleSaveLtOverrides}
                   disabled={savingLtOverride}
-                  className="px-3 py-1.5 text-xs font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 disabled:opacity-50 transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold bg-violet-700 text-white rounded-lg hover:bg-violet-800 disabled:opacity-50 transition-colors"
                 >
-                  Reset to auto
+                  {savingLtOverride ? 'Saving…' : 'Save & apply'}
                 </button>
-              )}
-              {ltOverrideStatus && (
-                <span className={`text-xs font-medium ${ltOverrideStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {ltOverrideStatus.msg}
-                </span>
-              )}
+                {(ltOverrides.LTP1 != null || ltOverrides.LTP2 != null) && (
+                  <button
+                    onClick={handleClearLtOverrides}
+                    disabled={savingLtOverride}
+                    className="px-3 py-1.5 text-xs font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 disabled:opacity-50 transition-colors"
+                  >
+                    Reset to auto
+                  </button>
+                )}
+                {ltOverrideStatus && (
+                  <span className={`text-xs font-medium ${ltOverrideStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {ltOverrideStatus.msg}
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-violet-500 leading-relaxed">
+                Lactate is auto-filled from the curve — you can override it manually. HR is always derived from the curve.
+              </p>
             </div>
-            <p className="text-[10px] text-violet-500 leading-relaxed">
-              Pinned values override the automatic algorithm and update training zones. Leave blank to keep auto-calculated value.
-            </p>
-          </div>
-        )}
+          );
+        })()}
         
         <div className="flex flex-col lg:flex-row gap-4">
           <div

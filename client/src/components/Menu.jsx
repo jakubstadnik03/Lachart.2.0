@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
@@ -20,6 +21,7 @@ function getStatusDot(lastTestDate) {
 const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
   // FIRST: all hooks
   const { user: authUser, token: authToken, logout, loading } = useAuth();
+  const { selectedAthleteId: globalSelectedAthleteId, setSelectedAthleteId: setGlobalAthleteId } = useAthleteSelection();
   const [athletes, setAthletes] = useState([]);
   const [athleteStatuses, setAthleteStatuses] = useState({});
   const [loadingAthletes, setLoadingAthletes] = useState(true);
@@ -114,20 +116,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   // Only hide menu if loading AND no user (to prevent flickering when user is already loaded)
   if (loading && !user) return null;
 
-  // Pro trenéra: efektivně vybraný atlet (URL > global > sám trenér)
+  // Pro trenéra: efektivně vybraný atlet — single source of truth from context
   let effectiveAthleteId = null;
   if (["coach", "tester", "testing"].includes(user?.role)) {
-    effectiveAthleteId = currentAthleteIdFromUrl;
-    if (!effectiveAthleteId) {
-      try {
-        effectiveAthleteId = localStorage.getItem('global_selectedAthleteId') || null;
-      } catch {
-        // ignore
-      }
-    }
-    if (!effectiveAthleteId) {
-      effectiveAthleteId = user?._id || null;
-    }
+    // URL takes highest priority (so direct-link navigation is reflected immediately),
+    // then fall back to the globally selected ID from context.
+    effectiveAthleteId = (currentAthleteIdFromUrl && /^[a-f0-9]{24}$/.test(currentAthleteIdFromUrl))
+      ? currentAthleteIdFromUrl
+      : (globalSelectedAthleteId || user?._id || null);
   } else {
     effectiveAthleteId = currentAthleteIdFromUrl || null;
   }
@@ -145,12 +141,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         setIsMenuOpen(false);
       }
 
-      // Globální volba atleta – sdílená napříč stránkami
-      try {
-        localStorage.setItem('global_selectedAthleteId', athleteId);
-      } catch {
-        // ignore
-      }
+      // Globální volba atleta – sdílená napříč stránkami (context writes to localStorage + broadcasts)
+      setGlobalAthleteId(athleteId);
 
       // Pokud jsme na stránce athletes nebo profile, přesměrujeme na profil atleta
       if (currentPath === 'athletes' || currentPath === 'profile') {
@@ -173,36 +165,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         return;
       }
 
-      // Pro ostatní stránky přidáme ID atleta do URL
+      // Pro ostatní stránky přidáme ID atleta do URL — pages re-load via their selectedAthleteId useEffect
       navigate(`/${currentPath}/${athleteId}`, { replace: true });
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      if (currentPath === 'dashboard') {
-        const response = await api.get(`/user/athlete/${athleteId}/trainings`);
-        window.dispatchEvent(new CustomEvent('athleteChanged', { 
-          detail: { 
-            athleteId,
-            trainings: response.data 
-          }
-        }));
-      } else if (currentPath === 'training') {
-        const response = await api.get(`/user/athlete/${athleteId}/trainings`);
-        window.dispatchEvent(new CustomEvent('athleteChanged', { 
-          detail: { 
-            athleteId,
-            trainings: response.data 
-          }
-        }));
-      } else if (currentPath === 'testing') {
-        const response = await api.get(`/testing/athlete/${athleteId}`);
-        window.dispatchEvent(new CustomEvent('athleteChanged', { 
-          detail: { 
-            athleteId,
-            tests: response.data 
-          }
-        }));
-      }
     } catch (error) {
       console.error('Error changing athlete:', error);
     }
@@ -625,12 +589,23 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       
       <AnimatePresence>
         {isMenuOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-30 backdrop-blur-sm"
+            onTouchStart={(e) => {
+              // Record touch start position to distinguish tap from scroll
+              e.currentTarget._touchStartX = e.touches[0]?.clientX ?? 0;
+              e.currentTarget._touchStartY = e.touches[0]?.clientY ?? 0;
+            }}
+            onTouchEnd={(e) => {
+              // Only close if the touch didn't move much (it was a tap, not a scroll)
+              const dx = Math.abs((e.changedTouches[0]?.clientX ?? 0) - (e.currentTarget._touchStartX ?? 0));
+              const dy = Math.abs((e.changedTouches[0]?.clientY ?? 0) - (e.currentTarget._touchStartY ?? 0));
+              if (dx < 10 && dy < 10) setIsMenuOpen(false);
+            }}
             onClick={() => setIsMenuOpen(false)}
           />
         )}

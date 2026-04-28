@@ -40,13 +40,37 @@ function getLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
-function sportBadge(sport) {
-  if (!sport) return '';
+function SportIcon({ sport, className = "w-5 h-5" }) {
+  if (!sport) return null;
   const s = String(sport).toLowerCase();
-  if (s.includes('run') || s === 'running') return '🏃‍♂️';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') return '🚴‍♂️';
-  if (s.includes('swim') || s === 'swimming') return '🏊‍♂️';
-  return '🏋️';
+  if (s.includes('run') || s === 'running') {
+    return (
+      <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/run.svg" alt="Run" className="w-full h-full" />
+      </div>
+    );
+  }
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') {
+    return (
+      <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/bike.svg" alt="Bike" className="w-full h-full" />
+      </div>
+    );
+  }
+  if (s.includes('swim') || s === 'swimming') {
+    return (
+      <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/swim.svg" alt="Swim" className="w-full h-full" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${className} rounded-full bg-gray-100 p-0.5 flex items-center justify-center shrink-0`}>
+      <svg className="w-full h-full text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+      </svg>
+    </div>
+  );
 }
 
 /** Local calendar day key — must match grouping in `activitiesByDay`. */
@@ -247,7 +271,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-text">
-                  <span className="shrink-0 text-sm leading-none">{sportBadge(row.sport)}</span>
+                  <SportIcon sport={row.sport} className="w-4 h-4" />
                   <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-gray-800 sm:text-xs" title={row.sport}>
                     {row.sport}
                   </span>
@@ -1188,7 +1212,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               style={act.category ? { borderLeftColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
                             >
                               <div className="flex items-center gap-1 min-w-0">
-                                <span className="text-[10px] shrink-0">{sportBadge(act.sport)}</span>
+                                <SportIcon sport={act.sport} className="w-3.5 h-3.5" />
                                 <span className="truncate text-[9px] font-medium text-gray-700">{act.title || act.name || act.sport || 'Activity'}</span>
                               </div>
                             </button>
@@ -1258,7 +1282,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           >
                             <div className="mb-0.5 flex items-center justify-between gap-1">
                               <div className="flex min-w-0 flex-1 items-center gap-1">
-                                <span className="text-xs">{sportBadge(act.sport)}</span>
+                                <SportIcon sport={act.sport} className="w-4 h-4" />
                                 <span className="truncate text-[10px] font-medium">{act.title || act.name || 'Activity'}</span>
                               </div>
                               {act.category && (
@@ -1847,7 +1871,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                         >
                           <div className="flex items-center justify-between gap-1 mb-0.5">
                             <div className="flex items-center gap-1 flex-1 min-w-0">
-                              <span className="text-sm">{sportBadge(act.sport)}</span>
+                              <SportIcon sport={act.sport} className="w-5 h-5" />
                               <span className="truncate font-medium text-xs">{act.title || act.name || 'Activity'}</span>
                             </div>
                             {act.category && (
@@ -1895,7 +1919,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
             {/* Header */}
             <div className="shrink-0 px-4 pb-3 border-b border-gray-100">
               <div className="flex items-start gap-3">
-                <span className="text-2xl mt-0.5 shrink-0">{sportBadge(trainingDetail?.sport || selectedTraining?.sport)}</span>
+                <SportIcon sport={trainingDetail?.sport || selectedTraining?.sport} className="w-9 h-9 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   {/* Title */}
                   {isEditingTitle ? (

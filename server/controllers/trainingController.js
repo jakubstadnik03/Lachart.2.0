@@ -2,6 +2,7 @@ const TrainingAbl = require('../abl/trainingAbl');
 const mongoose    = require('mongoose');
 const User        = require('../models/UserModel');
 const Notification = require('../models/Notification');
+const { notifyAthlete, notifyCoachesOfAthlete } = require('../utils/notificationHelper');
 // Use the already-compiled model (loaded by trainingDao via ../models/training)
 // Avoids Mongoose OverwriteModelError from case-mismatch on macOS module cache
 const getTraining = () => mongoose.models.Training || require('../models/training');
@@ -55,29 +56,52 @@ const trainingController = {
             const newTraining = await TrainingAbl.createTraining(req.body);
             res.status(201).json(newTraining);
 
-            // Notify coach(es) that athlete logged a new training (fire-and-forget)
-            try {
-              const athlete = await User.findById(req.body.athleteId).select('name surname coachIds');
-              if (athlete && Array.isArray(athlete.coachIds) && athlete.coachIds.length > 0) {
-                const athleteName = `${athlete.name || ''} ${athlete.surname || ''}`.trim() || 'Athlete';
-                const sportLabel  = String(req.body.sport || 'training').charAt(0).toUpperCase() + String(req.body.sport || '').slice(1);
-                const title       = String(req.body.title || 'New training');
-                await Notification.insertMany(
-                  athlete.coachIds.map(coachId => ({
-                    recipientId:  coachId,
+            // Notifications (fire-and-forget)
+            ;(async () => {
+              try {
+                const actorId   = String(req.user?.userId || '');
+                const athleteId = String(req.body.athleteId || actorId);
+                const actor     = await User.findById(actorId).select('name surname role').lean();
+                const actorRole = String(actor?.role || '').toLowerCase();
+                const isCoach   = ['coach', 'admin', 'tester', 'testing'].includes(actorRole);
+                const actorName = actor ? `${actor.name || ''} ${actor.surname || ''}`.trim() || 'Your coach' : 'Your coach';
+                const sportLabel = String(req.body.sport || '').charAt(0).toUpperCase() + String(req.body.sport || '').slice(1) || 'Training';
+                const trainingTitle = String(req.body.title || 'New training');
+                const resourceId = String(newTraining._id);
+
+                if (isCoach && athleteId !== actorId) {
+                  // Coach created training on behalf of athlete — notify athlete
+                  await notifyAthlete(athleteId, {
                     type:         'training_logged',
-                    title:        `${athleteName} logged a new training`,
-                    body:         `${title} · ${sportLabel}`,
-                    resourceId:   String(newTraining._id),
+                    title:        'New training added',
+                    body:         `${actorName} logged "${trainingTitle}" for you · ${sportLabel}`,
+                    resourceId,
                     resourceType: 'training',
-                    fromName:     athleteName,
-                    read:         false,
-                  }))
-                );
+                    fromName:     actorName,
+                  });
+                } else {
+                  // Athlete created their own training — notify their coach(es)
+                  const athlete = await User.findById(athleteId).select('name surname coachIds').lean();
+                  if (athlete && Array.isArray(athlete.coachIds) && athlete.coachIds.length > 0) {
+                    const athleteName = `${athlete.name || ''} ${athlete.surname || ''}`.trim() || 'Athlete';
+                    await Notification.insertMany(
+                      athlete.coachIds.map(coachId => ({
+                        recipientId:  coachId,
+                        type:         'training_logged',
+                        title:        `${athleteName} logged a new training`,
+                        body:         `${trainingTitle} · ${sportLabel}`,
+                        resourceId,
+                        resourceType: 'training',
+                        fromName:     athleteName,
+                        read:         false,
+                      }))
+                    );
+                  }
+                }
+              } catch (notifErr) {
+                console.error('[TrainingNotif]', notifErr.message);
               }
-            } catch (notifErr) {
-              console.error('[TrainingNotif] failed to create coach notification:', notifErr.message);
-            }
+            })();
         } catch (error) {
             res.status(400).json({ 
                 error: 'Invalid data format',

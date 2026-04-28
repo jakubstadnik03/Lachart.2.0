@@ -63,8 +63,12 @@ const testSchema = new mongoose.Schema({
     },
     // Manual LT1/LT2 override — set by coach/athlete to pin thresholds (overrides auto-calculation)
     thresholdOverrides: {
-      LTP1: { type: Number, default: null },
-      LTP2: { type: Number, default: null },
+      LTP1:         { type: Number, default: null },
+      LTP2:         { type: Number, default: null },
+      LTP1_lactate: { type: Number, default: null },
+      LTP2_lactate: { type: Number, default: null },
+      LTP1_hr:      { type: Number, default: null },
+      LTP2_hr:      { type: Number, default: null },
     },
 }, {
     timestamps: true,

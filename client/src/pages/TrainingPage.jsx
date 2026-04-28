@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
-import { PlusIcon, ListBulletIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
+import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
@@ -11,6 +11,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCategories } from '../context/CategoryContext';
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
 
@@ -21,19 +22,10 @@ export default function TrainingPage() {
   const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   const coachLike = COACH_LIKE_ROLES.includes(String(user?.role || '').toLowerCase());
-  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
-    if (athleteId) return athleteId;
-    if (coachLike && user) {
-      try {
-        const globalId = localStorage.getItem('global_selectedAthleteId');
-        if (globalId) return globalId;
-      } catch {
-        // ignore
-      }
-      return user._id || null;
-    }
-    return null;
-  });
+  // ── Single source of truth for athlete selection ─────────────────────────────
+  const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
+  const selectedAthleteId = coachLike ? (_globalAthleteId || user?._id || null) : (user?._id || null);
+  const setSelectedAthleteId = _setGlobalAthleteId;
   const [trainings, setTrainings] = useState([]);
   // Initialize selectedSport with localStorage or default to 'all'
   const [selectedSport, setSelectedSport] = useState(() => {
@@ -52,7 +44,17 @@ export default function TrainingPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef(null);
   const { categories, getCategoryStyle } = useCategories();
+
+  // Close category dropdown on Escape
+  useEffect(() => {
+    if (!categoryDropdownOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setCategoryDropdownOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [categoryDropdownOpen]);
   const [fieldLactatePanelKey, setFieldLactatePanelKey] = useState(0);
   const [lactateActivityLoadingId, setLactateActivityLoadingId] = useState(null);
   const [stravaLactateFormError, setStravaLactateFormError] = useState(null);
@@ -308,38 +310,16 @@ export default function TrainingPage() {
     String(user?.role || '').toLowerCase()
   );
 
-  // Sync selectedAthleteId when URL param :athleteId changes (e.g. CoachAthleteBar navigates)
+  // Sync selectedAthleteId when URL param :athleteId changes (e.g. CoachAthleteBar navigates).
+  // Do NOT fall back to coach self when URL has no athlete — that wipes the localStorage selection.
   useEffect(() => {
     if (athleteId && athleteId !== selectedAthleteId) {
       setSelectedAthleteId(athleteId);
-    } else if (!athleteId && coachLike && user?._id && selectedAthleteId !== user._id) {
-      // No URL param → fall back to coach self
-      setSelectedAthleteId(user._id);
     }
-  }, [athleteId, user?._id, coachLike]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [athleteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Posluchač pro změnu atleta (z menu nebo CoachAthleteBar)
-  useEffect(() => {
-    const handleAthleteChange = (event) => {
-      const { athleteId: newAthleteId, trainings: newTrainings } = event.detail;
-      if (!newAthleteId || newAthleteId === selectedAthleteId) return;
-      setSelectedAthleteId(newAthleteId);
-      // If trainings were bundled with the event (legacy menu dispatch), use them directly
-      if (Array.isArray(newTrainings) && newTrainings.length > 0) {
-        setTrainings(newTrainings);
-      }
-      // Navigate so URL stays in sync (CoachAthleteBar already navigated, but legacy menu doesn't)
-      navigate(`/training/${newAthleteId}`, { replace: true });
-    };
-
-    // globalAthleteChanged = CoachAthleteBar  |  athleteChanged = legacy desktop Menu
-    window.addEventListener('globalAthleteChanged', handleAthleteChange);
-    window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => {
-      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
-      window.removeEventListener('athleteChanged', handleAthleteChange);
-    };
-  }, [navigate, selectedAthleteId]);
+  // Athlete change events are handled centrally by AthleteSelectionContext.
+  // When CoachAthleteBar navigates to /training/:athleteId, the URL-sync effect below picks it up.
 
   // Funkce pro přidání nového tréninku
   const handleAddTraining = async (formData) => {
@@ -455,42 +435,63 @@ export default function TrainingPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Category filter — scrollable pills */}
-          <div
-            className="flex items-center gap-1.5 min-w-0"
-            style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', flexShrink: 1, touchAction: 'pan-x' }}
-          >
-            {/* All pill */}
-            <button
-              onClick={() => setSelectedCategory('all')}
-              style={{ touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedCategory === 'all'
-                  ? 'bg-primary border-primary text-white'
-                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              All
-            </button>
-
-            {categories.map(cat => {
-              const isActive = selectedCategory === cat.id;
-              const style = getCategoryStyle(cat.id);
+        <div className="flex items-center gap-2">
+          {/* Category filter — compact dropdown */}
+          <div className="relative flex-shrink-0" ref={categoryDropdownRef}>
+            {(() => {
+              const activeCat = selectedCategory !== 'all' ? categories.find(c => c.id === selectedCategory) : null;
+              const activeStyle = activeCat ? getCategoryStyle(activeCat.id) : null;
               return (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(isActive ? 'all' : cat.id)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0"
-                  style={isActive
-                    ? { backgroundColor: cat.color, borderColor: cat.color, color: '#fff', touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }
-                    : { backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color, touchAction: 'pan-x manipulation', WebkitTapHighlightColor: 'transparent' }
+                  onClick={() => setCategoryDropdownOpen(v => !v)}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
+                  style={activeCat
+                    ? { backgroundColor: activeStyle.backgroundColor, borderColor: activeStyle.borderColor, color: activeStyle.color }
+                    : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#4b5563' }
                   }
                 >
-                  {cat.label}
+                  {activeCat ? activeCat.label : 'All categories'}
+                  <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
               );
-            })}
+            })()}
+
+            {categoryDropdownOpen && (
+              <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 z-10" onClick={() => setCategoryDropdownOpen(false)} />
+                {/* Dropdown panel */}
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[160px]">
+                  {/* All option */}
+                  <button
+                    onClick={() => { setSelectedCategory('all'); setCategoryDropdownOpen(false); }}
+                    className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    All categories
+                    {selectedCategory === 'all' && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                  </button>
+                  <div className="h-px bg-gray-100 mx-2 my-1" />
+                  {categories.map(cat => {
+                    const isActive = selectedCategory === cat.id;
+                    const s = getCategoryStyle(cat.id);
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => { setSelectedCategory(isActive ? 'all' : cat.id); setCategoryDropdownOpen(false); }}
+                        className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                        style={{ color: s.color }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                          {cat.label}
+                        </span>
+                        {isActive && <CheckIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cat.color }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Add Training button — never shrinks */}

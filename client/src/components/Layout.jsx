@@ -10,6 +10,7 @@ import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
 import { isCapacitorNative } from "../utils/isNativeApp";
+import { useAthleteSelection } from "../context/AthleteSelectionContext";
 import NativeLayout from "./native/NativeLayout";
 import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
 
@@ -95,34 +96,13 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     };
   }, [loadNativeAthletes]);
 
-  // effectiveAthleteId for native coach view — useState so it actually updates on selection
-  const [nativeEffectiveAthleteId, setNativeEffectiveAthleteId] = useState(() => {
-    const isCoach = isCoachRole(user);
-    if (!isCoach) return null;
-    try {
-      return localStorage.getItem('global_selectedAthleteId') || user?._id || null;
-    } catch {
-      return user?._id || null;
-    }
-  });
-
-  // Sync effectiveAthleteId when user loads (initial render may have no user yet)
-  useEffect(() => {
-    if (!isCapacitorNative()) return;
-    const isCoach = isCoachRole(user);
-    if (!isCoach) return;
-    try {
-      const saved = localStorage.getItem('global_selectedAthleteId');
-      setNativeEffectiveAthleteId(saved || user._id);
-    } catch {
-      setNativeEffectiveAthleteId(user?._id || null);
-    }
-  }, [user]);
+  // effectiveAthleteId for native coach view — use global context as source of truth
+  const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: setGlobalAthleteId } = useAthleteSelection();
+  const isCoachNative = isCoachRole(user);
+  const nativeEffectiveAthleteId = isCoachNative ? (_globalAthleteId || user?._id || null) : null;
 
   const handleNativeAthleteSelect = useCallback((athleteId) => {
-    try { localStorage.setItem('global_selectedAthleteId', athleteId); } catch {}
-    setNativeEffectiveAthleteId(athleteId);  // ← state update → UI reflects immediately
-    window.dispatchEvent(new CustomEvent('athleteSelected', { detail: { athleteId } }));
+    setGlobalAthleteId(athleteId);  // context writes localStorage + broadcasts event
     // Also update trainingCalendar_selectedAthleteId so FitAnalysisPage reacts
     try { localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId); } catch {}
 
@@ -136,7 +116,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     }
     // For calendar / athletes / other routes the event + localStorage is enough
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname, setGlobalAthleteId]);
   // ────────────────────────────────────────────────────────────────────────────
 
   // Memoize menu and header props to prevent unnecessary re-renders

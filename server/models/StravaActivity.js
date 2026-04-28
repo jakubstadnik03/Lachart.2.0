@@ -28,7 +28,7 @@ const stravaActivitySchema = new mongoose.Schema({
   description: { type: String, default: null },
   category: {
     type: String,
-    enum: ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', 'hills', null],
+    enum: ['endurance', 'lt1', 'tempo', 'lt2', 'zone2', 'vo2max', 'hills', null],
     default: null
   },
   sport: String,

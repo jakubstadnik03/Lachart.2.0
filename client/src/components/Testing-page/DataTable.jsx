@@ -3538,11 +3538,48 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // ── Manual override: if coach/athlete pinned LT1 or LT2, apply now ──────────
     const ovr = mockData?.thresholdOverrides;
     if (ovr) {
+      // Interpolate HR from measured data at a given pace (seconds) / watts value
+      const interpHRAtX = (x) => {
+        if (!sortedResults || sortedResults.length < 2) return null;
+        const pts = [...sortedResults].sort((a, b) => Number(a.power) - Number(b.power));
+        if (x <= pts[0].power) return pts[0].heartRate != null ? Number(pts[0].heartRate) : null;
+        if (x >= pts[pts.length - 1].power) {
+          const last = pts[pts.length - 1];
+          return last.heartRate != null ? Number(last.heartRate) : null;
+        }
+        for (let i = 0; i < pts.length - 1; i++) {
+          const lo = Number(pts[i].power), hi = Number(pts[i + 1].power);
+          if (x >= lo && x <= hi && lo !== hi) {
+            const ha = pts[i].heartRate != null ? Number(pts[i].heartRate) : null;
+            const hb = pts[i + 1].heartRate != null ? Number(pts[i + 1].heartRate) : null;
+            const t = (x - lo) / (hi - lo);
+            if (ha != null && hb != null) return Math.round(ha + (hb - ha) * t);
+            return ha ?? hb ?? null;
+          }
+        }
+        return null;
+      };
+
+      if (!thresholds.lactates) thresholds.lactates = {};
+      if (!thresholds.heartRates) thresholds.heartRates = {};
+
       if (ovr.LTP1 != null && Number.isFinite(Number(ovr.LTP1))) {
         thresholds['LTP1'] = Number(ovr.LTP1);
+        // Apply saved lactate override
+        if (ovr.LTP1_lactate != null && Number.isFinite(Number(ovr.LTP1_lactate))) {
+          thresholds.lactates['LTP1'] = Number(ovr.LTP1_lactate);
+        }
+        // Derive HR from measured data at the override position
+        const hr1 = interpHRAtX(Number(ovr.LTP1));
+        if (hr1 != null) thresholds.heartRates['LTP1'] = hr1;
       }
       if (ovr.LTP2 != null && Number.isFinite(Number(ovr.LTP2))) {
         thresholds['LTP2'] = Number(ovr.LTP2);
+        if (ovr.LTP2_lactate != null && Number.isFinite(Number(ovr.LTP2_lactate))) {
+          thresholds.lactates['LTP2'] = Number(ovr.LTP2_lactate);
+        }
+        const hr2 = interpHRAtX(Number(ovr.LTP2));
+        if (hr2 != null) thresholds.heartRates['LTP2'] = hr2;
       }
     }
 

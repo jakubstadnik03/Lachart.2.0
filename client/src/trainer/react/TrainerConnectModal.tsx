@@ -3,9 +3,10 @@
  * Simple UI for connecting to trainers and controlling ERG mode
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTrainer } from './useTrainer.js';
 import { TrainerClientOptions } from '../types.ts';
+import { hasWebBluetooth } from '../utils.js';
 
 interface TrainerConnectModalProps {
   isOpen: boolean;
@@ -13,6 +14,15 @@ interface TrainerConnectModalProps {
   options?: TrainerClientOptions;
   /** Pass the parent's useTrainer instance so the connection persists after the modal closes. */
   trainer?: ReturnType<typeof useTrainer>;
+}
+
+/** Detect the browser/OS situation for helpful messaging */
+function getPlatformSituation(): 'supported' | 'ios' | 'unsupported' {
+  if (hasWebBluetooth()) return 'supported';
+  const ua = navigator.userAgent || '';
+  const isIOS = /iP(hone|ad|od)/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS) return 'ios';
+  return 'unsupported';
 }
 
 export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainerProp }: TrainerConnectModalProps) {
@@ -34,6 +44,7 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
 
   const [targetWatts, setTargetWatts] = useState(100);
   const [isScanning, setIsScanning] = useState(false);
+  const [platformSituation] = useState(() => getPlatformSituation());
 
   if (!isOpen) return null;
 
@@ -69,6 +80,7 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
       case 'controlled':
       case 'erg_active':
         return 'bg-green-500';
+      case 'scanning':
       case 'connecting':
         return 'bg-yellow-500';
       case 'error':
@@ -78,64 +90,114 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
     }
   };
 
+  const getStatusLabel = () => {
+    switch (status) {
+      case 'scanning':    return 'Scanning…';
+      case 'connecting':  return 'Connecting…';
+      case 'ready':       return 'Connected';
+      case 'controlled':  return 'Control active';
+      case 'erg_active':  return 'ERG active';
+      case 'error':       return 'Error';
+      default:            return 'Disconnected';
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">Connect Trainer</h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Connect Trainer</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Smart trainer via Bluetooth</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
           >
             ✕
           </button>
         </div>
 
-        {/* Status */}
-        <div className="mb-4 flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full ${getStatusColor()}`} />
-          <span className="text-sm font-medium capitalize">{status}</span>
-          {error && (
-            <span className="text-sm text-red-600 ml-2">{error}</span>
+        <div className="p-5 space-y-4">
+
+          {/* ── Platform not supported ── */}
+          {platformSituation === 'ios' && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm space-y-2">
+              <div className="font-semibold text-amber-900">⚠️ Bluetooth not available on iOS browsers</div>
+              <p className="text-amber-800 text-xs leading-relaxed">
+                Apple blocks Web Bluetooth in Safari and Chrome for iOS. To connect your trainer:
+              </p>
+              <ul className="text-amber-800 text-xs space-y-1 list-disc list-inside">
+                <li>Use a <strong>desktop Chrome, Edge or Opera</strong> browser</li>
+                <li>Or use the <strong>LaChart native app</strong> (coming soon)</li>
+              </ul>
+            </div>
           )}
-        </div>
 
-        {/* Scan Section */}
-        <div className="mb-4">
-          <button
-            onClick={handleScan}
-            disabled={isScanning || status === 'connecting'}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            {isScanning ? 'Scanning...' : 'Scan for Trainers'}
-          </button>
-        </div>
+          {platformSituation === 'unsupported' && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm space-y-2">
+              <div className="font-semibold text-amber-900">⚠️ Bluetooth not supported in this browser</div>
+              <p className="text-amber-800 text-xs leading-relaxed">
+                Web Bluetooth requires <strong>Chrome, Edge or Opera</strong>. Firefox and Safari do not support it.
+              </p>
+            </div>
+          )}
 
-        {/* Device List */}
-        {devices.length > 0 && (
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold mb-2">Found Devices:</h3>
+          {/* ── Status row ── */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusColor()}`} />
+            <span className="text-sm font-medium text-gray-700">{getStatusLabel()}</span>
+            {error && (
+              <span className="text-xs text-red-600 ml-1 flex-1 truncate" title={error}>{error}</span>
+            )}
+          </div>
+
+          {/* ── Scan button ── */}
+          {platformSituation === 'supported' && !connectedDevice && (
+            <button
+              onClick={handleScan}
+              disabled={isScanning || status === 'connecting'}
+              className={`w-full py-3 rounded-xl text-sm font-bold transition-all ${
+                isScanning || status === 'connecting'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-primary text-white hover:bg-primary/90 shadow-sm'
+              }`}
+            >
+              {isScanning ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Scanning…
+                </span>
+              ) : 'Scan for Trainer'}
+            </button>
+          )}
+
+          {/* ── Device list ── */}
+          {devices.length > 0 && (
             <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Found devices</p>
               {devices.map(device => (
                 <div
                   key={device.id}
-                  className="flex items-center justify-between p-2 border rounded"
+                  className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50"
                 >
                   <div>
-                    <div className="font-medium">{device.name}</div>
-                    <div className="text-xs text-gray-500">{device.transport}</div>
+                    <div className="font-semibold text-sm text-gray-900">{device.name}</div>
+                    <div className="text-xs text-gray-400">{device.transport}</div>
                   </div>
                   {connectedDevice?.id === device.id ? (
                     <button
                       onClick={disconnect}
-                      className="px-3 py-1 bg-red-600 text-white rounded text-sm"
+                      className="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors"
                     >
                       Disconnect
                     </button>
                   ) : (
                     <button
                       onClick={() => handleConnect(device.id)}
-                      className="px-3 py-1 bg-green-600 text-white rounded text-sm"
+                      className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors"
                     >
                       Connect
                     </button>
@@ -143,74 +205,104 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Connected Device Info */}
-        {connectedDevice && (
-          <div className="mb-4 p-4 bg-gray-50 rounded">
-            <h3 className="text-sm font-semibold mb-2">Connected: {connectedDevice.name}</h3>
-            
-            {/* Capabilities */}
-            {capabilities && (
-              <div className="text-xs text-gray-600 mb-2">
-                <div>ERG: {capabilities.erg ? '✓' : '✗'}</div>
-                {capabilities.powerRange && (
-                  <div>Power Range: {capabilities.powerRange.min}-{capabilities.powerRange.max}W</div>
-                )}
+          {/* ── Connected device telemetry ── */}
+          {connectedDevice && (
+            <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-900">{connectedDevice.name}</div>
+                <button
+                  onClick={disconnect}
+                  className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors"
+                >
+                  Disconnect
+                </button>
               </div>
-            )}
 
-            {/* Telemetry */}
-            {telemetry && (
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {telemetry.power !== undefined && (
-                  <div>Power: {telemetry.power.toFixed(0)}W</div>
-                )}
-                {telemetry.cadence !== undefined && (
-                  <div>Cadence: {telemetry.cadence.toFixed(0)}rpm</div>
-                )}
-                {telemetry.speed !== undefined && (
-                  <div>Speed: {telemetry.speed.toFixed(1)}km/h</div>
-                )}
-                {telemetry.hr !== undefined && (
-                  <div>HR: {telemetry.hr}bpm</div>
-                )}
-              </div>
-            )}
-
-            {/* ERG Control */}
-            {capabilities?.erg && (
-              <div className="mt-4">
-                <label className="block text-sm font-medium mb-2">
-                  Target Power (W):
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min={capabilities.powerRange?.min || 0}
-                    max={capabilities.powerRange?.max || 2000}
-                    value={targetWatts}
-                    onChange={(e) => setTargetWatts(Number(e.target.value))}
-                    className="flex-1 px-3 py-2 border rounded"
-                  />
-                  <button
-                    onClick={handleSetErg}
-                    className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
-                  >
-                    Set ERG
-                  </button>
+              {/* Capabilities */}
+              {capabilities && (
+                <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span className={`px-2 py-0.5 rounded-full font-medium ${capabilities.erg ? 'bg-green-100 text-green-700' : 'bg-gray-100'}`}>
+                    ERG {capabilities.erg ? '✓' : '✗'}
+                  </span>
+                  {capabilities.powerRange && (
+                    <span className="px-2 py-0.5 rounded-full bg-gray-100">
+                      {capabilities.powerRange.min}–{capabilities.powerRange.max} W
+                    </span>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
 
-        {/* Close Button */}
-        <div className="mt-4 flex justify-end">
+              {/* Live telemetry */}
+              {telemetry && (
+                <div className="grid grid-cols-2 gap-2">
+                  {telemetry.power !== undefined && (
+                    <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                      <div className="text-lg font-bold text-gray-900">{telemetry.power.toFixed(0)}</div>
+                      <div className="text-xs text-gray-400">W</div>
+                    </div>
+                  )}
+                  {telemetry.cadence !== undefined && (
+                    <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                      <div className="text-lg font-bold text-gray-900">{telemetry.cadence.toFixed(0)}</div>
+                      <div className="text-xs text-gray-400">rpm</div>
+                    </div>
+                  )}
+                  {telemetry.speed !== undefined && (
+                    <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                      <div className="text-lg font-bold text-gray-900">{telemetry.speed.toFixed(1)}</div>
+                      <div className="text-xs text-gray-400">km/h</div>
+                    </div>
+                  )}
+                  {telemetry.hr !== undefined && (
+                    <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                      <div className="text-lg font-bold text-gray-900">{telemetry.hr}</div>
+                      <div className="text-xs text-gray-400">bpm</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ERG Control */}
+              {capabilities?.erg && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-gray-600">Target Power</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min={capabilities.powerRange?.min || 0}
+                      max={capabilities.powerRange?.max || 2000}
+                      value={targetWatts}
+                      onChange={(e) => setTargetWatts(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    <span className="flex items-center text-sm text-gray-500 font-medium">W</span>
+                    <button
+                      onClick={handleSetErg}
+                      className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+                    >
+                      Set ERG
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Help text for supported browsers */}
+          {platformSituation === 'supported' && !connectedDevice && !isScanning && (
+            <p className="text-xs text-gray-400 text-center">
+              A Bluetooth device picker will open. Select your trainer from the list.
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+            className="w-full py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
             Close
           </button>

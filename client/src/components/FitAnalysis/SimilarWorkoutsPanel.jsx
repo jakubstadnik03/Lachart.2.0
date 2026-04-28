@@ -5,14 +5,27 @@ import {
 } from 'recharts';
 import { ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 
-const SPORT_EMOJI = (sport = '') => {
+const SportIcon = ({ sport = '', className = "w-5 h-5" }) => {
   const s = sport.toLowerCase();
-  if (s.includes('run')) return '🏃';
-  if (s.includes('swim')) return '🏊';
-  if (s.includes('walk')) return '🚶';
-  if (s.includes('row')) return '🚣';
-  if (s.includes('ski')) return '⛷️';
-  return '🚴';
+  if (s.includes('run') || s.includes('walk')) {
+    return (
+      <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/run.svg" alt="Run" className="w-full h-full" />
+      </div>
+    );
+  }
+  if (s.includes('swim') || s.includes('row')) {
+    return (
+      <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center shrink-0`}>
+        <img src="/icon/swim.svg" alt="Swim" className="w-full h-full" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center shrink-0`}>
+      <img src="/icon/bike.svg" alt="Bike" className="w-full h-full" />
+    </div>
+  );
 };
 
 const fmtDate = (iso) => {
@@ -287,7 +300,7 @@ export default function SimilarWorkoutsPanel({ training, onSelectWorkout, isMobi
             onClick={() => onSelectWorkout?.(w._id)}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <span className="text-base shrink-0">{SPORT_EMOJI(w.sport)}</span>
+              <SportIcon sport={w.sport} className="w-5 h-5" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{w.title}</p>
                 <p className="text-xs text-gray-400">{fmtDate(w.timestamp)}</p>

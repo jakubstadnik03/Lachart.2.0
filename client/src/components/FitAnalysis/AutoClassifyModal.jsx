@@ -3,28 +3,73 @@ import { XMarkIcon, SparklesIcon, CheckIcon } from '@heroicons/react/24/outline'
 import api from '../../services/api';
 
 const CAT_COLORS = {
-  recovery:  '#6b7280',
-  zone2:     '#22c55e',
-  lt1:       '#0ea5e9',
-  lt2:       '#8b5cf6',
-  tempo:     '#f97316',
-  vo2max:    '#ef4444',
   endurance: '#3b82f6',
+  lt1:       '#0ea5e9',
+  tempo:     '#f97316',
+  lt2:       '#8b5cf6',
+  zone2:     '#22c55e',
+  vo2max:    '#ef4444',
+  hills:     '#f59e0b',
 };
+
+const CAT_LABELS = {
+  endurance: 'Endurance',
+  lt1:       'LT1',
+  tempo:     'Tempo',
+  lt2:       'LT2',
+  zone2:     'Zone 2',
+  vo2max:    'VO₂max',
+  hills:     'Hills',
+};
+
+// SVG icon components matching TrainingForm
+const CatSvg = ({ children, size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, display: 'block' }}>
+    {children}
+  </svg>
+);
+
 const CAT_ICONS = {
-  recovery: '💤', zone2: '🌿', lt1: '📊',
-  lt2: '🎯', tempo: '⚡', vo2max: '🔥', endurance: '🏃',
+  endurance: <CatSvg><path d="M2 12 C5.5 6 8.5 6 12 12 C15.5 18 18.5 18 22 12" /></CatSvg>,
+  lt1: <CatSvg>
+    <polyline points="3,19 9,16 14,10 20,5" />
+    <circle cx="14" cy="10" r="2.2" fill="currentColor" stroke="none" />
+  </CatSvg>,
+  tempo: <CatSvg>
+    <circle cx="12" cy="13" r="8" />
+    <polyline points="12,9 12,13 15,15" />
+    <line x1="9" y1="2" x2="15" y2="2" />
+    <line x1="12" y1="2" x2="12" y2="5" />
+  </CatSvg>,
+  lt2: <CatSvg>
+    <polyline points="3,19 7,18 10,15 13,9 19,4" />
+    <circle cx="13" cy="9" r="2.2" fill="currentColor" stroke="none" />
+  </CatSvg>,
+  zone2: <CatSvg strokeWidth="1.8">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <polyline points="8,12 10,10 11,14 13,10 14,12" strokeWidth="1.2" />
+  </CatSvg>,
+  vo2max: <CatSvg>
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5,12 12,5 19,12" />
+    <line x1="8" y1="19" x2="8" y2="16" strokeWidth="1.2" />
+    <line x1="12" y1="21" x2="12" y2="19" strokeWidth="1.2" />
+    <line x1="16" y1="19" x2="16" y2="16" strokeWidth="1.2" />
+  </CatSvg>,
+  hills: <CatSvg>
+    <polyline points="2,20 7,10 11,15 15,8 19,13 22,20" />
+    <line x1="2" y1="20" x2="22" y2="20" />
+  </CatSvg>,
 };
+
 const SPORT_ICONS = { cycling: '/icon/bike.svg', running: '/icon/run.svg', swimming: '/icon/swim.svg' };
 
 function CategoryPill({ category }) {
   if (!category) return <span className="text-gray-400 text-xs">—</span>;
   const color = CAT_COLORS[category] || '#6b7280';
-  const icon = CAT_ICONS[category] || '🏷️';
-  const label = {
-    recovery: 'Recovery', zone2: 'Zone 2', lt1: 'LT1',
-    lt2: 'LT2', tempo: 'Tempo', vo2max: 'VO₂max', endurance: 'Endurance',
-  }[category] || category;
+  const icon = CAT_ICONS[category] || null;
+  const label = CAT_LABELS[category] || category;
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border"
@@ -226,13 +271,13 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                 </button>
                 {Object.entries(catCounts).sort((a,b) => b[1]-a[1]).map(([cat, count]) => {
                   const color = CAT_COLORS[cat] || '#6b7280';
-                  const icon = CAT_ICONS[cat] || '🏷️';
-                  const label = { recovery: 'Recovery', zone2: 'Zone 2', lt1: 'LT1', lt2: 'LT2', vo2max: 'VO₂max', endurance: 'Endurance' }[cat] || cat;
+                  const icon = CAT_ICONS[cat] || null;
+                  const label = CAT_LABELS[cat] || cat;
                   return (
                     <button
                       key={cat}
                       onClick={() => setFilterCat(filterCat === cat ? 'all' : cat)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
                       style={filterCat === cat
                         ? { backgroundColor: color, color: '#fff', borderColor: color }
                         : { backgroundColor: `${color}18`, color, borderColor: `${color}44` }

@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
 import { TrainingProvider } from './context/TrainingContext';
 import { CategoryProvider } from './context/CategoryContext';
+import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -371,12 +372,14 @@ function App() {
     <CategoryProvider>
       <NotificationProvider>
         <AuthProvider>
+          <AthleteSelectionProvider>
           <TrainingProvider>
             {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
             <AppRoutes />
             {isProd && <DeferredVercelTrackers />}
             {isProd && <DeferredBuyMeACoffeeWidget />}
           </TrainingProvider>
+          </AthleteSelectionProvider>
         </AuthProvider>
       </NotificationProvider>
     </CategoryProvider>

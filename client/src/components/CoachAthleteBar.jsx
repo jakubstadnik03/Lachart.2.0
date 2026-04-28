@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { UserPlusIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { getAthleteAvatar } from '../utils/avatarUtils';
 
@@ -46,36 +47,18 @@ export default function CoachAthleteBar() {
 
   const isCoach = isCoachRole(user);
 
-  // Resolve initial athleteId: URL segment 2 takes priority, then localStorage, then self
-  const resolveAthleteId = useCallback(() => {
+  // ── Single source of truth — read from global context ────────────────────────
+  const { selectedAthleteId, setSelectedAthleteId } = useAthleteSelection();
+
+  // When the URL has an explicit athlete ID (e.g. direct navigation / deep link),
+  // push it into the context so all pages stay in sync.
+  useEffect(() => {
     const seg = location.pathname.split('/')[2];
-    if (seg && /^[a-f0-9]{24}$/.test(seg)) return seg;
-    try { return localStorage.getItem('global_selectedAthleteId') || user?._id || null; } catch { return user?._id || null; }
-  }, [location.pathname, user?._id]);
-
-  const [selectedAthleteId, setSelectedAthleteId] = useState(resolveAthleteId);
-
-  // Keep ring in sync when URL changes (e.g. navigating to /dashboard/:athleteId)
-  useEffect(() => {
-    setSelectedAthleteId(resolveAthleteId());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (seg && /^[a-f0-9]{24}$/.test(seg) && seg !== selectedAthleteId) {
+      setSelectedAthleteId(seg);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
-
-  // Keep ring in sync when athlete is switched via any event source
-  useEffect(() => {
-    const handleAthleteEvent = (e) => {
-      const id = e.detail?.athleteId;
-      if (id) setSelectedAthleteId(id);
-    };
-    window.addEventListener('athleteSelected', handleAthleteEvent);
-    window.addEventListener('athleteChanged', handleAthleteEvent);
-    window.addEventListener('globalAthleteChanged', handleAthleteEvent);
-    return () => {
-      window.removeEventListener('athleteSelected', handleAthleteEvent);
-      window.removeEventListener('athleteChanged', handleAthleteEvent);
-      window.removeEventListener('globalAthleteChanged', handleAthleteEvent);
-    };
-  }, []);
 
   const [athletes, setAthletes] = useState([]);
   const [statuses, setStatuses] = useState({});
@@ -133,13 +116,12 @@ export default function CoachAthleteBar() {
   const currentSection = location.pathname.split('/')[1];
 
   const handleSelectAthlete = (athleteId) => {
-    try { localStorage.setItem('global_selectedAthleteId', athleteId); } catch {}
-    // Broadcast so pages can react without a full reload (pages not using URL param)
-    window.dispatchEvent(new CustomEvent('globalAthleteChanged', { detail: { athleteId } }));
+    // setSelectedAthleteId writes to localStorage + broadcasts the event automatically.
+    setSelectedAthleteId(athleteId);
     if (ATHLETE_URL_SECTIONS.includes(currentSection)) {
       navigate(`/${currentSection}/${athleteId}`, { replace: true });
     }
-    // For pages like training-calendar, lactate-statistics — they read from localStorage/event
+    // For pages like training-calendar — they listen to globalAthleteChanged (broadcast by context).
   };
 
   const activeAthletes = athletes.filter(a => !(a.invitationPending || a.coachLinkStatus === 'pending'));

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import api, { invalidateCache, addTest } from '../services/api';
@@ -39,21 +40,12 @@ const TestingPage = () => {
   const isCoachLikeRole = role === 'coach' || isTestingRole || isTesterRole ||
     role === 'admin' || (user?.admin === true && role !== 'athlete');
   const { addNotification } = useNotification();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
-    if (athleteId) return athleteId;
-    if (isCoachLikeRole) {
-      try {
-        const globalId = localStorage.getItem('global_selectedAthleteId');
-        if (globalId) return globalId;
-      } catch {
-        // ignore storage errors
-      }
-      // Only "coach" defaults to self if nothing selected; tester/testing start with no athlete.
-      if (user?.role === 'coach') return user?._id || null;
-      return null;
-    }
-    return null;
-  });
+  // ── Single source of truth for athlete selection ─────────────────────────────
+  const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
+  const selectedAthleteId = isCoachLikeRole
+    ? (_globalAthleteId || (user?.role === 'coach' ? user?._id : null) || null)
+    : null;
+  const setSelectedAthleteId = _setGlobalAthleteId;
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
@@ -240,11 +232,10 @@ const TestingPage = () => {
 
   // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
-    if (athleteId) {
+    // Only update when URL provides a new explicit athlete — never reset to self
+    // when URL has no athlete (that would wipe the localStorage selection).
+    if (athleteId && athleteId !== selectedAthleteId) {
       setSelectedAthleteId(athleteId);
-    } else if (user?.role === 'coach' && !selectedAthleteId) {
-      // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
-      setSelectedAthleteId(user._id);
     }
     
     // Validate selected athlete - if profile fails to load, reset to safe state
@@ -369,13 +360,7 @@ const TestingPage = () => {
         // Set selected athlete to test's athlete (if different)
         if (testAthleteId !== String(selectedAthleteId)) {
           console.log('[TestingPage] Setting selectedAthleteId to test athlete:', testAthleteId);
-          setSelectedAthleteId(testAthleteId);
-          // Save to localStorage
-          try {
-            localStorage.setItem('global_selectedAthleteId', testAthleteId);
-          } catch (e) {
-            console.warn('Failed to save selectedAthleteId to localStorage:', e);
-          }
+          setSelectedAthleteId(testAthleteId); // context also writes to localStorage
         }
 
         // Load all tests for this athlete (will trigger loadTests)
@@ -1117,23 +1102,8 @@ const TestingPage = () => {
     }
   }, [athleteProfile, latestBySport, bikeFtpEstimate, runRecentPerf]);
 
-  // Posluchač pro změnu atleta z menu nebo CoachAthleteBar
-  useEffect(() => {
-    const handleAthleteChange = (event) => {
-      const { athleteId: newAthleteId } = event.detail;
-      if (!newAthleteId || newAthleteId === selectedAthleteId) return;
-      setSelectedAthleteId(newAthleteId);
-      navigate(`/testing/${newAthleteId}`, { replace: true });
-    };
-
-    // globalAthleteChanged = CoachAthleteBar  |  athleteChanged = legacy desktop Menu
-    window.addEventListener('globalAthleteChanged', handleAthleteChange);
-    window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => {
-      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
-      window.removeEventListener('athleteChanged', handleAthleteChange);
-    };
-  }, [navigate, selectedAthleteId]);
+  // Athlete change events are handled centrally by AthleteSelectionContext.
+  // When CoachAthleteBar navigates to /testing/:athleteId, the URL-sync effect below picks it up.
 
   const handleAddTest = async (newTest) => {
     try {
@@ -1214,14 +1184,7 @@ const TestingPage = () => {
   };
 
   const handleAthleteCreated = (athleteId, athleteData) => {
-    // Persist newly created athlete as global selection (Dashboard / Training / Testing)
-    try {
-      localStorage.setItem('global_selectedAthleteId', athleteId);
-    } catch {
-      // ignore storage errors
-    }
-
-    // Select the newly created athlete in Testing page
+    // Select the newly created athlete globally (context writes to localStorage + broadcasts)
     setSelectedAthleteId(athleteId);
     navigate(`/testing/${athleteId}`, { replace: true });
     

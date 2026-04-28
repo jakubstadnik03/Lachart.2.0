@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
@@ -64,21 +65,11 @@ export default function DashboardPage() {
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
-  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
-    if (athleteId) return athleteId;
-    if (isCoachLikeRole) {
-      // Prefer globally vybraného atleta (ze selectu/Menu), jinak sebe
-      try {
-        const globalId = localStorage.getItem('global_selectedAthleteId');
-        if (globalId) return globalId;
-      } catch {
-        // ignore
-      }
-      // Coach can fallback to self, tester/testing must explicitly pick an athlete
-      return user?.role === 'coach' ? user._id : null;
-    }
-    return null;
-  });
+  // ── Single source of truth for athlete selection ─────────────────────────────
+  const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
+  // For non-coach roles use own ID; for coach/tester roles use global selection.
+  const selectedAthleteId = isCoachLikeRole ? (_globalAthleteId || user?._id || null) : (user?._id || null);
+  const setSelectedAthleteId = _setGlobalAthleteId;
   /** Atletes never had `selectedAthleteId` set (it stayed null); charts used `athleteId` and bailed out. Coaches use selection. */
   const dashboardDataAthleteId = selectedAthleteId || user?._id || null;
   const [trainings, setTrainings] = useState([]);
@@ -644,20 +635,15 @@ export default function DashboardPage() {
   // Removed: cascade useEffect that re-triggered loadCalendarData on regularTrainings change.
   // The main loader now passes regularTrainings directly to loadCalendarData.
 
-  // Sync selectedAthleteId with URL parameter when it changes
+  // Sync selectedAthleteId when URL athlete param changes.
+  // NOTE: Do NOT reset to coach-self when URL has no athlete — that wipes the selection
+  // that was stored in localStorage when the coach navigated via menu.
   useEffect(() => {
-    if (athleteId) {
-      // If URL has athleteId, use it
-      if (athleteId !== selectedAthleteId) {
-        setSelectedAthleteId(athleteId);
-      }
-    } else if (user?.role === 'coach') {
-      // If no athleteId in URL and user is coach, default to coach's own ID
-      if (!selectedAthleteId || selectedAthleteId !== user._id) {
-        setSelectedAthleteId(user._id);
-      }
+    if (athleteId && athleteId !== selectedAthleteId) {
+      setSelectedAthleteId(athleteId);
     }
-  }, [athleteId, user, selectedAthleteId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteId]);
 
   // Load calendar data from cache on mount
   useEffect(() => {
@@ -681,26 +667,7 @@ export default function DashboardPage() {
     }
   }, [user?._id, selectedAthleteId, user?.role, isCoachLikeRole]);
 
-  // Listen for athlete change from any source (Menu desktop, CoachAthleteBar, native bar)
-  useEffect(() => {
-    const handleAthleteChange = (event) => {
-      const { athleteId: newAthleteId } = event.detail;
-      if (newAthleteId && newAthleteId !== selectedAthleteId) {
-        setSelectedAthleteId(newAthleteId);
-        // Menu already navigates, so we don't need to navigate here
-      }
-    };
-
-    // 3 event names used across different dispatchers — listen to all of them
-    window.addEventListener('athleteChanged', handleAthleteChange);       // desktop Menu
-    window.addEventListener('athleteSelected', handleAthleteChange);      // native NativeLayout
-    window.addEventListener('globalAthleteChanged', handleAthleteChange); // desktop CoachAthleteBar
-    return () => {
-      window.removeEventListener('athleteChanged', handleAthleteChange);
-      window.removeEventListener('athleteSelected', handleAthleteChange);
-      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
-    };
-  }, [selectedAthleteId]);
+  // Athlete change events are now handled centrally by AthleteSelectionContext.
 
   // Track last loaded athleteId to prevent duplicate loads
   const lastLoadedAthleteIdRef = React.useRef(null);
@@ -727,12 +694,7 @@ export default function DashboardPage() {
     if (isPendingAthleteSelection) {
       const fallbackAthleteId = String(user?._id || '');
       if (fallbackAthleteId && String(selectedAthleteId || '') !== fallbackAthleteId) {
-        setSelectedAthleteId(fallbackAthleteId);
-        try {
-          localStorage.setItem('global_selectedAthleteId', fallbackAthleteId);
-        } catch {
-          // ignore storage errors
-        }
+        setSelectedAthleteId(fallbackAthleteId); // context also writes to localStorage
         if (athleteId) {
           navigate('/dashboard', { replace: true });
         }
@@ -741,11 +703,7 @@ export default function DashboardPage() {
       return;
     }
 
-    // Coach fallback: if nothing is selected, use coach self profile.
-    if (user?.role === 'coach' && !selectedAthleteId) {
-      setSelectedAthleteId(user._id);
-      return;
-    }
+    // selectedAthleteId already defaults to user._id via the context-derived value above.
 
     // Skip if we already loaded data for this athlete recently (5 minutes minimum between loads)
     // BUT always load at least once
@@ -800,7 +758,9 @@ export default function DashboardPage() {
     };
 
     loadData();
-  }, [athleteId, user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
+  // selectedSport intentionally excluded — sport is a client-side filter, not a data-load trigger.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
@@ -1074,6 +1034,7 @@ export default function DashboardPage() {
           className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
           <FormFitnessChart
+            key={`ffc-${dashboardDataAthleteId}`}
             athleteId={dashboardDataAthleteId}
           />
         </motion.div>
@@ -1085,6 +1046,7 @@ export default function DashboardPage() {
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
           <WeeklyTrainingLoad
+            key={`wtl-${dashboardDataAthleteId}`}
             athleteId={dashboardDataAthleteId}
           />
         </motion.div>
@@ -1204,7 +1166,7 @@ export default function DashboardPage() {
         >
           <div className="space-y-6 overflow-visible">
             {/* Lactate Statistics Component */}
-            <LactateStatistics selectedAthleteId={selectedAthleteId} />
+            <LactateStatistics key={`ls-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
             
             {filteredTests && filteredTests.length > 0 ? (
               <>

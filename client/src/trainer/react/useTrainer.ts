@@ -28,7 +28,7 @@ export interface UseTrainerReturn {
   start: () => Promise<void>;
 }
 
-export function useTrainer(options: TrainerClientOptions = {}): UseTrainerReturn {
+export function useTrainer(options: TrainerClientOptions | null = {}): UseTrainerReturn {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<DeviceInfo | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
@@ -41,7 +41,7 @@ export function useTrainer(options: TrainerClientOptions = {}): UseTrainerReturn
 
   // Initialize adapter
   useEffect(() => {
-    if (!adapterRef.current) {
+    if (!adapterRef.current && options !== null) {
       adapterRef.current = createTrainerClient(options);
     }
 
@@ -93,7 +93,13 @@ export function useTrainer(options: TrainerClientOptions = {}): UseTrainerReturn
       setStatus('disconnected');
       logger.info('Scan complete:', foundDevices.length, 'devices found');
     } catch (err: any) {
-      setError(err.message || 'Scan failed');
+      // Provide friendlier messages for common failure modes
+      const raw = err?.message || '';
+      let msg = raw || 'Scan failed';
+      if (!raw || raw.toLowerCase().includes('websocket') || raw.toLowerCase().includes('failed to construct') || err instanceof Event) {
+        msg = 'Bluetooth is not available in this browser. Use Chrome on desktop or Android to connect a trainer.';
+      }
+      setError(msg);
       setStatus('error');
       logger.error('Scan error:', err);
     }
