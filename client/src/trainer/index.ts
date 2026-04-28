@@ -9,6 +9,7 @@ import { logger } from './logger.js';
 import { FTMSAdapter } from './ftms/ftmsAdapter.ts';
 import { CompanionAdapter } from './companion/companionAdapter.ts';
 import { ANTAdapter } from './ant/antAdapter.ts';
+import { CapacitorBleAdapter } from './capacitor/capacitorBleAdapter.js';
 
 // Re-export types
 export type { TrainerAdapter, DeviceInfo, TrainerCapabilities, Telemetry, TrainerStatus, TrainerClientOptions } from './types.ts';
@@ -19,13 +20,30 @@ export { ANTAdapter } from './ant/antAdapter.ts';
 export { useTrainer } from './react/useTrainer.js';
 export { TrainerConnectModal } from './react/TrainerConnectModal.jsx';
 
+/** Detect Capacitor native platform (iOS / Android) */
+function isCapacitorNative(): boolean {
+  try {
+    // Capacitor sets window.Capacitor.isNativePlatform() at runtime
+    const w = window as any;
+    return !!(w?.Capacitor?.isNativePlatform?.());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Create a trainer client adapter
  */
 export function createTrainerClient(options: TrainerClientOptions = {}): TrainerAdapter {
   const { preferred = 'auto', companionUrl, antBridgeUrl } = options;
 
-  logger.info('Creating trainer client', { preferred, hasWebBluetooth: hasWebBluetooth() });
+  logger.info('Creating trainer client', { preferred, hasWebBluetooth: hasWebBluetooth(), isNative: isCapacitorNative() });
+
+  // On Capacitor native (iOS/Android), use the native BLE adapter
+  if ((preferred === 'auto' || preferred === 'capacitor') && isCapacitorNative()) {
+    logger.info('Using Capacitor BLE adapter (native platform)');
+    return new CapacitorBleAdapter();
+  }
 
   if (preferred === 'ftms' || (preferred === 'auto' && hasWebBluetooth())) {
     logger.info('Using FTMS adapter (Web Bluetooth)');
@@ -51,8 +69,8 @@ export function createTrainerClient(options: TrainerClientOptions = {}): Trainer
  * Get platform-specific message for trainer connectivity
  */
 export function getPlatformMessage(): string | null {
-  if (hasWebBluetooth()) {
-    return null; // Web Bluetooth available
+  if (isCapacitorNative() || hasWebBluetooth()) {
+    return null; // Native BLE or Web Bluetooth available
   }
-  return 'iOS requires LaChart Link companion app for trainer connectivity.';
+  return 'Connect via Chrome on desktop, or use the mobile app for Bluetooth trainer support.';
 }

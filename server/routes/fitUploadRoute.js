@@ -72,13 +72,8 @@ const upload = multer({
 router.post('/upload', verifyToken, upload.single('file'), fitUploadController.uploadFitFile);
 
 // Cache middleware for slow endpoints (5 minutes cache)
-const cache = require('node-cache');
-// maxKeys + useClones:false limit RAM on Render; full monthly-analysis payloads are huge per user.
-const routeCache = new cache({
-  stdTTL: 300,
-  maxKeys: 400,
-  useClones: false
-});
+// Shared module so controllers can also invalidate after mutations.
+const { fitRouteCache: routeCache } = require('../utils/fitRouteCache');
 
 const routeCacheMiddleware = (req, res, next) => {
   const path = req.path || req.url || '';

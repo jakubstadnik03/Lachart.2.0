@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { notifyCoachesOfAthlete } = require('../utils/notificationHelper');
 const { generateFitFile } = require('../utils/fitGenerator');
+const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
 
 const lactateSessionController = {
   // Create new lactate session
@@ -201,6 +202,42 @@ const lactateSessionController = {
       }
       
       await session.save();
+
+      // ── Create / upsert a FitTraining document so the session appears in the calendar ──
+      try {
+        const FitTraining = require('../models/fitTraining');
+        const fitData = session.fitFile?.fitData;
+        const sessionStart = session.startedAt || session.startTime || new Date();
+
+        // Build a minimal FitTraining that mirrors what uploadFitFile produces
+        const trainingDoc = {
+          athleteId:        String(session.athleteId),
+          sport:            session.sport === 'bike' ? 'cycling' : session.sport === 'run' ? 'running' : 'generic',
+          timestamp:        sessionStart,
+          totalElapsedTime: session.duration ? Math.round(session.duration / 1000) : (fitData?.totalElapsedTime || 0),
+          titleManual:      session.title || `Lactate Test – ${new Date(sessionStart).toLocaleDateString()}`,
+          description:      `Lactate test session`,
+          analysisComplete: true,
+          records:          fitData?.records  || [],
+          laps:             fitData?.laps     || [],
+          avgPower:         fitData?.laps?.length
+            ? Math.round(fitData.laps.reduce((s, l) => s + (l.avgPower || 0), 0) / fitData.laps.length)
+            : null,
+        };
+
+        // Upsert: avoid duplicate FitTraining rows if completeSession is called twice
+        await FitTraining.findOneAndUpdate(
+          { athleteId: trainingDoc.athleteId, timestamp: trainingDoc.timestamp, titleManual: trainingDoc.titleManual },
+          { $setOnInsert: trainingDoc },
+          { upsert: true, new: true }
+        );
+        console.log('[completeSession] FitTraining created/found for calendar');
+        // Bust the server-side route cache so GET /api/fit/trainings returns the new entry
+        invalidateFitCacheForUser(session.athleteId);
+      } catch (ftErr) {
+        // Non-fatal — don't fail the whole completion if FitTraining creation fails
+        console.error('[completeSession] FitTraining creation error:', ftErr.message);
+      }
 
       const { notifyUserLactateTestCompleted } = require('../utils/expoPushNotifications');
       notifyUserLactateTestCompleted(session.athleteId).catch((e) =>

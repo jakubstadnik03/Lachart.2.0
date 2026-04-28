@@ -2,7 +2,7 @@
  * Universal Trainer Connectivity Types
  */
 
-export type TransportType = 'ftms-ble' | 'companion' | 'ant-fec';
+export type TransportType = 'ftms-ble' | 'companion' | 'ant-fec' | 'capacitor-ble';
 
 export interface DeviceInfo {
   id: string;
@@ -73,7 +73,7 @@ export interface ScanOptions {
 }
 
 export interface TrainerClientOptions {
-  preferred?: 'auto' | 'ftms' | 'companion' | 'ant';
+  preferred?: 'auto' | 'ftms' | 'companion' | 'ant' | 'capacitor';
   companionUrl?: string;
   antBridgeUrl?: string;
 }

@@ -202,6 +202,8 @@ const LactateTestingPage = () => {
   const startMainTestRef    = useRef(null);
   const startCooldownRef    = useRef(null);
   const advanceWarmupStepRef = useRef(null);
+  // Always-current trainer ref so interval callbacks never use a stale closure
+  const trainerRef          = useRef(trainer);
 
   // Keep refs in sync
   useEffect(() => { liveDataRef.current       = liveData;      }, [liveData]);
@@ -215,6 +217,7 @@ const LactateTestingPage = () => {
   useEffect(() => { cooldownRef.current       = cooldown;      }, [cooldown]);
   useEffect(() => { wattOffsetRef.current     = wattOffset;    }, [wattOffset]);
   useEffect(() => { warmupStepRef.current     = warmupStep;    }, [warmupStep]);
+  useEffect(() => { trainerRef.current        = trainer;       }, [trainer]);
 
   // ── Warmup step power helper ──────────────────────────────
   const getWarmupStepPower = (stepIdx, wu) => {
@@ -347,15 +350,16 @@ const LactateTestingPage = () => {
           intervalTimerRef.current = null;
           setIntervalTimer(0);
           setPhase('recovery');
-          if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-            setTimeout(() => Promise.resolve(trainer.setErgWatts(0)).catch(console.error), 100);
+          const t = trainerRef.current;
+          if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+            setTimeout(() => Promise.resolve(t.setErgWatts(0)).catch(console.error), 100);
           }
           return 0;
         }
         return prev + 1;
       });
     }, 1000);
-  }, [trainer]);
+  }, []);
 
   // ── Start cooldown phase ───────────────────────────────────
   const startCooldown = useCallback(() => {
@@ -363,8 +367,9 @@ const LactateTestingPage = () => {
     setCooldownTimer(0);
     setPhase('cooldown');
     const cd = cooldownRef.current;
-    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-      setTimeout(() => Promise.resolve(trainer.setErgWatts(cd.power)).catch(console.error), 100);
+    const t0 = trainerRef.current;
+    if (t0?.setErgWatts && (t0.status === 'controlled' || t0.status === 'erg_active')) {
+      setTimeout(() => Promise.resolve(t0.setErgWatts(cd.power)).catch(console.error), 100);
     }
     addNotification(`Cooldown: ${cd.power}W for ${fmtTime(cd.duration)}`, 'info');
 
@@ -378,7 +383,8 @@ const LactateTestingPage = () => {
             testStateRef.current = 'completed';
             setTestState('completed');
             setPhase('work');
-            if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+            const t = trainerRef.current;
+            if (t?.setErgWatts) Promise.resolve(t.setErgWatts(0)).catch(console.error);
             addNotification('Cooldown complete. Test finished ✓', 'success');
           }, 100);
           return dur;
@@ -386,7 +392,7 @@ const LactateTestingPage = () => {
         return prev + 1;
       });
     }, 1000);
-  }, [trainer, addNotification]);
+  }, [addNotification]);
   useEffect(() => { startCooldownRef.current = startCooldown; }, [startCooldown]);
 
   // ── Advance warmup step (step-type warmup) ─────────────────
@@ -404,12 +410,13 @@ const LactateTestingPage = () => {
     setWarmupStep(nextStep);
     warmupStepRef.current = nextStep;
     const power = getWarmupStepPower(nextStep, wu);
-    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-      Promise.resolve(trainer.setErgWatts(power)).catch(console.error);
+    const t = trainerRef.current;
+    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+      Promise.resolve(t.setErgWatts(power)).catch(console.error);
     }
     addNotification(`Warmup step ${nextStep + 1}/${wu.stepCount}: ${power}W`, 'info');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainer, addNotification]);
+  }, [addNotification]);
   useEffect(() => { advanceWarmupStepRef.current = advanceWarmupStep; }, [advanceWarmupStep]);
 
   // ── Start main test (after warmup or directly) ─────────────
@@ -420,13 +427,14 @@ const LactateTestingPage = () => {
     setIntervalTimer(0); intervalTimerRef2.current = 0;
     startIntervalTimer();
     const firstPower = protocolRef.current.steps[0]?.targetPower ?? protocolRef.current.startPower;
-    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+    const t = trainerRef.current;
+    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
       setTimeout(() => {
-        Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
+        Promise.resolve(trainerRef.current.setErgWatts(firstPower)).catch(console.error);
         addNotification(`ERG set to ${firstPower}W`, 'info');
       }, 500);
     }
-  }, [trainer, startIntervalTimer, addNotification]);
+  }, [startIntervalTimer, addNotification]);
   useEffect(() => { startMainTestRef.current = startMainTest; }, [startMainTest]);
 
   // ── Start next interval (after recovery) ───────────────────
@@ -448,7 +456,8 @@ const LactateTestingPage = () => {
         testStateRef.current = 'completed';
         setTestState('completed');
         setPhase('work');
-        if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+        const t = trainerRef.current;
+        if (t?.setErgWatts) Promise.resolve(t.setErgWatts(0)).catch(console.error);
         addNotification('Test complete ✓', 'success');
       }
       return;
@@ -463,18 +472,29 @@ const LactateTestingPage = () => {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(countdownRef.current); countdownRef.current = null;
-          setCurrentStep(prevStep => {
-            const next = prevStep + 1 < protocolRef.current.steps.length ? prevStep + 1 : prevStep;
-            currentStepRef.current = next;
-            const targetPower = protocolRef.current.steps[next]?.targetPower;
-            if (targetPower && trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-              setTimeout(() => Promise.resolve(trainer.setErgWatts(targetPower)).catch(console.error), 500);
-            }
-            return next;
-          });
+
+          // Compute next step index BEFORE entering state setters (avoid side-effects inside updaters)
+          const next = currentStepRef.current + 1 < protocolRef.current.steps.length
+            ? currentStepRef.current + 1
+            : currentStepRef.current;
+          currentStepRef.current = next;
+          const targetPower = protocolRef.current.steps[next]?.targetPower;
+
+          setCurrentStep(next);
           setPhase('work');
           setIntervalTimer(0);
           startIntervalTimer();
+
+          // Set ERG power for the new step — use ref so we always get the latest trainer
+          if (targetPower) {
+            setTimeout(() => {
+              const t = trainerRef.current;
+              if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+                Promise.resolve(t.setErgWatts(targetPower)).catch(console.error);
+              }
+            }, 300);
+          }
+
           return 0;
         }
         return prev - 1;
@@ -482,22 +502,21 @@ const LactateTestingPage = () => {
     }, 1000);
 
     setTimeout(() => addNotification('Starting in 3…', 'info'), 0);
-  }, [trainer, startIntervalTimer, addNotification]);
+  }, [startIntervalTimer, addNotification]);
 
   useEffect(() => { handleStartIntervalRef.current = handleStartInterval; }, [handleStartInterval]);
 
   // ── Live watt adjustment ───────────────────────────────────
   const adjustWatts = useCallback((delta) => {
-    setWattOffset(prev => {
-      const newOffset = prev + delta;
-      wattOffsetRef.current = newOffset;
-      const effective = (protocolRef.current.steps[currentStepRef.current]?.targetPower ?? 0) + newOffset;
-      if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
-        Promise.resolve(trainer.setErgWatts(Math.max(0, effective))).catch(console.error);
-      }
-      return newOffset;
-    });
-  }, [trainer]);
+    const newOffset = wattOffsetRef.current + delta;
+    wattOffsetRef.current = newOffset;
+    setWattOffset(newOffset);
+    const effective = (protocolRef.current.steps[currentStepRef.current]?.targetPower ?? 0) + newOffset;
+    const t = trainerRef.current;
+    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+      Promise.resolve(t.setErgWatts(Math.max(0, effective))).catch(console.error);
+    }
+  }, []);
 
   // ── Start test ─────────────────────────────────────────────
   const handleStartTest = () => {
@@ -639,7 +658,8 @@ const LactateTestingPage = () => {
               testStateRef.current = 'completed';
               setTestState('completed');
               setPhase('work');
-              if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
+              const t = trainerRef.current;
+              if (t?.setErgWatts) Promise.resolve(t.setErgWatts(0)).catch(console.error);
               addNotification('Cooldown complete. Test finished ✓', 'success');
             }, 100);
             return dur;

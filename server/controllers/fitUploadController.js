@@ -5,6 +5,7 @@ const path = require('path');
 const FitParser = require('fit-file-parser').default;
 const TrainingAbl = require('../abl/trainingAbl');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
+const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
 
 /**
  * Parse FIT file and extract training data
@@ -372,6 +373,9 @@ async function uploadFitFile(req, res) {
       resourceId: String(fitTraining._id),
       resourceType: 'fit',
     }).catch(() => {});
+
+    // Bust the server-side route cache so subsequent GET /api/fit/trainings returns fresh data
+    invalidateFitCacheForUser(userId);
 
     res.status(201).json({
       success: true,

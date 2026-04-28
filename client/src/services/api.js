@@ -896,7 +896,12 @@ export const createLactateSession = (sessionData) => api.post('/api/lactate-sess
 export const getLactateSessions = (athleteId) => api.get(`/api/lactate-session/athlete/${athleteId}`);
 export const getLactateSessionById = (sessionId) => api.get(`/api/lactate-session/${sessionId}`);
 export const updateLactateSession = (sessionId, updateData) => api.put(`/api/lactate-session/${sessionId}`, updateData);
-export const completeLactateSession = (sessionId, completionData) => api.post(`/api/lactate-session/${sessionId}/complete`, completionData);
+export const completeLactateSession = (sessionId, completionData) =>
+  api.post(`/api/lactate-session/${sessionId}/complete`, completionData).then(r => {
+    // Invalidate so the calendar picks up the new FitTraining created server-side
+    invalidateTrainingCaches();
+    return r;
+  });
 export const generateMockFitFile = (sessionId) => api.post(`/api/lactate-session/${sessionId}/mock-fit`);
 export const deleteLactateSession = (sessionId) => api.delete(`/api/lactate-session/${sessionId}`);
 export const downloadLactateSessionFit = async (sessionId) => {
@@ -946,7 +951,7 @@ export const uploadFitFile = async (file) => {
   try {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const token = localStorage.getItem('authToken') || localStorage.getItem('token');
     const response = await api.post('/api/fit/upload', formData, {
       headers: {
@@ -955,7 +960,10 @@ export const uploadFitFile = async (file) => {
       },
       timeout: 60000 // 60 second timeout for large files
     });
-    
+
+    // Invalidate training caches so the calendar reflects the new upload immediately
+    invalidateTrainingCaches();
+
     return response.data;
   } catch (error) {
     console.error('Error uploading FIT file:', error);

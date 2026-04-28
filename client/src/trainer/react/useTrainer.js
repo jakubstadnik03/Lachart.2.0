@@ -79,7 +79,13 @@ export function useTrainer(options) {
       }
       logger.info('Scan complete:', foundDevices.length, 'devices found');
     } catch (err) {
-      setError(err.message || 'Scan failed');
+      const raw = err?.message || '';
+      let msg = raw || 'Scan failed';
+      // WebSocket error (Event object) or no message → companion WS unreachable
+      if (!raw || /websocket|failed to construct/i.test(raw) || err instanceof Event) {
+        msg = 'Bluetooth is not available in this browser. Use Chrome on desktop or the mobile app.';
+      }
+      setError(msg);
       setStatus('error');
       logger.error('Scan error:', err);
     }
