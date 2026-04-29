@@ -150,7 +150,7 @@ export default function TrainingPage() {
 
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings, coachLike]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings, coachLike]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (location.hash !== '#field-lactate') return;

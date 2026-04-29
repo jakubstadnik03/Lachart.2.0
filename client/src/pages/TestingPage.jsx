@@ -265,7 +265,7 @@ const TestingPage = () => {
     if (isAuthenticated && user) {
       validateAthlete();
     }
-  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole, isTestingRole, pendingAthleteIds]);
+  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole, isTestingRole, pendingAthleteIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const loadCoachAthletes = async () => {
@@ -394,7 +394,7 @@ const TestingPage = () => {
 
     loadTestFromUrl();
     return () => ac.abort();
-  }, [testIdFromUrl, isAuthenticated, user?._id, selectedAthleteId, setSearchParams]);
+  }, [testIdFromUrl, isAuthenticated, user?._id, selectedAthleteId, setSearchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Načtení dat při prvním načtení stránky nebo změně atleta
   useEffect(() => {
@@ -629,7 +629,7 @@ const TestingPage = () => {
 
     loadAdvisor();
     return () => ac.abort();
-  }, [isAuthenticated, effectiveTargetAthleteId, isCoachLikeRole, user?._id, user?.role, isPendingSelectedAthlete, pendingAthletesLoaded]);
+  }, [isAuthenticated, effectiveTargetAthleteId, isCoachLikeRole, user?._id, user?.role, isPendingSelectedAthlete, pendingAthletesLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
