@@ -328,7 +328,9 @@ function NativeBottomTabBar({ tabs }) {
             if (tab.key === 'calendar')        return p.startsWith('/training-calendar');
             if (tab.key === 'athletes')        return p.startsWith('/athletes');
             if (tab.key === 'testing')         return p.startsWith('/testing');
-            if (tab.key === 'training')        return p.startsWith('/training');
+            // Use exact match or /training/ prefix — NOT startsWith('/training') alone
+            // because '/training-calendar' also starts with '/training'.
+            if (tab.key === 'training')        return p === '/training' || p.startsWith('/training/');
             if (tab.key === 'lactate-testing') return p.startsWith('/lactate-testing');
             if (tab.key === 'admin')           return p.startsWith('/admin');
             return p === tab.path;
