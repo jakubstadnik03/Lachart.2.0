@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { motion, useDragControls } from "framer-motion";
 import ReactDOM from "react-dom";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
@@ -535,6 +536,7 @@ const TrainingForm = ({
   initialSelectedLap = null,
 }) => {
   const { addNotification } = useNotification();
+  const dragControls = useDragControls();
   const [formData, setFormData] = useState(initialData || {
     sport: "bike",
     type: "interval",
@@ -1034,13 +1036,25 @@ const TrainingForm = ({
   );
 
   return (
-    <div
+    <motion.div
+      drag="y"
+      dragControls={dragControls}
+      dragListener={false}
+      dragConstraints={{ top: 0 }}
+      dragElastic={{ top: 0, bottom: 0.4 }}
+      onDragEnd={(_, info) => {
+        if (info.offset.y > 80 || info.velocity.y > 400) onClose();
+      }}
       className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl flex flex-col relative shadow-xl overflow-hidden"
       style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}
     >
 
-      {/* Drag handle — mobile only */}
-      <div className="flex justify-center pt-2.5 pb-0 sm:hidden shrink-0" aria-hidden="true">
+      {/* Drag handle — mobile only; touching it starts the swipe-to-close drag */}
+      <div
+        className="flex justify-center pt-2.5 pb-0 sm:hidden shrink-0 cursor-grab active:cursor-grabbing touch-none"
+        aria-hidden="true"
+        onPointerDown={(e) => dragControls.start(e)}
+      >
         <div className="h-1 w-10 rounded-full bg-gray-300" />
       </div>
 
@@ -1727,7 +1741,7 @@ const TrainingForm = ({
         </div>,
         document.body
       )}
-    </div>
+    </motion.div>
   );
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon, FireIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import LapsTable from '../FitAnalysis/LapsTable';
@@ -317,6 +317,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     if (!['coach', 'tester', 'testing'].includes(role)) return null;
     return selectedAthleteId ?? null;
   }, [user?.role, selectedAthleteId]);
+  const sheetDragControls = useDragControls();
+
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [trainingDetail, setTrainingDetail] = useState(null);
@@ -337,6 +339,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [editingCategory, setEditingCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const closeSheet = () => { setSelectedTraining(null); setTrainingDetail(null); setIsEditingTitle(false); setIsEditingCategory(false); };
+
   // Resolve stable comment ID for the selected training (changes when training changes)
   const commentTrainingId = useMemo(() => {
     if (!trainingDetail) return null;
@@ -1903,17 +1907,26 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => {
-              setSelectedTraining(null);
-              setTrainingDetail(null);
-              setIsEditingTitle(false);
-              setIsEditingCategory(false);
-            }}
+            onClick={closeSheet}
           />
           {/* Sheet panel */}
-          <div className="relative z-10 bg-white rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '90dvh' }}>
-            {/* Drag handle */}
-            <div className="shrink-0 pt-3 pb-1 flex justify-center">
+          <motion.div
+            drag="y"
+            dragControls={sheetDragControls}
+            dragListener={false}
+            dragConstraints={{ top: 0 }}
+            dragElastic={{ top: 0, bottom: 0.4 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 80 || info.velocity.y > 400) closeSheet();
+            }}
+            className="relative z-10 bg-white rounded-t-2xl shadow-2xl flex flex-col"
+            style={{ maxHeight: '90dvh' }}
+          >
+            {/* Drag handle — touch here to swipe-to-close */}
+            <div
+              className="shrink-0 pt-3 pb-1 flex justify-center cursor-grab active:cursor-grabbing touch-none"
+              onPointerDown={(e) => sheetDragControls.start(e)}
+            >
               <div className="w-10 h-1 bg-gray-200 rounded-full" />
             </div>
             {/* Header */}
@@ -2186,7 +2199,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                 <div className="text-center py-8 text-gray-400 text-sm">Loading training details...</div>
               )}
             </div>
-          </div>
+          </motion.div>
         </div>,
         document.body
       )}
