@@ -168,7 +168,7 @@ export const OUTREACH_CONTACTS = [
     name: 'UCD Institute for Sport and Health',
     country: 'Ireland',
     website: 'https://www.ucd.ie/sportandhealth/sportscienceservices/humanperformancelaboratory/',
-    email: null,
+    email: 'sports.institute@ucd.ie',
     contactMethod: 'form',
     note: 'Isokinetic dynamometry + gas analyzers. Dublin.',
     priority: false,
