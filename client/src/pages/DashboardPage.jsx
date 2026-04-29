@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
+import { usePremium } from '../hooks/usePremium';
+import UpgradeModal from '../components/UpgradeModal';
+import { LockClosedIcon } from '@heroicons/react/24/outline';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
 import { TrainingStats } from "../components/DashboardPage/TrainingStats";
@@ -54,6 +57,27 @@ function sortAndLimitCalendarActivities(combined) {
   return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_DASHBOARD_CALENDAR_ACTIVITIES);
 }
 
+// ── Premium locked placeholder (shown in place of gated widgets) ──────────────
+function PremiumLockedCard({ title, description, onUpgrade }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center justify-center gap-3 text-center h-full min-h-[220px]">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+        <LockClosedIcon className="w-5 h-5 text-primary" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-gray-900 text-sm mb-1">{title}</h3>
+        <p className="text-xs text-gray-500 max-w-[220px]">{description}</p>
+      </div>
+      <button
+        onClick={onUpgrade}
+        className="mt-1 px-4 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+      >
+        Upgrade to Pro
+      </button>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
@@ -63,6 +87,7 @@ export default function DashboardPage() {
   const isCoachLikeRole = ['admin', 'coach', 'testing', 'tester'].includes(role) ||
     (user?.admin === true && role !== 'athlete');
   const { addNotification } = useNotification();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
   // ── Single source of truth for athlete selection ─────────────────────────────
@@ -103,6 +128,8 @@ export default function DashboardPage() {
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const navigate = useNavigate();  /** Avoid flashing the empty-state hero while API/cache is still settling */
   const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
+  /** True once trainings + calendar have been fetched at least once (avoids flash on initial load) */
+  const [trainingsInitialized, setTrainingsInitialized] = useState(false);
 
   // Check Strava connection status (athletes + coaches — own Strava / profile photo)
   useEffect(() => {
@@ -219,6 +246,7 @@ export default function DashboardPage() {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
             setTrainings(parsed);
+            setTrainingsInitialized(true);
             usedCache = true;
             setLoading(false);
           }
@@ -253,6 +281,7 @@ export default function DashboardPage() {
       ];
 
       setTrainings(allTrainings);
+      setTrainingsInitialized(true);
 
       // 3) Save to localStorage so next dashboard/TrainingPage open is instant
       try {
@@ -834,16 +863,27 @@ export default function DashboardPage() {
     }
   }, [selectedSport, recentTrainings, selectedTitle]);
 
+  // Reset initialization flag whenever the viewed athlete changes so the banner
+  // doesn't flash while the new athlete's data is still being fetched.
   useEffect(() => {
+    setTrainingsInitialized(false);
+    setShowEmptyWelcomeDelayed(false);
+  }, [selectedAthleteId]);
+
+  useEffect(() => {
+    // Don't start the timer until we've received at least one response from the API/cache
+    // — this prevents the welcome panel from flashing on initial load when data isn't ready yet
+    if (!trainingsInitialized) return;
     const noTrainings = !recentTrainings || recentTrainings.length === 0;
     const noCalendar = !calendarData || calendarData.length === 0;
     if (!noTrainings || !noCalendar) {
       setShowEmptyWelcomeDelayed(false);
       return undefined;
     }
-    const t = window.setTimeout(() => setShowEmptyWelcomeDelayed(true), 500);
+    // Short extra delay after data confirms empty (avoids a brief flash if calendar loads slightly later)
+    const t = window.setTimeout(() => setShowEmptyWelcomeDelayed(true), 800);
     return () => clearTimeout(t);
-  }, [recentTrainings, calendarData]);
+  }, [recentTrainings, calendarData, trainingsInitialized]);
 
   const showAthleteEmptyWelcome =
     !isTestingRole &&
@@ -907,7 +947,9 @@ export default function DashboardPage() {
   );
 
   return (
-    <motion.div 
+    <>
+    <UpgradeModal {...UpgradeModalProps} />
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6"
@@ -1098,13 +1140,21 @@ export default function DashboardPage() {
           transition={{ delay: 0.4 }}
           className="lg:col-span-2 md:col-span-2"
         >
-          <SpiderChart 
-            trainings={recentTrainings}
-            selectedSport={selectedSport}
-            setSelectedSport={setSelectedSport}
-            calendarData={calendarData}
-            athleteId={selectedAthleteId}
-          />
+          {isPremium ? (
+            <SpiderChart
+              trainings={recentTrainings}
+              selectedSport={selectedSport}
+              setSelectedSport={setSelectedSport}
+              calendarData={calendarData}
+              athleteId={selectedAthleteId}
+            />
+          ) : (
+            <PremiumLockedCard
+              title="Performance Profile"
+              description="Unlock the radar chart to see your power / pace profile across sprint, VO₂max, threshold and endurance efforts."
+              onUpgrade={() => gate('Performance Profile (Spider Chart)', 'pro')}
+            />
+          )}
         </motion.div>
 
         <motion.div 
@@ -1131,15 +1181,23 @@ export default function DashboardPage() {
           transition={{ delay: 0.6 }}
           className="lg:col-span-2 md:col-span-2"
         >
-          <TrainingGraph 
-            trainingList={recentTrainings}
-            selectedSport={selectedSport}
-            setSelectedSport={setSelectedSport}
-            selectedTitle={selectedTitle}
-            setSelectedTitle={setSelectedTitle}
-            selectedTraining={selectedTraining}
-            setSelectedTraining={setSelectedTraining}
-          />
+          {isPremium ? (
+            <TrainingGraph
+              trainingList={recentTrainings}
+              selectedSport={selectedSport}
+              setSelectedSport={setSelectedSport}
+              selectedTitle={selectedTitle}
+              setSelectedTitle={setSelectedTitle}
+              selectedTraining={selectedTraining}
+              setSelectedTraining={setSelectedTraining}
+            />
+          ) : (
+            <PremiumLockedCard
+              title="Training Graph"
+              description="Upgrade to Pro to view power, pace and heart rate trends across your training sessions."
+              onUpgrade={() => gate('Training Graph', 'pro')}
+            />
+          )}
         </motion.div>
           </>
         )}
@@ -1204,5 +1262,6 @@ export default function DashboardPage() {
         </motion.div>
       </div>
     </motion.div>
+    </>
   );
 }

@@ -487,6 +487,39 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
         </div>
 
         <div className="px-6 py-5">
+          {/* Role selector — shown in all modes */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">I am a…</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEmailFormData(p => ({...p, role: 'athlete'}))}
+                className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border-2 text-sm font-semibold transition-all ${
+                  emailFormData.role === 'athlete'
+                    ? 'border-primary bg-primary/5 text-primary'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <span className="text-xl">🏃</span>
+                <span>Athlete</span>
+                <span className="text-[10px] font-normal text-gray-400 leading-tight text-center">Track my own tests &amp; training</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmailFormData(p => ({...p, role: 'coach'}))}
+                className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border-2 text-sm font-semibold transition-all ${
+                  emailFormData.role === 'coach'
+                    ? 'border-primary bg-primary/5 text-primary'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <span className="text-xl">📋</span>
+                <span>Coach</span>
+                <span className="text-[10px] font-normal text-gray-400 leading-tight text-center">Manage athletes &amp; their tests</span>
+              </button>
+            </div>
+          </div>
+
           {mode === 'options' && (
             <div className="space-y-3">
               {!isCapacitorNative() && (

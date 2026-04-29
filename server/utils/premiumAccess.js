@@ -20,15 +20,27 @@ function subscriptionGrantsPremium(sub) {
 /**
  * @param {object} user - User document or lean (must have optional `premium`)
  * @param {object|null} subscription - Subscription lean/doc or null
- * @returns {{ isPremium: boolean, source: 'manual'|'subscription'|'none' }}
+ * @returns {{ isPremium: boolean, source: 'manual'|'subscription'|'beta'|'none' }}
  */
 function resolvePremiumAccess(user, subscription) {
+  // Manual override always wins
   if (user && user.premium === true) {
     return { isPremium: true, source: 'manual' };
   }
-  if (subscriptionGrantsPremium(subscription)) {
-    return { isPremium: true, source: 'subscription' };
+
+  // Admin sees real subscription state (so they can test the Stripe paywall)
+  if (user && user.role === 'admin') {
+    if (subscriptionGrantsPremium(subscription)) {
+      return { isPremium: true, source: 'subscription' };
+    }
+    return { isPremium: false, source: 'none' };
   }
+
+  // All other logged-in users get full access for free during beta
+  if (user) {
+    return { isPremium: true, source: 'beta' };
+  }
+
   return { isPremium: false, source: 'none' };
 }
 

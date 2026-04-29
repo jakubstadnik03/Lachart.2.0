@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2 } from 'lucide-react';
+import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2, Lock } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
@@ -135,7 +135,7 @@ const logDataChange = (type, data) => {
   console.log(`[Data Change] ${type}:`, essentialData);
 };
 
-function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false, disableInnerScroll = false }) {
+function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false, disableInnerScroll = false, isPremium = true }) {
   const normalizeSport = (sport) => {
     const s = String(sport || '').trim().toLowerCase();
     if (s === 'running' || s.includes('run')) return 'run';
@@ -1222,7 +1222,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           {/* Edit Mode Toggle - Only show for existing tests */}
           {!isNewTest && (
             <button
+              disabled={!isPremium}
               onClick={() => {
+                if (!isPremium) return;
                 logClick('Edit/Cancel Button', { isEditMode });
                 if (isEditMode) {
                   // Cancel: restore original data
@@ -1297,10 +1299,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 setIsEditMode(!isEditMode);
               }}
               className={`shrink-0 justify-center px-3 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
-                isEditMode 
+                isEditMode
                   ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
                   : 'bg-primary hover:bg-primary-dark text-white'
-              }`}
+              } ${!isPremium ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isEditMode ? (
                 <>
@@ -1309,7 +1311,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 </>
               ) : (
                 <>
-                  <Edit size={14} />
+                  {isPremium ? <Edit size={14} /> : <Lock size={14} />}
                   Edit
                 </>
               )}
@@ -1596,13 +1598,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             <button
               data-tour="tour-add-interval"
               type="button"
+              disabled={!isPremium && !isNewTest}
               onClick={() => {
+                if (!isPremium && !isNewTest) return;
                 logClick('Add Interval Button');
                 handleAddRow();
               }}
-              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+              className={`w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <Plus size={14} /> Add Interval
+              {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
             </button>
 
             <div className="flex gap-2 w-full sm:w-auto">

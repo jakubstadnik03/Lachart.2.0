@@ -150,11 +150,7 @@ export default function AuthSideCarousel({
       <div className="absolute left-6 top-6 flex items-center gap-2.5 z-10">
         <div className="h-9 w-9 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg">
           <picture>
-            <source
-              type="image/webp"
-              srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-              sizes="24px"
-            />
+            
             <img src="/images/LaChart.png" alt="LaChart" className="h-6 w-6 object-contain" draggable={false} />
           </picture>
         </div>

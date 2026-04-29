@@ -497,11 +497,7 @@ const SignUpPage = () => {
             <div className="mx-auto flex items-center gap-2 justify-center">
               <div className="h-11 w-11 rounded-2xl shadow-sm flex items-center justify-center">
                 <picture>
-                  <source
-                    type="image/webp"
-                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-                    sizes="44px"
-                  />
+                  
                   <img className="h-11 w-11 object-contain" src="/images/LaChart.png" alt="LaChart" />
                 </picture>
               </div>
@@ -1090,12 +1086,8 @@ const SignUpPage = () => {
             <div>
               <a href="/" className="flex items-center gap-2">
                 <picture>
-                  <source
-                    type="image/webp"
-                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-                    sizes="44px"
-                  />
-                  <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                  
+                  <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-auto object-contain" />
                 </picture>
                 <span className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</span>
               </a>

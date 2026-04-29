@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
-import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthProvider';
 import { addTraining, updateTraining, getStravaActivityDetail } from '../services/api';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
+import QuickAddLactateModal from '../components/training/QuickAddLactateModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCategories } from '../context/CategoryContext';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -63,6 +64,7 @@ export default function TrainingPage() {
     initialData: null,
   });
   const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
+  const [quickLactateOpen, setQuickLactateOpen] = useState(false);
 
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
@@ -321,6 +323,51 @@ export default function TrainingPage() {
   // Athlete change events are handled centrally by AthleteSelectionContext.
   // When CoachAthleteBar navigates to /training/:athleteId, the URL-sync effect below picks it up.
 
+  // Quick add lactate handler
+  const handleQuickAddLactate = useCallback(async ({ lactateValue, blockTitle, trainingId, intervalIndex }) => {
+    const targetId = selectedAthleteId || user._id;
+    if (!trainingId) {
+      // No training selected — nothing to save yet; modal closes without error
+      return;
+    }
+    const training = trainings.find(t => t._id === trainingId);
+    if (!training) throw new Error('Training not found');
+
+    const updatedResults = [...(training.results || [])];
+
+    if (intervalIndex !== null && intervalIndex !== undefined && updatedResults[intervalIndex]) {
+      // Update existing interval
+      updatedResults[intervalIndex] = {
+        ...updatedResults[intervalIndex],
+        lactate: String(lactateValue),
+        ...(blockTitle ? { title: blockTitle } : {}),
+      };
+    } else {
+      // Add new interval row
+      updatedResults.push({
+        interval: updatedResults.length + 1,
+        lactate: String(lactateValue),
+        title: blockTitle || '',
+        power: '',
+        heartRate: '',
+        RPE: '',
+        duration: '',
+        repeatCount: 1,
+        isRecovery: false,
+        isSelected: true,
+      });
+    }
+
+    await updateTraining(trainingId, {
+      ...training,
+      results: updatedResults,
+      athleteId: targetId,
+      coachId: user._id,
+    });
+
+    await loadTrainings(targetId);
+  }, [selectedAthleteId, user, trainings, loadTrainings]);
+
   // Funkce pro přidání nového tréninku
   const handleAddTraining = async (formData) => {
     try {
@@ -425,17 +472,21 @@ export default function TrainingPage() {
         transition={{ delay: 0.05 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"
       >
-        <div>
+        {/* Title + count — always visible */}
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-            <ListBulletIcon className="w-6 h-6 text-primary" />
+            <ListBulletIcon className="w-6 h-6 text-primary flex-shrink-0" />
             Training Log
           </h1>
           {filteredTrainings.length > 0 && (
-            <p className="text-xs text-gray-400 mt-0.5">{filteredTrainings.length} training{filteredTrainings.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400 mt-0.5 ml-8">
+              {filteredTrainings.length} training{filteredTrainings.length !== 1 ? 's' : ''}
+            </p>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Controls row — wraps on very small screens */}
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Category filter — compact dropdown */}
           <div className="relative flex-shrink-0" ref={categoryDropdownRef}>
             {(() => {
@@ -494,17 +545,27 @@ export default function TrainingPage() {
             )}
           </div>
 
-          {/* Add Training button — never shrinks */}
+          {/* Add Lactate button */}
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => setQuickLactateOpen(true)}
+            className="flex items-center gap-1.5 h-9 px-3 bg-white border border-primary/30 text-primary text-sm font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm flex-shrink-0"
+          >
+            <BeakerIcon className="w-4 h-4 flex-shrink-0" />
+            Add Lactate
+          </motion.button>
+
+          {/* Add Training button */}
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60 flex-shrink-0 ml-1"
+            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60 flex-shrink-0"
             disabled={isSubmitting}
           >
             {isSubmitting ? (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
             ) : (
-              <PlusIcon className="w-4 h-4" />
+              <PlusIcon className="w-4 h-4 flex-shrink-0" />
             )}
             {isSubmitting ? 'Adding…' : 'Add Training'}
           </motion.button>
@@ -626,6 +687,15 @@ export default function TrainingPage() {
       </div>
 
       {/* ── MODALS ── */}
+
+      {/* Quick Add Lactate modal */}
+      <QuickAddLactateModal
+        isOpen={quickLactateOpen}
+        onClose={() => setQuickLactateOpen(false)}
+        trainings={trainings}
+        onSave={handleQuickAddLactate}
+      />
+
       <AnimatePresence>
         {isFormOpen && (
           <motion.div

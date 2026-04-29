@@ -1,11 +1,18 @@
 import * as React from "react";
+import { Link } from "react-router-dom";
 
 export default function Footer() {
   return (
     <div className="flex flex-wrap gap-4 sm:gap-10 justify-between items-center px-4 sm:px-6 py-4 w-full text-sm leading-none bg-white border-t border-gray-200">
-      <div className="self-stretch my-auto text-gray-600">
+      <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+        <img src="/images/LaChart.png" alt="LaChart" className="h-7 w-auto object-contain" />
+        <span className="font-semibold text-gray-700">LaChart</span>
+      </Link>
+
+      <div className="self-stretch my-auto text-gray-500 text-xs">
         © 2026 LaChart. All Rights Reserved.
       </div>
+
       <div className="flex items-center gap-4 sm:gap-6">
         <a
           href="https://buymeacoffee.com/lachart"
@@ -17,9 +24,6 @@ export default function Footer() {
           <span className="text-base">☕</span>
           <span className="text-xs sm:text-sm font-medium">Buy me a coffee</span>
         </a>
-        <div className="self-stretch my-auto text-right text-blue-500">
-          Made by <span className="text-blue-500">LaChart</span>
-        </div>
       </div>
     </div>
   );

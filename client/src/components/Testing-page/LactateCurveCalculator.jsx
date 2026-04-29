@@ -775,7 +775,7 @@ ChartJS.register(lactateZoneLtpOverlayPlugin);
 
 const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
-  const { gate, UpgradeModalProps } = usePremium();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -2765,13 +2765,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               <div data-tour="tour-lactate-share" className="flex items-center gap-2">
                 <div className="flex flex-col gap-0.5">
                   <button
-                    onClick={openEmailModal}
+                    onClick={() => {
+                      if (!isPremium) { gate('Email Report Export', 'pro'); return; }
+                      openEmailModal();
+                    }}
                     disabled={sendingEmail}
                     className={`h-9 px-3 text-xs rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5 ${
                       sendingEmail
                         ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                         : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
-                    }`}
+                    } ${!isPremium ? 'opacity-60' : ''}`}
                     title="Send report to email"
                   >
                     <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />

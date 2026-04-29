@@ -345,6 +345,25 @@ router.post("/", verifyToken, async (req, res) => {
             const d = new Date(payload.date);
             if (!isNaN(d.getTime())) payload.date = d;
         }
+        // ── Free-plan test limit ───────────────────────────────────────────
+        if (process.env.SUBSCRIPTION_ENABLED === 'true') {
+            const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
+            const fullUser = await User.findById(req.user.userId);
+            const { isPremium } = await resolvePremiumForUserDocument(fullUser);
+            if (!isPremium) {
+                const targetAthleteId = payload.athleteId || String(req.user.userId);
+                const existingCount = await Test.countDocuments({ athleteId: String(targetAthleteId) });
+                if (existingCount >= 1) {
+                    return res.status(403).json({
+                        error: 'FREE_PLAN_LIMIT',
+                        feature: 'tests',
+                        message: 'Free plan allows only 1 test. Upgrade to Pro for unlimited tests.'
+                    });
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
+
         const test = await testAbl.createTest(payload);
         console.log(`[Test] Test saved for user ${req.user.userId} → testId=${test._id}, sport=${test.sport}, title="${test.title}"`);
         res.status(201).json(test);

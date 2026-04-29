@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import Modal from '../Modal';
 import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { usePremium } from '../../hooks/usePremium';
+import UpgradeModal from '../UpgradeModal';
 
-const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
+const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated, athleteCount = 0 }) => {
   const { addNotification } = useNotification();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [loading, setLoading] = useState(false);
   const [athleteData, setAthleteData] = useState({
     name: '',
@@ -30,6 +33,13 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
       addNotification('Name and surname are required', 'error');
       return;
     }
+
+    // ── Premium gate: free plan allows only 1 athlete ──────────────────────
+    if (!isPremium && athleteCount >= 1) {
+      gate('Multiple Athletes', 'coach');
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     try {
       setLoading(true);
@@ -77,6 +87,8 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
     'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary';
 
   return (
+    <>
+    <UpgradeModal {...UpgradeModalProps} />
     <Modal isOpen={isOpen} onClose={handleClose} title="Add New Athlete">
       <div className="space-y-4">
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 sm:p-4 sm:text-sm">
@@ -232,6 +244,7 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
         </div>
       </div>
     </Modal>
+    </>
   );
 };
 

@@ -521,7 +521,7 @@ const TrainingGraph = ({
   const hasComment = selectedTrainingData.comments || selectedTrainingData.description;
 
   return (
-    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[420px] sm:min-h-[460px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
       {/* ── Header — single row ── */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">

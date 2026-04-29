@@ -32,8 +32,10 @@ export function SearchableSelect({ value, options, onChange, placeholder = "Sele
         panelRef.current && !panelRef.current.contains(e.target)
       ) setOpen(false);
     };
-    const onScroll = () => {
-      // Don't close if the user is typing in the search input (mobile keyboard causes a viewport scroll)
+    const onScroll = (e) => {
+      // Don't close when scrolling inside the dropdown panel itself
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      // Don't close if the search input is focused (mobile keyboard scroll)
       if (panelRef.current && panelRef.current.contains(document.activeElement)) return;
       setOpen(false);
     };

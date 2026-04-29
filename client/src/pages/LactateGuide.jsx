@@ -105,7 +105,7 @@ const LactateGuide = () => {
       <nav className="sticky top-0 w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-50">
         <div className="flex items-center gap-2">
           <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-auto object-contain" />
             <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
           </a>
         </div>
@@ -714,7 +714,7 @@ const LactateGuide = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <a href="/" className="flex items-center gap-2">
-                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-auto object-contain" />
                 <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
               </a>
               <p className="mt-4 text-gray-600">

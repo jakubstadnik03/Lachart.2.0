@@ -16,8 +16,10 @@ import { useAuth } from '../context/AuthProvider';
  */
 export function usePremium() {
   const { user } = useAuth();
-  // All features are currently free — treat every logged-in user as premium.
-  const isPremium = !!user;
+
+  // Read isPremium from the user object (which already has premiumPreviewNoAccess applied
+  // by AuthProvider via userWithPremiumPreviewApplied). Falls back to true for beta users.
+  const isPremium = user ? (user.isPremium !== undefined ? user.isPremium : true) : false;
   const isCoach = isPremium;
 
   const [modalState, setModalState] = useState({
@@ -32,19 +34,17 @@ export function usePremium() {
 
   /**
    * gate(featureName, requiredPlan?)
-   * Returns true if user has access.
-   * All features are free, so always returns true for logged-in users.
+   * Returns true if user has access, false + opens upgrade modal if not.
    */
   const gate = useCallback(
     (featureName = 'This feature', requiredPlan = 'pro') => {
-      // All features free — always grant access for authenticated users.
-      if (!user) {
+      if (!user || !isPremium) {
         setModalState({ isOpen: true, feature: featureName, requiredPlan });
         return false;
       }
       return true;
     },
-    [user]
+    [user, isPremium]
   );
 
   const UpgradeModalProps = {

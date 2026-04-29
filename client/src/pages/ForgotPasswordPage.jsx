@@ -88,7 +88,7 @@ const ForgotPasswordPage = () => {
             <div className="mb-8 text-center">
               <div className="mx-auto h-16 w-16 rounded-2xl shadow-md mb-3 flex items-center justify-center">
                 <picture>
-                  <source type="image/webp" srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w" sizes="64px" />
+                  
                   <img className="h-16 w-16 object-contain" src="/images/LaChart.png" alt="LaChart" />
                 </picture>
               </div>
@@ -215,12 +215,8 @@ const ForgotPasswordPage = () => {
               <div className="mx-auto flex items-center gap-2 justify-center">
                 <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
                   <picture>
-                    <source
-                      type="image/webp"
-                      srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-                      sizes="28px"
-                    />
-                    <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                    
+                    <img className="h-7 w-7 object-contain" src="/images/LaChart.png" alt="LaChart" />
                   </picture>
                 </div>
                 <h1 className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</h1>

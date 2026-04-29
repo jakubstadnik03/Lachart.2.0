@@ -396,6 +396,26 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
+        // ── Free-plan athlete limit ───────────────────────────────────────
+        if (process.env.SUBSCRIPTION_ENABLED === 'true') {
+            const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
+            const fullCoach = await userDao.findById(req.user.userId);
+            const { isPremium } = await resolvePremiumForUserDocument(fullCoach);
+            if (!isPremium) {
+                // Count athletes already assigned to this coach
+                const User = require('../models/UserModel');
+                const athleteCount = await User.countDocuments({ coachId: String(req.user.userId) });
+                if (athleteCount >= 1) {
+                    return res.status(403).json({
+                        error: 'FREE_PLAN_LIMIT',
+                        feature: 'athletes',
+                        message: 'Free plan allows only 1 athlete. Upgrade to Coach plan to manage more athletes.'
+                    });
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
+
         // Check if email is already registered (only if email is provided)
         if (email) {
             const existingUser = await userDao.findByEmail(email.toLowerCase());

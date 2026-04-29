@@ -15,6 +15,8 @@ import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, PlusIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
+import { usePremium } from '../hooks/usePremium';
+import UpgradeModal from '../components/UpgradeModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
@@ -68,6 +70,8 @@ const TestingPage = () => {
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  const [coachAthleteCount, setCoachAthleteCount] = useState(0);
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [mobileTab, setMobileTab] = useState('tests');
   const navigate = useNavigate();
   const lastLoadedTestIdFromUrlRef = useRef(null);
@@ -282,6 +286,7 @@ const TestingPage = () => {
           )
           .map((a) => String(a._id));
         setPendingAthleteIds(pendingIds);
+        setCoachAthleteCount(list.length);
       } catch (e) {
         console.warn('Failed to load coach athletes for pending checks:', e?.message || e);
       } finally {
@@ -1141,6 +1146,13 @@ const TestingPage = () => {
         }))
       };
 
+      // ── Premium gate: free plan allows only 1 test ──────────────────────
+      if (!isPremium && tests.length >= 1) {
+        gate('Unlimited Tests', 'pro');
+        return;
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       const response = await addTest(processedTest);
       const testId = response.data._id;
       setTests(prev => [...prev, response.data]);
@@ -1446,8 +1458,10 @@ const TestingPage = () => {
           isOpen={showAddAthleteModal}
           onClose={() => setShowAddAthleteModal(false)}
           onAthleteCreated={handleAthleteCreated}
+          athleteCount={coachAthleteCount}
         />
       )}
+      <UpgradeModal {...UpgradeModalProps} />
       <StravaIntegrationModal
         isOpen={showStravaModal}
         onClose={handleStravaModalClose}

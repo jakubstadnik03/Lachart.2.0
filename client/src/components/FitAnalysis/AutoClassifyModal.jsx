@@ -1,6 +1,29 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { XMarkIcon, SparklesIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, SparklesIcon, CheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+
+/** Styled checkbox — replaces the default browser input[type=checkbox] */
+function Checkbox({ checked, onChange, onClick }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onClick || onChange}
+      className={`w-4.5 h-4.5 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center shrink-0 transition-all duration-150 ${
+        checked
+          ? 'bg-primary border-primary shadow-sm shadow-primary/20'
+          : 'bg-white border-gray-300 hover:border-primary/60'
+      }`}
+    >
+      {checked && (
+        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+    </button>
+  );
+}
 
 const CAT_COLORS = {
   endurance: '#3b82f6',
@@ -89,6 +112,9 @@ function formatDur(sec) {
 }
 
 export default function AutoClassifyModal({ onClose, onApplied }) {
+  const [mode, setMode] = useState('classify'); // 'classify' | 'reset'
+
+  // ── Classify state ────────────────────────────────────────
   const [sport, setSport] = useState('all');
   const [skipCategorized, setSkipCategorized] = useState(true);
   const [applyTitles, setApplyTitles] = useState(true);
@@ -99,6 +125,64 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [filterCat, setFilterCat] = useState('all');
+
+  // ── Reset state ───────────────────────────────────────────
+  const [resetSport, setResetSport] = useState('all');
+  const [resetActivities, setResetActivities] = useState(null);
+  const [resetSelected, setResetSelected] = useState(new Set());
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetError, setResetError] = useState(null);
+
+  const loadResetActivities = useCallback(async () => {
+    setResetLoading(true);
+    setResetError(null);
+    setResetActivities(null);
+    setResetSelected(new Set());
+    setResetResult(null);
+    try {
+      // Fetch all activities — including already categorized ones — so we can pick which to clear
+      const { data } = await api.get('/api/integrations/strava/auto-classify', {
+        params: { sport: resetSport, skipCategorized: 'false', limit: 1000 },
+      });
+      // Only show those that already have a category
+      const categorized = (data.proposals || []).filter(p => p.currentCategory);
+      setResetActivities(categorized);
+      setResetSelected(new Set(categorized.map(p => p._id)));
+    } catch (err) {
+      setResetError(err.response?.data?.error || err.message);
+    } finally {
+      setResetLoading(false);
+    }
+  }, [resetSport]);
+
+  const applyReset = useCallback(async () => {
+    if (!resetActivities || resetSelected.size === 0) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      const items = resetActivities
+        .filter(p => resetSelected.has(p._id))
+        .map(p => ({ _id: p._id, category: null, applyCategory: true }));
+      const { data } = await api.post('/api/integrations/strava/auto-classify/apply', { items });
+      setResetResult(data.updated);
+      if (onApplied) onApplied();
+    } catch (err) {
+      setResetError(err.response?.data?.error || err.message);
+    } finally {
+      setResetting(false);
+    }
+  }, [resetActivities, resetSelected, onApplied]);
+
+  const allResetSelected = resetActivities?.length > 0 && resetActivities.every(p => resetSelected.has(p._id));
+  const toggleAllReset = () => {
+    if (allResetSelected) {
+      setResetSelected(new Set());
+    } else {
+      setResetSelected(new Set(resetActivities.map(p => p._id)));
+    }
+  };
 
   const loadProposals = useCallback(async () => {
     setLoading(true);
@@ -177,23 +261,49 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
   }, [proposals]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden max-h-[88vh]">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <SparklesIcon className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-bold text-gray-900">Auto-categorize Activities</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${mode === 'classify' ? 'bg-primary/10' : 'bg-red-50'}`}>
+              {mode === 'classify'
+                ? <SparklesIcon className="w-5 h-5 text-primary" />
+                : <ArrowPathIcon className="w-5 h-5 text-red-500" />}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">
+                {mode === 'classify' ? 'Auto-categorize Activities' : 'Reset Categories'}
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {mode === 'classify' ? 'Classify activities based on your training zones' : 'Remove categories from selected activities'}
+              </p>
+            </div>
+            {/* Mode toggle */}
+            <div className="flex items-center gap-0.5 ml-2 p-1 bg-gray-100 rounded-xl">
+              <button
+                onClick={() => setMode('classify')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'classify' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <SparklesIcon className="w-3.5 h-3.5" /> Categorize
+              </button>
+              <button
+                onClick={() => setMode('reset')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'reset' ? 'bg-white text-red-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <ArrowPathIcon className="w-3.5 h-3.5" /> Reset
+              </button>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Controls */}
-        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex flex-wrap gap-3 items-end">
+        {/* Controls — classify mode */}
+        <div className={`px-6 py-3.5 border-b border-gray-100 bg-gray-50/50 flex flex-wrap gap-3 items-center shrink-0 ${mode === 'reset' ? 'hidden' : ''}`}>
           <div>
             <label className="block text-[11px] text-gray-500 mb-1 font-medium">Sport</label>
             <div className="flex gap-1">
@@ -214,15 +324,15 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={skipCategorized} onChange={e => setSkipCategorized(e.target.checked)} className="rounded" />
+          <button type="button" onClick={() => setSkipCategorized(v => !v)} className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+            <Checkbox checked={skipCategorized} />
             Skip already categorized
-          </label>
+          </button>
 
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={applyTitles} onChange={e => setApplyTitles(e.target.checked)} className="rounded" />
+          <button type="button" onClick={() => setApplyTitles(v => !v)} className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+            <Checkbox checked={applyTitles} />
             Also set titles
-          </label>
+          </button>
 
           <button
             onClick={loadProposals}
@@ -239,28 +349,161 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
           </button>
         </div>
 
-        {/* Results */}
-        <div className="flex-1 overflow-y-auto">
+        {/* ── Reset controls ── */}
+        {mode === 'reset' && (
+          <div className="px-6 py-3.5 border-b border-gray-100 bg-red-50/30 flex flex-wrap gap-3 items-center shrink-0">
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1 font-medium">Sport</label>
+              <div className="flex gap-1">
+                {['all', 'cycling', 'running', 'swimming'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setResetSport(s)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                      resetSport === s ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {SPORT_ICONS[s] ? (
+                      <img src={SPORT_ICONS[s]} className={`w-3.5 h-3.5 object-contain ${resetSport === s ? 'invert' : ''}`} alt="" />
+                    ) : '🏅'}
+                    {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 flex-1">
+              Load activities that currently have a category assigned — then pick which ones to clear.
+            </p>
+            <button
+              onClick={loadResetActivities}
+              disabled={resetLoading}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 transition-all"
+            >
+              {resetLoading ? (
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              ) : <ArrowPathIcon className="w-3.5 h-3.5" />}
+              {resetLoading ? 'Loading…' : 'Load categorized'}
+            </button>
+          </div>
+        )}
+
+        {/* Results — only scrollable when there is content */}
+        <div className="overflow-y-auto">
+          {/* ── Reset results ── */}
+          {mode === 'reset' && (
+            <>
+              {resetError && (
+                <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{resetError}</div>
+              )}
+              {resetResult !== null && (
+                <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700 flex items-center gap-2">
+                  <CheckIcon className="w-4 h-4" />
+                  <strong>{resetResult}</strong> activities reset successfully!
+                </div>
+              )}
+              {!resetActivities && !resetLoading && !resetError && (
+                <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
+                  <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-3">
+                    <ArrowPathIcon className="w-7 h-7 text-red-300" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">Click <strong className="text-gray-700">Load categorized</strong> to see activities that have a category assigned.</p>
+                </div>
+              )}
+              {resetActivities && resetActivities.length === 0 && (
+                <div className="text-center py-10 text-gray-400">
+                  <ArrowPathIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No categorized activities found for the selected sport.</p>
+                </div>
+              )}
+              {resetActivities && resetActivities.length > 0 && (
+                <div className="px-5 pt-3 pb-2">
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="px-3 py-2.5 text-left">
+                            <Checkbox checked={allResetSelected} onClick={toggleAllReset} />
+                          </th>
+                          <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-28">Date</th>
+                          <th className="px-2 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-8"></th>
+                          <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide">Activity name</th>
+                          <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-24">Duration</th>
+                          <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-32">Category</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resetActivities.map((p, i) => {
+                          const isSelected = resetSelected.has(p._id);
+                          const date = p.startDate ? new Date(p.startDate).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+                          return (
+                            <tr
+                              key={p._id}
+                              className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-red-50/50' : 'hover:bg-gray-50'} ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                              onClick={() => setResetSelected(prev => {
+                                const next = new Set(prev);
+                                isSelected ? next.delete(p._id) : next.add(p._id);
+                                return next;
+                              })}
+                            >
+                              <td className="px-3 py-2.5">
+                                <Checkbox checked={isSelected} onClick={e => { e.stopPropagation(); setResetSelected(prev => { const next = new Set(prev); isSelected ? next.delete(p._id) : next.add(p._id); return next; }); }} />
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap text-[11px]">{date}</td>
+                              <td className="px-2 py-2.5">
+                                {SPORT_ICONS[p.sport] ? (
+                                  <img src={SPORT_ICONS[p.sport]} className="w-4 h-4 object-contain opacity-50" alt={p.sport} />
+                                ) : <span className="text-gray-300">?</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-700 max-w-xs truncate font-medium">{p.name}</td>
+                              <td className="px-3 py-2.5 text-gray-400 text-[11px]">{formatDur(p.movingTime)}</td>
+                              <td className="px-3 py-2.5">
+                                <CategoryPill category={p.currentCategory} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Classify results ── */}
+          {mode === 'classify' && <>
           {error && (
-            <div className="mx-5 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+            <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>
           )}
 
           {result !== null && (
-            <div className="mx-5 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700 flex items-center gap-2">
+            <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700 flex items-center gap-2">
               <CheckIcon className="w-4 h-4" />
               <strong>{result}</strong> activities updated successfully!
             </div>
           )}
 
+          {!proposals && !loading && !error && (
+            <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/8 flex items-center justify-center mb-3">
+                <SparklesIcon className="w-7 h-7 text-primary/50" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">Choose a sport filter and click <strong className="text-gray-700">Analyze</strong> to get category suggestions based on your training zones.</p>
+            </div>
+          )}
+
           {proposals && proposals.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-10 text-gray-400">
               <SparklesIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
-              <p>No activities to classify. Make sure your zones are configured in Profile.</p>
+              <p className="text-sm">No activities to classify. Make sure your zones are configured in Profile.</p>
             </div>
           )}
 
           {proposals && proposals.length > 0 && (
-            <div className="px-5 pt-3 pb-2">
+            <div className="px-6 pt-4 pb-2">
               {/* Category filter chips */}
               <div className="flex flex-wrap gap-1.5 mb-3">
                 <button
@@ -294,15 +537,15 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left">
-                        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} className="rounded" />
+                      <th className="px-3 py-2.5 text-left">
+                        <Checkbox checked={allVisibleSelected} onClick={toggleAll} />
                       </th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-600 w-28">Date</th>
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600 w-8">Sport</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Activity name</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-600 w-24">Duration</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-600 w-32">Category</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Proposed title</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-28">Date</th>
+                      <th className="px-2 py-2.5 text-left w-8"></th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide">Activity name</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-24">Duration</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide w-32">Category</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-gray-500 text-[11px] uppercase tracking-wide">Proposed title</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -312,38 +555,29 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                       return (
                         <tr
                           key={p._id}
-                          className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-gray-50'} ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                          className={`border-b border-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-gray-50'}`}
                           onClick={() => setSelected(prev => {
                             const next = new Set(prev);
                             isSelected ? next.delete(p._id) : next.add(p._id);
                             return next;
                           })}
                         >
-                          <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => setSelected(prev => {
-                                const next = new Set(prev);
-                                isSelected ? next.delete(p._id) : next.add(p._id);
-                                return next;
-                              })}
-                              className="rounded"
-                            />
+                          <td className="px-3 py-2.5">
+                            <Checkbox checked={isSelected} onClick={e => { e.stopPropagation(); setSelected(prev => { const next = new Set(prev); isSelected ? next.delete(p._id) : next.add(p._id); return next; }); }} />
                           </td>
-                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{date}</td>
-                          <td className="px-2 py-2">
+                          <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap text-[11px]">{date}</td>
+                          <td className="px-2 py-2.5">
                             {SPORT_ICONS[p.sport] ? (
-                              <img src={SPORT_ICONS[p.sport]} className="w-4 h-4 object-contain opacity-60" alt={p.sport} />
-                            ) : <span className="text-gray-400">?</span>}
+                              <img src={SPORT_ICONS[p.sport]} className="w-4 h-4 object-contain opacity-50" alt={p.sport} />
+                            ) : <span className="text-gray-300">?</span>}
                           </td>
-                          <td className="px-3 py-2 text-gray-700 max-w-xs truncate">{p.name}</td>
-                          <td className="px-3 py-2 text-gray-500">{formatDur(p.movingTime)}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2.5 text-gray-700 font-medium max-w-xs truncate">{p.name}</td>
+                          <td className="px-3 py-2.5 text-gray-400 text-[11px]">{formatDur(p.movingTime)}</td>
+                          <td className="px-3 py-2.5">
                             <CategoryPill category={p.proposedCategory} />
                           </td>
-                          <td className="px-3 py-2 text-gray-700 font-medium">
-                            {p.proposedTitle || <span className="text-gray-400">—</span>}
+                          <td className="px-3 py-2.5 text-gray-600 text-[11px]">
+                            {p.proposedTitle || <span className="text-gray-300">—</span>}
                           </td>
                         </tr>
                       );
@@ -353,11 +587,12 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
               </div>
             </div>
           )}
+          </>}
         </div>
 
-        {/* Footer */}
-        {proposals && proposals.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
+        {/* Footer — classify mode */}
+        {mode === 'classify' && proposals && proposals.length > 0 && (
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3 shrink-0">
             <span className="text-xs text-gray-500">
               <strong className="text-gray-800">{selected.size}</strong> / {proposals.length} selected
               {!applyTitles && <span className="ml-2 text-gray-400">(titles won't be changed)</span>}
@@ -378,6 +613,33 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                   </svg>
                 ) : <CheckIcon className="w-3.5 h-3.5" />}
                 {applying ? 'Applying…' : `Apply to ${selected.size} activities`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Footer — reset mode */}
+        {mode === 'reset' && resetActivities && resetActivities.length > 0 && (
+          <div className="px-6 py-4 border-t border-red-100 bg-red-50/30 flex items-center justify-between gap-3 shrink-0">
+            <span className="text-xs text-gray-500">
+              <strong className="text-gray-800">{resetSelected.size}</strong> / {resetActivities.length} selected to reset
+            </span>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={applyReset}
+                disabled={resetting || resetSelected.size === 0}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500 text-white text-xs font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 transition-all"
+              >
+                {resetting ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                ) : <ArrowPathIcon className="w-3.5 h-3.5" />}
+                {resetting ? 'Resetting…' : `Reset ${resetSelected.size} activities`}
               </button>
             </div>
           </div>

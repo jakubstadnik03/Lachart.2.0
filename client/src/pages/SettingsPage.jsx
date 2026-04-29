@@ -6,6 +6,8 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
+import { usePremium } from '../hooks/usePremium';
+import UpgradeModal from '../components/UpgradeModal';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -70,6 +72,7 @@ const SettingsPage = () => {
   const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
+  const { gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
@@ -207,10 +210,10 @@ const SettingsPage = () => {
       if (tab === 'coach') setActiveTab('coach');
       // Stripe redirect feedback
       if (tab === 'subscription' && q.get('success') === '1') {
-        addNotification({ type: 'success', message: 'Payment successful! Your subscription is now active.' });
+        addNotification('Payment successful! Your subscription is now active.', 'success');
       }
       if (tab === 'subscription' && q.get('canceled') === '1') {
-        addNotification({ type: 'info', message: 'Checkout was canceled. No charges were made.' });
+        addNotification('Checkout was canceled. No charges were made.', 'info');
       }
     } catch {
       // ignore
@@ -579,7 +582,7 @@ const SettingsPage = () => {
     } catch (err) {
       const msg = err?.response?.data?.message || err?.response?.data?.error || 'Checkout failed';
       setSubError(msg);
-      addNotification({ type: 'error', message: msg });
+      addNotification(msg, 'error');
     } finally {
       setSubActionLoading(false);
     }
@@ -594,7 +597,7 @@ const SettingsPage = () => {
     } catch (err) {
       const msg = err?.response?.data?.error || 'Could not open billing portal';
       setSubError(msg);
-      addNotification({ type: 'error', message: msg });
+      addNotification(msg, 'error');
     } finally {
       setSubActionLoading(false);
     }
@@ -606,11 +609,11 @@ const SettingsPage = () => {
     setSubActionLoading(true);
     try {
       await cancelSubscription();
-      addNotification({ type: 'success', message: 'Subscription will be canceled at the end of the billing period.' });
+      addNotification('Subscription will be canceled at the end of the billing period.', 'success');
       const data = await getCurrentSubscription();
       setSubData(data);
     } catch (err) {
-      addNotification({ type: 'error', message: err?.response?.data?.error || 'Cancel failed' });
+      addNotification(err?.response?.data?.error || 'Cancel failed', 'error');
     } finally {
       setSubActionLoading(false);
     }
@@ -621,11 +624,11 @@ const SettingsPage = () => {
     setSubActionLoading(true);
     try {
       await reactivateSubscription();
-      addNotification({ type: 'success', message: 'Subscription reactivated!' });
+      addNotification('Subscription reactivated!', 'success');
       const data = await getCurrentSubscription();
       setSubData(data);
     } catch (err) {
-      addNotification({ type: 'error', message: err?.response?.data?.error || 'Reactivate failed' });
+      addNotification(err?.response?.data?.error || 'Reactivate failed', 'error');
     } finally {
       setSubActionLoading(false);
     }
@@ -724,6 +727,10 @@ const SettingsPage = () => {
 
   const handleUpload = async () => {
     if (files.length === 0) return;
+
+    // ── Premium gate: FIT upload requires Pro plan ──────────────────────────
+    if (!gate('FIT Training Upload', 'pro')) return;
+    // ────────────────────────────────────────────────────────────────────────
 
     try {
       setUploading(true);
@@ -2933,6 +2940,7 @@ const SettingsPage = () => {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
@@ -2981,6 +2989,8 @@ const SettingsPage = () => {
       </div>
 
     </div>
+    <UpgradeModal {...fitUpgradeModalProps} />
+    </>
   );
 };
 

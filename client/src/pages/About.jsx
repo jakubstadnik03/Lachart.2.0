@@ -690,11 +690,7 @@ const About = () => {
       <nav className="w-full bg-white border-b border-gray-100 py-2 sm:py-4 px-4 sm:px-6 flex items-center justify-between z-20 relative">
         <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
           <picture>
-            <source
-              type="image/webp"
-              srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-              sizes="(min-width: 640px) 99px, 89px"
-            />
+            
             <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 sm:h-9 w-auto" />
           </picture>
           <span className="text-lg sm:text-xl font-bold text-primary-dark tracking-tight">LaChart</span>
@@ -718,11 +714,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
             <picture>
-              <source
-                type="image/webp"
-                srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
-                sizes="40px"
-              />
+              
               <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-auto" />
             </picture>
             <span className="text-lg font-bold text-primary-dark">LaChart</span>
@@ -1236,16 +1228,12 @@ const About = () => {
                 <p className="text-xs text-gray-600">No card required · Export in seconds</p>
               </div>
             </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <BrowserFrame>
-                <LazyImage
-                  src="/images/lachart-test.png"
-                  webpSrcSet="/images/lachart-test-640.webp 640w, /images/lachart-test-960.webp 960w, /images/lachart-test-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="Lactate test PDF report"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
+            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="flex justify-center">
+              <img
+                src="/images/lactate-pdf-report.jpg"
+                alt="LaChart lactate test PDF report with lactate curve, heart rate overlay and training zones"
+                className="w-full max-w-2xl rounded-2xl shadow-2xl"
+              />
             </motion.div>
           </div>
         </div>
@@ -1255,16 +1243,12 @@ const About = () => {
       <section id="guide" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }} className="order-2 lg:order-1">
-              <BrowserFrame>
-                <LazyImage
-                  src="/images/lachart3.jpeg"
-                  webpSrcSet="/images/lachart3-320.webp 320w, /images/lachart3-560.webp 560w, /images/lachart3-800.webp 800w"
-                  sizes="(min-width: 1024px) 560px, 100vw"
-                  alt="Lactate analysis"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
+            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }} className="order-2 lg:order-1 flex justify-center">
+              <img
+                src="/images/lactate-threshold-testing.jpg"
+                alt="Lactate threshold testing — cyclist on indoor trainer with coach taking blood sample"
+                className="w-full max-w-2xl rounded-2xl shadow-2xl"
+              />
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="order-1 lg:order-2">
               <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Learn</p>
@@ -1457,20 +1441,11 @@ const About = () => {
               </div>
             </motion.div>
             <motion.div {...revealProps({ opacity: 0, x: 40 }, { opacity: 1, x: 0 }, { duration: 0.6, delay: 0.1 }, { once: true, margin: '-60px' })} className="flex justify-center min-w-0">
-              <picture>
-                <source
-                  type="image/webp"
-                  srcSet="/images/lachart3-320.webp 320w, /images/lachart3-560.webp 560w, /images/lachart3-800.webp 800w"
-                  sizes="(min-width: 1024px) 560px, 320px"
-                />
-                <img
-                  src="/images/lachart3.png"
-                  alt="LaChart analytics"
-                  className="w-auto max-w-xs drop-shadow-2xl"
-                  srcSet="/images/lachart3.png 1857w"
-                  sizes="(min-width: 1024px) 560px, 320px"
-                />
-              </picture>
+              <img
+                src="/images/why-lachart.jpg"
+                alt="Why LaChart — everything in one platform"
+                className="w-full max-w-2xl rounded-2xl shadow-2xl"
+              />
             </motion.div>
           </div>
         </div>

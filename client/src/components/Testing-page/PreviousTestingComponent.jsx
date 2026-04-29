@@ -11,6 +11,9 @@ import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from '../../context/AuthProvider';
 import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { usePremium } from '../../hooks/usePremium';
+import UpgradeModal from '../UpgradeModal';
+import { LockClosedIcon } from '@heroicons/react/24/outline';
 
 const KM_PER_MILE = 1.609344;
 
@@ -101,6 +104,26 @@ function buildPredictorTraining(externalActivities, sport) {
   };
 }
 
+function PremiumLockedCard({ title, description, onUpgrade }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+        <LockClosedIcon className="w-5 h-5 text-primary" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-gray-900 text-sm mb-1">{title}</h3>
+        <p className="text-xs text-gray-500">{description}</p>
+      </div>
+      <button
+        onClick={onUpgrade}
+        className="mt-1 px-4 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+      >
+        Upgrade to Pro
+      </button>
+    </div>
+  );
+}
+
 const PreviousTestingComponent = ({
   selectedSport,
   tests = [],
@@ -110,6 +133,7 @@ const PreviousTestingComponent = ({
   externalActivities = [],
 }) => {
   const { user } = useAuth();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
@@ -485,6 +509,7 @@ const PreviousTestingComponent = ({
                 onTestDataChange={() => {}}
                 onGlucoseColumnChange={handleGlucoseColumnChange}
                 onDelete={handleTestDelete}
+                isPremium={isPremium}
               />
             </div>
           </motion.div>
@@ -499,7 +524,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        <LactateCurveCalculator mockData={currentTest} />
+        <LactateCurveCalculator mockData={currentTest} isPremium={isPremium} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -512,7 +537,15 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        <TrainingZonesGenerator mockData={currentTest} />
+        {isPremium ? (
+          <TrainingZonesGenerator mockData={currentTest} />
+        ) : (
+          <PremiumLockedCard
+            title="Training Zones"
+            description="Unlock personalised training zones based on your lactate thresholds."
+            onUpgrade={() => gate('Training Zones', 'pro')}
+          />
+        )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -533,7 +566,15 @@ const PreviousTestingComponent = ({
                 </div>
               }
             >
-              <RacePacePredictorCard {...racePredictorProps} />
+              {isPremium ? (
+                <RacePacePredictorCard {...racePredictorProps} />
+              ) : (
+                <PremiumLockedCard
+                  title="Race Pace Predictor"
+                  description="Predict your race paces based on your lactate test thresholds."
+                  onUpgrade={() => gate('Race Pace Predictor', 'pro')}
+                />
+              )}
             </Suspense>
           </motion.div>
         )}
@@ -565,6 +606,8 @@ const PreviousTestingComponent = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <UpgradeModal {...UpgradeModalProps} />
     </div>
   );
 };

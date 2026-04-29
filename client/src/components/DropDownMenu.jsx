@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 
-export function DropdownMenu({ 
+export function DropdownMenu({
   selectedValue,
   options = [],
   onChange,
@@ -9,27 +9,40 @@ export function DropdownMenu({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const listRef = useRef(null);
 
-  const toggleMenu = () => setIsOpen(!isOpen);
+  const toggleMenu = () => setIsOpen(prev => !prev);
 
-  // Přidána kontrola existence options
-  const selectedOption = options && options.length > 0 
+  const selectedOption = options && options.length > 0
     ? options.find(opt => opt[valueKey] === selectedValue)
     : null;
 
-  // Přidáme useEffect pro zachycení kliknutí mimo menu
   useEffect(() => {
-    const handleClickOutside = (event) => {
+    if (!isOpen) return;
+
+    // Close when clicking/touching outside the dropdown
+    const handleOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+    // Close when the page scrolls but NOT when the list itself is scrolling
+    const handleScroll = (event) => {
+      if (listRef.current && listRef.current.contains(event.target)) return;
+      setIsOpen(false);
     };
-  }, []);
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside, { passive: true });
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      window.removeEventListener('scroll', handleScroll, { capture: true });
+    };
+  }, [isOpen]);
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
@@ -40,7 +53,6 @@ export function DropdownMenu({
         aria-label="Training selector"
         onClick={toggleMenu}
       >
-        {/* Hamburger menu ikona */}
         <svg className="w-5 h-5 mr-1 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>
@@ -57,12 +69,16 @@ export function DropdownMenu({
         />
       </div>
 
-      {/* Dropdown menu */}
+      {/* Dropdown menu — scrollable list so the page never needs to scroll while it's open */}
       {isOpen && options && options.length > 0 && (
-        <ul className="absolute left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-full">
+        <ul
+          ref={listRef}
+          className="absolute left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-full max-h-60 overflow-y-auto overscroll-contain"
+        >
           {options.map((option, index) => (
             <li
               key={option[valueKey] || index}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={() => {
                 onChange(option[valueKey]);
                 setIsOpen(false);
