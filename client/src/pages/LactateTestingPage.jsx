@@ -10,6 +10,7 @@ import {
   completeLactateSession, downloadLactateSessionFit,
 } from '../services/api';
 import deviceConnectivity from '../services/deviceConnectivity';
+import { isCapacitorNative } from '../utils/isNativeApp';
 import { useTrainer } from '../trainer/react/useTrainer.js';
 import { TrainerConnectModal } from '../trainer/react/TrainerConnectModal.jsx';
 import {
@@ -800,7 +801,7 @@ const LactateTestingPage = () => {
 
   // ── Other devices ──────────────────────────────────────────
   const connectOtherDevice = async (key, label) => {
-    if (!navigator.bluetooth) { addNotification('Web Bluetooth not supported. Use Chrome or Edge.', 'error'); return; }
+    if (!navigator.bluetooth && !isCapacitorNative()) { addNotification('Web Bluetooth is only supported in Chrome or Edge on desktop. Use the mobile app for Bluetooth on iOS.', 'error'); return; }
     try {
       addNotification(`Connecting ${label}…`, 'info');
       await deviceConnectivity.connectWebBluetooth(key, (data) => {
