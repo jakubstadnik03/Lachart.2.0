@@ -892,13 +892,43 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
 
 export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
   const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail });
+  const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
+  const fileName = `lachart-report-${date}.pdf`;
+
+  // iOS Safari and Capacitor WKWebView don't support <a download> for blob URLs.
+  // Detect iOS: open as a data URL in a new tab — iOS shows it in the built-in PDF
+  // viewer with a native "Save to Files / Share" button in the toolbar.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  if (isIOS) {
+    // Convert blob to base64 data URL so it survives the new tab open
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result; // data:application/pdf;base64,...
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(
+          `<html><head><title>${fileName}</title></head><body style="margin:0">` +
+          `<embed src="${dataUrl}" type="application/pdf" width="100%" height="100%" />` +
+          `</body></html>`
+        );
+      } else {
+        // Popup blocked — fall back to same-window navigation
+        window.location.href = dataUrl;
+      }
+    };
+    reader.readAsDataURL(blob);
+    return;
+  }
+
+  // Desktop / Android: standard <a download> trigger
   const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
   link.href = url;
-  link.setAttribute('download', `lachart-report-${date}.pdf`);
+  link.setAttribute('download', fileName);
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }

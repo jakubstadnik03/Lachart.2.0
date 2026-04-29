@@ -786,6 +786,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [pdfStatus, setPdfStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [showPdfPreview, setShowPdfPreview]   = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl]     = useState(null);
+  // Lock body scroll while PDF preview modal is open
+  useEffect(() => {
+    if (showPdfPreview) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [showPdfPreview]);
   const [pdfCustomNote, setPdfCustomNote]     = useState('');
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
@@ -3371,28 +3379,81 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       {showPdfPreview && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowPdfPreview(false)} />
-          <div className="relative w-full max-w-6xl h-[98vh] sm:h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-6xl h-[98dvh] sm:h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
 
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-100 flex-shrink-0">
+            {/* Modal header — always visible, sticky at top */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-white z-10">
               <div className="min-w-0">
                 <div className="text-sm sm:text-base font-semibold text-gray-900">PDF Preview</div>
                 <div className="text-xs text-gray-400 truncate">{mockData?.title || 'Lactate Report'} · {formatDate(mockData?.date)}</div>
               </div>
               <button
                 onClick={() => setShowPdfPreview(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-500 touch-manipulation flex-shrink-0"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors text-gray-600 touch-manipulation flex-shrink-0"
+                aria-label="Close PDF preview"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
-            {/* Main area: stacks vertically on mobile, side-by-side on md+ */}
-            <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+            {/* Main area:
+                Mobile  → flex-col: PDF on top (scrollable), sidebar collapsible below
+                Desktop → flex-row: PDF left, sidebar right */}
+            <div className="flex flex-col md:flex-row flex-1 min-h-0">
 
-              {/* Sidebar — on mobile comes first so user fills note before seeing preview */}
-              <div className="flex-shrink-0 md:w-72 md:order-2 md:border-l border-b md:border-b-0 border-gray-100 flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[35vh] md:max-h-none">
+              {/* ── PDF viewer ── */}
+              <div className="flex-1 md:order-1 relative bg-gray-100 min-h-0 flex flex-col" style={{ minHeight: 0 }}>
+                {pdfPreviewLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      <span className="text-sm text-gray-500">Generating preview…</span>
+                    </div>
+                  </div>
+                )}
+                {pdfPreviewUrl && (
+                  <>
+                    {/* Mobile: open in new tab — iframe PDF scroll doesn't work on iOS/WKWebView */}
+                    <div className="md:hidden flex flex-col h-full">
+                      <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                        <object
+                          data={pdfPreviewUrl}
+                          type="application/pdf"
+                          className="w-full"
+                          style={{ height: '60dvh' }}
+                        >
+                          <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
+                            <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            <p className="text-sm text-gray-500">PDF preview not supported in this browser.</p>
+                          </div>
+                        </object>
+                      </div>
+                      {/* Always-visible open-in-browser button on mobile */}
+                      <div className="flex-shrink-0 p-3 bg-white border-t border-gray-100">
+                        <a
+                          href={pdfPreviewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full min-h-[44px] px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-semibold touch-manipulation active:opacity-70"
+                        >
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          Open full PDF in browser
+                        </a>
+                      </div>
+                    </div>
+                    {/* Desktop: regular iframe */}
+                    <iframe
+                      src={pdfPreviewUrl}
+                      title="PDF Preview"
+                      className="hidden md:block w-full h-full border-0"
+                    />
+                  </>
+                )}
+              </div>
+
+              {/* Sidebar — on mobile collapsible below PDF, on desktop fixed right column */}
+              <div className="flex-shrink-0 md:w-72 md:order-2 md:border-l border-t md:border-t-0 border-gray-100 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[38dvh] md:max-h-none" style={{ WebkitOverflowScrolling: 'touch' }}>
 
                   {/* Custom note */}
                   <div>
@@ -3521,25 +3582,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 </div>
               </div>
 
-              {/* PDF iframe */}
-              <div className="flex-1 md:order-1 relative bg-gray-100 overflow-hidden">
-                {pdfPreviewLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="text-sm text-gray-500">Generating preview…</span>
-                    </div>
-                  </div>
-                )}
-                {pdfPreviewUrl && (
-                  <iframe
-                    src={pdfPreviewUrl}
-                    title="PDF Preview"
-                    className="w-full h-full border-0"
-                    style={{ minHeight: '100%' }}
-                  />
-                )}
-              </div>
             </div>
           </div>
         </div>
