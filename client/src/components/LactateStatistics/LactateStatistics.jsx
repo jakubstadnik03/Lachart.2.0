@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import api, { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones, getZoneHistory } from '../../services/api';
+import api, { getTrainingsWithLactate, getMonthlyPowerAnalysis, getZoneHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
@@ -71,8 +71,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const zoneTypeInitialized = useRef(new Map()); // Track which months have had zone type auto-selected
   const [tooltipData, setTooltipData] = useState(null); // { x, y, content }
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const lastTrainingCountRef = useRef(0); // Track last known training count
-  const pollingIntervalRef = useRef(null); // Reference to polling interval
+  // lastTrainingCountRef and pollingIntervalRef removed — polling was eliminated
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   const [zoneHistoryLoading, setZoneHistoryLoading] = useState(false);
   const [showZoneHistory, setShowZoneHistory] = useState(false);
@@ -179,7 +178,6 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
             setTrainings(parsed);
-            lastTrainingCountRef.current = parsed.length;
             setLoading(false);
             usedCache = true;
           }
@@ -197,9 +195,6 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       const data = await getTrainingsWithLactate(athleteId);
       const newTrainings = data || [];
       setTrainings(newTrainings);
-
-      // Update training count reference
-      lastTrainingCountRef.current = newTrainings.length;
 
       // Persist to cache for reuse on other pages / next visits
       try {
@@ -335,19 +330,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     }
   }, [user, selectedAthleteId, loadedMonths]);
 
-  const loadUserZones = useCallback(async () => {
-    try {
-      await getLatestPowerZones();
-      // User zones are loaded but not used in this component
-    } catch (error) {
-      // Silently handle 429 (Too Many Requests) - don't log as error
-      if (error.response?.status === 429) {
-        console.log('Rate limited when loading user zones, will retry later');
-        return;
-      }
-      console.error('Error loading user zones:', error);
-    }
-  }, []);
+  // loadUserZones was calling getLatestPowerZones() but the result was never used
+  // in this component (there was even a comment saying so). Removed to avoid
+  // unnecessary API hits on every mount.
 
   // Helper function to check if selected month is current month
   const isCurrentMonth = useCallback((monthKey) => {
@@ -373,8 +358,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   useEffect(() => {
     loadTrainings();
     loadAvailableMonths();
-    loadUserZones();
-    
+    // loadUserZones removed — result was never used in this component
+
     // Load cached month data from localStorage on mount
     const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
     const cachePrefix = `monthlyAnalysis_${athleteId || 'default'}_`;
@@ -411,7 +396,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     } catch (e) {
       console.log('Error loading cached months:', e);
     }
-  }, [loadTrainings, loadAvailableMonths, loadUserZones, user, selectedAthleteId]);
+  }, [loadTrainings, loadAvailableMonths, user, selectedAthleteId]);
 
   // Load month data when selected month changes
   useEffect(() => {
@@ -439,50 +424,10 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     };
   }, [refreshCurrentMonthIfSelected]);
   
-  // Polling mechanism to check for new trainings
-  useEffect(() => {
-    // Only poll if current month is selected
-    if (!selectedMonth || !isCurrentMonth(selectedMonth)) {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      return;
-    }
-    
-    // Poll every 30 seconds for new trainings
-    const pollForNewTrainings = async () => {
-      try {
-        const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
-        const data = await getTrainingsWithLactate(athleteId);
-        const currentCount = (data || []).length;
-        
-        // If training count increased, refresh data
-        if (currentCount > lastTrainingCountRef.current) {
-          console.log(`New trainings detected (${currentCount} vs ${lastTrainingCountRef.current}), refreshing...`);
-          lastTrainingCountRef.current = currentCount;
-          await refreshCurrentMonthIfSelected();
-        } else {
-          lastTrainingCountRef.current = currentCount;
-        }
-      } catch (error) {
-        console.error('Error polling for new trainings:', error);
-      }
-    };
-    
-    // Initial count
-    lastTrainingCountRef.current = trainings.length;
-    
-    // Start polling
-    pollingIntervalRef.current = setInterval(pollForNewTrainings, 30000); // 30 seconds
-    
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    };
-  }, [selectedMonth, isCurrentMonth, trainings.length, user, selectedAthleteId, refreshCurrentMonthIfSelected]);
+  // Polling removed — it was calling getTrainingsWithLactate every 30 seconds
+  // which hammered the Strava API rate limit. New-training detection is already
+  // handled correctly by the event listeners above (trainingAdded / trainingUpdated /
+  // stravaSyncComplete). No polling needed.
 
   // Auto-select zone type when month data is loaded (only once per month)
   useEffect(() => {

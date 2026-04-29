@@ -209,19 +209,24 @@ export default function SpiderChart({
       const reqId = ++allTimeReqRef.current;
       const cacheKey = `powerRadar_allTimeRef_v2${targetAthleteId ? `_${targetAthleteId}` : ''}`;
       const cacheTsKey = cacheKey + '_ts';
+      const CACHE_TTL = 3600000; // 1 hour
       try {
         const now = Date.now();
         const cached = localStorage.getItem(cacheKey);
         const ts = Number(localStorage.getItem(cacheTsKey) || 0);
-        if (cached && (now - ts) < 3600000) {
+        if (cached && (now - ts) < CACHE_TTL) {
           try {
             const parsed = JSON.parse(cached);
-            if (isBikePayload(parsed)) setBikeAllTimeRef(parsed);
+            if (isBikePayload(parsed)) {
+              setBikeAllTimeRef(parsed);
+              return; // cache is fresh — skip the API call entirely
+            }
           } catch {}
         }
+        // Cache stale or missing — fetch from server
         const params = new URLSearchParams({ comparePeriod: 'alltime' });
         if (targetAthleteId) params.append('athleteId', targetAthleteId);
-        const resp = await api.get(`/api/fit/power-metrics?${params}`, { noCache: true });
+        const resp = await api.get(`/api/fit/power-metrics?${params}`);
         if (reqId !== allTimeReqRef.current) return;
         if (isBikePayload(resp.data)) {
           setBikeAllTimeRef(resp.data);
@@ -241,27 +246,31 @@ export default function SpiderChart({
       const athletePart = targetAthleteId ? `_${targetAthleteId}` : '';
       const cacheKey = `powerRadar_metrics_v3_${comparePeriod}_${selectedMonths.join(',')}${athletePart}`;
       const cacheTsKey = cacheKey + '_ts';
-      const CACHE_DUR = 600000;
+      const CACHE_DUR = 600000; // 10 min
       try {
         const now = Date.now();
-        let usedCache = false;
         const cached = localStorage.getItem(cacheKey);
         const ts = Number(localStorage.getItem(cacheTsKey) || 0);
         if (cached && ts && (now - ts) < CACHE_DUR) {
           try {
             const parsed = JSON.parse(cached);
-            if (isBikePayload(parsed)) { setBikeMetrics(parsed); setLoadError(null); usedCache = true; }
+            if (isBikePayload(parsed)) {
+              setBikeMetrics(parsed);
+              setLoadError(null);
+              return; // cache is fresh — skip the API call entirely
+            }
           } catch {}
         }
-        usedCache ? setRefreshing(true) : setLoading(true);
 
+        // Cache stale or missing — fetch from server
+        setLoading(true);
         const params = new URLSearchParams();
         if (comparePeriod) params.append('comparePeriod', comparePeriod);
         selectedMonths.forEach(m => params.append('selectedMonths', m));
         if (targetAthleteId) params.append('athleteId', targetAthleteId);
 
         setLoadError(null);
-        const resp = await api.get(`/api/fit/power-metrics?${params}`, { noCache: true });
+        const resp = await api.get(`/api/fit/power-metrics?${params}`);
         if (reqId !== metricsReqRef.current) return;
         const metrics = resp.data;
 
