@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
@@ -1153,6 +1154,38 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       setPdfStatus({ type: 'error', message: e?.message || 'Failed to generate PDF.' });
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  // On iOS Capacitor, blob URLs can't open in a new tab — convert to base64 and embed
+  const handleOpenInBrowser = async () => {
+    if (!pdfPreviewUrl) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      try {
+        const blob = await fetch(pdfPreviewUrl).then(r => r.blob());
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = reader.result;
+          const win = window.open('', '_blank');
+          if (win) {
+            win.document.write(
+              `<html><head><title>Lactate Report</title></head>` +
+              `<body style="margin:0;background:#000">` +
+              `<embed src="${dataUrl}" type="application/pdf" width="100%" height="100%" />` +
+              `</body></html>`
+            );
+          } else {
+            window.location.href = dataUrl;
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        console.error('[LactateCurveCalculator] Failed to open PDF:', e);
+      }
+    } else {
+      window.open(pdfPreviewUrl, '_blank', 'noopener');
     }
   };
 
@@ -3375,14 +3408,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         </div>
       )}
 
-      {/* ── PDF Preview Modal ── */}
-      {showPdfPreview && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {/* ── PDF Preview Modal — rendered via portal to escape overflow:auto on iOS ── */}
+      {showPdfPreview && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowPdfPreview(false)} />
-          <div className="relative w-full max-w-6xl h-[98dvh] sm:h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-6xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
+            style={{ height: '100dvh', maxHeight: '100dvh' }}>
 
-            {/* Modal header — always visible, sticky at top */}
-            <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-white z-10">
+            {/* Modal header — always visible, sticky at top; safe-area-top ensures notch is covered */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-white z-10"
+              style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 12px))' }}>
               <div className="min-w-0">
                 <div className="text-sm sm:text-base font-semibold text-gray-900">PDF Preview</div>
                 <div className="text-xs text-gray-400 truncate">{mockData?.title || 'Lactate Report'} · {formatDate(mockData?.date)}</div>
@@ -3430,15 +3465,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       </div>
                       {/* Always-visible open-in-browser button on mobile */}
                       <div className="flex-shrink-0 p-3 bg-white border-t border-gray-100">
-                        <a
-                          href={pdfPreviewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={handleOpenInBrowser}
                           className="flex items-center justify-center gap-2 w-full min-h-[44px] px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-semibold touch-manipulation active:opacity-70"
                         >
                           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                           Open full PDF in browser
-                        </a>
+                        </button>
                       </div>
                     </div>
                     {/* Desktop: regular iframe */}
@@ -3562,7 +3595,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex-shrink-0 border-t border-gray-100 p-3 sm:p-4 flex flex-row md:flex-col gap-2">
+                <div className="flex-shrink-0 border-t border-gray-100 p-3 sm:p-4 flex flex-row md:flex-col gap-2"
+                  style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}>
                   <button
                     onClick={handleRegeneratePdfPreview}
                     disabled={pdfPreviewLoading}
@@ -3584,7 +3618,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
