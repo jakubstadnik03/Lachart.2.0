@@ -883,13 +883,15 @@ function CoachVisual() {
 
 // ─── Slide definitions (light theme) ─────────────────────────────────────────
 
+// charPos: where the character anchors — 'right' (default) | 'left'
+// charScale: extra size multiplier for specific characters
 const INTRO_SLIDES = [
-  { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual />, character: '/characters/cyclist-standing.png' },
-  { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />,    character: '/characters/coach-laptop.png' },
-  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />,       character: '/characters/runner-treadmill.png' },
-  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />,   character: '/characters/athlete-watch.png' },
-  { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />,     character: '/characters/athlete-phone.png' },
-  { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />,       character: '/characters/athlete-app.png' },
+  { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual />, character: '/characters/cyclist-standing.png', charPos: 'right', charScale: 1.15 },
+  { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />,    character: '/characters/coach-laptop.png',    charPos: 'right', charScale: 1.2  },
+  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />,       character: '/characters/runner-treadmill.png',charPos: 'right', charScale: 1.1  },
+  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />,   character: '/characters/athlete-watch.png',   charPos: 'left',  charScale: 1.0  },
+  { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />,     character: '/characters/athlete-phone.png',   charPos: 'right', charScale: 1.1  },
+  { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />,       character: '/characters/athlete-app.png',     charPos: 'left',  charScale: 1.05 },
 ];
 
 export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
@@ -972,22 +974,49 @@ export function IntroSlides({ user, onDone }) {
           </div>
           <h2 className="text-[30px] leading-[1.15] font-black text-gray-900 mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
           <p className="text-[15px] text-gray-400 leading-relaxed mb-5 flex-shrink-0">{current.subtitle}</p>
-          <div className="flex-1 overflow-hidden relative">
-            <div className="w-full">{current.visual}</div>
-            {current.character && (
-              <img
-                src={current.character}
-                alt=""
-                aria-hidden="true"
-                className="absolute bottom-0 right-0 pointer-events-none select-none"
-                style={{
-                  width: 'clamp(90px, 28%, 130px)',
-                  objectFit: 'contain',
-                  objectPosition: 'bottom right',
-                  filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.10))',
-                  transform: 'translateX(8px)',
-                }}
-              />
+          {/* Visual + character — side-by-side composition */}
+          <div className="flex-1 overflow-hidden flex items-end gap-3 min-h-0">
+            {/* Character — left side */}
+            {current.character && current.charPos === 'left' && (
+              <div className="flex-shrink-0 self-end" style={{ width: `clamp(100px, 32%, 160px)` }}>
+                <img
+                  src={current.character}
+                  alt=""
+                  aria-hidden="true"
+                  className="w-full object-contain object-bottom pointer-events-none select-none"
+                  style={{
+                    mixBlendMode: 'multiply',
+                    filter: 'drop-shadow(2px 0 18px rgba(0,0,0,0.08))',
+                    transform: `scale(${current.charScale ?? 1}) translateX(-6px)`,
+                    transformOrigin: 'bottom left',
+                    maxHeight: '240px',
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Component visual — takes remaining space */}
+            <div className="flex-1 min-w-0 self-start overflow-hidden">
+              {current.visual}
+            </div>
+
+            {/* Character — right side */}
+            {current.character && current.charPos !== 'left' && (
+              <div className="flex-shrink-0 self-end" style={{ width: `clamp(100px, 32%, 160px)` }}>
+                <img
+                  src={current.character}
+                  alt=""
+                  aria-hidden="true"
+                  className="w-full object-contain object-bottom pointer-events-none select-none"
+                  style={{
+                    mixBlendMode: 'multiply',
+                    filter: 'drop-shadow(-2px 0 18px rgba(0,0,0,0.08))',
+                    transform: `scale(${current.charScale ?? 1}) translateX(6px)`,
+                    transformOrigin: 'bottom right',
+                    maxHeight: '240px',
+                  }}
+                />
+              </div>
             )}
           </div>
           <div className="flex items-center gap-3 pt-4 flex-shrink-0" style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
