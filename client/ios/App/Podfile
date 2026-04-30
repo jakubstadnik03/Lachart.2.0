@@ -43,56 +43,44 @@ post_install do |installer|
 
   # ── Privacy manifest injection ─────────────────────────────────────────────
   # GoogleSignIn 6.x, GTMAppAuth and GTMSessionFetcher don't ship with
-  # PrivacyInfo.xcprivacy. Apple requires one per SDK (ITMS-91061).
-  # We write the manifest into each pod's source directory and register it
-  # as a resource so CocoaPods bundles it into the compiled .framework.
-  privacy_manifest = <<~XML
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-      <key>NSPrivacyAccessedAPITypes</key>
-      <array>
-        <dict>
-          <key>NSPrivacyAccessedAPIType</key>
-          <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
-          <key>NSPrivacyAccessedAPITypeReasons</key>
-          <array>
-            <string>CA92.1</string>
-          </array>
-        </dict>
-      </array>
-      <key>NSPrivacyTracking</key>
-      <false/>
-      <key>NSPrivacyCollectedDataTypes</key>
-      <array/>
-    </dict>
-    </plist>
-  XML
+  # PrivacyInfo.xcprivacy (ITMS-91061). We add a Run Script build phase to
+  # each pod target that writes the manifest directly into the compiled
+  # .framework bundle at build time — works in Xcode Cloud and local builds.
+  privacy_xml = '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ' \
+    '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict>' \
+    '<key>NSPrivacyAccessedAPITypes</key><array>' \
+    '<dict><key>NSPrivacyAccessedAPIType</key>' \
+    '<string>NSPrivacyAccessedAPICategoryUserDefaults</string>' \
+    '<key>NSPrivacyAccessedAPITypeReasons</key>' \
+    '<array><string>CA92.1</string></array></dict>' \
+    '</array>' \
+    '<key>NSPrivacyTracking</key><false/>' \
+    '<key>NSPrivacyCollectedDataTypes</key><array/>' \
+    '</dict></plist>'
+
+  privacy_script = <<~BASH
+    DEST="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.framework/PrivacyInfo.xcprivacy"
+    if [ ! -f "$DEST" ]; then
+      cat > "$DEST" << 'PRIVACY_EOF'
+#{privacy_xml}
+PRIVACY_EOF
+      echo "[privacy] Wrote PrivacyInfo.xcprivacy → ${PRODUCT_NAME}.framework"
+    fi
+  BASH
 
   %w[GoogleSignIn GTMAppAuth GTMSessionFetcher].each do |pod_name|
-    pod_dir = "#{installer.sandbox.root}/#{pod_name}"
-    next unless Dir.exist?(pod_dir)
-
-    manifest_path = "#{pod_dir}/PrivacyInfo.xcprivacy"
-    File.write(manifest_path, privacy_manifest) unless File.exist?(manifest_path)
-    puts "  [privacy] PrivacyInfo.xcprivacy → #{pod_name}"
-
-    # Register the file as a resource in the pod's Xcode target
     target = installer.pods_project.targets.find { |t| t.name == pod_name }
     next unless target
 
-    group = installer.pods_project.main_group.find_subpath(pod_name, false)
-    next unless group
+    # Skip if we already added this phase
+    next if target.shell_script_build_phases.any? { |p| p.name == 'Inject PrivacyInfo.xcprivacy' }
 
-    # Avoid duplicate references
-    already_present = group.files.any? { |f| f.path == 'PrivacyInfo.xcprivacy' }
-    next if already_present
-
-    file_ref = group.new_file(manifest_path)
-    file_ref.path = manifest_path
-    file_ref.source_tree = '<absolute>'
-    target.resources_build_phase.add_file_reference(file_ref)
+    phase = target.new_shell_script_build_phase('Inject PrivacyInfo.xcprivacy')
+    phase.shell_script = privacy_script
+    phase.show_env_vars_in_log = '0'
+    puts "  [privacy] Build phase added → #{pod_name}"
   end
 
   installer.pods_project.save
