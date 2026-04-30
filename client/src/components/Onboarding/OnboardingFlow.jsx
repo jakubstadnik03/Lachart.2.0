@@ -896,7 +896,6 @@ export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
 
 // Unified full-screen tutorial: intro slides → setup steps
 export function IntroSlides({ user, onDone }) {
-  const navigate = useNavigate();
   const [phase, setPhase] = useState('slides'); // 'slides' | 'setup'
   const [slide, setSlide] = useState(0);
   const [setupStep, setSetupStep] = useState(0); // 0=profile, 1=preferences, 2=strava
@@ -939,7 +938,6 @@ export function IntroSlides({ user, onDone }) {
     { id: 'preferences', label: 'Preferences' },
     { id: 'strava', label: 'Connect Data' },
   ];
-  const totalSteps = SLIDES_PLUS_SETUP_COUNT(total, SETUP_STEPS.length);
   const globalStep = phase === 'slides' ? slide : total + setupStep;
   const globalTotal = total + SETUP_STEPS.length;
 
@@ -1041,8 +1039,6 @@ export function IntroSlides({ user, onDone }) {
     </div>
   );
 }
-
-function SLIDES_PLUS_SETUP_COUNT(slides, steps) { return slides + steps; }
 
 export default function OnboardingFlow({ onDismiss }) {
   const { user } = useAuth();

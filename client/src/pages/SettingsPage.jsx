@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
