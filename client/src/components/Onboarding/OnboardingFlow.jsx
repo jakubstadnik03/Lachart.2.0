@@ -660,7 +660,7 @@ function fmtDateForSubmit(s) {
 
 // ─── Intro Slides ─────────────────────────────────────────────────────────────
 
-// Visual components for each slide
+// Visual components — light theme
 function LactateCurveVisual() {
   const points = [
     { x: 5, y: 85, w: 120 }, { x: 20, y: 78, w: 150 },
@@ -669,46 +669,43 @@ function LactateCurveVisual() {
   ];
   const svgPoints = points.map(p => `${p.x * 4},${p.y * 1.4}`).join(' ');
   return (
-    <div className="w-full rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+    <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-4 pt-4 pb-2">
         <div className="flex justify-between items-center mb-3">
-          <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Lactate Curve</span>
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Lactate Curve</span>
           <div className="flex gap-3">
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400" /><span className="text-[10px] text-white/60">LT1</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-400" /><span className="text-[10px] text-white/60">LT2</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[10px] text-gray-500">LT1</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[10px] text-gray-500">LT2</span></div>
           </div>
         </div>
         <svg viewBox="0 0 340 120" className="w-full h-28">
           <defs>
-            <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#767EB5" stopOpacity="0.3" />
+            <linearGradient id="curveGradL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#767EB5" stopOpacity="0.15" />
               <stop offset="100%" stopColor="#767EB5" stopOpacity="0" />
             </linearGradient>
           </defs>
-          <polyline points={`5,119 ${svgPoints} 330,119`} fill="url(#curveGrad)" stroke="none" />
+          <polyline points={`5,119 ${svgPoints} 330,119`} fill="url(#curveGradL)" stroke="none" />
           <polyline points={svgPoints} fill="none" stroke="#767EB5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          {/* LT1 line */}
-          <line x1="120" y1="0" x2="120" y2="119" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4,3" />
-          <circle cx="120" cy="86" r="4" fill="#60a5fa" />
-          {/* LT2 line */}
-          <line x1="220" y1="0" x2="220" y2="119" stroke="#f87171" strokeWidth="1.5" strokeDasharray="4,3" />
-          <circle cx="220" cy="47" r="4" fill="#f87171" />
-          {/* X axis labels */}
+          <line x1="120" y1="0" x2="120" y2="119" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,3" />
+          <circle cx="120" cy="86" r="4" fill="#3b82f6" />
+          <line x1="220" y1="0" x2="220" y2="119" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4,3" />
+          <circle cx="220" cy="47" r="4" fill="#ef4444" />
           {[150,200,250,300,350].map((w,i) => (
-            <text key={i} x={40 + i*60} y="118" fontSize="8" fill="rgba(255,255,255,0.3)" textAnchor="middle">{w}W</text>
+            <text key={i} x={40 + i*60} y="118" fontSize="8" fill="#9ca3af" textAnchor="middle">{w}W</text>
           ))}
         </svg>
       </div>
-      <div className="grid grid-cols-2 border-t border-white/10">
-        <div className="px-4 py-3 border-r border-white/10">
-          <p className="text-[10px] text-white/40 uppercase tracking-wider">LT1 Power</p>
-          <p className="text-lg font-bold text-blue-400 mt-0.5">193 W</p>
-          <p className="text-[10px] text-white/40">2.1 mmol/L</p>
+      <div className="grid grid-cols-2 border-t border-gray-100">
+        <div className="px-4 py-3 border-r border-gray-100">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wider">LT1 Power</p>
+          <p className="text-lg font-bold text-blue-500 mt-0.5">193 W</p>
+          <p className="text-[10px] text-gray-400">2.1 mmol/L</p>
         </div>
         <div className="px-4 py-3">
-          <p className="text-[10px] text-white/40 uppercase tracking-wider">LT2 Power</p>
-          <p className="text-lg font-bold text-red-400 mt-0.5">267 W</p>
-          <p className="text-[10px] text-white/40">4.0 mmol/L</p>
+          <p className="text-[10px] text-gray-400 uppercase tracking-wider">LT2 Power</p>
+          <p className="text-lg font-bold text-red-500 mt-0.5">267 W</p>
+          <p className="text-[10px] text-gray-400">4.0 mmol/L</p>
         </div>
       </div>
     </div>
@@ -717,11 +714,11 @@ function LactateCurveVisual() {
 
 function ZonesVisual() {
   const zones = [
-    { z: 'Z1', label: 'Active Recovery', sub: '< 55% LT1', pct: 28, color: '#60a5fa', bg: 'rgba(96,165,250,0.15)' },
-    { z: 'Z2', label: 'Endurance',        sub: '55–75% LT1', pct: 52, color: '#34d399', bg: 'rgba(52,211,153,0.15)' },
-    { z: 'Z3', label: 'Tempo',            sub: '75–90% LT2', pct: 68, color: '#fbbf24', bg: 'rgba(251,191,36,0.15)' },
-    { z: 'Z4', label: 'Threshold',        sub: '90–105% LT2', pct: 82, color: '#f97316', bg: 'rgba(249,115,22,0.15)' },
-    { z: 'Z5', label: 'VO2 Max',          sub: '> 105% LT2', pct: 95, color: '#f43f5e', bg: 'rgba(244,63,94,0.15)' },
+    { z: 'Z1', label: 'Active Recovery', sub: '< 55%', pct: 28, color: '#3b82f6', bg: '#eff6ff' },
+    { z: 'Z2', label: 'Endurance',       sub: '55–75%', pct: 52, color: '#10b981', bg: '#f0fdf4' },
+    { z: 'Z3', label: 'Tempo',           sub: '75–90%', pct: 68, color: '#f59e0b', bg: '#fffbeb' },
+    { z: 'Z4', label: 'Threshold',       sub: '90–105%', pct: 82, color: '#f97316', bg: '#fff7ed' },
+    { z: 'Z5', label: 'VO2 Max',         sub: '> 105%', pct: 95, color: '#ef4444', bg: '#fef2f2' },
   ];
   return (
     <div className="w-full space-y-2">
@@ -730,10 +727,10 @@ function ZonesVisual() {
           <span className="text-[11px] font-bold w-5 flex-shrink-0" style={{ color }}>{z}</span>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-baseline mb-1">
-              <span className="text-xs font-semibold text-white truncate">{label}</span>
-              <span className="text-[10px] text-white/40 ml-2 flex-shrink-0">{sub}</span>
+              <span className="text-xs font-semibold text-gray-800 truncate">{label}</span>
+              <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0">{sub}</span>
             </div>
-            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
             </div>
           </div>
@@ -750,23 +747,23 @@ function StepTestVisual() {
     { w: 240, la: 3.6, hr: 169 }, { w: 270, la: 6.1, hr: 178 },
   ];
   return (
-    <div className="w-full rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
-      <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center">
-        <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Step Test Data</span>
-        <span className="text-[10px] text-white/30">6 steps</span>
+    <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Step Test</span>
+        <span className="text-[10px] text-gray-400">6 steps</span>
       </div>
-      <div className="divide-y divide-white/5">
-        <div className="grid grid-cols-4 px-4 py-2">
+      <div className="divide-y divide-gray-50">
+        <div className="grid grid-cols-4 px-4 py-2 bg-gray-50/50">
           {['Step','Watts','Lactate','HR'].map(h => (
-            <span key={h} className="text-[9px] font-semibold text-white/30 uppercase tracking-wider">{h}</span>
+            <span key={h} className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider">{h}</span>
           ))}
         </div>
         {steps.map((s, i) => (
-          <div key={i} className={`grid grid-cols-4 px-4 py-2.5 ${i === 4 ? 'bg-blue-500/10' : ''}`}>
-            <span className="text-xs text-white/50">{i + 1}</span>
-            <span className="text-xs font-semibold text-white">{s.w} W</span>
-            <span className={`text-xs font-bold ${s.la > 4 ? 'text-red-400' : s.la > 2 ? 'text-yellow-400' : 'text-green-400'}`}>{s.la}</span>
-            <span className="text-xs text-white/60">{s.hr} bpm</span>
+          <div key={i} className={`grid grid-cols-4 px-4 py-2.5 ${i === 3 ? 'bg-blue-50' : ''}`}>
+            <span className="text-xs text-gray-400">{i + 1}</span>
+            <span className="text-xs font-semibold text-gray-800">{s.w} W</span>
+            <span className={`text-xs font-bold ${s.la > 4 ? 'text-red-500' : s.la > 2 ? 'text-amber-500' : 'text-emerald-500'}`}>{s.la}</span>
+            <span className="text-xs text-gray-500">{s.hr} bpm</span>
           </div>
         ))}
       </div>
@@ -777,39 +774,35 @@ function StepTestVisual() {
 function BluetoothVisual() {
   return (
     <div className="w-full space-y-3">
-      <div className="rounded-2xl bg-white/5 border border-white/10 px-5 py-4">
+      <div className="rounded-2xl bg-white border border-gray-100 shadow-sm px-5 py-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1">Heart Rate</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Heart Rate</p>
             <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-black text-white">142</span>
-              <span className="text-sm text-white/40">bpm</span>
+              <span className="text-4xl font-black text-gray-900">142</span>
+              <span className="text-sm text-gray-400">bpm</span>
             </div>
           </div>
           <div className="flex flex-col items-center gap-1">
-            <div className="w-10 h-10 rounded-full bg-green-400/20 border border-green-400/40 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 text-green-400" fill="currentColor">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-500" fill="currentColor">
                 <path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/>
               </svg>
             </div>
-            <span className="text-[9px] text-green-400 font-semibold">Connected</span>
+            <span className="text-[9px] text-emerald-600 font-semibold">Connected</span>
           </div>
         </div>
         <div className="h-12 flex items-end gap-0.5">
           {[60,72,68,80,75,142,138,145,142,148,144,142].map((v,i) => (
-            <div key={i} className="flex-1 rounded-sm" style={{ height: `${(v/160)*100}%`, backgroundColor: i > 4 ? 'rgba(248,113,113,0.8)' : 'rgba(255,255,255,0.2)' }} />
+            <div key={i} className="flex-1 rounded-sm" style={{ height: `${(v/160)*100}%`, backgroundColor: i > 4 ? '#fca5a5' : '#e5e7eb' }} />
           ))}
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {[
-          { label: 'Polar H10', connected: true },
-          { label: 'Garmin HRM', connected: false },
-          { label: 'Wahoo TICKR', connected: false },
-        ].map(({ label, connected }) => (
-          <div key={label} className={`rounded-xl px-2 py-2.5 border text-center ${connected ? 'bg-green-400/10 border-green-400/30' : 'bg-white/5 border-white/10'}`}>
-            <div className={`w-1.5 h-1.5 rounded-full mx-auto mb-1.5 ${connected ? 'bg-green-400' : 'bg-white/20'}`} />
-            <p className="text-[9px] text-white/60 leading-tight">{label}</p>
+        {[{ label: 'Polar H10', connected: true }, { label: 'Garmin HRM', connected: false }, { label: 'Wahoo TICKR', connected: false }].map(({ label, connected }) => (
+          <div key={label} className={`rounded-xl px-2 py-2.5 border text-center ${connected ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full mx-auto mb-1.5 ${connected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+            <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
           </div>
         ))}
       </div>
@@ -819,40 +812,38 @@ function BluetoothVisual() {
 
 function ReportsVisual() {
   return (
-    <div className="w-full rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
-      <div className="bg-white/8 px-5 py-4 border-b border-white/10">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-white">Lactate Test Report</p>
-            <p className="text-[10px] text-white/40 mt-0.5">April 30, 2026 · Cycling</p>
-          </div>
-          <div className="w-8 h-10 rounded-md bg-white/10 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/60" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-            </svg>
-          </div>
+    <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+        <div>
+          <p className="text-xs font-bold text-gray-800">Lactate Test Report</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">April 30, 2026 · Cycling</p>
+        </div>
+        <div className="w-8 h-10 rounded-md bg-gray-100 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
         </div>
       </div>
       <div className="px-5 py-4 space-y-3">
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: 'LT1', value: '193 W', sub: '2.1 mmol/L', color: 'text-blue-400' },
-            { label: 'LT2', value: '267 W', sub: '4.0 mmol/L', color: 'text-red-400' },
-            { label: 'Max HR', value: '182', sub: 'bpm', color: 'text-white' },
+            { label: 'LT1', value: '193 W', sub: '2.1 mmol/L', color: 'text-blue-500' },
+            { label: 'LT2', value: '267 W', sub: '4.0 mmol/L', color: 'text-red-500' },
+            { label: 'Max HR', value: '182', sub: 'bpm', color: 'text-gray-800' },
           ].map(({ label, value, sub, color }) => (
-            <div key={label} className="bg-white/5 rounded-xl px-2 py-2.5 text-center">
-              <p className="text-[9px] text-white/40 uppercase tracking-wider">{label}</p>
+            <div key={label} className="bg-gray-50 rounded-xl px-2 py-2.5 text-center border border-gray-100">
+              <p className="text-[9px] text-gray-400 uppercase tracking-wider">{label}</p>
               <p className={`text-sm font-bold mt-0.5 ${color}`}>{value}</p>
-              <p className="text-[9px] text-white/30">{sub}</p>
+              <p className="text-[9px] text-gray-400">{sub}</p>
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2.5">
-          <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/40 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="flex items-center gap-2 rounded-xl bg-[#767EB5]/8 border border-[#767EB5]/20 px-3 py-2.5">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#767EB5] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
           </svg>
-          <p className="text-xs text-white/50">Send PDF report to athlete</p>
-          <div className="ml-auto text-[10px] font-semibold text-[#767EB5]">Send</div>
+          <p className="text-xs text-gray-600">Send PDF report to athlete</p>
+          <div className="ml-auto text-[10px] font-bold text-[#767EB5]">Send</div>
         </div>
       </div>
     </div>
@@ -867,22 +858,22 @@ function CoachVisual() {
   ];
   return (
     <div className="w-full space-y-2">
-      <div className="flex items-center justify-between px-1 mb-3">
-        <p className="text-xs font-semibold text-white/50 uppercase tracking-wider">Your Athletes</p>
-        <p className="text-[10px] text-white/30">3 active</p>
+      <div className="flex items-center justify-between px-1 mb-2">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Your Athletes</p>
+        <p className="text-[10px] text-gray-400">3 active</p>
       </div>
       {athletes.map(({ name, sport, lt2, trend, up }) => (
-        <div key={name} className="flex items-center gap-3 rounded-2xl bg-white/5 border border-white/8 px-4 py-3">
-          <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+        <div key={name} className="flex items-center gap-3 rounded-2xl bg-white border border-gray-100 shadow-sm px-4 py-3">
+          <div className="w-9 h-9 rounded-full bg-[#767EB5]/10 flex items-center justify-center text-sm font-bold text-[#767EB5] flex-shrink-0">
             {name[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{name}</p>
-            <p className="text-[10px] text-white/40">{sport}</p>
+            <p className="text-sm font-semibold text-gray-800 truncate">{name}</p>
+            <p className="text-[10px] text-gray-400">{sport}</p>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="text-xs font-bold text-white">{lt2}</p>
-            <p className={`text-[10px] font-semibold ${up ? 'text-green-400' : 'text-red-400'}`}>{trend}</p>
+            <p className="text-xs font-bold text-gray-800">{lt2}</p>
+            <p className={`text-[10px] font-semibold ${up ? 'text-emerald-500' : 'text-red-500'}`}>{trend}</p>
           </div>
         </div>
       ))}
@@ -890,180 +881,168 @@ function CoachVisual() {
   );
 }
 
+// ─── Slide definitions (light theme) ─────────────────────────────────────────
+
 const INTRO_SLIDES = [
-  {
-    bg: '#09090f',
-    accentColor: '#767EB5',
-    label: 'Welcome',
-    title: 'The Science of\nEndurance Performance',
-    subtitle: 'LaChart brings professional lactate threshold testing to coaches and athletes — with the precision of a sports lab, in your pocket.',
-    visual: <LactateCurveVisual />,
-  },
-  {
-    bg: '#090f18',
-    accentColor: '#4f8ef7',
-    label: 'Step Testing',
-    title: 'Run a Step Test\nin Minutes',
-    subtitle: 'Enter your data step by step — power, lactate, and heart rate. LaChart fits the curve automatically and detects LT1 and LT2 thresholds.',
-    visual: <StepTestVisual />,
-  },
-  {
-    bg: '#090f18',
-    accentColor: '#60a5fa',
-    label: 'Lactate Curve',
-    title: 'Precise Threshold\nDetection',
-    subtitle: 'Your lactate curve is calculated using scientifically validated methods including Log-log, DMAX, OBLA, IAT and more.',
-    visual: <LactateCurveVisual />,
-  },
-  {
-    bg: '#090f12',
-    accentColor: '#34d399',
-    label: 'Training Zones',
-    title: 'Zones Calculated\nFrom Real Data',
-    subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you and your sport.',
-    visual: <ZonesVisual />,
-  },
-  {
-    bg: '#0f0918',
-    accentColor: '#a78bfa',
-    label: 'Bluetooth',
-    title: 'Connect Your\nHeart Rate Monitor',
-    subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',
-    visual: <BluetoothVisual />,
-  },
-  {
-    bg: '#0f1209',
-    accentColor: '#86efac',
-    label: 'Reports',
-    title: 'Professional PDF\nReports',
-    subtitle: 'Generate a complete test report with lactate curve, thresholds, and training zones — and send it directly to your athlete.',
-    visual: <ReportsVisual />,
-  },
-  {
-    bg: '#130a18',
-    accentColor: '#c084fc',
-    label: 'Coach',
-    title: 'Manage Your\nEntire Squad',
-    subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness development — all from a single coach dashboard.',
-    visual: <CoachVisual />,
-  },
+  { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual />, character: '/characters/cyclist-standing.png' },
+  { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />,    character: '/characters/coach-laptop.png' },
+  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />,       character: '/characters/runner-treadmill.png' },
+  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />,   character: '/characters/athlete-watch.png' },
+  { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />,     character: '/characters/athlete-phone.png' },
+  { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />,       character: '/characters/athlete-app.png' },
 ];
 
 export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
 
+// Unified full-screen tutorial: intro slides → setup steps
 export function IntroSlides({ user, onDone }) {
+  const navigate = useNavigate();
+  const [phase, setPhase] = useState('slides'); // 'slides' | 'setup'
   const [slide, setSlide] = useState(0);
+  const [setupStep, setSetupStep] = useState(0); // 0=profile, 1=preferences, 2=strava
+  const [saving, setSaving] = useState(false);
   const [exiting, setExiting] = useState(false);
   const total = INTRO_SLIDES.length;
   const current = INTRO_SLIDES[slide];
 
-  const goTo = (next) => {
-    if (next < 0 || next >= total) return;
-    setSlide(next);
-  };
-
-  const handleDone = () => {
-    if (user?._id) localStorage.setItem(INTRO_SEEN_KEY(user._id), 'true');
-    setExiting(true);
-    setTimeout(() => onDone(), 300);
-  };
-
-  // Swipe support
+  // Swipe
   const touchStart = React.useRef(null);
   const onTouchStart = (e) => { touchStart.current = e.touches[0].clientX; };
   const onTouchEnd = (e) => {
     if (touchStart.current === null) return;
     const diff = touchStart.current - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 40) diff > 0 ? (slide < total - 1 ? goTo(slide + 1) : handleDone()) : goTo(slide - 1);
+    if (Math.abs(diff) > 40 && phase === 'slides') {
+      if (diff > 0) { slide < total - 1 ? setSlide(s => s + 1) : setPhase('setup'); }
+      else if (slide > 0) { setSlide(s => s - 1); }
+    }
     touchStart.current = null;
   };
 
+  const handleFinish = () => {
+    if (user?._id) localStorage.setItem(INTRO_SEEN_KEY(user._id), 'true');
+    setExiting(true);
+    setTimeout(() => onDone(), 300);
+  };
+
+  const saveAndNext = async (data) => {
+    setSaving(true);
+    try {
+      const resp = await updateUserProfile(data);
+      if (resp?.data) window.dispatchEvent(new CustomEvent('userUpdated', { detail: resp.data }));
+      setSetupStep(s => s + 1);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  };
+
+  const SETUP_STEPS = [
+    { id: 'profile', label: 'Your Profile' },
+    { id: 'preferences', label: 'Preferences' },
+    { id: 'strava', label: 'Connect Data' },
+  ];
+  const totalSteps = SLIDES_PLUS_SETUP_COUNT(total, SETUP_STEPS.length);
+  const globalStep = phase === 'slides' ? slide : total + setupStep;
+  const globalTotal = total + SETUP_STEPS.length;
+
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex flex-col transition-opacity duration-300 ${exiting ? 'opacity-0' : 'opacity-100'}`}
-      style={{ backgroundColor: current.bg }}
+      className={`fixed inset-0 z-[9999] flex flex-col bg-white transition-opacity duration-300 ${exiting ? 'opacity-0' : 'opacity-100'}`}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Safe area top + progress */}
+      {/* Progress bar */}
       <div className="flex-shrink-0" style={{ paddingTop: 'max(48px, env(safe-area-inset-top, 48px))' }}>
-        <div className="flex gap-1 px-5 pb-5">
-          {INTRO_SLIDES.map((_, i) => (
-            <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}>
+        <div className="flex gap-1 px-5 pb-4">
+          {Array.from({ length: globalTotal }).map((_, i) => (
+            <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-gray-100">
               <div
-                className="h-full rounded-full transition-all duration-400"
-                style={{ width: i <= slide ? '100%' : '0%', backgroundColor: current.accentColor }}
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: i <= globalStep ? '100%' : '0%', backgroundColor: phase === 'slides' ? current.accentColor : '#767EB5' }}
               />
             </div>
           ))}
         </div>
       </div>
 
-      {/* Centered outer container for desktop */}
-      <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-hidden">
-
-        {/* Label chip */}
-        <div className="mb-4 flex-shrink-0">
-          <span className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border"
-            style={{ color: current.accentColor, borderColor: `${current.accentColor}40`, backgroundColor: `${current.accentColor}15` }}>
-            {current.label}
-          </span>
-        </div>
-
-        {/* Title */}
-        <h2 className="text-[32px] leading-[1.15] font-black text-white mb-3 flex-shrink-0 whitespace-pre-line">
-          {current.title}
-        </h2>
-
-        {/* Subtitle */}
-        <p className="text-[15px] text-white/50 leading-relaxed mb-6 flex-shrink-0">
-          {current.subtitle}
-        </p>
-
-        {/* Visual — scrollable if needed */}
-        <div className="flex-1 overflow-hidden flex items-start">
-          <div className="w-full">
-            {current.visual}
+      {/* Slide phase */}
+      {phase === 'slides' && (
+        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-hidden">
+          <div className="mb-3 flex-shrink-0">
+            <span className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border"
+              style={{ color: current.accentColor, borderColor: `${current.accentColor}30`, backgroundColor: `${current.accentColor}0f` }}>
+              {current.label}
+            </span>
+          </div>
+          <h2 className="text-[30px] leading-[1.15] font-black text-gray-900 mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
+          <p className="text-[15px] text-gray-400 leading-relaxed mb-5 flex-shrink-0">{current.subtitle}</p>
+          <div className="flex-1 overflow-hidden relative">
+            <div className="w-full">{current.visual}</div>
+            {current.character && (
+              <img
+                src={current.character}
+                alt=""
+                aria-hidden="true"
+                className="absolute bottom-0 right-0 pointer-events-none select-none"
+                style={{
+                  width: 'clamp(90px, 28%, 130px)',
+                  objectFit: 'contain',
+                  objectPosition: 'bottom right',
+                  filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.10))',
+                  transform: 'translateX(8px)',
+                }}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-3 pt-4 flex-shrink-0" style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
+            {slide > 0 ? (
+              <button onClick={() => setSlide(s => s - 1)} className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            ) : (
+              <button onClick={handleFinish} className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
+                <span className="text-[10px] font-semibold text-gray-300">Skip</span>
+              </button>
+            )}
+            <button
+              onClick={() => slide < total - 1 ? setSlide(s => s + 1) : setPhase('setup')}
+              className="flex-1 h-12 rounded-2xl font-semibold text-sm text-white flex items-center justify-center gap-2 active:scale-[0.97] transition-all"
+              style={{ backgroundColor: current.accentColor }}
+            >
+              <span>{slide < total - 1 ? 'Continue' : 'Set Up Account'}</span>
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Buttons */}
-        <div className="flex items-center gap-3 pt-5 pb-safe flex-shrink-0"
-          style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
-          {slide > 0 ? (
-            <button
-              onClick={() => goTo(slide - 1)}
-              className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-95"
-              style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
-            >
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+      {/* Setup phase */}
+      {phase === 'setup' && (
+        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-y-auto">
+          {/* Step header */}
+          <div className="flex items-center gap-3 mb-6 flex-shrink-0 pt-2">
+            <button onClick={() => setupStep > 0 ? setSetupStep(s => s - 1) : setPhase('slides')} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
-          ) : (
-            <button
-              onClick={handleDone}
-              className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            >
-              <span className="text-[10px] font-semibold text-white/30">Skip</span>
-            </button>
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider">Step {setupStep + 1} of {SETUP_STEPS.length}</p>
+              <p className="text-base font-bold text-gray-900">{SETUP_STEPS[setupStep]?.label}</p>
+            </div>
+          </div>
+
+          {setupStep === 0 && <ProfileStep user={user} onSave={saveAndNext} saving={saving} />}
+          {setupStep === 1 && <UnitsStep user={user} onSave={saveAndNext} saving={saving} />}
+          {setupStep === 2 && (
+            <div className="space-y-5 pb-10">
+              <StravaStep user={user} onSkip={handleFinish} />
+              <button onClick={handleFinish} className={BTN_GHOST}>Skip for now</button>
+            </div>
           )}
-          <button
-            onClick={() => slide < total - 1 ? goTo(slide + 1) : handleDone()}
-            className="flex-1 h-12 rounded-2xl font-semibold text-sm text-white transition-all active:scale-[0.97] flex items-center justify-center gap-2"
-            style={{ backgroundColor: current.accentColor }}
-          >
-            <span>{slide < total - 1 ? 'Continue' : 'Get Started'}</span>
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
+function SLIDES_PLUS_SETUP_COUNT(slides, steps) { return slides + steps; }
 
 export default function OnboardingFlow({ onDismiss }) {
   const { user } = useAuth();
