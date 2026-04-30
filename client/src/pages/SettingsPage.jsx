@@ -168,8 +168,7 @@ const SettingsPage = () => {
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    { id: 'units', name: 'Units', icon: Settings },
-    { id: 'training', name: 'Training', icon: Activity },
+    { id: 'training', name: 'Preferences', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
     { id: 'coach', name: 'Coach', icon: Users },
@@ -227,6 +226,7 @@ const SettingsPage = () => {
       if (tab === 'integrations') setActiveTab('integrations');
       if (tab === 'subscription') setActiveTab('subscription');
       if (tab === 'coach') setActiveTab('coach');
+      if (tab === 'units') setActiveTab('training'); // units merged into preferences
       // Stripe redirect feedback
       if (tab === 'subscription' && q.get('success') === '1') {
         addNotification('Payment successful! Your subscription is now active.', 'success');
@@ -1881,103 +1881,61 @@ const SettingsPage = () => {
           </div>
         );
 
-      case 'units':
-        return (
-          <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-            <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Units Preferences</h3>
-            <div className={`${isMobile ? 'space-y-2.5' : 'space-y-6'}`}>
-              <div>
-                <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-2'}`}>Distance</label>
-                <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="distance"
-                      value="metric"
-                      checked={units.distance === 'metric'}
-                      onChange={(e) => saveUnits({ ...units, distance: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Metric (km, m)</span>
-                  </label>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="distance"
-                      value="imperial"
-                      checked={units.distance === 'imperial'}
-                      onChange={(e) => saveUnits({ ...units, distance: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Imperial (miles, feet)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-2'}`}>Weight</label>
-                <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="weight"
-                      value="kg"
-                      checked={units.weight === 'kg'}
-                      onChange={(e) => saveUnits({ ...units, weight: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Kilograms (kg)</span>
-                  </label>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="weight"
-                      value="lbs"
-                      checked={units.weight === 'lbs'}
-                      onChange={(e) => saveUnits({ ...units, weight: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Pounds (lbs)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-2'}`}>Temperature</label>
-                <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="temperature"
-                      value="celsius"
-                      checked={units.temperature === 'celsius'}
-                      onChange={(e) => saveUnits({ ...units, temperature: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Celsius (°C)</span>
-                  </label>
-                  <label className={`flex items-center ${isMobile ? 'text-xs' : ''}`}>
-                    <input
-                      type="radio"
-                      name="temperature"
-                      value="fahrenheit"
-                      checked={units.temperature === 'fahrenheit'}
-                      onChange={(e) => saveUnits({ ...units, temperature: e.target.value })}
-                      className={isMobile ? 'mr-1.5' : 'mr-2'}
-                    />
-                    <span>Fahrenheit (°F)</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+      case 'units': // merged into 'training' — fall through
 
       case 'training':
         return (
           <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-            <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Training Preferences</h3>
+            <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Preferences</h3>
             <div className={`${isMobile ? 'space-y-4' : 'space-y-8'}`}>
+
+              {/* ── Units ───────────────────────────────────────────────────── */}
+              <div>
+                <p className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-gray-800 ${isMobile ? 'mb-2' : 'mb-4'}`}>Units</p>
+                <div className={`${isMobile ? 'space-y-2.5' : 'space-y-4'}`}>
+                  <div>
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-1.5'}`}>Distance</label>
+                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
+                      {[{ value: 'metric', label: 'Metric (km, m)' }, { value: 'imperial', label: 'Imperial (miles, feet)' }].map(opt => (
+                        <label key={opt.value} className={`flex items-center gap-2 cursor-pointer ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          <input type="radio" name="distance" value={opt.value} checked={units.distance === opt.value} onChange={e => saveUnits({ ...units, distance: e.target.value })} className="accent-primary" />
+                          <span className="text-gray-700">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-1.5'}`}>Weight</label>
+                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
+                      {[{ value: 'kg', label: 'Kilograms (kg)' }, { value: 'lbs', label: 'Pounds (lbs)' }].map(opt => (
+                        <label key={opt.value} className={`flex items-center gap-2 cursor-pointer ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          <input type="radio" name="weight" value={opt.value} checked={units.weight === opt.value} onChange={e => saveUnits({ ...units, weight: e.target.value })} className="accent-primary" />
+                          <span className="text-gray-700">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-1' : 'mb-1.5'}`}>Temperature</label>
+                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-4'}`}>
+                      {[{ value: 'celsius', label: 'Celsius (°C)' }, { value: 'fahrenheit', label: 'Fahrenheit (°F)' }].map(opt => (
+                        <label key={opt.value} className={`flex items-center gap-2 cursor-pointer ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          <input type="radio" name="temperature" value={opt.value} checked={units.temperature === opt.value} onChange={e => saveUnits({ ...units, temperature: e.target.value })} className="accent-primary" />
+                          <span className="text-gray-700">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* divider */}
+              <div className="border-t border-gray-100" />
+
+              {/* ── Training Preferences heading ────────────────────────────── */}
+              <div className={`${isMobile ? '-mt-2' : '-mt-4'}`}>
+                <p className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-gray-800 ${isMobile ? 'mb-2' : 'mb-4'}`}>Training Preferences</p>
+              </div>
 
               {/* RPE / Borg Scale */}
               <div>
@@ -2113,6 +2071,98 @@ const SettingsPage = () => {
               </div>
 
             </div>
+
+            {/* ── Strava Connection ─────────────────────────────────────────── */}
+            <div className={`${isMobile ? 'mt-4 pt-4' : 'mt-8 pt-8'} border-t border-gray-100`}>
+              <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-700 ${isMobile ? 'mb-2' : 'mb-4'} uppercase tracking-wider`}>Connect Strava</h4>
+              <div className={`flex items-center justify-between rounded-xl border-2 ${stravaConnected ? 'border-orange-200 bg-orange-50' : 'border-gray-200 bg-gray-50'} ${isMobile ? 'px-3 py-2.5' : 'px-5 py-4'}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  {!stravaLogoError ? (
+                    <img src="/icon/strava.png" alt="Strava" className={`${isMobile ? 'w-7 h-7' : 'w-9 h-9'} flex-shrink-0`} onError={() => setStravaLogoError(true)} />
+                  ) : (
+                    <div className={`${isMobile ? 'w-7 h-7' : 'w-9 h-9'} rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0`}><span className="text-white font-bold text-sm">S</span></div>
+                  )}
+                  <div className="min-w-0">
+                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-800`}>Strava</p>
+                    <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${stravaConnected ? 'text-orange-600' : 'text-gray-400'}`}>
+                      {stravaConnected ? 'Connected — activities sync automatically' : 'Not connected'}
+                    </p>
+                  </div>
+                </div>
+                <div className={`flex items-center gap-2 flex-shrink-0 ml-2`}>
+                  {stravaConnected && (
+                    <button
+                      onClick={handleSyncStrava}
+                      disabled={isSyncingStrava}
+                      className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'} rounded-lg bg-white border border-orange-200 text-orange-600 hover:bg-orange-50 font-medium transition-colors disabled:opacity-50`}
+                    >
+                      {isSyncingStrava ? 'Syncing…' : 'Sync now'}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleConnectStrava}
+                    className={`${isMobile ? 'px-2.5 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'} rounded-lg font-semibold transition-colors ${stravaConnected ? 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100' : 'bg-primary text-white hover:bg-primary-dark'}`}
+                  >
+                    {stravaConnected ? 'Reconnect' : 'Connect'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Coach Connection ──────────────────────────────────────────── */}
+            {user?.role === 'athlete' && (
+              <div className={`${isMobile ? 'mt-4 pt-4' : 'mt-6 pt-6'} border-t border-gray-100`}>
+                <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-700 ${isMobile ? 'mb-2' : 'mb-4'} uppercase tracking-wider`}>Your Coach</h4>
+
+                {myCoaches.length > 0 ? (
+                  <div className={`${isMobile ? 'space-y-2 mb-3' : 'space-y-2 mb-4'}`}>
+                    {myCoaches.map(c => (
+                      <div key={String(c._id)} className={`flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 ${isMobile ? 'px-3 py-2' : 'px-4 py-3'}`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`${isMobile ? 'w-7 h-7' : 'w-8 h-8'} rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0`}>
+                            <User className={`${isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-primary`} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-800 truncate`}>{c.name} {c.surname}</p>
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 truncate`}>{c.email}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveCoach(c._id)}
+                          disabled={isLoading}
+                          className={`flex items-center gap-1 flex-shrink-0 ml-2 ${isMobile ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1.5'} text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors`}
+                        >
+                          <UserMinus className={`${isMobile ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 ${isMobile ? 'mb-2' : 'mb-3'}`}>No coach connected yet. Enter your coach's email to send an invitation.</p>
+                )}
+
+                <form onSubmit={handleCoachChange} className="flex gap-2">
+                  <input
+                    type="email"
+                    value={formData.newCoachEmail}
+                    onChange={e => setFormData(prev => ({ ...prev, newCoachEmail: e.target.value }))}
+                    placeholder="coach@example.com"
+                    required
+                    className={`flex-1 border border-gray-200 rounded-lg ${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'} focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className={`flex items-center gap-1.5 ${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-xs'} font-semibold text-white bg-primary hover:bg-primary-dark rounded-lg transition-colors disabled:opacity-50 flex-shrink-0`}
+                  >
+                    <UserPlus className={`${isMobile ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
+                    {isLoading ? 'Sending…' : 'Invite'}
+                  </button>
+                </form>
+              </div>
+            )}
+
           </div>
         );
 
