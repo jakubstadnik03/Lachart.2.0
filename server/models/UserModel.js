@@ -238,6 +238,32 @@ const userSchema = new mongoose.Schema({
       default: 'celsius'
     }
   },
+  // Training preferences
+  trainingPreferences: {
+    rpeScale: {
+      type: String,
+      enum: ['rpe', 'borg'],
+      default: 'rpe'
+    },
+    paceDisplay: {
+      type: String,
+      enum: ['minpkm', 'kmh'],
+      default: 'minpkm'
+    },
+    zonesMethod: {
+      type: String,
+      enum: ['lactate', 'hrmax', 'ftp'],
+      default: 'lactate'
+    },
+    customZones: {
+      enabled: { type: Boolean, default: false },
+      zone1: { min: Number, max: Number, label: { type: String, default: 'Active Recovery' } },
+      zone2: { min: Number, max: Number, label: { type: String, default: 'Endurance' } },
+      zone3: { min: Number, max: Number, label: { type: String, default: 'Tempo' } },
+      zone4: { min: Number, max: Number, label: { type: String, default: 'Threshold' } },
+      zone5: { min: Number, max: Number, label: { type: String, default: 'VO2 Max' } },
+    }
+  },
   // Email/notification preferences
   notifications: {
     emailNotifications: { type: Boolean, default: true },

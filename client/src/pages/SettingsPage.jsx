@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
@@ -13,6 +13,7 @@ import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFi
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
+import { IntroSlides, INTRO_SEEN_KEY } from '../components/Onboarding/OnboardingFlow';
 import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLocalNotifications';
 
 const DEFAULT_NOTIFICATION_PREFS = {
@@ -116,6 +117,23 @@ const SettingsPage = () => {
     temperature: 'celsius' // 'celsius' or 'fahrenheit'
   });
 
+  const DEFAULT_TRAINING_PREFS = useMemo(() => ({
+    rpeScale: 'rpe',
+    paceDisplay: 'minpkm',
+    zonesMethod: 'lactate',
+    customZones: {
+      enabled: false,
+      zone1: { min: 0, max: 55, label: 'Active Recovery' },
+      zone2: { min: 55, max: 75, label: 'Endurance' },
+      zone3: { min: 75, max: 87, label: 'Tempo' },
+      zone4: { min: 87, max: 95, label: 'Threshold' },
+      zone5: { min: 95, max: 100, label: 'VO2 Max' },
+    }
+  }), []);
+  const [trainingPrefs, setTrainingPrefs] = useState(DEFAULT_TRAINING_PREFS);
+  const [savingTrainingPrefs, setSavingTrainingPrefs] = useState(false);
+  const [showIntroTutorial, setShowIntroTutorial] = useState(false);
+
   const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATION_PREFS);
 
   const [formData, setFormData] = useState({
@@ -151,6 +169,7 @@ const SettingsPage = () => {
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
     { id: 'units', name: 'Units', icon: Settings },
+    { id: 'training', name: 'Training', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
     { id: 'coach', name: 'Coach', icon: Users },
@@ -550,7 +569,11 @@ const SettingsPage = () => {
         }
       }
     }
-  }, [user?.units, user?._id, user?.notifications]);
+    // Load training preferences from user profile
+    if (user?.trainingPreferences) {
+      setTrainingPrefs(prev => ({ ...DEFAULT_TRAINING_PREFS, ...user.trainingPreferences, customZones: { ...DEFAULT_TRAINING_PREFS.customZones, ...user.trainingPreferences.customZones } }));
+    }
+  }, [user?.units, user?._id, user?.notifications, user?.trainingPreferences, DEFAULT_TRAINING_PREFS]);
 
   // Fetch subscription data when tab is active
   useEffect(() => {
@@ -658,6 +681,35 @@ const SettingsPage = () => {
     } catch (error) {
       console.error('Error saving units to backend:', error);
       throw error;
+    }
+  };
+
+  // Save training preferences to backend
+  const saveTrainingPrefs = async (newPrefs) => {
+    try {
+      setSavingTrainingPrefs(true);
+      const response = await fetch(API_ENDPOINTS.EDIT_PROFILE, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ trainingPreferences: newPrefs })
+      });
+      if (response.ok) {
+        const updatedUser = await response.json();
+        saveUserToStorage(updatedUser);
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        setTrainingPrefs(newPrefs);
+        addNotification('Training preferences saved', 'success');
+      } else {
+        throw new Error('Failed to save training preferences');
+      }
+    } catch (error) {
+      console.error('Error saving training preferences:', error);
+      addNotification('Failed to save training preferences', 'error');
+    } finally {
+      setSavingTrainingPrefs(false);
     }
   };
 
@@ -1607,15 +1659,30 @@ const SettingsPage = () => {
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent('lachart:openWalkthrough'));
-                  }}
-                  className={`shrink-0 ${isMobile ? 'w-full' : ''} inline-flex items-center justify-center gap-2 font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'}`}
-                >
-                  Start walkthrough
-                </button>
+                <div className={`flex ${isMobile ? 'w-full flex-col' : ''} gap-2`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (user?._id) localStorage.removeItem(INTRO_SEEN_KEY(user._id));
+                      setShowIntroTutorial(true);
+                    }}
+                    className={`shrink-0 ${isMobile ? 'w-full' : ''} inline-flex items-center justify-center gap-2 font-semibold rounded-lg bg-[#767EB5] text-white hover:bg-[#5f6a9e] focus:outline-none focus:ring-2 focus:ring-[#767EB5] focus:ring-offset-2 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'}`}
+                  >
+                    <svg viewBox="0 0 24 24" className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 3l14 9-14 9V3z" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Intro Tutorial
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('lachart:openWalkthrough'));
+                    }}
+                    className={`shrink-0 ${isMobile ? 'w-full' : ''} inline-flex items-center justify-center gap-2 font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'}`}
+                  >
+                    App Walkthrough
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1902,6 +1969,149 @@ const SettingsPage = () => {
                   </label>
                 </div>
               </div>
+            </div>
+          </div>
+        );
+
+      case 'training':
+        return (
+          <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
+            <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Training Preferences</h3>
+            <div className={`${isMobile ? 'space-y-4' : 'space-y-8'}`}>
+
+              {/* RPE / Borg Scale */}
+              <div>
+                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-700 mb-1`}>Perceived Exertion Scale</label>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-3`}>Choose how you rate effort during training sessions.</p>
+                <div className={`flex ${isMobile ? 'flex-col gap-2' : 'gap-4'}`}>
+                  {[
+                    { value: 'rpe', label: 'RPE', sub: 'Rating of Perceived Exertion (1–10)', example: 'Easy = 3, Hard = 8, Max = 10' },
+                    { value: 'borg', label: 'Borg Scale', sub: 'Borg CR10 / RPE (6–20)', example: 'Easy = 10, Hard = 15, Max = 20' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => saveTrainingPrefs({ ...trainingPrefs, rpeScale: opt.value })}
+                      className={`flex-1 text-left rounded-xl border-2 px-4 py-3 transition-all ${trainingPrefs.rpeScale === opt.value ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <div className={`font-semibold ${isMobile ? 'text-xs' : 'text-sm'} ${trainingPrefs.rpeScale === opt.value ? 'text-primary' : 'text-gray-800'}`}>{opt.label}</div>
+                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`}>{opt.sub}</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[11px]'} text-gray-400 mt-1`}>{opt.example}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pace Display */}
+              <div>
+                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-700 mb-1`}>Running Pace Display</label>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-3`}>How running speed is shown in training logs and test results.</p>
+                <div className={`flex ${isMobile ? 'flex-col gap-2' : 'gap-4'}`}>
+                  {[
+                    { value: 'minpkm', label: 'min/km', sub: 'Pace format', example: 'e.g. 4:30 min/km' },
+                    { value: 'kmh', label: 'km/h', sub: 'Speed format', example: 'e.g. 13.3 km/h' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => saveTrainingPrefs({ ...trainingPrefs, paceDisplay: opt.value })}
+                      className={`flex-1 text-left rounded-xl border-2 px-4 py-3 transition-all ${trainingPrefs.paceDisplay === opt.value ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <div className={`font-semibold ${isMobile ? 'text-xs' : 'text-sm'} ${trainingPrefs.paceDisplay === opt.value ? 'text-primary' : 'text-gray-800'}`}>{opt.label}</div>
+                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`}>{opt.sub}</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[11px]'} text-gray-400 mt-1`}>{opt.example}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zones Method */}
+              <div>
+                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-700 mb-1`}>Zones Calculation Method</label>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-3`}>How your training zones are calculated.</p>
+                <div className={`flex ${isMobile ? 'flex-col gap-2' : 'gap-3'}`}>
+                  {[
+                    { value: 'lactate', label: 'Lactate Thresholds', sub: 'Zones based on LT1 & LT2 from your lactate tests', recommended: true },
+                    { value: 'hrmax', label: 'Max Heart Rate %', sub: 'Zones based on percentage of your maximum HR' },
+                    { value: 'ftp', label: 'FTP / Critical Power', sub: 'Zones based on percentage of your FTP (cycling)' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => saveTrainingPrefs({ ...trainingPrefs, zonesMethod: opt.value })}
+                      className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${trainingPrefs.zonesMethod === opt.value ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`font-semibold ${isMobile ? 'text-xs' : 'text-sm'} ${trainingPrefs.zonesMethod === opt.value ? 'text-primary' : 'text-gray-800'}`}>{opt.label}</span>
+                        {opt.recommended && <span className="text-[10px] bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">Recommended</span>}
+                      </div>
+                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`}>{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Zone Labels & Boundaries */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-700`}>Custom Zone Boundaries</label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>{trainingPrefs.customZones?.enabled ? 'Enabled' : 'Disabled'}</span>
+                    <div
+                      onClick={() => saveTrainingPrefs({ ...trainingPrefs, customZones: { ...trainingPrefs.customZones, enabled: !trainingPrefs.customZones?.enabled } })}
+                      className={`relative w-10 h-5 rounded-full cursor-pointer transition-colors ${trainingPrefs.customZones?.enabled ? 'bg-primary' : 'bg-gray-300'}`}
+                    >
+                      <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${trainingPrefs.customZones?.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </div>
+                  </label>
+                </div>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-3`}>Override the default zone names and % boundaries. Used in all charts and reports.</p>
+                {trainingPrefs.customZones?.enabled && (
+                  <div className="space-y-2">
+                    {[1,2,3,4,5].map(z => {
+                      const key = `zone${z}`;
+                      const zone = trainingPrefs.customZones?.[key] || {};
+                      const colors = ['bg-blue-50 border-blue-200','bg-green-50 border-green-200','bg-yellow-50 border-yellow-200','bg-orange-50 border-orange-200','bg-red-50 border-red-200'];
+                      return (
+                        <div key={key} className={`flex items-center gap-2 rounded-lg border p-2 ${colors[z-1]}`}>
+                          <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-gray-500 w-5`}>Z{z}</span>
+                          <input
+                            type="text"
+                            defaultValue={zone.label || `Zone ${z}`}
+                            onBlur={e => {
+                              const updated = { ...trainingPrefs, customZones: { ...trainingPrefs.customZones, [key]: { ...zone, label: e.target.value } } };
+                              saveTrainingPrefs(updated);
+                            }}
+                            placeholder={`Zone ${z} name`}
+                            className={`flex-1 border border-gray-200 rounded px-2 py-1 ${isMobile ? 'text-[10px]' : 'text-xs'} bg-white focus:outline-none focus:ring-1 focus:ring-primary`}
+                          />
+                          <input
+                            type="number"
+                            defaultValue={zone.min ?? ''}
+                            onBlur={e => {
+                              const updated = { ...trainingPrefs, customZones: { ...trainingPrefs.customZones, [key]: { ...zone, min: Number(e.target.value) } } };
+                              saveTrainingPrefs(updated);
+                            }}
+                            placeholder="Min %"
+                            className={`w-14 border border-gray-200 rounded px-2 py-1 ${isMobile ? 'text-[10px]' : 'text-xs'} bg-white focus:outline-none focus:ring-1 focus:ring-primary`}
+                          />
+                          <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400`}>–</span>
+                          <input
+                            type="number"
+                            defaultValue={zone.max ?? ''}
+                            onBlur={e => {
+                              const updated = { ...trainingPrefs, customZones: { ...trainingPrefs.customZones, [key]: { ...zone, max: Number(e.target.value) } } };
+                              saveTrainingPrefs(updated);
+                            }}
+                            placeholder="Max %"
+                            className={`w-14 border border-gray-200 rounded px-2 py-1 ${isMobile ? 'text-[10px]' : 'text-xs'} bg-white focus:outline-none focus:ring-1 focus:ring-primary`}
+                          />
+                          <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400`}>%</span>
+                        </div>
+                      );
+                    })}
+                    {savingTrainingPrefs && <p className="text-[11px] text-primary animate-pulse">Saving...</p>}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         );
@@ -2941,6 +3151,9 @@ const SettingsPage = () => {
 
   return (
     <>
+    {showIntroTutorial && (
+      <IntroSlides user={user} onDone={() => setShowIntroTutorial(false)} />
+    )}
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">

@@ -803,7 +803,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [selectedCompareIds, setSelectedCompareIds] = useState([]); // up to 2 test IDs for PDF comparison
   const [zoneOverride, setZoneOverride] = useState(null);
   // Manual LT1/LT2 threshold override
-  const [ltOverrides, setLtOverrides] = useState({ LTP1: null, LTP2: null });
+  const [ltOverrides, setLtOverrides] = useState({ LTP1: null, LTP2: null, LTP1_lactate: null, LTP2_lactate: null });
   const [ltEditValues, setLtEditValues] = useState({ LTP1: '', LTP2: '' }); // pace/watts raw strings
   const [ltEditLactates, setLtEditLactates] = useState({ LTP1: '', LTP2: '' }); // lactate mmol/L raw strings
   const [showLtOverridePanel, setShowLtOverridePanel] = useState(false);
@@ -909,7 +909,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   // Sync ltOverrides from server data when test/overrides change
   useEffect(() => {
-    setLtOverrides({ LTP1: serverOverrideLt1, LTP2: serverOverrideLt2 });
+    setLtOverrides({ LTP1: serverOverrideLt1, LTP2: serverOverrideLt2, LTP1_lactate: serverOverrideLt1Lactate, LTP2_lactate: serverOverrideLt2Lactate });
     setLtEditValues({
       LTP1: serverOverrideLt1 != null ? String(serverOverrideLt1) : '',
       LTP2: serverOverrideLt2 != null ? String(serverOverrideLt2) : '',
@@ -1059,7 +1059,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     try {
       setSavingLtOverride(true);
       await api.put(`/test/${testId}`, { thresholdOverrides: { LTP1: null, LTP2: null, LTP1_lactate: null, LTP2_lactate: null } });
-      setLtOverrides({ LTP1: null, LTP2: null });
+      setLtOverrides({ LTP1: null, LTP2: null, LTP1_lactate: null, LTP2_lactate: null });
       setLtEditValues({ LTP1: '', LTP2: '' });
       setLtEditLactates({ LTP1: '', LTP2: '' });
       setLtOverrideStatus({ type: 'success', msg: 'Overrides cleared' });

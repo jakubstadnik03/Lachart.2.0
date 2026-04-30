@@ -40,3 +40,9 @@ Thumbs.db
 client/ios/App/Pods/
 client/android/.gradle/
 client/android/app/build/
+
+# Xcode build artifacts
+*.ipa
+*.xcarchive
+client/App\ */
+
