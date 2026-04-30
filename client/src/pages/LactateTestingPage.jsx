@@ -343,22 +343,24 @@ const LactateTestingPage = () => {
   // ── Interval timer ─────────────────────────────────────────
   const startIntervalTimer = useCallback(() => {
     if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
+    let elapsed = 0;
     intervalTimerRef.current = setInterval(() => {
-      setIntervalTimer(prev => {
-        const maxTime = protocolRef.current.steps[currentStepRef.current]?.duration || 360;
-        if (prev + 1 >= maxTime) {
-          clearInterval(intervalTimerRef.current);
-          intervalTimerRef.current = null;
-          setIntervalTimer(0);
-          setPhase('recovery');
-          const t = trainerRef.current;
-          if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
-            setTimeout(() => Promise.resolve(t.setErgWatts(0)).catch(console.error), 100);
-          }
-          return 0;
+      elapsed += 1;
+      const maxTime = protocolRef.current.steps[currentStepRef.current]?.duration || 360;
+      if (elapsed >= maxTime) {
+        clearInterval(intervalTimerRef.current);
+        intervalTimerRef.current = null;
+        elapsed = 0;
+        // Transition to recovery outside of state updater
+        setIntervalTimer(0);
+        setPhase('recovery');
+        const t = trainerRef.current;
+        if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+          setTimeout(() => Promise.resolve(t.setErgWatts(0)).catch(console.error), 100);
         }
-        return prev + 1;
-      });
+      } else {
+        setIntervalTimer(elapsed);
+      }
     }, 1000);
   }, []);
 
@@ -466,43 +468,46 @@ const LactateTestingPage = () => {
 
     // Reset watt offset for new step
     setWattOffset(0); wattOffsetRef.current = 0;
+
+    // Compute next step NOW so we can show the target during the countdown
+    const nextStep = currentStepRef.current + 1 < protocolRef.current.steps.length
+      ? currentStepRef.current + 1
+      : currentStepRef.current;
+    const nextTargetPower = protocolRef.current.steps[nextStep]?.targetPower;
+
+    // Advance step immediately so the target display updates during countdown
+    currentStepRef.current = nextStep;
+    setCurrentStep(nextStep);
+
     setPhase('countdown');
     setCountdown(3);
 
+    let tick = 3;
     countdownRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(countdownRef.current); countdownRef.current = null;
+      tick -= 1;
+      if (tick <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        setCountdown(0);
+        setPhase('work');
+        setIntervalTimer(0);
+        startIntervalTimer();
 
-          // Compute next step index BEFORE entering state setters (avoid side-effects inside updaters)
-          const next = currentStepRef.current + 1 < protocolRef.current.steps.length
-            ? currentStepRef.current + 1
-            : currentStepRef.current;
-          currentStepRef.current = next;
-          const targetPower = protocolRef.current.steps[next]?.targetPower;
-
-          setCurrentStep(next);
-          setPhase('work');
-          setIntervalTimer(0);
-          startIntervalTimer();
-
-          // Set ERG power for the new step — use ref so we always get the latest trainer
-          if (targetPower) {
-            setTimeout(() => {
-              const t = trainerRef.current;
-              if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
-                Promise.resolve(t.setErgWatts(targetPower)).catch(console.error);
-              }
-            }, 300);
-          }
-
-          return 0;
+        // Set ERG power for the new step — use ref so we always get the latest trainer
+        if (nextTargetPower) {
+          setTimeout(() => {
+            const t = trainerRef.current;
+            if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+              Promise.resolve(t.setErgWatts(nextTargetPower)).catch(console.error);
+            }
+          }, 100);
         }
-        return prev - 1;
-      });
+      } else {
+        setCountdown(tick);
+      }
     }, 1000);
 
-    setTimeout(() => addNotification('Starting in 3…', 'info'), 0);
+    setTimeout(() => addNotification(`Step ${nextStep + 1}: ${nextTargetPower ? `${nextTargetPower}W — ` : ''}Starting in 3…`, 'info'), 0);
   }, [startIntervalTimer, addNotification]);
 
   useEffect(() => { handleStartIntervalRef.current = handleStartInterval; }, [handleStartInterval]);
