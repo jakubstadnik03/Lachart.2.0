@@ -4,6 +4,7 @@
  * Works on desktop (centered modal) and mobile / Capacitor (full-screen).
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
@@ -256,8 +257,9 @@ function ProfileStep({ user, onSave, saving }) {
   );
 }
 
-/** Step 2 — Units */
+/** Step 2 — Units (split into 2 sub-pages: units / training prefs) */
 function UnitsStep({ user, onSave, saving }) {
+  const [subPage, setSubPage] = useState(0); // 0 = units, 1 = training prefs
   const [units, setUnits] = useState({
     distance:    user?.units?.distance    || 'metric',
     weight:      user?.units?.weight      || 'kg',
@@ -285,22 +287,11 @@ function UnitsStep({ user, onSave, saving }) {
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}
               `}
             >
-              <input
-                type="radio"
-                name={stateKey}
-                value={opt.value}
-                checked={isSelected}
-                onChange={() =>
-                  isTraining
-                    ? setTrainingPrefs(p => ({ ...p, [stateKey]: opt.value }))
-                    : setUnits(p => ({ ...p, [stateKey]: opt.value }))
-                }
+              <input type="radio" name={stateKey} value={opt.value} checked={isSelected}
+                onChange={() => isTraining ? setTrainingPrefs(p => ({ ...p, [stateKey]: opt.value })) : setUnits(p => ({ ...p, [stateKey]: opt.value }))}
                 className="sr-only"
               />
-              {React.isValidElement(opt.icon)
-                ? <span className="flex-shrink-0">{opt.icon}</span>
-                : <span className="text-lg flex-shrink-0">{opt.icon}</span>
-              }
+              {React.isValidElement(opt.icon) ? <span className="flex-shrink-0">{opt.icon}</span> : <span className="text-lg flex-shrink-0">{opt.icon}</span>}
               <div>
                 <p className="text-xs font-semibold leading-tight">{opt.label}</p>
                 <p className="text-[10px] text-gray-400 leading-none">{opt.sub}</p>
@@ -312,73 +303,51 @@ function UnitsStep({ user, onSave, saving }) {
     </div>
   );
 
+  if (subPage === 0) return (
+    <div className="space-y-4 flex flex-col h-full">
+      <div className="text-center">
+        <div className="flex justify-center mb-2"><Globe className="w-10 h-10 text-primary" /></div>
+        <h3 className="text-lg font-bold text-gray-900">Units</h3>
+        <p className="text-sm text-gray-500 mt-1">Choose your measurement system</p>
+      </div>
+      <RadioGroup stateKey="distance" label="Distance" options={[
+        { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
+        { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
+      ]} />
+      <RadioGroup stateKey="weight" label="Weight" options={[
+        { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
+        { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
+      ]} />
+      <div className="flex-1" />
+      <button type="button" onClick={() => setSubPage(1)} className={BTN_PRIMARY}>Continue →</button>
+    </div>
+  );
+
   return (
-    <div className="space-y-4">
-      <div className="text-center mb-2">
+    <div className="space-y-4 flex flex-col h-full">
+      <div className="text-center">
         <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Units & Preferences</h3>
-        <p className="text-sm text-gray-500 mt-1">Choose your preferred measurement system and training settings</p>
+        <h3 className="text-lg font-bold text-gray-900">Training Preferences</h3>
+        <p className="text-sm text-gray-500 mt-1">How you like to measure your training</p>
       </div>
-
-      <RadioGroup
-        stateKey="distance"
-        label="Distance"
-        options={[
-          { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
-          { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
-        ]}
-      />
-      <RadioGroup
-        stateKey="weight"
-        label="Weight"
-        options={[
-          { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
-          { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
-        ]}
-      />
-
-      <div className="border-t border-gray-100 pt-3">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Training Preferences</p>
-        <div className="space-y-3">
-          <RadioGroup
-            stateKey="paceDisplay"
-            label="Running Pace"
-            isTraining
-            options={[
-              { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
-              { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
-            ]}
-          />
-          <RadioGroup
-            stateKey="rpeScale"
-            label="Perceived Exertion Scale"
-            isTraining
-            options={[
-              { value: 'rpe',  icon: <Dumbbell className="w-5 h-5" />,   label: 'RPE 1–10',  sub: 'Simple scale' },
-              { value: 'borg', icon: <Microscope className="w-5 h-5" />, label: 'Borg 6–20', sub: 'Scientific' },
-            ]}
-          />
-          <RadioGroup
-            stateKey="zonesMethod"
-            label="Training Zones Based On"
-            isTraining
-            options={[
-              { value: 'lactate', icon: <Droplets className="w-5 h-5" />, label: 'Lactate LT1/LT2', sub: 'Recommended' },
-              { value: 'hrmax',   icon: <Heart className="w-5 h-5" />,    label: 'Max HR %',         sub: 'Classic method' },
-              { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
-            ]}
-          />
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onSave({ units, trainingPreferences: trainingPrefs, onboarding: { unitsDone: true } })}
-        disabled={saving}
-        className={BTN_PRIMARY}
-      >
+      <RadioGroup stateKey="paceDisplay" label="Running Pace" isTraining options={[
+        { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
+        { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
+      ]} />
+      <RadioGroup stateKey="rpeScale" label="Perceived Exertion" isTraining options={[
+        { value: 'rpe',  icon: <Dumbbell className="w-5 h-5" />,   label: 'RPE 1–10',  sub: 'Simple scale' },
+        { value: 'borg', icon: <Microscope className="w-5 h-5" />, label: 'Borg 6–20', sub: 'Scientific' },
+      ]} />
+      <RadioGroup stateKey="zonesMethod" label="Zones Based On" isTraining options={[
+        { value: 'lactate', icon: <Droplets className="w-5 h-5" />, label: 'Lactate LT1/LT2', sub: 'Recommended' },
+        { value: 'hrmax',   icon: <Heart className="w-5 h-5" />,    label: 'Max HR %',         sub: 'Classic' },
+        { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
+      ]} />
+      <div className="flex-1" />
+      <button type="button" onClick={() => onSave({ units, trainingPreferences: trainingPrefs, onboarding: { unitsDone: true } })} disabled={saving} className={BTN_PRIMARY}>
         {saving ? 'Saving…' : 'Save & Continue →'}
       </button>
+      <button type="button" onClick={() => setSubPage(0)} className={BTN_GHOST}>← Back</button>
     </div>
   );
 }
@@ -987,8 +956,8 @@ const INTRO_SLIDES = [
 export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
 
 // Unified full-screen tutorial: intro slides → setup steps
-export function IntroSlides({ user, onDone }) {
-  const [phase, setPhase] = useState('slides'); // 'slides' | 'setup'
+export function IntroSlides({ user, onDone, startAtSetup = false }) {
+  const [phase, setPhase] = useState(startAtSetup ? 'setup' : 'slides'); // 'slides' | 'setup'
   const [slide, setSlide] = useState(0);
   const [setupStep, setSetupStep] = useState(0); // 0=profile, 1=preferences, 2=strava
   const [saving, setSaving] = useState(false);
@@ -1034,9 +1003,10 @@ export function IntroSlides({ user, onDone }) {
   const globalStep = phase === 'slides' ? slide : total + setupStep;
   const globalTotal = total + SETUP_STEPS.length;
 
-  return (
+  const content = (
     <div
-      className={`fixed inset-0 z-[9999] flex flex-col bg-white transition-opacity duration-300 ${exiting ? 'opacity-0' : 'opacity-100'}`}
+      className={`fixed inset-0 flex flex-col bg-white transition-opacity duration-300 ${exiting ? 'opacity-0' : 'opacity-100'}`}
+      style={{ zIndex: 99999 }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
@@ -1120,6 +1090,8 @@ export function IntroSlides({ user, onDone }) {
       )}
     </div>
   );
+
+  return ReactDOM.createPortal(content, document.body);
 }
 
 export default function OnboardingFlow({ onDismiss }) {
@@ -1232,11 +1204,15 @@ export default function OnboardingFlow({ onDismiss }) {
 
   if (!user) return null;
 
-  // Show intro slides first for new users
+  // Show intro slides first for new users — also handles setup steps
   if (showIntro) {
     return <IntroSlides user={user} onDone={() => setShowIntro(false)} />;
   }
 
+  // For returning users who skipped/need to redo setup — reuse IntroSlides in setup phase
+  return <IntroSlides user={user} onDone={() => dismiss(true)} startAtSetup />;
+
+  // eslint-disable-next-line no-unreachable
   return (
     <>
       {/* Backdrop */}
