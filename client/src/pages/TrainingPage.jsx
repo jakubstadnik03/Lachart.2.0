@@ -111,16 +111,16 @@ export default function TrainingPage() {
       ];
       
       setTrainings(allTrainings);
-      
-      // Nastavení výchozího vybraného tréninku
-      if (response.data.length > 0) {
-        const sportTrainings = selectedSport === 'all' 
-          ? response.data 
-          : response.data.filter(t => t.sport === selectedSport);
-        if (sportTrainings.length > 0) {
-          setSelectedTitle(sportTrainings[0].title);
-          setSelectedTraining(sportTrainings[0]._id);
-        }
+
+      // Nastavení výchozího vybraného tréninku — vždy nejnovější ze všech zdrojů
+      const sortedAll = [...allTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const sportFiltered = selectedSport === 'all'
+        ? sortedAll
+        : sortedAll.filter(t => t.sport === selectedSport);
+      const newest = sportFiltered[0] ?? sortedAll[0];
+      if (newest) {
+        setSelectedTitle(newest.title);
+        setSelectedTraining(newest._id);
       }
 
       // 3) Uložit do localStorage, aby další stránky/otevření byly rychlé
