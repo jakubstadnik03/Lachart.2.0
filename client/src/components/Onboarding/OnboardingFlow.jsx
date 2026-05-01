@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, PersonStanding, Waves, Trophy, CheckCircle } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -241,11 +242,11 @@ function ProfileStep({ user, onSave, saving }) {
         <label className="block text-xs font-semibold text-gray-600 mb-1">Primary Sport</label>
         <select className={INPUT} value={form.sport} onChange={e => set('sport', e.target.value)}>
           <option value="">Select sport…</option>
-          <option value="cycling">🚴 Cycling</option>
-          <option value="running">🏃 Running</option>
-          <option value="swimming">🏊 Swimming</option>
-          <option value="triathlon">🏅 Triathlon</option>
-          <option value="rowing">🚣 Rowing</option>
+          <option value="cycling">Cycling</option>
+          <option value="running">Running</option>
+          <option value="swimming">Swimming</option>
+          <option value="triathlon">Triathlon</option>
+          <option value="rowing">Rowing</option>
           <option value="other">Other</option>
         </select>
       </div>
@@ -296,7 +297,10 @@ function UnitsStep({ user, onSave, saving }) {
                 }
                 className="sr-only"
               />
-              <span className="text-lg">{opt.icon}</span>
+              {React.isValidElement(opt.icon)
+                ? <span className="flex-shrink-0">{opt.icon}</span>
+                : <span className="text-lg flex-shrink-0">{opt.icon}</span>
+              }
               <div>
                 <p className="text-xs font-semibold leading-tight">{opt.label}</p>
                 <p className="text-[10px] text-gray-400 leading-none">{opt.sub}</p>
@@ -320,16 +324,16 @@ function UnitsStep({ user, onSave, saving }) {
         stateKey="distance"
         label="Distance"
         options={[
-          { value: 'metric',   icon: '🌍', label: 'Metric',   sub: 'km, meters' },
-          { value: 'imperial', icon: '🇺🇸', label: 'Imperial', sub: 'miles, feet' },
+          { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
+          { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
         ]}
       />
       <RadioGroup
         stateKey="weight"
         label="Weight"
         options={[
-          { value: 'kg',  icon: '⚖️', label: 'Kilograms', sub: 'kg' },
-          { value: 'lbs', icon: '🏋️', label: 'Pounds',    sub: 'lbs' },
+          { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
+          { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
         ]}
       />
 
@@ -341,8 +345,8 @@ function UnitsStep({ user, onSave, saving }) {
             label="Running Pace"
             isTraining
             options={[
-              { value: 'minpkm', icon: '🏃', label: 'min/km', sub: 'e.g. 4:30 /km' },
-              { value: 'kmh',    icon: '⚡', label: 'km/h',   sub: 'e.g. 13.3 km/h' },
+              { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
+              { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
             ]}
           />
           <RadioGroup
@@ -350,8 +354,8 @@ function UnitsStep({ user, onSave, saving }) {
             label="Perceived Exertion Scale"
             isTraining
             options={[
-              { value: 'rpe',  icon: '💪', label: 'RPE 1–10',   sub: 'Simple scale' },
-              { value: 'borg', icon: '🔬', label: 'Borg 6–20',  sub: 'Scientific' },
+              { value: 'rpe',  icon: <Dumbbell className="w-5 h-5" />,   label: 'RPE 1–10',  sub: 'Simple scale' },
+              { value: 'borg', icon: <Microscope className="w-5 h-5" />, label: 'Borg 6–20', sub: 'Scientific' },
             ]}
           />
           <RadioGroup
@@ -359,9 +363,9 @@ function UnitsStep({ user, onSave, saving }) {
             label="Training Zones Based On"
             isTraining
             options={[
-              { value: 'lactate', icon: '🩸', label: 'Lactate LT1/LT2', sub: 'Recommended' },
-              { value: 'hrmax',   icon: '❤️', label: 'Max HR %',         sub: 'Classic method' },
-              { value: 'ftp',     icon: '⚡', label: 'FTP / Power',      sub: 'Cycling' },
+              { value: 'lactate', icon: <Droplets className="w-5 h-5" />, label: 'Lactate LT1/LT2', sub: 'Recommended' },
+              { value: 'hrmax',   icon: <Heart className="w-5 h-5" />,    label: 'Max HR %',         sub: 'Classic method' },
+              { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
             ]}
           />
         </div>
@@ -397,7 +401,7 @@ function StravaStep({ user, onSkip, onConnect }) {
   return (
     <div className="space-y-5">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">🔗</div>
+        <div className="flex justify-center mb-2"><Link2 className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Connect Your Training Data</h3>
         <p className="text-sm text-gray-500 mt-1">Sync your activities automatically</p>
       </div>
@@ -428,7 +432,7 @@ function StravaStep({ user, onSkip, onConnect }) {
             disabled={loading}
             className="w-full py-3 px-4 rounded-2xl bg-[#FC4C02] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#e04402] active:scale-[0.98] transition-all disabled:opacity-60"
           >
-            {loading ? 'Redirecting…' : '🚴 Connect with Strava'}
+            {loading ? 'Redirecting…' : 'Connect with Strava'}
           </button>
         </>
       )}
@@ -449,7 +453,7 @@ function ZonesStep({ onSkip, navigate, onClose }) {
   return (
     <div className="space-y-5">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">⚡</div>
+        <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Set Your Training Zones</h3>
         <p className="text-sm text-gray-500 mt-1">Zones help you train at the right intensity</p>
       </div>
@@ -515,7 +519,7 @@ function AthletesStep({ onSkip, navigate, onClose, onDone }) {
   if (added) {
     return (
       <div className="space-y-5 text-center">
-        <div className="text-5xl">🎉</div>
+        <div className="flex justify-center"><CheckCircle className="w-14 h-14 text-green-500" /></div>
         <h3 className="text-lg font-bold text-gray-900">Athlete added!</h3>
         <p className="text-sm text-gray-500">You can add more athletes from the Athletes page.</p>
         <button type="button" onClick={onDone} className={BTN_PRIMARY}>Continue →</button>
@@ -533,7 +537,7 @@ function AthletesStep({ onSkip, navigate, onClose, onDone }) {
   return (
     <form onSubmit={handleAdd} className="space-y-4">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">👥</div>
+        <div className="flex justify-center mb-2"><Users className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Add Your First Athlete</h3>
         <p className="text-sm text-gray-500 mt-1">Invite athletes to your coaching team</p>
       </div>
@@ -576,7 +580,7 @@ function FirstTestStep({ user, navigate, onClose, onSkip }) {
   return (
     <div className="space-y-5">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">🧪</div>
+        <div className="flex justify-center mb-2"><FlaskConical className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Create Your First Test</h3>
         <p className="text-sm text-gray-500 mt-1">
           {isCoachUser
@@ -588,16 +592,16 @@ function FirstTestStep({ user, navigate, onClose, onSkip }) {
       {/* Visual preview */}
       <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl p-4 border border-primary/10">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center text-lg">📊</div>
+          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center"><BarChart2 className="w-5 h-5 text-primary" /></div>
           <div>
             <p className="text-sm font-bold text-gray-900">Lactate Threshold Test</p>
             <p className="text-xs text-gray-500">Step-by-step guided protocol</p>
           </div>
         </div>
         <div className="flex gap-4 text-xs text-gray-600">
-          <span>⚡ Power zones</span>
-          <span>❤️ HR zones</span>
-          <span>📈 LT1 / LT2</span>
+          <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5" /> Power zones</span>
+          <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> HR zones</span>
+          <span className="flex items-center gap-1"><TrendingUp className="w-3.5 h-3.5" /> LT1 / LT2</span>
         </div>
       </div>
 
@@ -606,7 +610,7 @@ function FirstTestStep({ user, navigate, onClose, onSkip }) {
         onClick={() => { onClose(); navigate('/testing'); }}
         className={BTN_PRIMARY}
       >
-        Start First Test 🚀
+        Start First Test
       </button>
 
       <button type="button" onClick={onSkip} className={BTN_GHOST}>
@@ -950,8 +954,8 @@ export function IntroSlides({ user, onDone }) {
       onTouchEnd={onTouchEnd}
     >
       {/* Progress bar */}
-      <div className="flex-shrink-0" style={{ paddingTop: 'max(48px, env(safe-area-inset-top, 48px))' }}>
-        <div className="flex gap-1 px-5 pb-4">
+      <div className="flex-shrink-0" style={{ paddingTop: 'max(44px, env(safe-area-inset-top, 44px))' }}>
+        <div className="flex gap-1 px-5 pb-3">
           {Array.from({ length: globalTotal }).map((_, i) => (
             <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-gray-100">
               <div
@@ -972,10 +976,10 @@ export function IntroSlides({ user, onDone }) {
               {current.label}
             </span>
           </div>
-          <h2 className="text-[30px] leading-[1.15] font-black text-gray-900 mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
-          <p className="text-[15px] text-gray-400 leading-relaxed mb-5 flex-shrink-0">{current.subtitle}</p>
+          <h2 className="text-[22px] sm:text-[30px] leading-[1.15] font-black text-gray-900 mb-2 sm:mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
+          <p className="text-[13px] sm:text-[15px] text-gray-400 leading-relaxed mb-3 sm:mb-5 flex-shrink-0 line-clamp-3">{current.subtitle}</p>
           {/* Visual + character — character overlays the visual from the bottom corner */}
-          <div className="flex-1 overflow-hidden min-h-0 relative">
+          <div className="flex-1 overflow-hidden min-h-0 max-h-[38vh] sm:max-h-none relative">
             {/* Component visual — full width */}
             <div className="w-full h-full">
               {current.visual}
@@ -1003,7 +1007,7 @@ export function IntroSlides({ user, onDone }) {
               />
             )}
           </div>
-          <div className="flex items-center gap-3 pt-4 flex-shrink-0" style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
+          <div className="flex items-center gap-3 pt-2 sm:pt-4 flex-shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}>
             {slide > 0 ? (
               <button onClick={() => setSlide(s => s - 1)} className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all">
                 <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
