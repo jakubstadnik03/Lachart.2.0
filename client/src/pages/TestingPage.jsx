@@ -436,6 +436,8 @@ const TestingPage = () => {
     const checkStravaConnection = async () => {
       if (!isAuthenticated || !user) return;
       if (isPendingSelectedAthlete) return;
+      // Coaches test athletes — don't prompt them to connect their own Strava
+      if (isCoachLikeRole) return;
       
       try {
         const status = await getIntegrationStatus();
@@ -466,7 +468,7 @@ const TestingPage = () => {
     };
 
     checkStravaConnection();
-  }, [user, isAuthenticated, isPendingSelectedAthlete]);
+  }, [user, isAuthenticated, isPendingSelectedAthlete, isCoachLikeRole]);
 
   // Listen for Strava connection updates (e.g., after connecting)
   useEffect(() => {

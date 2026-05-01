@@ -537,7 +537,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               userData={user}
             />
           )}
-          {user && (
+          {user && !isCoachRole(user) && (
             <StravaConnectModal
               isOpen={showStravaModal}
               onClose={() => {
@@ -756,8 +756,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
       )}
 
-      {/* Strava Connect Modal - third step */}
-      {user && (
+      {/* Strava Connect Modal - third step (athletes only, not coaches) */}
+      {user && !isCoachRole(user) && (
         <StravaConnectModal
           isOpen={showStravaModal}
           onClose={() => {

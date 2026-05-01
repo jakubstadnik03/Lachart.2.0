@@ -164,8 +164,18 @@ export default function CoachAthleteBar() {
       <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5 -mx-1 px-1">
         {/* "Me" chip — coach's own profile */}
         <button
-          onClick={() => handleSelectAthlete(user?._id)}
-          title="View my own dashboard"
+          onClick={() => {
+            setSelectedAthleteId(user?._id);
+            // Always navigate somewhere useful:
+            // • on athlete-section pages → stay in section, swap ID
+            // • everywhere else → go to own athlete profile
+            if (ATHLETE_URL_SECTIONS.includes(currentSection)) {
+              navigate(`/${currentSection}/${user?._id}`, { replace: true });
+            } else {
+              navigate(`/athlete/${user?._id}`);
+            }
+          }}
+          title="Open my profile"
           className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
             isViewingSelf
               ? 'bg-primary/10 ring-2 ring-primary/30'
@@ -179,7 +189,14 @@ export default function CoachAthleteBar() {
               className={`w-9 h-9 rounded-full object-cover border-2 ${
                 isViewingSelf ? 'border-primary' : 'border-transparent'
               }`}
+              onError={e => { e.currentTarget.src = '/images/coach-avatar.webp'; }}
             />
+            {/* "Me" badge */}
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-white flex items-center justify-center">
+              <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+              </svg>
+            </span>
           </div>
           <span className={`text-[9px] font-semibold truncate max-w-[3.5rem] ${isViewingSelf ? 'text-primary' : 'text-gray-600'}`}>
             {user?.name || 'Me'}
