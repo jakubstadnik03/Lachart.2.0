@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, PersonStanding, Waves, Trophy, CheckCircle } from 'lucide-react';
+import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -315,7 +315,7 @@ function UnitsStep({ user, onSave, saving }) {
   return (
     <div className="space-y-4">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">📐</div>
+        <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Units & Preferences</h3>
         <p className="text-sm text-gray-500 mt-1">Choose your preferred measurement system and training settings</p>
       </div>
@@ -887,15 +887,13 @@ function CoachVisual() {
 
 // ─── Slide definitions (light theme) ─────────────────────────────────────────
 
-// charPos: where the character anchors — 'right' (default) | 'left'
-// charScale: extra size multiplier for specific characters
 const INTRO_SLIDES = [
-  { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual />, character: '/characters/cyclist-standing.png', charPos: 'right', charScale: 1.15 },
-  { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />,    character: '/characters/coach-laptop.png',    charPos: 'right', charScale: 1.2  },
-  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />,       character: '/characters/runner-treadmill.png',charPos: 'right', charScale: 1.1  },
-  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />,   character: '/characters/athlete-watch.png',   charPos: 'left',  charScale: 1.0  },
-  { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />,     character: '/characters/athlete-phone.png',   charPos: 'right', charScale: 1.1  },
-  { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />,       character: '/characters/athlete-app.png',     charPos: 'left',  charScale: 1.05 },
+  { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual /> },
+  { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />    },
+  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />       },
+  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />   },
+  { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />     },
+  { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />       },
 ];
 
 export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
@@ -978,34 +976,11 @@ export function IntroSlides({ user, onDone }) {
           </div>
           <h2 className="text-[22px] sm:text-[30px] leading-[1.15] font-black text-gray-900 mb-2 sm:mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
           <p className="text-[13px] sm:text-[15px] text-gray-400 leading-relaxed mb-3 sm:mb-5 flex-shrink-0 line-clamp-3">{current.subtitle}</p>
-          {/* Visual + character — character overlays the visual from the bottom corner */}
-          <div className="flex-1 overflow-hidden min-h-0 max-h-[38vh] sm:max-h-none relative">
-            {/* Component visual — full width */}
+          {/* Visual */}
+          <div className="flex-1 overflow-hidden min-h-0 max-h-[38vh] sm:max-h-none">
             <div className="w-full h-full">
               {current.visual}
             </div>
-
-            {/* Character — large overlay anchored to bottom corner */}
-            {current.character && (
-              <img
-                src={current.character}
-                alt=""
-                aria-hidden="true"
-                className="absolute bottom-0 pointer-events-none select-none object-contain object-bottom"
-                style={{
-                  [current.charPos === 'left' ? 'left' : 'right']: '-8px',
-                  width: `clamp(120px, 42%, 200px)`,
-                  maxHeight: '85%',
-                  mixBlendMode: 'multiply',
-                  filter: current.charPos === 'left'
-                    ? 'drop-shadow(3px -2px 14px rgba(0,0,0,0.12))'
-                    : 'drop-shadow(-3px -2px 14px rgba(0,0,0,0.12))',
-                  transform: `scale(${current.charScale ?? 1})`,
-                  transformOrigin: current.charPos === 'left' ? 'bottom left' : 'bottom right',
-                  zIndex: 10,
-                }}
-              />
-            )}
           </div>
           <div className="flex items-center gap-3 pt-2 sm:pt-4 flex-shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}>
             {slide > 0 ? (
