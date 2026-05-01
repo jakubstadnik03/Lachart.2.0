@@ -1,8 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserPlusIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { Bike, Activity, Waves, Medal } from 'lucide-react';
 import api from '../../services/api';
 import { getAthleteAvatar } from '../../utils/avatarUtils';
+
+const SPORT_ICONS = { cycling: Bike, running: Activity, swimming: Waves, triathlon: Medal };
+function SportIcon({ sport, size = 14 }) {
+  const Icon = SPORT_ICONS[sport?.toLowerCase()] || Medal;
+  return <Icon size={size} className="inline-block text-gray-500" />;
+}
 
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
@@ -33,7 +40,6 @@ const STATUS_COLORS = {
   red: { dot: 'bg-red-400', ring: 'ring-red-200', badge: 'bg-red-50 text-red-600', label: 'Overdue' },
 };
 
-const SPORT_EMOJI = { cycling: '🚴', running: '🏃', swimming: '🏊', triathlon: '🏅' };
 
 /**
  * CoachDashboardHeader
@@ -261,7 +267,7 @@ export default function CoachDashboardHeader({ selectedAthleteId, onSelectAthlet
               </span>
               {selectedAthlete.sport && (
                 <span className="text-xs">
-                  {SPORT_EMOJI[selectedAthlete.sport?.toLowerCase()] || '🏅'} {selectedAthlete.sport}
+                  <SportIcon sport={selectedAthlete.sport} /> {selectedAthlete.sport}
                 </span>
               )}
               {selectedStatus && (

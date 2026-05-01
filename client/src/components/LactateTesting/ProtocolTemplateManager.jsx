@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api';
 
 const SPORT_LABELS = {
-  bike: '🚴 Bike',
-  run: '🏃 Run',
-  swim: '🏊 Swim',
+  bike: 'Bike',
+  run: 'Run',
+  swim: 'Swim',
 };
 
 function SportPill({ sport }) {
@@ -312,9 +312,9 @@ export default function ProtocolTemplateManager({
                       onChange={(e) => setSaveSport(e.target.value)}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#767EB5]"
                     >
-                      <option value="bike">🚴 Bike</option>
-                      <option value="run">🏃 Run</option>
-                      <option value="swim">🏊 Swim</option>
+                      <option value="bike">Bike</option>
+                      <option value="run">Run</option>
+                      <option value="swim">Swim</option>
                     </select>
                     <div className="text-xs text-gray-500 font-mono bg-white rounded-lg px-3 py-2 border border-gray-100">
                       {protocolSummary(currentProtocol)}

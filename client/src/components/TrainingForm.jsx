@@ -7,6 +7,7 @@ import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
 import LapsBarChart from "./FitAnalysis/LapsBarChart";
+import { Zap, TrendingUp, TrendingDown, RotateCcw } from 'lucide-react';
 
 const ACTIVITIES = [
   {
@@ -116,10 +117,10 @@ const formatSecondsToMMSS = (seconds) => {
 
 /** Interval type config — used in auto-detection and interval cards UI */
 const INTERVAL_TYPES = [
-  { id: 'work',     label: 'Work',      shortLabel: 'Work', icon: '⚡', bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
-  { id: 'warmup',   label: 'Warm-up',   shortLabel: 'WU',   icon: '↑',  bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200' },
-  { id: 'cooldown', label: 'Cool-down', shortLabel: 'CD',   icon: '↓',  bg: 'bg-sky-100',    text: 'text-sky-700',    border: 'border-sky-200' },
-  { id: 'recovery', label: 'Rest',      shortLabel: 'Rest', icon: '↩',  bg: 'bg-gray-100',   text: 'text-gray-500',   border: 'border-gray-200' },
+  { id: 'work',     label: 'Work',      shortLabel: 'Work', icon: <Zap size={14} />, bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+  { id: 'warmup',   label: 'Warm-up',   shortLabel: 'WU',   icon: <TrendingUp size={14} />,   bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200' },
+  { id: 'cooldown', label: 'Cool-down', shortLabel: 'CD',   icon: <TrendingDown size={14} />, bg: 'bg-sky-100',    text: 'text-sky-700',    border: 'border-sky-200' },
+  { id: 'recovery', label: 'Rest',      shortLabel: 'Rest', icon: <RotateCcw size={14} />,    bg: 'bg-gray-100',   text: 'text-gray-500',   border: 'border-gray-200' },
 ];
 
 /** Parse raw seconds from a form result (durationSeconds or MM:SS string). */
@@ -179,23 +180,57 @@ function autoDetectIntervalTypes(results) {
   });
 
   /**
-   * Given an array of nullable numbers (one per interval), find the largest
-   * group of intervals whose values are within `tol` (relative) of each other.
-   * Returns a Set of indices, or null if no valid cluster found (< 2 members,
-   * or the cluster contains ALL intervals with data).
+   * Find the best cluster of similar values within `tol` relative tolerance.
+   *
+   * `preferHigh` (use for intensity metrics): among clusters of near-equal size
+   * (within 1 member of the max), pick the one with the HIGHEST average value.
+   * This ensures work intervals (high power/HR) beat recovery intervals (low
+   * power/HR) when both form clusters of similar size — fixing the bug where
+   * the lap with the highest watts was mislabelled as "rest".
+   *
+   * Without `preferHigh` (distance/duration): prefer the largest cluster, with
+   * a tiebreak that avoids clusters anchored to the first/last interval (those
+   * are usually warmup/cooldown, not repeated work intervals).
    */
-  function findCluster(vals, tol) {
+  function findCluster(vals, tol, { preferHigh = false } = {}) {
     const pairs = vals.map((v, i) => ({ i, v })).filter(x => x.v !== null);
     if (pairs.length < 2) return null;
-    let best = [];
-    for (const pivot of pairs) {
-      const cluster = pairs.filter(x => Math.abs(x.v - pivot.v) / pivot.v <= tol);
-      if (cluster.length > best.length) best = cluster;
+
+    // Build one cluster per pivot point
+    const clusters = pairs.map(pivot =>
+      pairs.filter(x => Math.abs(x.v - pivot.v) / pivot.v <= tol)
+    ).filter(c => c.length >= 2);
+
+    if (clusters.length === 0) return null;
+
+    const maxLen = Math.max(...clusters.map(c => c.length));
+    // Candidates: all clusters within 1 member of the largest
+    const topClusters = clusters.filter(c => c.length >= maxLen - 1);
+
+    let best;
+    if (preferHigh) {
+      // For intensity: pick the cluster with the highest average value
+      // (work intervals always have higher power/HR than recovery intervals)
+      best = topClusters.reduce((a, b) => {
+        const avgA = a.reduce((s, x) => s + x.v, 0) / a.length;
+        const avgB = b.reduce((s, x) => s + x.v, 0) / b.length;
+        return avgB > avgA ? b : a;
+      });
+    } else {
+      // For distance/duration: largest cluster wins; tiebreak avoids edge indices
+      best = topClusters.reduce((a, b) => {
+        if (b.length > a.length) return b;
+        if (b.length === a.length) {
+          // Prefer the cluster that doesn't touch index 0 or n-1 (likely WU/CD)
+          const aHasEdge = a.some(x => x.i === 0 || x.i === n - 1);
+          const bHasEdge = b.some(x => x.i === 0 || x.i === n - 1);
+          if (aHasEdge && !bHasEdge) return b;
+        }
+        return a;
+      });
     }
-    if (best.length < 2) return null;
-    // If every data-carrying interval is in the cluster they're all "work"
-    // — still useful, just return the full set so we mark them all work.
-    return new Set(best.map(x => x.i));
+
+    return best.length >= 2 ? new Set(best.map(x => x.i)) : null;
   }
 
   // Step 1 — distance cluster (best signal for swim/run repeats)
@@ -204,23 +239,24 @@ function autoDetectIntervalTypes(results) {
   // Step 2 — duration cluster (best signal for bike intervals)
   if (!workSet) workSet = findCluster(meta.map(m => m.dur), 0.25);
 
-  // Step 3 — intensity cluster (HR or power)
+  // Step 3 — intensity cluster (HR or power).
+  // Use preferHigh so the high-watt cluster wins over the low-watt cluster.
   if (!workSet) {
     const intensities = meta.map(m => m.power || m.hr);
     if (intensities.filter(Boolean).length >= Math.ceil(n / 2)) {
-      workSet = findCluster(intensities, 0.12);
+      workSet = findCluster(intensities, 0.12, { preferHigh: true });
     }
   }
 
-  // Step 4 — positional heuristic: if the edge intervals look very different
-  //          from the bulk by duration, peel them off as warmup/cooldown.
+  // Step 4 — positional heuristic: if edge intervals differ from the bulk by
+  //          duration, peel them off as warmup/cooldown.
   if (!workSet) {
     const durs = meta.map(m => m.dur);
     const midDurs = durs.slice(1, -1).filter(Boolean);
     if (midDurs.length >= 2) {
       const midAvg = midDurs.reduce((a, b) => a + b, 0) / midDurs.length;
       const firstDur = durs[0], lastDur = durs[n - 1];
-      const edgeTol = 0.4; // 40 % different from bulk avg → it's an edge
+      const edgeTol = 0.4;
       const firstIsEdge = firstDur != null && (firstDur < midAvg * (1 - edgeTol) || firstDur > midAvg * (1 + edgeTol));
       const lastIsEdge  = lastDur  != null && (lastDur  < midAvg * (1 - edgeTol) || lastDur  > midAvg * (1 + edgeTol));
       const start = firstIsEdge ? 1 : 0;
@@ -237,21 +273,36 @@ function autoDetectIntervalTypes(results) {
   const firstWork = Math.min(...workSet);
   const lastWork  = Math.max(...workSet);
 
-  // Average duration of confirmed work intervals (used to spot recovery gaps)
+  // Average duration + intensity of confirmed work intervals
   const workDurs = [...workSet].map(i => parseIntervalDurSec(migrated[i])).filter(d => d > 0);
   const avgWorkDur = workDurs.length ? workDurs.reduce((a, b) => a + b, 0) / workDurs.length : 0;
 
+  const workIntensities = [...workSet].map(i => meta[i].power || meta[i].hr || 0).filter(v => v > 0);
+  const avgWorkIntensity = workIntensities.length
+    ? workIntensities.reduce((a, b) => a + b, 0) / workIntensities.length
+    : 0;
+
   // Step 5 — assign final types
   return migrated.map((r, i) => {
-    if (r.intervalType) return r;                 // manually set → never overwrite
+    if (r.intervalType) return r;               // manually set → never overwrite
     if (i < firstWork)  return { ...r, intervalType: 'warmup' };
     if (i > lastWork)   return { ...r, intervalType: 'cooldown' };
     if (workSet.has(i)) return { ...r, intervalType: 'work' };
 
-    // Inside work range but not in cluster
-    const dur = parseIntervalDurSec(r);
-    const isShort = avgWorkDur > 0 && dur > 0 && dur < avgWorkDur * 0.65;
-    return { ...r, intervalType: isShort ? 'recovery' : 'work' };
+    // Inside work range but not in the work cluster — decide work vs recovery.
+    const dur       = parseIntervalDurSec(r);
+    const intensity = meta[i].power || meta[i].hr || 0;
+
+    // Safety guard: if this interval's intensity is >= 90 % of the work average,
+    // it must be work — prevents a high-watt lap from being mislabelled as rest.
+    if (avgWorkIntensity > 0 && intensity >= avgWorkIntensity * 0.90) {
+      return { ...r, intervalType: 'work' };
+    }
+
+    const isShort        = avgWorkDur       > 0 && dur       > 0 && dur       < avgWorkDur       * 0.65;
+    const isLowIntensity = avgWorkIntensity > 0 && intensity > 0 && intensity < avgWorkIntensity * 0.75;
+
+    return { ...r, intervalType: (isShort || isLowIntensity) ? 'recovery' : 'work' };
   });
 }
 

@@ -432,12 +432,22 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
       zIndex: 100000,
       primaryColor: '#0d9488',
       textColor: '#111827',
-      // Unused while disableOverlay is true; kept for consistency if overlay is re-enabled.
       overlayColor: 'transparent',
       arrowColor: '#fff',
     },
     tooltip: {
       borderRadius: 12,
+      minWidth: 272,
+      maxWidth: 320,
+    },
+    tooltipContent: {
+      // Fixed min-height keeps the footer buttons at the same vertical
+      // position on every step regardless of how much text the step has.
+      minHeight: 80,
+      padding: '8px 0 4px',
+    },
+    tooltipFooter: {
+      marginTop: 0,
     },
     buttonNext: {
       backgroundColor: '#0d9488',

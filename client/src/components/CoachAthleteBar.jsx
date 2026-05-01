@@ -4,7 +4,7 @@ import { UserPlusIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
-import { getAthleteAvatar } from '../utils/avatarUtils';
+import { getAthleteAvatar, getAvatarBySportAndGender } from '../utils/avatarUtils';
 
 // Admin sees coach UI only when their role is not 'athlete'.
 // An admin who set role='athlete' should see athlete UI, not coach UI.
@@ -162,17 +162,28 @@ export default function CoachAthleteBar() {
 
       {/* Avatar chips row */}
       <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5 -mx-1 px-1">
-        {/* "Me" chip */}
+        {/* "Me" chip — coach's own profile */}
         <button
           onClick={() => handleSelectAthlete(user?._id)}
-          title="View my dashboard"
-          className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-1.5 py-1 rounded-xl transition-all ${isViewingSelf ? 'bg-primary/10 ring-2 ring-primary/25' : 'hover:bg-gray-100'}`}
+          title="View my own dashboard"
+          className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
+            isViewingSelf
+              ? 'bg-primary/10 ring-2 ring-primary/30'
+              : 'hover:bg-gray-100'
+          }`}
         >
           <div className="relative">
-            <img src={user?.profileImage || '/images/triathlete-avatar.jpg'} alt="Me" className="w-8 h-8 rounded-full object-cover" />
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary border-2 border-white text-[5px] flex items-center justify-center text-white font-bold">me</span>
+            <img
+              src={getAvatarBySportAndGender(user)}
+              alt="Me"
+              className={`w-9 h-9 rounded-full object-cover border-2 ${
+                isViewingSelf ? 'border-primary' : 'border-transparent'
+              }`}
+            />
           </div>
-          <span className={`text-[9px] font-medium truncate max-w-[3rem] ${isViewingSelf ? 'text-primary' : 'text-gray-500'}`}>Me</span>
+          <span className={`text-[9px] font-semibold truncate max-w-[3.5rem] ${isViewingSelf ? 'text-primary' : 'text-gray-600'}`}>
+            {user?.name || 'Me'}
+          </span>
         </button>
 
         <div className="w-px h-7 bg-gray-200 flex-shrink-0" />

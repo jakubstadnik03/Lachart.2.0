@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { 
+import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
 import { format, parseISO, subMonths } from 'date-fns';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Activity, Zap, Heart, Timer } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
@@ -227,26 +228,26 @@ const TrainingStats = ({ trainings, athleteId }) => {
       case 0:
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard 
-              title="Total Trainings" 
-              value={stats.totalTrainings} 
-              icon="🏃‍♂️"
+            <StatCard
+              title="Total Trainings"
+              value={stats.totalTrainings}
+              icon={<Activity size={28} className="text-gray-400" />}
             />
-            <StatCard 
-              title="Total Duration" 
-              value={formatDuration(stats.totalDuration)} 
-              icon="⏱️"
+            <StatCard
+              title="Total Duration"
+              value={formatDuration(stats.totalDuration)}
+              icon={<Timer size={28} className="text-gray-400" />}
             />
-            <StatCard 
-              title="Avg Power" 
-              value={stats.avgPower.toFixed(1)} 
-              icon="⚡"
+            <StatCard
+              title="Avg Power"
+              value={stats.avgPower.toFixed(1)}
+              icon={<Zap size={28} className="text-gray-400" />}
               unit={selectedSport === 'bike' ? 'W' : 'min/km'}
             />
-            <StatCard 
-              title="Avg Heart Rate" 
-              value={stats.avgHeartRate.toFixed(0)} 
-              icon="❤️"
+            <StatCard
+              title="Avg Heart Rate"
+              value={stats.avgHeartRate.toFixed(0)}
+              icon={<Heart size={28} className="text-gray-400" />}
               unit="bpm"
             />
           </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
+import ReactDOM from 'react-dom';
 import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
@@ -693,13 +694,16 @@ export default function TrainingPage() {
         onSave={handleQuickAddLactate}
       />
 
+      {/* Portal modals — rendered into document.body so iOS fixed-in-overflow-auto
+          issues don't prevent them from covering the CoachAthleteBar header. */}
       <AnimatePresence>
-        {isFormOpen && (
+        {isFormOpen && ReactDOM.createPortal(
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4"
+            style={{ zIndex: 99998 }}
+            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
@@ -713,17 +717,19 @@ export default function TrainingPage() {
                 onSubmit={handleAddTraining}
               />
             </motion.div>
-          </motion.div>
+          </motion.div>,
+          document.body
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {stravaLactateModal.isOpen && stravaLactateModal.initialData && (
+        {stravaLactateModal.isOpen && stravaLactateModal.initialData && ReactDOM.createPortal(
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4"
+            style={{ zIndex: 99999 }}
+            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
@@ -744,7 +750,8 @@ export default function TrainingPage() {
                 isLoading={stravaLactateSubmitting}
               />
             </motion.div>
-          </motion.div>
+          </motion.div>,
+          document.body
         )}
       </AnimatePresence>
     </motion.div>

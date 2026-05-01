@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Bike, Activity, Waves, Zap } from "lucide-react";
 
 // ── Sport helpers ─────────────────────────────────────────────────────────────
 const normalizeSport = (raw) => {
@@ -11,10 +12,10 @@ const normalizeSport = (raw) => {
 };
 
 const SPORT_META = {
-  bike:  { label: "Bike",  color: "#f97316", emoji: "🚴" },
-  run:   { label: "Run",   color: "#6366f1", emoji: "🏃" },
-  swim:  { label: "Swim",  color: "#06b6d4", emoji: "🏊" },
-  other: { label: "Other", color: "#94a3b8", emoji: "⚡" },
+  bike:  { label: "Bike",  color: "#f97316", Icon: Bike },
+  run:   { label: "Run",   color: "#6366f1", Icon: Activity },
+  swim:  { label: "Swim",  color: "#06b6d4", Icon: Waves },
+  other: { label: "Other", color: "#94a3b8", Icon: Zap },
 };
 
 // ── Activity nav helper (same pattern as TrainingTable / TrainingStats) ────────
@@ -348,7 +349,7 @@ function HoverTooltip({ tooltip }) {
               key={i}
               className={`flex items-start gap-1.5 ${i > 0 ? "mt-1.5 pt-1.5 border-t border-gray-100" : ""}`}
             >
-              <span className="text-sm mt-px">{meta.emoji}</span>
+              <meta.Icon size={14} className="mt-px shrink-0" style={{ color: meta.color }} />
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-gray-800 leading-tight truncate">{title}</p>
                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -440,12 +441,12 @@ const DayPopup = React.forwardRef(function DayPopup({ popup, onNavigate, onClose
                 disabled={!navId}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left group"
               >
-                {/* Sport dot */}
+                {/* Sport icon */}
                 <span
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: meta.color + "20" }}
                 >
-                  {meta.emoji}
+                  <meta.Icon size={18} style={{ color: meta.color }} />
                 </span>
 
                 <div className="flex-1 min-w-0">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { useAthleteSelection } from '../../context/AthleteSelectionContext';
 
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
@@ -82,6 +83,7 @@ const FILTER_OPTIONS = [
 
 export default function CoachAthleteOverview({ athletes }) {
   const navigate = useNavigate();
+  const { setSelectedAthleteId } = useAthleteSelection();
   const [athleteData, setAthleteData] = useState({});
   const [sortBy, setSortBy] = useState('status');
   const [filter, setFilter] = useState('all');
@@ -228,7 +230,7 @@ export default function CoachAthleteOverview({ athletes }) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <button
-                        onClick={() => navigate(`/athlete/${athlete._id}`)}
+                        onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/athlete/${athlete._id}`); }}
                         className="font-semibold text-gray-800 text-sm hover:text-primary text-left leading-tight"
                         style={{ touchAction: 'manipulation' }}
                       >
@@ -261,14 +263,14 @@ export default function CoachAthleteOverview({ athletes }) {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <button
-                        onClick={() => navigate(`/dashboard/${athlete._id}`)}
+                        onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/dashboard/${athlete._id}`); }}
                         className="text-xs text-primary font-medium"
                         style={{ touchAction: 'manipulation' }}
                       >
                         Dashboard
                       </button>
                       <button
-                        onClick={() => navigate(`/testing/${athlete._id}`)}
+                        onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/testing/${athlete._id}`); }}
                         className="text-xs text-gray-500"
                         style={{ touchAction: 'manipulation' }}
                       >
@@ -306,7 +308,7 @@ export default function CoachAthleteOverview({ athletes }) {
                     <td className="px-5 py-3">
                       <span
                         className="font-medium text-gray-800 cursor-pointer hover:text-[#767EB5] transition-colors"
-                        onClick={() => navigate(`/athlete/${athlete._id}`)}
+                        onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/athlete/${athlete._id}`); }}
                       >
                         {athlete.name} {athlete.surname}
                       </span>
@@ -342,13 +344,13 @@ export default function CoachAthleteOverview({ athletes }) {
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => navigate(`/dashboard/${athlete._id}`)}
+                          onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/dashboard/${athlete._id}`); }}
                           className="text-xs text-[#767EB5] hover:underline font-medium whitespace-nowrap"
                         >
                           Dashboard
                         </button>
                         <button
-                          onClick={() => navigate(`/testing/${athlete._id}`)}
+                          onClick={() => { setSelectedAthleteId(athlete._id); navigate(`/testing/${athlete._id}`); }}
                           className="text-xs text-gray-500 hover:underline whitespace-nowrap"
                         >
                           Tests

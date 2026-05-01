@@ -367,8 +367,220 @@ const fmtSpeedAsPace = (mps, isSwim) => {
   return `${m}:${String(s).padStart(2,'0')} ${isSwim ? '/100m' : '/km'}`;
 };
 
+/* ─── Inline comparison helpers ─────────────────────────────────────────────── */
+
+/** Return only "work" intervals. If no explicit types, fall back to all. */
+function workIntervalsOnly(results) {
+  if (!Array.isArray(results) || results.length === 0) return [];
+  const typed = results.filter(r => r.intervalType);
+  if (typed.length >= Math.ceil(results.length * 0.5)) {
+    const work = results.filter(r => r.intervalType === 'work');
+    if (work.length >= 1) return work;
+  }
+  return results;
+}
+
+/** Average a numeric field over a result array. Returns null if no data. */
+function avgField(results, key) {
+  const vals = results
+    .map(r => { const v = r[key]; return v == null || v === '' ? NaN : Number(v); })
+    .filter(v => !isNaN(v) && v > 0);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+/** Human-readable relative date like "6 weeks ago". */
+function relDate(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const weeks  = Math.round(diff / (7  * 24 * 3600 * 1000));
+  const months = Math.round(diff / (30 * 24 * 3600 * 1000));
+  if (weeks < 1) return 'last week';
+  if (weeks === 1) return '1 wk ago';
+  if (weeks < 9)  return `${weeks} wks ago`;
+  if (months === 1) return '1 mo ago';
+  return `${months} mo ago`;
+}
+
+/** Format a pace value (sec) → "m:ss". */
+function fmtPaceSec(sec) {
+  if (!sec || isNaN(sec)) return '—';
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Inline "vs. previous same workout" comparison panel.
+ * Shows a dual mini-skyline + per-metric delta for work intervals.
+ */
+function InlineComparison({ currResults, prevResults, prevTraining, sport, accentColor }) {
+  const isBike = !sport.toLowerCase().includes('run') && !sport.toLowerCase().includes('swim');
+
+  const cWork = workIntervalsOnly(currResults);
+  const pWork = workIntervalsOnly(prevResults);
+
+  if (cWork.length === 0 && pWork.length === 0) return null;
+
+  // ── Metric definitions ────────────────────────────────────────────────────
+  const METRICS = [
+    {
+      key: 'power',
+      label: isBike ? 'Avg power' : 'Avg pace',
+      // For pace, raw value = sec/km (lower = faster). isGoodWhenPositive:
+      //   bike: +watts = better (true)
+      //   run/swim: −pace = faster = better (false = lower is better)
+      goodWhenPositive: isBike ? true : false,
+      format: (v) => isBike ? `${Math.round(v)} W` : fmtPaceSec(v),
+      fmtDelta: (d) => {
+        if (isBike) return `${d > 0 ? '+' : ''}${Math.round(d)} W`;
+        // pace delta in sec: negative = faster
+        const abs = Math.round(Math.abs(d));
+        return `${d < 0 ? '−' : '+'}${abs}s`;
+      },
+    },
+    {
+      key: 'heartRate',
+      label: 'Avg HR',
+      goodWhenPositive: false,
+      format: (v) => `${Math.round(v)} bpm`,
+      fmtDelta: (d) => `${d > 0 ? '+' : ''}${Math.round(d)} bpm`,
+    },
+    {
+      key: 'lactate',
+      label: 'Lactate',
+      goodWhenPositive: false,
+      format: (v) => `${Number(v).toFixed(1)} mmol`,
+      fmtDelta: (d) => `${d > 0 ? '+' : ''}${Number(d).toFixed(1)}`,
+    },
+  ];
+
+  // Only show lactate column if either workout has lactate data
+  const hasLac = [...cWork, ...pWork].some(r => r.lactate != null && r.lactate !== '');
+  const visMetrics = METRICS.filter(m => m.key !== 'lactate' || hasLac);
+
+  // ── Mini dual-skyline ─────────────────────────────────────────────────────
+  const len = Math.min(cWork.length, pWork.length, 10);
+  const cPwr = cWork.slice(0, len).map(r => toPowerNum(r.power, sport));
+  const pPwr = pWork.slice(0, len).map(r => toPowerNum(r.power, sport));
+  const maxPwr = Math.max(...cPwr, ...pPwr, 0.001);
+  const CHART_H = 28;
+
+  const prevDateStr = prevTraining?.date
+    || prevTraining?.startDate || prevTraining?.start_date
+    || prevTraining?.timestamp || prevTraining?.createdAt || '';
+
+  return (
+    <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">vs. previous same workout</span>
+        {prevDateStr && (
+          <>
+            <span className="text-[10px] text-gray-300">·</span>
+            <span className="text-[10px] text-gray-500 font-medium">
+              {new Date(prevDateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
+            <span className="text-[10px] text-gray-400">({relDate(prevDateStr)})</span>
+          </>
+        )}
+      </div>
+
+      {/* ── Dual skyline + delta stats ── */}
+      <div className="flex items-start gap-5 flex-wrap">
+
+        {/* Dual skyline */}
+        {len >= 2 && (
+          <div className="flex-shrink-0">
+            <svg width={len * 14 - 2} height={CHART_H * 2 + 6} style={{ overflow: 'visible' }}>
+              {/* current (top) */}
+              {cPwr.map((v, i) => {
+                const pct = maxPwr > 0 ? v / maxPwr : 0;
+                const h = Math.max(3, pct * CHART_H);
+                return (
+                  <rect key={`c${i}`}
+                    x={i * 14} y={CHART_H - h} width={12} height={h}
+                    fill={accentColor} rx={2} opacity={0.85}
+                  />
+                );
+              })}
+              {/* previous (bottom) */}
+              {pPwr.map((v, i) => {
+                const pct = maxPwr > 0 ? v / maxPwr : 0;
+                const h = Math.max(3, pct * CHART_H);
+                return (
+                  <rect key={`p${i}`}
+                    x={i * 14} y={CHART_H + 6 + (CHART_H - h)} width={12} height={h}
+                    fill="#d1d5db" rx={2}
+                  />
+                );
+              })}
+              {/* divider */}
+              <line x1={0} y1={CHART_H + 3} x2={len * 14 - 2} y2={CHART_H + 3}
+                stroke="#e5e7eb" strokeWidth={1} strokeDasharray="3 2" />
+            </svg>
+            <div className="flex items-center gap-3 mt-1.5">
+              <span className="flex items-center gap-1 text-[9px] text-gray-500">
+                <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: accentColor }} />
+                Now
+              </span>
+              <span className="flex items-center gap-1 text-[9px] text-gray-500">
+                <span className="inline-block w-2 h-2 rounded-sm bg-gray-300 flex-shrink-0" />
+                Prev
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Metric deltas */}
+        <div className="flex gap-5 flex-wrap flex-1 items-start">
+          {visMetrics.map(m => {
+            const cVal = avgField(cWork, m.key);
+            const pVal = avgField(pWork, m.key);
+            if (cVal === null && pVal === null) return null;
+
+            const delta = cVal != null && pVal != null ? cVal - pVal : null;
+            const isGood = delta !== null
+              ? (m.goodWhenPositive ? delta > 0 : delta < 0)
+              : null;
+            const isZero = delta !== null && Math.abs(delta) < 0.05;
+
+            return (
+              <div key={m.key} className="flex flex-col gap-0.5 min-w-[72px]">
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">{m.label}</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm font-semibold text-gray-800">
+                    {cVal != null ? m.format(cVal) : '—'}
+                  </span>
+                  {delta !== null && !isZero && (
+                    <span className={`text-[10px] font-semibold flex items-center gap-0.5 leading-none ${
+                      isGood === true  ? 'text-emerald-500' :
+                      isGood === false ? 'text-red-400' :
+                                         'text-gray-400'
+                    }`}>
+                      {delta > 0 ? '▲' : '▼'} {m.fmtDelta(delta)}
+                    </span>
+                  )}
+                  {isZero && (
+                    <span className="text-[10px] text-gray-300 font-medium">±0</span>
+                  )}
+                </div>
+                {pVal != null && (
+                  <span className="text-[9px] text-gray-400">was {m.format(pVal)}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── TrainingItem ──────────────────────────────────────────────────────────── */
-const TrainingItem = ({ training, isExpanded, onToggleExpand }) => {
+const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = null }) => {
   const navigate = useNavigate();
   const [intervalPage, setIntervalPage] = useState(0);
   // Full detail loaded on expand (for Strava activities that don't include laps in list)
@@ -712,6 +924,24 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand }) => {
                   </div>
                 )}
               </div>
+            );
+          })()}
+
+          {/* ── Inline comparison with previous same workout ── */}
+          {prevTraining && (() => {
+            const prevSport = resolveSport(prevTraining);
+            const prevRes = (Array.isArray(prevTraining.results) && prevTraining.results.length > 0)
+              ? prevTraining.results
+              : normalizeLaps(prevTraining.laps, prevSport);
+            if (prevRes.length === 0) return null;
+            return (
+              <InlineComparison
+                currResults={safeResults}
+                prevResults={prevRes}
+                prevTraining={prevTraining}
+                sport={sport}
+                accentColor={accentColor}
+              />
             );
           })()}
 

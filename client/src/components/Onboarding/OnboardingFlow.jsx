@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
+import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 

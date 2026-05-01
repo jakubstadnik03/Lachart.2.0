@@ -9,6 +9,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon
 } from '@heroicons/react/24/outline';
+import { Bike, Heart, BarChart2, Thermometer, Wind } from 'lucide-react';
 
 const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect }) => {
   const { user } = useAuth();
@@ -17,31 +18,31 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
     {
       key: 'bikeTrainer',
       name: 'Bike Trainer',
-      icon: '🚴',
+      Icon: Bike,
       description: 'Smart trainer via Bluetooth/ANT+'
     },
     {
       key: 'heartRate',
       name: 'Heart Rate Monitor',
-      icon: '❤️',
+      Icon: Heart,
       description: 'Heart rate strap/band'
     },
     {
       key: 'moxy',
       name: 'Moxy Monitor',
-      icon: '📊',
+      Icon: BarChart2,
       description: 'Muscle oxygenation sensor'
     },
     {
       key: 'coreTemp',
       name: 'Core Temperature',
-      icon: '🌡️',
+      Icon: Thermometer,
       description: 'Core body temperature sensor'
     },
     {
       key: 'vo2master',
       name: 'VO2Master',
-      icon: '💨',
+      Icon: Wind,
       description: 'Oxygen uptake & breathing data'
     }
   ];
@@ -99,7 +100,7 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{device.icon}</span>
+                  <device.Icon size={24} className="text-gray-500 shrink-0" />
                   <div>
                     <div className="font-semibold text-gray-900">
                       {device.name}

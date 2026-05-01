@@ -106,6 +106,77 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
   );
 };
 
+/**
+ * Detect trainings that look like structured lactate step tests:
+ *  - relevant sport (bike / run / swim)
+ *  - 3+ intervals or laps
+ *  - meaningful intensity variation (structured, not just easy)
+ *  - no lactate data recorded yet
+ */
+function looksLikeLactateWorkout(training) {
+  if (!training) return false;
+
+  // Only for structured sports
+  const sport = (training.sport || training.sport_type || training.type || '').toLowerCase();
+  const isRelevantSport =
+    sport.includes('run') ||
+    sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') ||
+    sport.includes('swim');
+  if (!isRelevantSport) return false;
+
+  // Skip if lactate data is already present
+  const hasLactate =
+    (training.lactate != null && training.lactate !== '') ||
+    (Array.isArray(training.results) && training.results.some(r => r?.lactate != null && r?.lactate !== '')) ||
+    (Array.isArray(training.laps)    && training.laps.some(l    => l?.lactate != null && l?.lactate !== ''));
+  if (hasLactate) return false;
+
+  // ── Manual results: has work intervals with power ─────────────────────────
+  if (Array.isArray(training.results) && training.results.length >= 3) {
+    const hasWork  = training.results.some(r => r.intervalType === 'work');
+    const hasPower = training.results.some(r => r.power != null && r.power !== '');
+    if (hasWork && hasPower) return true;
+
+    // No explicit type? Check for meaningful power variation
+    const powers = training.results
+      .map(r => Number(r.power))
+      .filter(v => !isNaN(v) && v > 0);
+    if (powers.length >= 3) {
+      const max = Math.max(...powers);
+      const min = Math.min(...powers);
+      if (max > 0 && (max - min) / max > 0.15) return true;
+    }
+  }
+
+  // ── FIT / Strava laps: meaningful power OR speed variation ────────────────
+  if (Array.isArray(training.laps) && training.laps.length >= 4) {
+    const lapPowers = training.laps
+      .map(l => l.avgPower ?? l.normalizedPower ?? l.average_watts)
+      .filter(v => v != null && !isNaN(Number(v)) && Number(v) > 0)
+      .map(Number);
+
+    if (lapPowers.length >= 3) {
+      const max = Math.max(...lapPowers);
+      const min = Math.min(...lapPowers);
+      if (max > 0 && (max - min) / max > 0.20) return true;
+    }
+
+    // Run / swim: use speed variation
+    const lapSpeeds = training.laps
+      .map(l => l.avgSpeed ?? l.average_speed)
+      .filter(v => v != null && !isNaN(Number(v)) && Number(v) > 0)
+      .map(Number);
+
+    if (lapSpeeds.length >= 3) {
+      const max = Math.max(...lapSpeeds);
+      const min = Math.min(...lapSpeeds);
+      if (max > 0 && (max - min) / max > 0.15) return true;
+    }
+  }
+
+  return false;
+}
+
 const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -225,6 +296,39 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       else set.add(s);
     });
     return Array.from(set).sort();
+  }, [trainings]);
+
+  // ── Previous same-title training map (for inline comparison) ──────────────
+  // For each training, find the most-recent earlier training with the same title
+  // that also has interval/lap data. O(n²) but n is typically small (≤200).
+  const prevTrainingMap = useMemo(() => {
+    const map = {};
+    trainings.forEach(t => {
+      const title = (t.title || t.titleManual || t.name || t.titleAuto || '').trim().toLowerCase();
+      if (!title || title === 'untitled') return;
+      const tMs = new Date(t.date || t.startDate || t.start_date || t.timestamp || t.createdAt || 0).getTime();
+      if (!tMs) return;
+
+      const prev = trainings
+        .filter(other => {
+          if (other._id === t._id) return false;
+          const oTitle = (other.title || other.titleManual || other.name || other.titleAuto || '').trim().toLowerCase();
+          if (oTitle !== title) return false;
+          const hasData = (Array.isArray(other.results) && other.results.length > 0)
+                       || (Array.isArray(other.laps)    && other.laps.length    > 0);
+          if (!hasData) return false;
+          const oMs = new Date(other.date || other.startDate || other.start_date || other.timestamp || other.createdAt || 0).getTime();
+          return oMs < tMs;
+        })
+        .sort((a, b) => {
+          const dA = new Date(a.date || a.startDate || a.start_date || a.timestamp || a.createdAt || 0).getTime();
+          const dB = new Date(b.date || b.startDate || b.start_date || b.timestamp || b.createdAt || 0).getTime();
+          return dB - dA; // most recent first
+        });
+
+      if (prev.length > 0) map[t._id] = prev[0];
+    });
+    return map;
   }, [trainings]);
 
   const sortedTrainings = sortData(trainings, sortConfig);
@@ -545,57 +649,77 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       )}
 
       <div className="space-y-2">
-        {paginatedTrainings.map((training) => (
-          <div key={training._id} className="relative group">
-            <TrainingItem 
-              training={{
-                ...training,
-                date: formatDate(training.date || training.startDate || training.start_date || training.startTime || training.timestamp)
-              }}
-              isExpanded={expandedItems[training._id] || false}
-              onToggleExpand={() => toggleExpand(training._id)}
-            />
-            <div className="absolute right-4 top-4 transform flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddLactateTraining(training);
+        {paginatedTrainings.map((training) => {
+          const suggestLactate = looksLikeLactateWorkout(training);
+          return (
+            <div key={training._id} className="relative group">
+              <TrainingItem
+                training={{
+                  ...training,
+                  date: formatDate(training.date || training.startDate || training.start_date || training.startTime || training.timestamp)
                 }}
-                className="p-2 text-green-700 hover:text-green-900 hover:bg-green-50 rounded-full bg-white shadow-sm"
-                title="Add lactate"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </button>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
-                  handleEditTraining(training);
-                }}
-                className="p-2 text-primary hover:text-primary-dark hover:bg-blue-100 rounded-full bg-white shadow-sm"
-                title="Edit training"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
-                  handleDeleteTraining(training);
-                }}
-                className="p-2 text-red hover:text-red-dark hover:bg-red-100 rounded-full bg-white shadow-sm"
-                title="Delete training"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+                isExpanded={expandedItems[training._id] || false}
+                onToggleExpand={() => toggleExpand(training._id)}
+                prevTraining={prevTrainingMap[training._id] || null}
+              />
+
+              {/* ── Smart lactate suggestion banner ── */}
+              {suggestLactate && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleAddLactateTraining(training); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border-x border-b border-amber-200 transition-colors"
+                  style={{ marginTop: -2, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}
+                >
+                  {/* Droplet / lactate icon */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  </svg>
+                  <span className="flex-1 text-left">Structured workout — looks like you measured lactate. Add measurements?</span>
+                  <span className="flex items-center gap-1 text-amber-600 font-semibold shrink-0">
+                    Add lactate
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </button>
+              )}
+
+              {/* ── Hover action buttons (desktop) ── */}
+              <div className={`absolute right-4 top-4 flex gap-2 transition-opacity z-10 ${suggestLactate ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                {/* Add lactate — always shown on hover; suggestion banner handles mobile */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleAddLactateTraining(training); }}
+                  className="p-2 text-green-700 hover:text-green-900 hover:bg-green-50 rounded-full bg-white shadow-sm"
+                  title="Add lactate"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditTraining(training); }}
+                  className="p-2 text-primary hover:text-primary-dark hover:bg-blue-100 rounded-full bg-white shadow-sm"
+                  title="Edit training"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteTraining(training); }}
+                  className="p-2 text-red hover:text-red-dark hover:bg-red-100 rounded-full bg-white shadow-sm"
+                  title="Delete training"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <Pagination

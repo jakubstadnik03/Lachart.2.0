@@ -276,6 +276,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // Strava then Garmin (sequential) — avoids two heavy backend jobs at once after login.
   // Coaches who connect Strava use the same user-scoped tokens; sync must run for them too.
+  // Also re-syncs when the app returns to foreground (user uploads to Strava then switches back).
   useEffect(() => {
     if (!user?._id) return undefined;
 
@@ -285,54 +286,85 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
     let cancelled = false;
 
-    const runStrava = async () => {
+    // On-load: 60 s cooldown so reopening the same tab doesn't hammer the API.
+    // On foreground-return: 30 s cooldown so switching back from Strava syncs quickly.
+    const runStrava = async (cooldownMs = 60000) => {
       const syncKey = `strava_auto_sync_${user._id}`;
       const now = Date.now();
       const lastSync = sessionStorage.getItem(syncKey);
-      if (lastSync && now - parseInt(lastSync, 10) < 60000) return;
+      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
       try {
         const result = await autoSyncStravaActivities();
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
-          console.log(`Auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
+          console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
           if (result.imported > 0) {
             maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
           }
         }
       } catch (error) {
-        console.log('Auto-sync failed on app load:', error);
+        console.log('Auto-sync failed:', error);
       }
     };
 
-    const runGarmin = async () => {
+    const runGarmin = async (cooldownMs = 60000) => {
       const syncKey = `garmin_auto_sync_${user._id}`;
       const now = Date.now();
       const lastSync = sessionStorage.getItem(syncKey);
-      if (lastSync && now - parseInt(lastSync, 10) < 60000) return;
+      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
       try {
         const result = await autoSyncGarminActivities();
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
-          console.log(`Garmin auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
+          console.log(`Garmin auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
         }
       } catch (error) {
-        console.log('Garmin auto-sync failed on app load:', error);
+        console.log('Garmin auto-sync failed:', error);
       }
     };
 
+    // Initial sync on app load (small delay so auth is fully settled)
     const run = async () => {
       await new Promise((r) => setTimeout(r, 3500));
       if (cancelled) return;
-      if (hasStrava) await runStrava();
+      if (hasStrava) await runStrava(60000);
       await new Promise((r) => setTimeout(r, 4500));
       if (cancelled) return;
-      if (hasGarmin) await runGarmin();
+      if (hasGarmin) await runGarmin(60000);
     };
 
+    // Re-sync when app returns to foreground — catches activities uploaded to Strava
+    // while the user was away from LaChart.
+    const onForeground = async () => {
+      if (cancelled) return;
+      if (hasStrava) await runStrava(30000);  // 30 s cooldown on foreground
+      if (hasGarmin) await runGarmin(30000);
+    };
+
+    // Capacitor native: use App plugin appStateChange event
+    let capacitorCleanup = null;
+    if (isCapacitorNative()) {
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) onForeground();
+        }).then((handle) => {
+          capacitorCleanup = handle;
+        });
+      }).catch(() => {});
+    } else {
+      // Web fallback: visibilitychange
+      const onVisible = () => { if (document.visibilityState === 'visible') onForeground(); };
+      document.addEventListener('visibilitychange', onVisible);
+      capacitorCleanup = { remove: () => document.removeEventListener('visibilitychange', onVisible) };
+    }
+
     run();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      capacitorCleanup?.remove?.();
+    };
   }, [
     user?._id,
     user?.role,

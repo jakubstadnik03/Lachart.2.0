@@ -7,10 +7,12 @@ import { useNotification } from '../context/NotificationContext';
 import { getAthleteAvatar } from '../utils/avatarUtils';
 import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';
 import Modal from '../components/Modal';
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 
 const AthletesPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { setSelectedAthleteId } = useAthleteSelection();
   const [athletes, setAthletes] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,6 +94,7 @@ const AthletesPage = () => {
       addNotification('Waiting for athlete confirmation before profile access.', 'info');
       return;
     }
+    setSelectedAthleteId(athleteId);
     navigate(`/athlete/${athleteId}`);
   };
 

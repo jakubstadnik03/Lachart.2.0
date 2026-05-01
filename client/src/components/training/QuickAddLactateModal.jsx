@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, BeakerIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 
-const SPORT_LABELS = { bike: '🚴 Bike', run: '🏃 Run', swim: '🏊 Swim' };
+const SPORT_LABELS = { bike: 'Bike', run: 'Run', swim: 'Swim' };
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -172,7 +172,7 @@ export default function QuickAddLactateModal({ isOpen, onClose, trainings = [], 
                     <option value="">— No training selected —</option>
                     {sortedTrainings.map(t => (
                       <option key={t._id} value={t._id}>
-                        {SPORT_LABELS[t.sport] || t.sport || '📋'} &nbsp;
+                        {SPORT_LABELS[t.sport] || t.sport} &nbsp;
                         {t.title || 'Untitled'} &nbsp;·&nbsp; {formatDate(t.date)}
                       </option>
                     ))}
