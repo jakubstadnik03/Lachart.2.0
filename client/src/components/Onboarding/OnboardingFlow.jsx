@@ -974,49 +974,33 @@ export function IntroSlides({ user, onDone }) {
           </div>
           <h2 className="text-[30px] leading-[1.15] font-black text-gray-900 mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
           <p className="text-[15px] text-gray-400 leading-relaxed mb-5 flex-shrink-0">{current.subtitle}</p>
-          {/* Visual + character — side-by-side composition */}
-          <div className="flex-1 overflow-hidden flex items-end gap-3 min-h-0">
-            {/* Character — left side */}
-            {current.character && current.charPos === 'left' && (
-              <div className="flex-shrink-0 self-end" style={{ width: `clamp(100px, 32%, 160px)` }}>
-                <img
-                  src={current.character}
-                  alt=""
-                  aria-hidden="true"
-                  className="w-full object-contain object-bottom pointer-events-none select-none"
-                  style={{
-                    mixBlendMode: 'multiply',
-                    filter: 'drop-shadow(2px 0 18px rgba(0,0,0,0.08))',
-                    transform: `scale(${current.charScale ?? 1}) translateX(-6px)`,
-                    transformOrigin: 'bottom left',
-                    maxHeight: '240px',
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Component visual — takes remaining space */}
-            <div className="flex-1 min-w-0 self-start overflow-hidden">
+          {/* Visual + character — character overlays the visual from the bottom corner */}
+          <div className="flex-1 overflow-hidden min-h-0 relative">
+            {/* Component visual — full width */}
+            <div className="w-full h-full">
               {current.visual}
             </div>
 
-            {/* Character — right side */}
-            {current.character && current.charPos !== 'left' && (
-              <div className="flex-shrink-0 self-end" style={{ width: `clamp(100px, 32%, 160px)` }}>
-                <img
-                  src={current.character}
-                  alt=""
-                  aria-hidden="true"
-                  className="w-full object-contain object-bottom pointer-events-none select-none"
-                  style={{
-                    mixBlendMode: 'multiply',
-                    filter: 'drop-shadow(-2px 0 18px rgba(0,0,0,0.08))',
-                    transform: `scale(${current.charScale ?? 1}) translateX(6px)`,
-                    transformOrigin: 'bottom right',
-                    maxHeight: '240px',
-                  }}
-                />
-              </div>
+            {/* Character — large overlay anchored to bottom corner */}
+            {current.character && (
+              <img
+                src={current.character}
+                alt=""
+                aria-hidden="true"
+                className="absolute bottom-0 pointer-events-none select-none object-contain object-bottom"
+                style={{
+                  [current.charPos === 'left' ? 'left' : 'right']: '-8px',
+                  width: `clamp(120px, 42%, 200px)`,
+                  maxHeight: '85%',
+                  mixBlendMode: 'multiply',
+                  filter: current.charPos === 'left'
+                    ? 'drop-shadow(3px -2px 14px rgba(0,0,0,0.12))'
+                    : 'drop-shadow(-3px -2px 14px rgba(0,0,0,0.12))',
+                  transform: `scale(${current.charScale ?? 1})`,
+                  transformOrigin: current.charPos === 'left' ? 'bottom left' : 'bottom right',
+                  zIndex: 10,
+                }}
+              />
             )}
           </div>
           <div className="flex items-center gap-3 pt-4 flex-shrink-0" style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>

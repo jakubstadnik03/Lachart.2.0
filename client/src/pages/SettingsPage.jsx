@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity, Info, AlertTriangle, BarChart2, Target, MessageCircle, TrendingUp } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
@@ -1715,7 +1715,7 @@ const SettingsPage = () => {
                       </li>
                     </ul>
                     <p className={`flex gap-2 ${isMobile ? 'text-[9px]' : 'text-xs'} text-sky-800`}>
-                      <span className="shrink-0" aria-hidden>ℹ️</span>
+                      <Info className="shrink-0 mt-0.5" size={13} aria-hidden />
                       <span>FIT per-second <code className="rounded bg-white/80 px-0.5">records</code> and bulky third-party <code className="rounded bg-white/80 px-0.5">raw</code> payloads are excluded for size; contact support if you need originals.</span>
                     </p>
                   </div>
@@ -2841,8 +2841,9 @@ const SettingsPage = () => {
                       )}
                       {!garminConnected && (
                         <div className="mb-2 space-y-1.5">
-                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5`}>
-                            ⚠️ OAuth Connect requires <strong>Health API</strong> access in your Garmin developer account. If you have an Evaluation tier, use <strong>Connect with credentials</strong> below instead.
+                          <p className={`flex gap-1.5 items-start ${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5`}>
+                            <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                            <span>OAuth Connect requires <strong>Health API</strong> access in your Garmin developer account. If you have an Evaluation tier, use <strong>Connect with credentials</strong> below instead.</span>
                           </p>
                         </div>
                       )}
@@ -2935,17 +2936,19 @@ const SettingsPage = () => {
                           <div className="font-semibold">Sync error:</div>
                           <div className="font-mono break-all">{garminSyncError}</div>
                           {garminSyncError.includes('InvalidPullTokenException') && (
-                            <div className="mt-1 text-red-600 font-medium">
-                              ⚠️ Your Garmin token doesn't have activity pull permissions.
+                            <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
+                              <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                              <span>Your Garmin token doesn't have activity pull permissions.
                               Fix: <strong>Disconnect</strong> then <strong>Reconnect</strong> and make sure
                               to enable <strong>Activities</strong> + <strong>Historical Data</strong> toggles
                               on the Garmin consent screen. If the problem persists, your Garmin Health API app
-                              may need SUMMARY_PULL enabled in the developer portal.
+                              may need SUMMARY_PULL enabled in the developer portal.</span>
                             </div>
                           )}
                           {garminSyncError.includes('401') || garminSyncError.includes('403') ? (
-                            <div className="mt-1 text-red-600 font-medium">
-                              ⚠️ Access denied. Try disconnecting and reconnecting your Garmin account.
+                            <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
+                              <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                              <span>Access denied. Try disconnecting and reconnecting your Garmin account.</span>
                             </div>
                           ) : null}
                         </div>
@@ -3171,13 +3174,14 @@ const SettingsPage = () => {
               <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-primary mb-2`}>How it works</p>
               <ul className={`${isMobile ? 'text-[10px] space-y-1' : 'text-sm space-y-2'} text-gray-600 list-none`}>
                 {[
-                  '📊 Your coach sees all your lactate test results in real time',
-                  '🎯 They can set personalised training zones based on your LT1 & LT2',
-                  '💬 Coaches can add notes and feedback on each test',
-                  '📈 Both of you track your LT2 progression over time',
-                ].map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span>{item}</span>
+                  { icon: BarChart2, text: 'Your coach sees all your lactate test results in real time' },
+                  { icon: Target, text: 'They can set personalised training zones based on your LT1 & LT2' },
+                  { icon: MessageCircle, text: 'Coaches can add notes and feedback on each test' },
+                  { icon: TrendingUp, text: 'Both of you track your LT2 progression over time' },
+                ].map(({ icon: Icon, text }) => (
+                  <li key={text} className="flex items-start gap-2">
+                    <Icon className="shrink-0 mt-0.5 text-primary" size={isMobile ? 12 : 15} aria-hidden />
+                    <span>{text}</span>
                   </li>
                 ))}
               </ul>
