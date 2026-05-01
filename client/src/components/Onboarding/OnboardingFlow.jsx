@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal } from 'lucide-react';
+import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Bike, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ function ProfileStep({ user, onSave, saving }) {
   return (
     <form onSubmit={handleSave} className="space-y-4">
       <div className="text-center mb-2">
-        <div className="text-4xl mb-2">🙋</div>
+        <div className="flex justify-center mb-2"><UserIcon className="w-10 h-10 text-primary" /></div>
         <h3 className="text-lg font-bold text-gray-900">Tell us about yourself</h3>
         <p className="text-sm text-gray-500 mt-1">Basic information helps us personalise your experience</p>
       </div>
@@ -448,46 +448,134 @@ function StravaStep({ user, onSkip, onConnect }) {
   );
 }
 
-/** Step 4a — Training Zones (athlete) */
-function ZonesStep({ onSkip, navigate, onClose }) {
+/** Step 4a — Training Zones (athlete) — enter LT1/LT2, generate zones */
+function ZonesStep({ onSkip, onSave, saving }) {
+  const [sport, setSport] = useState('cycling');
+  const [lt1, setLt1] = useState('');
+  const [lt2, setLt2] = useState('');
+  const [lt1hr, setLt1hr] = useState('');
+  const [lt2hr, setLt2hr] = useState('');
+  const [maxhr, setMaxhr] = useState('');
+  const [generated, setGenerated] = useState(null);
+  const [err, setErr] = useState('');
+
+  const sportLabel = sport === 'cycling' ? 'W' : sport === 'running' ? 'sec/km' : 'm/min';
+
+  const handleGenerate = () => {
+    const l1 = Number(lt1); const l2 = Number(lt2);
+    if (!l1 || !l2 || l1 >= l2) { setErr('Enter valid LT1 and LT2 (LT1 must be less than LT2)'); return; }
+    setErr('');
+    // Power zones based on LT1/LT2
+    const pz = {
+      lt1: l1, lt2: l2,
+      zone1: { min: 0,              max: Math.round(l1 * 0.75), description: 'Active Recovery' },
+      zone2: { min: Math.round(l1 * 0.75), max: l1,            description: 'Aerobic Base' },
+      zone3: { min: l1,             max: Math.round(l1 + (l2 - l1) * 0.5), description: 'Tempo' },
+      zone4: { min: Math.round(l1 + (l2 - l1) * 0.5), max: l2, description: 'Threshold' },
+      zone5: { min: l2,             max: Math.round(l2 * 1.20), description: 'VO2 Max' },
+    };
+    // HR zones if provided
+    let hz = null;
+    const h1 = Number(lt1hr); const h2 = Number(lt2hr); const hmax = Number(maxhr);
+    if (h1 && h2 && h1 < h2) {
+      hz = {
+        maxHeartRate: hmax || Math.round(h2 * 1.05),
+        zone1: { min: 0,   max: h1,  description: 'Active Recovery' },
+        zone2: { min: h1,  max: Math.round(h1 + (h2 - h1) * 0.4), description: 'Aerobic Base' },
+        zone3: { min: Math.round(h1 + (h2 - h1) * 0.4), max: Math.round(h1 + (h2 - h1) * 0.8), description: 'Tempo' },
+        zone4: { min: Math.round(h1 + (h2 - h1) * 0.8), max: h2, description: 'Threshold' },
+        zone5: { min: h2,  max: hmax || Math.round(h2 * 1.05), description: 'VO2 Max' },
+      };
+    }
+    setGenerated({ power: pz, hr: hz });
+  };
+
+  const handleSave = () => {
+    if (!generated) return;
+    const payload = {
+      powerZones: { [sport]: generated.power },
+      ...(generated.hr ? { heartRateZones: { [sport]: generated.hr } } : {}),
+      onboarding: { trainingZonesDone: true },
+    };
+    onSave(payload);
+  };
+
+  const ZONE_COLORS = ['bg-blue-50 text-blue-700 border-blue-100','bg-green-50 text-green-700 border-green-100','bg-yellow-50 text-yellow-700 border-yellow-100','bg-orange-50 text-orange-700 border-orange-100','bg-red-50 text-red-700 border-red-100'];
+
   return (
-    <div className="space-y-5">
-      <div className="text-center mb-2">
+    <div className="space-y-4 pb-6">
+      <div className="text-center">
         <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Set Your Training Zones</h3>
-        <p className="text-sm text-gray-500 mt-1">Zones help you train at the right intensity</p>
+        <h3 className="text-lg font-bold text-gray-900">Generate Training Zones</h3>
+        <p className="text-sm text-gray-500 mt-1">Enter your LT1 & LT2 thresholds to auto-calculate zones</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: 'Zone 1', color: 'bg-blue-100 text-blue-700',   desc: 'Active Recovery' },
-          { label: 'Zone 2', color: 'bg-green-100 text-green-700', desc: 'Aerobic Base' },
-          { label: 'Zone 3', color: 'bg-yellow-100 text-yellow-700',desc: 'Aerobic Threshold' },
-          { label: 'Zone 4', color: 'bg-orange-100 text-orange-700',desc: 'Lactate Threshold' },
-          { label: 'Zone 5', color: 'bg-red-100 text-red-700',     desc: 'VO2 Max' },
-          { label: 'Zone 6', color: 'bg-purple-100 text-purple-700',desc: 'Anaerobic' },
-        ].map(z => (
-          <div key={z.label} className={`rounded-xl px-3 py-2 ${z.color}`}>
-            <p className="text-xs font-bold">{z.label}</p>
-            <p className="text-[10px] opacity-80">{z.desc}</p>
-          </div>
+      {/* Sport selector */}
+      <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
+        {['cycling','running','swimming'].map(s => (
+          <button key={s} type="button" onClick={() => { setSport(s); setGenerated(null); }}
+            className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+            {s}
+          </button>
         ))}
       </div>
 
-      <p className="text-xs text-gray-500 text-center">
-        Zones are automatically calculated from your lactate test results. You can also set them manually in Settings.
-      </p>
+      {/* LT inputs */}
+      <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power / Pace Thresholds ({sportLabel})</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 (Aerobic)</label>
+            <input type="number" value={lt1} onChange={e => { setLt1(e.target.value); setGenerated(null); }} placeholder={sport === 'cycling' ? '180' : '240'} className={INPUT} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 (Anaerobic)</label>
+            <input type="number" value={lt2} onChange={e => { setLt2(e.target.value); setGenerated(null); }} placeholder={sport === 'cycling' ? '250' : '290'} className={INPUT} />
+          </div>
+        </div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Heart Rate (bpm) — optional</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 HR</label>
+            <input type="number" value={lt1hr} onChange={e => { setLt1hr(e.target.value); setGenerated(null); }} placeholder="145" className={INPUT} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 HR</label>
+            <input type="number" value={lt2hr} onChange={e => { setLt2hr(e.target.value); setGenerated(null); }} placeholder="168" className={INPUT} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Max HR</label>
+            <input type="number" value={maxhr} onChange={e => { setMaxhr(e.target.value); setGenerated(null); }} placeholder="185" className={INPUT} />
+          </div>
+        </div>
+      </div>
 
-      <button
-        type="button"
-        onClick={() => { onClose(); navigate('/settings?tab=zones'); }}
-        className={BTN_PRIMARY}
-      >
-        Set Zones in Settings
-      </button>
+      {err && <p className="text-xs text-red-600 text-center">{err}</p>}
+
+      {!generated ? (
+        <button type="button" onClick={handleGenerate} className={BTN_PRIMARY}>Generate Zones</button>
+      ) : (
+        <>
+          <div className="space-y-1.5">
+            {Object.entries(generated.power).filter(([k]) => k.startsWith('zone')).map(([key, z], i) => (
+              <div key={key} className={`flex items-center justify-between rounded-xl px-3 py-2 border ${ZONE_COLORS[i]}`}>
+                <div>
+                  <span className="text-xs font-bold capitalize">{key.replace('zone','Zone ')} </span>
+                  <span className="text-[10px] opacity-70">— {z.description}</span>
+                </div>
+                <span className="text-xs font-semibold">{z.min}–{z.max} {sportLabel}</span>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
+            {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Save Zones'}
+          </button>
+          <button type="button" onClick={() => setGenerated(null)} className={BTN_GHOST}>Edit values</button>
+        </>
+      )}
 
       <button type="button" onClick={onSkip} className={BTN_GHOST}>
-        Skip — I'll do this later
+        Skip — I'll set zones later
       </button>
     </div>
   );
@@ -938,9 +1026,10 @@ export function IntroSlides({ user, onDone }) {
   };
 
   const SETUP_STEPS = [
-    { id: 'profile', label: 'Your Profile' },
-    { id: 'preferences', label: 'Preferences' },
-    { id: 'strava', label: 'Connect Data' },
+    { id: 'profile',     label: 'Your Profile' },
+    { id: 'preferences', label: 'Preferences'  },
+    { id: 'zones',       label: 'Training Zones' },
+    { id: 'strava',      label: 'Connect Data'  },
   ];
   const globalStep = phase === 'slides' ? slide : total + setupStep;
   const globalTotal = total + SETUP_STEPS.length;
@@ -1020,7 +1109,8 @@ export function IntroSlides({ user, onDone }) {
 
           {setupStep === 0 && <ProfileStep user={user} onSave={saveAndNext} saving={saving} />}
           {setupStep === 1 && <UnitsStep user={user} onSave={saveAndNext} saving={saving} />}
-          {setupStep === 2 && (
+          {setupStep === 2 && <ZonesStep onSkip={() => setSetupStep(s => s + 1)} onSave={saveAndNext} saving={saving} />}
+          {setupStep === 3 && (
             <div className="space-y-5 pb-10">
               <StravaStep user={user} onSkip={handleFinish} />
               <button onClick={handleFinish} className={BTN_GHOST}>Skip for now</button>
