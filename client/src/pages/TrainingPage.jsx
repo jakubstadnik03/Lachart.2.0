@@ -470,50 +470,46 @@ export default function TrainingPage() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"
+        className="flex items-center justify-between gap-2 mb-4"
       >
-        {/* Title + count — always visible */}
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-            <ListBulletIcon className="w-6 h-6 text-primary flex-shrink-0" />
+        {/* Title + count */}
+        <div className="min-w-0 flex items-baseline gap-2">
+          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-1.5 whitespace-nowrap">
+            <ListBulletIcon className="w-5 h-5 text-primary flex-shrink-0" />
             Training Log
           </h1>
           {filteredTrainings.length > 0 && (
-            <p className="text-xs text-gray-400 mt-0.5 ml-8">
-              {filteredTrainings.length} training{filteredTrainings.length !== 1 ? 's' : ''}
-            </p>
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              {filteredTrainings.length} trainings
+            </span>
           )}
         </div>
 
-        {/* Controls row — wraps on very small screens */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Category filter — compact dropdown */}
-          <div className="relative flex-shrink-0" ref={categoryDropdownRef}>
+        {/* Controls — single row, compact */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Category filter */}
+          <div className="relative" ref={categoryDropdownRef}>
             {(() => {
               const activeCat = selectedCategory !== 'all' ? categories.find(c => c.id === selectedCategory) : null;
               const activeStyle = activeCat ? getCategoryStyle(activeCat.id) : null;
               return (
                 <button
                   onClick={() => setCategoryDropdownOpen(v => !v)}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
+                  className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
                   style={activeCat
                     ? { backgroundColor: activeStyle.backgroundColor, borderColor: activeStyle.borderColor, color: activeStyle.color }
                     : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#4b5563' }
                   }
                 >
-                  {activeCat ? activeCat.label : 'All categories'}
-                  <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
+                  {activeCat ? activeCat.label : 'Categories'}
+                  <ChevronDownIcon className={`w-3 h-3 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
               );
             })()}
-
             {categoryDropdownOpen && (
               <>
-                {/* Backdrop */}
                 <div className="fixed inset-0 z-10" onClick={() => setCategoryDropdownOpen(false)} />
-                {/* Dropdown panel */}
-                <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[160px]">
-                  {/* All option */}
+                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[160px]">
                   <button
                     onClick={() => { setSelectedCategory('all'); setCategoryDropdownOpen(false); }}
                     className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
@@ -545,29 +541,30 @@ export default function TrainingPage() {
             )}
           </div>
 
-          {/* Add Lactate button */}
+          {/* Add Lactate — icon + label on sm+, icon-only on mobile */}
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={() => setQuickLactateOpen(true)}
-            className="flex items-center gap-1.5 h-9 px-3 bg-white border border-primary/30 text-primary text-sm font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm flex-shrink-0"
+            className="flex items-center gap-1 h-8 px-2.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
+            title="Add Lactate"
           >
             <BeakerIcon className="w-4 h-4 flex-shrink-0" />
-            Add Lactate
+            <span className="hidden sm:inline">Add Lactate</span>
           </motion.button>
 
-          {/* Add Training button */}
+          {/* Add Training */}
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60 flex-shrink-0"
+            className="flex items-center gap-1 h-8 px-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60"
             disabled={isSubmitting}
+            title="Add Training"
           >
-            {isSubmitting ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-            ) : (
-              <PlusIcon className="w-4 h-4 flex-shrink-0" />
-            )}
-            {isSubmitting ? 'Adding…' : 'Add Training'}
+            {isSubmitting
+              ? <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" />
+              : <PlusIcon className="w-4 h-4 flex-shrink-0" />
+            }
+            <span className="hidden xs:inline sm:inline">{isSubmitting ? 'Adding…' : 'Add Training'}</span>
           </motion.button>
         </div>
       </motion.div>
