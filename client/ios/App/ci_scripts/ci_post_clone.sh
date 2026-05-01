@@ -7,8 +7,20 @@ set -e
 echo "=== LaChart CI: post-clone ==="
 
 # ── Node / npm ────────────────────────────────────────────────────────────────
-# Xcode Cloud uses its own Node; make sure Homebrew's node is also on PATH
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# Make sure Homebrew paths are on PATH first
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+# Xcode Cloud does NOT pre-install Node — install it via Homebrew
+if ! command -v node > /dev/null 2>&1; then
+  echo "→ Node not found — installing via Homebrew…"
+  brew install node
+  # Refresh PATH after brew install
+  export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
+else
+  echo "→ Node found: $(node --version)"
+fi
+
+echo "→ npm version: $(npm --version)"
 
 # Resolve the client directory relative to the repo root
 REPO_ROOT="$CI_PRIMARY_REPOSITORY_PATH"
@@ -22,7 +34,7 @@ echo "→ Building web app…"
 npm run build
 
 echo "→ Syncing Capacitor…"
-npx cap sync ios --no-build
+npx cap sync ios
 
 # ── CocoaPods ─────────────────────────────────────────────────────────────────
 echo "→ Installing CocoaPods…"
