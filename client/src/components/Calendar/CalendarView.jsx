@@ -354,6 +354,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }) {
   const popupRef = useRef(null);
   const a = activity;
+  const isMobilePopup = window.innerWidth < 768;
 
   // Escape key + click outside
   useEffect(() => {
@@ -371,28 +372,28 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
     return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
   }, [onClose]);
 
-  // Position: right of element if space, else left; always inside viewport
-  const POPUP_W = 288; // w-72
-  const POPUP_H = 380; // estimated max height
+  // Desktop positioning: right of element if space, else left; always inside viewport
+  const POPUP_W = 288;
+  const POPUP_H = 380;
   const MARGIN = 8;
   const vpW = window.innerWidth;
   const vpH = window.innerHeight;
 
   let left, top;
-  if (anchorRect) {
-    // Try right side
-    if (anchorRect.right + POPUP_W + MARGIN <= vpW) {
-      left = anchorRect.right + MARGIN;
+  if (!isMobilePopup) {
+    if (anchorRect) {
+      if (anchorRect.right + POPUP_W + MARGIN <= vpW) {
+        left = anchorRect.right + MARGIN;
+      } else {
+        left = anchorRect.left - POPUP_W - MARGIN;
+      }
+      left = Math.max(MARGIN, Math.min(left, vpW - POPUP_W - MARGIN));
+      top = anchorRect.top;
+      top = Math.max(MARGIN, Math.min(top, vpH - POPUP_H - MARGIN));
     } else {
-      left = anchorRect.left - POPUP_W - MARGIN;
+      left = vpW / 2 - POPUP_W / 2;
+      top = vpH / 2 - POPUP_H / 2;
     }
-    left = Math.max(MARGIN, Math.min(left, vpW - POPUP_W - MARGIN));
-
-    top = anchorRect.top;
-    top = Math.max(MARGIN, Math.min(top, vpH - POPUP_H - MARGIN));
-  } else {
-    left = vpW / 2 - POPUP_W / 2;
-    top = vpH / 2 - POPUP_H / 2;
   }
 
   // Data extraction
@@ -412,11 +413,10 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
   const power = a.normalizedPower || a.avgPower || a.average_watts || 0;
   const hr = a.averageHeartRate || a.average_heartrate || 0;
   const elevation = a.totalElevationGain || a.elevationGain || a.total_elevation_gain || 0;
-  const ftp = null; // could be passed in from userProfile, skip IF for now
+  const ftp = null;
   const np = a.normalizedPower || 0;
   const ifVal = (np > 0 && ftp) ? (np / ftp).toFixed(2) : null;
 
-  // Date formatting
   const actDate = a.date || a.timestamp || a.startDate || a.start_time;
   const dateStr = actDate
     ? new Date(actDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
@@ -435,14 +435,11 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
     { label: 'Elevation', value: elevation > 0 ? `${Math.round(elevation)} m` : '-' },
   ];
 
-  return ReactDOM.createPortal(
-    <div
-      ref={popupRef}
-      className="fixed z-[10000] w-72 max-w-xs bg-white rounded-2xl shadow-2xl overflow-hidden"
-      style={{ left, top, maxHeight: '90vh', overflowY: 'auto' }}
-    >
+  // Shared inner content
+  const innerContent = (
+    <>
       {/* Colored top accent bar */}
-      <div className="h-1.5 w-full" style={{ backgroundColor: color }} />
+      <div className="h-1.5 w-full flex-shrink-0" style={{ backgroundColor: color }} />
 
       {/* Header */}
       <div className="px-4 pt-3 pb-2 flex items-start gap-2">
@@ -453,14 +450,15 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
         </div>
         <button
           onClick={onClose}
-          className="flex-shrink-0 p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+          className="flex-shrink-0 p-1 rounded-lg hover:bg-gray-100 active:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
         >
-          <XMarkIcon className="w-4 h-4" />
+          <XMarkIcon className="w-5 h-5" />
         </button>
       </div>
 
       {/* Stats grid */}
-      <div className="px-4 pb-3 grid grid-cols-2 gap-x-3 gap-y-2">
+      <div className="px-4 pb-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
         {stats.map(({ label, value }) => (
           <div key={label}>
             <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide">{label}</div>
@@ -481,12 +479,51 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
       <div className="px-4 pb-4">
         <button
           onClick={() => { if (onSelectActivity) onSelectActivity(a); onClose(); }}
-          className="w-full py-2 rounded-xl text-sm font-semibold text-white transition-colors"
-          style={{ backgroundColor: color }}
+          className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors touch-manipulation"
+          style={{ backgroundColor: color, WebkitTapHighlightColor: 'transparent' }}
         >
           Open Activity
         </button>
       </div>
+    </>
+  );
+
+  if (isMobilePopup) {
+    // Mobile: bottom sheet with backdrop
+    return ReactDOM.createPortal(
+      <div className="fixed inset-0 z-[10000] flex flex-col justify-end">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/40"
+          onClick={onClose}
+        />
+        {/* Bottom sheet */}
+        <div
+          ref={popupRef}
+          className="relative bg-white rounded-t-2xl shadow-2xl overflow-y-auto"
+          style={{ maxHeight: '85vh' }}
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="w-10 h-1 rounded-full bg-gray-300" />
+          </div>
+          {innerContent}
+          {/* Safe area bottom padding */}
+          <div className="h-safe-area-inset-bottom" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  // Desktop: floating popup
+  return ReactDOM.createPortal(
+    <div
+      ref={popupRef}
+      className="fixed z-[10000] w-72 max-w-xs bg-white rounded-2xl shadow-2xl overflow-hidden"
+      style={{ left, top, maxHeight: '90vh', overflowY: 'auto' }}
+    >
+      {innerContent}
     </div>,
     document.body
   );
@@ -1103,16 +1140,44 @@ export default function CalendarView({
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} overflow-hidden`}>
       {/* Header */}
       {isMobile ? (
-        <div className="flex items-center justify-between mb-2 px-1">
-          <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-            <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
-          </button>
-          <button onClick={today} className="text-sm font-bold text-gray-900 uppercase tracking-wide active:text-primary transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-            {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-          </button>
-          <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-            <ChevronRightIcon className="w-5 h-5 text-gray-600" />
-          </button>
+        <div className="mb-2">
+          {/* Month nav row */}
+          <div className="flex items-center justify-between px-1 mb-2">
+            <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+              <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+            </button>
+            <button onClick={today} className="text-sm font-bold text-gray-900 uppercase tracking-wide active:text-primary transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+              {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+            </button>
+            <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+              <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+          {/* Sport filter pills — scrollable row */}
+          {uniqueSportBuckets.length > 1 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 px-1 scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {uniqueSportBuckets.map(bucket => {
+                const isActive = sportFilter === bucket;
+                const iconMap = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
+                const labelMap = { all: 'All', bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
+                const icon = iconMap[bucket];
+                return (
+                  <button
+                    key={bucket}
+                    type="button"
+                    onClick={() => setSportFilter(bucket)}
+                    className={`flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all touch-manipulation ${
+                      isActive ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'
+                    }`}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    {icon && <img src={icon} alt={bucket} className={`w-3 h-3 object-contain ${isActive ? 'invert' : ''}`} />}
+                    <span>{labelMap[bucket]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
@@ -1314,53 +1379,67 @@ export default function CalendarView({
                     onStart={onStartWorkout}
                   />
                 ))}
+                {/* Weekly summary strip for mobile */}
+                {(() => {
+                  const dayDateObj = new Date(selectedDay + 'T12:00:00');
+                  const wkKey = startOfWeek(dayDateObj).toISOString().slice(0, 10);
+                  const wkSummary = weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === wkKey);
+                  if (!wkSummary || wkSummary.totalSeconds === 0) return null;
+                  const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds,
+                    tssRun, tssBike, tssSwim, tssStrength, volumeChange } = wkSummary;
+                  const totalTssForBar = tssRun + tssBike + tssSwim + tssStrength;
+                  return (
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 mb-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">This week</span>
+                        <div className="flex items-center gap-1">
+                          {volumeChange === 'up' && <ArrowUpIcon className="w-3 h-3 text-green-500" />}
+                          {volumeChange === 'down' && <ArrowDownIcon className="w-3 h-3 text-red-500" />}
+                          {volumeChange === 'same' && <MinusIcon className="w-3 h-3 text-gray-400" />}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="text-base font-extrabold text-gray-900 leading-tight">{formatHours(totalSeconds)}</div>
+                          {totalTSS > 0 && (
+                            <div className="flex items-center gap-0.5">
+                              <FireIcon className="w-3 h-3 text-primary" />
+                              <span className="text-xs font-bold text-primary">{Math.round(totalTSS)}</span>
+                              <span className="text-[9px] text-gray-400">TSS</span>
+                            </div>
+                          )}
+                        </div>
+                        {totalTssForBar > 0 && (
+                          <div className="flex-1 flex h-2 rounded-full overflow-hidden gap-px">
+                            {tssBike > 0 && <div style={{ width: `${(tssBike/totalTssForBar)*100}%`, backgroundColor: '#3b82f6' }} className="rounded-full" />}
+                            {tssRun > 0 && <div style={{ width: `${(tssRun/totalTssForBar)*100}%`, backgroundColor: '#f97316' }} className="rounded-full" />}
+                            {tssSwim > 0 && <div style={{ width: `${(tssSwim/totalTssForBar)*100}%`, backgroundColor: '#06b6d4' }} className="rounded-full" />}
+                            {tssStrength > 0 && <div style={{ flex: 1, backgroundColor: '#8b5cf6' }} className="rounded-full" />}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                        {bikeSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/bike.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(bikeSeconds)}</span>}
+                        {runSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/run.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(runSeconds)}</span>}
+                        {swimSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/swim.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(swimSeconds)}</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {dayActs.map((a, i) => {
                   const activityId = a.id || a._id;
                   const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
-                  const title = a.title || a.name || a.originalFileName || 'Activity';
-                  const duration = Number(a.totalTimerTime || a.moving_time || a.movingTime || a.totalElapsedTime || a.elapsedTime || a.duration || 0);
-                  const distance = Number(a.distance || 0);
-                  const durationStr = duration > 0
-                    ? `${Math.floor(duration / 3600)}:${String(Math.floor((duration % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(duration % 60)).padStart(2, '0')}`
-                    : '';
-                  const distanceStr = distance > 0 ? formatKm(distance) : '';
-                  const tss = Number(a.tss || a.TSS || a.totalTSS || 0);
-
                   return (
                     <div key={i} className="w-full">
-                      <button
-                        onClick={() => handleSelectActivity(a)}
-                        className={`w-full text-left rounded-xl border p-3 transition-all touch-manipulation ${
-                          isActSelected
-                            ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/20'
-                            : 'border-gray-200 bg-white shadow-sm active:bg-gray-50'
-                        }`}
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <SportIcon sport={a.sport} className="w-8 h-8" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-gray-900 truncate">{title}</div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              {durationStr && <span className="text-xs text-gray-500">{durationStr}</span>}
-                              {distanceStr && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{distanceStr}</span></>}
-                              {tss > 0 && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{Math.round(tss)} TSS</span></>}
-                            </div>
-                          </div>
-                          {(commentCounts[String(a._id || a.id)] || 0) > 0 && (
-                            <span className="text-xs text-gray-400 flex-shrink-0">💬 {commentCounts[String(a._id || a.id)]}</span>
-                          )}
-                          <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        </div>
-                        {a.category && (
-                          <div
-                            className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold"
-                            style={catBadgeStyle(a.category)}
-                          >
-                            {catLabel(a.category)}
-                          </div>
-                        )}
-                      </button>
+                      <WeekActivityCard
+                        a={a}
+                        isSelected={isActSelected}
+                        onSelect={handleSelectActivity}
+                        onActivityClick={handleActivityClick}
+                        onAddLactate={onAddLactate}
+                        catBadgeStyle={catBadgeStyle}
+                        catLabel={catLabel}
+                      />
                       {onAddLactate && a.type === 'strava' && (
                         <button
                           onClick={() => onAddLactate(a)}
