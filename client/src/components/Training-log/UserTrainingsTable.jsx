@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import ReactDOM from "react-dom";
 import TrainingItem from "./TrainingItem";
 import TrainingForm from "../TrainingForm";
 import { deleteTraining, updateTraining, deleteFitTraining } from "../../services/api";
@@ -732,22 +733,22 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
         totalItems={filteredTrainings.length}
       />
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && trainingToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {/* Delete Confirmation Modal — portaled to body so it covers NativeLayout header/tabs on iOS */}
+      {showDeleteModal && trainingToDelete && ReactDOM.createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
           <div className="bg-white rounded-xl p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Delete Training</h3>
             <p className="mb-6">
-              Are you sure you want to delete the training "{trainingToDelete.title}" from {formatDate(trainingToDelete.date)}? 
+              Are you sure you want to delete the training "{trainingToDelete.title}" from {formatDate(trainingToDelete.date)}?
               This action cannot be undone.
             </p>
-            
+
             {error && (
               <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
                 {error}
               </div>
             )}
-            
+
             <div className="flex justify-end gap-4">
               <button
                 onClick={() => {
@@ -769,25 +770,32 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Edit Modal */}
-      {showEditModal && trainingToEdit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <TrainingForm
-            key={trainingToEdit._id}
-            onClose={() => {
-              setShowEditModal(false);
-              setTrainingToEdit(null);
-              setError(null);
-            }}
-            onSubmit={handleEditSubmit}
-            initialData={trainingToEdit}
-            isEditing={true}
-            isLoading={isLoading}
-          />
-        </div>
+      {/* Edit Modal — portaled to body so it covers NativeLayout header/tabs on iOS */}
+      {showEditModal && trainingToEdit && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ zIndex: 99998 }}
+        >
+          <div className="w-full sm:max-w-2xl">
+            <TrainingForm
+              key={trainingToEdit._id}
+              onClose={() => {
+                setShowEditModal(false);
+                setTrainingToEdit(null);
+                setError(null);
+              }}
+              onSubmit={handleEditSubmit}
+              initialData={trainingToEdit}
+              isEditing={true}
+              isLoading={isLoading}
+            />
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -45,6 +45,8 @@ const LactateTestingProtocolGuide = lazy(() => import('./pages/blog/LactateTesti
 const Lt1VsLt2TrainingZones = lazy(() => import('./pages/blog/Lt1VsLt2TrainingZones'));
 const OblaDmaxIatMethodsCompared = lazy(() => import('./pages/blog/OblaDmaxIatMethodsCompared'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
+const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
 const FitAnalysisPage = lazy(() => import('./pages/FitAnalysisPage'));
 const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
 const LactateStatisticsPage = lazy(() => import('./pages/LactateStatisticsPage'));
@@ -299,6 +301,8 @@ function AppRoutes() {
             path="/lactate-statistics" 
             element={<LactateStatisticsPage />}
           />
+          <Route path="/workout-planner" element={<WorkoutPlannerPage />} />
+          <Route path="/workout-execution/:plannedWorkoutId" element={<WorkoutExecutionPage />} />
           <Route path="/athletes" element={<Athletes />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />

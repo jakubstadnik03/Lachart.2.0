@@ -123,50 +123,47 @@ const TestingPage = () => {
     { id: "swim", name: "Swimming" },
   ];
 
+  // Keep a stable ref to isTestingRole so loadTests doesn't need it as dep
+  const isTestingRoleRef = useRef(isTestingRole);
+  isTestingRoleRef.current = isTestingRole;
+
+  // Stable loadTests — uses refs for volatile values so the callback identity never changes.
+  // This prevents the useEffect below from re-running on every render and causing a retry loop.
   const loadTests = React.useCallback(async (targetId) => {
     try {
       setError(null);
-      const testId = targetId;
 
-      const response = isTestingRole
+      const response = isTestingRoleRef.current
         ? await api.get('/test')
-        : await api.get(`/test/list/${testId}`);
-      
+        : await api.get(`/test/list/${targetId}`);
+
       const testsData = Array.isArray(response.data) ? response.data : [];
-      
+
       const seenIds = new Set();
       const uniqueTests = [];
       const duplicateIds = [];
-      
+
       testsData.forEach((test, index) => {
         if (!test || !test._id) {
           console.warn(`[TestingPage] Test at index ${index} is missing _id, skipping`);
           return;
         }
-        
-        // Normalize ID for comparison (handle both string and ObjectId)
         const testIdStr = String(test._id);
-        
         if (seenIds.has(testIdStr)) {
-          console.warn(`[TestingPage] Duplicate test ID found: ${testIdStr}, skipping duplicate`);
           duplicateIds.push(testIdStr);
           return;
         }
-        
         seenIds.add(testIdStr);
         uniqueTests.push(test);
       });
-      
+
       if (duplicateIds.length > 0) {
         console.warn(`[TestingPage] Found ${duplicateIds.length} duplicate test IDs:`, duplicateIds);
-        addNotification(`Warning: Found ${duplicateIds.length} duplicate test(s). Only showing unique tests.`, 'warning');
+        addNotificationRef.current(`Warning: Found ${duplicateIds.length} duplicate test(s). Only showing unique tests.`, 'warning');
       }
-      
+
       // Limit tests to prevent memory issues
       const limitedTests = uniqueTests.slice(0, MAX_TESTS);
-      if (uniqueTests.length > MAX_TESTS) {
-        console.warn(`[TestingPage] Limited ${uniqueTests.length} tests to ${MAX_TESTS} to prevent memory issues`);
-      }
 
       // Ignore responses if user switched athlete or list was superseded
       if (String(effectiveAthleteIdRef.current) !== String(targetId)) {
@@ -175,15 +172,21 @@ const TestingPage = () => {
 
       setTests(limitedTests);
     } catch (err) {
+      // Silently ignore aborted/cancelled requests (user switched athlete mid-flight)
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
+
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
-      addNotification('Failed to load tests. Please refresh the page.', 'error');
-      // Allow the effect to retry the same athlete (ref was set before the request)
+      // Only show notification if this athlete is still the current one
+      // (avoids stale-request errors firing for the previous user after re-login)
       if (String(effectiveAthleteIdRef.current) === String(targetId)) {
-        lastLoadedTestsForAthleteRef.current = null;
+        addNotificationRef.current('Failed to load tests. Please refresh the page.', 'error');
+        // Do NOT reset lastLoadedTestsForAthleteRef here — that caused an infinite retry loop
+        // where each failure cleared the guard and immediately triggered another fetch attempt.
       }
     }
-  }, [addNotification, isTestingRole]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // stable — all volatile values accessed via refs
 
   // If backend says the selected test doesn't exist anymore, the UI might be holding a stale testId.
   // Reload the test list, clear the URL param and localStorage selection.

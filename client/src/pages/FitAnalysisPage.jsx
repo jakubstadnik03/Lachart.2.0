@@ -12,6 +12,9 @@ import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates } from '../services/workoutPlannerApi';
+import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
+import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModal';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import CalendarPeriodStats from '../components/FitAnalysis/CalendarPeriodStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
@@ -1461,6 +1464,11 @@ const FitAnalysisPage = () => {
   const [showAutoClassify, setShowAutoClassify] = useState(false);
   const [, setGarminConnected] = useState(false);
   const [externalActivities, setExternalActivities] = useState([]);
+  const [plannedWorkoutsCalendar, setPlannedWorkoutsCalendar] = useState([]);
+  const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
+  const [compareModal, setCompareModal] = useState(null); // PlannedWorkout object with executionData
+  const [planTemplates, setPlanTemplates] = useState([]);
+  const [planContext, setPlanContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
   const [selectedStrava, setSelectedStrava] = useState(null);
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
   const getLinkedStravaActivityId = useCallback((training) => {
@@ -2064,6 +2072,126 @@ const FitAnalysisPage = () => {
       setExternalActivities([]);
     }
   }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail, pendingAthleteIds]);
+
+  /** Load planned workouts + templates + athlete power context for the calendar overlay */
+  // ── Helper: build planContext from profile powerZones ─────────────────────
+  const buildContextFromProfile = useCallback((pz) => {
+    if (!pz) return null;
+    const cyclingZones  = pz.cycling  || null;
+    const runningZones  = pz.running  || null;
+    const swimmingZones = pz.swimming || null;
+    // LT2/LT1 directly from profile fields; fall back to zone4/zone3 boundaries
+    const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min || null;
+    const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min || null;
+    const lt2Pace  = runningZones?.lt2  || runningZones?.zone4?.min  || null;
+    const lt1Pace  = runningZones?.lt1  || runningZones?.zone3?.min  || null;
+    const lt2Swim  = swimmingZones?.lt2 || swimmingZones?.zone4?.min || null;
+    const lt1Swim  = swimmingZones?.lt1 || swimmingZones?.zone3?.min || null;
+    return { ftp: lt2Power || 250, lt2Power, lt1Power, lt2Pace, lt1Pace, lt2Swim, lt1Swim, cyclingZones, runningZones, swimmingZones };
+  }, []);
+
+  // ── When userProfile loads/changes, push zone data into planContext ────────
+  useEffect(() => {
+    if (!userProfile) return;
+    const ctx = buildContextFromProfile(userProfile.powerZones);
+    if (!ctx) return;
+    setPlanContext(prev => ({ ...prev, ...ctx }));
+  }, [userProfile, buildContextFromProfile]);
+
+  const loadPlannedWorkoutsForCalendar = useCallback(async () => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = {};
+      if (isCoachLike && selectedAthleteId) opts.athleteId = selectedAthleteId;
+
+      const targetId = selectedAthleteId || user?._id;
+
+      const [data, tpls] = await Promise.all([
+        getPlannedWorkouts(opts),
+        getWorkoutTemplates().catch(() => []),
+      ]);
+      setPlannedWorkoutsCalendar(Array.isArray(data) ? data : []);
+      setPlanTemplates(Array.isArray(tpls) ? tpls : []);
+
+      // Enrich planContext with latest test-derived thresholds (zones come from userProfile effect above)
+      if (targetId) {
+        try {
+          const testRes = await api.get(`/test/list/${targetId}`).catch(() => ({ data: [] }));
+          const tests = Array.isArray(testRes.data) ? testRes.data : [];
+          const withPower = tests
+            .filter(t => t.lt2?.power || t.thresholds?.lt2Power || t.lt2Power)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+          if (withPower.length > 0) {
+            const t = withPower[0];
+            // Merge test thresholds on top of profile zones (profile zones stay)
+            setPlanContext(prev => {
+              const lt2Power = t.lt2?.power || t.thresholds?.lt2Power || t.lt2Power || prev.lt2Power;
+              const lt1Power = t.lt1?.power || t.thresholds?.lt1Power || t.lt1Power || prev.lt1Power;
+              return {
+                ...prev,
+                ftp:      t.ftp || t.thresholds?.ftp || lt2Power || prev.ftp,
+                lt2Power: lt2Power || prev.lt2Power,
+                lt1Power: lt1Power || prev.lt1Power,
+              };
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {
+      setPlannedWorkoutsCalendar([]);
+    }
+  }, [selectedAthleteId, user?.role, user?._id]);
+
+  // Load planned workouts once when athlete changes
+  useEffect(() => {
+    loadPlannedWorkoutsForCalendar();
+  }, [loadPlannedWorkoutsForCalendar]);
+
+  /** CRUD for planned workouts from the calendar */
+  const handlePlanSave = useCallback(async (data) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+
+      if (planModal?.workout?._id) {
+        const updated = await updatePlannedWorkout(planModal.workout._id, data);
+        setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === updated._id ? updated : p));
+      } else {
+        const created = await createPlannedWorkout({ ...data, ...opts });
+        setPlannedWorkoutsCalendar(prev => [...prev, created]);
+      }
+      setPlanModal(null);
+    } catch (_) {}
+  }, [planModal, selectedAthleteId, user?.role]);
+
+  const handlePlanDelete = useCallback(async (pw) => {
+    if (!window.confirm('Delete this planned workout?')) return;
+    try {
+      await deletePlannedWorkout(pw._id);
+      setPlannedWorkoutsCalendar(prev => prev.filter(p => p._id !== pw._id));
+      setPlanModal(null);
+    } catch (_) {}
+  }, []);
+
+  const handleMovePlannedWorkout = useCallback(async (id, newDateStr) => {
+    try {
+      const updated = await updatePlannedWorkout(id, { date: newDateStr });
+      setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === id ? { ...p, date: newDateStr, ...updated } : p));
+    } catch (_) {}
+  }, []);
+
+  const handleCopyPlannedWorkout = useCallback(async (pw, newDateStr) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const { _id, status, executionData, ...rest } = pw;
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned', ...opts });
+      setPlannedWorkoutsCalendar(prev => [...prev, created]);
+    } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -3718,6 +3846,25 @@ const FitAnalysisPage = () => {
           onApplied={() => { loadExternalActivities(); }}
         />
       )}
+      {/* Workout plan modal — portal to body, opens when clicking a day or a planned card */}
+      {planModal && (
+        <WorkoutPlanModal
+          date={planModal.date}
+          workout={planModal.workout}
+          context={planContext}
+          templates={planTemplates}
+          onSave={handlePlanSave}
+          onDelete={handlePlanDelete}
+          onClose={() => setPlanModal(null)}
+        />
+      )}
+      {/* Planned vs Actual comparison modal — opens for completed workouts with executionData */}
+      {compareModal && (
+        <WorkoutCompareModal
+          pw={compareModal}
+          onClose={() => setCompareModal(null)}
+        />
+      )}
       <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
         {!isMobile && (
           <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="flex items-center justify-between mb-4 md:mb-6">
@@ -3732,6 +3879,13 @@ const FitAnalysisPage = () => {
                 Auto-categorize
               </button>
               <button
+                onClick={() => setPlanModal({ date: new Date(), workout: null })}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-primary/30 text-primary text-sm font-semibold rounded-xl hover:bg-primary/5 transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                Plan workout
+              </button>
+              <button
                 onClick={handleOpenAddTraining}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all shadow-sm"
               >
@@ -3744,13 +3898,20 @@ const FitAnalysisPage = () => {
         {isMobile && !(selectedTraining || selectedStrava) && (
           <div className="px-4 pt-4 pb-2 flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">Training Calendar</h1>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setShowAutoClassify(true)}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-all shadow-sm"
                 title="Auto-categorize activities"
               >
                 <SparklesIcon className="w-3.5 h-3.5 text-primary" />
+              </button>
+              <button
+                onClick={() => setPlanModal({ date: new Date(), workout: null })}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
+                title="Plan workout"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
               </button>
               <button
                 onClick={handleOpenAddTraining}
@@ -3802,6 +3963,18 @@ const FitAnalysisPage = () => {
           onVisiblePeriodChange={handleCalendarPeriodChange}
           user={user}
           commentCounts={commentCounts}
+          plannedWorkouts={plannedWorkoutsCalendar}
+          onSelectPlannedWorkout={(pw) => {
+            if (pw.status === 'completed' && pw.executionData) {
+              setCompareModal(pw);
+            } else {
+              setPlanModal({ date: new Date(pw.date + 'T12:00:00'), workout: pw });
+            }
+          }}
+          onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
+          onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
+          onMovePlannedWorkout={handleMovePlannedWorkout}
+          onCopyPlannedWorkout={handleCopyPlannedWorkout}
         />
         </motion.div>
 

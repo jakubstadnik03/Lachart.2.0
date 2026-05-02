@@ -200,6 +200,7 @@ const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const protocolTemplateRoutes = require('./routes/protocolTemplateRoutes');
+const workoutPlannerRoutes  = require('./routes/workoutPlannerRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
@@ -219,6 +220,7 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/protocol-templates', protocolTemplateRoutes);
+app.use('/api/workout-planner',   workoutPlannerRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();

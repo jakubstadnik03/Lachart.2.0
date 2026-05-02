@@ -612,17 +612,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         >
           <div className="mx-auto w-full max-w-[1600px] flex flex-col flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
-            {/* Footer na mobilu — scrolluje s obsahem, vždy na konci */}
-            <div className="pt-4 md:hidden mt-auto">
+            {/* Footer scrolls with content on all screen sizes */}
+            <div className="mt-auto pt-4">
               <MemoizedFooter />
             </div>
           </div>
         </main>
-
-        {/* Footer na desktopu - sticky */}
-        <div className="hidden md:block shrink-0">
-          <MemoizedFooter />
-        </div>
       </div>
       {isMenuOpen && (
         <div 

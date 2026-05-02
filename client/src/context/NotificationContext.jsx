@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { COLORS } from '../styles/theme';
 
@@ -12,23 +12,33 @@ export const useNotification = () => {
   return context;
 };
 
+/** Deduplicate window: same message shown within this many ms → suppressed */
+const DEDUP_MS = 5000;
+
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
+  // Track last-shown timestamp per message for deduplication
+  const recentRef = useRef(new Map());
 
-  const addNotification = (message, type = 'success') => {
-    // Use timestamp + random number to ensure unique IDs even if called rapidly
-    const id = Date.now() + Math.random();
+  const removeNotification = useCallback((id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const addNotification = useCallback((message, type = 'success') => {
+    const now = Date.now();
+    const last = recentRef.current.get(message);
+    // Suppress identical messages shown within DEDUP_MS
+    if (last && now - last < DEDUP_MS) return;
+    recentRef.current.set(message, now);
+
+    const id = now + Math.random();
     setNotifications((prev) => [...prev, { id, message, type }]);
-    
-    // Auto-remove after 3 seconds
+
+    // Auto-remove after 4 seconds
     setTimeout(() => {
       removeNotification(id);
-    }, 3000);
-  };
-
-  const removeNotification = (id) => {
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id));
-  };
+    }, 4000);
+  }, [removeNotification]);
 
   return (
     <NotificationContext.Provider value={{ addNotification, removeNotification }}>

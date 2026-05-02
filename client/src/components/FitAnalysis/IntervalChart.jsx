@@ -430,15 +430,15 @@ const IntervalChart = ({
   }, [chartData]);
 
   // True when zoom would be counterproductive:
-  //   • ≤ 6 bars  → bars are already wide, zoom just scrolls them off-screen
-  //   • any single bar is > 40% of total distance → it would overflow the viewport after 2.4× zoom
+  //   • ≤ 20 bars → bars already fill the width well; zooming just hides context
+  //   • any single bar is > 25% of total distance → overflow after 2.4× zoom
   const skipAutoZoom = useMemo(() => {
-    if (nonPauseBarCount <= 6) return true;
-    if (!chartData?.totalDistance || chartData.totalDistance === 0) return nonPauseBarCount <= 6;
+    if (nonPauseBarCount <= 20) return true;
+    if (!chartData?.totalDistance || chartData.totalDistance === 0) return true;
     const widestFraction = (chartData.bars || [])
       .filter(b => !b.isPause)
       .reduce((max, b) => Math.max(max, b.distance / chartData.totalDistance), 0);
-    return widestFraction > 0.40;
+    return widestFraction > 0.25;
   }, [nonPauseBarCount, chartData]);
 
   // Auto-highlight best bar when coming from Power Radar / SpiderChart

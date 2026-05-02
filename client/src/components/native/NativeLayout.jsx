@@ -44,6 +44,7 @@ const Icon = ({ d, size = 24, stroke = 'currentColor', fill = 'none', strokeWidt
 
 const ICONS = {
   bell:         'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+  planner:      ['M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', 'M9 12h6m-3-3v6'],
   bellAlert:    ['M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9', 'M12 2a1 1 0 011 1v.341'],
   dashboard:    'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
   testing:      ['M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18'],
@@ -65,22 +66,22 @@ function getTabsForRole(user, effectiveAthleteId) {
   const ap = (base) => effectiveAthleteId ? `/${base}/${effectiveAthleteId}` : `/${base}`;
 
   if (isCoach) {
-    // Coach/Admin tabs: Athletes | Dashboard | Testing | Calendar | Training  (5 tabs)
+    // Coach/Admin tabs: Athletes | Home | Testing | Calendar | Training  (5 tabs)
     return [
-      { key: 'athletes',  label: 'Athletes', icon: ICONS.athletes,  path: '/athletes' },
-      { key: 'dashboard', label: 'Home',      icon: ICONS.dashboard, path: ap('dashboard') },
-      { key: 'testing',   label: 'Testing',   icon: ICONS.testing,   path: ap('testing') },
-      { key: 'calendar',  label: 'Calendar',  icon: ICONS.calendar,  path: '/training-calendar' },
-      { key: 'training',  label: 'Training',  icon: ICONS.training,  path: ap('training') },
+      { key: 'athletes', label: 'Athletes', icon: ICONS.athletes,  path: '/athletes' },
+      { key: 'dashboard',label: 'Home',     icon: ICONS.dashboard, path: ap('dashboard') },
+      { key: 'testing',  label: 'Testing',  icon: ICONS.testing,   path: ap('testing') },
+      { key: 'calendar', label: 'Calendar', icon: ICONS.calendar,  path: '/training-calendar' },
+      { key: 'training', label: 'Training', icon: ICONS.training,  path: ap('training') },
     ];
   }
 
-  // Athlete tabs: Dashboard | Testing | Calendar | Training  (4 tabs)
+  // Athlete tabs: Home | Testing | Calendar | Training  (4 tabs)
   return [
-    { key: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: ap('dashboard') },
-    { key: 'testing',   label: 'Testing',   icon: ICONS.testing,   path: ap('testing') },
-    { key: 'calendar',  label: 'Calendar',  icon: ICONS.calendar,  path: '/training-calendar' },
-    { key: 'training',  label: 'Training',  icon: ICONS.training,  path: ap('training') },
+    { key: 'dashboard', label: 'Home',     icon: ICONS.dashboard, path: ap('dashboard') },
+    { key: 'testing',   label: 'Testing',  icon: ICONS.testing,   path: ap('testing') },
+    { key: 'calendar',  label: 'Calendar', icon: ICONS.calendar,  path: '/training-calendar' },
+    { key: 'training',  label: 'Training', icon: ICONS.training,  path: ap('training') },
   ];
 }
 
