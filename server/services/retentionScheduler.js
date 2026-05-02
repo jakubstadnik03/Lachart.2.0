@@ -59,13 +59,13 @@ const CFG = {
   get WEEKLY_HOUR()      { return Number(process.env.RETENTION_WEEKLY_HOUR_UTC  || 7); },
   get MONTHLY_HOUR()     { return Number(process.env.RETENTION_MONTHLY_HOUR_UTC || 9); },
   get REMINDER_HOUR()    { return Number(process.env.RETENTION_REMINDER_HOUR_UTC|| 8); },
-  DAILY_GUARD_H:    20,   // hours — skip user if they got any retention email this recently
-  REENG_MIN_DAYS:   14,
+  DAILY_GUARD_H:    48,   // hours — skip user if they got any retention email this recently
+  REENG_MIN_DAYS:   21,
   REENG_MAX_DAYS:   90,
-  REENG_THROTTLE:   30,   // days between re-engagement mails
-  REMINDER_THROTTLE:21,   // days between test-reminder mails
-  WEEKLY_THROTTLE:   6,   // days between weekly progress mails
-  MONTHLY_THROTTLE: 25,   // days between monthly report mails
+  REENG_THROTTLE:   45,   // days between re-engagement mails
+  REMINDER_THROTTLE:49,   // days between test-reminder mails (~7 weeks)
+  WEEKLY_THROTTLE:   7,   // days between weekly progress mails
+  MONTHLY_THROTTLE: 28,   // days between monthly report mails
 };
 
 // ─── In-memory queue (persists across ticks, reset per campaign window) ───────
@@ -266,6 +266,7 @@ function buildScheduledCandidates(users, latestMap, day, hour, date) {
     campaignSent.weekly = today;
     for (const user of users) {
       if (!isEligible(user)) continue;
+      if (receivedRecentlyAny(user)) continue;
       if (user.notifications?.weeklyReports === false) continue;
       const lastSent = user.retentionEmails?.weeklyProgressLastSent;
       if (lastSent && daysSince(lastSent) < CFG.WEEKLY_THROTTLE) continue;
@@ -282,6 +283,7 @@ function buildScheduledCandidates(users, latestMap, day, hour, date) {
     campaignSent.monthly = today;
     for (const user of users) {
       if (!isEligible(user)) continue;
+      if (receivedRecentlyAny(user)) continue;
       const lastSent = user.retentionEmails?.monthlyReportLastSent;
       if (lastSent && daysSince(lastSent) < CFG.MONTHLY_THROTTLE) continue;
       if (!(latestMap.has(String(user._id)))) continue;
@@ -296,12 +298,13 @@ function buildScheduledCandidates(users, latestMap, day, hour, date) {
     campaignSent.reminder = today;
     for (const user of users) {
       if (!isEligible(user)) continue;
+      if (receivedRecentlyAny(user)) continue;
       const lastSent = user.retentionEmails?.testReminderLastSent;
       if (lastSent && daysSince(lastSent) < CFG.REMINDER_THROTTLE) continue;
       const latest = latestMap.get(String(user._id));
       if (!latest) continue;
-      // Only remind if last test was 6+ weeks ago
-      if (daysSince(latest.date) < 42) continue;
+      // Only remind if last test was 7+ weeks ago
+      if (daysSince(latest.date) < 49) continue;
       candidates.push({ user, type: 'testReminder' });
     }
     console.log(`[Retention] Reminder campaign queued: ${candidates.length} users`);

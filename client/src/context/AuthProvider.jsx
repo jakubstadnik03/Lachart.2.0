@@ -42,78 +42,29 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const removeToken = useCallback(() => {
-    // Základní auth údaje
-    localStorage.removeItem("token");
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("user");
-
-    // Vyčistit per‑user cache a filtry, aby se data nepřenášela mezi účty
+    // Nuclear wipe of localStorage — clears all user data, caches and preferences.
+    // We keep only a tiny allow-list of keys that are NOT user-specific.
+    // This is safer than a whitelist that always misses newly-added keys.
+    const KEEP_KEYS = new Set(['cookiesAccepted']);
     try {
-      const keysToRemove = [];
+      const allKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key) continue;
-        if (
-          key === 'trainingStats_selectedSport' ||
-          key.startsWith('dashboard_selectedSport_') ||
-          key.startsWith('calendarData_') ||
-          key.startsWith('calendarData_timestamp_') ||
-          key === 'lastRoute' ||
-          key.startsWith('weeklyTrainingLoad_') ||
-          key === 'weeklyTrainingLoadTimeRange' ||
-          key === 'weeklyTrainingLoadSportFilter' ||
-          key.startsWith('formFitness_series_') ||
-          key.startsWith('formFitness_today_') ||
-          key === 'formFitnessTimeRange' ||
-          key === 'formFitnessSportFilter' ||
-          key === 'formFitnessDeltaMode' ||
-          key.startsWith('athleteTrainings_') ||
-          key.startsWith('lactateTrainings_') ||
-          key.startsWith('monthlyAnalysis_') ||
-          key.startsWith('powerRadar_') ||
-          key.startsWith('trainingComparison_') ||
-          key === 'weeklyCalendar_activities' ||
-          key === 'weeklyCalendar_cacheTime' ||
-          key.startsWith('weeklyCalendar_activities_') ||
-          key.startsWith('weeklyCalendar_cacheTime_') ||
-          key === 'profileModalLastShown' ||
-          key === 'lactateCurve_lastTest' ||
-          key.startsWith('global_selectedAthleteId') ||
-          key === 'trainingCalendar_selectedAthleteId' ||
-          key.startsWith('testing_recommendations_open_') ||
-          key === 'lachart:lastTestId' ||
-          key.startsWith('lachart:lastTestId:') ||
-          key.startsWith('strava_modal_dismissed_') ||
-          key === 'fitAnalysis_selectedStravaId' ||
-          key === 'fitAnalysis_selectedTrainingId' ||
-          key === 'fitAnalysis_selectedTrainingModelId' ||
-          key === 'lastCheckedUserId' ||
-          key.startsWith('basicProfileModalDone_') ||
-          key.startsWith('unitsPreferencesModalDone_') ||
-          key.startsWith('trainingZonesModalDone_')
-        ) {
-          keysToRemove.push(key);
-        }
+        const k = localStorage.key(i);
+        if (k && !KEEP_KEYS.has(k)) allKeys.push(k);
       }
-      keysToRemove.forEach((k) => localStorage.removeItem(k));
-
-      // Session‑only věci (welcome modal, auto‑sync throttling apod.)
-      try {
-        sessionStorage.clear();
-      } catch {
-        // ignore
-      }
+      allKeys.forEach((k) => localStorage.removeItem(k));
     } catch (e) {
-      console.warn('Error clearing app caches on logout:', e);
+      console.warn('Error clearing localStorage on logout:', e);
     }
 
-    // Vyčistit axios defaults a cache
-    delete api.defaults.headers.common["Authorization"];
+    // Session‑only věci (welcome modal, auto‑sync throttling apod.)
+    try { sessionStorage.clear(); } catch { /* ignore */ }
 
-    // Vyčistit API cache
+    // Vyčistit axios defaults a in-memory API cache
+    delete api.defaults.headers.common["Authorization"];
     clearApiCache();
 
-    // Notify all components to flush any in-memory cached data for the previous user
+    // Notify all contexts/components (AthleteSelectionContext resets on this event).
     try { window.dispatchEvent(new CustomEvent('userLoggedOut')); } catch {}
 
     setToken(null);

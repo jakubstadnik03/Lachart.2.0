@@ -1119,7 +1119,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.34 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
-          <ZoneDistributionChart trainings={trainings} period="90d" />
+          <ZoneDistributionChart trainings={trainings} tests={tests} period="90d" />
         </motion.div>
 
         <motion.div

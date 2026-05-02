@@ -171,8 +171,9 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
   const maxVal = Math.max(...vals, 0.001);
 
   const BAR_AREA_H = height - 16; // reserve top 16px for lactate labels
-  const gap = 2;
-  const barW = Math.max(4, (width - gap * (results.length - 1)) / results.length);
+  // Shrink gap + bar width proportionally so all bars fit within `width`
+  const gap = results.length <= 8 ? 2 : results.length <= 15 ? 1.5 : results.length <= 25 ? 1 : 0.5;
+  const barW = Math.max(2, (width - gap * (results.length - 1)) / results.length);
   const totalW = results.length * barW + (results.length - 1) * gap;
   const offsetX = Math.max(0, (width - totalW) / 2);
 
@@ -224,8 +225,9 @@ function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
   const max = Math.max(...nums);
   const min = Math.min(...nums);
   const range = max - min || 1;
-  const gap = 1.5;
-  const barW = Math.max(3, (width - gap * (nums.length - 1)) / nums.length);
+  // Shrink gap + bar width proportionally so all bars always fit within `width`
+  const gap = nums.length <= 8 ? 1.5 : nums.length <= 15 ? 1 : nums.length <= 25 ? 0.8 : 0.5;
+  const barW = Math.max(1.5, (width - gap * (nums.length - 1)) / nums.length);
   const USABLE = height - 2;
 
   return (

@@ -2164,14 +2164,26 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
 // Connection status — NOT cached (connect/disconnect must be reflected immediately)
 router.get('/status', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    const stravaConnected = Boolean(user?.strava?.accessToken);
-    const garminConnected = Boolean(user?.garmin?.accessToken);
+    const requester = await User.findById(req.user.userId);
+    let targetUser = requester;
+
+    // Coach/admin can check an athlete's integration status via ?athleteId=
+    if (req.query.athleteId && req.query.athleteId !== String(requester._id)) {
+      const requesterRole = String(requester?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) || requester?.admin === true;
+      if (isCoachLike) {
+        const athlete = await User.findById(req.query.athleteId).select('strava garmin');
+        if (athlete) targetUser = athlete;
+      }
+    }
+
+    const stravaConnected = Boolean(targetUser?.strava?.accessToken);
+    const garminConnected = Boolean(targetUser?.garmin?.accessToken);
     res.json({
       stravaConnected,
       garminConnected,
-      garminAutoSync: Boolean(user?.garmin?.autoSync),
-      garminLastSync: user?.garmin?.lastSyncDate || null,
+      garminAutoSync: Boolean(targetUser?.garmin?.autoSync),
+      garminLastSync: targetUser?.garmin?.lastSyncDate || null,
     });
   } catch (e) {
     res.status(500).json({ error: 'status_failed' });

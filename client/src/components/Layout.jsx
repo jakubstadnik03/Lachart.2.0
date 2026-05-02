@@ -101,6 +101,21 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const isCoachNative = isCoachRole(user);
   const nativeEffectiveAthleteId = isCoachNative ? (_globalAthleteId || user?._id || null) : null;
 
+  // On fresh app open or login: reset stored athleteId to own ID whenever the
+  // logged-in user changes. This prevents leftover athlete IDs from a previous
+  // session showing the wrong avatar / data on startup.
+  const prevUserIdRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!user?._id) return;
+    const uid = String(user._id);
+    if (prevUserIdRef.current !== uid) {
+      prevUserIdRef.current = uid;
+      // Always start viewing your own data after (re-)login or cold start
+      setGlobalAthleteId(uid);
+      try { localStorage.setItem('trainingCalendar_selectedAthleteId', uid); } catch {}
+    }
+  }, [user?._id, setGlobalAthleteId]);
+
   const handleNativeAthleteSelect = useCallback((athleteId) => {
     setGlobalAthleteId(athleteId);  // context writes localStorage + broadcasts event
     // Also update trainingCalendar_selectedAthleteId so FitAnalysisPage reacts

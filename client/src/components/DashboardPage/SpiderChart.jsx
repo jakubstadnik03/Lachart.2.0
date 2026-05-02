@@ -188,6 +188,9 @@ export default function SpiderChart({
     monthlyMetrics: {},
   });
   const [bikeAllTimeRef, setBikeAllTimeRef] = useState(null);
+  // bikeReady: true once we've received real bike data (cache or API).
+  // Prevents the chart from flashing with all-zero data on first render.
+  const [bikeReady, setBikeReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -199,6 +202,11 @@ export default function SpiderChart({
 
   // ── Run metrics (client-side) ─────────────────────────────────────────────
   const runMetrics = useMemo(() => computeRunMetrics(trainings), [trainings]);
+
+  // Reset bikeReady when athlete changes so we don't flash stale data
+  useEffect(() => {
+    setBikeReady(false);
+  }, [targetAthleteId]);
 
   // ── Bike: all-time reference load ─────────────────────────────────────────
   const allTimeReqRef = useRef(0);
@@ -219,6 +227,7 @@ export default function SpiderChart({
             const parsed = JSON.parse(cached);
             if (isBikePayload(parsed)) {
               setBikeAllTimeRef(parsed);
+              setBikeReady(true);
               return; // cache is fresh — skip the API call entirely
             }
           } catch {}
@@ -230,6 +239,7 @@ export default function SpiderChart({
         if (reqId !== allTimeReqRef.current) return;
         if (isBikePayload(resp.data)) {
           setBikeAllTimeRef(resp.data);
+          setBikeReady(true);
           try { localStorage.setItem(cacheKey, JSON.stringify(resp.data)); localStorage.setItem(cacheTsKey, String(Date.now())); } catch {}
         }
       } catch {}
@@ -256,6 +266,7 @@ export default function SpiderChart({
             const parsed = JSON.parse(cached);
             if (isBikePayload(parsed)) {
               setBikeMetrics(parsed);
+              setBikeReady(true);
               setLoadError(null);
               return; // cache is fresh — skip the API call entirely
             }
@@ -295,6 +306,7 @@ export default function SpiderChart({
         } catch {}
         if (reqId !== metricsReqRef.current) return;
         setBikeMetrics(metrics);
+        setBikeReady(true);
       } catch (err) {
         const status = err.response?.status;
         if (status === 404 || status === 403) {
@@ -605,7 +617,11 @@ export default function SpiderChart({
 
   const runHasData = runMetrics?.hasData;
 
-  const isEmpty = sport === 'run' ? !runHasData : !chartData;
+  // For bike: show loading spinner until we have real data (bikeReady).
+  // This prevents the chart from flashing with all-zero placeholder values
+  // before the first API response or cache read arrives.
+  const isLoadingBike = sport === 'bike' && !bikeReady;
+  const isEmpty = sport === 'run' ? !runHasData : (!bikeReady || !chartData);
 
   return (
     <div className="w-full h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -713,7 +729,7 @@ export default function SpiderChart({
         )}
 
         {/* Loading skeleton */}
-        {loading && (
+        {(loading || isLoadingBike) && (
           <div className="mt-4 flex items-center justify-center h-56 text-gray-400 text-sm">
             <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -724,7 +740,7 @@ export default function SpiderChart({
         )}
 
         {/* Empty state */}
-        {!loading && isEmpty && (
+        {!loading && !isLoadingBike && isEmpty && (
           <div className="mt-4 flex flex-col items-center justify-center h-48 text-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -741,7 +757,7 @@ export default function SpiderChart({
         )}
 
         {/* Radar chart */}
-        {!loading && !isEmpty && (
+        {!loading && !isLoadingBike && !isEmpty && (
           <>
             <div className="w-full relative mt-2" style={{ height: '280px' }}>
               {chartData && (

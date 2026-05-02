@@ -533,14 +533,14 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           {/* Sport chips — Bike / Run / Swim first, rest in a "More" dropdown */}
           {availableSports.length > 1 && (() => {
             const PRIORITY = ['bike', 'run', 'swim'];
-            const ICONS    = { bike: '🚴', run: '🏃', swim: '🏊' };
+            const SPORT_ICONS = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
             const LABELS   = { bike: 'Bike', run: 'Run', swim: 'Swim' };
             const prioritySports = PRIORITY.filter(s => availableSports.includes(s));
             const otherSports    = availableSports.filter(s => !PRIORITY.includes(s));
             const isOtherActive  = filterSport !== 'all' && !PRIORITY.includes(filterSport);
 
             const chipCls = (active) =>
-              `px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+              `flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
                 active
                   ? 'bg-gray-800 text-white border-gray-800'
                   : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
@@ -556,7 +556,8 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
                 {/* Bike · Run · Swim */}
                 {prioritySports.map(key => (
                   <button key={key} onClick={() => { setFilterSport(key); setCurrentPage(1); }} className={chipCls(filterSport === key)}>
-                    {ICONS[key]} {LABELS[key]}
+                    <img src={SPORT_ICONS[key]} alt={key} className={`w-4 h-4 flex-shrink-0 ${filterSport === key ? 'brightness-0 invert' : ''}`} />
+                    {LABELS[key]}
                   </button>
                 ))}
 

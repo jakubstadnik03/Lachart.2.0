@@ -1241,10 +1241,11 @@ export const listExternalActivities = async (params = {}, requestOpts = {}) => {
 
 /** @param {{ signal?: AbortSignal; timeout?: number }} [opts] */
 export const getIntegrationStatus = async (opts = {}) => {
-  const { signal, timeout } = opts;
+  const { signal, timeout, athleteId } = opts;
   const cfg = {};
   if (signal) cfg.signal = signal;
   if (timeout != null) cfg.timeout = timeout;
+  if (athleteId) cfg.params = { athleteId };
   const { data } = await api.get('/api/integrations/status', cfg);
   return data; // { stravaConnected, garminConnected }
 };

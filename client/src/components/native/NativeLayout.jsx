@@ -261,14 +261,14 @@ function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
 }
 
 // ─── Coach Athlete Bar ─────────────────────────────────────────────────────────
-function NativeAthleteBar({ athletes, effectiveAthleteId, onSelect, statuses }) {
-  if (!athletes || athletes.length === 0) return null;
+function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statuses }) {
+  const hasAthletes = athletes && athletes.length > 0;
 
   return (
     <div className="flex-shrink-0 bg-white border-b border-gray-100">
       {/* touch-action:pan-x lets horizontal swipe scroll but still fires click */}
       <div
-        className="flex gap-2 px-4 py-2"
+        className="flex gap-1.5 px-3 py-2"
         style={{
           overflowX: 'auto',
           overflowY: 'hidden',
@@ -277,30 +277,70 @@ function NativeAthleteBar({ athletes, effectiveAthleteId, onSelect, statuses }) 
           touchAction: 'pan-x',
         }}
       >
-        {athletes.map((a) => {
-          const isSelected = effectiveAthleteId === a._id;
+        {/* ── "Me" chip — coach's own profile ── */}
+        {coach && (() => {
+          const isMeSelected = effectiveAthleteId === String(coach._id);
+          return (
+            <>
+              <button
+                onClick={() => onSelect(String(coach._id))}
+                style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
+                className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
+                  isMeSelected ? 'bg-primary/10' : ''
+                }`}
+              >
+                <div className="relative">
+                  <img
+                    src={getAvatarBySportAndGender(coach)}
+                    alt="Me"
+                    className={`w-9 h-9 rounded-full border-2 ${isMeSelected ? 'border-primary' : 'border-transparent'}`}
+                    onError={e => { e.currentTarget.src = '/images/coach-avatar.webp'; }}
+                  />
+                  {/* "Me" badge */}
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-white flex items-center justify-center">
+                    <svg width="8" height="8" viewBox="0 0 20 20" fill="white">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                  </span>
+                </div>
+                <span className={`text-[9px] font-semibold truncate max-w-[48px] ${isMeSelected ? 'text-primary' : 'text-gray-600'}`}>
+                  {coach.name || 'Me'}
+                </span>
+              </button>
+
+              {/* Divider */}
+              {hasAthletes && (
+                <div className="w-px self-stretch bg-gray-200 my-1 flex-shrink-0" />
+              )}
+            </>
+          );
+        })()}
+
+        {/* ── Athlete chips ── */}
+        {hasAthletes && athletes.map((a) => {
+          const isSelected = effectiveAthleteId === String(a._id);
           const dot = statusColor(statuses?.[a._id]);
           return (
             <button
               key={a._id}
-              onClick={() => onSelect(a._id)}
+              onClick={() => onSelect(String(a._id))}
               style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
               className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
-                isSelected ? 'bg-primary/10' : ''
+                isSelected ? 'bg-violet-50' : ''
               }`}
             >
               <div className="relative">
                 <img
                   src={getAvatarBySportAndGender(a)}
                   alt=""
-                  className={`w-9 h-9 rounded-full border-2 ${isSelected ? 'border-primary' : 'border-transparent'}`}
+                  className={`w-9 h-9 rounded-full border-2 ${isSelected ? 'border-violet-400' : 'border-transparent'}`}
                 />
                 <span
                   className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
                   style={{ background: dot }}
                 />
               </div>
-              <span className={`text-[9px] font-medium truncate max-w-[48px] ${isSelected ? 'text-primary' : 'text-gray-500'}`}>
+              <span className={`text-[9px] font-medium truncate max-w-[48px] ${isSelected ? 'text-violet-700' : 'text-gray-500'}`}>
                 {a.name}
               </span>
             </button>
@@ -551,6 +591,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       {/* Coach athlete selector */}
       {isCoach && (
         <NativeAthleteBar
+          coach={user}
           athletes={athletes}
           effectiveAthleteId={effectiveAthleteId}
           onSelect={onAthleteSelect}

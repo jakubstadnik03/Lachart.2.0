@@ -17,7 +17,7 @@ import { useAthleteSelection } from '../context/AthleteSelectionContext';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
 
-const COACH_LIKE_ROLES = ['coach', 'tester', 'testing'];
+const COACH_LIKE_ROLES = ['coach', 'tester', 'testing', 'admin'];
 
 export default function TrainingPage() {
   const { athleteId } = useParams();

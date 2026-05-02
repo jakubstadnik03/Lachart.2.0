@@ -81,14 +81,130 @@ function totalTrainingSeconds(training) {
   return parseDuration(training.duration || training.durationSeconds);
 }
 
+// ─── Threshold helpers ────────────────────────────────────────────────────────
+
+/** Normalize training sport string → 'run' | 'bike' | 'swim' | null */
+function normalizeSport(training) {
+  const s = (training.sport || training.sport_type || training.type || '').toLowerCase();
+  if (s.includes('run')) return 'run';
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
+  if (s.includes('swim')) return 'swim';
+  return null;
+}
+
+/**
+ * Estimate LT1 / LT2 from a single test's results array.
+ * Returns { lt1Hr, lt2Hr, lt1Power, lt2Power } — any value may be null.
+ */
+function estimateTestThresholds(test) {
+  // Use manual overrides first
+  const ov = test.thresholdOverrides || {};
+  const ovLt1Hr    = ov.LTP1_hr    != null ? Number(ov.LTP1_hr)    : null;
+  const ovLt2Hr    = ov.LTP2_hr    != null ? Number(ov.LTP2_hr)    : null;
+  const ovLt1Pow   = ov.LTP1       != null ? Number(ov.LTP1)       : null;
+  const ovLt2Pow   = ov.LTP2       != null ? Number(ov.LTP2)       : null;
+
+  let lt1Hr = ovLt1Hr, lt2Hr = ovLt2Hr;
+  let lt1Power = ovLt1Pow, lt2Power = ovLt2Pow;
+
+  // Auto-estimate from staged results when overrides are missing
+  const stages = Array.isArray(test.results)
+    ? test.results.filter(r => r.lactate != null && !Number.isNaN(Number(r.lactate)))
+    : [];
+
+  if (stages.length >= 2 && (lt2Hr == null || lt2Power == null)) {
+    const minLac = Math.min(...stages.map(s => Number(s.lactate)));
+
+    // LT2: OBLA (≥4 mmol) or 50% rise
+    for (const stage of stages) {
+      const lac = Number(stage.lactate);
+      if (lac >= 4.0) {
+        if (lt2Hr == null)    lt2Hr    = Number(stage.heartRate) || null;
+        if (lt2Power == null) lt2Power = Number(stage.power) || Number(stage.interval) || null;
+        break;
+      }
+    }
+    if (lt2Hr == null && lt2Power == null) {
+      for (let i = 1; i < stages.length; i++) {
+        const prev = Number(stages[i - 1].lactate);
+        const curr = Number(stages[i].lactate);
+        if (prev > 0 && (curr - prev) / prev > 0.5) {
+          if (lt2Hr == null)    lt2Hr    = Number(stages[i].heartRate) || null;
+          if (lt2Power == null) lt2Power = Number(stages[i].power) || Number(stages[i].interval) || null;
+          break;
+        }
+      }
+    }
+
+    // LT1: first stage where lactate > baseline + 1.0 mmol
+    for (const stage of stages) {
+      const lac = Number(stage.lactate);
+      if (lac > minLac + 1.0) {
+        if (lt1Hr == null)    lt1Hr    = Number(stage.heartRate) || null;
+        if (lt1Power == null) lt1Power = Number(stage.power) || Number(stage.interval) || null;
+        break;
+      }
+    }
+  }
+
+  return { lt1Hr, lt2Hr, lt1Power, lt2Power };
+}
+
+/**
+ * Get LT1/LT2 thresholds for a given sport from the athlete's most recent test.
+ * Returns { lt1Hr, lt2Hr, lt1Power, lt2Power } or null.
+ */
+function computeThresholds(tests, sport) {
+  if (!Array.isArray(tests) || tests.length === 0 || !sport) return null;
+  const matching = tests
+    .filter(t => t.sport === sport)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  if (matching.length === 0) return null;
+  const thresholds = estimateTestThresholds(matching[0]);
+  // Need at least one HR or power reference
+  if (!thresholds.lt2Hr && !thresholds.lt2Power) return null;
+  return thresholds;
+}
+
+/**
+ * Classify average HR (or power) into a zone key using LT thresholds.
+ * Returns 'z1'–'z5' or null.
+ */
+function classifyByThreshold(hr, power, thresholds) {
+  const { lt1Hr, lt2Hr, lt1Power, lt2Power } = thresholds;
+
+  // Prefer HR if we have LT2 reference
+  if (hr > 30 && lt2Hr > 0) {
+    if (hr >= lt2Hr * 1.03) return 'z5';
+    if (hr >= lt2Hr * 0.97) return 'z4';
+    if (lt1Hr > 0 && hr >= lt1Hr) return 'z3';
+    if (lt1Hr > 0 && hr >= lt1Hr * 0.88) return 'z2';
+    return 'z1';
+  }
+
+  // Fall back to power
+  if (power > 10 && lt2Power > 0) {
+    if (power >= lt2Power * 1.10) return 'z5';
+    if (power >= lt2Power * 0.95) return 'z4';
+    if (lt1Power > 0 && power >= lt1Power) return 'z3';
+    if (lt1Power > 0 && power >= lt1Power * 0.88) return 'z2';
+    return 'z1';
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Extract zone seconds from a single training.
  * Priority:
  *   1. Structured zone fields (zones[], heartRateZones, powerZones)
  *   2. Per-interval intensity × duration from results[]
- *   3. Top-level intensity × total duration
+ *   3. Top-level explicit intensity × total duration
+ *   4. Threshold-based: classify avg HR/power per lap (or whole workout) using LT data
  */
-function extractZones(training) {
+function extractZones(training, thresholds) {
   const empty = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
 
   // ── 1. Structured zone fields ──────────────────────────────────────────────
@@ -126,12 +242,25 @@ function extractZones(training) {
     }
   }
 
-  // ── 2. Per-interval intensity in results[] ─────────────────────────────────
+  // ── 2. Per-interval data from results[] ───────────────────────────────────
   if (Array.isArray(training.results) && training.results.length > 0) {
     const result = { ...empty };
     let attributed = 0;
+
+    // Map intervalType → zone (LaChart training form auto-detects these)
+    const INTERVAL_TYPE_ZONE = {
+      warmup:   'z1',
+      cooldown: 'z1',
+      recovery: 'z1',
+      work:     'z4', // best-effort: work intervals are threshold-range by default
+    };
+
     training.results.forEach((interval) => {
-      const zone = intensityToZone(interval.intensity || interval.category);
+      // Prefer explicit intensity/category; fall back to intervalType
+      const zone =
+        intensityToZone(interval.intensity || interval.category) ||
+        INTERVAL_TYPE_ZONE[interval.intervalType] ||
+        null;
       const secs = parseDuration(interval.duration || interval.durationSeconds);
       if (zone && secs > 0) {
         result[zone] += secs;
@@ -141,14 +270,54 @@ function extractZones(training) {
     if (attributed > 0) return result;
   }
 
-  // ── 3. Top-level intensity / category × total duration ─────────────────────
-  // Ignore `training.type` (e.g. "interval") — it describes workout structure, not zone.
-  const zone = intensityToZone(training.intensity || training.category);
+  // ── 3. Top-level explicit intensity × total duration ──────────────────────
+  // NOTE: do NOT use training.category here — "threshold", "endurance" etc.
+  // describe the workout TYPE, not "100% of time was spent in that zone".
+  // Only use training.intensity which users set specifically to indicate zone.
+  const zone = intensityToZone(training.intensity);
   const totalSecs = totalTrainingSeconds(training);
   if (zone && totalSecs > 0) {
     const result = { ...empty };
     result[zone] = totalSecs;
     return result;
+  }
+
+  // ── 4. Threshold-based fallback (Strava / FIT without zone data) ──────────
+  // Uses the athlete's lactate test LT1/LT2 to classify each lap (or the whole
+  // workout if no laps) by average HR or average power into a single zone.
+  if (thresholds) {
+    const lapResult = { ...empty };
+    let lapAttributed = 0;
+
+    if (Array.isArray(training.laps) && training.laps.length > 1) {
+      training.laps.forEach((lap) => {
+        const secs = Number(lap.moving_time || lap.elapsed_time || 0);
+        if (secs <= 0) return;
+        const avgHr  = Number(lap.average_heartrate || 0);
+        const avgPwr = Number(lap.average_watts || 0);
+        const lapZone = classifyByThreshold(avgHr, avgPwr, thresholds);
+        if (lapZone) {
+          lapResult[lapZone] += secs;
+          lapAttributed += secs;
+        }
+      });
+    }
+
+    if (lapAttributed > 0) return lapResult;
+
+    // No usable laps — classify whole workout by top-level averages
+    const avgHr  = Number(training.averageHeartRate || training.average_heartrate || 0);
+    const avgPwr = Number(
+      training.weightedAveragePower || training.averagePower ||
+      training.average_watts || training.normalizedPower || 0
+    );
+    const workoutZone = classifyByThreshold(avgHr, avgPwr, thresholds);
+    const workoutSecs = totalTrainingSeconds(training);
+    if (workoutZone && workoutSecs > 0) {
+      const result = { ...empty };
+      result[workoutZone] = workoutSecs;
+      return result;
+    }
   }
 
   return null;
@@ -163,11 +332,24 @@ function filterByPeriod(trainings, days) {
   });
 }
 
-function aggregateZones(trainings) {
+function aggregateZones(trainings, tests) {
   const totals = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
   let hasData = false;
+
+  // Pre-compute per-sport thresholds (only once per aggregation)
+  const thresholdCache = {};
+  const getThresholds = (sport) => {
+    if (sport == null) return null;
+    if (!(sport in thresholdCache)) {
+      thresholdCache[sport] = computeThresholds(tests, sport);
+    }
+    return thresholdCache[sport];
+  };
+
   trainings.forEach((t) => {
-    const z = extractZones(t);
+    const sport = normalizeSport(t);
+    const thresholds = getThresholds(sport);
+    const z = extractZones(t, thresholds);
     if (z) {
       hasData = true;
       Object.keys(totals).forEach((k) => { totals[k] += z[k] || 0; });
@@ -201,23 +383,26 @@ const CustomTooltip = ({ active, payload }) => {
   );
 };
 
-export default function ZoneDistributionChart({ trainings = [], period = '90d' }) {
+export default function ZoneDistributionChart({ trainings = [], tests = [], period = '90d' }) {
   const [activePeriod, setActivePeriod] = useState(period);
 
-  const { chartData, pcts, hasData } = useMemo(() => {
+  const { chartData, pcts, hasData, usingThresholds } = useMemo(() => {
     const def = PERIODS.find((p) => p.value === activePeriod) || PERIODS[1];
     const filtered = filterByPeriod(trainings, def.days);
-    const { hasData, ...totals } = aggregateZones(filtered);
-    if (!hasData) return { chartData: [], pcts: null, hasData: false };
+    const { hasData, ...totals } = aggregateZones(filtered, tests);
+    if (!hasData) return { chartData: [], pcts: null, hasData: false, usingThresholds: false };
 
     const grand = Object.values(totals).reduce((a, b) => a + b, 0);
-    if (grand === 0) return { chartData: [], pcts: null, hasData: false };
+    if (grand === 0) return { chartData: [], pcts: null, hasData: false, usingThresholds: false };
 
     const pcts = {};
     ZONES.forEach((z) => { pcts[z.key] = (totals[z.key] / grand) * 100; });
 
-    return { chartData: [{ name: 'dist', ...pcts }], pcts, hasData: true };
-  }, [trainings, activePeriod]);
+    // Check if any sport has thresholds available (to show subtle indicator)
+    const hasSomeThreshold = ['run', 'bike', 'swim'].some(s => computeThresholds(tests, s) != null);
+
+    return { chartData: [{ name: 'dist', ...pcts }], pcts, hasData: true, usingThresholds: hasSomeThreshold };
+  }, [trainings, tests, activePeriod]);
 
   const distLabel = hasData && pcts ? getDistributionLabel(pcts) : null;
 
@@ -306,6 +491,11 @@ export default function ZoneDistributionChart({ trainings = [], period = '90d' }
                 <p key={z.key} className="text-[9px] text-center text-gray-400 truncate">{z.name}</p>
               ))}
             </div>
+            {usingThresholds && (
+              <p className="mt-2 text-[9px] text-center text-gray-400">
+                ✦ Estimated from your lactate test thresholds
+              </p>
+            )}
           </>
         )}
       </div>

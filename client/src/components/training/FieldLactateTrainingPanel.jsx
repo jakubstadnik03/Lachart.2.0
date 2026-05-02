@@ -94,7 +94,8 @@ export default function FieldLactateTrainingPanel({
     setError(null);
     try {
       const [status, pending] = await Promise.all([
-        getIntegrationStatus({ timeout: 15000 }),
+        // When viewing an athlete (coach/admin), check athlete's Strava; otherwise check own.
+        getIntegrationStatus({ timeout: 15000, athleteId: integrationAthleteId || undefined }),
         getPendingLactateActivities(integrationAthleteId, { days: 21 }),
       ]);
       setStravaConnected(Boolean(status && status.stravaConnected));
@@ -115,7 +116,7 @@ export default function FieldLactateTrainingPanel({
     .sort((a, b) => b.score - a.score);
 
   const calendarHref =
-    user && ['coach', 'tester', 'testing'].includes(String(user.role || '').toLowerCase()) &&
+    user && ['coach', 'tester', 'testing', 'admin'].includes(String(user.role || '').toLowerCase()) &&
     integrationAthleteId && String(integrationAthleteId) !== String(user._id)
       ? `/training-calendar/${integrationAthleteId}`
       : '/training-calendar';

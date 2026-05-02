@@ -47,13 +47,20 @@ export function AthleteSelectionProvider({ children }) {
         try { localStorage.setItem(STORAGE_KEY, id); } catch {}
       }
     };
+    // On logout: immediately wipe the selected athlete so the next user starts clean.
+    const handleLogout = () => {
+      setSelectedAthleteIdState(null);
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    };
     window.addEventListener('globalAthleteChanged', handleAthleteEvent);
     window.addEventListener('athleteChanged', handleAthleteEvent);
     window.addEventListener('athleteSelected', handleAthleteEvent);
+    window.addEventListener('userLoggedOut', handleLogout);
     return () => {
       window.removeEventListener('globalAthleteChanged', handleAthleteEvent);
       window.removeEventListener('athleteChanged', handleAthleteEvent);
       window.removeEventListener('athleteSelected', handleAthleteEvent);
+      window.removeEventListener('userLoggedOut', handleLogout);
     };
   }, []);
 
