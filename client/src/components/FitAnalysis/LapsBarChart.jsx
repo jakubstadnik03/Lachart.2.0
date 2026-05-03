@@ -7,7 +7,7 @@ import React, { useMemo, useRef, useEffect, useState } from 'react';
  *   auto-scrolled to center the selected lap. Selected bar is taller + highlighted.
  * Double-click anywhere on the chart to reset zoom.
  */
-export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSelect, sport = '' }) {
+export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSelect, sport = '', disableZoom = false }) {
   const sportLower = (sport || '').toLowerCase();
   const isRun = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
   const isSwim = sportLower.includes('swim');
@@ -89,13 +89,14 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
   }, [activeEntries]);
 
   const skipZoom = useMemo(() => {
+    if (disableZoom) return true;
     const totalDuration = activeEntries.reduce((s, e) => s + e.duration, 0);
     const maxDuration = activeEntries.reduce((max, e) => Math.max(max, e.duration), 0);
     return (
       activeEntries.length <= 6 ||
       (totalDuration > 0 && maxDuration / totalDuration > 0.40)
     );
-  }, [activeEntries]);
+  }, [activeEntries, disableZoom]);
 
   const ZOOM_BAR_W = 36; // px per bar in zoomed mode
   const PAUSE_BAR_W = 8; // px for pause/rest bars in zoom mode

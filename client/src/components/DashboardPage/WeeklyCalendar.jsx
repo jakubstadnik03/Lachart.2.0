@@ -1814,107 +1814,11 @@ const WeeklyCalendar = ({
                     }}
                   />
 
-                  {/* Chart Toggle */}
-                  {(trainingDetail.records && trainingDetail.records.length > 0) || 
+                  {/* Laps section */}
+                  {(trainingDetail.records && trainingDetail.records.length > 0) ||
                    (trainingDetail.laps && trainingDetail.laps.length > 0) ? (
                     <div className="mt-4 sm:mt-6">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <button
-                          onClick={() => setChartView('training')}
-                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                            chartView === 'training'
-                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
-                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
-                          }`}
-                        >
-                          Training Chart
-                        </button>
-                        <button
-                          onClick={() => setChartView('interval')}
-                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                            chartView === 'interval'
-                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
-                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
-                          }`}
-                        >
-                          Interval Chart
-                        </button>
-                      </div>
-
-                      {/* Training Chart */}
-                      {chartView === 'training' && trainingDetail.records && trainingDetail.records.length > 0 && (
-                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                          <TrainingChart 
-                            training={trainingDetail} 
-                            userProfile={userProfile}
-                            user={user}
-                          />
-                        </div>
-                      )}
-
-                      {/* Interval Chart */}
-                      {chartView === 'interval' && trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                          {/* Selected lap info (like on FitAnalysis) */}
-                          {(() => {
-                            if (!selectedLapNumber) return null;
-                            const lap = trainingDetail.laps.find(
-                              (l, idx) =>
-                                String(l.lapNumber ?? idx + 1) === String(selectedLapNumber)
-                            );
-                            if (!lap) return null;
-                            return (
-                              <div className="mb-2 px-1 text-xs sm:text-sm text-gray-100 flex flex-wrap items-center gap-2">
-                                <span className="font-medium">
-                                  Lap {lap.lapNumber ?? trainingDetail.laps.indexOf(lap) + 1}
-                                </span>
-                                {lap.duration != null && (
-                                  <span className="text-gray-300">
-                                    Time: {Math.round(lap.duration)} s
-                                  </span>
-                                )}
-                                {lap.distance != null && (
-                                  <span className="text-gray-300">
-                                    Dist: {formatDistanceForUser(Number(lap.distance), user)}
-                                  </span>
-                                )}
-                                {lap.avgPower != null && (
-                                  <span className="text-gray-300">
-                                    Power: {Math.round(lap.avgPower)} W
-                                  </span>
-                                )}
-                                {lap.avgPace != null && (
-                                  <span className="text-gray-300">
-                                    Pace: {lap.avgPace}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          <IntervalChart 
-                            laps={trainingDetail.laps}
-                            sport={trainingDetail.sport || 'cycling'}
-                            user={user}
-                            selectedLapNumber={selectedLapNumber}
-                            onSelectLapNumber={setSelectedLapNumber}
-                          />
-                        </div>
-                      )}
-
-                      {chartView === 'training' && (!trainingDetail.records || trainingDetail.records.length === 0) && (
-                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-                          Training has no records data to display chart
-                        </div>
-                      )}
-
-                      {chartView === 'interval' && (!trainingDetail.laps || trainingDetail.laps.length === 0) && (
-                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-                          Training has no intervals (laps) to display chart
-                        </div>
-                      )}
-
-                      {/* Laps Table - Show for both training and interval views if laps exist */}
+                      {/* Laps Table */}
                       {trainingDetail.laps && trainingDetail.laps.length > 0 && (
                         <div className="mt-3 sm:mt-4">
                           <LapsTable 
@@ -1984,6 +1888,7 @@ const WeeklyCalendar = ({
                             user={user}
                             selectedLapNumber={selectedLapNumber}
                             onSelectLapNumber={setSelectedLapNumber}
+                            disableZoom={true}
                           />
                         </div>
                       )}

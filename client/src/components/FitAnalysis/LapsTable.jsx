@@ -50,7 +50,7 @@ const LAPS_LIST_SCROLL_CLASS =
 const LAPS_LIST_FULL_CLASS =
   'overflow-x-auto';
 
-const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null }) => {
+const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false }) => {
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
   const [initialLapIndex, setInitialLapIndex] = useState(null);
   const [lactateSaved, setLactateSaved] = useState(false);
@@ -237,6 +237,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             selectedLapNumber={effectiveSelectedLap}
             onSelect={handleSelectLap}
             sport={training?.sport}
+            disableZoom={disableZoom}
           />
         </div>
 
@@ -393,6 +394,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
         selectedLapNumber={effectiveSelectedLap}
         onSelect={handleSelectLap}
         sport={training?.sport}
+        disableZoom={disableZoom}
       />
 
       <div
