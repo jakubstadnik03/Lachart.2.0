@@ -869,9 +869,9 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
       const payload = {
         title: planForm.title || title,
         description: planForm.description,
-        notes: planForm.notes,
+        coachNotes: planForm.notes,
         sport: sportForPlan,
-        scheduledDate: dateForPlan,
+        date: dateForPlan,
         plannedDuration: durMins ? durMins * 60 : dur,
         ...(planForm.distanceKm > 0 && { plannedDistance: planForm.distanceKm }),
         targetTss: planForm.targetTss ? Number(planForm.targetTss) : (tss || undefined),
