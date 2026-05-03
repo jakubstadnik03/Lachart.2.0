@@ -19,8 +19,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import TrainingStats from '../FitAnalysis/TrainingStats';
-import TrainingChart from '../FitAnalysis/TrainingChart';
-import IntervalChart from '../FitAnalysis/IntervalChart';
 import LapsTable from '../FitAnalysis/LapsTable';
 import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
 import api from '../../services/api';
@@ -537,7 +535,6 @@ const WeeklyCalendar = ({
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
-  const [chartView, setChartView] = useState('training'); // 'training' or 'interval'
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');
@@ -1009,7 +1006,7 @@ const WeeklyCalendar = ({
     return () => window.removeEventListener('selectCalendarActivity', handleSelectActivity);
   }, []); // Only set up listener once
 
-  // Load user profile for TrainingChart - if coach viewing athlete, load athlete's profile
+  // Load user profile (zones, units) for training detail / stats when coach views an athlete
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -1061,7 +1058,7 @@ const WeeklyCalendar = ({
           return;
         }
         const detail = await getFitTraining(trainingId);
-        // Ensure we have records for TrainingChart
+        // Ensure we have stream records when present (for downstream charts)
         if (detail && (!detail.records || detail.records.length === 0)) {
           console.warn('FIT training has no records:', trainingId);
         }

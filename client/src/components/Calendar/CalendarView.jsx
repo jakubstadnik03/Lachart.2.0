@@ -960,7 +960,6 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
         </div>
       );
     };
-    const fmtDelta = (pct) => pct == null ? '—' : `${pct}%`;
 
     return ReactDOM.createPortal(
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
