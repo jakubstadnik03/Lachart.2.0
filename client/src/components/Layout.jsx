@@ -612,10 +612,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         >
           <div className="mx-auto w-full max-w-[1600px] flex flex-col flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
-            {/* Footer scrolls with content on all screen sizes */}
-            <div className="mt-auto pt-4">
-              <MemoizedFooter />
-            </div>
+            {/* Footer scrolls with content on all screen sizes (hidden on training-calendar) */}
+            {!location.pathname.startsWith('/training-calendar') && (
+              <div className="mt-auto pt-4">
+                <MemoizedFooter />
+              </div>
+            )}
           </div>
         </main>
       </div>
