@@ -738,9 +738,22 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
   const [selectedLap, setSelectedLap] = useState(null);
   const lapRowRefs = useRef([]);
 
+  // Mobile detection + view tabs (TrainingPeaks-style)
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const [mobileView, setMobileView] = useState('summary'); // 'summary' | 'laps' | 'edit'
+
   // Planned workout editing state
   const [plannedWorkout, setPlannedWorkout] = useState(initialPlannedWorkout || null);
   const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
+
+  // Completed metadata edit state (title/description — works for FIT/Strava/regular)
+  const [completedForm, setCompletedForm] = useState({ title: '', description: '' });
+  const [savingCompleted, setSavingCompleted] = useState(false);
 
   // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
   const parseDurationToMinutes = (raw) => {
@@ -880,6 +893,356 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
   };
 
   const planSteps = Array.isArray(plannedWorkout?.steps) ? plannedWorkout.steps : [];
+
+  // ── Seed completed-metadata form once activity title/notes are known ──
+  useEffect(() => {
+    setCompletedForm({ title: title || '', description: notes || '' });
+  }, [title, notes]);
+
+  const handleSaveCompleted = async () => {
+    setSavingCompleted(true);
+    try {
+      const id = String(merged.id || merged._id || '');
+      const payload = { title: completedForm.title, description: completedForm.description };
+      if (id.startsWith('strava-')) {
+        const { updateStravaActivity } = await import('../../services/api.js');
+        await updateStravaActivity(id.replace('strava-', ''), payload);
+      } else if (id.startsWith('fit-')) {
+        const { updateFitTraining } = await import('../../services/api.js');
+        await updateFitTraining(id.replace('fit-', ''), payload);
+      } else if (id.startsWith('regular-') || id) {
+        const { updateTraining } = await import('../../services/api.js');
+        await updateTraining(id.replace('regular-', ''), payload);
+      }
+      setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description }));
+    } catch (err) {
+      console.error('Failed to save completed metadata', err);
+    } finally {
+      setSavingCompleted(false);
+    }
+  };
+
+  // ── Compliance helpers (TrainingPeaks-style) ──
+  const compliancePct = (planned, actual) => (planned > 0 && actual > 0) ? Math.round((actual / planned) * 100) : null;
+  const complianceColorPct = (pct) => {
+    if (pct == null) return '#9ca3af';
+    if (pct >= 95 && pct <= 105) return '#22c55e'; // green
+    if (pct >= 80 && pct <= 120) return '#eab308'; // yellow
+    return '#f97316'; // orange
+  };
+  const durPct  = compliancePct(plannedDur, dur);
+  const distPct = compliancePct(plannedDist * 1000, dist); // plannedDistance is in km
+  const tssPct  = compliancePct(plannedTss, tss);
+
+  // ── MOBILE LAYOUT (TrainingPeaks-style) ──
+  if (isMobile) {
+    const hasPlanned = !!plannedWorkout && (plannedDur > 0 || plannedDist > 0 || plannedTss > 0);
+    const TabBtn = ({ id, label }) => (
+      <button
+        onClick={() => setMobileView(id)}
+        className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+          mobileView === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'
+        }`}
+      >
+        {label}
+      </button>
+    );
+    const ComplianceBar = ({ pct }) => {
+      if (pct == null) return null;
+      const c = complianceColorPct(pct);
+      const widthPct = Math.max(8, Math.min(100, pct));
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${widthPct}%`, backgroundColor: c }} />
+          </div>
+          <span className="text-xs font-bold tabular-nums w-12 text-right" style={{ color: c }}>{pct}%</span>
+        </div>
+      );
+    };
+    const fmtDelta = (pct) => pct == null ? '—' : `${pct}%`;
+
+    return ReactDOM.createPortal(
+      <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
+          <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
+            <div className="text-xs text-gray-400">{dateStr}</div>
+          </div>
+          {mobileView !== 'edit' && (
+            <button
+              onClick={() => setMobileView('edit')}
+              title="Edit"
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200"
+            >
+              <PencilIcon className="w-5 h-5" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tabs (hidden in edit mode) */}
+        {mobileView !== 'edit' && (
+          <div className="flex border-b border-gray-100 flex-shrink-0">
+            <TabBtn id="summary" label="Summary" />
+            {laps.length > 0 && <TabBtn id="laps" label={`Laps (${laps.length})`} />}
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {mobileView === 'summary' && (
+            <div className="px-4 py-4 space-y-4">
+              {/* Big completed stats */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Duration', value: fmtDur(dur) },
+                  ...(dist > 0 ? [{ label: 'Distance', value: fmtDist(dist) }] : []),
+                  ...(paceStr ? [{ label: 'Pace', value: paceStr }] : []),
+                  ...(hr > 0 ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
+                  ...(isBike && power > 0 ? [{ label: 'Power', value: `${Math.round(power)} W` }] : []),
+                  ...(tss > 0 ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+                ].map(({ label, value }) => (
+                  <div key={label} className="rounded-xl bg-gray-50 px-3 py-2">
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
+                    <div className="text-base font-bold text-gray-800 tabular-nums mt-0.5">{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Compliance — only if planned exists */}
+              {hasPlanned && (
+                <div className="rounded-xl border border-gray-100 p-3 space-y-3">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Compliance</div>
+                  {plannedDur > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="font-semibold text-gray-600">Duration</span>
+                        <span className="text-gray-400 tabular-nums">{fmtDur(plannedDur)} → {fmtDur(dur)}</span>
+                      </div>
+                      <ComplianceBar pct={durPct} />
+                    </div>
+                  )}
+                  {plannedDist > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="font-semibold text-gray-600">Distance</span>
+                        <span className="text-gray-400 tabular-nums">{fmtDist(plannedDist * 1000)} → {fmtDist(dist)}</span>
+                      </div>
+                      <ComplianceBar pct={distPct} />
+                    </div>
+                  )}
+                  {plannedTss > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="font-semibold text-gray-600">TSS</span>
+                        <span className="text-gray-400 tabular-nums">{plannedTss} → {Math.round(tss) || '—'}</span>
+                      </div>
+                      <ComplianceBar pct={tssPct} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Notes */}
+              {notes && (
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
+                </div>
+              )}
+
+              {/* Planned details (description / intervals) */}
+              {hasPlanned && plannedWorkout?.description && (
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{plannedWorkout.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mobileView === 'laps' && laps.length > 0 && (
+            <div className="px-4 py-3">
+              {laps.length > 1 && (
+                <div className="mb-3">
+                  <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} selectedLap={selectedLap} onSelectLap={setSelectedLap} />
+                </div>
+              )}
+              {(() => {
+                const hasLactate = laps[0]?.lactate != null || laps[0]?.lactateValue != null;
+                return (
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="grid text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
+                      style={{ gridTemplateColumns: `1.5rem 1fr 1fr 1fr${hasLactate ? ' 1fr' : ''}` }}>
+                      <span>#</span>
+                      <span className="text-right">Time</span>
+                      <span className="text-right">Dist</span>
+                      <span className="text-right">HR</span>
+                      {hasLactate && <span className="text-right">La</span>}
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {laps.map((lap, i) => {
+                        const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                        const lapDist = Number(lap.distance || 0);
+                        const lapHr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                        const lapLa = lap.lactate ?? lap.lactateValue;
+                        const lapNum = lap.lapNumber ?? (i + 1);
+                        return (
+                          <div key={i} className="grid items-center px-3 py-2 text-xs"
+                            style={{ gridTemplateColumns: `1.5rem 1fr 1fr 1fr${hasLactate ? ' 1fr' : ''}` }}>
+                            <span className="font-bold text-gray-400">{lapNum}</span>
+                            <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
+                            <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>
+                            <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                            {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {mobileView === 'edit' && (
+            <div className="px-4 py-4 space-y-5">
+              <div className="grid grid-cols-2 gap-x-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <div>Planned</div>
+                <div>Completed</div>
+              </div>
+
+              {/* Title row */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
+                <input
+                  type="text"
+                  value={planForm.title}
+                  onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder={title}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                />
+                <input
+                  type="text"
+                  value={completedForm.title}
+                  onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                />
+              </div>
+
+              {/* Duration */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Duration</div>
+                <input
+                  type="text"
+                  value={planForm.durationDisplay}
+                  onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                  onBlur={() => {
+                    const mins = parseDurationToMinutes(planForm.durationDisplay);
+                    if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) }));
+                  }}
+                  placeholder="1:30"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                />
+                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{fmtDur(dur)}</div>
+              </div>
+
+              {/* Distance */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Distance</div>
+                <input
+                  type="text"
+                  value={planForm.distanceDisplay}
+                  onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                  onBlur={() => {
+                    const km = parseDistanceToKm(planForm.distanceDisplay);
+                    if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
+                  }}
+                  placeholder="10 km"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                />
+                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{dist > 0 ? fmtDist(dist) : '—'}</div>
+              </div>
+
+              {/* TSS */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">TSS</div>
+                <input
+                  type="number"
+                  value={planForm.targetTss}
+                  onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))}
+                  placeholder=""
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                  min="0"
+                />
+                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{tss > 0 ? Math.round(tss) : '—'}</div>
+              </div>
+
+              {/* Description */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Description</div>
+                <textarea
+                  value={planForm.description}
+                  onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))}
+                  rows={3}
+                  placeholder="Workout description…"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
+                />
+                <textarea
+                  value={completedForm.description}
+                  onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
+                  rows={3}
+                  placeholder="How did it go?"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
+                />
+              </div>
+
+              {/* Coach notes (planned only) */}
+              <div>
+                <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes (planned)</div>
+                <textarea
+                  value={planForm.notes}
+                  onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))}
+                  rows={2}
+                  placeholder="Coach notes, instructions…"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer for edit mode */}
+        {mobileView === 'edit' && (
+          <div className="flex gap-2 px-4 py-3 border-t border-gray-100 flex-shrink-0">
+            <button
+              onClick={() => setMobileView('summary')}
+              className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                await Promise.all([handleSavePlan(), handleSaveCompleted()]);
+                setMobileView('summary');
+              }}
+              disabled={savingPlan || savingCompleted}
+              className="flex-1 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+              style={{ backgroundColor: color }}
+            >
+              {(savingPlan || savingCompleted) ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        )}
+      </div>,
+      document.body
+    );
+  }
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
