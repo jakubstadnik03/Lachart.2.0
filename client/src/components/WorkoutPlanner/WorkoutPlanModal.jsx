@@ -18,7 +18,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import { Dumbbell, PersonStanding, Repeat2, Sparkles, Bike as MtbBike, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
+import { Bike, Footprints, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
 
@@ -29,11 +29,14 @@ const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cool
 
 // ─── Sport SVG icons (lucide-react) ─────────────────────────────────────────
 const SPORT_LUCIDE_ICONS = {
+  bike:       Bike,
+  run:        Footprints,
+  swim:       WavesLadder,
   strength:   Dumbbell,
   walk:       PersonStanding,
   brick:      Repeat2,
   crosstrain: Sparkles,
-  mtbike:     MtbBike,
+  mtbike:     Bike,
   rowing:     Waves,
   lactate:    TestTube2,
   other:      MoreHorizontal,
@@ -47,9 +50,9 @@ const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
 
 // ─── Sport picker options ────────────────────────────────────────────────────
 const SPORT_OPTIONS = [
-  { key: 'bike',       label: 'Bike',         color: '#767EB5', img: '/icon/bike.svg' },
-  { key: 'run',        label: 'Run',          color: '#f97316', img: '/icon/run.svg' },
-  { key: 'swim',       label: 'Swim',         color: '#38bdf8', img: '/icon/swim.svg' },
+  { key: 'bike',       label: 'Bike',         color: '#767EB5', svgName: 'bike' },
+  { key: 'run',        label: 'Run',          color: '#f97316', svgName: 'run' },
+  { key: 'swim',       label: 'Swim',         color: '#38bdf8', svgName: 'swim' },
   { key: 'strength',   label: 'Strength',     color: '#8b5cf6', svgName: 'strength' },
   { key: 'walk',       label: 'Walk',         color: '#22c55e', svgName: 'walk' },
   { key: 'brick',      label: 'Brick',        color: '#f59e0b', svgName: 'brick' },
