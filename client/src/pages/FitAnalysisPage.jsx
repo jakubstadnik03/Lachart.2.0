@@ -4014,10 +4014,8 @@ const FitAnalysisPage = () => {
         )}
         {selectedTraining && (
           <motion.div
-            key={`training-${selectedTraining._id || selectedTraining.id}`}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}
             animate={{ y: 0, opacity: 1 }}
-            exit={isMobile ? { y: '100%', opacity: 0 } : { opacity: 0 }}
             transition={{ type: 'spring', damping: 32, stiffness: 320 }}
             className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
@@ -5001,10 +4999,8 @@ const FitAnalysisPage = () => {
         {/* Strava Activity Detail */}
         {selectedStrava && (
           <motion.div
-            key={`strava-${selectedStrava.id || selectedStrava._id}`}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}
             animate={{ y: 0, opacity: 1 }}
-            exit={isMobile ? { y: '100%', opacity: 0 } : { opacity: 0 }}
             transition={{ type: 'spring', damping: 32, stiffness: 320 }}
             className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
