@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { XMarkIcon, SparklesIcon, CheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { motion } from 'framer-motion';
 import api from '../../services/api';
 
 /** Styled checkbox — replaces the default browser input[type=checkbox] */
@@ -261,9 +262,15 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
   }, [proposals]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6"
+    >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden max-h-[88vh]">
+      <motion.div
+        initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: '100%', opacity: 0 }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden max-h-[88vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
@@ -644,7 +651,7 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

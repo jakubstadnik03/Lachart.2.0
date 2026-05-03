@@ -4013,7 +4013,13 @@ const FitAnalysisPage = () => {
           </div>
         )}
         {selectedTraining && (
-          <div className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
+          <motion.div
+            key={`training-${selectedTraining._id || selectedTraining.id}`}
+            initial={isMobile ? { y: '100%', opacity: 0 } : false}
+            animate={{ y: 0, opacity: 1 }}
+            exit={isMobile ? { y: '100%', opacity: 0 } : { opacity: 0 }}
+            transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+            className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
             {isMobile ? (
               <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-3 py-2.5 flex items-center justify-between gap-2 shadow-sm">
@@ -4989,12 +4995,18 @@ const FitAnalysisPage = () => {
                   )}
                   </div>
             </motion.div>
-                        </div>
+                        </motion.div>
         )}
 
         {/* Strava Activity Detail */}
         {selectedStrava && (
-          <div className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
+          <motion.div
+            key={`strava-${selectedStrava.id || selectedStrava._id}`}
+            initial={isMobile ? { y: '100%', opacity: 0 } : false}
+            animate={{ y: 0, opacity: 1 }}
+            exit={isMobile ? { y: '100%', opacity: 0 } : { opacity: 0 }}
+            transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+            className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
             {isMobile ? (
               <div className="sticky top-0 z-20 bg-white border-b border-gray-100 shadow-sm">
@@ -6124,14 +6136,17 @@ const FitAnalysisPage = () => {
             </div>
           );
         })()}
-          </div>
+          </motion.div>
         )}
 
           </div>
 
       {/* Manual Add / Edit Training Modal */}
       {showManualForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4">
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4"
+        >
           <div className="w-full sm:max-w-2xl">
             {manualFormError && (
               <div className="mb-2 mx-4 sm:mx-0 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
@@ -6147,13 +6162,16 @@ const FitAnalysisPage = () => {
               isLoading={manualFormSubmitting}
             />
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Training Form Modal - Export to training */}
       {showTrainingForm && trainingFormData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-2xl">
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+        >
+          <div className="w-full sm:max-w-2xl">
             <TrainingForm
               onClose={() => {
                 setShowTrainingForm(false);
@@ -6166,7 +6184,7 @@ const FitAnalysisPage = () => {
               initialSelectedLap={trainingFormData?._initialSelectedLap ?? null}
             />
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Calendar "Add Lactate" loading indicator */}

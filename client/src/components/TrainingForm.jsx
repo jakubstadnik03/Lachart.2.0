@@ -1096,6 +1096,10 @@ const TrainingForm = ({
       onDragEnd={(_, info) => {
         if (info.offset.y > 80 || info.velocity.y > 400) onClose();
       }}
+      initial={{ y: '100%', opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: '100%', opacity: 0 }}
+      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl flex flex-col relative shadow-xl overflow-hidden"
       style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}
     >
