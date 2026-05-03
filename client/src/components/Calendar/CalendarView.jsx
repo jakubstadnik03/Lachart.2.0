@@ -1074,15 +1074,28 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
                 </div>
               )}
               {(() => {
-                const hasLactate = laps[0]?.lactate != null || laps[0]?.lactateValue != null;
+                const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
+                const hasPace = isRun && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
+                const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                const colTokens = ['1.5rem', '1fr', '1fr'];
+                if (hasPower) colTokens.push('1fr');
+                if (hasPace)  colTokens.push('1fr');
+                colTokens.push('1fr'); // HR
+                if (hasCadence) colTokens.push('1fr');
+                if (hasLactate) colTokens.push('1fr');
+                const cols = colTokens.join(' ');
                 return (
                   <div className="rounded-xl border border-gray-100 overflow-hidden">
                     <div className="grid text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
-                      style={{ gridTemplateColumns: `1.5rem 1fr 1fr 1fr${hasLactate ? ' 1fr' : ''}` }}>
+                      style={{ gridTemplateColumns: cols }}>
                       <span>#</span>
                       <span className="text-right">Time</span>
                       <span className="text-right">Dist</span>
+                      {hasPower && <span className="text-right">Pwr</span>}
+                      {hasPace && <span className="text-right">Pace</span>}
                       <span className="text-right">HR</span>
+                      {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
                       {hasLactate && <span className="text-right">La</span>}
                     </div>
                     <div className="divide-y divide-gray-50">
@@ -1090,15 +1103,28 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
                         const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
                         const lapDist = Number(lap.distance || 0);
                         const lapHr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                        const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
+                        const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
                         const lapLa = lap.lactate ?? lap.lactateValue;
                         const lapNum = lap.lapNumber ?? (i + 1);
+                        let lapPaceStr = '—';
+                        if (isRun && lapDist > 0 && lapDur > 0) {
+                          const spk = lapDur / (lapDist / 1000);
+                          lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                        } else if (isSwim && lapDist > 0 && lapDur > 0) {
+                          const sp100 = lapDur / (lapDist / 100);
+                          lapPaceStr = `${Math.floor(sp100/60)}:${String(Math.round(sp100%60)).padStart(2,'0')}`;
+                        }
                         return (
                           <div key={i} className="grid items-center px-3 py-2 text-xs"
-                            style={{ gridTemplateColumns: `1.5rem 1fr 1fr 1fr${hasLactate ? ' 1fr' : ''}` }}>
+                            style={{ gridTemplateColumns: cols }}>
                             <span className="font-bold text-gray-400">{lapNum}</span>
                             <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
                             <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>
+                            {hasPower && <span className="text-right tabular-nums font-semibold" style={{ color }}>{lapPower > 0 ? `${Math.round(lapPower)}W` : '—'}</span>}
+                            {hasPace && <span className="text-right tabular-nums font-semibold" style={{ color }}>{lapPaceStr}</span>}
                             <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                            {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                             {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
                           </div>
                         );
@@ -2300,13 +2326,6 @@ export default function CalendarView({
       const el = rectOrEvent instanceof Element ? rectOrEvent : null;
       onActivityClick(a, el);
     } else {
-      // On mobile, skip the modal — let the parent page render its full
-      // detail view (chart, stats, laps, comments) which the modal would
-      // otherwise hide.
-      if (isMobile) {
-        handleSelectActivity(a);
-        return;
-      }
       // Find the matching planned workout for this day/sport
       const actDate = a.date || a.timestamp || a.startDate || a.start_time;
       const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
