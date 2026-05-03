@@ -1467,6 +1467,7 @@ const FitAnalysisPage = () => {
   const [plannedWorkoutsCalendar, setPlannedWorkoutsCalendar] = useState([]);
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
   const [compareModal, setCompareModal] = useState(null); // PlannedWorkout object with executionData
+  const [mobileStravaTab, setMobileStravaTab] = useState('summary'); // 'summary' | 'laps'
   const [planTemplates, setPlanTemplates] = useState([]);
   const [planContext, setPlanContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
   const [selectedStrava, setSelectedStrava] = useState(null);
@@ -4996,16 +4997,52 @@ const FitAnalysisPage = () => {
           <div className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
             {/* Back button bar — sticky on mobile */}
             {isMobile ? (
-              <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-3 py-2.5 flex items-center gap-2 shadow-sm">
-                <button
-                  type="button"
-                  onClick={handleCloseTrainingDetail}
-                  className="flex items-center gap-1.5 text-sm font-medium text-gray-600 active:text-primary transition-colors touch-manipulation"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  <ChevronLeftIcon className="w-4 h-4" />
-                  <span>Calendar</span>
-                </button>
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-100 shadow-sm">
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseTrainingDetail}
+                    className="flex items-center gap-1 text-sm font-medium text-gray-600 active:text-primary touch-manipulation"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <ChevronLeftIcon className="w-4 h-4" />
+                    <span>Calendar</span>
+                  </button>
+                  <div className="ml-auto flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dateStr = selectedStrava?.start_date_local || selectedStrava?.start_date || selectedStrava?.startDate;
+                        const d = dateStr ? new Date(dateStr) : new Date();
+                        const sportRaw = (selectedStrava?.sport_type || selectedStrava?.type || selectedStrava?.sport || '').toLowerCase();
+                        const sport = sportRaw.includes('run') || sportRaw.includes('walk') || sportRaw.includes('hike') ? 'run'
+                                     : sportRaw.includes('swim') ? 'swim' : 'bike';
+                        const dayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        const matchPw = (plannedWorkoutsCalendar || []).find(pw => {
+                          const pwDate = typeof pw.date === 'string' ? pw.date.slice(0,10) : '';
+                          return pwDate === dayKey && pw.sport === sport;
+                        }) || null;
+                        setPlanModal({ date: d, workout: matchPw });
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm font-semibold text-blue-600 active:bg-blue-50"
+                    >
+                      <PencilIcon className="w-4 h-4" /> Edit plan
+                    </button>
+                  </div>
+                </div>
+                <div className="flex border-t border-gray-100">
+                  {['summary','laps'].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setMobileStravaTab(t)}
+                      className={`flex-1 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                        mobileStravaTab === t ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'
+                      }`}
+                    >
+                      {t === 'summary' ? 'Summary' : 'Laps'}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2 mb-4">
@@ -5434,6 +5471,7 @@ const FitAnalysisPage = () => {
 
           return (
             <div className={`bg-white ${isMobile ? 'rounded-none border-0' : 'rounded-2xl border border-gray-200 shadow-sm'} ${isMobile ? 'p-4' : 'p-5 md:p-8'} ${isMobile ? 'space-y-4' : 'space-y-5 md:space-y-8'}`}>
+              <div className={isMobile && mobileStravaTab !== 'summary' ? 'hidden' : 'contents'}>
               {/* Title and Description */}
               <StravaTitleEditor onExportToTraining={handleExportToTraining} />
 
@@ -5724,7 +5762,9 @@ const FitAnalysisPage = () => {
                 trainingType="strava"
                 isMobile={isMobile}
               />
+              </div>
 
+              <div className={isMobile && mobileStravaTab !== 'laps' ? 'hidden' : 'contents'}>
               {/* Training Chart - Modern SVG Version for Strava */}
               {(() => {
                 // Convert Strava streams to records format
@@ -6079,6 +6119,7 @@ const FitAnalysisPage = () => {
                 />
               </div>
 
+              </div>
               </div>
             </div>
           );
