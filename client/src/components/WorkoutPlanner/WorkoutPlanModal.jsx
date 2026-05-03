@@ -18,6 +18,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { Dumbbell, PersonStanding, Repeat2, Sparkles, Bike as MtbBike, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
 
@@ -26,20 +27,22 @@ export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim
 export const SPORT_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
 const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
 
-// ─── Sport SVG icons (no emoji) ─────────────────────────────────────────────
+// ─── Sport SVG icons (lucide-react) ─────────────────────────────────────────
+const SPORT_LUCIDE_ICONS = {
+  strength:   Dumbbell,
+  walk:       PersonStanding,
+  brick:      Repeat2,
+  crosstrain: Sparkles,
+  mtbike:     MtbBike,
+  rowing:     Waves,
+  lactate:    TestTube2,
+  other:      MoreHorizontal,
+};
+
 const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
-  const s = { width: size, height: size, fill: 'none', stroke: color, strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' };
-  switch (name) {
-    case 'strength': return <svg viewBox="0 0 24 24" style={s}><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M8 9.5v5M16 9.5v5"/></svg>;
-    case 'walk':     return <svg viewBox="0 0 24 24" style={s}><circle cx="12" cy="4.5" r="1.5"/><path d="M9 8.5l1.5 4 2.5 2 2-3.5M9 14l-2 5M15 14l1 5M11.5 12.5l-2.5 1.5"/></svg>;
-    case 'brick':    return <svg viewBox="0 0 24 24" style={s}><circle cx="7" cy="12" r="3"/><path d="M10 12h2"/><circle cx="15" cy="12" r="2"/><path d="M4 12c0-1.7 1.3-3 3-3"/><path d="M7 17v-2M15 9v2"/></svg>;
-    case 'crosstrain': return <svg viewBox="0 0 24 24" style={s}><path d="M12 3v18M3 12h18M7 7l10 10M17 7L7 17"/></svg>;
-    case 'mtbike':   return <svg viewBox="0 0 24 24" style={s}><circle cx="6" cy="16" r="3"/><circle cx="18" cy="16" r="3"/><path d="M6 16l4-7h4l3 7M14 9l-2-4M10 9H8"/></svg>;
-    case 'rowing':   return <svg viewBox="0 0 24 24" style={s}><path d="M3 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><circle cx="14" cy="7" r="1.5"/><path d="M12 10l2-3M7 13l5-3 3-5"/></svg>;
-    case 'lactate':  return <svg viewBox="0 0 24 24" style={s}><path d="M12 3c0 0-6 6.5-6 10a6 6 0 0 0 12 0c0-3.5-6-10-6-10z"/><path d="M9 16c0 1.7 1.3 3 3 3"/></svg>;
-    case 'other':    return <svg viewBox="0 0 24 24" style={s}><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>;
-    default:         return null;
-  }
+  const Icon = SPORT_LUCIDE_ICONS[name];
+  if (!Icon) return null;
+  return <Icon size={size} color={color} strokeWidth={1.8} />;
 };
 
 // ─── Sport picker options ────────────────────────────────────────────────────
