@@ -3975,17 +3975,29 @@ const FitAnalysisPage = () => {
           onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
           onMovePlannedWorkout={handleMovePlannedWorkout}
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
+          onDeletePlannedWorkout={handlePlanDelete}
+          onOpenActivity={handleCalendarActivitySelect}
+          mobileChartsContent={calendarPeriod ? (
+            <CalendarPeriodStats
+              activities={calendarMergedActivities}
+              period={calendarPeriod}
+              user={user}
+              userProfile={userProfile}
+              isMobile={true}
+              onSelectActivity={handleCalendarActivitySelect}
+            />
+          ) : null}
         />
         </motion.div>
 
-        {!selectedTraining && !selectedStrava && !detailLoading && calendarPeriod && (
+        {!isMobile && !selectedTraining && !selectedStrava && !detailLoading && calendarPeriod && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
             <CalendarPeriodStats
               activities={calendarMergedActivities}
               period={calendarPeriod}
               user={user}
               userProfile={userProfile}
-              isMobile={isMobile}
+              isMobile={false}
               onSelectActivity={handleCalendarActivitySelect}
             />
           </motion.div>

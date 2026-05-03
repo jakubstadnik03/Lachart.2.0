@@ -1,16 +1,32 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon, FireIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  CheckIcon,
+  XMarkIcon,
+  FireIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
+  EllipsisVerticalIcon,
+  PlusIcon,
+  PlayIcon,
+  DocumentDuplicateIcon,
+  TrashIcon,
+  ArrowPathIcon,
+} from '@heroicons/react/24/outline';
+import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import TrainingStats from '../FitAnalysis/TrainingStats';
+import TrainingChart from '../FitAnalysis/TrainingChart';
+import IntervalChart from '../FitAnalysis/IntervalChart';
 import LapsTable from '../FitAnalysis/LapsTable';
-import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, updateTraining, addTraining } from '../../services/api';
+import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
-import TrainingForm from '../TrainingForm';
-import TrainingComments from '../TrainingComments';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -40,37 +56,18 @@ function getLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
-function SportIcon({ sport, className = "w-5 h-5" }) {
+function SportIcon({ sport, className = 'w-4 h-4' }) {
   if (!sport) return null;
   const s = String(sport).toLowerCase();
-  if (s.includes('run') || s === 'running') {
-    return (
-      <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center shrink-0`}>
-        <img src="/icon/run.svg" alt="Run" className="w-full h-full" />
-      </div>
-    );
-  }
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') {
-    return (
-      <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center shrink-0`}>
-        <img src="/icon/bike.svg" alt="Bike" className="w-full h-full" />
-      </div>
-    );
-  }
-  if (s.includes('swim') || s === 'swimming') {
-    return (
-      <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center shrink-0`}>
-        <img src="/icon/swim.svg" alt="Swim" className="w-full h-full" />
-      </div>
-    );
-  }
-  return (
-    <div className={`${className} rounded-full bg-gray-100 p-0.5 flex items-center justify-center shrink-0`}>
-      <svg className="w-full h-full text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-      </svg>
-    </div>
-  );
+  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail'))
+    return <Footprints className={`${className} text-orange-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual'))
+    return <Bike className={`${className} text-blue-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('swim'))
+    return <WavesLadder className={`${className} text-cyan-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength'))
+    return <Dumbbell className={`${className} text-purple-500 flex-shrink-0`} strokeWidth={2} />;
+  return <ZapIcon className={`${className} text-gray-400 flex-shrink-0`} strokeWidth={2} />;
 }
 
 /** Local calendar day key — must match grouping in `activitiesByDay`. */
@@ -201,91 +198,94 @@ function formatDecimalHours(totalSec) {
   return `${h.toFixed(1)}h`;
 }
 
+function normalizeSport(sport) {
+  const s = String(sport || '').toLowerCase().trim();
+  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail')) return 'Running';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'Cycling';
+  if (s.includes('swim')) return 'Swimming';
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout')) return 'Strength';
+  if (!s) return 'Other';
+  return 'Other';
+}
+
+
 function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
   const { totalTss, totalSec, bySport } = summary;
-  const hoursStr = formatDecimalHours(totalSec);
   const tssRounded = Math.round(totalTss);
   const prevRounded = prevWeekTss != null ? Math.round(Number(prevWeekTss)) : null;
-  const showTrend =
-    prevRounded != null && prevRounded > 0 && tssRounded !== prevRounded;
+  const showTrend = prevRounded != null && prevRounded > 0 && tssRounded !== prevRounded;
+
+  const totalTssForBar = bySport.reduce((s, r) => s + r.tss, 0);
+  const sportColors = { cycling: '#3b82f6', running: '#f97316', swimming: '#06b6d4', strength: '#8b5cf6' };
+
+  const hoursStr = totalSec > 0
+    ? (() => { const h = Math.floor(totalSec / 3600); const m = Math.floor((totalSec % 3600) / 60); return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ''}`.trim() : `${m}m`; })()
+    : null;
 
   return (
     <div
-      className={`flex h-full flex-col rounded-xl border border-gray-100 bg-custom-gray text-left shadow-sm ${
-        compact ? 'min-w-[118px] p-2' : 'min-h-0 min-w-0 p-2 sm:p-2.5'
+      className={`flex flex-col rounded-lg border border-gray-200 bg-gray-50 border-l-4 border-l-primary/40 text-left ${
+        compact ? 'p-2 min-w-[120px]' : 'p-2.5 min-w-0'
       }`}
       data-testid="weekly-calendar-summary"
     >
-      {!compact && (
-        <p className="-mt-[35px] mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Week summary</p>
-      )}
-      <div className={`flex flex-wrap items-center ${compact ? 'gap-1' : 'gap-1.5'}`}>
-        {hoursStr ? (
-          <span
-            className={`rounded-full border border-primary/25 bg-white font-semibold tabular-nums text-primary-dark shadow-sm ${
-              compact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2.5 py-1 text-xs'
-            }`}
-          >
-            {hoursStr}
+      {/* Header: total time + TSS + trend */}
+      <div className="flex items-start justify-between gap-1 mb-1">
+        <div>
+          <div className={`font-extrabold text-gray-900 leading-tight tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>
+            {hoursStr || '—'}
+          </div>
+          {tssRounded > 0 && (
+            <div className="flex items-center gap-0.5 mt-0.5">
+              <FireIcon className={`text-primary shrink-0 ${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+              <span className={`font-bold text-primary tabular-nums ${compact ? 'text-[9px]' : 'text-xs'}`}>{tssRounded}</span>
+              <span className={`text-gray-400 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>TSS</span>
+            </div>
+          )}
+        </div>
+        {showTrend && (
+          <span className={`mt-0.5 flex-shrink-0 ${tssRounded > prevRounded ? 'text-green-500' : 'text-red-400'}`}>
+            {tssRounded > prevRounded
+              ? <ArrowTrendingUpIcon className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+              : <ArrowTrendingDownIcon className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
           </span>
-        ) : null}
-        <span
-          className={`inline-flex items-center gap-1 rounded-full border border-primary/25 bg-white font-semibold tabular-nums text-primary-dark shadow-sm ${
-            compact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2.5 py-1 text-xs'
-          }`}
-          title="Total TSS"
-        >
-          <FireIcon className={compact ? 'h-3 w-3 shrink-0' : 'h-3.5 w-3.5 shrink-0'} aria-hidden />
-          {tssRounded}
-        </span>
-        {showTrend ? (
-          <span
-            className={`inline-flex items-center rounded-full border border-gray-100 bg-white px-1.5 py-0.5 ${tssRounded > prevRounded ? 'text-greenos' : 'text-red'}`}
-            title={tssRounded > prevRounded ? 'Up vs previous week' : 'Down vs previous week'}
-          >
-            {tssRounded > prevRounded ? (
-              <ArrowTrendingUpIcon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            ) : (
-              <ArrowTrendingDownIcon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            )}
-          </span>
-        ) : null}
+        )}
       </div>
-      <div
-        className={`mt-2 border-t border-gray-200/80 pt-2 ${
-          compact ? 'max-h-32 space-y-1 text-[9px]' : 'max-h-52 space-y-2 text-xs sm:text-[13px]'
-        } overflow-y-auto leading-snug`}
-      >
+
+      {/* TSS distribution bar */}
+      {totalTssForBar > 0 && (
+        <div className="flex h-1.5 rounded-full overflow-hidden gap-px mb-1.5">
+          {bySport.map(row => {
+            const ratio = row.tss / totalTssForBar;
+            if (ratio <= 0) return null;
+            const s = String(row.sport || '').toLowerCase();
+            const color = sportColors[s.toLowerCase()] || '#8b5cf6';
+            return <div key={row.sport} style={{ width: `${ratio * 100}%`, backgroundColor: color }} className="rounded-full" />;
+          })}
+        </div>
+      )}
+
+      {/* Per-sport rows */}
+      <div className="space-y-1">
         {bySport.length === 0 ? (
-          <div className="text-lighterText italic">—</div>
+          <div className={`text-gray-400 italic ${compact ? 'text-[9px]' : 'text-[10px]'}`}>—</div>
         ) : (
           bySport.map((row) => {
-            const distPart =
-              row.dist > 0 ? formatDistanceForUser(row.dist, user) : '—';
             const timePart = row.sec > 0 ? formatDecimalHours(row.sec) || formatWeekDurationSeconds(row.sec) : '—';
             return (
-              <div
-                key={row.sport}
-                className={`flex flex-col rounded-lg border border-gray-100/90 bg-white/80 ${
-                  compact ? 'gap-0 px-1.5 py-1' : 'gap-0.5 px-2 py-1.5'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-text">
-                  <SportIcon sport={row.sport} className="w-4 h-4" />
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-gray-800 sm:text-xs" title={row.sport}>
-                    {row.sport}
+              <div key={row.sport} className="flex items-center gap-1">
+                <SportIcon sport={row.sport} className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                <span className={`font-semibold text-gray-700 flex-1 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}>{timePart}</span>
+                {row.dist > 0 && (
+                  <span className={`text-gray-400 flex-shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
+                    {formatDistanceForUser(row.dist, user)}
                   </span>
-                </div>
-                <div className={`tabular-nums text-lighterText ${compact ? 'pl-6 text-[9px]' : 'pl-7 text-[11px] sm:text-xs'}`}>
-                  <span>{distPart}</span>
-                  <span className="mx-1 text-gray-300">·</span>
-                  <span>{timePart}</span>
-                  <span className="mx-1 text-gray-300">·</span>
-                  <span className="inline-flex items-center gap-0.5 font-medium text-primary-dark">
-                    <FireIcon className={`shrink-0 ${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} aria-hidden />
+                )}
+                {row.tss > 0 && (
+                  <span className={`font-bold text-primary flex-shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
                     {Math.round(row.tss)}
                   </span>
-                </div>
+                )}
               </div>
             );
           })
@@ -295,7 +295,224 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
   );
 }
 
-const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
+function planStepTotalSecs(steps) {
+  if (!Array.isArray(steps)) return 0;
+  let total = 0;
+  for (const s of steps) {
+    const dur = Number(s.durationSeconds || s.duration || 0);
+    const reps = Number(s.repeat || s.repeatCount || 1);
+    total += dur * (reps > 0 ? reps : 1);
+  }
+  return total;
+}
+
+function secsToHMShort(secs) {
+  if (!secs) return '';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h > 0) return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+  return `${m}m`;
+}
+
+
+function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-planned-menu]')) {
+        setMenuOpen(false);
+        setRepeatOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  const openMenu = (e) => {
+    e.stopPropagation();
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    setMenuOpen(v => !v);
+    setRepeatOpen(false);
+  };
+
+  const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+  const durStr = secsToHMShort(secs);
+  const isCompleted = pw.status === 'completed';
+
+  const dropdown = menuOpen ? ReactDOM.createPortal(
+    <div
+      data-planned-menu
+      style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+      className="w-40 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 text-xs overflow-hidden"
+    >
+      {onSelect && (
+        <button onClick={() => { setMenuOpen(false); onSelect(pw); }}
+          className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+          <PencilIcon className="w-3.5 h-3.5" /> Edit
+        </button>
+      )}
+      {onCopy && (
+        <button onClick={() => { setMenuOpen(false); onCopy(pw, pw.date); }}
+          className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+          <DocumentDuplicateIcon className="w-3.5 h-3.5" /> Copy
+        </button>
+      )}
+      {onRepeat && (
+        <>
+          <button onClick={() => setRepeatOpen(v => !v)}
+            className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+            <ArrowPathIcon className="w-3.5 h-3.5" /> Repeat ›
+          </button>
+          {repeatOpen && (
+            <div className="px-3 pb-2">
+              <p className="text-[9px] text-gray-400 py-1">Next N weeks</p>
+              <div className="grid grid-cols-3 gap-1">
+                {[2,3,4,6,8,12].map(n => (
+                  <button key={n}
+                    onClick={() => { setMenuOpen(false); setRepeatOpen(false); onRepeat(pw, n); }}
+                    className="text-gray-700 text-xs py-1 rounded hover:bg-gray-50 font-medium">
+                    {n}×
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {onStart && !isCompleted && (
+        <button onClick={() => { setMenuOpen(false); onStart(pw); }}
+          className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+          <PlayIcon className="w-3.5 h-3.5" /> Start
+        </button>
+      )}
+      {onDelete && (
+        <button onClick={() => { setMenuOpen(false); onDelete(pw); }}
+          className="w-full text-left px-3 py-1.5 text-red-500 hover:bg-red-50 flex items-center gap-2">
+          <TrashIcon className="w-3.5 h-3.5" /> Delete
+        </button>
+      )}
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={() => onSelect && onSelect(pw)}
+        className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[10px] ${
+          isCompleted
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+        }`}
+      >
+        <div className="flex items-center gap-1">
+          <SportIcon sport={pw.sport} className="w-3 h-3" />
+          <span className="truncate font-medium flex-1">{pw.title || 'Planned workout'}</span>
+          {durStr && <span className="text-[9px] opacity-70 flex-shrink-0">{durStr}</span>}
+        </div>
+      </button>
+      <button
+        ref={btnRef}
+        onClick={openMenu}
+        className="absolute right-0.5 top-0.5 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded hover:bg-black/10 transition-opacity"
+      >
+        <EllipsisVerticalIcon className="w-3 h-3" />
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
+function actSportColor(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return '#f97316';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
+  if (s.includes('swim')) return '#06b6d4';
+  return '#8b5cf6';
+}
+
+function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compact = false }) {
+  const title = act.title || act.name || act.originalFileName || 'Activity';
+  const dur = act.duration || act.elapsed_time || act.movingTime || act.totalTimerTime || act.totalElapsedTime || 0;
+  const durStr = dur > 0 ? `${Math.floor(dur / 3600)}:${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
+  const dist = act.distance || act.totalDistance || 0;
+  const distStr = dist > 0 ? (dist > 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`) : null;
+  const tss = act.tss || act.trainingLoad || 0;
+  const power = act.normalizedPower || act.avgPower || act.average_watts || 0;
+  const hr = act.averageHeartRate || act.average_heartrate || 0;
+  const color = catBadgeStyle && act.category
+    ? (catBadgeStyle(act.category).borderColor || actSportColor(act.sport))
+    : actSportColor(act.sport);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left rounded-xl border transition-all flex flex-col gap-1 ${
+        compact ? 'p-1.5' : 'p-2'
+      } ${
+        isSelected
+          ? 'bg-gradient-to-br from-primary to-primary-dark shadow-md ring-2 ring-primary/20 border-transparent'
+          : 'bg-white hover:bg-gray-50 shadow-sm hover:shadow-md border-gray-200'
+      }`}
+      style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+      title={title}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        <SportIcon sport={act.sport} className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+        <span className={`font-bold truncate flex-1 ${compact ? 'text-[10px]' : 'text-[11px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}>
+          {title}
+        </span>
+        {act.category && !compact && (
+          <span className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle?.(act.category)}>
+            {catLabel?.(act.category)?.substring(0, 4)}
+          </span>
+        )}
+      </div>
+      {!compact && (durStr || distStr) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {durStr && <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{durStr}</span>}
+          {distStr && <><span className={isSelected ? 'text-white/40' : 'text-gray-300'}>·</span><span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{distStr}</span></>}
+        </div>
+      )}
+      {!compact && tss > 0 && (
+        <div className="flex items-center gap-1.5">
+          <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${Math.min(100, (tss / 150) * 100)}%`, backgroundColor: tss > 100 ? '#ef4444' : tss > 70 ? '#f59e0b' : '#22c55e' }} />
+          </div>
+          <span className={`text-[9px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
+        </div>
+      )}
+      {!compact && (power > 0 || hr > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {power > 0 && <span className={`text-[10px] ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>{Math.round(power)}W</span>}
+          {hr > 0 && <span className={`text-[10px] ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>♥ {Math.round(hr)}</span>}
+        </div>
+      )}
+    </button>
+  );
+}
+
+const WeeklyCalendar = ({
+  activities = [],
+  onSelectActivity,
+  selectedActivityId,
+  selectedAthleteId = null,
+  onActivityUpdate = null,
+  plannedWorkouts = [],
+  onPlanWorkout = null,
+  onSelectPlannedWorkout = null,
+  onStartWorkout = null,
+  onCopyPlannedWorkout = null,
+  onDeletePlannedWorkout = null,
+}) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
 
@@ -303,10 +520,6 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     const cat = getCategory(catId);
     if (!cat) return { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#d1d5db' };
     return { backgroundColor: hexToRgba(cat.color, 0.15), color: cat.color, borderColor: hexToRgba(cat.color, 0.35) };
-  };
-  const catBorderColor = (catId) => {
-    const cat = getCategory(catId);
-    return cat ? cat.color : null;
   };
   const catLabel = (catId) => {
     const cat = getCategory(catId);
@@ -317,170 +530,26 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     if (!['coach', 'tester', 'testing'].includes(role)) return null;
     return selectedAthleteId ?? null;
   }, [user?.role, selectedAthleteId]);
-  const sheetDragControls = useDragControls();
-
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [trainingDetail, setTrainingDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
-  const lapsTableRef = useRef(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
-  // Clear stale cache immediately when the viewed athlete changes
-  const prevAthleteIdRef = React.useRef(selectedAthleteId);
-  if (prevAthleteIdRef.current !== selectedAthleteId) {
-    prevAthleteIdRef.current = selectedAthleteId;
-    if (cachedActivities.length > 0) setCachedActivities([]);
-  }
+  const [chartView, setChartView] = useState('training'); // 'training' or 'interval'
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingCategory, setEditingCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const closeSheet = () => { setSelectedTraining(null); setTrainingDetail(null); setIsEditingTitle(false); setIsEditingCategory(false); };
-
-  // Resolve stable comment ID for the selected training (changes when training changes)
-  const commentTrainingId = useMemo(() => {
-    if (!trainingDetail) return null;
-    if (trainingDetail.type === 'strava') return String(trainingDetail.stravaId || trainingDetail.id || '');
-    return String(trainingDetail._id || '');
-  }, [trainingDetail?._id, trainingDetail?.stravaId, trainingDetail?.id, trainingDetail?.type]); // eslint-disable-line
-  const commentTrainingType = trainingDetail?.type || 'training';
-
-  const [lactateFormOpen, setLactateFormOpen] = useState(false);
-  const [lactateFormData, setLactateFormData] = useState(null);
-  const [lactateFormLoading, setLactateFormLoading] = useState(false);
-  const [, setShowLeftScroll] = useState(false);
-  const [, setShowRightScroll] = useState(true);
+  const [showLeftScroll, setShowLeftScroll] = useState(false);
+  const [showRightScroll, setShowRightScroll] = useState(true);
   const [showLeftScrollNoTraining, setShowLeftScrollNoTraining] = useState(false);
   const [showRightScrollNoTraining, setShowRightScrollNoTraining] = useState(true);
   const scrollContainerRef = useRef(null);
   const scrollContainerNoTrainingRef = useRef(null);
-
-  // Scroll the laps table wrapper into view (desktop) when a bar is clicked
-  useEffect(() => {
-    if (selectedLapNumber == null || !lapsTableRef.current) return;
-    lapsTableRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selectedLapNumber]);
-
-  // Open the full TrainingForm for lactate entry
-  const handleOpenLactateForm = async (lapIndex) => {
-    if (!trainingDetail) return;
-    setLactateFormLoading(true);
-    try {
-      // Use the laps already loaded in trainingDetail — no second API call needed
-      const laps = Array.isArray(trainingDetail.laps) ? trainingDetail.laps : [];
-
-      // If no laps cached yet, fetch them now
-      let detail = trainingDetail;
-      let fetchedLaps = laps;
-      if (!fetchedLaps.length) {
-        const rawId = trainingDetail.stravaId || trainingDetail.id || '';
-        const stravaId = String(rawId).replace(/^strava-/i, '');
-        if (!stravaId) return;
-        const data = await getStravaActivityDetail(stravaId, stravaDetailAthleteId);
-        detail = { ...trainingDetail, ...(data.detail || {}) };
-        fetchedLaps = data.laps || [];
-      }
-      if (!fetchedLaps.length) return;
-
-      const sportType = detail.sport || detail.sport_type || detail.type || 'bike';
-      const sportLower = String(sportType).toLowerCase();
-      const sport = sportLower.includes('swim') ? 'swim' : sportLower.includes('run') ? 'run' : 'bike';
-      const isRun = sport === 'run';
-      const isSwim = sport === 'swim';
-
-      const fmtDur = (sec) => {
-        const s = Number(sec) || 0;
-        const m = Math.floor(s / 60);
-        const ss = Math.round(s % 60);
-        return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-      };
-
-      const results = fetchedLaps.map((lap, idx) => {
-        const durationSec = Math.round(lap.moving_time ?? lap.elapsed_time ?? lap.totalTimerTime ?? 0);
-        const distM = Math.round(lap.distance ?? lap.totalDistance ?? 0);
-        const speed = lap.average_speed ?? lap.avgSpeed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? lap.enhanced_avg_speed ?? lap.speed ?? 0;
-        const effectiveSpeed = speed > 0.05 ? speed : (distM > 0 && durationSec > 0 ? distM / durationSec : 0);
-
-        let powerValue = '';
-        if (isRun || isSwim) {
-          if (effectiveSpeed > 0.05) {
-            const paceSec = isSwim ? Math.round(100 / effectiveSpeed) : Math.round(1000 / effectiveSpeed);
-            powerValue = fmtDur(paceSec);
-          }
-        } else {
-          const w = lap.average_watts ?? lap.average_power ?? lap.avgPower ?? 0;
-          powerValue = w > 0 ? String(Math.round(w)) : '';
-        }
-
-        const isSwimRest = isSwim && distM < 10;
-        return {
-          interval: idx + 1,
-          power: powerValue,
-          heartRate: String(Math.round(lap.average_heartrate ?? lap.avgHeartRate ?? 0) || ''),
-          lactate: lap.lactate != null ? String(lap.lactate) : '',
-          RPE: '',
-          elevation: (() => {
-            const g = lap.total_elevation_gain ?? lap.elevation_gain ?? null;
-            return g != null && Number.isFinite(Number(g)) ? String(Math.round(Number(g))) : '';
-          })(),
-          duration: fmtDur(durationSec),
-          durationSeconds: durationSec,
-          durationType: 'time',
-          distanceMeters: distM > 0 ? distM : undefined,
-          repeatCount: 1,
-          isRecovery: isSwimRest,
-          isSelected: !isSwimRest,
-        };
-      });
-
-      const activityDate = detail.start_date_local || detail.start_date || detail.date || detail.startDate || new Date();
-      const parsedDate = new Date(activityDate);
-      const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
-
-      const stravaActId = String(detail.id || detail.stravaId || trainingDetail.stravaId || trainingDetail.id || '').replace(/^strava-/i, '');
-
-      const initialData = {
-        sport,
-        type: 'interval',
-        category: detail.category || trainingDetail.category || '',
-        title: detail.linkedTrainingTitle || detail.title || detail.name || 'Untitled Training',
-        customTitle: '',
-        description: detail.description || '',
-        date: dateStr,
-        sourceStravaActivityId: stravaActId,
-        specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
-        results,
-      };
-
-      setLactateFormData({ initialData, focusLap: lapIndex });
-      setLactateFormOpen(true);
-    } catch (err) {
-      console.error('WeeklyCalendar: failed to open lactate form', err);
-    } finally {
-      setLactateFormLoading(false);
-    }
-  };
-
-  const handleLactateFormSubmit = async (formData) => {
-    try {
-      const athleteId = selectedAthleteId || user?._id;
-      const trainingData = { ...formData, athleteId, coachId: user?._id };
-      if (formData._id) {
-        await updateTraining(formData._id, trainingData);
-      } else {
-        await addTraining(trainingData);
-      }
-      setLactateFormOpen(false);
-      setLactateFormData(null);
-      if (onActivityUpdate) onActivityUpdate();
-    } catch (err) {
-      console.error('WeeklyCalendar: failed to save lactate form', err);
-    }
-  };
 
   // If Strava doesn't provide explicit swim laps, generate swim splits from stream records.
   // This keeps the Interval tabs/table usable for swimming too.
@@ -702,25 +771,15 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }, [currentWeek]);
 
-  // Flush in-memory cache when a different user logs in
-  useEffect(() => {
-    const handleLogout = () => setCachedActivities([]);
-    window.addEventListener('userLoggedOut', handleLogout);
-    return () => window.removeEventListener('userLoggedOut', handleLogout);
-  }, []);
-
-  // Load activities from localStorage on mount (scoped to the current athlete so switching athletes
-  // never shows stale data from a different user)
+  // Load activities from localStorage on mount
   useEffect(() => {
     const loadCachedActivities = () => {
       try {
-        const cacheKey = `weeklyCalendar_activities_${selectedAthleteId || 'self'}`;
-        const cacheTimeKey = `weeklyCalendar_cacheTime_${selectedAthleteId || 'self'}`;
-        const cached = localStorage.getItem(cacheKey);
+        const cached = localStorage.getItem('weeklyCalendar_activities');
         if (cached) {
           const parsed = JSON.parse(cached);
           // Check if cache is not too old (e.g., 1 hour)
-          const cacheTime = localStorage.getItem(cacheTimeKey);
+          const cacheTime = localStorage.getItem('weeklyCalendar_cacheTime');
           if (cacheTime && Date.now() - parseInt(cacheTime) < 3600000) {
             setCachedActivities(parsed);
           }
@@ -730,24 +789,22 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
       }
     };
     loadCachedActivities();
-  }, [selectedAthleteId]); // re-run when athlete switches so we load correct athlete's cache
+  }, []);
 
-  // Save activities to localStorage when they change (scoped per athlete)
+  // Save activities to localStorage when they change
   useEffect(() => {
     if (activities && activities.length > 0) {
       try {
-        const cacheKey = `weeklyCalendar_activities_${selectedAthleteId || 'self'}`;
-        const cacheTimeKey = `weeklyCalendar_cacheTime_${selectedAthleteId || 'self'}`;
         // Match dashboard calendar cap so week navigation into history still has data offline
         const limited = activities.slice(0, 2000);
-        localStorage.setItem(cacheKey, JSON.stringify(limited));
-        localStorage.setItem(cacheTimeKey, Date.now().toString());
+        localStorage.setItem('weeklyCalendar_activities', JSON.stringify(limited));
+        localStorage.setItem('weeklyCalendar_cacheTime', Date.now().toString());
         setCachedActivities(limited);
       } catch (error) {
         console.error('Error saving activities to cache:', error);
       }
     }
-  }, [activities, selectedAthleteId]);
+  }, [activities]);
 
   // Use activities prop directly (don't use cache if activities are provided)
   // Cache is only used as fallback when activities prop is empty
@@ -775,6 +832,27 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     }
     return map;
   }, [effectiveActivities]);
+
+  const plannedByDay = useMemo(() => {
+    const map = new Map();
+    plannedWorkouts.forEach(pw => {
+      if (!pw.date) return;
+      const key = pw.date.slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(pw);
+    });
+    return map;
+  }, [plannedWorkouts]);
+
+  const handleRepeatWorkout = useCallback((pw, weeks) => {
+    if (!onCopyPlannedWorkout || !pw.date) return;
+    const base = new Date(pw.date + 'T12:00:00');
+    for (let i = 1; i <= weeks; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() + 7 * i);
+      onCopyPlannedWorkout(pw, d.toISOString().slice(0, 10));
+    }
+  }, [onCopyPlannedWorkout]);
 
   const weekRangeMeta = useMemo(() => {
     if (!weekDays?.length) return { primary: '', secondary: '' };
@@ -832,14 +910,11 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
         totalSec += sec;
         totalDist += dist;
 
-        const rawLabel = String(act.sport || 'Other').trim() || 'Other';
-        // Normalise key to lowercase so "Swim" and "swim" merge into one row
-        const mapKey = rawLabel.toLowerCase();
-        const displayLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
-        if (!sportMap.has(mapKey)) {
-          sportMap.set(mapKey, { sport: displayLabel, count: 0, tss: 0, sec: 0, dist: 0 });
+        const label = normalizeSport(act.sport);
+        if (!sportMap.has(label)) {
+          sportMap.set(label, { sport: label, count: 0, tss: 0, sec: 0, dist: 0 });
         }
-        const row = sportMap.get(mapKey);
+        const row = sportMap.get(label);
         row.count += 1;
         row.tss += tss;
         row.sec += sec;
@@ -1089,229 +1164,225 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   const weekSummaryAside = (compact) => (
-    <div
-      className={
-        compact
-          ? 'min-w-[118px] flex-shrink-0 self-stretch'
-          : 'h-full min-h-0 w-full min-w-[150px] max-w-[190px] self-stretch sm:min-w-[160px] sm:max-w-[210px]'
-      }
-    >
+    <div className={compact ? 'min-w-[112px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
       <WeekSummaryColumn summary={weekSummary} user={user} prevWeekTss={prevWeekSummary.totalTss} compact={compact} />
     </div>
   );
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-2 sm:mb-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Calendar</p>
-          <h3 className="text-sm font-semibold text-gray-800 sm:text-base">Weekly overview</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-text">Weekly Calendar</h3>
           {weekRangeMeta.primary && (
-            <p className="mt-1 truncate text-xs text-gray-500 sm:text-sm" title={weekRangeMeta.primary}>
+            <p className="text-xs sm:text-sm text-lighterText mt-0.5 truncate" title={weekRangeMeta.primary}>
               {weekRangeMeta.primary}
             </p>
           )}
           {weekRangeMeta.secondary && (
-            <p className="mt-0.5 truncate text-[11px] text-gray-400 sm:text-xs" title={weekRangeMeta.secondary}>
+            <p className="text-[10px] sm:text-xs text-lighterText/90 truncate" title={weekRangeMeta.secondary}>
               {weekRangeMeta.secondary}
             </p>
           )}
         </div>
-        <div className="flex flex-shrink-0 items-center gap-0.5 self-end rounded-lg bg-gray-50 p-0.5 sm:self-start">
+        <div className="flex items-center gap-1 sm:gap-1.5 self-end sm:self-start flex-shrink-0">
           <button
-            type="button"
             onClick={prevWeek}
-            className="rounded-md p-1.5 text-gray-600 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm"
-            aria-label="Previous week"
+            className="p-1 sm:p-1.5 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-colors"
           >
-            <ChevronLeftIcon className="h-4 w-4" />
+            <ChevronLeftIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
           </button>
           <button
-            type="button"
             onClick={today}
-            className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-white hover:shadow-sm"
+            className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-white hover:bg-gray-50 text-gray-700 rounded-lg border border-gray-200 shadow-sm transition-colors font-medium"
           >
             Today
           </button>
           <button
-            type="button"
             onClick={nextWeek}
-            className="rounded-md p-1.5 text-gray-600 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm"
-            aria-label="Next week"
+            className="p-1 sm:p-1.5 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-colors"
           >
-            <ChevronRightIcon className="h-4 w-4" />
+            <ChevronRightIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
           </button>
         </div>
       </div>
 
-      {/* MOBILE: Always-visible unified day strip */}
-      {isMobile && (
-        <div className="relative">
-          {showLeftScrollNoTraining && (
-            <button
-              onClick={() => scrollContainerNoTrainingRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}
-              className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white via-white/70 to-transparent z-10 flex items-center justify-start pl-1"
-            >
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                <ChevronLeftIcon className="w-4 h-4 text-primary" />
-              </div>
-            </button>
-          )}
-          {showRightScrollNoTraining && (
-            <button
-              onClick={() => scrollContainerNoTrainingRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}
-              className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white via-white/70 to-transparent z-10 flex items-center justify-end pr-1"
-            >
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                <ChevronRightIcon className="w-4 h-4 text-primary" />
-              </div>
-            </button>
-          )}
-          <div
-            ref={scrollContainerNoTrainingRef}
-            className="overflow-x-auto -mx-2 px-2"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
-          >
-            <div className="flex gap-2 min-w-max pb-1">
-              {weekDays.map((day, idx) => {
-                const key = getLocalDateString(day);
-                const dayActivities = activitiesByDay.get(key) || [];
-                const isToday = isSameDay(day, new Date());
-                return (
-                  <div
-                    key={idx}
-                    className={`bg-white rounded-xl border p-2.5 min-w-[120px] flex-shrink-0 transition-all ${
-                      isToday
-                        ? 'border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/15'
-                        : 'border-gray-100 shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className={`text-lg font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-800'}`}>
-                        {day.getDate()}
+      {selectedTraining ? (
+        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-6'} gap-3 sm:gap-4`}>
+          {/* Calendar - Mobile: Horizontal scroll, Desktop: Vertical Layout */}
+          {isMobile ? (
+            <div className="relative">
+              {/* Left scroll indicator */}
+              {showLeftScroll && (
+                <button
+                  onClick={() => {
+                    if (scrollContainerRef.current) {
+                      scrollContainerRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+                    }
+                  }}
+                  className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 via-white/40 to-transparent z-10 flex items-center justify-start pl-2"
+                >
+                  <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
+                    <ChevronLeftIcon className="w-4 h-4 text-primary" />
+                  </div>
+                </button>
+              )}
+              
+              {/* Right scroll indicator */}
+              {showRightScroll && (
+                <button
+                  onClick={() => {
+                    if (scrollContainerRef.current) {
+                      scrollContainerRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+                    }
+                  }}
+                  className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 via-white/40 to-transparent z-10 flex items-center justify-end pr-2"
+                >
+                  <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
+                    <ChevronRightIcon className="w-4 h-4 text-primary" />
+                  </div>
+                </button>
+              )}
+              
+              <div 
+                ref={scrollContainerRef}
+                className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+              >
+                <div className="flex gap-2 min-w-max">
+                {weekDays.map((day, idx) => {
+                  const key = getLocalDateString(day);
+                  const dayActivities = activitiesByDay.get(key) || [];
+                  const dayPlanned = plannedByDay.get(key) || [];
+                  const isToday = isSameDay(day, new Date());
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`group bg-white rounded-xl border p-2 min-w-[110px] flex-shrink-0 shadow-sm ${
+                        isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div>
+                          <div className={`text-xs font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                            {day.getDate()}
+                          </div>
+                          <div className="text-[9px] text-gray-400 mt-0.5">
+                            {dayNames[idx].substring(0, 3)}
+                          </div>
+                        </div>
+                        {onPlanWorkout && (
+                          <button onClick={() => onPlanWorkout(day)}
+                            className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100"
+                            title="Plan workout">
+                            <PlusIcon className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
-                      <div className={`text-[10px] font-semibold uppercase tracking-wide ${isToday ? 'text-primary/60' : 'text-gray-400'}`}>
-                        {dayNames[idx].substring(0, 3)}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      {dayActivities.length === 0 ? (
-                        <div className="text-[9px] text-gray-300 italic py-0.5">—</div>
-                      ) : (
-                        dayActivities.slice(0, 3).map((act, i) => {
+                      <div className="space-y-1">
+                        {dayPlanned.map((pw, i) => (
+                          <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                            onSelect={onSelectPlannedWorkout}
+                            onStart={onStartWorkout}
+                            onCopy={onCopyPlannedWorkout}
+                            onDelete={onDeletePlannedWorkout}
+                            onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                          />
+                        ))}
+                        {dayActivities.slice(0, 2).map((act, i) => {
                           const activityId = act.id || act._id;
-                          const isSelected = selectedTraining && (
+                          const isActSelected = selectedTraining && (
                             (selectedTraining.id && String(activityId) === String(selectedTraining.id)) ||
                             (selectedTraining._id && String(activityId) === String(selectedTraining._id))
                           );
                           return (
-                            <button
-                              key={i}
+                            <WeekActCard key={i} act={act} isSelected={isActSelected}
                               onClick={() => handleActivityClick(act)}
-                              className={`w-full text-left px-1.5 py-1 rounded-lg border transition-all ${
-                                isSelected
-                                  ? 'border-primary/40 bg-primary/5 ring-1 ring-primary/15 shadow-sm'
-                                  : 'border-gray-100 bg-gray-50/80 hover:bg-white hover:border-gray-200'
-                              }`}
-                              style={act.category ? { borderLeftColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
-                            >
-                              <div className="flex items-center gap-1 min-w-0">
-                                <SportIcon sport={act.sport} className="w-3.5 h-3.5" />
-                                <span className="truncate text-[9px] font-medium text-gray-700">{act.title || act.name || act.sport || 'Activity'}</span>
-                              </div>
-                            </button>
+                              catBadgeStyle={catBadgeStyle} catLabel={catLabel}
+                              compact={true} />
                           );
-                        })
-                      )}
-                      {dayActivities.length > 3 && (
-                        <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 3} more</div>
-                      )}
+                        })}
+                        {dayActivities.length > 2 && (
+                          <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-              {weekSummaryAside(true)}
+                  );
+                })}
+                {weekSummaryAside(true)}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* DESKTOP layout: selected training shows left-day-list + right-detail-panel */}
-      {!isMobile && (selectedTraining ? (
-        <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 sm:gap-4">
-          {/* Desktop day list - left column */}
-          <div className="flex w-full min-w-0 max-w-[min(100%,640px)] flex-col gap-2 lg:col-span-1">
+          ) : (
+          <div className="flex flex-col gap-2 lg:col-span-1 w-full max-w-[min(100%,520px)] min-w-0">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
               const dayActivities = activitiesByDay.get(key) || [];
+              const dayPlanned = plannedByDay.get(key) || [];
               const isToday = isSameDay(day, new Date());
 
               const dayCard = (
                 <div
-                  className={`rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
-                    isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
+                  className={`group bg-white rounded-xl border p-1.5 shadow-sm ${
+                    isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
                   }`}
                 >
-                  <div className="mb-1 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <div className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-gray-800'}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div>
+                      <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-[10px] text-gray-500">
+                      <div className="text-[10px] text-gray-400 mt-0.5">
                         {dayNames[idx].substring(0, 3)}
                       </div>
                     </div>
+                    {onPlanWorkout && (
+                      <button onClick={() => onPlanWorkout(day)}
+                        className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100"
+                        title="Plan workout">
+                        <PlusIcon className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                   <div className="space-y-1">
-                    {dayActivities.length === 0 ? (
-                      <div className="text-[10px] italic text-gray-400">-</div>
-                    ) : (
-                      dayActivities.slice(0, 2).map((act, i) => {
-                        const activityId = act.id || act._id;
-                        const isSelected = selectedTraining && (
-                          (selectedTraining.id && String(activityId) === String(selectedTraining.id)) ||
-                          (selectedTraining._id && String(activityId) === String(selectedTraining._id))
-                        );
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => handleActivityClick(act)}
-                            className={`w-full rounded-lg border px-1.5 py-1 text-left transition-colors ${
-                              isSelected
-                                ? 'border-primary/40 bg-white text-gray-900 shadow-sm ring-1 ring-primary/15'
-                                : 'border-gray-100/80 bg-white/90 text-gray-800 hover:border-gray-200 hover:bg-white'
-                            }`}
-                            style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
-                            title={act.title || act.name || 'Activity'}
-                          >
-                            <div className="mb-0.5 flex items-center justify-between gap-1">
-                              <div className="flex min-w-0 flex-1 items-center gap-1">
-                                <SportIcon sport={act.sport} className="w-4 h-4" />
-                                <span className="truncate text-[10px] font-medium">{act.title || act.name || 'Activity'}</span>
-                              </div>
-                              {act.category && (
-                                <div className="flex-shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold" style={catBadgeStyle(act.category)}>
-                                  {catLabel(act.category).substring(0, 4)}
-                                </div>
-                              )}
-                            </div>
-                            {act.description && (
-                              <div className={`truncate text-[8px] ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>
-                                {act.description}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
+                    {dayPlanned.map((pw, i) => (
+                      <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                        onSelect={onSelectPlannedWorkout}
+                        onStart={onStartWorkout}
+                        onCopy={onCopyPlannedWorkout}
+                        onDelete={onDeletePlannedWorkout}
+                        onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                      />
+                    ))}
+                    {dayActivities.slice(0, 2).map((act, i) => {
+                      const activityId = act.id || act._id;
+                      const isActSelected = selectedTraining && (
+                        (selectedTraining.id && String(activityId) === String(selectedTraining.id)) ||
+                        (selectedTraining._id && String(activityId) === String(selectedTraining._id))
+                      );
+                      return (
+                        <WeekActCard key={i} act={act} isSelected={isActSelected}
+                          onClick={() => handleActivityClick(act)}
+                          catBadgeStyle={catBadgeStyle} catLabel={catLabel}
+                          compact={true} />
+                      );
+                    })}
                     {dayActivities.length > 2 && (
-                      <div className="text-center text-[9px] text-gray-400">
-                        +{dayActivities.length - 2} more
-                      </div>
+                      <div className="text-[9px] text-gray-400 text-center">+{dayActivities.length - 2} more</div>
                     )}
                   </div>
                 </div>
               );
+
+              if (idx === 6) {
+                return (
+                  <div key="sun-summary-row" className="flex flex-row gap-2 w-full min-w-0 items-stretch">
+                    <div className="min-w-0 flex-1">{dayCard}</div>
+                    <div className="w-[min(200px,44%)] shrink-0 self-stretch">{weekSummaryAside(false)}</div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={idx}>
@@ -1320,14 +1391,15 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               );
             })}
           </div>
+          )}
 
-          {/* Training Details - Right Side */}
+          {/* Training Details - Right Side - Much Wider */}
           <AnimatePresence>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2 sm:p-3 md:p-4 lg:col-span-5"
+              className={`bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2 sm:p-3 md:p-4 ${isMobile ? 'w-full mt-3' : 'lg:col-span-5'}`}
             >
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-3 flex-1">
@@ -1375,7 +1447,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                 const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                 const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-
+                                
                                 if (Array.isArray(timeArray)) {
                                   const records = timeArray.map((t, i) => ({
                                     timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1385,14 +1457,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     cadence: cadenceArray[i] || null,
                                     distance: distanceArray[i] || null
                                   }));
-
+                                
                                 const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
                                 const isSwim = sportLower.includes('swim');
                                 let laps = Array.isArray(detail.laps) ? detail.laps : [];
                                 if (isSwim && laps.length === 0) {
                                   laps = generateSwimLapsFromRecords(records);
                                 }
-
+                                  
                                   setTrainingDetail({
                                     ...selectedTraining,
                                     type: 'strava',
@@ -1462,7 +1534,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 flex-1 group">
-                      <h4
+                      <h4 
                         className="text-base font-semibold text-text flex-1 cursor-pointer"
                         onClick={() => {
                           setEditingTitle(trainingDetail?.title || trainingDetail?.name || '');
@@ -1483,7 +1555,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       </button>
                     </div>
                   )}
-
+                  
                   {/* Category */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {isEditingCategory ? (
@@ -1534,7 +1606,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                   const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                   const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-
+                                  
                                   if (Array.isArray(timeArray)) {
                                     const records = timeArray.map((t, i) => ({
                                       timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1551,7 +1623,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     if (isSwim && laps.length === 0) {
                                       laps = generateSwimLapsFromRecords(records);
                                     }
-
+                                    
                                     setTrainingDetail({
                                       ...selectedTraining,
                                       type: 'strava',
@@ -1646,7 +1718,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     )}
                   </div>
                 </div>
-
+                
                 {/* Close button */}
                 <button
                   onClick={() => {
@@ -1669,11 +1741,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               ) : trainingDetail ? (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Training Stats */}
-                  <TrainingStats
-                    training={trainingDetail}
+                  <TrainingStats 
+                    training={trainingDetail} 
                     user={user}
-                    hideCategory
-                    hideTitle
                     onUpdate={async () => {
                       // Reload detail if needed
                       try {
@@ -1691,7 +1761,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                             const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                             const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-
+                            
                             if (Array.isArray(timeArray)) {
                               const records = timeArray.map((t, i) => ({
                                 timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1708,7 +1778,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               if (isSwim && laps.length === 0) {
                                 laps = generateSwimLapsFromRecords(records);
                               }
-
+                              
                               setTrainingDetail({
                                 ...selectedTraining,
                                 type: 'strava',
@@ -1744,10 +1814,110 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     }}
                   />
 
-                  {/* Laps Table */}
-                  {trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                    <div className="mt-3 sm:mt-4" ref={lapsTableRef}>
-                          <LapsTable
+                  {/* Chart Toggle */}
+                  {(trainingDetail.records && trainingDetail.records.length > 0) || 
+                   (trainingDetail.laps && trainingDetail.laps.length > 0) ? (
+                    <div className="mt-4 sm:mt-6">
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <button
+                          onClick={() => setChartView('training')}
+                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                            chartView === 'training'
+                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
+                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
+                          }`}
+                        >
+                          Training Chart
+                        </button>
+                        <button
+                          onClick={() => setChartView('interval')}
+                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                            chartView === 'interval'
+                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
+                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
+                          }`}
+                        >
+                          Interval Chart
+                        </button>
+                      </div>
+
+                      {/* Training Chart */}
+                      {chartView === 'training' && trainingDetail.records && trainingDetail.records.length > 0 && (
+                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
+                          <TrainingChart 
+                            training={trainingDetail} 
+                            userProfile={userProfile}
+                            user={user}
+                          />
+                        </div>
+                      )}
+
+                      {/* Interval Chart */}
+                      {chartView === 'interval' && trainingDetail.laps && trainingDetail.laps.length > 0 && (
+                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
+                          {/* Selected lap info (like on FitAnalysis) */}
+                          {(() => {
+                            if (!selectedLapNumber) return null;
+                            const lap = trainingDetail.laps.find(
+                              (l, idx) =>
+                                String(l.lapNumber ?? idx + 1) === String(selectedLapNumber)
+                            );
+                            if (!lap) return null;
+                            return (
+                              <div className="mb-2 px-1 text-xs sm:text-sm text-gray-100 flex flex-wrap items-center gap-2">
+                                <span className="font-medium">
+                                  Lap {lap.lapNumber ?? trainingDetail.laps.indexOf(lap) + 1}
+                                </span>
+                                {lap.duration != null && (
+                                  <span className="text-gray-300">
+                                    Time: {Math.round(lap.duration)} s
+                                  </span>
+                                )}
+                                {lap.distance != null && (
+                                  <span className="text-gray-300">
+                                    Dist: {formatDistanceForUser(Number(lap.distance), user)}
+                                  </span>
+                                )}
+                                {lap.avgPower != null && (
+                                  <span className="text-gray-300">
+                                    Power: {Math.round(lap.avgPower)} W
+                                  </span>
+                                )}
+                                {lap.avgPace != null && (
+                                  <span className="text-gray-300">
+                                    Pace: {lap.avgPace}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          <IntervalChart 
+                            laps={trainingDetail.laps}
+                            sport={trainingDetail.sport || 'cycling'}
+                            user={user}
+                            selectedLapNumber={selectedLapNumber}
+                            onSelectLapNumber={setSelectedLapNumber}
+                          />
+                        </div>
+                      )}
+
+                      {chartView === 'training' && (!trainingDetail.records || trainingDetail.records.length === 0) && (
+                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                          Training has no records data to display chart
+                        </div>
+                      )}
+
+                      {chartView === 'interval' && (!trainingDetail.laps || trainingDetail.laps.length === 0) && (
+                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                          Training has no intervals (laps) to display chart
+                        </div>
+                      )}
+
+                      {/* Laps Table - Show for both training and interval views if laps exist */}
+                      {trainingDetail.laps && trainingDetail.laps.length > 0 && (
+                        <div className="mt-3 sm:mt-4">
+                          <LapsTable 
                             training={trainingDetail}
                             onUpdate={async () => {
                               // Reload detail if needed
@@ -1765,7 +1935,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                     const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                     const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-
+                                    
                                     if (Array.isArray(timeArray)) {
                                       const records = timeArray.map((t, i) => ({
                                         timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1782,7 +1952,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                       if (isSwim && laps.length === 0) {
                                         laps = generateSwimLapsFromRecords(records);
                                       }
-
+                                      
                                       setTrainingDetail({
                                         ...selectedTraining,
                                         type: 'strava',
@@ -1814,19 +1984,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             user={user}
                             selectedLapNumber={selectedLapNumber}
                             onSelectLapNumber={setSelectedLapNumber}
-                            onOpenLactateForm={handleOpenLactateForm}
                           />
                         </div>
                       )}
-
-                  {/* Comments */}
-                  {commentTrainingId && (
-                    <TrainingComments
-                      key={commentTrainingId}
-                      trainingId={commentTrainingId}
-                      trainingType={commentTrainingType}
-                      isMobile={false}
-                    />
+                    </div>
+                  ) : (
+                    <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                      Training has no data to display charts (no records or laps)
+                    </div>
                   )}
                 </div>
               ) : (
@@ -1838,391 +2003,163 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
           </AnimatePresence>
         </div>
       ) : (
-        /* Desktop no-training: 7-col grid */
-        <div className="grid w-full min-w-0 gap-2 sm:gap-3 [grid-template-columns:repeat(7,minmax(0,1fr))_minmax(10.5rem,0.95fr)]">
+        /* Calendar - Mobile: Horizontal scroll, Desktop: Grid Layout */
+        isMobile ? (
+          <div className="relative">
+            {/* Left scroll indicator */}
+            {showLeftScrollNoTraining && (
+              <button
+                onClick={() => {
+                  if (scrollContainerNoTrainingRef.current) {
+                    scrollContainerNoTrainingRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+                  }
+                }}
+                className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 via-white/40 to-transparent z-10 flex items-center justify-start pl-2"
+              >
+                <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
+                  <ChevronLeftIcon className="w-4 h-4 text-primary" />
+                </div>
+              </button>
+            )}
+            
+            {/* Right scroll indicator */}
+            {showRightScrollNoTraining && (
+              <button
+                onClick={() => {
+                  if (scrollContainerNoTrainingRef.current) {
+                    scrollContainerNoTrainingRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+                  }
+                }}
+                className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 via-white/40 to-transparent z-10 flex items-center justify-end pr-2"
+              >
+                <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
+                  <ChevronRightIcon className="w-4 h-4 text-primary" />
+                </div>
+              </button>
+            )}
+            
+            <div 
+              ref={scrollContainerNoTrainingRef}
+              className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="flex gap-2 min-w-max">
           {weekDays.map((day, idx) => {
             const key = getLocalDateString(day);
             const dayActivities = activitiesByDay.get(key) || [];
+            const dayPlanned = plannedByDay.get(key) || [];
             const isToday = isSameDay(day, new Date());
 
             return (
               <div
                 key={idx}
-                className={`min-w-0 rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
-                  isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
+                className={`group bg-white rounded-xl border p-2 min-w-[130px] flex-shrink-0 shadow-sm ${
+                  isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
                 }`}
               >
-                <div className="flex flex-col items-center mb-2">
-                  <div className={`text-base font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
-                    {day.getDate()}
+                <div className="flex items-center justify-between mb-1.5">
+                  <div>
+                    <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                      {day.getDate()}
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {dayNames[idx].substring(0, 3)}
+                    </div>
                   </div>
-                  <div className="text-xs text-lighterText">
-                    {dayNames[idx]}
-                  </div>
+                  {onPlanWorkout && (
+                    <button onClick={() => onPlanWorkout(day)}
+                      className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100"
+                      title="Plan workout">
+                      <PlusIcon className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-1.5">
-                  {dayActivities.length === 0 ? (
-                    <div className="text-xs text-lighterText italic text-center">-</div>
-                  ) : (
-                    dayActivities.map((act, i) => {
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => handleActivityClick(act)}
-                          className="w-full rounded-lg border border-gray-100/90 bg-white/90 px-2 py-1.5 text-left text-gray-800 transition-colors hover:border-gray-200 hover:bg-white"
-                          style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
-                          title={act.title || act.name || 'Activity'}
-                        >
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            <div className="flex items-center gap-1 flex-1 min-w-0">
-                              <SportIcon sport={act.sport} className="w-5 h-5" />
-                              <span className="truncate font-medium text-xs">{act.title || act.name || 'Activity'}</span>
-                            </div>
-                            {act.category && (
-                              <div className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
-                                {catLabel(act.category)}
-                              </div>
-                            )}
-                          </div>
-                          {act.description && (
-                            <div className="text-[9px] text-lighterText truncate">
-                              {act.description}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })
+                <div className="space-y-1">
+                  {dayPlanned.map((pw, i) => (
+                    <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                      onSelect={onSelectPlannedWorkout}
+                      onStart={onStartWorkout}
+                      onCopy={onCopyPlannedWorkout}
+                      onDelete={onDeletePlannedWorkout}
+                      onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                    />
+                  ))}
+                  {dayActivities.slice(0, 2).map((act, i) => (
+                    <WeekActCard key={i} act={act} isSelected={false}
+                      onClick={() => handleActivityClick(act)}
+                      catBadgeStyle={catBadgeStyle} catLabel={catLabel}
+                      compact={true} />
+                  ))}
+                  {dayActivities.length > 2 && (
+                    <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
                   )}
                 </div>
               </div>
             );
           })}
-          <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
-        </div>
-      ))}
-
-      {/* MOBILE: Training detail bottom-sheet portal */}
-      {isMobile && selectedTraining && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex flex-col justify-end">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={closeSheet}
-          />
-          {/* Sheet panel */}
-          <motion.div
-            drag="y"
-            dragControls={sheetDragControls}
-            dragListener={false}
-            dragConstraints={{ top: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
-            onDragEnd={(_, info) => {
-              if (info.offset.y > 80 || info.velocity.y > 400) closeSheet();
-            }}
-            className="relative z-10 bg-white rounded-t-2xl shadow-2xl flex flex-col"
-            style={{ maxHeight: '90dvh' }}
-          >
-            {/* Drag handle — touch here to swipe-to-close */}
-            <div
-              className="shrink-0 pt-3 pb-1 flex justify-center cursor-grab active:cursor-grabbing touch-none"
-              onPointerDown={(e) => sheetDragControls.start(e)}
-            >
-              <div className="w-10 h-1 bg-gray-200 rounded-full" />
-            </div>
-            {/* Header */}
-            <div className="shrink-0 px-4 pb-3 border-b border-gray-100">
-              <div className="flex items-start gap-3">
-                <SportIcon sport={trainingDetail?.sport || selectedTraining?.sport} className="w-9 h-9 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  {/* Title */}
-                  {isEditingTitle ? (
-                    <div className="flex items-center gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white"
-                        autoFocus
-                      />
-                      <button
-                        onClick={async () => {
-                          try {
-                            setSaving(true);
-                            const title = editingTitle.trim();
-                            if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                              await updateFitTraining(trainingDetail._id, { title });
-                              const detail = await getFitTraining(trainingDetail._id);
-                              setTrainingDetail({ ...detail, type: 'fit' });
-                              setSelectedTraining(prev => prev ? { ...prev, title, titleManual: title } : null);
-                              if (onActivityUpdate) onActivityUpdate({ type: 'fit', _id: trainingDetail._id, id: `fit-${trainingDetail._id}`, title, titleManual: title });
-                            } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                              await updateStravaActivity(trainingDetail.id, { title });
-                              setSelectedTraining(prev => prev ? { ...prev, title, titleManual: title, name: title } : null);
-                              if (onActivityUpdate) onActivityUpdate({ type: 'strava', id: trainingDetail.id, stravaId: trainingDetail.id, title, titleManual: title, name: title });
-                            }
-                            setIsEditingTitle(false);
-                          } catch (error) { console.error('Error saving title:', error); }
-                          finally { setSaving(false); }
-                        }}
-                        disabled={saving}
-                        className="shrink-0 p-1.5 text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
-                      >
-                        <CheckIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => { setIsEditingTitle(false); setEditingTitle(trainingDetail?.title || trainingDetail?.name || ''); }}
-                        className="shrink-0 p-1.5 text-gray-400 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                      >
-                        <XMarkIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <h3
-                      className="text-base font-bold text-gray-900 mb-2 cursor-pointer"
-                      onClick={() => { setEditingTitle(trainingDetail?.title || trainingDetail?.name || ''); setIsEditingTitle(true); }}
-                    >
-                      {trainingDetail?.linkedTrainingTitle || trainingDetail?.title || trainingDetail?.name || selectedTraining?.title || selectedTraining?.name || 'Training'}
-                    </h3>
-                  )}
-                  {/* Category */}
-                  {isEditingCategory ? (
-                    <div className="flex items-center gap-1.5">
-                      <select
-                        value={editingCategory}
-                        onChange={(e) => setEditingCategory(e.target.value)}
-                        className="flex-1 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        autoFocus
-                      >
-                        <option value="">None</option>
-                        <option value="endurance">Endurance</option>
-                        <option value="tempo">Tempo</option>
-                        <option value="threshold">Threshold</option>
-                        <option value="vo2max">VO2max</option>
-                        <option value="anaerobic">Anaerobic</option>
-                        <option value="recovery">Recovery</option>
-                      </select>
-                      <button
-                        onClick={async () => {
-                          try {
-                            setSaving(true);
-                            const category = editingCategory || null;
-                            if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                              await updateFitTraining(trainingDetail._id, { category });
-                              const detail = await getFitTraining(trainingDetail._id);
-                              setTrainingDetail({ ...detail, type: 'fit' });
-                              if (onActivityUpdate) onActivityUpdate({ type: 'fit', _id: trainingDetail._id, id: `fit-${trainingDetail._id}`, category });
-                            } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                              await updateStravaActivity(trainingDetail.id, { category: category || null });
-                              if (onActivityUpdate) onActivityUpdate({ type: 'strava', id: trainingDetail.id, stravaId: trainingDetail.id, category });
-                            }
-                            setIsEditingCategory(false);
-                          } catch (error) { console.error('Error saving category:', error); }
-                          finally { setSaving(false); }
-                        }}
-                        disabled={saving}
-                        className="shrink-0 p-1.5 text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
-                      >
-                        <CheckIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => { setIsEditingCategory(false); setEditingCategory(trainingDetail?.category || ''); }}
-                        className="shrink-0 p-1.5 text-gray-400 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                      >
-                        <XMarkIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setEditingCategory(trainingDetail?.category || ''); setIsEditingCategory(true); }}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer"
-                      style={catBadgeStyle(trainingDetail?.category)}
-                    >
-                      {trainingDetail?.category ? catLabel(trainingDetail.category) : '+ Category'}
-                    </button>
-                  )}
-                </div>
-                {/* Close button */}
-                <button
-                  onClick={() => {
-                    setSelectedTraining(null);
-                    setTrainingDetail(null);
-                    setIsEditingTitle(false);
-                    setIsEditingCategory(false);
-                  }}
-                  className="shrink-0 p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
-                >
-                  <XMarkIcon className="w-5 h-5" />
-                </button>
+              {weekSummaryAside(true)}
               </div>
             </div>
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto overscroll-contain">
-              {loadingDetail ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                </div>
-              ) : trainingDetail ? (
-                <div className="p-4 space-y-4">
-                  <TrainingStats
-                    training={trainingDetail}
-                    user={user}
-                    hideCategory
-                    hideTitle
-                    onUpdate={async () => {
-                      try {
-                        if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                          const detail = await getFitTraining(trainingDetail._id);
-                          setTrainingDetail({ ...detail, type: 'fit' });
-                        } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                          const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
-                          if (detail.detail && detail.streams) {
-                            const startDate = new Date(detail.detail.start_date);
-                            const timeArray = detail.streams.time?.data || detail.streams.time || [];
-                            const wattsArray = detail.streams.watts?.data || detail.streams.watts || [];
-                            const heartrateArray = detail.streams.heartrate?.data || detail.streams.heartrate || [];
-                            const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
-                            const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
-                            const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                            if (Array.isArray(timeArray)) {
-                              const records = timeArray.map((t, i) => ({
-                                timestamp: new Date(startDate.getTime() + (t * 1000)),
-                                power: wattsArray[i] || null,
-                                heartRate: heartrateArray[i] || null,
-                                speed: velocityArray[i] || null,
-                                cadence: cadenceArray[i] || null,
-                                distance: distanceArray[i] || null
-                              }));
-                              const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
-                              const isSwim = sportLower.includes('swim');
-                              let laps = Array.isArray(detail.laps) ? detail.laps : [];
-                              if (isSwim && laps.length === 0) laps = generateSwimLapsFromRecords(records);
-                              setTrainingDetail({
-                                ...selectedTraining, type: 'strava', records, laps,
-                                totalElapsedTime: detail.detail.elapsed_time || 0,
-                                totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
-                                totalDistance: detail.detail.distance || 0,
-                                avgPower: detail.detail.average_watts || null, maxPower: detail.detail.max_watts || null,
-                                avgHeartRate: detail.detail.average_heartrate || null, maxHeartRate: detail.detail.max_heartrate || null,
-                                avgSpeed: detail.detail.average_speed || null, maxSpeed: detail.detail.max_speed || null,
-                                avgCadence: detail.detail.average_cadence || null, maxCadence: detail.detail.max_cadence || null,
-                                sport: trainingDetail.sport || detail.detail.type || 'cycling',
-                                title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
-                                linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
-                                category: detail.category || trainingDetail.category || ''
-                              });
-                            } else {
-                              setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
-                            }
-                          } else {
-                            setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
-                          }
-                        }
-                      } catch (error) { console.error('Error reloading training detail:', error); }
-                    }}
-                  />
-                  {trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                    <LapsTable
-                      training={trainingDetail}
-                      onUpdate={async () => {
-                        try {
-                          if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                            const detail = await getFitTraining(trainingDetail._id);
-                            setTrainingDetail({ ...detail, type: 'fit' });
-                          } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                            const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
-                            if (detail.detail && detail.streams) {
-                              const startDate = new Date(detail.detail.start_date);
-                              const timeArray = detail.streams.time?.data || detail.streams.time || [];
-                              const wattsArray = detail.streams.watts?.data || detail.streams.watts || [];
-                              const heartrateArray = detail.streams.heartrate?.data || detail.streams.heartrate || [];
-                              const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
-                              const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
-                              const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                              if (Array.isArray(timeArray)) {
-                                const records = timeArray.map((t, i) => ({
-                                  timestamp: new Date(startDate.getTime() + (t * 1000)),
-                                  power: wattsArray[i] || null,
-                                  heartRate: heartrateArray[i] || null,
-                                  speed: velocityArray[i] || null,
-                                  cadence: cadenceArray[i] || null,
-                                  distance: distanceArray[i] || null
-                                }));
-                                const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
-                                const isSwim = sportLower.includes('swim');
-                                let laps = Array.isArray(detail.laps) ? detail.laps : [];
-                                if (isSwim && laps.length === 0) laps = generateSwimLapsFromRecords(records);
-                                setTrainingDetail({
-                                  ...selectedTraining, type: 'strava', records, laps,
-                                  totalElapsedTime: detail.detail.elapsed_time || 0,
-                                  totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
-                                  totalDistance: detail.detail.distance || 0,
-                                  avgPower: detail.detail.average_watts || null, maxPower: detail.detail.max_watts || null,
-                                  avgHeartRate: detail.detail.average_heartrate || null, maxHeartRate: detail.detail.max_heartrate || null,
-                                  avgSpeed: detail.detail.average_speed || null, maxSpeed: detail.detail.max_speed || null,
-                                  avgCadence: detail.detail.average_cadence || null, maxCadence: detail.detail.max_cadence || null,
-                                  sport: trainingDetail.sport || detail.detail.type || 'cycling',
-                                  title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
-                                  linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
-                                  category: detail.category || trainingDetail.category || ''
-                                });
-                              }
-                            }
-                          }
-                        } catch (error) { console.error('Error reloading training detail:', error); }
-                      }}
-                      user={user}
-                      selectedLapNumber={selectedLapNumber}
-                      onSelectLapNumber={setSelectedLapNumber}
-                      fullHeight
-                      onOpenLactateForm={handleOpenLactateForm}
-                    />
-                  )}
-                  {/* Comments */}
-                  {commentTrainingId && (
-                    <TrainingComments
-                      key={commentTrainingId}
-                      trainingId={commentTrainingId}
-                      trainingType={commentTrainingType}
-                      isMobile={true}
-                    />
-                  )}
-
-                  {/* Lactate form loading overlay */}
-                  {lactateFormLoading && (
-                    <div className="flex items-center justify-center py-6 gap-2 text-sm text-primary">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
-                      <span>Opening lactate form…</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-400 text-sm">Loading training details...</div>
-              )}
-            </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
-
-      {/* TrainingForm portal for lactate entry — rendered above everything */}
-      {lactateFormOpen && lactateFormData && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => { setLactateFormOpen(false); setLactateFormData(null); }}
-          />
-          <div className="relative z-10 w-full max-w-2xl">
-            <TrainingForm
-              key={lactateFormData.initialData?.sourceStravaActivityId || 'wc-lac'}
-              initialData={lactateFormData.initialData}
-              isEditing={false}
-              initialSelectedLap={lactateFormData.focusLap != null ? lactateFormData.focusLap + 1 : null}
-              onClose={() => { setLactateFormOpen(false); setLactateFormData(null); }}
-              onSubmit={handleLactateFormSubmit}
-            />
           </div>
-        </div>,
-        document.body
+        ) : (
+          <div className="grid grid-cols-8 gap-2 sm:gap-3">
+            {weekDays.map((day, idx) => {
+              const key = getLocalDateString(day);
+              const dayActivities = activitiesByDay.get(key) || [];
+              const dayPlanned = plannedByDay.get(key) || [];
+              const isToday = isSameDay(day, new Date());
+
+              return (
+                <div
+                  key={idx}
+                  className={`group bg-white rounded-xl border p-2 min-w-0 shadow-sm ${
+                    isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className={`text-base font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                        {day.getDate()}
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">
+                        {dayNames[idx].substring(0, 3)}
+                      </div>
+                    </div>
+                    {onPlanWorkout && (
+                      <button
+                        onClick={() => onPlanWorkout(day)}
+                        className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100"
+                        title="Plan workout"
+                      >
+                        <PlusIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {dayPlanned.map((pw, i) => (
+                      <PlannedMiniCard
+                        key={`pw-${i}`}
+                        pw={pw}
+                        onSelect={onSelectPlannedWorkout}
+                        onStart={onStartWorkout}
+                        onCopy={onCopyPlannedWorkout}
+                        onDelete={onDeletePlannedWorkout}
+                        onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                      />
+                    ))}
+                    {dayActivities.map((act, i) => (
+                      <WeekActCard key={i} act={act} isSelected={false}
+                        onClick={() => handleActivityClick(act)}
+                        catBadgeStyle={catBadgeStyle} catLabel={catLabel}
+                        compact={false} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
+          </div>
+        )
       )}
     </div>
   );

@@ -171,7 +171,7 @@ export function useTrainer(options) {
 
   // Debounced ERG setter (200ms)
   const setErgWattsRef = useRef(null);
-  
+
   useEffect(() => {
     setErgWattsRef.current = debounce(async (watts) => {
       if (!adapterRef.current) {
@@ -181,6 +181,27 @@ export function useTrainer(options) {
 
       try {
         setError(null);
+
+        // Auto-request control if the adapter isn't ready to accept ERG commands yet.
+        // This handles cases where requestControl() timed out on initial connect, or where
+        // the trainer silently re-entered 'ready' state after an ERG gap.
+        const adapterState = adapterRef.current.state;
+        if (adapterState && adapterState !== 'controlled' && adapterState !== 'erg_active') {
+          logger.info('setErgWatts: adapter not controlled, auto-requesting control first');
+          try {
+            if (adapterRef.current.requestControl) {
+              await adapterRef.current.requestControl();
+            }
+            if (adapterRef.current.start) {
+              await adapterRef.current.start();
+            }
+            setStatus('controlled');
+          } catch (ctrlErr) {
+            logger.warn('Auto-requestControl in setErgWatts failed:', ctrlErr);
+            // Continue anyway — some trainers (FE-C, Wahoo) don't need explicit control
+          }
+        }
+
         const clamped = clampWatts(watts, capabilities);
         await adapterRef.current.setErgWatts(clamped);
         setStatus('erg_active');
@@ -192,10 +213,12 @@ export function useTrainer(options) {
     }, 200);
   }, [capabilities]);
 
+  // Returns the Promise from the debounced call so callers can await / catch
   const setErgWatts = useCallback((watts) => {
     if (setErgWattsRef.current) {
-      setErgWattsRef.current(watts);
+      return setErgWattsRef.current(watts);
     }
+    return Promise.resolve();
   }, []);
 
   const setResistance = useCallback(async (level) => {

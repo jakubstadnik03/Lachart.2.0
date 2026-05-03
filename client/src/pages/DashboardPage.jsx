@@ -18,6 +18,8 @@ import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalcu
 import DateSelector from "../components/DateSelector";
 import LactateStatistics from "../components/LactateStatistics/LactateStatistics";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
+import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
@@ -212,6 +214,8 @@ export default function DashboardPage() {
   
   // Training calendar data (FIT files and Strava activities)
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
+  const [plannedWorkouts, setPlannedWorkouts] = useState([]);
+  const [planModal, setPlanModal] = useState(null);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
   // work only with a limited number of the most recent trainings to keep calculations fast.
@@ -834,6 +838,56 @@ export default function DashboardPage() {
     return () => clearTimeout(timeoutId);
   }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData, isCoachLikeRole]);
 
+  // ── Planned workouts for dashboard calendar ───────────────────────────────
+  const loadDashboardPlannedWorkouts = useCallback(async () => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const data = await getPlannedWorkouts(opts);
+      setPlannedWorkouts(Array.isArray(data) ? data : []);
+    } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
+
+  useEffect(() => { loadDashboardPlannedWorkouts(); }, [loadDashboardPlannedWorkouts]);
+
+  const handleDashboardPlanSave = useCallback(async (data) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      if (planModal?.workout?._id) {
+        const updated = await updatePlannedWorkout(planModal.workout._id, data);
+        setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
+      } else {
+        const created = await createPlannedWorkout({ ...data, ...opts });
+        setPlannedWorkouts(prev => [...prev, created]);
+      }
+      setPlanModal(null);
+    } catch (_) {}
+  }, [planModal, selectedAthleteId, user?.role]);
+
+  const handleDashboardPlanDelete = useCallback(async (pw) => {
+    if (!window.confirm('Delete this planned workout?')) return;
+    try {
+      await deletePlannedWorkout(pw._id);
+      setPlannedWorkouts(prev => prev.filter(p => p._id !== pw._id));
+      setPlanModal(null);
+    } catch (_) {}
+  }, []);
+
+  const handleDashboardCopyPlan = useCallback(async (pw, newDateStr) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const { _id, status, executionData, ...rest } = pw;
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned', ...opts });
+      setPlannedWorkouts(prev => [...prev, created]);
+    } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (recentTrainings.length > 0) {
       // Get available sports from recent trainings only (keeps UI snappy)
@@ -1065,6 +1119,12 @@ export default function DashboardPage() {
               localStorage.removeItem(cacheKey);
               localStorage.removeItem(cacheTimestampKey);
             }}
+            plannedWorkouts={plannedWorkouts}
+            onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
+            onSelectPlannedWorkout={(pw) => setPlanModal({ date: new Date(pw.date + 'T12:00:00'), workout: pw })}
+            onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
+            onCopyPlannedWorkout={handleDashboardCopyPlan}
+            onDeletePlannedWorkout={handleDashboardPlanDelete}
           />
         </motion.div>
 
@@ -1262,6 +1322,17 @@ export default function DashboardPage() {
         </motion.div>
       </div>
     </motion.div>
+
+    {planModal && (
+      <WorkoutPlanModal
+        date={planModal.date}
+        workout={planModal.workout}
+        athleteId={selectedAthleteId}
+        onSave={handleDashboardPlanSave}
+        onDelete={handleDashboardPlanDelete}
+        onClose={() => setPlanModal(null)}
+      />
+    )}
     </>
   );
 }

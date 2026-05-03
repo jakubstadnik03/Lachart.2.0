@@ -354,10 +354,8 @@ const LactateTestingPage = () => {
         // Transition to recovery outside of state updater
         setIntervalTimer(0);
         setPhase('recovery');
-        const t = trainerRef.current;
-        if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
-          setTimeout(() => Promise.resolve(t.setErgWatts(0)).catch(console.error), 100);
-        }
+        // Send 0W to trainer — adapter keeps its own state, no React status check needed
+        setTimeout(() => Promise.resolve(trainerRef.current?.setErgWatts?.(0)).catch(e => console.warn('ERG 0W failed:', e)), 100);
       } else {
         setIntervalTimer(elapsed);
       }
@@ -371,7 +369,7 @@ const LactateTestingPage = () => {
     setPhase('cooldown');
     const cd = cooldownRef.current;
     const t0 = trainerRef.current;
-    if (t0?.setErgWatts && (t0.status === 'controlled' || t0.status === 'erg_active')) {
+    if (t0?.setErgWatts) {
       setTimeout(() => Promise.resolve(t0.setErgWatts(cd.power)).catch(console.error), 100);
     }
     addNotification(`Cooldown: ${cd.power}W for ${fmtTime(cd.duration)}`, 'info');
@@ -414,7 +412,7 @@ const LactateTestingPage = () => {
     warmupStepRef.current = nextStep;
     const power = getWarmupStepPower(nextStep, wu);
     const t = trainerRef.current;
-    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+    if (t?.setErgWatts) {
       Promise.resolve(t.setErgWatts(power)).catch(console.error);
     }
     addNotification(`Warmup step ${nextStep + 1}/${wu.stepCount}: ${power}W`, 'info');
@@ -431,9 +429,9 @@ const LactateTestingPage = () => {
     startIntervalTimer();
     const firstPower = protocolRef.current.steps[0]?.targetPower ?? protocolRef.current.startPower;
     const t = trainerRef.current;
-    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
+    if (t?.setErgWatts) {
       setTimeout(() => {
-        Promise.resolve(trainerRef.current.setErgWatts(firstPower)).catch(console.error);
+        Promise.resolve(trainerRef.current?.setErgWatts?.(firstPower)).catch(console.error);
         addNotification(`ERG set to ${firstPower}W`, 'info');
       }, 500);
     }
@@ -494,12 +492,9 @@ const LactateTestingPage = () => {
         startIntervalTimer();
 
         // Set ERG power for the new step — use ref so we always get the latest trainer
-        if (nextTargetPower) {
+        if (nextTargetPower != null) {
           setTimeout(() => {
-            const t = trainerRef.current;
-            if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
-              Promise.resolve(t.setErgWatts(nextTargetPower)).catch(console.error);
-            }
+            Promise.resolve(trainerRef.current?.setErgWatts?.(nextTargetPower)).catch(console.error);
           }, 100);
         }
       } else {
@@ -519,8 +514,9 @@ const LactateTestingPage = () => {
     setWattOffset(newOffset);
     const effective = (protocolRef.current.steps[currentStepRef.current]?.targetPower ?? 0) + newOffset;
     const t = trainerRef.current;
-    if (t?.setErgWatts && (t.status === 'controlled' || t.status === 'erg_active')) {
-      Promise.resolve(t.setErgWatts(Math.max(0, effective))).catch(console.error);
+    // Let the adapter validate its own state — don't gate on React status which can lag
+    if (t?.setErgWatts) {
+      Promise.resolve(t.setErgWatts(Math.max(0, effective))).catch(e => console.warn('ERG adjust failed:', e));
     }
   }, []);
 
@@ -554,7 +550,7 @@ const LactateTestingPage = () => {
       setPhase('warmup');
       if (wu.type === 'fixed') {
         // Fixed-power warmup
-        if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+        if (trainer.setErgWatts) {
           setTimeout(() => {
             Promise.resolve(trainer.setErgWatts(wu.power)).catch(console.error);
           }, 500);
@@ -576,7 +572,7 @@ const LactateTestingPage = () => {
       } else {
         // Step-type warmup
         const firstPower = getWarmupStepPower(0, wu);
-        if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+        if (trainer.setErgWatts) {
           setTimeout(() => {
             Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
           }, 500);
@@ -598,7 +594,7 @@ const LactateTestingPage = () => {
       setPhase('work');
       startIntervalTimer();
       const firstPower = protocol.steps[0]?.targetPower ?? protocol.startPower;
-      if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+      if (trainer.setErgWatts) {
         setTimeout(() => {
           Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
           addNotification(`ERG set to ${firstPower}W`, 'info');
@@ -699,7 +695,7 @@ const LactateTestingPage = () => {
     if (intervalTimerRef.current) { clearInterval(intervalTimerRef.current); intervalTimerRef.current = null; }
     setIntervalTimer(0);
     setPhase('recovery');
-    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+    if (trainer.setErgWatts) {
       Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
     }
     setTimeout(() => addNotification('Interval ended. Enter lactate.', 'info'), 0);

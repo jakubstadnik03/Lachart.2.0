@@ -578,13 +578,9 @@ export class FTMSAdapter implements TrainerAdapter {
 
     logger.info(`Setting ERG power to ${clampedWatts}W`);
 
-    // Stop FE-C keepalive if setting to 0
-    if (clampedWatts === 0 && this.fecKeepAliveTimer) {
-      clearInterval(this.fecKeepAliveTimer);
-      this.fecKeepAliveTimer = null;
-      this.fecLastTargetWatts = null;
-      logger.info('FE-C keepalive stopped (power set to 0)');
-    }
+    // Note: do NOT stop FE-C keepalive for 0W — trainer must keep receiving commands
+    // or it exits ERG mode. The keepalive below will update fecLastTargetWatts = 0
+    // and continue sending 0W frames throughout recovery to hold ERG state.
 
     try {
       // Use FTMS control point if available

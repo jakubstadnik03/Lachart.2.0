@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
   ChevronLeftIcon,
@@ -12,7 +12,10 @@ import {
   PlayIcon,
   CheckCircleIcon,
   XMarkIcon,
+  PencilIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
+import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
@@ -113,44 +116,18 @@ function getLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
-// Sport icon component with SVG icons
 const SportIcon = ({ sport, className = "w-4 h-4" }) => {
   if (!sport) return null;
   const s = String(sport).toLowerCase();
-
-  if (s.includes('run')) {
-    return (
-      <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center`}>
-        <img src="/icon/run.svg" alt="Run" className="w-3 h-3" />
-      </div>
-    );
-  }
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) {
-    return (
-      <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center`}>
-        <img src="/icon/bike.svg" alt="Bike" className="w-3 h-3" />
-      </div>
-    );
-  }
-  if (s.includes('swim')) {
-    return (
-      <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center`}>
-        <img src="/icon/swim.svg" alt="Swim" className="w-3 h-3" />
-      </div>
-    );
-  }
-  if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
-    return (
-      <div className={`${className} rounded-full bg-primary/10 p-0.5 flex items-center justify-center`}>
-        <BoltIcon className="w-3 h-3 text-primary" />
-      </div>
-    );
-  }
-  return (
-    <div className={`${className} rounded-full bg-gray-100 p-0.5 flex items-center justify-center`}>
-      <BoltIcon className="w-3 h-3 text-gray-600" />
-    </div>
-  );
+  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail'))
+    return <Footprints className={`${className} text-orange-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual'))
+    return <Bike className={`${className} text-blue-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('swim'))
+    return <WavesLadder className={`${className} text-cyan-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength'))
+    return <Dumbbell className={`${className} text-purple-500 flex-shrink-0`} strokeWidth={2} />;
+  return <ZapIcon className={`${className} text-gray-400 flex-shrink-0`} strokeWidth={2} />;
 };
 
 // ─── Sport color helper ───────────────────────────────────────────────────────
@@ -162,8 +139,62 @@ function sportColor(sport) {
   return '#8b5cf6';
 }
 
+// ─── Compliance helpers ────────────────────────────────────────────────────────
+function sportMatches(pwSport, actSport) {
+  const p = (pwSport || '').toLowerCase();
+  const a = (actSport || '').toLowerCase();
+  if (p === 'bike' && (a.includes('ride') || a.includes('bike') || a.includes('cycle') || a.includes('virtual'))) return true;
+  if (p === 'run'  && a.includes('run')) return true;
+  if (p === 'swim' && a.includes('swim')) return true;
+  if (p === 'walk' && a.includes('walk')) return true;
+  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
+  return p === a;
+}
+
+function getCompliance(plannedSecs, actualSecs) {
+  if (!plannedSecs || !actualSecs) return null;
+  const r = actualSecs / plannedSecs;
+  if (r >= 0.9)  return { color: '#22c55e', bg: '#f0fdf4', label: 'On target',  ring: '#22c55e' };
+  if (r >= 0.75) return { color: '#eab308', bg: '#fefce8', label: 'Good',        ring: '#eab308' };
+  if (r >= 0.55) return { color: '#f97316', bg: '#fff7ed', label: 'Short',       ring: '#f97316' };
+  return           { color: '#ef4444', bg: '#fef2f2', label: 'Missed',       ring: '#ef4444' };
+}
+
+function findCompliance(pw, acts) {
+  if (!acts || acts.length === 0) return null;
+  const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+  if (!plannedSecs) return null;
+  const match = acts.find(a => sportMatches(pw.sport, a.sport || a.type || ''));
+  if (!match) return null;
+  const actualSecs = Number(
+    match.duration || match.moving_time || match.elapsed_time ||
+    match.movingTime || match.totalTimerTime || 0
+  );
+  return getCompliance(plannedSecs, actualSecs);
+}
+
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
-function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false }) {
+function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [repeatOpen, setRepeatOpen] = React.useState(false);
+  const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
+  const menuBtnRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => { if (!e.target.closest('[data-pw-menu]')) { setMenuOpen(false); setRepeatOpen(false); } };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  const openMenu = (e) => {
+    e.stopPropagation();
+    const rect = menuBtnRef.current?.getBoundingClientRect();
+    if (rect) setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setMenuOpen(v => !v);
+    setRepeatOpen(false);
+  };
+
   const sport = (pw.sport || 'bike').toLowerCase();
   const color = SPORT_PLAN_COLORS[sport] || '#767EB5';
   const duration = planStepTotalSecs(pw.steps);
@@ -171,89 +202,241 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const isSkipped   = pw.status === 'skipped';
 
   if (compact) {
-    // tiny card for desktop month cell
+    // ── Match WeekActivityCard visual style ──
+    // planned  → white bg, solid left border in sport color, sport icon, title, duration
+    // compliance hit → left border turns compliance color, subtle tinted bg
+    // completed green → filled green gradient (like selected activity card)
+    const isGreen = compliance?.color === '#22c55e' || (isCompleted && !compliance);
+    const leftBorderColor = isGreen ? '#22c55e' : compliance ? compliance.color : color;
+
     return (
       <div
         className="relative group/plan w-full max-w-full"
-        style={{ minWidth: 0, opacity: isDragging ? 0.4 : 1, transition: 'opacity 0.15s' }}
+        style={{ minWidth: 0, opacity: isDragging ? 0.4 : isSkipped ? 0.45 : 1, transition: 'opacity 0.15s' }}
         draggable={!isCompleted && !isSkipped}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
         <button
           onClick={() => onSelect && onSelect(pw)}
-          className="w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5"
+          className={`w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${
+            isGreen
+              ? 'bg-gradient-to-br from-green-500 to-green-600 border-transparent shadow-md'
+              : compliance
+                ? 'bg-white border-gray-200 shadow-sm hover:bg-gray-50'
+                : 'bg-white border-gray-200 shadow-sm hover:bg-gray-50 hover:shadow-md'
+          }`}
           style={{
-            borderStyle: 'dashed',
-            borderColor: color + '80',
-            backgroundColor: color + '10',
-            color: isSkipped ? '#9ca3af' : color,
-            opacity: isSkipped ? 0.5 : 1,
-            minWidth: 0,
-            overflow: 'hidden',
+            borderLeftColor: leftBorderColor,
+            borderLeftWidth: 3,
+            minWidth: 0, overflow: 'hidden',
             cursor: (!isCompleted && !isSkipped) ? 'grab' : 'pointer',
           }}
           title={pw.title}
         >
-          {isCompleted
-            ? <CheckCircleIcon className="w-3 h-3 flex-shrink-0" style={{ color }} />
-            : <PlayIcon className="w-3 h-3 flex-shrink-0 opacity-70" />}
-          <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {pw.title || 'Planned'}
-          </span>
-          {duration > 0 && <span className="flex-shrink-0 opacity-60 text-[9px]">{fmtPlanDuration(duration)}</span>}
+          {/* Title row — sport icon + title */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            {isGreen
+              ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-white" />
+              : <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
+            }
+            <span
+              className="text-[11px] font-bold truncate flex-1"
+              style={{ color: isGreen ? '#fff' : isSkipped ? '#9ca3af' : '#1e293b' }}
+            >
+              {pw.title || 'Planned'}
+            </span>
+            {/* Compliance dot for non-green matches */}
+            {compliance && !isGreen && (
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
+            )}
+          </div>
+          {/* Duration + stats row */}
+          {(duration > 0 || pw.targetTss > 0) && (
+            <div className="flex items-center gap-2 text-[10px] mt-0.5">
+              {duration > 0 && (
+                <span style={{ color: isGreen ? 'rgba(255,255,255,0.85)' : '#6b7280' }}>
+                  {fmtPlanDuration(duration)}
+                </span>
+              )}
+              {pw.targetTss > 0 && (
+                <>
+                  <span style={{ color: isGreen ? 'rgba(255,255,255,0.4)' : '#d1d5db' }}>·</span>
+                  <span style={{ color: isGreen ? 'rgba(255,255,255,0.85)' : '#6b7280' }}>{pw.targetTss} TSS</span>
+                </>
+              )}
+              {compliance && (
+                <span className="ml-auto text-[9px] font-bold" style={{ color: isGreen ? 'rgba(255,255,255,0.9)' : compliance.color }}>
+                  {compliance.label}
+                </span>
+              )}
+            </div>
+          )}
         </button>
-        {!isCompleted && !isSkipped && onStart && (
-          <button
-            onClick={e => { e.stopPropagation(); onStart(pw); }}
-            title="Start workout"
-            className="absolute top-0.5 right-0.5 hidden group-hover/plan:flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-bold border leading-none z-10"
-            style={{ backgroundColor: color + '20', color, borderColor: color + '60' }}
+        {/* Three-dot menu */}
+        <button
+          ref={menuBtnRef}
+          onClick={openMenu}
+          className="absolute top-0.5 right-0.5 z-20 opacity-0 group-hover/plan:opacity-100 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
+        >
+          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+            <circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/>
+          </svg>
+        </button>
+        {menuOpen && ReactDOM.createPortal(
+          <div
+            data-pw-menu
+            style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+            className="w-40 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 text-sm overflow-hidden"
           >
-            <PlayIcon className="w-2 h-2" /> Start
-          </button>
+            {!repeatOpen ? (
+              <>
+                <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                  onClick={e => { e.stopPropagation(); setMenuOpen(false); onSelect?.(pw); }}>
+                  <PencilIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> Edit
+                </button>
+                {onDuplicate && (
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                    onClick={e => { e.stopPropagation(); setMenuOpen(false); onDuplicate(pw); }}>
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                      <rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M3 12V3h9" strokeLinecap="round"/>
+                    </svg>
+                    Copy
+                  </button>
+                )}
+                {onRepeat && (
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                    onClick={e => { e.stopPropagation(); setRepeatOpen(true); }}>
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                      <path d="M2 8a6 6 0 1 0 6-6" strokeLinecap="round"/><path d="M2 3v5h5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Repeat
+                  </button>
+                )}
+                {!isCompleted && !isSkipped && onStart && (
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                    onClick={e => { e.stopPropagation(); setMenuOpen(false); onStart(pw); }}>
+                    <PlayIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> Start
+                  </button>
+                )}
+                {onDelete && (
+                  <>
+                    <div className="border-t border-gray-100 my-1" />
+                    <button className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2.5 text-red-500 transition-colors"
+                      onClick={e => { e.stopPropagation(); setMenuOpen(false); onDelete(pw); }}>
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                        <path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5L11 4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Delete
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <div className="px-3 py-2">
+                <button className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mb-2 transition-colors"
+                  onClick={e => { e.stopPropagation(); setRepeatOpen(false); }}>
+                  ← Back
+                </button>
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Repeat for N weeks</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {[2, 3, 4, 6, 8, 12].map(w => (
+                    <button key={w}
+                      className="py-1.5 rounded-lg text-xs font-bold text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                      onClick={e => { e.stopPropagation(); setMenuOpen(false); setRepeatOpen(false); onRepeat(pw, w); }}>
+                      {w}×
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>,
+          document.body
         )}
       </div>
     );
   }
 
-  // full card for mobile selected-day view
+  // full card for mobile selected-day view — matches activity card style
+  const isGreenFull = compliance?.color === '#22c55e' || (isCompleted && !compliance);
+  const leftBorderFull = isGreenFull ? '#22c55e' : compliance ? compliance.color : color;
   return (
     <div
-      className="w-full rounded-xl border-2 p-3 transition-all"
-      style={{ borderStyle: 'dashed', borderColor: color + '80', backgroundColor: color + '08' }}
+      className="w-full rounded-xl border border-gray-200 overflow-hidden transition-all bg-white shadow-sm"
+      style={{ borderLeftColor: leftBorderFull, borderLeftWidth: 4 }}
     >
-      <div className="flex items-start gap-3">
-        {pw.sport && SPORT_PLAN_COLORS[pw.sport.toLowerCase()] && (
+      {/* Clickable header — opens edit modal */}
+      <button
+        onClick={() => onSelect && onSelect(pw)}
+        className="w-full text-left p-3 flex items-start gap-3 active:bg-black/5 transition-colors touch-manipulation"
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+      >
+        {pw.sport && (
           <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color + '20' }}>
-            <img src={`/icon/${sport}.svg`} alt={sport} className="w-4 h-4" />
+            <img src={`/icon/${sport}.svg`} alt={sport} className="w-4 h-4" onError={e => { e.target.style.display='none'; }} />
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-semibold text-gray-900 truncate">{pw.title || 'Planned workout'}</span>
-            {isCompleted && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
-            {isSkipped && <span className="text-xs text-gray-400">skipped</span>}
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-semibold text-gray-900 truncate flex-1">{pw.title || 'Planned workout'}</span>
+            {/* Compliance badge */}
+            {compliance && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0"
+                style={{ backgroundColor: compliance.color + '20', color: compliance.color }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: compliance.color }} />
+                {compliance.label}
+              </span>
+            )}
+            {!compliance && isCompleted && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
+            {isSkipped && <span className="text-xs text-gray-400 flex-shrink-0">skipped</span>}
+            {!isCompleted && !isSkipped && (
+              <PencilIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-40" style={{ color }} />
+            )}
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-500">
             {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
             {pw.steps?.length > 0 && <span>{pw.steps.filter(s => !s.isGroupHeader).length} steps</span>}
+            {pw.targetTss > 0 && <span>{pw.targetTss} TSS</span>}
           </div>
           {pw.steps?.length > 0 && (
             <div className="mt-2">
-              <PlanMiniChart steps={pw.steps} color={color} width={120} height={20} />
+              <PlanMiniChart steps={pw.steps} color={color} width={160} height={22} />
             </div>
           )}
         </div>
-      </div>
-      {!isCompleted && !isSkipped && onStart && (
-        <button
-          onClick={() => onStart(pw)}
-          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors"
-          style={{ backgroundColor: color + '20', color, border: `1px solid ${color}60` }}
-        >
-          <PlayIcon className="w-4 h-4" /> Start Workout
-        </button>
+      </button>
+
+      {/* Action buttons row */}
+      {!isSkipped && (
+        <div className="flex border-t" style={{ borderColor: color + '30' }}>
+          {!isCompleted && onSelect && (
+            <button
+              onClick={() => onSelect(pw)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors touch-manipulation min-h-[44px]"
+              style={{ color, backgroundColor: color + '08', WebkitTapHighlightColor: 'transparent' }}
+            >
+              <PencilIcon className="w-3.5 h-3.5" /> Edit
+            </button>
+          )}
+          {isCompleted && onSelect && (
+            <button
+              onClick={() => onSelect(pw)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors touch-manipulation min-h-[44px]"
+              style={{ color, backgroundColor: color + '08', WebkitTapHighlightColor: 'transparent' }}
+            >
+              <CheckCircleIcon className="w-3.5 h-3.5 text-green-500" /> View Results
+            </button>
+          )}
+          {!isCompleted && !isSkipped && onStart && (
+            <button
+              onClick={() => onStart(pw)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors touch-manipulation border-l min-h-[44px]"
+              style={{ color: '#fff', backgroundColor: color, borderColor: color + '40', WebkitTapHighlightColor: 'transparent' }}
+            >
+              <PlayIcon className="w-3.5 h-3.5" /> Start
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -283,7 +466,9 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 
   const handleClick = (e) => {
     if (onActivityClick) {
-      onActivityClick(a, e);
+      // Capture rect immediately — React nullifies e.currentTarget after the handler returns
+      const rect = e.currentTarget ? e.currentTarget.getBoundingClientRect() : null;
+      onActivityClick(a, rect);
     } else {
       onSelect(a);
     }
@@ -350,8 +535,722 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   );
 }
 
+// ─── Lap Chart ───────────────────────────────────────────────────────────────
+function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
+  const W = 600, H = 100, PAD = { t: 14, b: 18, l: 4, r: 4 };
+  const innerW = W - PAD.l - PAD.r;
+  const innerH = H - PAD.t - PAD.b;
+  const GAP = 2;
+
+  // Lap durations — bar widths are proportional to elapsed time
+  const durations = laps.map(l => l.elapsed_time || l.totalElapsedTime || l.duration || 0);
+  const totalDur  = durations.reduce((s, d) => s + d, 0) || 1;
+
+  // Primary metric per lap (height)
+  const primary = laps.map((lap, i) => {
+    const dur = durations[i];
+    const d   = Number(lap.distance || 0);
+    if (isBike) return Number(lap.average_watts || lap.avgPower || 0);
+    if (isRun && d > 0 && dur > 0) return dur / (d / 1000); // sec/km — lower is faster
+    return dur;
+  });
+
+  const hrVals = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0));
+  const hasHr  = hrVals.some(v => v > 0);
+  const hasLa  = laps.some(l => l.lactate != null || l.lactateValue != null);
+
+  const validP = primary.filter(Boolean);
+  const pMax = Math.max(...validP, 1);
+  const pMin = isRun ? Math.min(...validP, pMax) : 0;
+  const pRange = pMax - pMin || 1;
+
+  const hrMax = hasHr ? Math.max(...hrVals.filter(Boolean), 1) : 1;
+  const hrMin = hasHr ? Math.min(...hrVals.filter(Boolean), hrMax) : 0;
+  const hrRange = hrMax - hrMin || 1;
+
+  const laVals = hasLa ? laps.map(l => { const v = l.lactate ?? l.lactateValue; return v != null ? Number(v) : null; }) : [];
+  const laMax  = hasLa ? Math.max(...laVals.filter(v => v != null), 1) : 1;
+  const laMin  = hasLa ? Math.min(...laVals.filter(v => v != null), laMax) : 0;
+  const laRange = laMax - laMin || 1;
+
+  // Compute x-position and width for each bar
+  const totalGapW = GAP * (laps.length - 1);
+  const availW = innerW - totalGapW;
+  const barXW = laps.map((_, i) => {
+    const bw = (durations[i] / totalDur) * availW;
+    const x  = PAD.l + laps.slice(0, i).reduce((s, _, j) => s + (durations[j] / totalDur) * availW + GAP, 0);
+    return { x, bw };
+  });
+
+  // Bar height: for run/pace, lower sec/km = faster → taller bar (invert)
+  const barH = (val) => {
+    if (!val) return 3;
+    const norm = isRun ? (pMax - val) / pRange : (val - pMin) / pRange;
+    return Math.max(3, norm * innerH);
+  };
+  const yBar = (val) => PAD.t + innerH - barH(val);
+
+  // HR line
+  const hrY = (v) => v > 0 ? PAD.t + innerH - ((v - hrMin) / hrRange) * innerH : null;
+  const hrPoints = laps.map((_, i) => {
+    const { x, bw } = barXW[i];
+    const cy = hrY(hrVals[i]);
+    return cy != null ? `${x + bw / 2},${cy}` : null;
+  }).filter(Boolean).join(' ');
+
+  const laY = (v) => v != null ? PAD.t + innerH - ((v - laMin) / laRange) * innerH : null;
+
+  const fmtPrimary = (val) => {
+    if (!val) return '';
+    if (isBike) return `${Math.round(val)}W`;
+    if (isRun) { const m = Math.floor(val / 60); return `${m}:${String(Math.round(val % 60)).padStart(2, '0')}`; }
+    return '';
+  };
+
+  return (
+    <div className="px-4 pb-3">
+      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-3">
+        <span>{isBike ? 'Power per lap (width = duration)' : isRun ? 'Pace per lap (width = duration)' : 'Laps (width = duration)'}</span>
+        {hasHr && <span className="text-red-400">— HR</span>}
+        {hasLa && <span style={{ color: '#7c3aed' }}>· La</span>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 100 }}>
+        {laps.map((lap, i) => {
+          const { x, bw } = barXW[i];
+          const val = primary[i];
+          const bh  = barH(val);
+          const by  = yBar(val);
+          const sel = selectedLap === i;
+          const lapNum = lap.lapNumber ?? (i + 1);
+          return (
+            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
+              {/* Bar */}
+              <rect
+                x={x} y={by} width={Math.max(bw, 1)} height={bh}
+                rx={2}
+                fill={sel ? color : color + '70'}
+              />
+              {/* Full-height click zone */}
+              <rect x={x} y={PAD.t} width={Math.max(bw, 1)} height={innerH} rx={2} fill="transparent" />
+              {/* Value label above bar (when selected or wide enough) */}
+              {val > 0 && (bw > 28 || sel) && (
+                <text
+                  x={x + bw / 2} y={by - 2}
+                  textAnchor="middle" fontSize={sel ? 8 : 7}
+                  fill={sel ? color : color + 'cc'} fontWeight={sel ? 'bold' : 'normal'}
+                >
+                  {fmtPrimary(val)}
+                </text>
+              )}
+              {/* Lap number — only if wide enough */}
+              {bw > 14 && (
+                <text
+                  x={x + bw / 2} y={H - 4}
+                  textAnchor="middle" fontSize={7}
+                  fill={sel ? color : '#9ca3af'}
+                  fontWeight={sel ? 'bold' : 'normal'}
+                >
+                  {lapNum}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {/* HR line */}
+        {hasHr && hrPoints && (
+          <polyline points={hrPoints} fill="none" stroke="#ef4444" strokeWidth={1.5} strokeLinejoin="round" opacity={0.8} />
+        )}
+        {/* HR dots */}
+        {hasHr && hrVals.map((v, i) => {
+          const { x, bw } = barXW[i];
+          const cy = hrY(v);
+          if (!cy) return null;
+          return <circle key={i} cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3 : 2} fill="#ef4444" opacity={0.9} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)} />;
+        })}
+        {/* Lactate dots */}
+        {hasLa && laVals.map((v, i) => {
+          if (v == null) return null;
+          const { x, bw } = barXW[i];
+          const cy = laY(v);
+          return (
+            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
+              <circle cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3.5 : 2.5} fill="#7c3aed" opacity={0.9} />
+              {selectedLap === i && (
+                <text x={x + bw / 2 + 4} y={cy - 2} fontSize={7} fill="#7c3aed" fontWeight="bold">{v.toFixed(1)}</text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── Activity Full Modal ──────────────────────────────────────────────────────
+function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
+  const a = activity;
+  const color = sportColor(a.sport);
+  const sport = String(a.sport || '').toLowerCase();
+  const isRun  = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
+  const isSwim = sport.includes('swim');
+  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike');
+
+  // Full detail loaded async (for laps)
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setDetailLoading(true);
+      try {
+        const id = String(a.id || a._id || '');
+        let data = null;
+        if (id.startsWith('strava-')) {
+          const { getStravaActivityDetail } = await import('../../services/api.js');
+          const raw = await getStravaActivityDetail(id.replace('strava-', ''));
+          data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual };
+        } else if (id.startsWith('fit-')) {
+          const { getFitTraining } = await import('../../services/api.js');
+          data = await getFitTraining(id.replace('fit-', ''));
+        } else if (id.startsWith('regular-')) {
+          const { getTrainingById } = await import('../../services/api.js');
+          data = await getTrainingById(id.replace('regular-', ''));
+        } else if (id) {
+          const { getFitTraining } = await import('../../services/api.js');
+          data = await getFitTraining(id);
+        }
+        if (!cancelled) setDetail(data);
+      } catch (e) {
+        console.warn('ActivityFullModal: failed to load detail', e);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [a.id, a._id]);
+
+  // Merge summary + full detail — detail wins for laps/stats when available
+  const merged = detail ? { ...a, ...detail } : a;
+
+  // Lap selection
+  const [selectedLap, setSelectedLap] = useState(null);
+  const lapRowRefs = useRef([]);
+
+  // Planned workout editing state
+  const [plannedWorkout, setPlannedWorkout] = useState(initialPlannedWorkout || null);
+  const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
+
+  // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
+  const parseDurationToMinutes = (raw) => {
+    const s = String(raw).trim().toLowerCase();
+    if (!s) return null;
+    if (s.includes(':')) {
+      const parts = s.split(':').map(Number);
+      if (parts.length === 2) return parts[0] * 60 + (parts[1] || 0);
+      if (parts.length === 3) return parts[0] * 60 + (parts[1] || 0) + Math.round((parts[2] || 0) / 60);
+      return null;
+    }
+    if (s.endsWith('h')) return parseFloat(s) * 60;
+    if (s.endsWith('m')) return parseFloat(s);
+    const n = parseFloat(s);
+    if (isNaN(n)) return null;
+    // ≤9 plain number → hours (user typed "2" → 2 h)
+    return n <= 9 ? n * 60 : n;
+  };
+  const formatMinutes = (mins) => {
+    if (!mins) return '';
+    const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+    return `${h}:${String(m).padStart(2, '0')}`;
+  };
+
+  // Smart distance parser: "10" → "10 km", "500m" → "0.5 km"
+  const parseDistanceToKm = (raw) => {
+    const s = String(raw).trim().toLowerCase();
+    if (!s) return null;
+    if (s.endsWith('km')) return parseFloat(s);
+    if (s.endsWith('m')) return parseFloat(s) / 1000;
+    const n = parseFloat(s);
+    if (isNaN(n)) return null;
+    // If > 500 assume metres, else km
+    return n > 500 ? n / 1000 : n;
+  };
+
+  const initDurMins = initialPlannedWorkout?.plannedDuration
+    ? Math.round(initialPlannedWorkout.plannedDuration / 60) : null;
+  const initDistKm = initialPlannedWorkout?.plannedDistance
+    ? Number(initialPlannedWorkout.plannedDistance) : null;
+
+  const [planForm, setPlanForm] = useState({
+    title: initialPlannedWorkout?.title || '',
+    description: initialPlannedWorkout?.description || '',
+    durationDisplay: initDurMins ? formatMinutes(initDurMins) : '',
+    durationMins: initDurMins,
+    distanceDisplay: initDistKm ? String(initDistKm) : '',
+    distanceKm: initDistKm,
+    targetTss: initialPlannedWorkout?.targetTss ? String(initialPlannedWorkout.targetTss) : '',
+    notes: initialPlannedWorkout?.notes || '',
+  });
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  // Escape to close
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  // ── Activity data (use merged = summary + full detail) ──
+  const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
+  const dur = Number(merged.duration || merged.elapsed_time || merged.movingTime || merged.moving_time || merged.totalTimerTime || merged.totalElapsedTime || merged.elapsedTime || 0);
+  const dist = Number(merged.distance || merged.totalDistance || 0);
+  const tss  = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
+  const hrTss = Number(merged.hrTSS || merged.hrTss || 0);
+  const power = Number(merged.normalizedPower || merged.avgPower || merged.averagePower || merged.average_watts || 0);
+  const np    = Number(merged.normalizedPower || 0);
+  const hr    = Number(merged.averageHeartRate || merged.average_heartrate || merged.avgHR || merged.avgHeartRate || 0);
+  const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0);
+  const cadence   = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0);
+  const avgSpeed  = Number(merged.avgSpeed || merged.averageSpeed || merged.average_speed || 0);
+  const actDate   = merged.date || merged.timestamp || merged.startDate || merged.start_time;
+  const dateStr   = actDate ? new Date(actDate).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : '';
+  const notes = merged.description || merged.notes || '';
+
+  const fmtDur = (s) => {
+    if (!s) return '—';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.floor(s%60);
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+  };
+  const fmtDist = (d) => d >= 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`;
+  let paceStr = null;
+  if (isRun && avgSpeed > 0) {
+    const s = 1000/avgSpeed;
+    paceStr = `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')} /km`;
+  } else if (isSwim && avgSpeed > 0) {
+    const s = 100/avgSpeed;
+    paceStr = `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')} /100m`;
+  }
+
+  // Laps
+  const laps = Array.isArray(merged.laps) ? merged.laps : [];
+  const fmtLapDur = (s) => {
+    if (!s) return '—';
+    const m = Math.floor(s/60), sec = Math.floor(s%60);
+    return `${m}:${String(sec).padStart(2,'0')}`;
+  };
+
+  // Planned workout data
+  const plannedDur  = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
+  const plannedTss  = plannedWorkout ? Number(plannedWorkout.targetTss || 0) : 0;
+  const plannedDist = plannedWorkout ? Number(plannedWorkout.plannedDistance || 0) : 0;
+  const complianceRow = (plannedDur > 0 && dur > 0) ? getCompliance(plannedDur, dur) : null;
+
+  const handleSavePlan = async () => {
+    setSavingPlan(true);
+    try {
+      const { createPlannedWorkout, updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
+      const dateForPlan = actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+      const sportForPlan = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
+      const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
+      const payload = {
+        title: planForm.title || title,
+        description: planForm.description,
+        notes: planForm.notes,
+        sport: sportForPlan,
+        scheduledDate: dateForPlan,
+        plannedDuration: durMins ? durMins * 60 : dur,
+        ...(planForm.distanceKm > 0 && { plannedDistance: planForm.distanceKm }),
+        targetTss: planForm.targetTss ? Number(planForm.targetTss) : (tss || undefined),
+      };
+      let saved;
+      if (plannedWorkout?._id) {
+        saved = await updatePlannedWorkout(plannedWorkout._id, payload);
+      } else {
+        saved = await createPlannedWorkout(payload);
+      }
+      setPlannedWorkout(saved);
+      setEditingPlanned(false);
+      if (onPlannedSaved) onPlannedSaved(saved);
+    } catch (err) {
+      console.error('Failed to save planned workout', err);
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  const planSteps = Array.isArray(plannedWorkout?.steps) ? plannedWorkout.steps : [];
+
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
+          <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
+            <div className="text-xs text-gray-400">{dateStr}</div>
+          </div>
+          {onOpenFull && (
+            <button
+              onClick={onOpenFull}
+              title="Open full activity"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+            >
+              <ArrowTopRightOnSquareIcon className="w-5 h-5" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body — two columns */}
+        <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-gray-100">
+
+          {/* ── LEFT: Planned workout ── */}
+          <div className="w-2/5 flex-shrink-0 flex flex-col overflow-y-auto">
+            <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2 flex-shrink-0">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
+              {plannedWorkout && !editingPlanned && (
+                <button
+                  onClick={() => setEditingPlanned(true)}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                >
+                  <PencilIcon className="w-3 h-3" /> Edit
+                </button>
+              )}
+            </div>
+
+            {editingPlanned ? (
+              <div className="px-4 pb-4 flex flex-col gap-3 flex-1">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={planForm.title}
+                    onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))}
+                    placeholder={title}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                      Duration
+                      {planForm.durationMins > 0 && <span className="ml-1 font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={planForm.durationDisplay}
+                      onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                      onBlur={() => {
+                        const mins = parseDurationToMinutes(planForm.durationDisplay);
+                        if (mins != null && mins > 0) {
+                          setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) }));
+                        }
+                      }}
+                      placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                    />
+                    <div className="text-[9px] text-gray-400 mt-0.5">2 = 2h · 1:30 = 1h30m · 90 = 90min</div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
+                    <input
+                      type="text"
+                      value={planForm.distanceDisplay}
+                      onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                      onBlur={() => {
+                        const km = parseDistanceToKm(planForm.distanceDisplay);
+                        if (km != null && km > 0) {
+                          setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
+                        }
+                      }}
+                      placeholder={dist > 0 ? `${(dist/1000).toFixed(1)} km` : '10 km'}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                    />
+                    <div className="text-[9px] text-gray-400 mt-0.5">10 = 10 km · 500m = 0.5 km</div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
+                  <input
+                    type="number"
+                    value={planForm.targetTss}
+                    onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))}
+                    placeholder={tss > 0 ? String(Math.round(tss)) : ''}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</label>
+                  <textarea
+                    value={planForm.description}
+                    onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Workout description…"
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</label>
+                  <textarea
+                    value={planForm.notes}
+                    onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="Coach notes, instructions…"
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 mt-auto pt-2">
+                  {plannedWorkout && (
+                    <button
+                      onClick={() => setEditingPlanned(false)}
+                      className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSavePlan}
+                    disabled={savingPlan}
+                    className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: color }}
+                  >
+                    {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
+                  </button>
+                </div>
+                {plannedWorkout && onEditPlanned && (
+                  <button
+                    onClick={() => onEditPlanned(plannedWorkout)}
+                    className="w-full py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                    style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" /> Build Workout
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="px-4 pb-4 flex flex-col gap-3">
+                {/* Planned stats */}
+                <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+                  {plannedWorkout?.title && (
+                    <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>
+                  )}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    {plannedDur > 0 && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div>
+                        <div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div>
+                      </div>
+                    )}
+                    {plannedTss > 0 && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div>
+                        <div className="text-sm font-bold text-gray-800">{plannedTss}</div>
+                      </div>
+                    )}
+                    {plannedDist > 0 && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div>
+                        <div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div>
+                      </div>
+                    )}
+                  </div>
+                  {complianceRow && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+                      <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Description / notes */}
+                {(plannedWorkout?.description || plannedWorkout?.notes) && (
+                  <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+                    {plannedWorkout?.description && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Description</div>
+                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
+                      </div>
+                    )}
+                    {plannedWorkout?.notes && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Steps / intervals */}
+                {planSteps.length > 0 && (
+                  <div>
+                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
+                    <div className="space-y-1">
+                      {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
+                        const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
+                        return (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border-l-2" style={{ borderLeftColor: stepColor }}>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[10px] font-semibold text-gray-700 capitalize">{s.type || 'Step'} {s.groupId ? `(×${s.groupRepeat || 1})` : ''}</div>
+                              {s.targetPower > 0 && <div className="text-[10px] text-gray-500">{s.targetPower}W</div>}
+                            </div>
+                            <div className="text-[10px] font-bold text-gray-600 flex-shrink-0">{fmtPlanDuration(s.durationSeconds)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── RIGHT: Completed activity ── */}
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+
+            {/* ── STICKY TOP: header + stats + chart ── */}
+            <div className="flex-shrink-0 border-b border-gray-100">
+              <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Completed</span>
+                {detailLoading && (
+                  <svg className="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                )}
+              </div>
+
+              {/* Key stats — compact horizontal row */}
+              <div className="px-4 pb-3 flex flex-wrap gap-2">
+                {[
+                  { label: 'Duration',  value: fmtDur(dur) },
+                  { label: 'Distance',  value: dist > 0 ? fmtDist(dist) : null },
+                  ...(tss > 0  ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+                  ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
+                  ...(paceStr  ? [{ label: 'Pace', value: paceStr }] : []),
+                  ...(isBike && power > 0 ? [{ label: 'Pwr', value: `${Math.round(power)}W` }] : []),
+                  ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)}W` }] : []),
+                  ...(hr > 0   ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
+                  ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
+                  ...(cadence > 0   ? [{ label: isSwim ? 'SPM' : 'Cad', value: `${Math.round(cadence)}` }] : []),
+                ].filter(s => s.value != null).map(({ label, value }) => (
+                  <div key={label} className="rounded-lg bg-gray-50 px-2.5 py-1.5 flex flex-col">
+                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wide leading-none">{label}</span>
+                    <span className="text-xs font-bold text-gray-800 tabular-nums mt-0.5">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Lap chart */}
+              {laps.length > 1 && <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} selectedLap={selectedLap} onSelectLap={(i) => {
+                setSelectedLap(i);
+                lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }} />}
+
+              {notes && (
+                <div className="mx-4 mb-3 p-3 bg-gray-50 rounded-xl">
+                  <p className="text-xs text-gray-600 whitespace-pre-line line-clamp-3">{notes}</p>
+                </div>
+              )}
+            </div>
+
+            {/* ── SCROLLABLE: laps table ── */}
+            <div className="flex-1 overflow-y-auto">
+              {laps.length > 0 && (
+                <div className="px-4 py-3">
+                  {(() => {
+                    const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
+                    const cols = ['1.5rem', '1fr', ...(dist > 0 ? ['1fr'] : []), ...((isBike || isRun) ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                    return (
+                      <div className="rounded-xl overflow-hidden border border-gray-100">
+                        {/* Header */}
+                        <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100 sticky top-0 z-10"
+                          style={{ gridTemplateColumns: cols }}>
+                          <span>#</span>
+                          <span className="text-right">Time</span>
+                          {dist > 0 && <span className="text-right">Dist</span>}
+                          {(isBike || isRun) && <span className="text-right">{isBike ? 'Pwr' : 'Pace'}</span>}
+                          <span className="text-right">HR</span>
+                          {hasLactate && <span className="text-right">La</span>}
+                        </div>
+                        {/* Rows */}
+                        <div className="divide-y divide-gray-50">
+                          {laps.map((lap, i) => {
+                            const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                            const lapDist  = Number(lap.distance || 0);
+                            const lapPower = Number(lap.average_watts || lap.avgPower || 0);
+                            const lapHr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                            const lapLa    = lap.lactate ?? lap.lactateValue;
+                            const lapNum   = lap.lapNumber ?? (i + 1);
+                            let lapPaceStr = null;
+                            if (isRun && lapDist > 0 && lapDur > 0) {
+                              const spk = lapDur / (lapDist / 1000);
+                              lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            }
+                            const isSelected = selectedLap === i;
+                            return (
+                              <div
+                                key={i}
+                                ref={el => lapRowRefs.current[i] = el}
+                                onClick={() => setSelectedLap(isSelected ? null : i)}
+                                className="grid items-center px-3 py-2 text-[11px] cursor-pointer transition-colors"
+                                style={{
+                                  gridTemplateColumns: cols,
+                                  backgroundColor: isSelected ? color + '18' : undefined,
+                                  borderLeft: isSelected ? `3px solid ${color}` : '3px solid transparent',
+                                }}
+                              >
+                                <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
+                                <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
+                                {dist > 0 && <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>}
+                                {(isBike || isRun) && (
+                                  <span className="text-right tabular-nums font-semibold" style={{ color }}>
+                                    {isBike ? (lapPower > 0 ? `${Math.round(lapPower)}W` : '—') : (lapPaceStr || '—')}
+                                  </span>
+                                )}
+                                <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                                {hasLactate && (
+                                  <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>
+                                    {lapLa != null ? Number(lapLa).toFixed(1) : '—'}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="px-4 pb-4 flex gap-2">
+                {onAddLactate && merged.type === 'strava' && (
+                  <button
+                    onClick={() => { onAddLactate(merged); onClose(); }}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
+                    style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
+                  >
+                    + Lactate
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Activity Detail Popup ────────────────────────────────────────────────────
-function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }) {
+function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, onAddLactate, plannedWorkout = null, onEditPlanned = null, onOpenFull = null }) {
   const popupRef = useRef(null);
   const a = activity;
   const isMobilePopup = window.innerWidth < 768;
@@ -372,9 +1271,15 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
     return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
   }, [onClose]);
 
+  // Planned vs completed — computed early so POPUP_W/H can depend on hasPlanned
+  const plannedDur = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
+  const plannedDist = plannedWorkout ? (Number(plannedWorkout.plannedDistance || 0)) : 0;
+  const plannedTss  = plannedWorkout ? (Number(plannedWorkout.targetTss || 0)) : 0;
+  const hasPlanned = !!plannedWorkout && (plannedDur > 0 || plannedTss > 0);
+
   // Desktop positioning: right of element if space, else left; always inside viewport
-  const POPUP_W = 288;
-  const POPUP_H = 380;
+  const POPUP_W = hasPlanned ? 320 : 288;
+  const POPUP_H = hasPlanned ? 460 : 380;
   const MARGIN = 8;
   const vpW = window.innerWidth;
   const vpH = window.innerHeight;
@@ -399,23 +1304,42 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
   // Data extraction
   const title = a.title || a.name || a.originalFileName || 'Activity';
   const color = sportColor(a.sport);
+  const sport = String(a.sport || '').toLowerCase();
+  const isRun = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
+  const isSwim = sport.includes('swim');
+  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike');
 
-  const dur = a.duration || a.elapsed_time || a.movingTime || a.totalTimerTime || 0;
-  const durStr = dur > 0
-    ? `${Math.floor(dur/3600)}:${String(Math.floor((dur%3600)/60)).padStart(2,'0')}:${String(Math.floor(dur%60)).padStart(2,'0')}`
+  // Duration — cover all field name variations from Strava, FIT files, internal
+  const dur = Number(
+    a.duration || a.elapsed_time || a.movingTime || a.moving_time ||
+    a.totalTimerTime || a.totalElapsedTime || a.elapsedTime || 0
+  );
+  const fmtDur = (s) => s > 0
+    ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(Math.floor(s%60)).padStart(2,'0')}`
     : '-';
+  const durStr = fmtDur(dur);
 
-  const dist = a.distance || a.totalDistance || 0;
+  const dist = Number(a.distance || a.totalDistance || 0);
   const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`) : '-';
 
-  const tss = Number(a.tss || a.trainingLoad || 0);
+  const tss  = Number(a.tss || a.trainingLoad || 0);
   const hrTss = Number(a.hrTSS || a.hrTss || 0);
-  const power = a.normalizedPower || a.avgPower || a.average_watts || 0;
-  const hr = a.averageHeartRate || a.average_heartrate || 0;
-  const elevation = a.totalElevationGain || a.elevationGain || a.total_elevation_gain || 0;
-  const ftp = null;
-  const np = a.normalizedPower || 0;
-  const ifVal = (np > 0 && ftp) ? (np / ftp).toFixed(2) : null;
+  const power = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
+  const np    = Number(a.normalizedPower || 0);
+  const hr    = Number(a.averageHeartRate || a.average_heartrate || a.avgHR || 0);
+  const elevation = Number(a.totalElevationGain || a.elevationGain || a.total_elevation_gain || 0);
+  const cadence   = Number(a.averageCadence || a.average_cadence || a.avgCadence || 0);
+
+  // Average pace for run/swim
+  const avgSpeed = Number(a.avgSpeed || a.average_speed || 0); // m/s
+  let paceStr = null;
+  if (isRun && avgSpeed > 0) {
+    const secPerKm = 1000 / avgSpeed;
+    paceStr = `${Math.floor(secPerKm/60)}:${String(Math.round(secPerKm%60)).padStart(2,'0')} /km`;
+  } else if (isSwim && avgSpeed > 0) {
+    const secPer100 = 100 / avgSpeed;
+    paceStr = `${Math.floor(secPer100/60)}:${String(Math.round(secPer100%60)).padStart(2,'0')} /100m`;
+  }
 
   const actDate = a.date || a.timestamp || a.startDate || a.start_time;
   const dateStr = actDate
@@ -423,17 +1347,34 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
     : '';
 
   const notes = a.description || a.notes || '';
+  const isStrava = a.type === 'strava' || !!a.stravaId || !!a.strava_id;
 
+  // Build stats — only include rows with actual data
   const stats = [
-    { label: 'Duration', value: durStr },
-    { label: 'Distance', value: distStr },
-    { label: 'TSS', value: tss > 0 ? Math.round(tss) : '-' },
-    { label: 'hrTSS', value: (hrTss > 0 && hrTss !== tss) ? Math.round(hrTss) : '-' },
-    { label: 'Avg Power', value: power > 0 ? `${Math.round(power)} W` : '-' },
-    { label: 'IF', value: ifVal || '-' },
-    { label: 'Avg HR', value: hr > 0 ? `${Math.round(hr)} bpm` : '-' },
-    { label: 'Elevation', value: elevation > 0 ? `${Math.round(elevation)} m` : '-' },
+    { label: 'Duration',  value: durStr },
+    { label: 'Distance',  value: distStr },
+    ...(tss > 0  ? [{ label: 'TSS',      value: Math.round(tss) }] : []),
+    ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
+    ...(paceStr  ? [{ label: 'Avg Pace', value: paceStr }]  : []),
+    ...(isBike && power > 0 ? [{ label: 'Avg Power', value: `${Math.round(power)} W` }] : []),
+    ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
+    ...(hr > 0   ? [{ label: 'Avg HR',   value: `${Math.round(hr)} bpm` }] : []),
+    ...(elevation > 0 ? [{ label: 'Elevation', value: `${Math.round(elevation)} m` }] : []),
+    ...(cadence > 0   ? [{ label: isSwim ? 'Strokes/min' : 'Cadence', value: `${Math.round(cadence)}` }] : []),
   ];
+
+  const fmtDurShort = (s) => {
+    if (!s) return '—';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}` : `${m}m`;
+  };
+
+  const complianceRow = hasPlanned && dur > 0 ? getCompliance(plannedDur, dur) : null;
+  const compRows = hasPlanned ? [
+    { label: 'Duration', planned: fmtDurShort(plannedDur), completed: fmtDurShort(dur), unit: 'h:mm' },
+    ...(plannedDist > 0 || dist > 0 ? [{ label: 'Distance', planned: plannedDist > 0 ? `${(plannedDist/1000).toFixed(1)}` : '—', completed: dist > 0 ? `${(dist/1000).toFixed(2)}` : '—', unit: 'km' }] : []),
+    ...(plannedTss > 0 || tss > 0 ? [{ label: 'TSS', planned: plannedTss > 0 ? plannedTss : '—', completed: tss > 0 ? Math.round(tss) : '—', unit: '' }] : []),
+  ] : [];
 
   // Shared inner content
   const innerContent = (
@@ -457,9 +1398,36 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
         </button>
       </div>
 
+      {/* Planned vs Completed comparison — shown when a planned workout matches */}
+      {hasPlanned && (
+        <div className="mx-4 mb-3 rounded-xl overflow-hidden border border-gray-100">
+          {/* Header row */}
+          <div className="grid grid-cols-[1fr_auto_auto] bg-gray-50 px-3 py-1.5 border-b border-gray-100">
+            <div />
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide w-14 text-right">Planned</div>
+            <div className="text-[9px] font-bold uppercase tracking-wide w-14 text-right" style={{ color }}>Done</div>
+          </div>
+          {compRows.map(({ label, planned, completed, unit }) => (
+            <div key={label} className="grid grid-cols-[1fr_auto_auto] px-3 py-2 border-b border-gray-50 last:border-0">
+              <div className="text-[10px] font-medium text-gray-500">{label}</div>
+              <div className="text-[10px] font-semibold text-gray-400 w-14 text-right tabular-nums">{planned}{unit && planned !== '—' ? <span className="text-gray-300 ml-0.5">{unit}</span> : ''}</div>
+              <div className="text-[10px] font-bold w-14 text-right tabular-nums" style={{ color: complianceRow?.color || color }}>{completed}{unit && completed !== '—' ? <span className="font-normal ml-0.5" style={{ color: '#d1d5db' }}>{unit}</span> : ''}</div>
+            </div>
+          ))}
+          {/* Compliance summary row */}
+          {complianceRow && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+              <span className="text-[10px] font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+              {plannedWorkout?.title && <span className="text-[9px] text-gray-400 truncate flex-1 text-right">{plannedWorkout.title}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Stats grid */}
-      <div className="px-4 pb-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
-        {stats.map(({ label, value }) => (
+      <div className={`px-4 pb-3 grid grid-cols-2 gap-x-3 gap-y-2.5 ${hasPlanned ? 'pt-1' : ''}`}>
+        {stats.filter(s => hasPlanned ? !['Duration','Distance','TSS'].includes(s.label) : true).map(({ label, value }) => (
           <div key={label}>
             <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide">{label}</div>
             <div className="text-xs font-bold text-gray-800">{value}</div>
@@ -475,15 +1443,33 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity }
         </div>
       )}
 
-      {/* Footer */}
-      <div className="px-4 pb-4">
+      {/* Footer buttons */}
+      <div className="px-4 pb-4 flex flex-col gap-2">
         <button
-          onClick={() => { if (onSelectActivity) onSelectActivity(a); onClose(); }}
+          onClick={() => { onClose(); if (onOpenFull) onOpenFull(); else if (onSelectActivity) onSelectActivity(a); }}
           className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors touch-manipulation"
           style={{ backgroundColor: color, WebkitTapHighlightColor: 'transparent' }}
         >
           Open Activity
         </button>
+        {hasPlanned && onEditPlanned && (
+          <button
+            onClick={() => { onEditPlanned(plannedWorkout); onClose(); }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold border transition-colors touch-manipulation flex items-center justify-center gap-1.5"
+            style={{ borderColor: color + '60', color, backgroundColor: color + '08', WebkitTapHighlightColor: 'transparent' }}
+          >
+            <PencilIcon className="w-3.5 h-3.5" /> Edit Planned Workout
+          </button>
+        )}
+        {isStrava && onAddLactate && (
+          <button
+            onClick={() => { onAddLactate(a); onClose(); }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors touch-manipulation"
+            style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff', WebkitTapHighlightColor: 'transparent' }}
+          >
+            + Add Lactate Test
+          </button>
+        )}
       </div>
     </>
   );
@@ -535,7 +1521,10 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
     distanceRun, distanceBike, distanceSwim, tssRun, tssBike, tssSwim, tssStrength,
-    volumeChange } = weekSummary;
+    volumeChange, plannedSeconds, plannedTSS } = weekSummary;
+
+  const hasPlan = plannedSeconds > 0;
+  const completionPct = hasPlan ? Math.min(100, Math.round((totalSeconds / plannedSeconds) * 100)) : null;
 
   // TSS distribution bar segments
   const totalTssForBar = tssRun + tssBike + tssSwim + tssStrength;
@@ -551,20 +1540,35 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
 
   return (
     <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
-      {/* Total time + TSS at top */}
+      {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
-          <div className="text-base font-extrabold text-gray-900 leading-tight">{formatHours(totalSeconds)}</div>
-          {totalTSS > 0 && (
-            <div className="flex items-center gap-0.5 mt-0.5">
-              <FireIcon className="w-3 h-3 text-primary" />
-              <span className="text-xs font-bold text-primary">{Math.round(totalTSS)}</span>
-              <span className="text-[9px] text-gray-400">TSS</span>
+          {hasPlan ? (
+            <div className="flex items-baseline gap-1 leading-tight">
+              <span className="text-[11px] font-medium text-gray-400">{formatHours(plannedSeconds)}</span>
+              <span className="text-base font-extrabold text-gray-900">{formatHours(totalSeconds)}</span>
             </div>
+          ) : (
+            <div className="text-base font-extrabold text-gray-900 leading-tight">{formatHours(totalSeconds)}</div>
           )}
+          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+            {totalTSS > 0 && (
+              <div className="flex items-center gap-0.5">
+                <FireIcon className="w-3 h-3 text-primary" />
+                <span className="text-xs font-bold text-primary">{Math.round(totalTSS)}</span>
+                {plannedTSS > 0 && <span className="text-[9px] text-gray-400">/{Math.round(plannedTSS)}</span>}
+                <span className="text-[9px] text-gray-400">TSS</span>
+              </div>
+            )}
+            {completionPct !== null && (
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400'}`}>
+                {completionPct}%
+              </span>
+            )}
+          </div>
         </div>
         {volumeChange && (
-          <span className="mt-0.5">
+          <span className="mt-0.5 flex-shrink-0">
             {volumeChange === 'up' && <ArrowUpIcon className="w-4 h-4 text-green-500" />}
             {volumeChange === 'down' && <ArrowDownIcon className="w-4 h-4 text-red-500" />}
             {volumeChange === 'same' && <MinusIcon className="w-4 h-4 text-gray-400" />}
@@ -572,8 +1576,21 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
         )}
       </div>
 
-      {/* TSS distribution bar */}
-      {totalTssForBar > 0 && (
+      {/* Progress bar: actual / planned */}
+      {hasPlan && (
+        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${Math.min(100, (totalSeconds / plannedSeconds) * 100)}%`,
+              backgroundColor: completionPct >= 100 ? '#22c55e' : completionPct >= 70 ? '#f59e0b' : '#767EB5'
+            }}
+          />
+        </div>
+      )}
+
+      {/* TSS distribution bar (only when no plan bar) */}
+      {!hasPlan && totalTssForBar > 0 && (
         <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
           {bikeRatio > 0 && <div style={{ width: `${bikeRatio*100}%`, backgroundColor: '#3b82f6' }} className="rounded-full" />}
           {runRatio  > 0 && <div style={{ width: `${runRatio*100}%`,  backgroundColor: '#f97316' }} className="rounded-full" />}
@@ -628,8 +1645,14 @@ export default function CalendarView({
   onMovePlannedWorkout = null,
   /** Called with (pw, newDateStr) when a workout is copied via Alt+drag */
   onCopyPlannedWorkout = null,
+  /** Called with (pw) to delete a planned workout */
+  onDeletePlannedWorkout = null,
   /** Optional: called with (activity, element) to open custom popup */
   onActivityClick = null,
+  /** Optional: called with activity object to navigate to full detail page */
+  onOpenActivity = null,
+  /** Optional: content to render in the mobile Charts tab (replaces built-in simple charts) */
+  mobileChartsContent = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -677,6 +1700,8 @@ export default function CalendarView({
   const [anchorDate, setAnchorDate] = useState(getInitialAnchorDate);
   const initialDate = getInitialAnchorDate();
   const lastMonthRef = useRef(`${initialDate.getFullYear()}-${initialDate.getMonth()}`);
+  const fullscreenScrollRef = useRef(null);
+  const pendingScrollRestore = useRef(null); // { prevScrollHeight } — set before anchor shift, consumed in useLayoutEffect
 
   // Initialize sportFilter from localStorage or default to 'all'
   const getInitialSportFilter = () => {
@@ -689,6 +1714,15 @@ export default function CalendarView({
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
+  // Mobile-specific state
+  const [mobileTab, setMobileTab] = useState('calendar');
+  const [showMiniCal, setShowMiniCal] = useState(true);
+  const [chartType, setChartType] = useState('volume');
+  const [selectedMobileDay, setSelectedMobileDay] = useState(() => getLocalDateString(new Date()));
+  const dayListRef = useRef(null);
+  const dayRefs = useRef({});
+  const selectedMobileDayRef = useRef(selectedMobileDay);
+  const isAutoScrollingRef = useRef(false);
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -699,6 +1733,8 @@ export default function CalendarView({
 
   // Activity detail popup state: { activity, rect }
   const [activityPopup, setActivityPopup] = useState(null);
+  // Full activity modal state: { activity, plannedWorkout }
+  const [activityModal, setActivityModal] = useState(null);
 
   // Detect mobile
   useEffect(() => {
@@ -709,7 +1745,37 @@ export default function CalendarView({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Keep ref in sync so scroll spy closure stays fresh
+  useEffect(() => { selectedMobileDayRef.current = selectedMobileDay; }, [selectedMobileDay]);
 
+  // Mobile scroll spy — highlight day in mini-calendar as user scrolls day list
+  useEffect(() => {
+    if (!isMobile || mobileTab !== 'calendar') return;
+    const container = dayListRef.current;
+    if (!container) return;
+
+    const onScroll = () => {
+      if (isAutoScrollingRef.current) return;
+      const containerTop = container.getBoundingClientRect().top;
+      let best = null;
+      let bestScore = Infinity;
+      Object.entries(dayRefs.current).forEach(([key, el]) => {
+        if (!el) return;
+        const relTop = el.getBoundingClientRect().top - containerTop;
+        // Pick day whose top is closest to 0 from above (i.e. just entering the top)
+        if (relTop <= 16) {
+          const score = Math.abs(relTop);
+          if (score < bestScore) { bestScore = score; best = key; }
+        }
+      });
+      if (best && best !== selectedMobileDayRef.current) {
+        setSelectedMobileDay(best);
+      }
+    };
+
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [isMobile, mobileTab]);
 
   // Load user profile for FTP and threshold pace
   useEffect(() => {
@@ -760,10 +1826,10 @@ export default function CalendarView({
     lastMonthRef.current = currentMonth;
   }, [anchorDate, initialAnchorDate, onMonthChange]);
 
-  // Notify parent about the stats period (week on desktop week view, otherwise calendar month)
+  // Notify parent about the stats period (week view or calendar month)
   useEffect(() => {
     if (!onVisiblePeriodChange) return;
-    const useWeek = !isMobile && view === 'week';
+    const useWeek = view === 'week';
     let periodStart;
     let periodEnd;
     let label;
@@ -846,6 +1912,17 @@ export default function CalendarView({
   }, [activities]);
 
   // Optimistic handler — mark selected immediately, then call parent
+  const handleRepeatWorkout = useCallback((pw, weeks) => {
+    if (!onCopyPlannedWorkout || !pw.date) return;
+    const base = new Date(pw.date + 'T12:00:00');
+    for (let i = 1; i <= weeks; i++) {
+      const d = new Date(base);
+      d.setDate(d.getDate() + 7 * i);
+      const dateStr = d.toISOString().slice(0, 10);
+      onCopyPlannedWorkout(pw, dateStr);
+    }
+  }, [onCopyPlannedWorkout]);
+
   const handleSelectActivity = (a) => {
     const id = a.id || a._id;
     if (id) setOptimisticSelectedId(String(id));
@@ -853,13 +1930,19 @@ export default function CalendarView({
   };
 
   // Activity click handler: show popup and also select
-  const handleActivityClick = (a, e) => {
+  // `rectOrEvent` can be a DOMRect (from WeekActivityCard) or a React event (from month-view inline buttons)
+  const handleActivityClick = (a, rectOrEvent) => {
     if (onActivityClick) {
-      onActivityClick(a, e.currentTarget);
+      // Parent wants to handle it — pass element or null
+      const el = rectOrEvent instanceof Element ? rectOrEvent : null;
+      onActivityClick(a, el);
     } else {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setActivityPopup({ activity: a, rect });
-      // Also select the activity
+      // Find the matching planned workout for this day/sport
+      const actDate = a.date || a.timestamp || a.startDate || a.start_time;
+      const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
+      const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
+      const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
+      setActivityModal({ activity: a, plannedWorkout: matchPw });
       handleSelectActivity(a);
     }
   };
@@ -905,18 +1988,40 @@ export default function CalendarView({
 
   const days = useMemo(() => {
     if (view === 'week' && !isMobile) {
-      // Desktop week view
       const start = startOfWeek(anchorDate);
       return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
     }
-    // Mobile: always show month, Desktop: show month or week based on view
     const start = startOfWeek(startOfMonth(anchorDate));
     return Array.from({ length: 42 }).map((_, i) => addDays(start, i));
   }, [view, anchorDate, isMobile]);
 
+  // Fullscreen: 16 weeks starting 2 weeks before anchor
+  const fullscreenWeeks = useMemo(() => {
+    if (isMobile) return [];
+    const anchorWeekStart = startOfWeek(anchorDate);
+    const start = addDays(anchorWeekStart, -6 * 7); // 6 weeks back from anchor
+    return Array.from({ length: 24 }, (_, i) => {   // 24 total = 6 back + 18 forward
+      const wStart = addDays(start, i * 7);
+      return Array.from({ length: 7 }, (_, j) => addDays(wStart, j));
+    });
+  }, [anchorDate, isMobile]);
+
+  // Mobile: 10 weeks starting 1 week before anchor
+  const mobileWeeks = useMemo(() => {
+    if (!isMobile) return [];
+    const anchorWeekStart = startOfWeek(anchorDate);
+    const start = addDays(anchorWeekStart, -1 * 7);
+    return Array.from({ length: 10 }, (_, i) => {
+      const wStart = addDays(start, i * 7);
+      return Array.from({ length: 7 }, (_, j) => addDays(wStart, j));
+    });
+  }, [anchorDate, isMobile]);
+
   const prev = () => {
     setDirection(-1);
-    if (isMobile && view === 'week') {
+    if (isFullscreen) {
+      setAnchorDate(d => addDays(d, -4 * 7)); // jump 4 weeks back in fullscreen
+    } else if (isMobile && view === 'week') {
       setAnchorDate(d => addDays(d, -7));
     } else if (view === 'week' && !isMobile) {
       setAnchorDate(d => addDays(d, -7));
@@ -926,7 +2031,9 @@ export default function CalendarView({
   };
   const next = () => {
     setDirection(1);
-    if (isMobile && view === 'week') {
+    if (isFullscreen) {
+      setAnchorDate(d => addDays(d, 4 * 7)); // jump 4 weeks forward in fullscreen
+    } else if (isMobile && view === 'week') {
       setAnchorDate(d => addDays(d, 7));
     } else if (view === 'week' && !isMobile) {
       setAnchorDate(d => addDays(d, 7));
@@ -936,17 +2043,33 @@ export default function CalendarView({
   };
   const today = () => setAnchorDate(new Date());
 
-  const [selectedDay, setSelectedDay] = useState(null); // YYYY-MM-DD key of selected day on mobile
+  // Fullscreen infinite scroll: restore scroll position after prepending past weeks
+  useLayoutEffect(() => {
+    if (pendingScrollRestore.current && fullscreenScrollRef.current) {
+      const { prevScrollHeight } = pendingScrollRestore.current;
+      const newScrollHeight = fullscreenScrollRef.current.scrollHeight;
+      fullscreenScrollRef.current.scrollTop += (newScrollHeight - prevScrollHeight);
+      pendingScrollRestore.current = null;
+    }
+  }, [anchorDate]);
+
+  // Scroll handler for fullscreen: auto-extend when near top or bottom
+  const handleFullscreenScroll = useCallback(() => {
+    if (!fullscreenScrollRef.current || pendingScrollRestore.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = fullscreenScrollRef.current;
+
+    if (scrollTop < 400) {
+      // Near top → prepend 4 past weeks, then restore scroll position
+      pendingScrollRestore.current = { prevScrollHeight: scrollHeight };
+      setAnchorDate(d => addDays(d, -4 * 7));
+    } else if (scrollTop + clientHeight > scrollHeight - 400) {
+      // Near bottom → append 4 future weeks (no position restore needed)
+      setAnchorDate(d => addDays(d, 4 * 7));
+    }
+  }, []);
+
   const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Handle day click on mobile - select day and show activities below
-  const handleDayClick = (dayDate) => {
-    if (isMobile) {
-      const key = getLocalDateString(dayDate);
-      setSelectedDay(prev => prev === key ? null : key); // toggle
-    }
-  };
 
   // Weekly summary (last 4 weeks)
   // Weekly summary only for weeks currently visible in the calendar grid
@@ -954,17 +2077,14 @@ export default function CalendarView({
   const weeklySummary = useMemo(() => {
     if (!days || days.length === 0) return [];
 
-    // In week view, only show the current week
     let visibleWeekKeys;
-    if (isMobile && view === 'week') {
-      // Only the current week
+    if (view === 'week') {
       const currentWeekStart = startOfWeek(anchorDate);
       visibleWeekKeys = new Set([currentWeekStart.toISOString().slice(0,10)]);
     } else {
-    // Which week starts are visible in the current grid
-      visibleWeekKeys = new Set(
-      days.map(d => startOfWeek(d).toISOString().slice(0,10))
-    );
+      visibleWeekKeys = new Set(days.map(d => startOfWeek(d).toISOString().slice(0,10)));
+      fullscreenWeeks.forEach(wk => visibleWeekKeys.add(startOfWeek(wk[0]).toISOString().slice(0,10)));
+      mobileWeeks.forEach(wk => visibleWeekKeys.add(startOfWeek(wk[0]).toISOString().slice(0,10)));
     }
 
     // Get FTP and threshold pace from user profile
@@ -1096,31 +2216,41 @@ export default function CalendarView({
       return acc;
     }, {});
 
+    // Planned totals per week
+    const plannedByWeek = {};
+    plannedWorkouts.forEach(pw => {
+      if (!pw.date) return;
+      const d = new Date(pw.date);
+      if (isNaN(d.getTime())) return;
+      const key = startOfWeek(d).toISOString().slice(0, 10);
+      if (!plannedByWeek[key]) plannedByWeek[key] = { plannedSeconds: 0, plannedTSS: 0 };
+      const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+      plannedByWeek[key].plannedSeconds += secs;
+      plannedByWeek[key].plannedTSS += Number(pw.targetTss || 0);
+    });
+
     const sorted = Object.values(summary)
       .sort((a, b) => b.weekStart - a.weekStart);
 
-    // Add comparison with previous week
+    // Add comparison with previous week + planned totals
     return sorted.map((week, index) => {
       const prevWeek = index < sorted.length - 1 ? sorted[index + 1] : null;
-      let volumeChange = null; // 'up', 'down', 'same', or null
-
+      let volumeChange = null;
       if (prevWeek) {
-        if (week.totalSeconds > prevWeek.totalSeconds) {
-          volumeChange = 'up';
-        } else if (week.totalSeconds < prevWeek.totalSeconds) {
-          volumeChange = 'down';
-        } else {
-          volumeChange = 'same';
-        }
+        if (week.totalSeconds > prevWeek.totalSeconds) volumeChange = 'up';
+        else if (week.totalSeconds < prevWeek.totalSeconds) volumeChange = 'down';
+        else volumeChange = 'same';
       }
-
+      const wk = week.weekStart.toISOString().slice(0, 10);
       return {
         ...week,
         volumeChange,
-        prevWeekTotalSeconds: prevWeek?.totalSeconds || null
+        prevWeekTotalSeconds: prevWeek?.totalSeconds || null,
+        plannedSeconds: plannedByWeek[wk]?.plannedSeconds || 0,
+        plannedTSS: plannedByWeek[wk]?.plannedTSS || 0,
       };
     });
-  }, [filteredActivities, days, userProfile, isMobile, view, anchorDate]);
+  }, [filteredActivities, plannedWorkouts, days, fullscreenWeeks, mobileWeeks, userProfile, view, anchorDate]);
 
   const formatHours = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0h';
@@ -1137,49 +2267,9 @@ export default function CalendarView({
   };
 
   const calendarContent = (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} overflow-hidden`}>
-      {/* Header */}
-      {isMobile ? (
-        <div className="mb-2">
-          {/* Month nav row */}
-          <div className="flex items-center justify-between px-1 mb-2">
-            <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-              <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
-            </button>
-            <button onClick={today} className="text-sm font-bold text-gray-900 uppercase tracking-wide active:text-primary transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-              {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-            </button>
-            <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-              <ChevronRightIcon className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-          {/* Sport filter pills — scrollable row */}
-          {uniqueSportBuckets.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 px-1 scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {uniqueSportBuckets.map(bucket => {
-                const isActive = sportFilter === bucket;
-                const iconMap = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
-                const labelMap = { all: 'All', bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
-                const icon = iconMap[bucket];
-                return (
-                  <button
-                    key={bucket}
-                    type="button"
-                    onClick={() => setSportFilter(bucket)}
-                    className={`flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all touch-manipulation ${
-                      isActive ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'
-                    }`}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    {icon && <img src={icon} alt={bucket} className={`w-3 h-3 object-contain ${isActive ? 'invert' : ''}`} />}
-                    <span>{labelMap[bucket]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white flex flex-col' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
+      {/* Header — desktop only */}
+      {!isMobile && (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex items-center gap-1.5 md:gap-2">
           <button
@@ -1204,7 +2294,14 @@ export default function CalendarView({
           </button>
         </div>
         <div className="text-sm md:text-base lg:text-lg font-semibold text-gray-900">
-          {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+          {isFullscreen
+            ? (() => {
+                const ws = startOfWeek(anchorDate);
+                const we = addDays(addDays(ws, -2*7), 16*7 - 1);
+                return `${ws.toLocaleDateString(undefined,{month:'short',year:'numeric'})} – ${we.toLocaleDateString(undefined,{month:'short',year:'numeric'})}`;
+              })()
+            : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+          }
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
           {/* Sport filter pills */}
@@ -1237,18 +2334,22 @@ export default function CalendarView({
               );
             })}
           </div>
-          <button
-            onClick={() => setView('week')}
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
-          >
-            Week
-          </button>
-          <button
-            onClick={() => setView('month')}
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
-          >
-            Month
-          </button>
+          {!isFullscreen && (
+            <button
+              onClick={() => setView('week')}
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
+            >
+              Week
+            </button>
+          )}
+          {!isFullscreen && (
+            <button
+              onClick={() => setView('month')}
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
+            >
+              Month
+            </button>
+          )}
           <button
             onClick={() => setIsFullscreen(v => !v)}
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
@@ -1264,200 +2365,520 @@ export default function CalendarView({
       </div>
       )}
 
-      {/* Mobile: Strava-like compact month grid */}
+      {/* Mobile: native app-style layout — mini calendar + scrollable day list */}
       {isMobile ? (
-        <div>
-          {/* Compact month grid */}
-          <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={anchorDate.toISOString().slice(0, 7)}
-            initial={{ opacity: 0, x: direction * 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: direction * -30 }}
-            transition={{ duration: 0.22, ease: 'easeInOut' }}
-            className="grid grid-cols-7 gap-0"
-          >
-            {/* Day name headers */}
-            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-              <div key={i} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
+        <div className="flex flex-col" style={{ height: 'calc(100svh - 56px)' }}>
+          {/* ── Tab bar ── */}
+          <div className="flex bg-gray-100 rounded-xl p-0.5 mb-3 mx-3 flex-shrink-0">
+            {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
+              <button
+                key={tab}
+                onClick={() => setMobileTab(tab)}
+                className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >{label}</button>
             ))}
-            {/* Day cells */}
-            {days.map((dayDate, dayIdx) => {
-              const key = getLocalDateString(dayDate);
-              const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-              const acts = activitiesByDay.get(key) || [];
-              const mobilePlanned = plannedByDay.get(key) || [];
-              const isToday = isSameDay(dayDate, new Date());
-              const isSelected = selectedDay === key;
+          </div>
 
-              const sportDots = acts.slice(0, 4).map(a => {
-                const s = (a.sport || '').toLowerCase();
-                if (s.includes('run')) return '#f97316';
-                if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
-                if (s.includes('swim')) return '#06b6d4';
-                if (s.includes('strength') || s.includes('gym') || s.includes('weight')) return '#8b5cf6';
-                return '#9ca3af';
-              });
-
-              return (
-                <motion.button
-                  key={dayIdx}
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.18, delay: dayIdx * 0.008 }}
-                  onClick={() => {
-                    handleDayClick(dayDate);
-                    if (acts.length === 1) {
-                      handleSelectActivity(acts[0]);
-                    }
-                  }}
-                  className={`flex flex-col items-center py-1.5 touch-manipulation transition-colors relative ${
-                    !isCurrentMonth ? 'opacity-30' : ''
-                  } ${isSelected ? 'bg-primary/10 rounded-lg' : ''}`}
-                  style={{ WebkitTapHighlightColor: 'transparent', minHeight: '44px' }}
+          {mobileTab === 'calendar' ? (<>
+            {/* ── Month nav + mini-cal toggle ── */}
+            <div className="flex items-center justify-between px-3 mb-1 flex-shrink-0">
+              <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+              </button>
+              <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+                </button>
+                <button
+                  onClick={() => setShowMiniCal(v => !v)}
+                  className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation transition-transform"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                  title={showMiniCal ? 'Hide calendar' : 'Show calendar'}
                 >
-                  <span className={`text-xs font-medium leading-none ${
-                    isToday
-                      ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center font-bold'
-                      : isSelected
-                        ? 'text-primary font-bold'
-                        : 'text-gray-800'
-                  }`}>
-                    {dayDate.getDate()}
-                  </span>
-                  {/* Activity dots */}
-                  {(sportDots.length > 0 || mobilePlanned.length > 0) && (
-                    <div className="flex items-center gap-[3px] mt-1 flex-wrap justify-center">
-                      {sportDots.map((color, i) => (
-                        <div key={i} className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: color }} />
-                      ))}
-                      {mobilePlanned.map((pw, i) => {
-                        const sport = (pw.sport || 'bike').toLowerCase();
-                        const c = SPORT_PLAN_COLORS[sport] || '#767EB5';
-                        return (
-                          <div key={`pd-${i}`} className="w-[5px] h-[5px] rounded-full border" style={{ borderColor: c, backgroundColor: 'transparent' }} />
-                        );
-                      })}
-                    </div>
-                  )}
-                </motion.button>
-              );
-            })}
-          </motion.div>
-          </AnimatePresence>
+                  <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showMiniCal ? '' : 'rotate-180'}`} />
+                </button>
+              </div>
+            </div>
 
-          {/* Selected day activities + planned workouts - show below calendar */}
-          {selectedDay && (() => {
-            const dayActs = activitiesByDay.get(selectedDay) || [];
-            const dayPlanned = plannedByDay.get(selectedDay) || [];
-            if (dayActs.length === 0 && dayPlanned.length === 0) return null;
-            const dayDate = new Date(selectedDay + 'T12:00:00');
-            const dayLabel = dayDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-
-            return (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mt-3 space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{dayLabel}</div>
-                  {onPlanWorkout && (
-                    <button
-                      onClick={() => onPlanWorkout(new Date(selectedDay + 'T12:00:00'))}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-primary/40 text-primary text-xs font-semibold hover:bg-primary/5 transition-colors"
-                    >
-                      <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" d="M8 3v10M3 8h10" />
-                      </svg>
-                      Plan workout
-                    </button>
-                  )}
+            {/* ── Mini month grid (collapsible) ── */}
+            {showMiniCal && (
+              <div className="flex-shrink-0 px-3 mb-2">
+                <div className="grid grid-cols-7 mb-0.5">
+                  {['M','T','W','T','F','S','S'].map((d, i) => (
+                    <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
+                  ))}
                 </div>
-                {/* Planned workouts */}
-                {dayPlanned.map((pw, pi) => (
-                  <PlannedWorkoutCard
-                    key={`mplan-${pi}`}
-                    pw={pw}
-                    onSelect={onSelectPlannedWorkout}
-                    onStart={onStartWorkout}
-                  />
+                <div className="grid grid-cols-7">
+                  {days.map(dayDate => {
+                    const key = getLocalDateString(dayDate);
+                    const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
+                    const isToday = isSameDay(dayDate, new Date());
+                    const isSelected = key === selectedMobileDay;
+                    const acts = activitiesByDay.get(key) || [];
+                    const planned = plannedByDay.get(key) || [];
+                    const dots = [...new Set(acts.map(a => {
+                      const s = (a.sport || '').toLowerCase();
+                      if (s.includes('run') || s.includes('walk')) return 'run';
+                      if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+                      if (s.includes('swim')) return 'swim';
+                      return 'other';
+                    }))].slice(0, 3);
+                    const hasPlanOnly = planned.length > 0 && acts.length === 0;
+                    const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setSelectedMobileDay(key);
+                          isAutoScrollingRef.current = true;
+                          setTimeout(() => {
+                            if (dayRefs.current[key]) {
+                              dayRefs.current[key].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                            setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+                          }, 50);
+                        }}
+                        className="flex flex-col items-center py-0.5 touch-manipulation"
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >
+                        <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
+                          isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
+                          isToday ? 'bg-primary text-white' :
+                          isSelected ? 'bg-gray-200 text-gray-900' :
+                          isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                        }`}>
+                          {dayDate.getDate()}
+                        </span>
+                        <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
+                          {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
+                          {dots.map((sport, si) => (
+                            <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Scrollable day list ── */}
+            <div ref={dayListRef} className="flex-1 overflow-y-auto px-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {days.filter(d => d.getMonth() === anchorDate.getMonth()).map(dayDate => {
+                const key = getLocalDateString(dayDate);
+                const acts = activitiesByDay.get(key) || [];
+                const planned = plannedByDay.get(key) || [];
+                const isToday = isSameDay(dayDate, new Date());
+                const isSelected = key === selectedMobileDay;
+                const hasItems = acts.length > 0 || planned.length > 0;
+                const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                return (
+                  <div
+                    key={key}
+                    ref={el => { dayRefs.current[key] = el; }}
+                    className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
+                    onClick={() => setSelectedMobileDay(key)}
+                  >
+                    {/* Day header */}
+                    <div className={`flex items-center justify-between px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-gray-400'}`}>{dayNames[dayDate.getDay()]}</span>
+                        <span className={`text-base font-extrabold ${isToday ? 'text-primary' : 'text-gray-800'}`}>{dayDate.getDate()}</span>
+                        {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
+                      </div>
+                      {onPlanWorkout && (
+                        <button
+                          onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
+                          className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >+</button>
+                      )}
+                    </div>
+                    {/* Content */}
+                    {hasItems ? (
+                      <div className="px-2 pb-1.5 pt-1 flex flex-col gap-1">
+                        {planned.map((pw, pi) => {
+                          const pwSport = (pw.sport || 'bike').toLowerCase();
+                          const color = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
+                          const duration = planStepTotalSecs(pw.steps);
+                          const isCompleted = pw.status === 'completed';
+                          const isSkipped = pw.status === 'skipped';
+                          const compliance = findCompliance(pw, acts);
+                          return (
+                            <button key={pi}
+                              onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
+                              className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 min-h-[40px]"
+                              style={{ borderStyle: compliance ? 'solid' : 'dashed', borderColor: compliance ? compliance.color : color + '60', backgroundColor: compliance ? compliance.bg : color + '0d', WebkitTapHighlightColor: 'transparent' }}>
+                              {compliance
+                                ? <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
+                                : isCompleted
+                                  ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-green-500" />
+                                  : <PlayIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" style={{ color }} />}
+                              <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : color }}>{pw.title || 'Planned workout'}</span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {compliance
+                                  ? <span className="text-[10px] font-bold" style={{ color: compliance.color }}>{compliance.label}</span>
+                                  : <>{pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={color} width={36} height={12} />}{duration > 0 && <span className="text-[10px] opacity-70" style={{ color }}>{fmtPlanDuration(duration)}</span>}</>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {acts.map((a, i) => {
+                          const activityId = a.id || a._id;
+                          const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
+                          const color = sportColor(a.sport);
+                          const title = a.title || a.name || a.originalFileName || 'Activity';
+                          const dur = Number(a.duration || a.elapsed_time || a.movingTime || a.moving_time || a.totalTimerTime || a.totalElapsedTime || 0);
+                          const durStr = dur > 0 ? `${Math.floor(dur / 3600)}h${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
+                          const dist = Number(a.distance || a.totalDistance || 0);
+                          const distStr = dist > 0 ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
+                          const tss = Number(a.tss || a.trainingLoad || 0);
+                          return (
+                            <button key={i}
+                              onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
+                              className={`w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
+                              style={{ borderLeftColor: color, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}>
+                              <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
+                              <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                              <div className="flex items-center gap-1.5 text-[10px] flex-shrink-0">
+                                {durStr && <span className="font-medium text-gray-600">{durStr}</span>}
+                                {distStr && <span className="text-gray-400">{distStr}</span>}
+                                {tss > 0 && <span className="font-bold text-primary">{Math.round(tss)}</span>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-gray-300">Rest day</div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="h-4" />
+            </div>
+          </>) : (
+            /* ── Charts tab ── */
+            <div className="flex flex-col flex-1 min-h-0">
+              {/* ── Period nav + Month/Week toggle ── */}
+              <div className="flex items-center justify-between px-3 mb-2 flex-shrink-0">
+                <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+                </button>
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-sm font-bold text-gray-900">
+                    {view === 'week'
+                      ? `${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                      : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                  </span>
+                  <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                    {[['month', 'Month'], ['week', 'Week']].map(([v, lbl]) => (
+                      <button key={v} onClick={() => setView(v)}
+                        className={`px-3 py-0.5 text-xs font-semibold rounded-md transition-all touch-manipulation ${view === v ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+
+              {mobileChartsContent ? (
+                <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  {mobileChartsContent}
+                  <div className="h-4" />
+                </div>
+              ) : (<>
+              {/* Chart type switcher */}
+              <div className="flex gap-1.5 px-3 mb-3 flex-shrink-0">
+                {[['volume', 'Volume'], ['tss', 'TSS'], ['sports', 'Sports']].map(([type, label]) => (
+                  <button
+                    key={type}
+                    onClick={() => setChartType(type)}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all touch-manipulation ${chartType === type ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'}`}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >{label}</button>
                 ))}
-                {/* Weekly summary strip for mobile */}
-                {(() => {
-                  const dayDateObj = new Date(selectedDay + 'T12:00:00');
-                  const wkKey = startOfWeek(dayDateObj).toISOString().slice(0, 10);
-                  const wkSummary = weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === wkKey);
-                  if (!wkSummary || wkSummary.totalSeconds === 0) return null;
-                  const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds,
-                    tssRun, tssBike, tssSwim, tssStrength, volumeChange } = wkSummary;
-                  const totalTssForBar = tssRun + tssBike + tssSwim + tssStrength;
-                  return (
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 mb-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">This week</span>
-                        <div className="flex items-center gap-1">
-                          {volumeChange === 'up' && <ArrowUpIcon className="w-3 h-3 text-green-500" />}
-                          {volumeChange === 'down' && <ArrowDownIcon className="w-3 h-3 text-red-500" />}
-                          {volumeChange === 'same' && <MinusIcon className="w-3 h-3 text-gray-400" />}
+              </div>
+
+              {weeklySummary.length === 0 ? (
+                <div className="text-center text-gray-400 text-sm py-10">No data</div>
+              ) : (() => {
+                const sorted = [...weeklySummary].reverse();
+                const maxVal = chartType === 'tss'
+                  ? Math.max(...sorted.map(w => w.totalTSS), 1)
+                  : chartType === 'volume'
+                  ? Math.max(...sorted.map(w => w.totalSeconds), 1)
+                  : 1;
+
+                return (
+                  <div className="flex-1 overflow-y-auto px-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+                    {/* Bar chart area */}
+                    {(chartType === 'volume' || chartType === 'tss') && (
+                      <div className="bg-white rounded-xl border border-gray-100 p-3 mb-3">
+                        <div className="text-xs font-bold text-gray-500 mb-3">
+                          {chartType === 'volume' ? 'Weekly volume (hours)' : 'Weekly TSS'}
+                        </div>
+                        <div className="flex items-end gap-1.5 h-28">
+                          {sorted.map(wk => {
+                            const weekEnd = addDays(wk.weekStart, 6);
+                            const isCurrentWeek = new Date() >= wk.weekStart && new Date() <= weekEnd;
+                            const val = chartType === 'tss' ? wk.totalTSS : wk.totalSeconds;
+                            const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                            const label = chartType === 'tss'
+                              ? (val > 0 ? Math.round(val) : '')
+                              : (val > 0 ? `${(val / 3600).toFixed(1)}` : '');
+                            return (
+                              <div key={wk.weekStart.toISOString()} className="flex-1 flex flex-col items-center gap-0.5">
+                                <span className="text-[8px] text-gray-400 font-medium">{label}</span>
+                                <div className="w-full flex flex-col justify-end" style={{ height: '80px' }}>
+                                  {chartType === 'volume' && wk.totalSeconds > 0 ? (
+                                    <div className="w-full rounded-t-sm overflow-hidden flex flex-col-reverse" style={{ height: `${pct}%` }}>
+                                      {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: '#3b82f6' }} />}
+                                      {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: '#f97316' }} />}
+                                      {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: '#06b6d4' }} />}
+                                      {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: '#8b5cf6' }} />}
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className="w-full rounded-t-sm"
+                                      style={{ height: `${pct}%`, backgroundColor: isCurrentWeek ? '#767EB5' : '#c7cae8', minHeight: val > 0 ? 3 : 0 }}
+                                    />
+                                  )}
+                                </div>
+                                <span className={`text-[8px] font-bold ${isCurrentWeek ? 'text-primary' : 'text-gray-400'}`}>
+                                  {wk.weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'numeric' })}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <div className="text-base font-extrabold text-gray-900 leading-tight">{formatHours(totalSeconds)}</div>
-                          {totalTSS > 0 && (
-                            <div className="flex items-center gap-0.5">
-                              <FireIcon className="w-3 h-3 text-primary" />
-                              <span className="text-xs font-bold text-primary">{Math.round(totalTSS)}</span>
-                              <span className="text-[9px] text-gray-400">TSS</span>
+                    )}
+
+                    {/* Sports breakdown */}
+                    {chartType === 'sports' && (
+                      <div className="bg-white rounded-xl border border-gray-100 p-3 mb-3">
+                        <div className="text-xs font-bold text-gray-500 mb-3">Sport distribution (hours)</div>
+                        {(() => {
+                          const totals = { bike: 0, run: 0, swim: 0, strength: 0 };
+                          sorted.forEach(wk => {
+                            totals.bike += wk.bikeSeconds;
+                            totals.run += wk.runSeconds;
+                            totals.swim += wk.swimSeconds;
+                            totals.strength += wk.strengthSeconds;
+                          });
+                          const total = totals.bike + totals.run + totals.swim + totals.strength;
+                          const sports = [
+                            { key: 'bike', label: 'Bike', color: '#3b82f6', sec: totals.bike },
+                            { key: 'run', label: 'Run', color: '#f97316', sec: totals.run },
+                            { key: 'swim', label: 'Swim', color: '#06b6d4', sec: totals.swim },
+                            { key: 'strength', label: 'Strength', color: '#8b5cf6', sec: totals.strength },
+                          ].filter(s => s.sec > 0);
+                          return (<>
+                            <div className="flex h-4 rounded-full overflow-hidden gap-px mb-3">
+                              {sports.map(s => (
+                                <div key={s.key} style={{ flex: s.sec, backgroundColor: s.color }} />
+                              ))}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              {sports.map(s => (
+                                <div key={s.key} className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                                  <span className="text-xs font-semibold text-gray-700 flex-1">{s.label}</span>
+                                  <span className="text-xs text-gray-500">{(s.sec / 3600).toFixed(1)}h</span>
+                                  <span className="text-xs font-bold text-gray-400">{total > 0 ? Math.round((s.sec / total) * 100) : 0}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>);
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Weekly summary cards */}
+                    {sorted.map(wk => {
+                      const weekEnd = addDays(wk.weekStart, 6);
+                      const isCurrentWeek = new Date() >= wk.weekStart && new Date() <= weekEnd;
+                      const totalDist = wk.distanceBike + wk.distanceRun + wk.distanceSwim;
+                      return (
+                        <div key={wk.weekStart.toISOString()} className={`mb-2 rounded-xl border p-3 ${isCurrentWeek ? 'border-primary/30' : 'border-gray-100 bg-white'}`}
+                          style={{ backgroundColor: isCurrentWeek ? 'rgba(118,126,181,0.04)' : undefined }}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`text-xs font-bold ${isCurrentWeek ? 'text-primary' : 'text-gray-500'}`}>
+                              {wk.weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – {weekEnd.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                            </span>
+                            {isCurrentWeek && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">This week</span>}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mb-2">
+                            {[
+                              { label: 'Time', value: formatHours(wk.totalSeconds) },
+                              { label: 'Distance', value: formatKm(totalDist) },
+                              { label: 'TSS', value: wk.totalTSS > 0 ? Math.round(wk.totalTSS) : '–', highlight: true },
+                            ].map(({ label, value, highlight }) => (
+                              <div key={label} className="bg-gray-50 rounded-lg p-1.5 text-center">
+                                <div className={`text-sm font-bold ${highlight ? 'text-primary' : 'text-gray-800'}`}>{value}</div>
+                                <div className="text-[10px] text-gray-400">{label}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {wk.totalSeconds > 0 && (
+                            <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+                              {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: '#3b82f6' }} />}
+                              {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: '#f97316' }} />}
+                              {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: '#06b6d4' }} />}
+                              {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: '#8b5cf6' }} />}
                             </div>
                           )}
                         </div>
-                        {totalTssForBar > 0 && (
-                          <div className="flex-1 flex h-2 rounded-full overflow-hidden gap-px">
-                            {tssBike > 0 && <div style={{ width: `${(tssBike/totalTssForBar)*100}%`, backgroundColor: '#3b82f6' }} className="rounded-full" />}
-                            {tssRun > 0 && <div style={{ width: `${(tssRun/totalTssForBar)*100}%`, backgroundColor: '#f97316' }} className="rounded-full" />}
-                            {tssSwim > 0 && <div style={{ width: `${(tssSwim/totalTssForBar)*100}%`, backgroundColor: '#06b6d4' }} className="rounded-full" />}
-                            {tssStrength > 0 && <div style={{ flex: 1, backgroundColor: '#8b5cf6' }} className="rounded-full" />}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
-                        {bikeSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/bike.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(bikeSeconds)}</span>}
-                        {runSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/run.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(runSeconds)}</span>}
-                        {swimSeconds > 0 && <span className="text-[10px] text-gray-500 flex items-center gap-1"><img src="/icon/swim.svg" alt="" className="w-3 h-3 opacity-60" />{formatHours(swimSeconds)}</span>}
-                      </div>
-                    </div>
-                  );
-                })()}
-                {dayActs.map((a, i) => {
-                  const activityId = a.id || a._id;
-                  const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
-                  return (
-                    <div key={i} className="w-full">
-                      <WeekActivityCard
-                        a={a}
-                        isSelected={isActSelected}
-                        onSelect={handleSelectActivity}
-                        onActivityClick={handleActivityClick}
-                        onAddLactate={onAddLactate}
-                        catBadgeStyle={catBadgeStyle}
-                        catLabel={catLabel}
-                      />
-                      {onAddLactate && a.type === 'strava' && (
-                        <button
-                          onClick={() => onAddLactate(a)}
-                          className="mt-1 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold active:bg-violet-100 touch-manipulation"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          <span className="text-base leading-none">+</span> Add Lactate
-                        </button>
+                      );
+                    })}
+                    <div className="h-4" />
+                  </div>
+                );
+              })()}
+              </>)}
+            </div>
+          )}
+        </div>
+      ) : isFullscreen ? (
+        /* ── Fullscreen: stacked week-by-week layout ── */
+        <div ref={fullscreenScrollRef} onScroll={handleFullscreenScroll} className="flex-1 overflow-y-auto -mx-4 md:-mx-5 px-0">
+          {/* Sticky column headers */}
+          <div className="sticky top-0 z-20 grid gap-px bg-gray-200 shadow-sm" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(130px,170px)' }}>
+            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Summary'].map(d => (
+              <div key={d} className="bg-gray-50 text-[11px] font-semibold text-center py-2 text-gray-500">{d}</div>
+            ))}
+          </div>
+
+          {fullscreenWeeks.map((weekDays) => {
+            const weekStart = startOfWeek(weekDays[0]);
+            const weekEnd = weekDays[6];
+            const weekKey = weekStart.toISOString().slice(0, 10);
+            const wkSummary = weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === weekKey);
+            const isCurrentWeek = weekDays.some(d => isSameDay(d, new Date()));
+            const weekLabel = `${weekStart.toLocaleDateString(undefined,{day:'numeric',month:'short'})} – ${weekEnd.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}`;
+
+            return (
+              <div key={weekKey} className={`border-b border-gray-100 ${isCurrentWeek ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}`}>
+                {/* Week header */}
+                <div className={`flex items-center gap-3 px-4 py-1.5 text-xs ${isCurrentWeek ? 'bg-primary/5' : 'bg-gray-50'}`}>
+                  <span className={`font-bold ${isCurrentWeek ? 'text-primary' : 'text-gray-500'}`}>{weekLabel}</span>
+                  {isCurrentWeek && <span className="bg-primary text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">Now</span>}
+                  {wkSummary && wkSummary.totalSeconds > 0 && (
+                    <div className="flex items-center gap-2 ml-auto text-gray-500">
+                      <span className="font-semibold text-gray-700">{formatHours(wkSummary.totalSeconds)}</span>
+                      {wkSummary.totalTSS > 0 && (
+                        <span className="flex items-center gap-0.5 text-primary font-bold">
+                          <FireIcon className="w-3 h-3" />{Math.round(wkSummary.totalTSS)} TSS
+                        </span>
                       )}
+                      {wkSummary.volumeChange === 'up' && <ArrowUpIcon className="w-3 h-3 text-green-500" />}
+                      {wkSummary.volumeChange === 'down' && <ArrowDownIcon className="w-3 h-3 text-red-500" />}
                     </div>
-                  );
-                })}
-              </motion.div>
+                  )}
+                </div>
+
+                {/* Day columns */}
+                <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(130px,170px)' }}>
+                  {weekDays.map((dayDate, dayIdx) => {
+                    const key = getLocalDateString(dayDate);
+                    const acts = activitiesByDay.get(key) || [];
+                    const planned = plannedByDay.get(key) || [];
+                    const isToday = isSameDay(dayDate, new Date());
+                    const isDragTarget = dragOverKey === key && draggedPw && draggedPw.pw.date !== key;
+
+                    return (
+                      <div
+                        key={key}
+                        className={`bg-white p-2 min-h-[190px] flex flex-col gap-1 group/day ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50/60'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
+                        onDragOver={e => { if (!draggedPw) return; e.preventDefault(); setDragOverKey(key); }}
+                        onDragLeave={() => { if (dragOverKey === key) setDragOverKey(null); }}
+                        onDrop={e => {
+                          e.preventDefault(); setDragOverKey(null);
+                          if (!draggedPw) return;
+                          const { pw, isCopy } = draggedPw;
+                          if (pw.date === key) return;
+                          if (isCopy && onCopyPlannedWorkout) onCopyPlannedWorkout(pw, key);
+                          else if (!isCopy && onMovePlannedWorkout) onMovePlannedWorkout(pw._id, key);
+                          setDraggedPw(null);
+                        }}
+                      >
+                        {/* Day number */}
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className={`text-xs font-bold leading-none ${isToday ? 'w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px]' : 'text-gray-700'}`}>
+                            {dayDate.getDate()}
+                          </span>
+                          {isDragTarget && <span className="text-[9px] font-semibold text-primary/70">{draggedPw?.isCopy ? 'Copy' : 'Move'}</span>}
+                          {!isDragTarget && onPlanWorkout && (
+                            <button
+                              onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
+                              className="opacity-0 group-hover/day:opacity-100 w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-primary hover:bg-primary/10 transition-all"
+                            >
+                              <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M8 3v10M3 8h10" /></svg>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Planned workouts */}
+                        {planned.map((pw, pi) => (
+                          <PlannedWorkoutCard
+                            key={`fs-plan-${pi}`}
+                            pw={pw}
+                            compact
+                            onSelect={onSelectPlannedWorkout}
+                            onStart={onStartWorkout}
+                            isDragging={draggedPw?.pw?._id === pw._id}
+                            onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
+                            onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
+                            compliance={findCompliance(pw, acts)}
+                            onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
+                            onDelete={onDeletePlannedWorkout}
+                            onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                          />
+                        ))}
+
+                        {/* Actual activities */}
+                        {acts.map((a, i) => {
+                          const activityId = a.id || a._id;
+                          const isSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
+                          return (
+                            <WeekActivityCard
+                              key={i}
+                              a={a}
+                              isSelected={isSelected}
+                              onSelect={handleSelectActivity}
+                              onActivityClick={handleActivityClick}
+                              onAddLactate={onAddLactate}
+                              catBadgeStyle={catBadgeStyle}
+                              catLabel={catLabel}
+                            />
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+
+                  {/* Summary column */}
+                  <WeekSummaryCell
+                    weekSummary={wkSummary}
+                    formatHours={formatHours}
+                    formatKm={formatKm}
+                    user={user}
+                  />
+                </div>
+              </div>
             );
-          })()}
+          })}
         </div>
       ) : (
-        /* Desktop: Original grid layout */
+        /* Desktop: compact month/week grid */
         <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={anchorDate.toISOString().slice(0, 7)}
@@ -1465,8 +2886,8 @@ export default function CalendarView({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: direction * -30 }}
           transition={{ duration: 0.22, ease: 'easeInOut' }}
-          className={`grid gap-px bg-gray-100 rounded-xl overflow-hidden ${isFullscreen ? 'overflow-y-auto flex-1' : ''}`}
-          style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) minmax(140px,180px)' : 'repeat(7, 1fr) minmax(140px,180px)' }}
+          className="grid gap-px bg-gray-100 rounded-xl overflow-hidden"
+          style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(140px,180px)' }}
         >
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
           <div key={d} className="bg-gray-50 text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-600">{d}</div>
@@ -1565,6 +2986,10 @@ export default function CalendarView({
                           isDragging={draggedPw?.pw?._id === pw._id}
                           onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                           onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
+                          compliance={findCompliance(pw, visibleActs)}
+                          onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
+                          onDelete={onDeletePlannedWorkout}
+                          onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
                         />
                       ))}
                       {visibleActs.map((a, i) => {
@@ -1595,7 +3020,7 @@ export default function CalendarView({
                         return (
                           <div key={i} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
                             <button
-                              onClick={(e) => handleActivityClick(a, e)}
+                              onClick={(e) => { const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
                               className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex flex-col gap-0.5 ${
                                 isSelected
                                   ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
@@ -1692,6 +3117,23 @@ export default function CalendarView({
           anchorRect={activityPopup.rect}
           onClose={() => setActivityPopup(null)}
           onSelectActivity={onSelectActivity}
+          onAddLactate={onAddLactate}
+          plannedWorkout={activityPopup.plannedWorkout || null}
+          onEditPlanned={onSelectPlannedWorkout}
+          onOpenFull={() => setActivityModal({ activity: activityPopup.activity, plannedWorkout: activityPopup.plannedWorkout || null })}
+        />
+      )}
+
+      {/* Activity full modal */}
+      {activityModal && (
+        <ActivityFullModal
+          activity={activityModal.activity}
+          plannedWorkout={activityModal.plannedWorkout}
+          onClose={() => setActivityModal(null)}
+          onEditPlanned={onSelectPlannedWorkout}
+          onAddLactate={onAddLactate}
+          onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
+          onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
         />
       )}
     </motion.div>

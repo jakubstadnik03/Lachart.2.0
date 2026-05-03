@@ -16,8 +16,8 @@
  */
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { motion } from 'framer-motion';
-import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { motion, AnimatePresence } from 'framer-motion';
+import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
 
@@ -25,6 +25,44 @@ import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
 export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
 export const SPORT_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
 const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
+
+// ─── Sport SVG icons (no emoji) ─────────────────────────────────────────────
+const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
+  const s = { width: size, height: size, fill: 'none', stroke: color, strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  switch (name) {
+    case 'strength': return <svg viewBox="0 0 24 24" style={s}><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M8 9.5v5M16 9.5v5"/></svg>;
+    case 'walk':     return <svg viewBox="0 0 24 24" style={s}><circle cx="12" cy="4.5" r="1.5"/><path d="M9 8.5l1.5 4 2.5 2 2-3.5M9 14l-2 5M15 14l1 5M11.5 12.5l-2.5 1.5"/></svg>;
+    case 'brick':    return <svg viewBox="0 0 24 24" style={s}><circle cx="7" cy="12" r="3"/><path d="M10 12h2"/><circle cx="15" cy="12" r="2"/><path d="M4 12c0-1.7 1.3-3 3-3"/><path d="M7 17v-2M15 9v2"/></svg>;
+    case 'crosstrain': return <svg viewBox="0 0 24 24" style={s}><path d="M12 3v18M3 12h18M7 7l10 10M17 7L7 17"/></svg>;
+    case 'mtbike':   return <svg viewBox="0 0 24 24" style={s}><circle cx="6" cy="16" r="3"/><circle cx="18" cy="16" r="3"/><path d="M6 16l4-7h4l3 7M14 9l-2-4M10 9H8"/></svg>;
+    case 'rowing':   return <svg viewBox="0 0 24 24" style={s}><path d="M3 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><circle cx="14" cy="7" r="1.5"/><path d="M12 10l2-3M7 13l5-3 3-5"/></svg>;
+    case 'lactate':  return <svg viewBox="0 0 24 24" style={s}><path d="M12 3c0 0-6 6.5-6 10a6 6 0 0 0 12 0c0-3.5-6-10-6-10z"/><path d="M9 16c0 1.7 1.3 3 3 3"/></svg>;
+    case 'other':    return <svg viewBox="0 0 24 24" style={s}><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>;
+    default:         return null;
+  }
+};
+
+// ─── Sport picker options ────────────────────────────────────────────────────
+const SPORT_OPTIONS = [
+  { key: 'bike',       label: 'Bike',         color: '#767EB5', img: '/icon/bike.svg' },
+  { key: 'run',        label: 'Run',          color: '#f97316', img: '/icon/run.svg' },
+  { key: 'swim',       label: 'Swim',         color: '#38bdf8', img: '/icon/swim.svg' },
+  { key: 'strength',   label: 'Strength',     color: '#8b5cf6', svgName: 'strength' },
+  { key: 'walk',       label: 'Walk',         color: '#22c55e', svgName: 'walk' },
+  { key: 'brick',      label: 'Brick',        color: '#f59e0b', svgName: 'brick' },
+  { key: 'crosstrain', label: 'Cross-train',  color: '#ec4899', svgName: 'crosstrain' },
+  { key: 'mtbike',     label: 'MTB',          color: '#a16207', svgName: 'mtbike' },
+  { key: 'rowing',     label: 'Rowing',       color: '#06b6d4', svgName: 'rowing' },
+  { key: 'lactate',    label: 'Lactate Test', color: '#ef4444', svgName: 'lactate', isTest: true },
+  { key: 'other',      label: 'Other',        color: '#6b7280', svgName: 'other' },
+];
+
+// Helper: render sport icon (img or svg)
+function SportOptIcon({ opt, size = 22, className = '' }) {
+  if (opt?.img) return <img src={opt.img} alt={opt.label} style={{ width: size, height: size }} className={className} />;
+  if (opt?.svgName) return <SportSVG name={opt.svgName} color={opt.color} size={size} />;
+  return null;
+}
 
 export function stepTotalSecs(steps) {
   if (!Array.isArray(steps)) return 0;
@@ -103,9 +141,33 @@ export function MiniWorkoutChart({ steps, height = 20, width = 120 }) {
   );
 }
 
+// ─── Duration string parser (h:mm:ss or mm:ss or minutes) ───────────────────
+function parseDurStr(s) {
+  if (!s) return 0;
+  const t = String(s).trim().toLowerCase();
+  if (t.endsWith('h')) return parseFloat(t) * 3600;
+  if (t.endsWith('m')) return parseFloat(t) * 60;
+  if (/^\d+(\.\d+)?$/.test(t)) {
+    const n = parseFloat(t);
+    // bare number ≤ 9 → hours (e.g. "2" = 2h), larger → minutes (e.g. "90" = 90min)
+    return n <= 9 ? n * 3600 : n * 60;
+  }
+  const parts = t.split(':').map(Number);
+  if (parts.length === 2) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60;
+  if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  return 0;
+}
+function secsToHMS(s) {
+  if (!s) return '';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:00` : `${m}:00`;
+}
+
 // ─── Main modal ────────────────────────────────────────────────────────────────
 export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [] }) {
   const isEdit = Boolean(workout?._id);
+  // 'pick' = sport selector (new workouts only), 'build' = full builder
+  const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
   const [title, setTitle]         = useState(workout?.title || '');
   const [desc, setDesc]           = useState(workout?.description || '');
@@ -114,19 +176,50 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [saving, setSaving]       = useState(false);
   const [tab, setTab]             = useState('builder');
   const [presetSport, setPresetSport] = useState(workout?.sport || 'bike');
+  // Build workout section: collapsed until user clicks "Build Workout"
+  const [showBuilder, setShowBuilder] = useState(isEdit && (workout?.steps?.length > 0));
+  // Planned manual stats (used when no builder steps)
+  const [plannedDurStr, setPlannedDurStr] = useState(
+    workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : ''
+  );
+  const [plannedDistStr, setPlannedDistStr] = useState(
+    workout?.plannedDistance ? String((workout.plannedDistance / 1000).toFixed(1)) : ''
+  );
+  // Coach comment (visible note shown on calendar card)
+  const [comment, setComment] = useState(workout?.comment || '');
+  // Lactate test saved notification
+  const [lactateSaved, setLactateSaved] = useState(false);
+
+  const pickSport = (s) => {
+    setSport(s);
+    setPresetSport(s);
+    setStep('build');
+  };
 
   const handleSave = async () => {
     if (!title.trim()) return;
     setSaving(true);
+    const stepsDur = steps.length > 0 ? stepTotalSecs(steps) : 0;
+    const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...context, sport }) : null;
     await onSave({
       date: toLocalISO(date),
       sport,
       title: title.trim(),
       description: desc,
-      targetTss: tss ? Number(tss) : undefined,
+      comment: comment.trim() || undefined,
+      targetTss:       tss ? Number(tss) : (estTss || undefined),
       steps,
+      plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
+      plannedDistance: plannedDistStr ? parseFloat(plannedDistStr) * 1000 : undefined,
+      isLactateTest:   sport === 'lactate' || undefined,
     });
     setSaving(false);
+    // Show in-app notification for lactate test
+    if (sport === 'lactate') {
+      setLactateSaved(true);
+    } else {
+      onClose();
+    }
   };
 
   const loadTemplate = (tpl) => {
@@ -135,15 +228,21 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     if (!title) setTitle(tpl.name);
     const newSport = tpl.sport || sport || 'bike';
     if (!sport) setSport(newSport);
-    // Auto-fill Target TSS from template or compute estimate
     if (tpl.targetTss) {
       setTss(String(tpl.targetTss));
     } else if (newSteps.length > 0) {
       const est = computeEstTSS(newSteps, { ...context, sport: newSport });
       if (est > 0) setTss(String(est));
     }
+    setShowBuilder(true);
     setTab('builder');
   };
+
+  // Auto-compute TSS when steps change
+  const stepsDuration = steps.length > 0 ? stepTotalSecs(steps) : 0;
+  const estTssFromSteps = steps.length > 0 ? computeEstTSS(steps, { ...context, sport }) : null;
+
+  const selectedSportMeta = SPORT_OPTIONS.find(o => o.key === sport);
 
   return ReactDOM.createPortal(
     <motion.div
@@ -159,208 +258,403 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         className="w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ maxHeight: '92vh' }}
       >
-        {/* Header */}
+        {/* ─── Lactate saved notification screen ─── */}
+        {lactateSaved ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
+              <BellIcon className="w-8 h-8 text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">Lactate Test Scheduled!</h3>
+              <p className="text-sm text-slate-500">
+                {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+              <p className="text-sm text-slate-500 mt-3 max-w-xs leading-relaxed">
+                Prepare your lactate analyzer and recording sheet. We recommend testing fasted or 3+ hours after your last meal.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-xl text-xs text-red-700 font-medium">
+                <CheckCircleIcon className="w-4 h-4 text-red-400 flex-shrink-0" />
+                Test saved to calendar
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl text-xs text-amber-700 font-medium">
+                <BellIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                Reminder shown the day before
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="mt-2 px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity min-h-[44px] w-full sm:w-auto"
+            >
+              Done
+            </button>
+          </div>
+        ) : (<>
+
+        {/* ─── Shared header ─── */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0">
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-slate-400 font-medium">
-              {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
-            <h2 className="text-base font-bold text-slate-900 leading-tight">
-              {isEdit ? 'Edit planned workout' : 'Plan a workout'}
-            </h2>
+          {step === 'build' && !isEdit && (
+            <button onClick={() => setStep('pick')} className="p-1.5 -ml-1 rounded-xl hover:bg-slate-100 text-slate-400">
+              <ArrowLeftIcon className="w-4 h-4" />
+            </button>
+          )}
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            {step === 'build' && selectedSportMeta && (
+              <span className="w-5 h-5 flex-shrink-0">
+                <SportOptIcon opt={selectedSportMeta} size={20} />
+              </span>
+            )}
+            <div>
+              <p className="text-[11px] text-slate-400 font-medium">
+                {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+              <h2 className="text-base font-bold text-slate-900 leading-tight">
+                {step === 'pick' ? 'Add a workout' : isEdit ? 'Edit planned workout' : `Plan a ${selectedSportMeta?.label || sport} workout`}
+              </h2>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-4">
-          {/* Sport + Title row */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Sport</label>
-              <div className="flex gap-2">
-                {['bike','run','swim'].map(s => (
-                  <button key={s} onClick={() => { setSport(s); setPresetSport(s); }}
-                    className={`flex-1 flex flex-col items-center gap-0.5 p-2 rounded-xl border transition-all ${sport === s ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white'}`}>
-                    <img src={SPORT_ICONS[s]} alt={s} className="w-5 h-5" />
-                    <span className="text-[10px] capitalize text-slate-600">{s}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="col-span-2">
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Title</label>
-              <input
-                type="text" value={title} onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Threshold intervals"
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                autoFocus
-              />
-            </div>
-          </div>
-
-          {/* Notes + TSS */}
-          <div className="grid grid-cols-4 gap-3">
-            <div className="col-span-3">
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Notes</label>
-              <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)}
-                placeholder="Coach notes, focus, context…"
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Target TSS</label>
-              <input type="number" value={tss} onChange={e => setTss(e.target.value)}
-                placeholder="—"
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 text-center"
-              />
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-1 border-b border-slate-100">
-            {[
-              { k: 'builder',   label: 'Builder',   Icon: WrenchScrewdriverIcon },
-              { k: 'templates', label: 'Templates',  Icon: RectangleStackIcon },
-            ].map(({ k, label, Icon }) => (
-              <button key={k} onClick={() => setTab(k)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-colors ${tab === k ? 'bg-primary text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === 'builder' && (
-            <WorkoutBuilder initialSteps={steps} context={context} sport={sport} onChange={setSteps} />
-          )}
-
-          {tab === 'templates' && (
-            <div className="flex flex-col gap-4">
-
-              {/* ── Sport switcher ── */}
-              <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl">
-                {['bike','run','swim'].map(s => {
-                  const SPORT_LABEL = { bike: 'Bike', run: 'Run', swim: 'Swim' };
-                  const sportColors = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
-                  const isActive = presetSport === s;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => setPresetSport(s)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        isActive ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                      style={isActive ? { color: sportColors[s] } : {}}
-                    >
-                      <img src={SPORT_ICONS[s]} alt={s} className="w-3.5 h-3.5" />
-                      {SPORT_LABEL[s]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* ── Built-in presets for selected sport ── */}
+        <AnimatePresence mode="wait" initial={false}>
+          {/* ─── STEP 1: Sport picker ─── */}
+          {step === 'pick' && (
+            <motion.div
+              key="pick"
+              initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-y-auto flex-1 p-5 flex flex-col gap-5"
+            >
+              {/* Sport grid */}
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Built-in workouts</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {PRESET_CATALOG.filter(p => p.sport === presetSport).map(preset => {
-                    const presetSteps = buildPresetSteps(preset.key);
-                    return (
-                      <button
-                        key={preset.key}
-                        onClick={() => {
-                          setSport(preset.sport);
-                          loadTemplate({ name: preset.name, sport: preset.sport, steps: presetSteps });
-                        }}
-                        className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left group"
-                        style={{ borderLeftColor: preset.color, borderLeftWidth: 3 }}
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Choose sport</p>
+                <div className="grid grid-cols-4 sm:grid-cols-5 gap-2.5">
+                  {SPORT_OPTIONS.map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => pickSport(opt.key)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white active:scale-95 transition-all touch-manipulation min-h-[72px] justify-between"
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = opt.color + '60'; e.currentTarget.style.backgroundColor = opt.color + '0d'; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.backgroundColor = ''; }}
+                    >
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center"
+                        style={{ backgroundColor: opt.color + '18' }}
                       >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800 leading-tight">{preset.name}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{preset.desc}</p>
-                          <div className="mt-1.5">
-                            <MiniWorkoutChart steps={presetSteps} width={100} height={16} />
-                          </div>
-                        </div>
-                        <ArrowRightIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-600 shrink-0 mt-0.5 transition-colors" />
-                      </button>
-                    );
-                  })}
+                        <SportOptIcon opt={opt} size={22} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">{opt.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* ── My saved templates (filtered to current sport) ── */}
-              {(() => {
-                const myTpls = templates.filter(t => t.sport === presetSport);
-                return (
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">My templates</p>
-                    {myTpls.length === 0 ? (
-                      <p className="text-sm text-slate-400 text-center py-4 border border-dashed border-slate-200 rounded-xl">
-                        No saved templates for {presetSport} yet.
-                      </p>
+              {/* Templates shortcut */}
+              {templates.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">My templates</p>
+                  <div className="flex flex-col gap-2">
+                    {templates.slice(0, 4).map(tpl => {
+                      const opt = SPORT_OPTIONS.find(o => o.key === tpl.sport) || SPORT_OPTIONS[SPORT_OPTIONS.length - 1];
+                      return (
+                        <button
+                          key={tpl._id}
+                          onClick={() => { setSport(tpl.sport); setPresetSport(tpl.sport); loadTemplate(tpl); setStep('build'); }}
+                          className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-white hover:border-primary/40 hover:bg-primary/5 transition-all text-left min-h-[52px]"
+                        >
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: opt.color + '18' }}>
+                            <SportOptIcon opt={opt} size={18} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{tpl.name}</p>
+                            <p className="text-[11px] text-slate-400">{fmtDuration(stepTotalSecs(tpl.steps))}</p>
+                          </div>
+                          {tpl.steps?.length > 0 && (
+                            <MiniWorkoutChart steps={tpl.steps} width={60} height={14} />
+                          )}
+                          <ArrowRightIcon className="w-4 h-4 text-slate-300 flex-shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* ─── STEP 2: Builder ─── */}
+          {step === 'build' && (
+            <motion.div
+              key="build"
+              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-y-auto flex-1 flex flex-col"
+            >
+              {/* ── Big title input ── */}
+              <div className="px-5 pt-5 pb-3">
+                <input
+                  type="text" value={title} onChange={e => setTitle(e.target.value)}
+                  placeholder="Untitled Workout"
+                  className="w-full text-xl font-bold text-slate-900 border-0 border-b-2 border-slate-100 pb-2 focus:border-primary focus:outline-none bg-transparent placeholder:text-slate-300 transition-colors"
+                  autoFocus={step === 'build'}
+                />
+              </div>
+
+              {/* ── Sport + planned stats row ── */}
+              <div className="px-5 py-3 border-b border-slate-100">
+                {/* Sport pill row */}
+                <div className="flex items-center gap-2 mb-3">
+                  {!isEdit ? (
+                    <button
+                      onClick={() => setStep('pick')}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-80"
+                      style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}
+                    >
+                      <SportOptIcon opt={selectedSportMeta} size={13} />
+                      {selectedSportMeta?.label}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold"
+                      style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}>
+                      <SportOptIcon opt={selectedSportMeta} size={13} />
+                      {selectedSportMeta?.label}
+                    </div>
+                  )}
+                </div>
+
+                {/* Planned stats table */}
+                <div className="grid grid-cols-3 gap-2">
+                  {/* Duration */}
+                  <div className="bg-slate-50 rounded-xl p-3 min-h-[70px]">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">Duration</span>
+                    {stepsDuration > 0 ? (
+                      <span className="text-base font-bold text-slate-800">{secsToHMS(stepsDuration)}</span>
                     ) : (
-                      <div className="flex flex-col gap-2">
-                        {myTpls.map(tpl => (
-                          <button key={tpl._id} onClick={() => { setSport(tpl.sport); loadTemplate(tpl); }}
-                            className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
-                            <img src={SPORT_ICONS[tpl.sport] || SPORT_ICONS.bike} alt={tpl.sport} className="w-6 h-6 shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-800">{tpl.name}</p>
-                              <p className="text-[11px] text-slate-400">{tpl.steps?.length || 0} steps · {fmtDuration(stepTotalSecs(tpl.steps))}</p>
-                              {tpl.steps?.length > 0 && <div className="mt-1"><MiniWorkoutChart steps={tpl.steps} /></div>}
-                            </div>
-                            <span className="flex items-center gap-0.5 text-xs text-primary font-semibold shrink-0">Use <ArrowRightIcon className="w-3 h-3" /></span>
+                      <input
+                        type="text" value={plannedDurStr} onChange={e => setPlannedDurStr(e.target.value)}
+                        onBlur={() => { const s = parseDurStr(plannedDurStr); if (s > 0) setPlannedDurStr(secsToHMS(s)); }}
+                        placeholder="h:mm:ss"
+                        className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
+                      />
+                    )}
+                    <span className="text-[10px] text-slate-400">h:mm:ss</span>
+                  </div>
+
+                  {/* Distance */}
+                  <div className="bg-slate-50 rounded-xl p-3 min-h-[70px]">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">Distance</span>
+                    <div className="flex items-baseline gap-1">
+                      <input
+                        type="text" value={plannedDistStr} onChange={e => setPlannedDistStr(e.target.value)}
+                        placeholder="--"
+                        className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-400">km</span>
+                  </div>
+
+                  {/* TSS */}
+                  <div className="bg-slate-50 rounded-xl p-3 min-h-[70px]">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">TSS</span>
+                    {estTssFromSteps ? (
+                      <span className="text-base font-bold text-primary">{Math.round(estTssFromSteps)}</span>
+                    ) : (
+                      <input
+                        type="number" value={tss} onChange={e => setTss(e.target.value)}
+                        placeholder="--"
+                        className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
+                      />
+                    )}
+                    <span className="text-[10px] text-slate-400">TSS</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Build Workout section ── */}
+              <div className="px-5 py-4 flex-1 flex flex-col gap-4">
+
+                {!showBuilder ? (
+                  /* Collapsed: big dashed button */
+                  <button
+                    onClick={() => setShowBuilder(true)}
+                    className="w-full flex flex-col items-center justify-center gap-2 py-6 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all group"
+                  >
+                    <svg className="w-8 h-8 opacity-50 group-hover:opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                      <rect x="2" y="16" width="4" height="6" rx="1" />
+                      <rect x="7" y="11" width="4" height="11" rx="1" />
+                      <rect x="12" y="7" width="4" height="15" rx="1" />
+                      <rect x="17" y="3" width="4" height="19" rx="1" />
+                    </svg>
+                    <span className="text-sm font-semibold">Build Workout</span>
+                    <span className="text-[11px] text-slate-300">Add intervals, warmup, cooldown…</span>
+                  </button>
+                ) : (
+                  /* Expanded: tabs + builder/templates */
+                  <div className="flex flex-col gap-3">
+                    {/* Tab bar */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-1">
+                        {[
+                          { k: 'builder',   label: 'Builder',   Icon: WrenchScrewdriverIcon },
+                          { k: 'templates', label: 'Templates',  Icon: RectangleStackIcon },
+                        ].map(({ k, label, Icon }) => (
+                          <button key={k} onClick={() => setTab(k)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors touch-manipulation min-h-[36px] ${tab === k ? 'bg-primary text-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                            {label}
                           </button>
                         ))}
                       </div>
+                      {/* Collapse button */}
+                      <button
+                        onClick={() => { setShowBuilder(false); setSteps([]); }}
+                        className="text-xs text-slate-400 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50 touch-manipulation"
+                      >
+                        Remove structure
+                      </button>
+                    </div>
+
+                    {tab === 'builder' && (
+                      <WorkoutBuilder initialSteps={steps} context={context} sport={sport} onChange={setSteps} />
+                    )}
+
+                    {tab === 'templates' && (
+                      <div className="flex flex-col gap-4">
+                        {/* Sport switcher */}
+                        <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl">
+                          {['bike','run','swim'].map(s => {
+                            const lbl = { bike: 'Bike', run: 'Run', swim: 'Swim' };
+                            const clr = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
+                            const isActive = presetSport === s;
+                            return (
+                              <button key={s} onClick={() => setPresetSport(s)}
+                                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${isActive ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                style={isActive ? { color: clr[s] } : {}}>
+                                <img src={SPORT_ICONS[s]} alt={s} className="w-3.5 h-3.5" />
+                                {lbl[s]}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Built-in presets */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Built-in workouts</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {PRESET_CATALOG.filter(p => p.sport === presetSport).map(preset => {
+                              const pSteps = buildPresetSteps(preset.key);
+                              return (
+                                <button key={preset.key}
+                                  onClick={() => { setSport(preset.sport); loadTemplate({ name: preset.name, sport: preset.sport, steps: pSteps }); }}
+                                  className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left group"
+                                  style={{ borderLeftColor: preset.color, borderLeftWidth: 3 }}>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-semibold text-slate-800 leading-tight">{preset.name}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">{preset.desc}</p>
+                                    <div className="mt-1.5"><MiniWorkoutChart steps={pSteps} width={100} height={16} /></div>
+                                  </div>
+                                  <ArrowRightIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-600 shrink-0 mt-0.5 transition-colors" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* My saved templates */}
+                        {(() => {
+                          const myTpls = templates.filter(t => t.sport === presetSport);
+                          return myTpls.length > 0 ? (
+                            <div>
+                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">My templates</p>
+                              <div className="flex flex-col gap-2">
+                                {myTpls.map(tpl => (
+                                  <button key={tpl._id} onClick={() => { setSport(tpl.sport); loadTemplate(tpl); }}
+                                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
+                                    <img src={SPORT_ICONS[tpl.sport] || SPORT_ICONS.bike} alt={tpl.sport} className="w-6 h-6 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold text-slate-800">{tpl.name}</p>
+                                      <p className="text-[11px] text-slate-400">{fmtDuration(stepTotalSecs(tpl.steps))}</p>
+                                      {tpl.steps?.length > 0 && <div className="mt-1"><MiniWorkoutChart steps={tpl.steps} /></div>}
+                                    </div>
+                                    <span className="flex items-center gap-0.5 text-xs text-primary font-semibold shrink-0">Use <ArrowRightIcon className="w-3 h-3" /></span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
                     )}
                   </div>
-                );
-              })()}
+                )}
 
-            </div>
+                {/* ── Comment + Description ── */}
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
+                      Comment <span className="normal-case font-normal text-slate-300">· shown on calendar card</span>
+                    </label>
+                    <textarea
+                      rows={2} value={comment} onChange={e => setComment(e.target.value)}
+                      placeholder="Short note shown on the calendar card…"
+                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Description / Coach notes</label>
+                    <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)}
+                      placeholder="Focus, context, feel…"
+                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 shrink-0 bg-white">
-          <div className="flex gap-2">
-            {isEdit && (
-              <button onClick={() => onDelete(workout)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-500 text-sm hover:bg-red-50 transition-colors">
-                <TrashIcon className="w-4 h-4" />
+        {/* ─── Footer (only in build step) ─── */}
+        {step === 'build' && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 shrink-0 bg-white">
+            <div className="flex gap-2">
+              {isEdit && (
+                <button onClick={() => onDelete(workout)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-500 text-sm hover:bg-red-50 transition-colors min-h-[44px]">
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+              )}
+              {steps.length > 0 && (
+                <button
+                  onClick={async () => {
+                    const name = window.prompt('Template name:', title);
+                    if (!name) return;
+                    try { await createWorkoutTemplate({ name, sport, steps, description: desc }); } catch (_) {}
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors">
+                  <BookmarkIcon className="w-4 h-4" />
+                  Save as template
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors touch-manipulation min-h-[44px]">
+                Cancel
               </button>
-            )}
-            {steps.length > 0 && (
-              <button
-                onClick={async () => {
-                  const name = window.prompt('Template name:', title);
-                  if (!name) return;
-                  try {
-                    await createWorkoutTemplate({ name, sport, steps, description: desc });
-                  } catch (_) {}
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors">
-                <BookmarkIcon className="w-4 h-4" />
-                Save as template
+              <button onClick={handleSave} disabled={!title.trim() || saving}
+                className={`px-5 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 touch-manipulation min-h-[44px] ${sport === 'lactate' ? 'bg-red-500' : 'bg-primary'}`}>
+                {saving ? 'Saving…' : isEdit ? 'Update' : sport === 'lactate' ? 'Plan lactate test' : 'Plan it'}
               </button>
-            )}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors">
-              Cancel
-            </button>
-            <button onClick={handleSave} disabled={!title.trim() || saving}
-              className="px-5 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
-              {saving ? 'Saving…' : isEdit ? 'Update' : 'Plan it'}
-            </button>
-          </div>
-        </div>
+        )}
+        </>)}
       </motion.div>
     </motion.div>,
     document.body
