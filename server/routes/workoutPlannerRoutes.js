@@ -204,7 +204,12 @@ router.put('/planned/:id', verifyToken, async (req, res) => {
     await pw.save();
     res.json(pw);
   } catch (e) {
-    res.status(500).json({ error: 'Failed to update planned workout' });
+    console.error('[WorkoutPlanner] PUT /planned/:id error:', e);
+    res.status(500).json({
+      error: 'Failed to update planned workout',
+      message: e?.message,
+      ...(e?.errors && { validation: Object.fromEntries(Object.entries(e.errors).map(([k, v]) => [k, v.message])) }),
+    });
   }
 });
 
