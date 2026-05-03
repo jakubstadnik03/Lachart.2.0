@@ -46,3 +46,6 @@ client/android/app/build/
 *.xcarchive
 client/App\ */
 
+
+# Claude Code worktrees
+.claude/worktrees/
