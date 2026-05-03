@@ -2326,6 +2326,13 @@ export default function CalendarView({
       const el = rectOrEvent instanceof Element ? rectOrEvent : null;
       onActivityClick(a, el);
     } else {
+      // On mobile, skip the modal — let the parent page render its full
+      // detail view (chart, stats, laps, comments) which the modal would
+      // otherwise hide.
+      if (isMobile) {
+        handleSelectActivity(a);
+        return;
+      }
       // Find the matching planned workout for this day/sport
       const actDate = a.date || a.timestamp || a.startDate || a.start_time;
       const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
