@@ -593,6 +593,33 @@ async function fetchStravaActivityStreams(token, stravaId) {
 // Helper function to delay requests to respect rate limits
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// ── Per-activity cache for /strava/activities/:id (Strava 100/15min limit) ──
+const STRAVA_ACTIVITY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+const stravaActivityCache = new Map(); // key: `${userId}:${stravaId}` → { data, expiresAt }
+
+function getCachedStravaActivity(key) {
+  const hit = stravaActivityCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt < Date.now()) {
+    stravaActivityCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function setCachedStravaActivity(key, data) {
+  stravaActivityCache.set(key, { data, expiresAt: Date.now() + STRAVA_ACTIVITY_CACHE_TTL_MS });
+  // Cap size to avoid unbounded growth on long-lived processes
+  if (stravaActivityCache.size > 500) {
+    const firstKey = stravaActivityCache.keys().next().value;
+    stravaActivityCache.delete(firstKey);
+  }
+}
+
+function invalidateStravaActivityCache(userId, stravaId) {
+  if (userId && stravaId) stravaActivityCache.delete(`${userId}:${stravaId}`);
+}
+
 function notifyStravaImportedPush(userId, imported) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
@@ -2353,8 +2380,14 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       });
     }
     
-    let detailResp;
-    try {
+    // ── Cache check (avoid hammering Strava: 100 req / 15 min limit) ──
+    const cacheKey = `${targetUserId}:${stravaId}`;
+    const cached = getCachedStravaActivity(cacheKey);
+    let detailResp = cached ? { data: cached.detail } : null;
+    let streamsData = cached ? (cached.streams || {}) : {};
+    let laps = cached ? (cached.laps || []) : [];
+
+    if (!cached) try {
       detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 30000
@@ -2400,21 +2433,24 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
     }
 
-    let streamsData = {};
-    try {
-      streamsData = await fetchStravaActivityStreams(token, stravaId);
-    } catch (streamErr) {
-      console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
-      streamsData = {};
+    if (!cached) {
+      try {
+        streamsData = await fetchStravaActivityStreams(token, stravaId);
+      } catch (streamErr) {
+        console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
+        streamsData = {};
+      }
+      // Laps (intervals)
+      try {
+        const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        laps = lapsResp.data || [];
+      } catch (e) {}
+
+      // Cache the Strava-side data; saved title/description/category come from DB
+      setCachedStravaActivity(cacheKey, { detail: detailResp.data, streams: streamsData, laps });
     }
-    // Laps (intervals)
-    let laps = [];
-    try {
-      const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      laps = lapsResp.data || [];
-    } catch (e) {}
     
     // Get saved title, description and laps with lactate from database (if not already loaded)
     if (!savedActivity) {
