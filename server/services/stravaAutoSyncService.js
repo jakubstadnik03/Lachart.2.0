@@ -201,6 +201,20 @@ async function syncStravaForUser(user) {
       notifyUserStravaActivitiesImported(user._id, imported).catch((e) =>
         console.error('[StravaAutoSync] push notify:', e.message || e)
       );
+
+      // In-app notification (bell). The manual sync does this too via
+      // notifyStravaImportedPush — auto-sync was missing it, so the bell
+      // stayed empty after a background import.
+      const { sendNotification } = require('../utils/notificationHelper');
+      const body = imported === 1
+        ? '1 new activity imported from Strava.'
+        : `${imported} new activities imported from Strava.`;
+      sendNotification(String(user._id), {
+        type: 'strava_import',
+        title: 'Strava sync',
+        body,
+        resourceType: 'strava',
+      }).catch((e) => console.error('[StravaAutoSync] in-app notify:', e.message || e));
     }
 
     return { imported, updated };
