@@ -253,10 +253,11 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
     >
       <div
         className={`bg-white w-full flex flex-col ${isMobile ? 'h-[100dvh] max-h-[100dvh] rounded-none' : 'rounded-lg max-w-5xl max-h-[90vh]'}`}
+        style={isMobile ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className={`sticky top-0 bg-white border-b border-gray-200 z-10 ${isMobile ? 'p-3' : 'p-4'}`}>
+        <div className={`sticky bg-white border-b border-gray-200 z-10 ${isMobile ? 'p-3 top-[env(safe-area-inset-top)]' : 'p-4 top-0'}`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>TRAINING GLOSSARY</h2>
             <button
