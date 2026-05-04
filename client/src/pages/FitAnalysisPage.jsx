@@ -1900,7 +1900,7 @@ const FitAnalysisPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadStravaDetail = useCallback(async (id, { overrideTitle = null } = {}) => {
+  const loadStravaDetail = useCallback(async (id, { overrideTitle = null, mergeResults = null } = {}) => {
     try {
       setDetailLoading(true);
       const role = String(user?.role || '').toLowerCase();
@@ -1918,8 +1918,11 @@ const FitAnalysisPage = () => {
       
       console.log('After deduplication:', uniqueLaps.length);
       
-      // Check if there's a linked training for this Strava activity (if regularTrainings is available)
-      const linkedTraining = (regularTrainings || []).find(t => String(t?.sourceStravaActivityId) === String(id));
+      // Check if there's a linked training for this Strava activity (if regularTrainings is available);
+      // fall back to mergeResults passed by the caller (loadTrainingFromTrainingModel) when state isn't ready yet.
+      const linkedFromState = (regularTrainings || []).find(t => String(t?.sourceStravaActivityId) === String(id));
+      const linkedTraining = linkedFromState
+        || (Array.isArray(mergeResults) ? { results: mergeResults, title: overrideTitle, sourceStravaActivityId: id } : null);
       const linkedTitle = linkedTraining?.title || overrideTitle;
 
       // Merge lactate values from linked Training model into Strava laps (if user entered
@@ -2846,16 +2849,33 @@ const FitAnalysisPage = () => {
         return;
       }
       
+      // Helper: copy lactate (and other user-entered values) from the parent
+      // Training.results onto the source FIT/Strava laps, so the intervals
+      // table on the detail page shows them.
+      const mergeLactateFromResults = (laps, results) => {
+        if (!Array.isArray(laps) || !Array.isArray(results) || results.length === 0) return laps;
+        return laps.map((lap, idx) => {
+          const r = results.find(x => Number.isFinite(x?.sourceLapIndex) && x.sourceLapIndex === idx)
+                 || results[idx]; // fallback: positional match
+          if (!r) return lap;
+          const next = (typeof lap.toObject === 'function') ? lap.toObject() : { ...lap };
+          if (r.lactate != null && next.lactate == null) next.lactate = r.lactate;
+          if (r.RPE != null && next.RPE == null) next.RPE = r.RPE;
+          return next;
+        });
+      };
+
       // Try to load original FitTraining or StravaActivity if reference exists
       if (data.sourceFitTrainingId) {
         try {
           const fitTraining = await getFitTraining(data.sourceFitTrainingId);
-          
+
           // Check for duplicate laps and deduplicate if needed
           if (fitTraining.laps && Array.isArray(fitTraining.laps)) {
             fitTraining.laps = deduplicateFitTrainingLaps(fitTraining.laps);
+            fitTraining.laps = mergeLactateFromResults(fitTraining.laps, data.results);
           }
-          
+
           setSelectedTraining(fitTraining);
           setSelectedStrava(null);
           setSelectedStravaStreams(null);
@@ -2876,7 +2896,7 @@ const FitAnalysisPage = () => {
         try {
           // Use the same loader as when selecting from calendar, so selectedStrava has the expected shape
           // and CalendarView can highlight/anchor correctly.
-          await loadStravaDetail(data.sourceStravaActivityId, { overrideTitle: data.title || null });
+          await loadStravaDetail(data.sourceStravaActivityId, { overrideTitle: data.title || null, mergeResults: data.results || null });
           
           // Clean URL params
           const url = new URL(window.location.href);
