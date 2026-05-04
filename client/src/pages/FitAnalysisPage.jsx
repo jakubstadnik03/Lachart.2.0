@@ -3989,7 +3989,12 @@ const FitAnalysisPage = () => {
             if (pw.status === 'completed' && pw.executionData) {
               setCompareModal(pw);
             } else {
-              setPlanModal({ date: new Date(pw.date + 'T12:00:00'), workout: pw });
+              // pw.date may already be a full ISO datetime string ("2026-05-04T00:00:00.000Z")
+              // or a date-only "YYYY-MM-DD". Normalise to date-only first, then add noon time
+              // so the Date parses to a local-noon Date object regardless of timezone.
+              const dateOnly = String(pw.date || '').slice(0, 10);
+              const d = dateOnly ? new Date(`${dateOnly}T12:00:00`) : new Date();
+              setPlanModal({ date: isNaN(d.getTime()) ? new Date() : d, workout: pw });
             }
           }}
           onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}

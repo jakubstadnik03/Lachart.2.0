@@ -92,7 +92,10 @@ export function fmtDuration(s) {
 }
 
 export function toLocalISO(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // Defensive: fall back to today if d is null/undefined/Invalid Date so we
+  // never POST/PUT a "NaN-NaN-NaN" date that the server rejects with 500.
+  const safe = (d instanceof Date && !isNaN(d.getTime())) ? d : new Date();
+  return `${safe.getFullYear()}-${String(safe.getMonth()+1).padStart(2,'0')}-${String(safe.getDate()).padStart(2,'0')}`;
 }
 
 // Mini SVG chart for template cards (with ramp support)
