@@ -859,7 +859,9 @@ const WeeklyCalendar = ({
 
   const handleRepeatWorkout = useCallback((pw, weeks) => {
     if (!onCopyPlannedWorkout || !pw.date) return;
-    const base = new Date(pw.date + 'T12:00:00');
+    const dateOnly = String(pw.date).slice(0, 10);
+    const base = new Date(`${dateOnly}T12:00:00`);
+    if (isNaN(base.getTime())) return;
     for (let i = 1; i <= weeks; i++) {
       const d = new Date(base);
       d.setDate(d.getDate() + 7 * i);

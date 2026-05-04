@@ -1123,7 +1123,13 @@ export default function DashboardPage() {
             }}
             plannedWorkouts={plannedWorkouts}
             onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
-            onSelectPlannedWorkout={(pw) => setPlanModal({ date: new Date(pw.date + 'T12:00:00'), workout: pw })}
+            onSelectPlannedWorkout={(pw) => {
+              // pw.date may be a full ISO datetime ('2026-05-04T00:00:00.000Z')
+              // or a date-only 'YYYY-MM-DD' — slice to date-only first.
+              const dateOnly = String(pw.date || '').slice(0, 10);
+              const d = dateOnly ? new Date(`${dateOnly}T12:00:00`) : new Date();
+              setPlanModal({ date: isNaN(d.getTime()) ? new Date() : d, workout: pw });
+            }}
             onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
             onCopyPlannedWorkout={handleDashboardCopyPlan}
             onDeletePlannedWorkout={handleDashboardPlanDelete}
