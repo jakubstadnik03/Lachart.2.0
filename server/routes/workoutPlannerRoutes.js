@@ -165,7 +165,8 @@ router.post('/planned', verifyToken, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
     const { date, sport, title, description, templateId, steps,
-            coachNotes, targetTss } = req.body;
+            coachNotes, comment, targetTss,
+            plannedDuration, plannedDistance, isLactateTest } = req.body;
 
     if (!date || !sport || !title) {
       return res.status(400).json({ error: 'date, sport and title are required' });
@@ -178,13 +179,18 @@ router.post('/planned', verifyToken, async (req, res) => {
       sport, title, description,
       templateId: templateId || null,
       steps: steps || [],
-      coachNotes, targetTss,
+      coachNotes, comment, targetTss,
+      plannedDuration, plannedDistance, isLactateTest,
       status: 'planned',
     });
     res.status(201).json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] POST /planned error:', e);
-    res.status(500).json({ error: 'Failed to create planned workout' });
+    res.status(500).json({
+      error: 'Failed to create planned workout',
+      message: e?.message,
+      ...(e?.errors && { validation: Object.fromEntries(Object.entries(e.errors).map(([k, v]) => [k, v.message])) }),
+    });
   }
 });
 
@@ -197,7 +203,8 @@ router.put('/planned/:id', verifyToken, async (req, res) => {
     if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
 
     const fields = ['date','sport','title','description','steps','status',
-                    'completedTrainingId','coachNotes','targetTss'];
+                    'completedTrainingId','coachNotes','comment','targetTss',
+                    'plannedDuration','plannedDistance','isLactateTest'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
     if (req.body.date) pw.date = new Date(req.body.date);
 
