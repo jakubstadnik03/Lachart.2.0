@@ -116,11 +116,28 @@ function getLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
+// Inline runner figure — lucide has no person-running icon, so we draw one
+// in lucide's stroke style. Mirrors RunnerSVG in WorkoutPlanModal.
+const RunnerSvg = ({ className = '', strokeWidth = 2 }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+       className={className}>
+    <circle cx="16" cy="4" r="1.6" fill="currentColor" stroke="none" />
+    <path d="M14.5 7.5 L11.5 11 L13.5 13.5" />
+    <path d="M13.5 13.5 L17.5 14.5" />
+    <path d="M11.5 11 L8.5 9" />
+    <path d="M13.5 13.5 L13 18 L10.5 22" />
+    <path d="M13 18 L18 19" />
+  </svg>
+);
+
 const SportIcon = ({ sport, className = "w-4 h-4" }) => {
   if (!sport) return null;
   const s = String(sport).toLowerCase();
-  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail'))
-    return <Footprints className={`${className} text-orange-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('run') || s.includes('hike') || s.includes('trail'))
+    return <RunnerSvg className={`${className} text-orange-500 flex-shrink-0`} strokeWidth={2} />;
+  if (s.includes('walk'))
+    return <Footprints className={`${className} text-orange-400 flex-shrink-0`} strokeWidth={2} />;
   if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual'))
     return <Bike className={`${className} text-blue-500 flex-shrink-0`} strokeWidth={2} />;
   if (s.includes('swim'))
