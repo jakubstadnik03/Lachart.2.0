@@ -18,7 +18,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import { Bike, Footprints, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
+import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
 
@@ -30,7 +30,6 @@ const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cool
 // ─── Sport SVG icons (lucide-react) ─────────────────────────────────────────
 const SPORT_LUCIDE_ICONS = {
   bike:       Bike,
-  run:        Footprints,
   swim:       WavesLadder,
   strength:   Dumbbell,
   walk:       PersonStanding,
@@ -42,7 +41,22 @@ const SPORT_LUCIDE_ICONS = {
   other:      MoreHorizontal,
 };
 
+// Inline runner figure — lucide has no proper "person running" icon, so we
+// draw one that matches lucide's stroke style and reads as a figure mid-stride.
+const RunnerSVG = ({ color, size }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+       stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="16" cy="4" r="1.6" fill={color} stroke="none" />
+    <path d="M14.5 7.5 L11.5 11 L13.5 13.5" />
+    <path d="M13.5 13.5 L17.5 14.5" />
+    <path d="M11.5 11 L8.5 9" />
+    <path d="M13.5 13.5 L13 18 L10.5 22" />
+    <path d="M13 18 L18 19" />
+  </svg>
+);
+
 const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
+  if (name === 'run') return <RunnerSVG color={color} size={size} />;
   const Icon = SPORT_LUCIDE_ICONS[name];
   if (!Icon) return null;
   return <Icon size={size} color={color} strokeWidth={1.8} />;
