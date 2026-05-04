@@ -526,9 +526,8 @@ function generateTrainingTitle(sport, category, results) {
     return null;
   };
 
-  // Work and rest intervals
+  // Work intervals only — rest no longer surfaced in the title
   const workResults = (results || []).filter(r => !r.intervalType || r.intervalType === 'work');
-  const restResults = (results || []).filter(r => r.intervalType === 'recovery');
 
   // No structured intervals → simple label
   if (workResults.length === 0) {
