@@ -124,7 +124,7 @@ export default function FieldLactateTrainingPanel({
   return (
     <div
       id="field-lactate"
-      className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden scroll-mt-24"
+      className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden scroll-mt-24"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
@@ -152,8 +152,8 @@ export default function FieldLactateTrainingPanel({
         </div>
       </div>
 
-      {/* Body — scrollable, capped height */}
-      <div className="overflow-y-auto" style={{ maxHeight: '20rem' }}>
+      {/* Body — scrollable, fills remaining card height (cap on smaller layouts) */}
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: '32rem' }}>
         {stravaConnected === false && (
           <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Strava not connected.{' '}
