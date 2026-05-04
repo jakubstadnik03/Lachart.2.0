@@ -494,7 +494,9 @@ const LactateTestingPage = () => {
         // Set ERG power for the new step — use ref so we always get the latest trainer
         if (nextTargetPower != null) {
           setTimeout(() => {
-            Promise.resolve(trainerRef.current?.setErgWatts?.(nextTargetPower)).catch(console.error);
+            const setErg = trainerRef.current?.setErgWatts;
+            console.log('[LactateTest] interval setErgWatts', { step: nextStep + 1, watts: nextTargetPower, hasFn: !!setErg });
+            if (setErg) Promise.resolve(setErg(nextTargetPower)).catch(e => console.warn('ERG interval failed:', e));
           }, 100);
         }
       } else {
@@ -549,12 +551,14 @@ const LactateTestingPage = () => {
     if (wu.enabled) {
       setPhase('warmup');
       if (wu.type === 'fixed') {
-        // Fixed-power warmup
-        if (trainer.setErgWatts) {
-          setTimeout(() => {
-            Promise.resolve(trainer.setErgWatts(wu.power)).catch(console.error);
-          }, 500);
-        }
+        // Fixed-power warmup — use ref to avoid stale closure
+        setTimeout(() => {
+          const setErg = trainerRef.current?.setErgWatts;
+          if (setErg) {
+            console.log('[LactateTest] start (warmup fixed) setErgWatts', wu.power);
+            Promise.resolve(setErg(wu.power)).catch(e => console.warn('ERG warmup failed:', e));
+          }
+        }, 500);
         if (warmupTimerRef.current) clearInterval(warmupTimerRef.current);
         warmupTimerRef.current = setInterval(() => {
           setWarmupTimer(prev => {
@@ -570,13 +574,15 @@ const LactateTestingPage = () => {
           });
         }, 1000);
       } else {
-        // Step-type warmup
+        // Step-type warmup — use ref to avoid stale closure
         const firstPower = getWarmupStepPower(0, wu);
-        if (trainer.setErgWatts) {
-          setTimeout(() => {
-            Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
-          }, 500);
-        }
+        setTimeout(() => {
+          const setErg = trainerRef.current?.setErgWatts;
+          if (setErg) {
+            console.log('[LactateTest] start (warmup step) setErgWatts', firstPower);
+            Promise.resolve(setErg(firstPower)).catch(e => console.warn('ERG warmup step failed:', e));
+          }
+        }, 500);
         if (warmupTimerRef.current) clearInterval(warmupTimerRef.current);
         warmupTimerRef.current = setInterval(() => {
           setWarmupTimer(prev => {
@@ -594,12 +600,16 @@ const LactateTestingPage = () => {
       setPhase('work');
       startIntervalTimer();
       const firstPower = protocol.steps[0]?.targetPower ?? protocol.startPower;
-      if (trainer.setErgWatts) {
-        setTimeout(() => {
-          Promise.resolve(trainer.setErgWatts(firstPower)).catch(console.error);
+      setTimeout(() => {
+        const setErg = trainerRef.current?.setErgWatts;
+        if (setErg && firstPower != null) {
+          console.log('[LactateTest] start (no warmup) setErgWatts', firstPower);
+          Promise.resolve(setErg(firstPower)).catch(e => console.warn('ERG start failed:', e));
           addNotification(`ERG set to ${firstPower}W`, 'info');
-        }, 1000);
-      }
+        } else {
+          console.warn('[LactateTest] start: no setErgWatts on trainerRef or no firstPower', { hasFn: !!setErg, firstPower });
+        }
+      }, 1000);
       setTimeout(() => addNotification('Test started!', 'success'), 0);
     }
   };
