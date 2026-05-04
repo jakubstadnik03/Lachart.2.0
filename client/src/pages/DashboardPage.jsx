@@ -900,18 +900,20 @@ export default function DashboardPage() {
         return;
       }
       
-      const sportTrainings = selectedSport === 'all' 
-        ? recentTrainings 
+      const sportTrainings = selectedSport === 'all'
+        ? recentTrainings
         : recentTrainings.filter(t => t.sport === selectedSport);
-      const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-      
+
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
-        if (uniqueTitles.length > 0) {
-          setSelectedTitle(uniqueTitles[0]);
-          const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
-          if (firstTrainingWithTitle) {
-            setSelectedTraining(firstTrainingWithTitle._id);
-          }
+        // Default to the most recent training (by date) — recentTrainings is
+        // already sorted desc, but be explicit so the graph/history widgets
+        // always land on the user's latest workout.
+        const latest = [...sportTrainings].sort((a, b) =>
+          new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+        )[0];
+        if (latest) {
+          setSelectedTitle(latest.title);
+          setSelectedTraining(latest._id);
         }
       }
     }

@@ -397,16 +397,15 @@ export function TrainingStats({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  /* auto-select first title when sport/trainings change */
+  /* auto-select latest training (by date) when sport/trainings change */
   useEffect(() => {
     if (!trainingsList.length) return;
     const rel = currentSelectedSport === "all" ? trainingsList : trainingsList.filter(t => t.sport === currentSelectedSport);
     if (!rel.length) return;
-    const first = rel[0].title;
     if (!currentSelectedTitle || !rel.some(t => t.title === currentSelectedTitle)) {
-      setCurrentSelectedTitle(first);
-      const newest = rel.filter(t => t.title === first).sort((a,b) => new Date(b.date)-new Date(a.date));
-      if (newest.length && setSelectedTrainingId) setSelectedTrainingId(newest[0]._id);
+      const latest = [...rel].sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0))[0];
+      setCurrentSelectedTitle(latest.title);
+      if (setSelectedTrainingId) setSelectedTrainingId(latest._id);
     }
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
