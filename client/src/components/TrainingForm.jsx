@@ -456,7 +456,7 @@ function isDefaultTitle(title) {
 
 /* ─── Smart title generator ─────────────────────────────────────────────────── */
 function generateTrainingTitle(sport, category, results) {
-  const sportLabel = { bike: 'Ride', run: 'Run', swim: 'Swim' }[sport] || 'Workout';
+  const sportLabel = { bike: 'ride', run: 'run', swim: 'swim' }[sport] || 'workout';
 
   // Full zone label map — covers all categories including LT1/LT2/Zone2
   const CAT_ZONE = {
@@ -486,20 +486,20 @@ function generateTrainingTitle(sport, category, results) {
     return `${Math.round(n)}m`;
   };
 
-  // Format duration as compact label: "10'", "1:30'", "45s"
+  // Format duration rounded to whole minutes: "5min" / "30s"
   const fmtDurLabel = (dur) => {
     if (!dur) return null;
+    let totalSec;
     if (typeof dur === 'string' && dur.includes(':')) {
-      const parts = dur.split(':');
-      const mins = parseInt(parts[0], 10);
-      const secs = parseInt(parts[1], 10);
-      if (secs === 0) return `${mins}'`;
-      return `${mins}:${String(secs).padStart(2, '0')}'`;
+      const parts = dur.split(':').map(Number);
+      totalSec = (parts[0] || 0) * 60 + (parts[1] || 0);
+    } else {
+      const n = parseFloat(dur);
+      if (isNaN(n)) return null;
+      totalSec = n;
     }
-    const n = parseFloat(dur);
-    if (isNaN(n)) return null;
-    const mins = Math.round(n / 60);
-    return mins > 0 ? `${mins}'` : `${Math.round(n)}s`;
+    if (totalSec < 60) return `${Math.round(totalSec)}s`;
+    return `${Math.round(totalSec / 60)}min`;
   };
 
   // Format power/pace target from first work interval
@@ -508,7 +508,7 @@ function generateTrainingTitle(sport, category, results) {
     if (pw === '' || pw === null || pw === undefined) return null;
     if (sport === 'bike') {
       const w = parseFloat(pw);
-      if (!isNaN(w) && w > 0) return `@${Math.round(w)}W`;
+      if (!isNaN(w) && w > 0) return `@${Math.round(w / 10) * 10}w`;
     } else {
       // run / swim: pace stored as MM:SS string or raw seconds
       if (typeof pw === 'string' && pw.includes(':')) {
@@ -532,45 +532,38 @@ function generateTrainingTitle(sport, category, results) {
 
   // No structured intervals → simple label
   if (workResults.length === 0) {
-    if (category === 'recovery') return `Recovery ${sportLabel}`;
-    if (category === 'endurance') return `Long ${sportLabel}`;
-    if (category === 'hills') return `Hill ${sportLabel}`;
-    return zoneLabel ? `${zoneLabel} ${sportLabel}` : sportLabel;
+    if (category === 'recovery') return `recovery ${sportLabel}`;
+    if (category === 'endurance') return `long ${sportLabel}`;
+    if (category === 'hills') return `hill ${sportLabel}`;
+    return zoneLabel ? `${zoneLabel.toLowerCase()} ${sportLabel}` : sportLabel;
   }
 
   // Total reps
   const totalReps = workResults.reduce((s, r) => s + (Number(r.repeatCount) || 1), 0);
   const first = workResults[0];
 
-  // Build work interval string: e.g. "8×10'" or "5×1km"
+  // Build work interval string: e.g. "8x5min" or "5x1km"
   let workStr = null;
   if (first.durationType === 'distance' && first.duration) {
     const d = fmtDist(first.duration);
-    if (d) workStr = `${totalReps}×${d}`;
+    if (d) workStr = `${totalReps}x${d}`;
   } else if (first.distance) {
     const d = fmtDist(first.distance);
-    if (d) workStr = `${totalReps}×${d}`;
+    if (d) workStr = `${totalReps}x${d}`;
   }
   if (!workStr && first.duration) {
     const t = fmtDurLabel(first.duration);
-    if (t) workStr = `${totalReps}×${t}`;
+    if (t) workStr = `${totalReps}x${t}`;
   }
-  if (!workStr) workStr = `${totalReps}× int`;
-
-  // Append rest: "8×10'/2'"
-  const firstRest = restResults[0];
-  if (firstRest?.duration) {
-    const rt = fmtDurLabel(firstRest.duration);
-    if (rt) workStr += `/${rt}`;
-  }
+  if (!workStr) workStr = `${totalReps}x int`;
 
   // Power/pace target
   const targetStr = fmtTarget(first);
 
-  // Assemble: "8×10'/2' @280W LT2 Ride"
+  // Assemble: "8x5min @350w lt2 ride"
   const parts = [workStr];
   if (targetStr) parts.push(targetStr);
-  if (zoneLabel) parts.push(zoneLabel);
+  if (zoneLabel) parts.push(zoneLabel.toLowerCase());
   parts.push(sportLabel);
 
   return parts.join(' ');
