@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { JWT_SECRET } = require('../config/jwt.config');
 const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
+const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
 const Training = require('../models/training');
@@ -564,30 +565,22 @@ async function getValidStravaToken(user) {
  * Streams often fail with 400 for some activity types or stream key combos; detail still loads.
  */
 async function fetchStravaActivityStreams(token, stravaId) {
+  // Single request with the full key list. Older code retried 6 fallback
+  // variants on 400/404, burning the rate-limit token bucket. Strava omits
+  // unsupported keys silently in the response so one shot is enough.
   const url = `https://www.strava.com/api/v3/activities/${stravaId}/streams`;
-  const base = { headers: { Authorization: `Bearer ${token}` }, timeout: 45000 };
-  const variants = [
-    { keys: 'time,velocity_smooth,heartrate,watts,altitude,latlng', key_by_type: true },
-    { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true },
-    { keys: 'time,heartrate,watts,velocity_smooth', key_by_type: true },
-    { keys: 'time,distance,heartrate,watts', key_by_type: true },
-    { keys: 'time,heartrate', key_by_type: true },
-    { keys: 'time', key_by_type: true }
-  ];
-  for (const params of variants) {
-    try {
-      const r = await axios.get(url, { ...base, params });
-      if (r.data != null) return r.data;
-    } catch (e) {
-      const st = e.response?.status;
-      if (st === 400 || st === 404) {
-        console.warn(`[Strava] streams attempt failed (${st}) keys=${params.keys}`);
-        continue;
-      }
-      throw e;
-    }
+  try {
+    const r = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 45000,
+      params: { keys: 'time,velocity_smooth,heartrate,watts,altitude,latlng,distance,cadence', key_by_type: true },
+    });
+    return r.data || {};
+  } catch (e) {
+    const st = e.response?.status;
+    if (st === 400 || st === 404) return {};
+    throw e;
   }
-  return {};
 }
 
 // Helper function to delay requests to respect rate limits
@@ -2522,11 +2515,23 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     let streamsData = cached ? (cached.streams || {}) : {};
     let laps = cached ? (cached.laps || []) : [];
 
-    if (!cached) try {
+    // Prefer the persisted Strava raw payload — activities are immutable once
+    // recorded, and user-side title/description/category are stored separately.
+    if (!cached && !req.query?.refresh && savedActivity?.raw && Object.keys(savedActivity.raw).length > 5) {
+      detailResp = { data: savedActivity.raw };
+    }
+    if (!cached && !detailResp) try {
       detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 30000
       });
+      // Persist for future reads
+      try {
+        await StravaActivity.updateOne(
+          { userId: targetUser._id, stravaId },
+          { $set: { raw: detailResp.data } }
+        );
+      } catch {}
     } catch (apiError) {
       if (apiError.response?.status === 401) {
         console.log('Got 401 from Strava activity detail, attempting token refresh...');
@@ -2569,19 +2574,68 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     }
 
     if (!cached) {
-      try {
-        streamsData = await fetchStravaActivityStreams(token, stravaId);
-      } catch (streamErr) {
-        console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
-        streamsData = {};
+      // ── Streams: prefer persisted DB copy (Strava activities are immutable
+      //    once recorded). Only call Strava when we don't have it yet, then
+      //    write back to DB so future reads — even after a server restart —
+      //    are free.
+      const wantsRefresh = String(req.query?.refresh || '') === '1';
+      let streamFromDb = null;
+      if (!wantsRefresh) {
+        streamFromDb = await StravaStream.findOne({ userId: targetUser._id, stravaId }).lean();
       }
-      // Laps (intervals)
-      try {
-        const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        laps = lapsResp.data || [];
-      } catch (e) {}
+      if (streamFromDb && streamFromDb.streams && Object.keys(streamFromDb.streams).length > 0) {
+        streamsData = streamFromDb.streams;
+      } else {
+        try {
+          streamsData = await fetchStravaActivityStreams(token, stravaId);
+        } catch (streamErr) {
+          console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
+          streamsData = {};
+        }
+        if (streamsData && Object.keys(streamsData).length > 0) {
+          StravaStream.updateOne(
+            { userId: targetUser._id, stravaId },
+            { $set: { streams: streamsData, fetchedAt: new Date() } },
+            { upsert: true }
+          ).catch(err => console.warn('[Strava] failed to persist streams:', err.message));
+        }
+      }
+
+      // ── Laps: prefer the persisted savedActivity.laps when present.
+      const persistedLaps = Array.isArray(savedActivity?.laps) && savedActivity.laps.length > 0
+        ? savedActivity.laps : null;
+      if (persistedLaps && !wantsRefresh) {
+        laps = persistedLaps;
+      } else {
+        try {
+          const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          laps = lapsResp.data || [];
+          // Persist a stripped copy of laps so we don't refetch them next time.
+          if (laps.length > 0) {
+            const stripped = laps.map(l => ({
+              lapNumber: l.lap_index,
+              startTime: l.start_date,
+              elapsed_time: l.elapsed_time,
+              moving_time: l.moving_time,
+              distance: l.distance,
+              average_speed: l.average_speed,
+              max_speed: l.max_speed,
+              average_heartrate: l.average_heartrate,
+              max_heartrate: l.max_heartrate,
+              average_watts: l.average_watts,
+              max_watts: l.max_watts,
+              average_cadence: l.average_cadence,
+              total_elevation_gain: l.total_elevation_gain,
+            }));
+            StravaActivity.updateOne(
+              { userId: targetUser._id, stravaId },
+              { $set: { laps: stripped } }
+            ).catch(err => console.warn('[Strava] failed to persist laps:', err.message));
+          }
+        } catch (e) {}
+      }
 
       // Cache the Strava-side data; saved title/description/category come from DB
       setCachedStravaActivity(cacheKey, { detail: detailResp.data, streams: streamsData, laps });

@@ -10,6 +10,14 @@ function startStravaAutoSyncScheduler() {
     console.log('[StravaAutoSyncScheduler] Disabled (set ENABLE_STRAVA_AUTO_SYNC_SCHEDULER=true to enable).');
     return;
   }
+  // Once the Strava webhook subscription is in place and proven reliable, set
+  // STRAVA_DISABLE_POLL=true on the server to stop the periodic sync entirely.
+  // Webhook will deliver new activities in real-time and skipping polling
+  // keeps the rate-limit budget free for ad-hoc detail fetches.
+  if (process.env.STRAVA_DISABLE_POLL === 'true') {
+    console.log('[StravaAutoSyncScheduler] STRAVA_DISABLE_POLL=true — polling skipped, webhook only.');
+    return;
+  }
 
   // Interval — webhook should deliver in real-time; this is a safety net for
   // events Strava drops or for users connected before the webhook subscription.
