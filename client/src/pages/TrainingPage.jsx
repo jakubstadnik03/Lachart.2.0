@@ -75,6 +75,22 @@ export default function TrainingPage() {
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+    // TrainingGraph renders blank when the picked training has no `.results`
+    // (intervals). FIT/Strava activities don't ship with `.results` — only
+    // regular trainings do. Prefer the newest training that actually has
+    // intervals; fall back to plain newest if none.
+    const hasIntervals = (t) => Array.isArray(t?.results) && t.results.length > 0;
+    const dateMs = (t) => {
+      const v = t?.date || t?.timestamp || t?.startDate || t?.start_date || t?.startDateLocal;
+      const ms = v ? new Date(v).getTime() : 0;
+      return Number.isFinite(ms) ? ms : 0;
+    };
+    const pickDefault = (list) => {
+      if (!list?.length) return null;
+      const sorted = [...list].sort((a, b) => dateMs(b) - dateMs(a));
+      return sorted.find(hasIntervals) ?? sorted[0] ?? null;
+    };
+
     // 1) Zkusit načíst tréninky z cache pro rychlé vykreslení + select newest
     try {
       const cached = localStorage.getItem(cacheKey);
@@ -85,11 +101,8 @@ export default function TrainingPage() {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
-            // Default-select newest from cache so widgets aren't blank
-            const sorted = [...parsed].sort((a, b) =>
-              new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
-            );
-            const newest = sorted[0];
+            // Default-select newest-with-results from cache so widgets aren't blank
+            const newest = pickDefault(parsed);
             if (newest) {
               setSelectedTitle(prev => prev || newest.title);
               setSelectedTraining(prev => prev || newest._id || newest.id);
@@ -122,14 +135,12 @@ export default function TrainingPage() {
       
       setTrainings(allTrainings);
 
-      // Nastavení výchozího vybraného tréninku — vždy nejnovější ze všech zdrojů
-      const sortedAll = [...allTrainings].sort((a, b) =>
-        new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
-      );
+      // Nastavení výchozího vybraného tréninku — preferuj nejnovější s intervaly,
+      // jinak prostě nejnovější (TrainingGraph by jinak vyrenderoval prázdný stav).
       const sportFiltered = selectedSport === 'all'
-        ? sortedAll
-        : sortedAll.filter(t => t.sport === selectedSport);
-      const newest = sportFiltered[0] ?? sortedAll[0];
+        ? allTrainings
+        : allTrainings.filter(t => t.sport === selectedSport);
+      const newest = pickDefault(sportFiltered) ?? pickDefault(allTrainings);
       if (newest) {
         setSelectedTitle(newest.title);
         setSelectedTraining(newest._id || newest.id);

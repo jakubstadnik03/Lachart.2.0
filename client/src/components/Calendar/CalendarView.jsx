@@ -619,8 +619,9 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ───────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
-  const W = 600, H = 100, PAD = { t: 14, b: 18, l: 4, r: 4 };
+function LapChart({ laps, color, isBike, isRun, isSwim = false, selectedLap, onSelectLap }) {
+  // Reserve left gutter for y-axis labels (Strava-style scale).
+  const W = 600, H = 110, PAD = { t: 14, b: 18, l: 36, r: 4 };
   const innerW = W - PAD.l - PAD.r;
   const innerH = H - PAD.t - PAD.b;
   const GAP = 2;
@@ -630,13 +631,18 @@ function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
   const totalDur  = durations.reduce((s, d) => s + d, 0) || 1;
 
   // Primary metric per lap (height)
+  // - bike: average power (W) — taller is better
+  // - run:  pace sec/km — lower is faster, so we invert when drawing
+  // - swim: pace sec/100m — same inversion
   const primary = laps.map((lap, i) => {
     const dur = durations[i];
     const d   = Number(lap.distance || 0);
     if (isBike) return Number(lap.average_watts || lap.avgPower || 0);
     if (isRun && d > 0 && dur > 0) return dur / (d / 1000); // sec/km — lower is faster
+    if (isSwim && d > 0 && dur > 0) return dur / (d / 100); // sec/100m — lower is faster
     return dur;
   });
+  const paceLike = isRun || isSwim;
 
   const hrVals = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0));
   const hasHr  = hrVals.some(v => v > 0);
@@ -644,7 +650,7 @@ function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
 
   const validP = primary.filter(Boolean);
   const pMax = Math.max(...validP, 1);
-  const pMin = isRun ? Math.min(...validP, pMax) : 0;
+  const pMin = paceLike ? Math.min(...validP, pMax) : 0;
   const pRange = pMax - pMin || 1;
 
   const hrMax = hasHr ? Math.max(...hrVals.filter(Boolean), 1) : 1;
@@ -665,10 +671,10 @@ function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
     return { x, bw };
   });
 
-  // Bar height: for run/pace, lower sec/km = faster → taller bar (invert)
+  // Bar height: for run/swim pace, lower sec = faster → taller bar (invert)
   const barH = (val) => {
     if (!val) return 3;
-    const norm = isRun ? (pMax - val) / pRange : (val - pMin) / pRange;
+    const norm = paceLike ? (pMax - val) / pRange : (val - pMin) / pRange;
     return Math.max(3, norm * innerH);
   };
   const yBar = (val) => PAD.t + innerH - barH(val);
@@ -683,21 +689,55 @@ function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
 
   const laY = (v) => v != null ? PAD.t + innerH - ((v - laMin) / laRange) * innerH : null;
 
+  const fmtMMSS = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
   const fmtPrimary = (val) => {
     if (!val) return '';
     if (isBike) return `${Math.round(val)}W`;
-    if (isRun) { const m = Math.floor(val / 60); return `${m}:${String(Math.round(val % 60)).padStart(2, '0')}`; }
+    if (paceLike) return fmtMMSS(val);
     return '';
   };
+  // Y-axis ticks (Strava-style): 4 evenly-spaced labels.
+  const axisUnit = isBike ? 'W' : isRun ? '/km' : isSwim ? '/100m' : '';
+  const TICK_COUNT = 4;
+  const axisTicks = (() => {
+    if (validP.length === 0) return [];
+    const out = [];
+    for (let i = 0; i < TICK_COUNT; i++) {
+      // For pace, smaller value = faster = top of chart, so reverse.
+      const t = i / (TICK_COUNT - 1);
+      const val = paceLike ? pMax - t * pRange : pMax - t * (pMax - pMin);
+      const y = PAD.t + t * innerH;
+      out.push({ y, val });
+    }
+    return out;
+  })();
 
   return (
     <div className="px-4 pb-3">
       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-3">
-        <span>{isBike ? 'Power per lap (width = duration)' : isRun ? 'Pace per lap (width = duration)' : 'Laps (width = duration)'}</span>
+        <span>{isBike ? 'Power per lap (width = duration)' : isRun ? 'Pace per lap (width = duration)' : isSwim ? 'Pace per lap (width = duration)' : 'Laps (width = duration)'}</span>
         {hasHr && <span className="text-red-400">— HR</span>}
         {hasLa && <span style={{ color: '#7c3aed' }}>· La</span>}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 100 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 110 }}>
+        {/* Y-axis grid + labels (left gutter) */}
+        {axisTicks.map((t, i) => (
+          <g key={`tick-${i}`}>
+            <line x1={PAD.l} x2={W - PAD.r} y1={t.y} y2={t.y} stroke="#f3f4f6" strokeWidth={1} />
+            <text x={PAD.l - 4} y={t.y + 3} textAnchor="end" fontSize={7} fill="#9ca3af">
+              {fmtPrimary(t.val)}
+            </text>
+          </g>
+        ))}
+        {axisUnit && (
+          <text x={PAD.l - 4} y={PAD.t + innerH + 8} textAnchor="end" fontSize={7} fill="#9ca3af">
+            {axisUnit}
+          </text>
+        )}
         {laps.map((lap, i) => {
           const { x, bw } = barXW[i];
           const val = primary[i];
@@ -1154,15 +1194,55 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
           {mobileView === 'laps' && laps.length > 0 && (
             <div className="px-4 py-3">
+              {/* Selected lap header — Strava-style "Lap N · primary" */}
+              {(() => {
+                const i = selectedLap != null && selectedLap >= 0 && selectedLap < laps.length ? selectedLap : null;
+                const lap = i != null ? laps[i] : null;
+                const lapNum = lap ? (lap.lapNumber ?? (i + 1)) : null;
+                const lapDur = lap ? (lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0) : 0;
+                const lapDist = lap ? Number(lap.distance || 0) : 0;
+                const lapPower = lap ? Number(lap.average_watts || lap.avgPower || lap.avg_power || 0) : 0;
+                let primaryStr = '—';
+                if (lap) {
+                  if (isBike && lapPower > 0) primaryStr = `${Math.round(lapPower)} W`;
+                  else if (isRun && lapDist > 0 && lapDur > 0) {
+                    const spk = lapDur / (lapDist / 1000);
+                    primaryStr = `${Math.floor(spk / 60)}:${String(Math.round(spk % 60)).padStart(2, '0')} /km`;
+                  } else if (isSwim && lapDist > 0 && lapDur > 0) {
+                    const sp100 = lapDur / (lapDist / 100);
+                    primaryStr = `${Math.floor(sp100 / 60)}:${String(Math.round(sp100 % 60)).padStart(2, '0')} /100m`;
+                  } else {
+                    primaryStr = fmtLapDur(lapDur);
+                  }
+                }
+                return (
+                  <div className="mb-2 px-1 flex items-baseline gap-2">
+                    <span className="text-sm font-bold text-gray-900">
+                      {lap ? `Lap ${lapNum}` : 'All laps'}
+                    </span>
+                    {lap && (
+                      <span className="text-xs font-semibold tabular-nums" style={{ color }}>
+                        {primaryStr}
+                      </span>
+                    )}
+                    <span className="ml-auto text-[10px] text-gray-400">{laps.length} laps</span>
+                  </div>
+                );
+              })()}
+
               {laps.length > 1 && (
                 <div className="mb-3">
-                  <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} selectedLap={selectedLap} onSelectLap={setSelectedLap} />
+                  <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={selectedLap} onSelectLap={(i) => {
+                    setSelectedLap(prev => prev === i ? null : i);
+                    // defer scroll until after state flush so the row exists
+                    setTimeout(() => lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0);
+                  }} />
                 </div>
               )}
               {(() => {
                 const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
                 const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
-                const hasPace = isRun && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
+                const hasPace = (isRun || isSwim) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
                 const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
                 const colTokens = ['1.5rem', '1fr', '1fr'];
                 if (hasPower) colTokens.push('1fr');
@@ -1201,10 +1281,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           const sp100 = lapDur / (lapDist / 100);
                           lapPaceStr = `${Math.floor(sp100/60)}:${String(Math.round(sp100%60)).padStart(2,'0')}`;
                         }
+                        const isSelected = selectedLap === i;
                         return (
-                          <div key={i} className="grid items-center px-3 py-2 text-xs"
-                            style={{ gridTemplateColumns: cols }}>
-                            <span className="font-bold text-gray-400">{lapNum}</span>
+                          <div
+                            key={i}
+                            ref={el => lapRowRefs.current[i] = el}
+                            onClick={() => setSelectedLap(prev => prev === i ? null : i)}
+                            className="grid items-center px-3 py-2 text-xs cursor-pointer transition-colors"
+                            style={{
+                              gridTemplateColumns: cols,
+                              backgroundColor: isSelected ? color + '18' : undefined,
+                              borderLeft: isSelected ? `3px solid ${color}` : '3px solid transparent',
+                            }}
+                          >
+                            <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
                             <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
                             <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>
                             {hasPower && <span className="text-right tabular-nums font-semibold" style={{ color }}>{lapPower > 0 ? `${Math.round(lapPower)}W` : '—'}</span>}
@@ -1621,7 +1711,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
 
               {/* Lap chart */}
-              {laps.length > 1 && <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} selectedLap={selectedLap} onSelectLap={(i) => {
+              {laps.length > 1 && <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={selectedLap} onSelectLap={(i) => {
                 setSelectedLap(i);
                 lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
               }} />}
@@ -1639,7 +1729,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <div className="px-4 py-3">
                   {(() => {
                     const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
-                    const cols = ['1.5rem', '1fr', ...(dist > 0 ? ['1fr'] : []), ...((isBike || isRun) ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                    const cols = ['1.5rem', '1fr', ...(dist > 0 ? ['1fr'] : []), ...((isBike || isRun || isSwim) ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
                     return (
                       <div className="rounded-xl overflow-hidden border border-gray-100">
                         {/* Header */}
@@ -1648,7 +1738,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           <span>#</span>
                           <span className="text-right">Time</span>
                           {dist > 0 && <span className="text-right">Dist</span>}
-                          {(isBike || isRun) && <span className="text-right">{isBike ? 'Pwr' : 'Pace'}</span>}
+                          {(isBike || isRun || isSwim) && <span className="text-right">{isBike ? 'Pwr' : 'Pace'}</span>}
                           <span className="text-right">HR</span>
                           {hasLactate && <span className="text-right">La</span>}
                         </div>
@@ -1665,6 +1755,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             if (isRun && lapDist > 0 && lapDur > 0) {
                               const spk = lapDur / (lapDist / 1000);
                               lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            } else if (isSwim && lapDist > 0 && lapDur > 0) {
+                              const sp100 = lapDur / (lapDist / 100);
+                              lapPaceStr = `${Math.floor(sp100/60)}:${String(Math.round(sp100%60)).padStart(2,'0')}`;
                             }
                             const isSelected = selectedLap === i;
                             return (
@@ -1682,7 +1775,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                                 <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
                                 <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                                 {dist > 0 && <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>}
-                                {(isBike || isRun) && (
+                                {(isBike || isRun || isSwim) && (
                                   <span className="text-right tabular-nums font-semibold" style={{ color }}>
                                     {isBike ? (lapPower > 0 ? `${Math.round(lapPower)}W` : '—') : (lapPaceStr || '—')}
                                   </span>
