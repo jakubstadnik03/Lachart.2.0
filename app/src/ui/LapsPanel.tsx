@@ -105,9 +105,8 @@ function sportColor(sport: string): string {
 const CHART_H    = 140;
 const Y_AXIS_W   = 44;
 const X_LABEL_H  = 18;
-const ZOOM_BAR_W = 28;
-const ZOOM_GAP   = 4;
-const ZOOM_SLOT  = ZOOM_BAR_W + ZOOM_GAP;
+const BAR_W      = 28;
+const BAR_GAP    = 4;
 const PAUSE_W    = 8;
 
 function LapChart({
@@ -128,7 +127,6 @@ function LapChart({
   const isSwim  = sp.includes('swim');
   const isRun   = sp.includes('run');
   const isBike  = sp.includes('bike') || sp.includes('cycl') || sp.includes('ride');
-  const isZoomed = selectedIndex >= 0;
 
   const values = laps.map((l) => {
     if (l.isPause) return 0;
@@ -159,18 +157,18 @@ function LapChart({
 
   const step = Math.max(1, Math.ceil(laps.length / 8));
 
-  // Scroll to selected bar when zoomed
+  // Scroll to selected bar
   useEffect(() => {
-    if (!isZoomed || !chartRef.current) return;
+    if (selectedIndex < 0 || !chartRef.current) return;
     let left = 0;
     for (let i = 0; i < selectedIndex; i++) {
-      left += (laps[i].isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP;
+      left += (laps[i].isPause ? PAUSE_W : BAR_W) + BAR_GAP;
     }
     chartRef.current.scrollTo({ x: Math.max(0, left - 80), animated: true });
-  }, [selectedIndex, isZoomed]);
+  }, [selectedIndex]);
 
   const totalWidth = laps.reduce(
-    (s, l) => s + (l.isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP, 0
+    (s, l) => s + (l.isPause ? PAUSE_W : BAR_W) + BAR_GAP, 0
   );
 
   return (
@@ -188,7 +186,7 @@ function LapChart({
         <Text style={[styles.yLabel, { position: 'absolute', bottom: 0, right: 4 }]}>{unitLabel}</Text>
       </View>
 
-      {/* Scrollable bars */}
+      {/* Always-scrollable bars */}
       <ScrollView
         ref={chartRef}
         horizontal
@@ -197,8 +195,8 @@ function LapChart({
         contentContainerStyle={{
           alignItems: 'flex-end',
           height: CHART_H + X_LABEL_H,
-          minWidth: isZoomed ? totalWidth : undefined,
-          gap: isZoomed ? ZOOM_GAP : 1,
+          minWidth: totalWidth,
+          gap: BAR_GAP,
           paddingRight: 8,
         }}
       >
@@ -206,17 +204,11 @@ function LapChart({
           const isSelected = selectedIndex === i;
           const val  = values[i];
           const barH = getBarH(val);
-          const showLabel = isZoomed ? isSelected : (i % step === 0);
+          const showLabel = isSelected || (i % step === 0);
 
-          // Colors
-          let barBg: string;
-          if (lap.isPause)   barBg = isSelected ? color + '60' : '#E5E7EB';
-          else if (isZoomed) barBg = isSelected ? color : color + '55';
-          else               barBg = color + 'AA';
-
-          const barWidth = isZoomed
-            ? (lap.isPause ? PAUSE_W : ZOOM_BAR_W)
-            : undefined; // proportional in normal mode
+          const barBg = lap.isPause
+            ? (isSelected ? color + '60' : '#E5E7EB')
+            : (isSelected ? color : color + '55');
 
           return (
             <TouchableOpacity
@@ -225,16 +217,13 @@ function LapChart({
               activeOpacity={0.7}
               style={[
                 styles.barItem,
-                isZoomed
-                  ? { width: lap.isPause ? PAUSE_W : ZOOM_BAR_W, flexShrink: 0 }
-                  : { flex: lap.weight, minWidth: 2 },
-                { height: CHART_H + X_LABEL_H },
+                { width: lap.isPause ? PAUSE_W : BAR_W, height: CHART_H + X_LABEL_H },
               ]}
             >
               {lap.isPause ? (
-                <View style={{ width: isZoomed ? 6 : 4, height: isZoomed ? 6 : 3, borderRadius: 3, backgroundColor: barBg, marginBottom: X_LABEL_H }} />
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: barBg, marginBottom: X_LABEL_H }} />
               ) : (
-                <View style={{ width: barWidth ?? '100%', height: barH, backgroundColor: barBg, borderRadius: 3, borderTopLeftRadius: 3, borderTopRightRadius: 3, marginBottom: X_LABEL_H }} />
+                <View style={{ width: BAR_W, height: barH, backgroundColor: barBg, borderRadius: 3, marginBottom: X_LABEL_H }} />
               )}
               {/* X-label + bottom indicator */}
               <View style={{ height: X_LABEL_H, alignItems: 'center', justifyContent: 'flex-start', width: '100%' }}>
@@ -328,21 +317,13 @@ export function LapsPanel({ laps, sport, sourceType }: Props) {
       {/* Header */}
       <View style={styles.header}>
         {sel ? (
-          <>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.headerLap}>Lap {sel.index}</Text>
-              <Text style={styles.headerDot}>·</Text>
-              <Text style={styles.headerDur}>{fmtLapTime(sel.duration)}</Text>
-              <Text style={styles.headerDot}>·</Text>
-              <Text style={[styles.headerPace, { color }]}>{selPaceLabel}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setSelectedIndex(-1)}
-              style={[styles.zoomOutBtn, { borderColor: color + '40' }]}
-            >
-              <Text style={[styles.zoomOutText, { color }]}>zoom out</Text>
-            </TouchableOpacity>
-          </>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={styles.headerLap}>Lap {sel.index}</Text>
+            <Text style={styles.headerDot}>·</Text>
+            <Text style={styles.headerDur}>{fmtLapTime(sel.duration)}</Text>
+            <Text style={styles.headerDot}>·</Text>
+            <Text style={[styles.headerPace, { color }]}>{selPaceLabel}</Text>
+          </View>
         ) : (
           <Text style={styles.headerHint}>
             {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
@@ -397,9 +378,6 @@ const styles = StyleSheet.create({
   headerDur:  { fontSize: 13, fontWeight: '600', color: '#374151' },
   headerPace: { fontSize: 13, fontWeight: '700' },
   headerHint: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-  zoomOutBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
-  zoomOutText: { fontSize: 11, fontWeight: '700' },
-
   yLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600', textAlign: 'right' },
   xLabel: { fontSize: 9, color: '#9CA3AF', fontWeight: '600' },
 

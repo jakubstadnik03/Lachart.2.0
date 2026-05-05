@@ -2464,7 +2464,6 @@ export default function CalendarView({
       const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
       const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
       setActivityModal({ activity: a, plannedWorkout: matchPw });
-      handleSelectActivity(a);
     }
   };
 
