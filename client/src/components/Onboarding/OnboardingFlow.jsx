@@ -141,6 +141,7 @@ function ProfileStep({ user, onSave, saving }) {
     weight:         user?.weight     ?? '',
     sport:          user?.sport      || '',
     gender:         user?.gender     || 'male',
+    role:           user?.role       || 'athlete',
   });
   const [err, setErr] = useState('');
 
@@ -158,101 +159,130 @@ function ProfileStep({ user, onSave, saving }) {
       weight: form.weight !== '' ? Number(form.weight) : undefined,
       sport: form.sport,
       gender: form.gender,
+      role: form.role,
       onboarding: { basicProfileDone: true },
     });
   };
 
   return (
-    <form onSubmit={handleSave} className="space-y-4">
-      <div className="text-center mb-2">
-        <div className="flex justify-center mb-2"><UserIcon className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Tell us about yourself</h3>
-        <p className="text-sm text-gray-500 mt-1">Basic information helps us personalise your experience</p>
-      </div>
-
-      {err && <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">First Name *</label>
-          <input
-            className={INPUT}
-            value={form.name}
-            onChange={e => set('name', e.target.value)}
-            placeholder="Jan"
-            required
-          />
+    <form onSubmit={handleSave} className="flex-1 flex flex-col min-h-0">
+      {/* Scrollable body */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4 pb-4">
+        <div className="text-center mb-2">
+          <div className="flex justify-center mb-2"><UserIcon className="w-10 h-10 text-primary" /></div>
+          <h3 className="text-lg font-bold text-gray-900">Tell us about yourself</h3>
+          <p className="text-sm text-gray-500 mt-1">Basic information helps us personalise your experience</p>
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Last Name</label>
-          <input
-            className={INPUT}
-            value={form.surname}
-            onChange={e => set('surname', e.target.value)}
-            placeholder="Novák"
-          />
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
+        {err && <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
+
+        {/* Role selector — switch between athlete and coach */}
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Birth</label>
-          <input
-            type="date"
-            className={INPUT}
-            value={form.dateOfBirth}
-            onChange={e => set('dateOfBirth', e.target.value)}
-          />
+          <label className="block text-xs font-semibold text-gray-600 mb-1">I am a</label>
+          <div className="grid grid-cols-2 gap-2">
+            {['athlete', 'coach'].map(r => (
+              <button
+                type="button"
+                key={r}
+                onClick={() => set('role', r)}
+                className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                  form.role === r
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                {r === 'athlete' ? '🏃 Athlete' : '👥 Coach'}
+              </button>
+            ))}
+          </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">First Name *</label>
+            <input
+              className={INPUT}
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="Jan"
+              required
+            />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Last Name</label>
+            <input
+              className={INPUT}
+              value={form.surname}
+              onChange={e => set('surname', e.target.value)}
+              placeholder="Novák"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Birth</label>
+            <input
+              type="date"
+              className={`${INPUT} block`}
+              value={form.dateOfBirth}
+              onChange={e => set('dateOfBirth', e.target.value)}
+            />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Gender</label>
+            <select className={INPUT} value={form.gender} onChange={e => set('gender', e.target.value)}>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Height (cm)</label>
+            <input
+              type="number"
+              className={INPUT}
+              value={form.height}
+              onChange={e => set('height', e.target.value)}
+              placeholder="175"
+              min={100} max={250}
+            />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Weight (kg)</label>
+            <input
+              type="number"
+              className={INPUT}
+              value={form.weight}
+              onChange={e => set('weight', e.target.value)}
+              placeholder="70"
+              min={30} max={300}
+            />
+          </div>
+        </div>
+
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Gender</label>
-          <select className={INPUT} value={form.gender} onChange={e => set('gender', e.target.value)}>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Primary Sport</label>
+          <select className={INPUT} value={form.sport} onChange={e => set('sport', e.target.value)}>
+            <option value="">Select sport…</option>
+            <option value="cycling">Cycling</option>
+            <option value="running">Running</option>
+            <option value="swimming">Swimming</option>
+            <option value="triathlon">Triathlon</option>
+            <option value="rowing">Rowing</option>
             <option value="other">Other</option>
           </select>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Height (cm)</label>
-          <input
-            type="number"
-            className={INPUT}
-            value={form.height}
-            onChange={e => set('height', e.target.value)}
-            placeholder="175"
-            min={100} max={250}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Weight (kg)</label>
-          <input
-            type="number"
-            className={INPUT}
-            value={form.weight}
-            onChange={e => set('weight', e.target.value)}
-            placeholder="70"
-            min={30} max={300}
-          />
-        </div>
+      {/* Sticky bottom action */}
+      <div className="flex-shrink-0 pt-3 border-t border-gray-100 bg-white"
+           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
+        <SaveButton saving={saving} label="Save Profile" />
       </div>
-
-      <div>
-        <label className="block text-xs font-semibold text-gray-600 mb-1">Primary Sport</label>
-        <select className={INPUT} value={form.sport} onChange={e => set('sport', e.target.value)}>
-          <option value="">Select sport…</option>
-          <option value="cycling">Cycling</option>
-          <option value="running">Running</option>
-          <option value="swimming">Swimming</option>
-          <option value="triathlon">Triathlon</option>
-          <option value="rowing">Rowing</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
-      <SaveButton saving={saving} label="Save Profile" />
     </form>
   );
 }
@@ -948,7 +978,6 @@ const INTRO_SLIDES = [
   { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual /> },
   { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />    },
   { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />       },
-  { label: 'Bluetooth HR',   accentColor: '#f97316', title: 'Connect Your\nHeart Rate Monitor',       subtitle: 'Pair any Bluetooth HR monitor to record live heart rate during tests. Compatible with Polar, Garmin, Wahoo and more.',  visual: <BluetoothVisual />   },
   { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />     },
   { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />       },
 ];
@@ -1065,9 +1094,9 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
 
       {/* Setup phase */}
       {phase === 'setup' && (
-        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-y-auto">
+        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-hidden min-h-0">
           {/* Step header */}
-          <div className="flex items-center gap-3 mb-6 flex-shrink-0 pt-2">
+          <div className="flex items-center gap-3 mb-4 flex-shrink-0 pt-2">
             <button onClick={() => setupStep > 0 ? setSetupStep(s => s - 1) : setPhase('slides')} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
               <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
