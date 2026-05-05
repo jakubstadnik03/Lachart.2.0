@@ -184,8 +184,24 @@ function findCompliance(pw, acts) {
   return getCompliance(plannedSecs, actualSecs);
 }
 
+/** Pairing state for a planned workout vs. the day's recorded activities.
+ *  - 'completed' → any same-sport activity recorded today, or pw.status === 'completed'
+ *  - 'missed'    → date strictly in the past, no match, status !== 'completed'
+ *  - null        → today/future or otherwise neutral
+ */
+function pairingStateFor(pw, acts, todayDateStr) {
+  if (!pw) return null;
+  if (pw.status === 'completed') return 'completed';
+  const matched = (acts || []).some(a => sportMatches(pw.sport, a.sport || a.type || ''));
+  if (matched) return 'completed';
+  const pwDateStr = String(pw.date || '').slice(0, 10);
+  if (!pwDateStr) return null;
+  if (pwDateStr < todayDateStr) return 'missed';
+  return null;
+}
+
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
-function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
+function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [repeatOpen, setRepeatOpen] = React.useState(false);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
@@ -214,11 +230,28 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 
   if (compact) {
     // ── Match WeekActivityCard visual style ──
-    // planned  → white bg, solid left border in sport color, sport icon, title, duration
-    // compliance hit → left border turns compliance color, subtle tinted bg
-    // completed green → filled green gradient (like selected activity card)
-    const isGreen = compliance?.color === '#22c55e' || (isCompleted && !compliance);
-    const leftBorderColor = isGreen ? '#22c55e' : compliance ? compliance.color : color;
+    // planned (upcoming)            → white bg, solid left border in sport color
+    // pairingState 'completed'       → light green tint  (training was done that day)
+    // pairingState 'missed'          → light red tint    (date past, no matching activity)
+    // compliance hit (legacy)        → uses compliance ring color
+    const isCompletedPair = pairingState === 'completed' || isCompleted;
+    const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
+    const leftBorderColor = isCompletedPair
+      ? '#22c55e'
+      : isMissedPair
+        ? '#ef4444'
+        : (compliance ? compliance.color : color);
+
+    let cardClass;
+    if (isCompletedPair) {
+      cardClass = 'bg-green-50 border-green-200 shadow-sm hover:bg-green-100';
+    } else if (isMissedPair) {
+      cardClass = 'bg-red-50 border-red-200 shadow-sm hover:bg-red-100';
+    } else if (compliance) {
+      cardClass = 'bg-white border-gray-200 shadow-sm hover:bg-gray-50';
+    } else {
+      cardClass = 'bg-white border-gray-200 shadow-sm hover:bg-gray-50 hover:shadow-md';
+    }
 
     return (
       <div
@@ -230,13 +263,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
       >
         <button
           onClick={() => onSelect && onSelect(pw)}
-          className={`w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${
-            isGreen
-              ? 'bg-gradient-to-br from-green-500 to-green-600 border-transparent shadow-md'
-              : compliance
-                ? 'bg-white border-gray-200 shadow-sm hover:bg-gray-50'
-                : 'bg-white border-gray-200 shadow-sm hover:bg-gray-50 hover:shadow-md'
-          }`}
+          className={`w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${cardClass}`}
           style={{
             borderLeftColor: leftBorderColor,
             borderLeftWidth: 3,
@@ -247,18 +274,18 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
         >
           {/* Title row — sport icon + title */}
           <div className="flex items-center gap-1.5 min-w-0">
-            {isGreen
-              ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-white" />
+            {isCompletedPair
+              ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-green-600" />
               : <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
             }
             <span
               className="text-[11px] font-bold truncate flex-1"
-              style={{ color: isGreen ? '#fff' : isSkipped ? '#9ca3af' : '#1e293b' }}
+              style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : '#1e293b' }}
             >
               {pw.title || 'Planned'}
             </span>
-            {/* Compliance dot for non-green matches */}
-            {compliance && !isGreen && (
+            {/* Compliance dot — hidden when card is already tinted */}
+            {compliance && !isCompletedPair && !isMissedPair && (
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
             )}
           </div>
@@ -266,18 +293,16 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
           {(duration > 0 || pw.targetTss > 0) && (
             <div className="flex items-center gap-2 text-[10px] mt-0.5">
               {duration > 0 && (
-                <span style={{ color: isGreen ? 'rgba(255,255,255,0.85)' : '#6b7280' }}>
-                  {fmtPlanDuration(duration)}
-                </span>
+                <span style={{ color: '#6b7280' }}>{fmtPlanDuration(duration)}</span>
               )}
               {pw.targetTss > 0 && (
                 <>
-                  <span style={{ color: isGreen ? 'rgba(255,255,255,0.4)' : '#d1d5db' }}>·</span>
-                  <span style={{ color: isGreen ? 'rgba(255,255,255,0.85)' : '#6b7280' }}>{pw.targetTss} TSS</span>
+                  <span style={{ color: '#d1d5db' }}>·</span>
+                  <span style={{ color: '#6b7280' }}>{pw.targetTss} TSS</span>
                 </>
               )}
               {compliance && (
-                <span className="ml-auto text-[9px] font-bold" style={{ color: isGreen ? 'rgba(255,255,255,0.9)' : compliance.color }}>
+                <span className="ml-auto text-[9px] font-bold" style={{ color: compliance.color }}>
                   {compliance.label}
                 </span>
               )}
@@ -3244,6 +3269,7 @@ export default function CalendarView({
                             onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                             onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
                             compliance={findCompliance(pw, acts)}
+                            pairingState={pairingStateFor(pw, acts, getLocalDateString(new Date()))}
                             onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                             onDelete={onDeletePlannedWorkout}
                             onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
@@ -3393,6 +3419,7 @@ export default function CalendarView({
                           onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                           onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
                           compliance={findCompliance(pw, visibleActs)}
+                          pairingState={pairingStateFor(pw, visibleActs, getLocalDateString(new Date()))}
                           onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                           onDelete={onDeletePlannedWorkout}
                           onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
