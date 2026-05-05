@@ -248,11 +248,20 @@ export default function DashboardPage() {
         const age = Date.now() - parseInt(ts, 10);
         if (!Number.isNaN(age) && age < CACHE_TTL) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
             setTrainingsInitialized(true);
             usedCache = true;
             setLoading(false);
+            // Immediately default-select newest so widgets aren't blank while API refreshes
+            const sorted = [...parsed].sort((a, b) =>
+              new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+            );
+            const newest = sorted[0];
+            if (newest) {
+              setSelectedTitle(prev => prev || newest.title);
+              setSelectedTraining(prev => prev || newest._id || newest.id);
+            }
           }
         }
       }
@@ -286,6 +295,17 @@ export default function DashboardPage() {
 
       setTrainings(allTrainings);
       setTrainingsInitialized(true);
+      // Default-select newest on first visit (no cache) so widgets aren't blank
+      if (!usedCache && allTrainings.length > 0) {
+        const sorted = [...allTrainings].sort((a, b) =>
+          new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+        );
+        const newest = sorted[0];
+        if (newest) {
+          setSelectedTitle(prev => prev || newest.title);
+          setSelectedTraining(prev => prev || newest._id || newest.id);
+        }
+      }
 
       // 3) Save to localStorage so next dashboard/TrainingPage open is instant
       try {
