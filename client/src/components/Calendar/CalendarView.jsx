@@ -618,153 +618,148 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   );
 }
 
-// ─── Lap Chart ───────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
-  const W = 600, H = 100, PAD = { t: 14, b: 18, l: 4, r: 4 };
-  const innerW = W - PAD.l - PAD.r;
-  const innerH = H - PAD.t - PAD.b;
-  const GAP = 2;
+// ─── Lap Chart (Garmin-style) ─────────────────────────────────────────────────
+function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef }) {
+  const BAR_W = 22, BAR_GAP = 5, BAR_SLOT = BAR_W + BAR_GAP;
+  const CHART_H = 96;
+  const Y_AXIS_W = 38;
 
-  // Lap durations — bar widths are proportional to elapsed time
-  const durations = laps.map(l => l.elapsed_time || l.totalElapsedTime || l.duration || 0);
-  const totalDur  = durations.reduce((s, d) => s + d, 0) || 1;
-
-  // Primary metric per lap (height)
-  const primary = laps.map((lap, i) => {
-    const dur = durations[i];
-    const d   = Number(lap.distance || 0);
+  // Compute pace/power value per lap
+  const values = laps.map((lap) => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
     if (isBike) return Number(lap.average_watts || lap.avgPower || 0);
-    if (isRun && d > 0 && dur > 0) return dur / (d / 1000); // sec/km — lower is faster
-    return dur;
+    if (isRun  && dist > 0 && dur > 0) return dur / (dist / 1000);   // sec/km
+    if (isSwim && dist > 0 && dur > 0) return dur / (dist / 100);    // sec/100m
+    return 0;
   });
 
-  const hrVals = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0));
-  const hasHr  = hrVals.some(v => v > 0);
-  const hasLa  = laps.some(l => l.lactate != null || l.lactateValue != null);
+  const nonZero = values.filter(v => v > 0);
+  if (!nonZero.length) return null;
 
-  const validP = primary.filter(Boolean);
-  const pMax = Math.max(...validP, 1);
-  const pMin = isRun ? Math.min(...validP, pMax) : 0;
-  const pRange = pMax - pMin || 1;
+  const maxVal = Math.max(...nonZero);
+  const minVal = Math.min(...nonZero);
+  const pad = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const chartMin = Math.max(0, minVal - pad);
+  const chartMax = maxVal + pad;
+  const range = chartMax - chartMin || 1;
 
-  const hrMax = hasHr ? Math.max(...hrVals.filter(Boolean), 1) : 1;
-  const hrMin = hasHr ? Math.min(...hrVals.filter(Boolean), hrMax) : 0;
-  const hrRange = hrMax - hrMin || 1;
-
-  const laVals = hasLa ? laps.map(l => { const v = l.lactate ?? l.lactateValue; return v != null ? Number(v) : null; }) : [];
-  const laMax  = hasLa ? Math.max(...laVals.filter(v => v != null), 1) : 1;
-  const laMin  = hasLa ? Math.min(...laVals.filter(v => v != null), laMax) : 0;
-  const laRange = laMax - laMin || 1;
-
-  // Compute x-position and width for each bar
-  const totalGapW = GAP * (laps.length - 1);
-  const availW = innerW - totalGapW;
-  const barXW = laps.map((_, i) => {
-    const bw = (durations[i] / totalDur) * availW;
-    const x  = PAD.l + laps.slice(0, i).reduce((s, _, j) => s + (durations[j] / totalDur) * availW + GAP, 0);
-    return { x, bw };
-  });
-
-  // Bar height: for run/pace, lower sec/km = faster → taller bar (invert)
-  const barH = (val) => {
-    if (!val) return 3;
-    const norm = isRun ? (pMax - val) / pRange : (val - pMin) / pRange;
-    return Math.max(3, norm * innerH);
+  const getBarH = (val) => {
+    if (!val) return 6;
+    return Math.max(4, ((val - chartMin) / range) * CHART_H);
   };
-  const yBar = (val) => PAD.t + innerH - barH(val);
 
-  // HR line
-  const hrY = (v) => v > 0 ? PAD.t + innerH - ((v - hrMin) / hrRange) * innerH : null;
-  const hrPoints = laps.map((_, i) => {
-    const { x, bw } = barXW[i];
-    const cy = hrY(hrVals[i]);
-    return cy != null ? `${x + bw / 2},${cy}` : null;
-  }).filter(Boolean).join(' ');
-
-  const laY = (v) => v != null ? PAD.t + innerH - ((v - laMin) / laRange) * innerH : null;
-
-  const fmtPrimary = (val) => {
-    if (!val) return '';
-    if (isBike) return `${Math.round(val)}W`;
-    if (isRun) { const m = Math.floor(val / 60); return `${m}:${String(Math.round(val % 60)).padStart(2, '0')}`; }
-    return '';
+  const fmtTick = (v) => {
+    if (isBike) return `${Math.round(v)}`;
+    const m = Math.floor(v / 60);
+    const s = Math.round(v % 60);
+    return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
+  const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
+
+  const yTicks = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  const step = Math.max(1, Math.ceil(laps.length / 8));
+
+  // Selected lap header info
+  const sel = selectedLap != null ? laps[selectedLap] : null;
+  const selVal = selectedLap != null ? values[selectedLap] : null;
+  const selPace = selVal ? fmtTick(selVal) + ' ' + unitLabel : null;
+  const selDur = sel ? (() => {
+    const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
+    const m = Math.floor(d / 60), s = Math.round(d % 60);
+    return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
+  })() : null;
+  const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
 
   return (
-    <div className="px-4 pb-3">
-      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-3">
-        <span>{isBike ? 'Power per lap (width = duration)' : isRun ? 'Pace per lap (width = duration)' : 'Laps (width = duration)'}</span>
-        {hasHr && <span className="text-red-400">— HR</span>}
-        {hasLa && <span style={{ color: '#7c3aed' }}>· La</span>}
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 100 }}>
-        {laps.map((lap, i) => {
-          const { x, bw } = barXW[i];
-          const val = primary[i];
-          const bh  = barH(val);
-          const by  = yBar(val);
-          const sel = selectedLap === i;
-          const lapNum = lap.lapNumber ?? (i + 1);
-          return (
-            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
-              {/* Bar */}
-              <rect
-                x={x} y={by} width={Math.max(bw, 1)} height={bh}
-                rx={2}
-                fill={sel ? color : color + '70'}
-              />
-              {/* Full-height click zone */}
-              <rect x={x} y={PAD.t} width={Math.max(bw, 1)} height={innerH} rx={2} fill="transparent" />
-              {/* Value label above bar (when selected or wide enough) */}
-              {val > 0 && (bw > 28 || sel) && (
-                <text
-                  x={x + bw / 2} y={by - 2}
-                  textAnchor="middle" fontSize={sel ? 8 : 7}
-                  fill={sel ? color : color + 'cc'} fontWeight={sel ? 'bold' : 'normal'}
-                >
-                  {fmtPrimary(val)}
-                </text>
-              )}
-              {/* Lap number — only if wide enough */}
-              {bw > 14 && (
-                <text
-                  x={x + bw / 2} y={H - 4}
-                  textAnchor="middle" fontSize={7}
-                  fill={sel ? color : '#9ca3af'}
-                  fontWeight={sel ? 'bold' : 'normal'}
-                >
-                  {lapNum}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {/* HR line */}
-        {hasHr && hrPoints && (
-          <polyline points={hrPoints} fill="none" stroke="#ef4444" strokeWidth={1.5} strokeLinejoin="round" opacity={0.8} />
+    <div className="px-4 pb-2">
+      {/* Selected lap header */}
+      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg min-h-[30px]">
+        {sel != null ? (
+          <>
+            <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
+            <span className="text-gray-300 text-xs">·</span>
+            <span className="text-xs font-semibold text-gray-600">{selDur}</span>
+            {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold text-blue-600">{selPace}</span></>}
+          </>
+        ) : (
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+            {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
+          </span>
         )}
-        {/* HR dots */}
-        {hasHr && hrVals.map((v, i) => {
-          const { x, bw } = barXW[i];
-          const cy = hrY(v);
-          if (!cy) return null;
-          return <circle key={i} cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3 : 2} fill="#ef4444" opacity={0.9} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)} />;
-        })}
-        {/* Lactate dots */}
-        {hasLa && laVals.map((v, i) => {
-          if (v == null) return null;
-          const { x, bw } = barXW[i];
-          const cy = laY(v);
-          return (
-            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
-              <circle cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3.5 : 2.5} fill="#7c3aed" opacity={0.9} />
-              {selectedLap === i && (
-                <text x={x + bw / 2 + 4} y={cy - 2} fontSize={7} fill="#7c3aed" fontWeight="bold">{v.toFixed(1)}</text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+      </div>
+
+      {/* Chart: Y-axis + scrollable bars */}
+      <div className="flex gap-0.5">
+        {/* Y-axis */}
+        <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + 16 }}>
+          {yTicks.map((v, i) => (
+            <span
+              key={i}
+              className="absolute right-1 text-[9px] text-gray-400 leading-none select-none"
+              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}
+            >
+              {fmtTick(v)}
+            </span>
+          ))}
+          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">
+            {unitLabel}
+          </span>
+        </div>
+
+        {/* Scrollable bar area */}
+        <div
+          ref={chartScrollRef}
+          className="flex-1 overflow-x-auto"
+          style={{ overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
+        >
+          <div
+            className="flex items-end"
+            style={{ minWidth: laps.length * BAR_SLOT, height: CHART_H + 16 }}
+          >
+            {laps.map((lap, i) => {
+              const val = values[i];
+              const bH = getBarH(val);
+              const isSelected = selectedLap === i;
+              const isPause = val === 0;
+              const lapNum = lap.lapNumber ?? (i + 1);
+              const showLabel = i % step === 0 || isSelected;
+
+              return (
+                <div
+                  key={i}
+                  className="flex flex-col items-center justify-end cursor-pointer select-none"
+                  style={{ width: BAR_SLOT, height: CHART_H + 16 }}
+                  onClick={() => onSelectLap(i)}
+                >
+                  {isPause ? (
+                    <div
+                      className="rounded-full"
+                      style={{ width: 6, height: 6, backgroundColor: isSelected ? '#93C5FD' : '#D1D5DB', marginBottom: 14 }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: BAR_W,
+                        height: bH,
+                        backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8',
+                        borderRadius: '3px 3px 0 0',
+                        marginBottom: 14,
+                      }}
+                    />
+                  )}
+                  <span
+                    className="text-[9px] leading-none"
+                    style={{ color: isSelected ? '#2563EB' : '#9CA3AF', fontWeight: isSelected ? 700 : 400 }}
+                  >
+                    {showLabel ? lapNum : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -820,6 +815,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
   const lapRowRefs = useRef([]);
+  const lapChartScrollRef = useRef(null);
 
   // Mobile detection + view tabs (TrainingPeaks-style)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -1621,10 +1617,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
 
               {/* Lap chart */}
-              {laps.length > 1 && <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} selectedLap={selectedLap} onSelectLap={(i) => {
-                setSelectedLap(i);
-                lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }} />}
+              {laps.length > 1 && <LapChart
+                laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+                selectedLap={selectedLap}
+                chartScrollRef={lapChartScrollRef}
+                onSelectLap={(i) => {
+                  setSelectedLap(i);
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }}
+              />}
 
               {notes && (
                 <div className="mx-4 mb-3 p-3 bg-gray-50 rounded-xl">
@@ -1639,16 +1640,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <div className="px-4 py-3">
                   {(() => {
                     const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
-                    const cols = ['1.5rem', '1fr', ...(dist > 0 ? ['1fr'] : []), ...((isBike || isRun) ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                    const showPace = isBike || isRun || isSwim;
+                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                    const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                     return (
                       <div className="rounded-xl overflow-hidden border border-gray-100">
                         {/* Header */}
                         <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100 sticky top-0 z-10"
                           style={{ gridTemplateColumns: cols }}>
                           <span>#</span>
+                          <span className="text-right">Dist</span>
                           <span className="text-right">Time</span>
-                          {dist > 0 && <span className="text-right">Dist</span>}
-                          {(isBike || isRun) && <span className="text-right">{isBike ? 'Pwr' : 'Pace'}</span>}
+                          {showPace && <span className="text-right">{paceHeader}</span>}
                           <span className="text-right">HR</span>
                           {hasLactate && <span className="text-right">La</span>}
                         </div>
@@ -1657,35 +1660,54 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           {laps.map((lap, i) => {
                             const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
                             const lapDist  = Number(lap.distance || 0);
+                            const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                             const lapPower = Number(lap.average_watts || lap.avgPower || 0);
                             const lapHr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
                             const lapLa    = lap.lactate ?? lap.lactateValue;
                             const lapNum   = lap.lapNumber ?? (i + 1);
-                            let lapPaceStr = null;
-                            if (isRun && lapDist > 0 && lapDur > 0) {
-                              const spk = lapDur / (lapDist / 1000);
-                              lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+
+                            let lapPaceStr = '—';
+                            if (isSwim) {
+                              const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                              if (spd > 0) {
+                                const s = Math.round(100 / spd);
+                                lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+                              }
+                            } else if (isRun) {
+                              if (lapDist > 0 && lapDur > 0) {
+                                const spk = lapDur / (lapDist / 1000);
+                                lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                              }
+                            } else if (isBike) {
+                              lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                             }
+
                             const isSelected = selectedLap === i;
+                            const BAR_SLOT_W = 22 + 5; // must match LapChart
                             return (
                               <div
                                 key={i}
                                 ref={el => lapRowRefs.current[i] = el}
-                                onClick={() => setSelectedLap(isSelected ? null : i)}
+                                onClick={() => {
+                                  const next = isSelected ? null : i;
+                                  setSelectedLap(next);
+                                  if (next != null && lapChartScrollRef.current) {
+                                    const offset = Math.max(0, next * BAR_SLOT_W - lapChartScrollRef.current.clientWidth / 2);
+                                    lapChartScrollRef.current.scrollTo({ left: offset, behavior: 'smooth' });
+                                  }
+                                }}
                                 className="grid items-center px-3 py-2 text-[11px] cursor-pointer transition-colors"
                                 style={{
                                   gridTemplateColumns: cols,
-                                  backgroundColor: isSelected ? color + '18' : undefined,
-                                  borderLeft: isSelected ? `3px solid ${color}` : '3px solid transparent',
+                                  backgroundColor: isSelected ? '#EFF6FF' : undefined,
+                                  borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent',
                                 }}
                               >
-                                <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
+                                <span className="font-bold" style={{ color: isSelected ? '#2563EB' : '#9ca3af' }}>{lapNum}</span>
+                                <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
                                 <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
-                                {dist > 0 && <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>}
-                                {(isBike || isRun) && (
-                                  <span className="text-right tabular-nums font-semibold" style={{ color }}>
-                                    {isBike ? (lapPower > 0 ? `${Math.round(lapPower)}W` : '—') : (lapPaceStr || '—')}
-                                  </span>
+                                {showPace && (
+                                  <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>
                                 )}
                                 <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                                 {hasLactate && (
