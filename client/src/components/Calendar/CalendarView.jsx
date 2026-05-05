@@ -618,35 +618,43 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   );
 }
 
-// ─── Lap Chart (Garmin-style) ─────────────────────────────────────────────────
+// ─── Lap Chart ────────────────────────────────────────────────────────────────
 function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef }) {
-  const BAR_W = 22, BAR_GAP = 5, BAR_SLOT = BAR_W + BAR_GAP;
   const CHART_H = 96;
   const Y_AXIS_W = 38;
+  const X_LABEL_H = 14;
 
-  // Compute pace/power value per lap
-  const values = laps.map((lap) => {
+  // Per-lap metric value (height) + flex weight (width)
+  const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
     const dist = Number(lap.distance || lap.totalDistance || 0);
-    if (isBike) return Number(lap.average_watts || lap.avgPower || 0);
-    if (isRun  && dist > 0 && dur > 0) return dur / (dist / 1000);   // sec/km
-    if (isSwim && dist > 0 && dur > 0) return dur / (dist / 100);    // sec/100m
-    return 0;
+    const pow  = Number(lap.average_watts || lap.avgPower || 0);
+
+    // Height metric: pace (sec/unit) or power
+    let value = 0;
+    if (isBike)                         value = pow;
+    else if (isRun && dist > 0 && dur > 0)  value = dur / (dist / 1000);  // sec/km
+    else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);   // sec/100m
+
+    // Width weight: distance for swim/run, duration for bike
+    const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
+
+    return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
   });
 
-  const nonZero = values.filter(v => v > 0);
+  const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
   if (!nonZero.length) return null;
 
   const maxVal = Math.max(...nonZero);
   const minVal = Math.min(...nonZero);
-  const pad = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const pad    = (maxVal - minVal) * 0.15 || maxVal * 0.1;
   const chartMin = Math.max(0, minVal - pad);
   const chartMax = maxVal + pad;
-  const range = chartMax - chartMin || 1;
+  const range  = chartMax - chartMin || 1;
 
   const getBarH = (val) => {
-    if (!val) return 6;
-    return Math.max(4, ((val - chartMin) / range) * CHART_H);
+    if (!val) return 4;
+    return Math.max(3, ((val - chartMin) / range) * CHART_H);
   };
 
   const fmtTick = (v) => {
@@ -656,20 +664,24 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
-
   const yTicks = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
-  const step = Math.max(1, Math.ceil(laps.length / 8));
 
-  // Selected lap header info
-  const sel = selectedLap != null ? laps[selectedLap] : null;
-  const selVal = selectedLap != null ? values[selectedLap] : null;
-  const selPace = selVal ? fmtTick(selVal) + ' ' + unitLabel : null;
+  // Sparse X labels (evenly spaced, not on click)
+  const step = Math.max(1, Math.ceil(laps.length / 7));
+
+  // Selected lap header
+  const sel    = selectedLap != null ? laps[selectedLap] : null;
+  const selEnt = selectedLap != null ? entries[selectedLap] : null;
+  const selPace = selEnt?.value ? `${fmtTick(selEnt.value)} ${unitLabel}` : null;
   const selDur = sel ? (() => {
     const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
     const m = Math.floor(d / 60), s = Math.round(d % 60);
     return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
   })() : null;
   const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
+
+  // Bar color: sport color at full opacity when selected, 55% otherwise
+  const hexAlpha = (hex, a) => hex + Math.round(a * 255).toString(16).padStart(2, '0');
 
   return (
     <div className="px-4 pb-2">
@@ -680,7 +692,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
             <span className="text-gray-300 text-xs">·</span>
             <span className="text-xs font-semibold text-gray-600">{selDur}</span>
-            {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold text-blue-600">{selPace}</span></>}
+            {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold" style={{ color }}>{selPace}</span></>}
           </>
         ) : (
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
@@ -689,10 +701,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
         )}
       </div>
 
-      {/* Chart: Y-axis + scrollable bars */}
-      <div className="flex gap-0.5">
+      <div className="flex gap-1">
         {/* Y-axis */}
-        <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + 16 }}>
+        <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + X_LABEL_H }}>
           {yTicks.map((v, i) => (
             <span
               key={i}
@@ -707,50 +718,49 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
           </span>
         </div>
 
-        {/* Scrollable bar area */}
+        {/* Proportional-width bars */}
         <div
           ref={chartScrollRef}
-          className="flex-1 overflow-x-auto"
-          style={{ overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
+          className="flex-1 min-w-0 overflow-x-auto"
+          style={{ overflowY: 'hidden' }}
         >
-          <div
-            className="flex items-end"
-            style={{ minWidth: laps.length * BAR_SLOT, height: CHART_H + 16 }}
-          >
-            {laps.map((lap, i) => {
-              const val = values[i];
-              const bH = getBarH(val);
+          <div className="flex items-end gap-px" style={{ minWidth: '100%', height: CHART_H + X_LABEL_H }}>
+            {entries.map((ent, i) => {
               const isSelected = selectedLap === i;
-              const isPause = val === 0;
-              const lapNum = lap.lapNumber ?? (i + 1);
-              const showLabel = i % step === 0 || isSelected;
+              const lapNum = laps[i].lapNumber ?? (i + 1);
+              const showLabel = i % step === 0;
+              const barH = getBarH(ent.value);
+              const barColor = ent.isPause
+                ? '#E5E7EB'
+                : isSelected ? color : hexAlpha(color, 0.55);
 
               return (
                 <div
                   key={i}
-                  className="flex flex-col items-center justify-end cursor-pointer select-none"
-                  style={{ width: BAR_SLOT, height: CHART_H + 16 }}
+                  className="flex flex-col items-center justify-end cursor-pointer select-none flex-shrink-0"
+                  style={{ flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H }}
                   onClick={() => onSelectLap(i)}
                 >
-                  {isPause ? (
+                  {ent.isPause ? (
                     <div
-                      className="rounded-full"
-                      style={{ width: 6, height: 6, backgroundColor: isSelected ? '#93C5FD' : '#D1D5DB', marginBottom: 14 }}
+                      style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: barColor, marginBottom: X_LABEL_H }}
                     />
                   ) : (
                     <div
                       style={{
-                        width: BAR_W,
-                        height: bH,
-                        backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8',
-                        borderRadius: '3px 3px 0 0',
-                        marginBottom: 14,
+                        width: '100%',
+                        height: barH,
+                        backgroundColor: barColor,
+                        borderRadius: '2px 2px 0 0',
+                        marginBottom: X_LABEL_H,
+                        outline: isSelected ? `2px solid ${color}` : 'none',
+                        outlineOffset: 1,
                       }}
                     />
                   )}
                   <span
-                    className="text-[9px] leading-none"
-                    style={{ color: isSelected ? '#2563EB' : '#9CA3AF', fontWeight: isSelected ? 700 : 400 }}
+                    className="text-[9px] leading-none truncate w-full text-center select-none"
+                    style={{ color: isSelected ? color : '#9CA3AF' }}
                   >
                     {showLabel ? lapNum : ''}
                   </span>
@@ -1683,19 +1693,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             }
 
                             const isSelected = selectedLap === i;
-                            const BAR_SLOT_W = 22 + 5; // must match LapChart
                             return (
                               <div
                                 key={i}
                                 ref={el => lapRowRefs.current[i] = el}
-                                onClick={() => {
-                                  const next = isSelected ? null : i;
-                                  setSelectedLap(next);
-                                  if (next != null && lapChartScrollRef.current) {
-                                    const offset = Math.max(0, next * BAR_SLOT_W - lapChartScrollRef.current.clientWidth / 2);
-                                    lapChartScrollRef.current.scrollTo({ left: offset, behavior: 'smooth' });
-                                  }
-                                }}
+                                onClick={() => setSelectedLap(isSelected ? null : i)}
                                 className="grid items-center px-3 py-2 text-[11px] cursor-pointer transition-colors"
                                 style={{
                                   gridTemplateColumns: cols,
