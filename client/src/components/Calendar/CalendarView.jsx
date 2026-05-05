@@ -200,8 +200,33 @@ function pairingStateFor(pw, acts, todayDateStr) {
   return null;
 }
 
+/** Pair planned workouts with same-sport activities for a single day.
+ *  TrainingPeaks-style: each planned workout claims the first unclaimed
+ *  matching activity, so the calendar shows ONE merged card instead of
+ *  two stacked entries. Returns:
+ *    pwToAct: Map<pw_id, activity>
+ *    claimed: Set<activityKey> — activity ids that should be hidden
+ */
+function pairPlannedWithActivities(plannedForDay, acts) {
+  const pwToAct = new Map();
+  const claimed = new Set();
+  if (!plannedForDay?.length || !acts?.length) return { pwToAct, claimed };
+  const actKey = (a) => String(a?.id ?? a?._id ?? '');
+  for (const pw of plannedForDay) {
+    if (!pw?._id) continue;
+    const claimedAlready = pw.completedTrainingId ? acts.find(a => actKey(a) === String(pw.completedTrainingId)) : null;
+    const candidate = claimedAlready
+      || acts.find(a => !claimed.has(actKey(a)) && sportMatches(pw.sport, a.sport || a.type || ''));
+    if (candidate) {
+      pwToAct.set(String(pw._id), candidate);
+      claimed.add(actKey(candidate));
+    }
+  }
+  return { pwToAct, claimed };
+}
+
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
-function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
+function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [repeatOpen, setRepeatOpen] = React.useState(false);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
@@ -262,7 +287,10 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
         onDragEnd={onDragEnd}
       >
         <button
-          onClick={() => onSelect && onSelect(pw)}
+          onClick={() => {
+            if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
+            else if (onSelect) onSelect(pw);
+          }}
           className={`w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${cardClass}`}
           style={{
             borderLeftColor: leftBorderColor,
@@ -3220,8 +3248,10 @@ export default function CalendarView({
                 <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(130px,170px)' }}>
                   {weekDays.map((dayDate, dayIdx) => {
                     const key = getLocalDateString(dayDate);
-                    const acts = activitiesByDay.get(key) || [];
+                    const allActs = activitiesByDay.get(key) || [];
                     const planned = plannedByDay.get(key) || [];
+                    const { pwToAct, claimed } = pairPlannedWithActivities(planned, allActs);
+                    const acts = allActs.filter(a => !claimed.has(String(a?.id ?? a?._id ?? '')));
                     const isToday = isSameDay(dayDate, new Date());
                     const isDragTarget = dragOverKey === key && draggedPw && draggedPw.pw.date !== key;
 
@@ -3268,8 +3298,10 @@ export default function CalendarView({
                             isDragging={draggedPw?.pw?._id === pw._id}
                             onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                             onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
-                            compliance={findCompliance(pw, acts)}
-                            pairingState={pairingStateFor(pw, acts, getLocalDateString(new Date()))}
+                            compliance={findCompliance(pw, allActs)}
+                            pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
+                            linkedActivity={pwToAct.get(String(pw._id)) || null}
+                            onSelectLinked={(act) => handleActivityClick(act, null)}
                             onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                             onDelete={onDeletePlannedWorkout}
                             onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
@@ -3341,7 +3373,10 @@ export default function CalendarView({
               ...weekDays.map((dayDate, dayIdx) => {
                 const key = getLocalDateString(dayDate);
                 const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-                const acts = activitiesByDay.get(key) || [];
+                const allActs = activitiesByDay.get(key) || [];
+                const plannedForDay = plannedByDay.get(key) || [];
+                const { pwToAct, claimed } = pairPlannedWithActivities(plannedForDay, allActs);
+                const acts = allActs.filter(a => !claimed.has(String(a?.id ?? a?._id ?? '')));
                 const isToday = isSameDay(dayDate, new Date());
                 const isExpanded = expandedDays.has(key);
                 const hasOverflow = acts.length > 3;
@@ -3364,7 +3399,6 @@ export default function CalendarView({
                 };
 
                 const cellIdx = weekIdx * 7 + dayIdx;
-                const plannedForDay = plannedByDay.get(key) || [];
                 const isDragTarget = dragOverKey === key && draggedPw && draggedPw.pw.date !== key;
                 return (
                   <motion.div
@@ -3418,8 +3452,10 @@ export default function CalendarView({
                           isDragging={draggedPw?.pw?._id === pw._id}
                           onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                           onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
-                          compliance={findCompliance(pw, visibleActs)}
-                          pairingState={pairingStateFor(pw, visibleActs, getLocalDateString(new Date()))}
+                          compliance={findCompliance(pw, allActs)}
+                          pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
+                          linkedActivity={pwToAct.get(String(pw._id)) || null}
+                          onSelectLinked={(act) => handleActivityClick(act, null)}
                           onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                           onDelete={onDeletePlannedWorkout}
                           onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
