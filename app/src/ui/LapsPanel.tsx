@@ -11,11 +11,11 @@ import { formatDuration, formatPaceSeconds, paceFromSpeed } from './format';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NormalizedLap {
-  index: number;       // 1-based
-  distance: number;    // meters
-  duration: number;    // seconds
-  pace: number | null; // sec/100m (swim), sec/km (run), null for rest
-  paceUnit: string;
+  index: number;
+  distance: number;   // meters
+  duration: number;   // seconds
+  pace: number | null; // sec/100m or sec/km
+  paceUnit: string;   // '/100m' | '/km' | 'km/h'
   hr: number | null;
   power: number | null;
   isPause: boolean;
@@ -27,18 +27,15 @@ interface Props {
   sourceType: 'strava' | 'fit' | 'regular';
 }
 
-// ─── Lap normalisation ────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeLap(raw: any, index: number, sport: string, sourceType: string): NormalizedLap {
   const sportLow = (sport || '').toLowerCase();
   const isSwim = sportLow.includes('swim');
   const isRun = sportLow.includes('run');
 
-  let distance = 0;
-  let duration = 0;
-  let hr: number | null = null;
-  let power: number | null = null;
-  let speed: number | null = null;
+  let distance = 0, duration = 0;
+  let hr: number | null = null, power: number | null = null, speed: number | null = null;
 
   if (sourceType === 'strava') {
     distance = Number(raw.distance ?? 0);
@@ -47,7 +44,6 @@ function normalizeLap(raw: any, index: number, sport: string, sourceType: string
     power = raw.average_watts != null ? Number(raw.average_watts) : null;
     speed = raw.average_speed != null ? Number(raw.average_speed) : null;
   } else {
-    // FIT
     distance = Number(raw.totalDistance ?? raw.distance ?? 0);
     duration = Number(raw.totalElapsedTime ?? raw.totalTimerTime ?? raw.duration ?? 0);
     hr = raw.avgHeartRate != null ? Number(raw.avgHeartRate) : null;
@@ -55,7 +51,6 @@ function normalizeLap(raw: any, index: number, sport: string, sourceType: string
     speed = raw.avgSpeed != null ? Number(raw.avgSpeed) : null;
   }
 
-  // Fallback: compute pace from distance + duration when speed not available
   if ((!speed || speed <= 0) && distance > 0 && duration > 0) {
     speed = distance / duration;
   }
@@ -72,7 +67,6 @@ function normalizeLap(raw: any, index: number, sport: string, sourceType: string
       pace = paceFromSpeed(speed, 'run');
       paceUnit = '/km';
     } else {
-      // Bike / other: store speed in km/h as positive number for chart, pace = null
       paceUnit = 'km/h';
     }
   }
@@ -80,13 +74,37 @@ function normalizeLap(raw: any, index: number, sport: string, sourceType: string
   return { index, distance, duration, pace, paceUnit, hr, power, isPause };
 }
 
+/** Format duration Garmin-style: "41s" under 1 min, "1:20" over 1 min */
+function formatLapTime(secs: number): string {
+  if (secs <= 0) return '0s';
+  if (secs < 60) return `${Math.round(secs)}s`;
+  return formatDuration(secs);
+}
+
+/** Format pace as "1:38 /100m" or "0s /100m" */
+function formatLapPace(pace: number | null, unit: string): string {
+  if (!pace) return `0s ${unit}`;
+  if (pace < 60) return `${Math.round(pace)}s ${unit}`;
+  const mm = Math.floor(pace / 60);
+  const ss = Math.round(pace % 60);
+  return `${mm}:${String(ss).padStart(2, '0')} ${unit}`;
+}
+
+/** Format distance as "600 m", "0 m" */
+function formatLapDist(meters: number): string {
+  if (!meters || meters <= 0) return '0 m';
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters)} m`;
+}
+
 // ─── Chart ────────────────────────────────────────────────────────────────────
 
-const CHART_HEIGHT = 140;
-const BAR_WIDTH = 18;
-const BAR_GAP = 4;
-const BAR_SLOT = BAR_WIDTH + BAR_GAP;
-const Y_AXIS_WIDTH = 40;
+const CHART_H = 160;
+const BAR_W = 22;
+const BAR_GAP = 6;
+const BAR_SLOT = BAR_W + BAR_GAP;
+const Y_AXIS_W = 44;
+const DOT_R = 5; // rest lap dot radius
 
 function LapChart({
   laps,
@@ -98,7 +116,7 @@ function LapChart({
   laps: NormalizedLap[];
   selectedIndex: number;
   sport: string;
-  onBarPress: (index: number) => void;
+  onBarPress: (i: number) => void;
   chartRef: React.RefObject<ScrollView>;
 }) {
   const sportLow = (sport || '').toLowerCase();
@@ -106,101 +124,146 @@ function LapChart({
   const isRun = sportLow.includes('run');
   const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
 
-  // For swim/run: pace chart (higher bar = slower)
-  // For bike: speed chart (higher bar = faster) or power
+  // Build value array (pace for swim/run, power/speed for bike)
   const values = laps.map((l) => {
     if (l.isPause) return 0;
     if ((isSwim || isRun) && l.pace) return l.pace;
     if (isBike && l.power) return l.power;
-    if (l.distance > 0 && l.duration > 0) return (l.distance / l.duration) * 3.6; // km/h
+    if (l.distance > 0 && l.duration > 0) return (l.distance / l.duration) * 3.6;
     return 0;
   });
 
   const nonZero = values.filter((v) => v > 0);
-  const maxVal = nonZero.length ? Math.max(...nonZero) : 1;
-  const minVal = nonZero.length ? Math.min(...nonZero) : 0;
-  const range = maxVal - minVal || 1;
+  if (!nonZero.length) return null;
 
-  // Y-axis labels (5 ticks from fast to slow for pace, slow to fast for speed)
-  const yLabels = useMemo(() => {
-    const ticks: string[] = [];
-    const steps = 4;
-    for (let i = steps; i >= 0; i--) {
-      const v = minVal + (range * i) / steps;
-      if (isSwim || isRun) {
-        ticks.push(formatPaceSeconds(v, ''));
-      } else {
-        ticks.push(`${Math.round(v)}`);
-      }
+  const maxVal = Math.max(...nonZero);
+  const minVal = Math.min(...nonZero);
+  // Add padding: 10% above and below
+  const pad = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const chartMin = Math.max(0, minVal - pad);
+  const chartMax = maxVal + pad;
+  const range = chartMax - chartMin || 1;
+
+  // Y-axis: 5 ticks from top (fastest/smallest) to bottom (slowest/largest)
+  const yTicks = 5;
+  const yLabels: string[] = [];
+  for (let i = 0; i < yTicks; i++) {
+    const v = chartMin + (range * i) / (yTicks - 1);
+    if (isSwim || isRun) {
+      yLabels.push(formatPaceSeconds(v, ''));
+    } else {
+      yLabels.push(`${Math.round(v)}`);
     }
-    return ticks;
-  }, [minVal, range, isSwim, isRun]);
+  }
 
-  const getBarHeight = (val: number) => {
-    if (!val) return 2;
-    const ratio = (val - minVal) / range;
-    // For pace: higher val = taller bar (slower is taller)
-    // For speed/power: higher val = taller bar
-    return Math.max(2, ratio * CHART_HEIGHT);
+  // Bar height: taller = slower (higher pace value)
+  const getBarH = (val: number) => {
+    if (!val) return DOT_R * 2;
+    const ratio = (val - chartMin) / range;
+    return Math.max(4, ratio * CHART_H);
   };
 
+  // Which lap indices to label on X axis
+  const step = Math.max(1, Math.ceil(laps.length / 8));
+
   return (
-    <View style={{ flexDirection: 'row' }}>
-      {/* Y-axis */}
-      <View style={{ width: Y_AXIS_WIDTH, height: CHART_HEIGHT, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 4 }}>
-        {yLabels.map((l, i) => (
-          <Text key={i} style={styles.yLabel}>{l}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      {/* Y-axis labels - top to bottom = min to max */}
+      <View style={{ width: Y_AXIS_W, height: CHART_H + 18, justifyContent: 'flex-start', paddingTop: 0 }}>
+        {yLabels.map((label, i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              top: (i / (yTicks - 1)) * CHART_H - 7,
+              right: 6,
+            }}
+          >
+            <Text style={styles.yLabel}>{label}</Text>
+          </View>
         ))}
+        {/* Unit label at bottom */}
+        <View style={{ position: 'absolute', bottom: 0, right: 6 }}>
+          <Text style={styles.yUnitLabel}>
+            {isSwim ? '/100m' : isRun ? '/km' : isBike ? 'W' : ''}
+          </Text>
+        </View>
       </View>
 
-      {/* Bars */}
+      {/* Horizontal bar chart */}
       <ScrollView
         ref={chartRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ flex: 1 }}
-        contentContainerStyle={{ height: CHART_HEIGHT, alignItems: 'flex-end', paddingRight: 8 }}
+        contentContainerStyle={{ paddingRight: 12 }}
       >
-        {laps.map((lap, i) => {
-          const val = values[i];
-          const barH = getBarHeight(val);
-          const isSelected = i === selectedIndex;
-          const isPause = lap.isPause;
+        <View style={{ height: CHART_H + 18 }}>
+          {laps.map((lap, i) => {
+            const val = values[i];
+            const barH = getBarH(val);
+            const isSelected = i === selectedIndex;
+            const showLabel = i % step === 0 || isSelected;
 
-          return (
-            <TouchableOpacity
-              key={i}
-              onPress={() => onBarPress(i)}
-              activeOpacity={0.7}
-              style={{ width: BAR_SLOT, alignItems: 'center', justifyContent: 'flex-end', height: CHART_HEIGHT }}
-            >
-              <View
+            return (
+              <TouchableOpacity
+                key={i}
+                onPress={() => onBarPress(i)}
+                activeOpacity={0.75}
                 style={{
-                  width: BAR_WIDTH,
-                  height: barH,
-                  borderRadius: 3,
-                  backgroundColor: isPause
-                    ? '#E5E7EB'
-                    : isSelected
-                      ? '#2563EB'
-                      : '#93C5FD',
+                  position: 'absolute',
+                  left: i * BAR_SLOT,
+                  width: BAR_SLOT,
+                  height: CHART_H + 18,
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
                 }}
-              />
-              {/* lap number under bar - only every Nth */}
-              {(i % Math.ceil(laps.length / 8) === 0 || isSelected) ? (
-                <Text style={[styles.barLabel, isSelected && { color: '#2563EB', fontWeight: '800' }]}>
-                  {lap.index}
+              >
+                {/* Bar or dot for rest laps */}
+                {lap.isPause ? (
+                  <View
+                    style={{
+                      width: DOT_R * 2,
+                      height: DOT_R * 2,
+                      borderRadius: DOT_R,
+                      backgroundColor: isSelected ? '#93C5FD' : '#BFDBFE',
+                      marginBottom: 14,
+                    }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: BAR_W,
+                      height: barH,
+                      borderRadius: 4,
+                      backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8',
+                      marginBottom: 14,
+                    }}
+                  />
+                )}
+                {/* X label */}
+                <Text
+                  style={[
+                    styles.xLabel,
+                    isSelected && { color: '#2563EB', fontWeight: '700' },
+                  ]}
+                >
+                  {showLabel ? lap.index : ''}
                 </Text>
-              ) : null}
-            </TouchableOpacity>
-          );
-        })}
+              </TouchableOpacity>
+            );
+          })}
+          {/* Invisible spacer so content width is right */}
+          <View style={{ width: laps.length * BAR_SLOT, height: 1 }} />
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-// ─── Table ────────────────────────────────────────────────────────────────────
+// ─── Table row ────────────────────────────────────────────────────────────────
+
+const ROW_H = 48;
 
 function LapRow({
   lap,
@@ -218,121 +281,96 @@ function LapRow({
   const isRun = sportLow.includes('run');
   const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
 
-  const distLabel = lap.distance > 0 ? `${Math.round(lap.distance)} m` : '—';
-  const timeLabel = lap.duration > 0 ? formatDuration(lap.duration) : '—';
-
-  let metricLabel = '—';
+  let paceLabel = '—';
   if (!lap.isPause) {
     if ((isSwim || isRun) && lap.pace) {
-      metricLabel = formatPaceSeconds(lap.pace, lap.paceUnit);
+      paceLabel = formatLapPace(lap.pace, lap.paceUnit);
     } else if (isBike && lap.power) {
-      metricLabel = `${Math.round(lap.power)} W`;
+      paceLabel = `${Math.round(lap.power)} W`;
     } else if (lap.distance > 0 && lap.duration > 0) {
       const kmh = (lap.distance / lap.duration) * 3.6;
-      metricLabel = `${kmh.toFixed(1)} km/h`;
+      paceLabel = `${kmh.toFixed(1)} km/h`;
     }
+  } else {
+    paceLabel = `0s ${lap.paceUnit}`;
   }
-
-  const hrLabel = lap.hr ? `${Math.round(lap.hr)}` : '—';
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.7}
-      style={[styles.tableRow, isSelected && styles.tableRowSelected]}
+      activeOpacity={0.6}
+      style={[styles.row, isSelected && styles.rowSelected]}
     >
-      <Text style={[styles.colNum, isSelected && styles.selectedText]}>{lap.index}</Text>
-      <Text style={[styles.colDist, isSelected && styles.selectedText]}>{distLabel}</Text>
-      <Text style={[styles.colTime, isSelected && styles.selectedText]}>{timeLabel}</Text>
-      <Text style={[styles.colMetric, isSelected && styles.selectedText]}>{metricLabel}</Text>
-      <Text style={[styles.colHr, isSelected && styles.selectedText]}>{hrLabel}</Text>
+      {/* Left selected indicator */}
+      <View style={[styles.rowIndicator, isSelected && styles.rowIndicatorActive]} />
+
+      <Text style={[styles.colIdx, isSelected && styles.colIdxSelected]}>{lap.index}</Text>
+      <Text style={[styles.colDist]}>{formatLapDist(lap.distance)}</Text>
+      <Text style={[styles.colTime]}>{formatLapTime(lap.duration)}</Text>
+      <Text style={[styles.colPace]}>{paceLabel}</Text>
     </TouchableOpacity>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function LapsPanel({ laps, sport, sourceType }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const chartScrollRef = useRef<ScrollView>(null);
-  const tableScrollRef = useRef<ScrollView>(null);
+  const chartRef = useRef<ScrollView>(null);
+  const tableRef = useRef<ScrollView>(null);
 
   const normalized = useMemo(
     () => laps.map((l, i) => normalizeLap(l, i + 1, sport, sourceType)),
-    [laps, sport, sourceType]
+    [laps, sport, sourceType],
   );
 
-  const selectedLap = normalized[selectedIndex];
+  const sel = normalized[selectedIndex];
 
   const sportLow = (sport || '').toLowerCase();
   const isSwim = sportLow.includes('swim');
   const isRun = sportLow.includes('run');
   const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
 
-  const metricHeader = isSwim ? '/100m' : isRun ? '/km' : isBike ? 'Power' : 'Pace';
-
-  const selectedMetricLabel = useMemo(() => {
-    if (!selectedLap || selectedLap.isPause) return `0 ${isSwim ? 's/100m' : isRun ? 's/km' : 'W'}`;
-    if ((isSwim || isRun) && selectedLap.pace) return formatPaceSeconds(selectedLap.pace, selectedLap.paceUnit);
-    if (isBike && selectedLap.power) return `${Math.round(selectedLap.power)} W`;
-    if (selectedLap.distance > 0 && selectedLap.duration > 0) {
-      const kmh = (selectedLap.distance / selectedLap.duration) * 3.6;
-      return `${kmh.toFixed(1)} km/h`;
+  const selPaceLabel = useMemo(() => {
+    if (!sel || sel.isPause) return `0s ${isSwim ? '/100m' : isRun ? '/km' : ''}`;
+    if ((isSwim || isRun) && sel.pace) return formatLapPace(sel.pace, sel.paceUnit);
+    if (isBike && sel.power) return `${Math.round(sel.power)} W`;
+    if (sel.distance > 0 && sel.duration > 0) {
+      return `${((sel.distance / sel.duration) * 3.6).toFixed(1)} km/h`;
     }
     return '—';
-  }, [selectedLap, isSwim, isRun, isBike]);
+  }, [sel, isSwim, isRun, isBike]);
 
-  const handleBarPress = useCallback((index: number) => {
+  const handleSelect = useCallback((index: number) => {
     setSelectedIndex(index);
-    // Scroll chart to keep bar visible (center on it)
-    const offset = Math.max(0, index * BAR_SLOT - 120);
-    chartScrollRef.current?.scrollTo({ x: offset, animated: true });
-    // Scroll table to the row
-    tableScrollRef.current?.scrollTo({ y: index * ROW_HEIGHT, animated: true });
-  }, []);
-
-  const handleRowPress = useCallback((index: number) => {
-    setSelectedIndex(index);
-    // Scroll chart to bar
-    const offset = Math.max(0, index * BAR_SLOT - 120);
-    chartScrollRef.current?.scrollTo({ x: offset, animated: true });
+    const barOffset = Math.max(0, index * BAR_SLOT - 120);
+    chartRef.current?.scrollTo({ x: barOffset, animated: true });
+    tableRef.current?.scrollTo({ y: index * ROW_H, animated: true });
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View>
       {/* Selected lap header */}
-      <View style={styles.selectedHeader}>
-        <Text style={styles.selectedLapTitle}>
-          Lap {selectedLap?.index ?? 1}
-        </Text>
-        <Text style={styles.selectedLapMeta}>
-          {selectedLap ? formatDuration(selectedLap.duration) : '—'}
-          {'  ·  '}
-          {selectedMetricLabel}
-        </Text>
+      <View style={styles.header}>
+        <Text style={styles.headerLap}>{sel?.index ?? 1}. kolo</Text>
+        <Text style={styles.headerDot}> · </Text>
+        <Text style={styles.headerPace}>{selPaceLabel}</Text>
       </View>
 
       {/* Chart */}
-      <LapChart
-        laps={normalized}
-        selectedIndex={selectedIndex}
-        sport={sport}
-        onBarPress={handleBarPress}
-        chartRef={chartScrollRef}
-      />
-
-      {/* Table header */}
-      <View style={styles.tableHeader}>
-        <Text style={[styles.colNum, styles.headerText]}>#</Text>
-        <Text style={[styles.colDist, styles.headerText]}>DIST</Text>
-        <Text style={[styles.colTime, styles.headerText]}>TIME</Text>
-        <Text style={[styles.colMetric, styles.headerText]}>{metricHeader}</Text>
-        <Text style={[styles.colHr, styles.headerText]}>HR</Text>
+      <View style={styles.chartWrap}>
+        <LapChart
+          laps={normalized}
+          selectedIndex={selectedIndex}
+          sport={sport}
+          onBarPress={handleSelect}
+          chartRef={chartRef}
+        />
       </View>
 
-      {/* Scrollable table */}
+      {/* Table */}
       <ScrollView
-        ref={tableScrollRef}
+        ref={tableRef}
         style={styles.table}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
@@ -343,7 +381,7 @@ export function LapsPanel({ laps, sport, sourceType }: Props) {
             lap={lap}
             isSelected={i === selectedIndex}
             sport={sport}
-            onPress={() => handleRowPress(i)}
+            onPress={() => handleSelect(i)}
           />
         ))}
       </ScrollView>
@@ -353,118 +391,116 @@ export function LapsPanel({ laps, sport, sourceType }: Props) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const ROW_HEIGHT = 44;
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-
-  // Selected lap header
-  selectedHeader: {
+  // Header
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: '#F3F4F6',
     paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    marginBottom: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 12,
   },
-  selectedLapTitle: {
+  headerLap: {
     fontSize: 15,
     fontWeight: '800',
     color: '#111827',
   },
-  selectedLapMeta: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#2563EB',
+  headerDot: {
+    fontSize: 15,
+    color: '#9CA3AF',
+  },
+  headerPace: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+  },
+
+  // Chart wrapper
+  chartWrap: {
+    marginBottom: 4,
   },
 
   // Y axis
   yLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  yUnitLabel: {
     fontSize: 10,
     color: '#9CA3AF',
     fontWeight: '600',
     textAlign: 'right',
   },
 
-  // Bar label
-  barLabel: {
-    fontSize: 9,
+  // X axis labels
+  xLabel: {
+    fontSize: 10,
     color: '#9CA3AF',
     fontWeight: '600',
-    marginTop: 2,
+    height: 14,
   },
 
   // Table
-  tableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    marginTop: 12,
-  },
-  headerText: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    fontWeight: '700',
-  },
   table: {
-    maxHeight: 320,
+    maxHeight: 340,
+    marginTop: 8,
   },
-  tableRow: {
+
+  // Row
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 4,
-    height: ROW_HEIGHT,
+    height: ROW_H,
     borderBottomWidth: 1,
-    borderBottomColor: '#F9FAFB',
+    borderBottomColor: '#F3F4F6',
+    paddingRight: 4,
   },
-  tableRowSelected: {
+  rowSelected: {
     backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-    borderBottomColor: '#DBEAFE',
   },
-  selectedText: {
-    color: '#1D4ED8',
+  rowIndicator: {
+    width: 3,
+    height: ROW_H,
+    marginRight: 8,
+    backgroundColor: 'transparent',
+  },
+  rowIndicatorActive: {
+    backgroundColor: '#2563EB',
+    borderRadius: 2,
   },
 
   // Columns
-  colNum: {
-    width: 30,
-    fontSize: 13,
+  colIdx: {
+    width: 32,
+    fontSize: 14,
     color: '#9CA3AF',
-    fontWeight: '700',
+    fontWeight: '600',
+  },
+  colIdxSelected: {
+    color: '#2563EB',
+    fontWeight: '800',
   },
   colDist: {
-    flex: 1,
-    fontSize: 13,
+    width: 70,
+    fontSize: 14,
     color: '#374151',
-    fontWeight: '700',
+    fontWeight: '600',
   },
   colTime: {
-    flex: 1,
+    width: 60,
     fontSize: 14,
     color: '#111827',
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  colMetric: {
-    flex: 1.2,
-    fontSize: 13,
-    color: '#374151',
     fontWeight: '700',
-    textAlign: 'center',
   },
-  colHr: {
-    width: 40,
-    fontSize: 13,
+  colPace: {
+    flex: 1,
+    fontSize: 14,
     color: '#374151',
-    fontWeight: '700',
+    fontWeight: '600',
     textAlign: 'right',
   },
 });
