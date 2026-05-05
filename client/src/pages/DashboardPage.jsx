@@ -907,13 +907,14 @@ export default function DashboardPage() {
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
         // Default to the most recent training (by date) — recentTrainings is
         // already sorted desc, but be explicit so the graph/history widgets
-        // always land on the user's latest workout.
+        // always land on the user's latest workout. Strava entries have `id`
+        // not `_id`, so fall back to either.
         const latest = [...sportTrainings].sort((a, b) =>
           new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
         )[0];
         if (latest) {
           setSelectedTitle(latest.title);
-          setSelectedTraining(latest._id);
+          setSelectedTraining(latest._id || latest.id);
         }
       }
     }

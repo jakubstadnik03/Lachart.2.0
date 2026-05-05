@@ -405,7 +405,8 @@ export function TrainingStats({
     if (!currentSelectedTitle || !rel.some(t => t.title === currentSelectedTitle)) {
       const latest = [...rel].sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0))[0];
       setCurrentSelectedTitle(latest.title);
-      if (setSelectedTrainingId) setSelectedTrainingId(latest._id);
+      // Strava activities use `id`, FIT/regular use `_id` — fall back to either
+      if (setSelectedTrainingId) setSelectedTrainingId(latest._id || latest.id);
     }
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 

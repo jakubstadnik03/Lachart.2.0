@@ -75,7 +75,7 @@ export default function TrainingPage() {
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-    // 1) Zkusit načíst tréninky z cache pro rychlé vykreslení
+    // 1) Zkusit načíst tréninky z cache pro rychlé vykreslení + select newest
     try {
       const cached = localStorage.getItem(cacheKey);
       const ts = localStorage.getItem(tsKey);
@@ -83,8 +83,17 @@ export default function TrainingPage() {
         const age = Date.now() - parseInt(ts, 10);
         if (!Number.isNaN(age) && age < CACHE_TTL) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
+            // Default-select newest from cache so widgets aren't blank
+            const sorted = [...parsed].sort((a, b) =>
+              new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+            );
+            const newest = sorted[0];
+            if (newest) {
+              setSelectedTitle(prev => prev || newest.title);
+              setSelectedTraining(prev => prev || newest._id || newest.id);
+            }
           }
         }
       }
@@ -114,14 +123,16 @@ export default function TrainingPage() {
       setTrainings(allTrainings);
 
       // Nastavení výchozího vybraného tréninku — vždy nejnovější ze všech zdrojů
-      const sortedAll = [...allTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const sortedAll = [...allTrainings].sort((a, b) =>
+        new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+      );
       const sportFiltered = selectedSport === 'all'
         ? sortedAll
         : sortedAll.filter(t => t.sport === selectedSport);
       const newest = sportFiltered[0] ?? sortedAll[0];
       if (newest) {
         setSelectedTitle(newest.title);
-        setSelectedTraining(newest._id);
+        setSelectedTraining(newest._id || newest.id);
       }
 
       // 3) Uložit do localStorage, aby další stránky/otevření byly rychlé

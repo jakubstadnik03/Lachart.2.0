@@ -256,7 +256,8 @@ const TrainingGraph = ({
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
     if (sportTrainings.length > 0) {
       const firstTitle = uniqueTitles[0];
-      const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
+      const firstObj = sportTrainings.find(t => t.title === firstTitle);
+      const firstTraining = firstObj?._id || firstObj?.id;
       if (firstTitle) { setSelectedTitle(firstTitle); if (firstTraining) setSelectedTraining(firstTraining); }
     } else { setSelectedTitle(null); setSelectedTraining(null); }
   };
@@ -265,7 +266,7 @@ const TrainingGraph = ({
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (setSelectedTitle) setSelectedTitle(newTitle);
-    if (setSelectedTraining && trainingsWithTitle[0]) setSelectedTraining(trainingsWithTitle[0]._id);
+    if (setSelectedTraining && trainingsWithTitle[0]) setSelectedTraining((trainingsWithTitle[0]._id || trainingsWithTitle[0].id));
   };
 
   const handleTrainingChange = (trainingId) => {
@@ -289,11 +290,11 @@ const TrainingGraph = ({
     }
     if (selectedTitle) {
       const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
-      if (trainingsWithTitle.length > 0) { if (setSelectedTraining) setSelectedTraining(trainingsWithTitle[0]._id); return; }
+      if (trainingsWithTitle.length > 0) { if (setSelectedTraining) setSelectedTraining((trainingsWithTitle[0]._id || trainingsWithTitle[0].id)); return; }
     }
     const sortedTrainings = [...sportTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
     const newest = sortedTrainings[0];
-    if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id); }
+    if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id || newest.id); }
   }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport]);
 
   // Update ranges + close-on-outside-click
