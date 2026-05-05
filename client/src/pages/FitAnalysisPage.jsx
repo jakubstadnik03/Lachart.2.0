@@ -1472,6 +1472,22 @@ const FitAnalysisPage = () => {
   const [planContext, setPlanContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
   const [selectedStrava, setSelectedStrava] = useState(null);
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
+
+  // When the URL carries an activity id, scroll the page down to the rich
+  // detail block once it's rendered (so users landing from the dashboard's
+  // 'open in calendar' action don't have to scroll past the calendar).
+  const detailSectionRef = useRef(null);
+  const pendingScrollToDetailRef = useRef(false);
+  useEffect(() => {
+    if (!pendingScrollToDetailRef.current) return;
+    if (!selectedStrava && !selectedTraining) return;
+    // Wait one frame so the detail block is mounted
+    const id = requestAnimationFrame(() => {
+      detailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      pendingScrollToDetailRef.current = false;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [selectedStrava, selectedTraining]);
   const getLinkedStravaActivityId = useCallback((training) => {
     if (!training || typeof training !== 'object') return null;
     const candidate =
@@ -1839,6 +1855,7 @@ const FitAnalysisPage = () => {
 
       // Canonical path: /training-calendar/:activityId or .../:athleteId/:activityId
       if (activityId) {
+        pendingScrollToDetailRef.current = true;
         setTimeout(() => {
           openFromActivityId(activityId);
         }, 200);
@@ -4039,6 +4056,7 @@ const FitAnalysisPage = () => {
         )}
         {selectedTraining && (
           <motion.div
+            ref={detailSectionRef}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}
             animate={{ y: 0, opacity: 1 }}
             transition={{ type: 'spring', damping: 32, stiffness: 320 }}
@@ -5024,6 +5042,7 @@ const FitAnalysisPage = () => {
         {/* Strava Activity Detail */}
         {selectedStrava && (
           <motion.div
+            ref={detailSectionRef}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}
             animate={{ y: 0, opacity: 1 }}
             transition={{ type: 'spring', damping: 32, stiffness: 320 }}
