@@ -940,7 +940,11 @@ function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, on
   const plannedDur  = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
   const plannedTss  = plannedWorkout ? Number(plannedWorkout.targetTss || 0) : 0;
   const plannedDist = plannedWorkout ? Number(plannedWorkout.plannedDistance || 0) : 0;
-  const complianceRow = (plannedDur > 0 && dur > 0) ? getCompliance(plannedDur, dur) : null;
+  // Skip duration-ratio compliance for implausibly long plans (legacy bad data
+  // where '30:00' was parsed as 30 hours). The merged-card pairing covers the
+  // 'completed' signal already, so we don't want a false 'Missed' here.
+  const complianceRow = (plannedDur > 0 && plannedDur < 24 * 3600 && dur > 0)
+    ? getCompliance(plannedDur, dur) : null;
 
   const handleSavePlan = async () => {
     setSavingPlan(true);
@@ -1840,7 +1844,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
     return h > 0 ? `${h}:${String(m).padStart(2,'0')}` : `${m}m`;
   };
 
-  const complianceRow = hasPlanned && dur > 0 ? getCompliance(plannedDur, dur) : null;
+  const complianceRow = hasPlanned && plannedDur < 24 * 3600 && dur > 0 ? getCompliance(plannedDur, dur) : null;
   const compRows = hasPlanned ? [
     { label: 'Duration', planned: fmtDurShort(plannedDur), completed: fmtDurShort(dur), unit: 'h:mm' },
     ...(plannedDist > 0 || dist > 0 ? [{ label: 'Distance', planned: plannedDist > 0 ? `${(plannedDist/1000).toFixed(1)}` : '—', completed: dist > 0 ? `${(dist/1000).toFixed(2)}` : '—', unit: 'km' }] : []),

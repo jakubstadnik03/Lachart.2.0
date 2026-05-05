@@ -171,7 +171,12 @@ function parseDurStr(s) {
     return n <= 9 ? n * 3600 : n * 60;
   }
   const parts = t.split(':').map(Number);
-  if (parts.length === 2) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60;
+  if (parts.length === 2) {
+    // Two-part is ambiguous: "1:30" = 1h30m, but "30:00" = 30min not 30h.
+    // Heuristic: first part ≥ 10 → MM:SS; otherwise H:MM.
+    const [a, b] = [parts[0] || 0, parts[1] || 0];
+    return a >= 10 ? a * 60 + b : a * 3600 + b * 60;
+  }
   if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
   return 0;
 }
