@@ -5,6 +5,7 @@ import type { RootStackParamList } from '../navigation/types';
 import { http } from '../api/http';
 import { Card, Chip, SectionTitle, StatGrid } from '../ui/components';
 import { formatBpm, formatDistanceMeters, formatDuration, formatPaceSeconds, formatWatts, paceFromSpeed } from '../ui/format';
+import { LapsPanel } from '../ui/LapsPanel';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TrainingDetail'>;
 
@@ -154,19 +155,15 @@ export function TrainingDetailScreen({ route, navigation }: Props) {
         <StatGrid items={stats} />
       </Card>
 
-      {sourceType === 'strava' && Array.isArray(data?.laps) && data.laps.length > 0 ? (
+      {(sourceType === 'strava' || sourceType === 'fit') &&
+        Array.isArray(data?.laps) && data.laps.length > 0 ? (
         <Card>
-          <SectionTitle>Intervals</SectionTitle>
-          <Text style={styles.small}>Intervals: {data.laps.length}</Text>
-          <Text style={styles.small}>Tip: next step is to render lap list + simple chart preview.</Text>
-        </Card>
-      ) : null}
-
-      {sourceType === 'fit' && Array.isArray(data?.laps) && data.laps.length > 0 ? (
-        <Card>
-          <SectionTitle>Intervals</SectionTitle>
-          <Text style={styles.small}>Laps: {data.laps.length}</Text>
-          <Text style={styles.small}>Records: {Array.isArray(data?.records) ? data.records.length : 0}</Text>
+          <SectionTitle>Laps ({data.laps.length})</SectionTitle>
+          <LapsPanel
+            laps={data.laps}
+            sport={sport || data?.sport || ''}
+            sourceType={sourceType}
+          />
         </Card>
       ) : null}
 
