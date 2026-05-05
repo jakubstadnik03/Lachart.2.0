@@ -386,11 +386,21 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
     setRepeatOpen(false);
   };
 
-  const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
-  const durStr = secsToHMShort(secs);
+  const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
   const isCompletedPair = pw.status === 'completed' || pairingState === 'completed';
   const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
   const isCompleted = isCompletedPair; // keeps existing menu logic working
+
+  // When merged with an actual activity, prefer real time/distance/sport
+  const actSecs = Number(linkedActivity?.duration || linkedActivity?.moving_time
+                || linkedActivity?.elapsed_time || linkedActivity?.movingTime
+                || linkedActivity?.totalTimerTime || linkedActivity?.totalElapsedTime || 0);
+  const actDistMeters = Number(linkedActivity?.distance || linkedActivity?.totalDistance || 0);
+  const actSport = linkedActivity?.sport || linkedActivity?.type || pw.sport;
+  const fmtDist = (m) => m >= 1000 ? `${(m/1000).toFixed(m % 1000 === 0 ? 0 : 1)} km` : `${Math.round(m)} m`;
+  const displaySport = linkedActivity ? actSport : pw.sport;
+  const displayDurStr = linkedActivity && actSecs > 0 ? secsToHMShort(actSecs) : secsToHMShort(plannedSecs);
+  const displayDistStr = linkedActivity && actDistMeters > 0 ? fmtDist(actDistMeters) : '';
 
   const dropdown = menuOpen ? ReactDOM.createPortal(
     <div
@@ -464,10 +474,13 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         }`}
       >
         <div className="flex items-center gap-1">
-          <SportIcon sport={pw.sport} className="w-3 h-3" />
+          <SportIcon sport={displaySport} className="w-3 h-3" />
           <span className="truncate font-medium flex-1">{pw.title || 'Planned workout'}</span>
-          {durStr && <span className="text-[9px] opacity-70 flex-shrink-0">{durStr}</span>}
+          {displayDurStr && <span className="text-[9px] opacity-70 flex-shrink-0">{displayDurStr}</span>}
         </div>
+        {displayDistStr && (
+          <div className="text-[9px] opacity-70 mt-0.5 truncate">{displayDistStr}</div>
+        )}
       </button>
       <button
         ref={btnRef}

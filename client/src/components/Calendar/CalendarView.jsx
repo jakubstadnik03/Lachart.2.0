@@ -247,11 +247,22 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
     setRepeatOpen(false);
   };
 
-  const sport = (pw.sport || 'bike').toLowerCase();
-  const color = SPORT_PLAN_COLORS[sport] || '#767EB5';
-  const duration = planStepTotalSecs(pw.steps);
+  const plannedSport = (pw.sport || 'bike').toLowerCase();
+  const color = SPORT_PLAN_COLORS[plannedSport] || '#767EB5';
+  const plannedDur = planStepTotalSecs(pw.steps);
   const isCompleted = pw.status === 'completed';
   const isSkipped   = pw.status === 'skipped';
+
+  // When merged with an actual activity, prefer real metrics for the card
+  const actSecs = Number(linkedActivity?.duration || linkedActivity?.moving_time
+                || linkedActivity?.elapsed_time || linkedActivity?.movingTime
+                || linkedActivity?.totalTimerTime || linkedActivity?.totalElapsedTime || 0);
+  const actDistMeters = Number(linkedActivity?.distance || linkedActivity?.totalDistance || 0);
+  const sport = linkedActivity ? (linkedActivity.sport || linkedActivity.type || plannedSport) : plannedSport;
+  const duration = (linkedActivity && actSecs > 0) ? actSecs : plannedDur;
+  const linkedDistStr = (linkedActivity && actDistMeters > 0)
+    ? (actDistMeters >= 1000 ? `${(actDistMeters/1000).toFixed(actDistMeters % 1000 === 0 ? 0 : 1)} km` : `${Math.round(actDistMeters)} m`)
+    : null;
 
   if (compact) {
     // ── Match WeekActivityCard visual style ──
@@ -300,12 +311,14 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
           }}
           title={pw.title}
         >
-          {/* Title row — sport icon + title */}
+          {/* Title row — sport icon + title (+ tiny check overlay when completed) */}
           <div className="flex items-center gap-1.5 min-w-0">
-            {isCompletedPair
-              ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-green-600" />
-              : <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
-            }
+            <span className="relative flex-shrink-0">
+              <SportIcon sport={sport} className="w-3.5 h-3.5" />
+              {isCompletedPair && (
+                <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
+              )}
+            </span>
             <span
               className="text-[11px] font-bold truncate flex-1"
               style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : '#1e293b' }}
@@ -318,12 +331,18 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             )}
           </div>
           {/* Duration + stats row */}
-          {(duration > 0 || pw.targetTss > 0) && (
+          {(duration > 0 || pw.targetTss > 0 || linkedDistStr) && (
             <div className="flex items-center gap-2 text-[10px] mt-0.5">
               {duration > 0 && (
                 <span style={{ color: '#6b7280' }}>{fmtPlanDuration(duration)}</span>
               )}
-              {pw.targetTss > 0 && (
+              {linkedDistStr && (
+                <>
+                  <span style={{ color: '#d1d5db' }}>·</span>
+                  <span style={{ color: '#6b7280' }}>{linkedDistStr}</span>
+                </>
+              )}
+              {!linkedDistStr && pw.targetTss > 0 && (
                 <>
                   <span style={{ color: '#d1d5db' }}>·</span>
                   <span style={{ color: '#6b7280' }}>{pw.targetTss} TSS</span>
