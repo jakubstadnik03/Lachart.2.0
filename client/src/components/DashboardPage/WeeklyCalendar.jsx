@@ -324,7 +324,41 @@ function secsToHMShort(secs) {
 }
 
 
-function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat }) {
+// Local sport-match helper (mirrors CalendarView.sportMatches)
+function planSportMatchesActivity(pwSport, actSport) {
+  const p = String(pwSport || '').toLowerCase();
+  const a = String(actSport || '').toLowerCase();
+  if (!p || !a) return false;
+  if (p === 'run'  && (a.includes('run') || a.includes('walk') || a.includes('hike'))) return true;
+  if (p === 'bike' && (a.includes('ride') || a.includes('cycle') || a.includes('bike') || a.includes('virtual'))) return true;
+  if (p === 'swim' && a.includes('swim')) return true;
+  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
+  return p === a;
+}
+
+// Pair planned workouts with same-sport activities for one day.
+// Returns { pwToAct: Map<pw_id, activity>, claimedKeys: Set<activityKey> }
+function pairPlannedWithDayActivities(planned, activities) {
+  const pwToAct = new Map();
+  const claimedKeys = new Set();
+  if (!planned?.length || !activities?.length) return { pwToAct, claimedKeys };
+  const actKey = (a) => String(a?.id ?? a?._id ?? '');
+  for (const pw of planned) {
+    if (!pw?._id) continue;
+    const explicit = pw.completedTrainingId
+      ? activities.find(a => actKey(a) === String(pw.completedTrainingId))
+      : null;
+    const candidate = explicit
+      || activities.find(a => !claimedKeys.has(actKey(a)) && planSportMatchesActivity(pw.sport, a.sport || a.type || ''));
+    if (candidate) {
+      pwToAct.set(String(pw._id), candidate);
+      claimedKeys.add(actKey(candidate));
+    }
+  }
+  return { pwToAct, claimedKeys };
+}
+
+function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pairingState = null, linkedActivity = null, onSelectLinked = null }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
@@ -354,7 +388,9 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat }) 
 
   const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
   const durStr = secsToHMShort(secs);
-  const isCompleted = pw.status === 'completed';
+  const isCompletedPair = pw.status === 'completed' || pairingState === 'completed';
+  const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
+  const isCompleted = isCompletedPair; // keeps existing menu logic working
 
   const dropdown = menuOpen ? ReactDOM.createPortal(
     <div
@@ -415,11 +451,16 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat }) 
   return (
     <div className="relative group">
       <button
-        onClick={() => onSelect && onSelect(pw)}
+        onClick={() => {
+          if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
+          else if (onSelect) onSelect(pw);
+        }}
         className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[10px] ${
-          isCompleted
-            ? 'bg-green-50 border-green-200 text-green-800'
-            : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+          isCompletedPair
+            ? 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'
+            : isMissedPair
+              ? 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
         }`}
       >
         <div className="flex items-center gap-1">
@@ -1262,8 +1303,12 @@ const WeeklyCalendar = ({
                 <div className="flex gap-2 min-w-max">
                 {weekDays.map((day, idx) => {
                   const key = getLocalDateString(day);
-                  const dayActivities = activitiesByDay.get(key) || [];
+                  const allActivities = activitiesByDay.get(key) || [];
                   const dayPlanned = plannedByDay.get(key) || [];
+                  const { pwToAct, claimedKeys } = pairPlannedWithDayActivities(dayPlanned, allActivities);
+                  const dayActivities = allActivities.filter(a => !claimedKeys.has(String(a?.id ?? a?._id ?? '')));
+                  const todayDateStr = getLocalDateString(new Date());
+                  const dayDateStr = key;
                   const isToday = isSameDay(day, new Date());
 
                   return (
@@ -1291,15 +1336,23 @@ const WeeklyCalendar = ({
                         )}
                       </div>
                       <div className="space-y-1">
-                        {dayPlanned.map((pw, i) => (
-                          <PlannedMiniCard key={`pw-${i}`} pw={pw}
-                            onSelect={onSelectPlannedWorkout}
-                            onStart={onStartWorkout}
-                            onCopy={onCopyPlannedWorkout}
-                            onDelete={onDeletePlannedWorkout}
-                            onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
-                          />
-                        ))}
+                        {dayPlanned.map((pw, i) => {
+                          const linked = pwToAct.get(String(pw._id)) || null;
+                          const matched = !!linked || pw.status === 'completed';
+                          const ps = matched ? 'completed' : (dayDateStr < todayDateStr ? 'missed' : null);
+                          return (
+                            <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                              onSelect={onSelectPlannedWorkout}
+                              onStart={onStartWorkout}
+                              onCopy={onCopyPlannedWorkout}
+                              onDelete={onDeletePlannedWorkout}
+                              onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                              pairingState={ps}
+                              linkedActivity={linked}
+                              onSelectLinked={(act) => handleActivityClick(act)}
+                            />
+                          );
+                        })}
                         {dayActivities.slice(0, 2).map((act, i) => {
                           const activityId = act.id || act._id;
                           const isActSelected = selectedTraining && (
@@ -1328,8 +1381,12 @@ const WeeklyCalendar = ({
           <div className="flex flex-col gap-2 lg:col-span-1 w-full max-w-[min(100%,520px)] min-w-0">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
-              const dayActivities = activitiesByDay.get(key) || [];
+              const allActivities = activitiesByDay.get(key) || [];
               const dayPlanned = plannedByDay.get(key) || [];
+              const { pwToAct, claimedKeys } = pairPlannedWithDayActivities(dayPlanned, allActivities);
+              const dayActivities = allActivities.filter(a => !claimedKeys.has(String(a?.id ?? a?._id ?? '')));
+              const todayDateStr = getLocalDateString(new Date());
+              const dayDateStr = key;
               const isToday = isSameDay(day, new Date());
 
               const dayCard = (
@@ -1356,15 +1413,23 @@ const WeeklyCalendar = ({
                     )}
                   </div>
                   <div className="space-y-1">
-                    {dayPlanned.map((pw, i) => (
-                      <PlannedMiniCard key={`pw-${i}`} pw={pw}
-                        onSelect={onSelectPlannedWorkout}
-                        onStart={onStartWorkout}
-                        onCopy={onCopyPlannedWorkout}
-                        onDelete={onDeletePlannedWorkout}
-                        onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
-                      />
-                    ))}
+                    {dayPlanned.map((pw, i) => {
+                      const linked = pwToAct.get(String(pw._id)) || null;
+                      const matched = !!linked || pw.status === 'completed';
+                      const ps = matched ? 'completed' : (dayDateStr < todayDateStr ? 'missed' : null);
+                      return (
+                        <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                          onSelect={onSelectPlannedWorkout}
+                          onStart={onStartWorkout}
+                          onCopy={onCopyPlannedWorkout}
+                          onDelete={onDeletePlannedWorkout}
+                          onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                          pairingState={ps}
+                          linkedActivity={linked}
+                          onSelectLinked={(act) => handleActivityClick(act)}
+                        />
+                      );
+                    })}
                     {dayActivities.slice(0, 2).map((act, i) => {
                       const activityId = act.id || act._id;
                       const isActSelected = selectedTraining && (
@@ -1961,8 +2026,12 @@ const WeeklyCalendar = ({
               <div className="flex gap-2 min-w-max">
           {weekDays.map((day, idx) => {
             const key = getLocalDateString(day);
-            const dayActivities = activitiesByDay.get(key) || [];
+            const allActivities = activitiesByDay.get(key) || [];
             const dayPlanned = plannedByDay.get(key) || [];
+            const { pwToAct, claimedKeys } = pairPlannedWithDayActivities(dayPlanned, allActivities);
+            const dayActivities = allActivities.filter(a => !claimedKeys.has(String(a?.id ?? a?._id ?? '')));
+            const todayDateStr = getLocalDateString(new Date());
+            const dayDateStr = key;
             const isToday = isSameDay(day, new Date());
 
             return (
@@ -1990,15 +2059,23 @@ const WeeklyCalendar = ({
                   )}
                 </div>
                 <div className="space-y-1">
-                  {dayPlanned.map((pw, i) => (
-                    <PlannedMiniCard key={`pw-${i}`} pw={pw}
-                      onSelect={onSelectPlannedWorkout}
-                      onStart={onStartWorkout}
-                      onCopy={onCopyPlannedWorkout}
-                      onDelete={onDeletePlannedWorkout}
-                      onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
-                    />
-                  ))}
+                  {dayPlanned.map((pw, i) => {
+                    const linked = pwToAct.get(String(pw._id)) || null;
+                    const matched = !!linked || pw.status === 'completed';
+                    const ps = matched ? 'completed' : (dayDateStr < todayDateStr ? 'missed' : null);
+                    return (
+                      <PlannedMiniCard key={`pw-${i}`} pw={pw}
+                        onSelect={onSelectPlannedWorkout}
+                        onStart={onStartWorkout}
+                        onCopy={onCopyPlannedWorkout}
+                        onDelete={onDeletePlannedWorkout}
+                        onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                        pairingState={ps}
+                        linkedActivity={linked}
+                        onSelectLinked={(act) => handleActivityClick(act)}
+                      />
+                    );
+                  })}
                   {dayActivities.slice(0, 2).map((act, i) => (
                     <WeekActCard key={i} act={act} isSelected={false}
                       onClick={() => handleActivityClick(act)}
@@ -2020,8 +2097,12 @@ const WeeklyCalendar = ({
           <div className="grid grid-cols-8 gap-2 sm:gap-3">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
-              const dayActivities = activitiesByDay.get(key) || [];
+              const allActivities = activitiesByDay.get(key) || [];
               const dayPlanned = plannedByDay.get(key) || [];
+              const { pwToAct, claimedKeys } = pairPlannedWithDayActivities(dayPlanned, allActivities);
+              const dayActivities = allActivities.filter(a => !claimedKeys.has(String(a?.id ?? a?._id ?? '')));
+              const todayDateStr = getLocalDateString(new Date());
+              const dayDateStr = key;
               const isToday = isSameDay(day, new Date());
 
               return (
@@ -2051,17 +2132,25 @@ const WeeklyCalendar = ({
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    {dayPlanned.map((pw, i) => (
-                      <PlannedMiniCard
-                        key={`pw-${i}`}
-                        pw={pw}
-                        onSelect={onSelectPlannedWorkout}
-                        onStart={onStartWorkout}
-                        onCopy={onCopyPlannedWorkout}
-                        onDelete={onDeletePlannedWorkout}
-                        onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
-                      />
-                    ))}
+                    {dayPlanned.map((pw, i) => {
+                      const linked = pwToAct.get(String(pw._id)) || null;
+                      const matched = !!linked || pw.status === 'completed';
+                      const ps = matched ? 'completed' : (dayDateStr < todayDateStr ? 'missed' : null);
+                      return (
+                        <PlannedMiniCard
+                          key={`pw-${i}`}
+                          pw={pw}
+                          onSelect={onSelectPlannedWorkout}
+                          onStart={onStartWorkout}
+                          onCopy={onCopyPlannedWorkout}
+                          onDelete={onDeletePlannedWorkout}
+                          onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                          pairingState={ps}
+                          linkedActivity={linked}
+                          onSelectLinked={(act) => handleActivityClick(act)}
+                        />
+                      );
+                    })}
                     {dayActivities.map((act, i) => (
                       <WeekActCard key={i} act={act} isSelected={false}
                         onClick={() => handleActivityClick(act)}
