@@ -11,12 +11,14 @@ function startStravaAutoSyncScheduler() {
     return;
   }
 
-  // Interval in milliseconds (default: 60 minutes — gives Strava rate limits time to recover)
-  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000);
+  // Interval — webhook should deliver in real-time; this is a safety net for
+  // events Strava drops or for users connected before the webhook subscription.
+  // Default 10 minutes; bump batch size so the whole user base cycles fast.
+  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 
-  // Process a small batch per tick; users rotate via lastSyncDate ordering.
-  // With 51 athletes and batchSize=6 every 60 min, all users cycle every ~8–9 hours.
-  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 6);
+  // Process up to 12 users per tick (was 6). Keeps each tick under ~2 minutes
+  // even with 10 s between users, so the 10-min interval is achievable.
+  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 12);
 
   // 10 s between users → spreads API calls; combined with 2 s between pages keeps
   // us well under Strava's 100 req/15-min limit even with full-history syncs.

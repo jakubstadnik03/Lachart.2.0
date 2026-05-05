@@ -643,6 +643,141 @@ function notifyStravaImportedPush(userId, imported) {
   }).catch((e) => console.error('[Strava sync notification]', e.message || e));
 }
 
+// ─── Strava webhook (push subscription) ──────────────────────────────────────
+// Real-time activity sync. Strava sends a POST when an athlete creates or
+// updates an activity; we fetch it and store it immediately so users don't
+// have to wait for the periodic auto-sync tick.
+
+async function fetchAndSaveStravaActivity(user, stravaActivityId) {
+  const token = await getValidStravaToken(user);
+  if (!token) throw new Error('No valid Strava token');
+  const resp = await axios.get(
+    `https://www.strava.com/api/v3/activities/${stravaActivityId}`,
+    { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+  );
+  const a = resp.data;
+  const doc = {
+    userId: user._id.toString(),
+    stravaId: a.id,
+    name: a.name || 'Untitled Activity',
+    sport: a.sport_type || a.type || 'Ride',
+    startDate: new Date(a.start_date_local || a.start_date),
+    elapsedTime: a.elapsed_time || 0,
+    movingTime: a.moving_time || 0,
+    distance: a.distance || 0,
+    averageSpeed: a.average_speed || null,
+    averageHeartRate: a.average_heartrate || null,
+    averagePower: a.average_watts || null,
+    weightedAveragePower:
+      a.weighted_average_watts != null && Number.isFinite(Number(a.weighted_average_watts))
+        ? Number(a.weighted_average_watts) : null,
+    raw: a,
+  };
+  const result = await StravaActivity.updateOne(
+    { userId: user._id, stravaId: a.id },
+    { $set: doc },
+    { upsert: true }
+  );
+  return { activity: doc, isNew: result.upsertedCount > 0 };
+}
+
+// GET /api/integrations/strava/webhook — subscription verification handshake
+router.get('/strava/webhook', (req, res) => {
+  const verifyToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || 'lachart-strava-webhook';
+  const mode = req.query['hub.mode'];
+  const challenge = req.query['hub.challenge'];
+  const token = req.query['hub.verify_token'];
+  if (mode === 'subscribe' && token === verifyToken && challenge) {
+    console.log('[StravaWebhook] subscription verified');
+    return res.status(200).json({ 'hub.challenge': challenge });
+  }
+  console.warn('[StravaWebhook] verification failed', { mode, hasChallenge: !!challenge });
+  res.sendStatus(403);
+});
+
+// POST /api/integrations/strava/webhook — receive activity events
+router.post('/strava/webhook', async (req, res) => {
+  // ACK fast (Strava expects 200 within 2 s; processing happens async)
+  res.sendStatus(200);
+
+  const event = req.body || {};
+  const { aspect_type, object_type, object_id, owner_id } = event;
+
+  try {
+    if (object_type !== 'activity') return; // ignore athlete events
+    if (!owner_id || !object_id) return;
+
+    // Map Strava owner_id → LaChart user
+    const user = await User.findOne({ 'strava.athleteId': Number(owner_id) });
+    if (!user) {
+      console.warn('[StravaWebhook] no user for athlete', owner_id);
+      return;
+    }
+
+    if (aspect_type === 'create' || aspect_type === 'update') {
+      const { isNew } = await fetchAndSaveStravaActivity(user, object_id);
+      if (aspect_type === 'create' && isNew) {
+        notifyStravaImportedPush(user._id, 1);
+      }
+      console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
+    } else if (aspect_type === 'delete') {
+      await StravaActivity.deleteOne({ userId: user._id, stravaId: Number(object_id) });
+      console.log(`[StravaWebhook] deleted activity ${object_id} for user ${user._id}`);
+    }
+  } catch (err) {
+    console.error('[StravaWebhook] processing error:', err.message || err);
+  }
+});
+
+// POST /api/integrations/strava/webhook/subscribe — admin-only bootstrap helper
+// curl -X POST https://lachart.onrender.com/api/integrations/strava/webhook/subscribe \
+//   -H "Authorization: Bearer <admin-jwt>"
+router.post('/strava/webhook/subscribe', verifyToken, async (req, res) => {
+  try {
+    const u = await User.findById(req.user.userId).select('admin role').lean();
+    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const callbackUrl = process.env.STRAVA_WEBHOOK_CALLBACK_URL
+      || `${(process.env.SERVER_PUBLIC_URL || '').replace(/\/+$/, '')}/api/integrations/strava/webhook`;
+    const verifyTokenStr = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || 'lachart-strava-webhook';
+    if (!callbackUrl || !callbackUrl.startsWith('http')) {
+      return res.status(400).json({ error: 'STRAVA_WEBHOOK_CALLBACK_URL or SERVER_PUBLIC_URL must be set' });
+    }
+    const params = new URLSearchParams({
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      callback_url: callbackUrl,
+      verify_token: verifyTokenStr,
+    });
+    const resp = await axios.post(
+      `https://www.strava.com/api/v3/push_subscriptions?${params.toString()}`
+    );
+    res.json({ ok: true, subscription: resp.data, callbackUrl });
+  } catch (e) {
+    console.error('[StravaWebhook] subscribe error:', e.response?.data || e.message);
+    res.status(500).json({ error: 'subscribe_failed', details: e.response?.data || e.message });
+  }
+});
+
+// GET /api/integrations/strava/webhook/subscriptions — list active subs (admin)
+router.get('/strava/webhook/subscriptions', verifyToken, async (req, res) => {
+  try {
+    const u = await User.findById(req.user.userId).select('admin role').lean();
+    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const params = new URLSearchParams({
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+    });
+    const resp = await axios.get(`https://www.strava.com/api/v3/push_subscriptions?${params.toString()}`);
+    res.json(resp.data);
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data || e.message });
+  }
+});
+
 // POST /api/integrations/strava/sync (basic history fetch)
 router.post('/strava/sync', verifyToken, async (req, res) => {
   let imported = 0;
