@@ -207,6 +207,11 @@ const TrainingGraph = ({
     (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
     [trainingSport, normalizeSport]
   );
+  // Strava activities use `id`, FIT/regular use `_id` — match either.
+  const matchesId = useCallback((t, id) => {
+    if (t == null || id == null) return false;
+    return String(t._id) === String(id) || String(t.id) === String(id);
+  }, []);
 
   const availableSports = [...new Set((trainingList || []).map((t) => trainingSport(t)))].filter(Boolean);
 
@@ -271,7 +276,7 @@ const TrainingGraph = ({
 
   const handleTrainingChange = (trainingId) => {
     setSelectedTraining(trainingId);
-    const training = trainingList.find(t => t._id === trainingId);
+    const training = trainingList.find(t => matchesId(t, trainingId));
     if (training && setSelectedTitle) setSelectedTitle(training.title);
   };
 
@@ -282,7 +287,7 @@ const TrainingGraph = ({
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     if (sportTrainings.length === 0) { if (setSelectedTitle) setSelectedTitle(null); if (setSelectedTraining) setSelectedTraining(null); return; }
     if (selectedTraining) {
-      const currentTraining = trainingList.find(t => t._id === selectedTraining);
+      const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
       if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
         if (setSelectedTitle && currentTraining.title !== selectedTitle) setSelectedTitle(currentTraining.title);
         return;
@@ -295,12 +300,12 @@ const TrainingGraph = ({
     const sortedTrainings = [...sportTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
     const newest = sortedTrainings[0];
     if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id || newest.id); }
-  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId]);
 
   // Update ranges + close-on-outside-click
   useEffect(() => {
     if (selectedTraining && trainingList?.length > 0) {
-      const selectedData = trainingList.find(t => t._id === selectedTraining);
+      const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
       if (selectedData?.results) {
         const sportKey = normalizeSport(selectedData.sport);
         const isRun  = sportKey === 'running' || sportKey === 'run';
@@ -400,7 +405,7 @@ const TrainingGraph = ({
     </div>
   );
 
-  const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
+  const selectedTrainingData = trainingList.find(t => matchesId(t, selectedTraining));
 
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
   const trainingOptions = trainingsWithSelectedTitle
