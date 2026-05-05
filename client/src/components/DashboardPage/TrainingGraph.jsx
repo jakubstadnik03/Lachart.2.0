@@ -337,7 +337,7 @@ const TrainingGraph = ({
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList, normalizeSport]);
+  }, [selectedTraining, trainingList, normalizeSport, matchesId]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
