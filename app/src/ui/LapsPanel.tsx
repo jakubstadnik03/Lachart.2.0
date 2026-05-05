@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -12,12 +12,13 @@ import { formatDuration, formatPaceSeconds, paceFromSpeed } from './format';
 
 interface NormalizedLap {
   index: number;
-  distance: number;   // meters
-  duration: number;   // seconds
-  pace: number | null; // sec/100m or sec/km
-  paceUnit: string;   // '/100m' | '/km' | 'km/h'
+  distance: number;
+  duration: number;
+  pace: number | null;
+  paceUnit: string;
   hr: number | null;
   power: number | null;
+  weight: number;   // flex weight for normal mode
   isPause: boolean;
 }
 
@@ -27,12 +28,13 @@ interface Props {
   sourceType: 'strava' | 'fit' | 'regular';
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Normalise ────────────────────────────────────────────────────────────────
 
 function normalizeLap(raw: any, index: number, sport: string, sourceType: string): NormalizedLap {
-  const sportLow = (sport || '').toLowerCase();
-  const isSwim = sportLow.includes('swim');
-  const isRun = sportLow.includes('run');
+  const sp = (sport || '').toLowerCase();
+  const isSwim = sp.includes('swim');
+  const isRun  = sp.includes('run');
+  const isBike = sp.includes('bike') || sp.includes('cycl') || sp.includes('ride');
 
   let distance = 0, duration = 0;
   let hr: number | null = null, power: number | null = null, speed: number | null = null;
@@ -40,91 +42,94 @@ function normalizeLap(raw: any, index: number, sport: string, sourceType: string
   if (sourceType === 'strava') {
     distance = Number(raw.distance ?? 0);
     duration = Number(raw.elapsed_time ?? raw.moving_time ?? 0);
-    hr = raw.average_heartrate != null ? Number(raw.average_heartrate) : null;
-    power = raw.average_watts != null ? Number(raw.average_watts) : null;
-    speed = raw.average_speed != null ? Number(raw.average_speed) : null;
+    hr       = raw.average_heartrate != null ? Number(raw.average_heartrate) : null;
+    power    = raw.average_watts != null ? Number(raw.average_watts) : null;
+    speed    = raw.average_speed != null ? Number(raw.average_speed) : null;
   } else {
     distance = Number(raw.totalDistance ?? raw.distance ?? 0);
     duration = Number(raw.totalElapsedTime ?? raw.totalTimerTime ?? raw.duration ?? 0);
-    hr = raw.avgHeartRate != null ? Number(raw.avgHeartRate) : null;
-    power = raw.avgPower != null ? Number(raw.avgPower) : null;
-    speed = raw.avgSpeed != null ? Number(raw.avgSpeed) : null;
+    hr       = raw.avgHeartRate != null ? Number(raw.avgHeartRate) : null;
+    power    = raw.avgPower != null ? Number(raw.avgPower) : null;
+    speed    = raw.avgSpeed != null ? Number(raw.avgSpeed) : null;
   }
 
-  if ((!speed || speed <= 0) && distance > 0 && duration > 0) {
-    speed = distance / duration;
-  }
+  if ((!speed || speed <= 0) && distance > 0 && duration > 0) speed = distance / duration;
 
-  const isPause = distance <= 0;
+  const isPause = !isBike && distance <= 0;
   let pace: number | null = null;
   let paceUnit = '/km';
 
   if (!isPause && speed && speed > 0) {
-    if (isSwim) {
-      pace = paceFromSpeed(speed, 'swim');
-      paceUnit = '/100m';
-    } else if (isRun) {
-      pace = paceFromSpeed(speed, 'run');
-      paceUnit = '/km';
-    } else {
-      paceUnit = 'km/h';
-    }
+    if (isSwim)      { pace = paceFromSpeed(speed, 'swim'); paceUnit = '/100m'; }
+    else if (isRun)  { pace = paceFromSpeed(speed, 'run');  paceUnit = '/km';   }
+    else               paceUnit = 'km/h';
   }
 
-  return { index, distance, duration, pace, paceUnit, hr, power, isPause };
+  // Width weight: distance for swim/run, duration for bike
+  const weight = isBike ? Math.max(duration, 1) : Math.max(distance, 1);
+
+  return { index, distance, duration, pace, paceUnit, hr, power, weight, isPause };
 }
 
-/** Format duration Garmin-style: "41s" under 1 min, "1:20" over 1 min */
-function formatLapTime(secs: number): string {
+function fmtLapTime(secs: number): string {
   if (secs <= 0) return '0s';
-  if (secs < 60) return `${Math.round(secs)}s`;
+  if (secs < 60)  return `${Math.round(secs)}s`;
   return formatDuration(secs);
 }
 
-/** Format pace as "1:38 /100m" or "0s /100m" */
-function formatLapPace(pace: number | null, unit: string): string {
-  if (!pace) return `0s ${unit}`;
+function fmtLapPace(pace: number | null, unit: string): string {
+  if (!pace) return `— ${unit}`;
   if (pace < 60) return `${Math.round(pace)}s ${unit}`;
-  const mm = Math.floor(pace / 60);
-  const ss = Math.round(pace % 60);
+  const mm = Math.floor(pace / 60), ss = Math.round(pace % 60);
   return `${mm}:${String(ss).padStart(2, '0')} ${unit}`;
 }
 
-/** Format distance as "600 m", "0 m" */
-function formatLapDist(meters: number): string {
-  if (!meters || meters <= 0) return '0 m';
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
-  return `${Math.round(meters)} m`;
+function fmtLapDist(m: number): string {
+  if (!m || m <= 0) return '—';
+  if (m >= 1000) return `${(m / 1000).toFixed(1)} km`;
+  return `${Math.round(m)} m`;
+}
+
+// ─── Sport color ──────────────────────────────────────────────────────────────
+
+function sportColor(sport: string): string {
+  const s = (sport || '').toLowerCase();
+  if (s.includes('swim'))  return '#06b6d4';   // cyan
+  if (s.includes('run'))   return '#f97316';   // orange
+  if (s.includes('bike') || s.includes('cycl') || s.includes('ride')) return '#3b82f6'; // blue
+  return '#8b5cf6'; // purple
 }
 
 // ─── Chart ────────────────────────────────────────────────────────────────────
 
-const CHART_H = 160;
-const BAR_W = 22;
-const BAR_GAP = 6;
-const BAR_SLOT = BAR_W + BAR_GAP;
-const Y_AXIS_W = 44;
-const DOT_R = 5; // rest lap dot radius
+const CHART_H    = 140;
+const Y_AXIS_W   = 44;
+const X_LABEL_H  = 18;
+const ZOOM_BAR_W = 28;
+const ZOOM_GAP   = 4;
+const ZOOM_SLOT  = ZOOM_BAR_W + ZOOM_GAP;
+const PAUSE_W    = 8;
 
 function LapChart({
   laps,
-  selectedIndex,
   sport,
+  selectedIndex,
   onBarPress,
   chartRef,
 }: {
   laps: NormalizedLap[];
-  selectedIndex: number;
   sport: string;
+  selectedIndex: number;
   onBarPress: (i: number) => void;
   chartRef: React.RefObject<ScrollView>;
 }) {
-  const sportLow = (sport || '').toLowerCase();
-  const isSwim = sportLow.includes('swim');
-  const isRun = sportLow.includes('run');
-  const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
+  const color   = sportColor(sport);
+  const sp      = (sport || '').toLowerCase();
+  const isSwim  = sp.includes('swim');
+  const isRun   = sp.includes('run');
+  const isBike  = sp.includes('bike') || sp.includes('cycl') || sp.includes('ride');
+  const isZoomed = selectedIndex >= 0;
 
-  // Build value array (pace for swim/run, power/speed for bike)
   const values = laps.map((l) => {
     if (l.isPause) return 0;
     if ((isSwim || isRun) && l.pace) return l.pace;
@@ -133,129 +138,116 @@ function LapChart({
     return 0;
   });
 
-  const nonZero = values.filter((v) => v > 0);
+  const nonZero = values.filter(v => v > 0);
   if (!nonZero.length) return null;
 
-  const maxVal = Math.max(...nonZero);
-  const minVal = Math.min(...nonZero);
-  // Add padding: 10% above and below
-  const pad = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const maxVal   = Math.max(...nonZero);
+  const minVal   = Math.min(...nonZero);
+  const pad      = (maxVal - minVal) * 0.15 || maxVal * 0.1;
   const chartMin = Math.max(0, minVal - pad);
-  const chartMax = maxVal + pad;
-  const range = chartMax - chartMin || 1;
+  const range    = (maxVal + pad) - chartMin || 1;
 
-  // Y-axis: 5 ticks from top (fastest/smallest) to bottom (slowest/largest)
-  const yTicks = 5;
-  const yLabels: string[] = [];
-  for (let i = 0; i < yTicks; i++) {
-    const v = chartMin + (range * i) / (yTicks - 1);
-    if (isSwim || isRun) {
-      yLabels.push(formatPaceSeconds(v, ''));
-    } else {
-      yLabels.push(`${Math.round(v)}`);
-    }
-  }
+  const getBarH = (val: number) => !val ? 3 : Math.max(3, ((val - chartMin) / range) * CHART_H);
 
-  // Bar height: taller = slower (higher pace value)
-  const getBarH = (val: number) => {
-    if (!val) return DOT_R * 2;
-    const ratio = (val - chartMin) / range;
-    return Math.max(4, ratio * CHART_H);
+  const fmtTick = (v: number) => {
+    if (isBike) return `${Math.round(v)}`;
+    const m = Math.floor(v / 60), s = Math.round(v % 60);
+    return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
+  const unitLabel = isSwim ? '/100m' : isRun ? '/km' : isBike ? 'W' : '';
+  const yTicks = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
 
-  // Which lap indices to label on X axis
   const step = Math.max(1, Math.ceil(laps.length / 8));
 
+  // Scroll to selected bar when zoomed
+  useEffect(() => {
+    if (!isZoomed || !chartRef.current) return;
+    let left = 0;
+    for (let i = 0; i < selectedIndex; i++) {
+      left += (laps[i].isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP;
+    }
+    chartRef.current.scrollTo({ x: Math.max(0, left - 80), animated: true });
+  }, [selectedIndex, isZoomed]);
+
+  const totalWidth = laps.reduce(
+    (s, l) => s + (l.isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP, 0
+  );
+
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-      {/* Y-axis labels - top to bottom = min to max */}
-      <View style={{ width: Y_AXIS_W, height: CHART_H + 18, justifyContent: 'flex-start', paddingTop: 0 }}>
-        {yLabels.map((label, i) => (
-          <View
+    <View style={{ flexDirection: 'row' }}>
+      {/* Y-axis */}
+      <View style={{ width: Y_AXIS_W, height: CHART_H + X_LABEL_H, position: 'relative' }}>
+        {yTicks.map((v, i) => (
+          <Text
             key={i}
-            style={{
-              position: 'absolute',
-              top: (i / (yTicks - 1)) * CHART_H - 7,
-              right: 6,
-            }}
+            style={[styles.yLabel, { position: 'absolute', top: (i / 4) * CHART_H - 6, right: 4 }]}
           >
-            <Text style={styles.yLabel}>{label}</Text>
-          </View>
-        ))}
-        {/* Unit label at bottom */}
-        <View style={{ position: 'absolute', bottom: 0, right: 6 }}>
-          <Text style={styles.yUnitLabel}>
-            {isSwim ? '/100m' : isRun ? '/km' : isBike ? 'W' : ''}
+            {fmtTick(v)}
           </Text>
-        </View>
+        ))}
+        <Text style={[styles.yLabel, { position: 'absolute', bottom: 0, right: 4 }]}>{unitLabel}</Text>
       </View>
 
-      {/* Horizontal bar chart */}
+      {/* Scrollable bars */}
       <ScrollView
         ref={chartRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingRight: 12 }}
+        contentContainerStyle={{
+          alignItems: 'flex-end',
+          height: CHART_H + X_LABEL_H,
+          minWidth: isZoomed ? totalWidth : undefined,
+          gap: isZoomed ? ZOOM_GAP : 1,
+          paddingRight: 8,
+        }}
       >
-        <View style={{ height: CHART_H + 18 }}>
-          {laps.map((lap, i) => {
-            const val = values[i];
-            const barH = getBarH(val);
-            const isSelected = i === selectedIndex;
-            const showLabel = i % step === 0 || isSelected;
+        {laps.map((lap, i) => {
+          const isSelected = selectedIndex === i;
+          const val  = values[i];
+          const barH = getBarH(val);
+          const showLabel = isZoomed ? isSelected : (i % step === 0);
 
-            return (
-              <TouchableOpacity
-                key={i}
-                onPress={() => onBarPress(i)}
-                activeOpacity={0.75}
-                style={{
-                  position: 'absolute',
-                  left: i * BAR_SLOT,
-                  width: BAR_SLOT,
-                  height: CHART_H + 18,
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                }}
-              >
-                {/* Bar or dot for rest laps */}
-                {lap.isPause ? (
-                  <View
-                    style={{
-                      width: DOT_R * 2,
-                      height: DOT_R * 2,
-                      borderRadius: DOT_R,
-                      backgroundColor: isSelected ? '#93C5FD' : '#BFDBFE',
-                      marginBottom: 14,
-                    }}
-                  />
-                ) : (
-                  <View
-                    style={{
-                      width: BAR_W,
-                      height: barH,
-                      borderRadius: 4,
-                      backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8',
-                      marginBottom: 14,
-                    }}
-                  />
+          // Colors
+          let barBg: string;
+          if (lap.isPause)   barBg = isSelected ? color + '60' : '#E5E7EB';
+          else if (isZoomed) barBg = isSelected ? color : color + '55';
+          else               barBg = color + 'AA';
+
+          const barWidth = isZoomed
+            ? (lap.isPause ? PAUSE_W : ZOOM_BAR_W)
+            : undefined; // proportional in normal mode
+
+          return (
+            <TouchableOpacity
+              key={i}
+              onPress={() => onBarPress(isSelected ? -1 : i)}
+              activeOpacity={0.7}
+              style={[
+                styles.barItem,
+                isZoomed
+                  ? { width: lap.isPause ? PAUSE_W : ZOOM_BAR_W, flexShrink: 0 }
+                  : { flex: lap.weight, minWidth: 2 },
+                { height: CHART_H + X_LABEL_H },
+              ]}
+            >
+              {lap.isPause ? (
+                <View style={{ width: isZoomed ? 6 : 4, height: isZoomed ? 6 : 3, borderRadius: 3, backgroundColor: barBg, marginBottom: X_LABEL_H }} />
+              ) : (
+                <View style={{ width: barWidth ?? '100%', height: barH, backgroundColor: barBg, borderRadius: 3, borderTopLeftRadius: 3, borderTopRightRadius: 3, marginBottom: X_LABEL_H }} />
+              )}
+              {/* X-label + bottom indicator */}
+              <View style={{ height: X_LABEL_H, alignItems: 'center', justifyContent: 'flex-start', width: '100%' }}>
+                {isSelected && (
+                  <View style={{ width: 6, height: 3, borderRadius: 2, backgroundColor: color, marginBottom: 2 }} />
                 )}
-                {/* X label */}
-                <Text
-                  style={[
-                    styles.xLabel,
-                    isSelected && { color: '#2563EB', fontWeight: '700' },
-                  ]}
-                >
+                <Text style={[styles.xLabel, isSelected && { color, fontWeight: '700' }]}>
                   {showLabel ? lap.index : ''}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-          {/* Invisible spacer so content width is right */}
-          <View style={{ width: laps.length * BAR_SLOT, height: 1 }} />
-        </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -265,49 +257,34 @@ function LapChart({
 
 const ROW_H = 48;
 
-function LapRow({
-  lap,
-  isSelected,
-  sport,
-  onPress,
-}: {
-  lap: NormalizedLap;
-  isSelected: boolean;
-  sport: string;
-  onPress: () => void;
+function LapRow({ lap, isSelected, sport, color, onPress }: {
+  lap: NormalizedLap; isSelected: boolean; sport: string; color: string; onPress: () => void;
 }) {
-  const sportLow = (sport || '').toLowerCase();
-  const isSwim = sportLow.includes('swim');
-  const isRun = sportLow.includes('run');
-  const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
+  const sp = (sport || '').toLowerCase();
+  const isSwim = sp.includes('swim');
+  const isRun  = sp.includes('run');
+  const isBike = sp.includes('bike') || sp.includes('cycl') || sp.includes('ride');
 
   let paceLabel = '—';
   if (!lap.isPause) {
-    if ((isSwim || isRun) && lap.pace) {
-      paceLabel = formatLapPace(lap.pace, lap.paceUnit);
-    } else if (isBike && lap.power) {
-      paceLabel = `${Math.round(lap.power)} W`;
-    } else if (lap.distance > 0 && lap.duration > 0) {
-      const kmh = (lap.distance / lap.duration) * 3.6;
-      paceLabel = `${kmh.toFixed(1)} km/h`;
+    if ((isSwim || isRun) && lap.pace) paceLabel = fmtLapPace(lap.pace, lap.paceUnit);
+    else if (isBike && lap.power)      paceLabel = `${Math.round(lap.power)} W`;
+    else if (lap.distance > 0 && lap.duration > 0) {
+      paceLabel = `${((lap.distance / lap.duration) * 3.6).toFixed(1)} km/h`;
     }
   } else {
-    paceLabel = `0s ${lap.paceUnit}`;
+    paceLabel = `— ${lap.paceUnit}`;
   }
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.6}
-      style={[styles.row, isSelected && styles.rowSelected]}
-    >
-      {/* Left selected indicator */}
-      <View style={[styles.rowIndicator, isSelected && styles.rowIndicatorActive]} />
-
-      <Text style={[styles.colIdx, isSelected && styles.colIdxSelected]}>{lap.index}</Text>
-      <Text style={[styles.colDist]}>{formatLapDist(lap.distance)}</Text>
-      <Text style={[styles.colTime]}>{formatLapTime(lap.duration)}</Text>
-      <Text style={[styles.colPace]}>{paceLabel}</Text>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.6}
+      style={[styles.row, isSelected && { backgroundColor: color + '14' }]}>
+      <View style={[styles.rowIndicator, isSelected && { backgroundColor: color }]} />
+      <Text style={[styles.colIdx, isSelected && { color, fontWeight: '800' }]}>{lap.index}</Text>
+      <Text style={styles.colDist}>{fmtLapDist(lap.distance)}</Text>
+      <Text style={styles.colTime}>{fmtLapTime(lap.duration)}</Text>
+      <Text style={[styles.colPace, isSelected && { color }]}>{paceLabel}</Text>
+      <Text style={styles.colHr}>{lap.hr ? `${Math.round(lap.hr)}` : '—'}</Text>
     </TouchableOpacity>
   );
 }
@@ -315,74 +292,87 @@ function LapRow({
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function LapsPanel({ laps, sport, sourceType }: Props) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const chartRef = useRef<ScrollView>(null);
-  const tableRef = useRef<ScrollView>(null);
+  const [selectedIndex, setSelectedIndex] = useState(-1); // -1 = no selection (zoomed out)
+  const chartRef  = useRef<ScrollView>(null);
+  const tableRef  = useRef<ScrollView>(null);
+  const color     = sportColor(sport);
 
   const normalized = useMemo(
     () => laps.map((l, i) => normalizeLap(l, i + 1, sport, sourceType)),
     [laps, sport, sourceType],
   );
 
-  const sel = normalized[selectedIndex];
+  const sel = selectedIndex >= 0 ? normalized[selectedIndex] : null;
 
-  const sportLow = (sport || '').toLowerCase();
-  const isSwim = sportLow.includes('swim');
-  const isRun = sportLow.includes('run');
-  const isBike = sportLow.includes('bike') || sportLow.includes('cycl') || sportLow.includes('ride');
+  const sp     = (sport || '').toLowerCase();
+  const isSwim = sp.includes('swim');
+  const isRun  = sp.includes('run');
+  const isBike = sp.includes('bike') || sp.includes('cycl') || sp.includes('ride');
 
   const selPaceLabel = useMemo(() => {
-    if (!sel || sel.isPause) return `0s ${isSwim ? '/100m' : isRun ? '/km' : ''}`;
-    if ((isSwim || isRun) && sel.pace) return formatLapPace(sel.pace, sel.paceUnit);
+    if (!sel || sel.isPause) return `— ${isSwim ? '/100m' : isRun ? '/km' : ''}`;
+    if ((isSwim || isRun) && sel.pace) return fmtLapPace(sel.pace, sel.paceUnit);
     if (isBike && sel.power) return `${Math.round(sel.power)} W`;
-    if (sel.distance > 0 && sel.duration > 0) {
-      return `${((sel.distance / sel.duration) * 3.6).toFixed(1)} km/h`;
-    }
     return '—';
   }, [sel, isSwim, isRun, isBike]);
 
   const handleSelect = useCallback((index: number) => {
     setSelectedIndex(index);
-    const barOffset = Math.max(0, index * BAR_SLOT - 120);
-    chartRef.current?.scrollTo({ x: barOffset, animated: true });
-    tableRef.current?.scrollTo({ y: index * ROW_H, animated: true });
+    if (index >= 0) {
+      tableRef.current?.scrollTo({ y: index * ROW_H, animated: true });
+    }
   }, []);
 
   return (
     <View>
-      {/* Selected lap header */}
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerLap}>{sel?.index ?? 1}. kolo</Text>
-        <Text style={styles.headerDot}> · </Text>
-        <Text style={styles.headerPace}>{selPaceLabel}</Text>
+        {sel ? (
+          <>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.headerLap}>Lap {sel.index}</Text>
+              <Text style={styles.headerDot}>·</Text>
+              <Text style={styles.headerDur}>{fmtLapTime(sel.duration)}</Text>
+              <Text style={styles.headerDot}>·</Text>
+              <Text style={[styles.headerPace, { color }]}>{selPaceLabel}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setSelectedIndex(-1)}
+              style={[styles.zoomOutBtn, { borderColor: color + '40' }]}
+            >
+              <Text style={[styles.zoomOutText, { color }]}>zoom out</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <Text style={styles.headerHint}>
+            {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
+          </Text>
+        )}
       </View>
 
       {/* Chart */}
-      <View style={styles.chartWrap}>
-        <LapChart
-          laps={normalized}
-          selectedIndex={selectedIndex}
-          sport={sport}
-          onBarPress={handleSelect}
-          chartRef={chartRef}
-        />
+      <LapChart
+        laps={normalized}
+        sport={sport}
+        selectedIndex={selectedIndex}
+        onBarPress={handleSelect}
+        chartRef={chartRef}
+      />
+
+      {/* Table header */}
+      <View style={styles.tableHeader}>
+        <Text style={[styles.colIdx, styles.headerText]}>#</Text>
+        <Text style={[styles.colDist, styles.headerText]}>DIST</Text>
+        <Text style={[styles.colTime, styles.headerText]}>TIME</Text>
+        <Text style={[styles.colPace, styles.headerText]}>{isSwim ? '/100m' : isRun ? '/km' : isBike ? 'PWR' : 'PACE'}</Text>
+        <Text style={[styles.colHr, styles.headerText]}>HR</Text>
       </View>
 
       {/* Table */}
-      <ScrollView
-        ref={tableRef}
-        style={styles.table}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
-      >
+      <ScrollView ref={tableRef} style={styles.table} showsVerticalScrollIndicator={false} nestedScrollEnabled>
         {normalized.map((lap, i) => (
-          <LapRow
-            key={i}
-            lap={lap}
-            isSelected={i === selectedIndex}
-            sport={sport}
-            onPress={() => handleSelect(i)}
-          />
+          <LapRow key={i} lap={lap} isSelected={i === selectedIndex} sport={sport} color={color}
+            onPress={() => handleSelect(i === selectedIndex ? -1 : i)} />
         ))}
       </ScrollView>
     </View>
@@ -392,115 +382,54 @@ export function LapsPanel({ laps, sport, sourceType }: Props) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 8,
   },
-  headerLap: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  headerDot: {
-    fontSize: 15,
-    color: '#9CA3AF',
-  },
-  headerPace: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#374151',
-  },
+  headerLap:  { fontSize: 14, fontWeight: '800', color: '#111827' },
+  headerDot:  { fontSize: 12, color: '#D1D5DB' },
+  headerDur:  { fontSize: 13, fontWeight: '600', color: '#374151' },
+  headerPace: { fontSize: 13, fontWeight: '700' },
+  headerHint: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
+  zoomOutBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
+  zoomOutText: { fontSize: 11, fontWeight: '700' },
 
-  // Chart wrapper
-  chartWrap: {
-    marginBottom: 4,
-  },
+  yLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600', textAlign: 'right' },
+  xLabel: { fontSize: 9, color: '#9CA3AF', fontWeight: '600' },
 
-  // Y axis
-  yLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  yUnitLabel: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
+  barItem: { flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' },
 
-  // X axis labels
-  xLabel: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    fontWeight: '600',
-    height: 14,
+  tableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 12,
   },
+  headerText: { fontSize: 10, color: '#9CA3AF', fontWeight: '700' },
 
-  // Table
-  table: {
-    maxHeight: 340,
-    marginTop: 8,
-  },
+  table: { maxHeight: 320 },
 
-  // Row
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     height: ROW_H,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
-    paddingRight: 4,
   },
-  rowSelected: {
-    backgroundColor: '#EFF6FF',
-  },
-  rowIndicator: {
-    width: 3,
-    height: ROW_H,
-    marginRight: 8,
-    backgroundColor: 'transparent',
-  },
-  rowIndicatorActive: {
-    backgroundColor: '#2563EB',
-    borderRadius: 2,
-  },
+  rowIndicator: { width: 3, height: ROW_H, marginRight: 8, backgroundColor: 'transparent', borderRadius: 2 },
 
-  // Columns
-  colIdx: {
-    width: 32,
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontWeight: '600',
-  },
-  colIdxSelected: {
-    color: '#2563EB',
-    fontWeight: '800',
-  },
-  colDist: {
-    width: 70,
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  colTime: {
-    width: 60,
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '700',
-  },
-  colPace: {
-    flex: 1,
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
+  colIdx:   { width: 32, fontSize: 13, color: '#9CA3AF', fontWeight: '600' },
+  colDist:  { width: 60, fontSize: 13, color: '#374151', fontWeight: '600' },
+  colTime:  { width: 54, fontSize: 14, color: '#111827', fontWeight: '700', textAlign: 'center' },
+  colPace:  { flex: 1, fontSize: 13, color: '#374151', fontWeight: '600', textAlign: 'center' },
+  colHr:    { width: 38, fontSize: 13, color: '#374151', fontWeight: '600', textAlign: 'right' },
 });

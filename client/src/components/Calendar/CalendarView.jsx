@@ -620,84 +620,99 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
 function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef }) {
-  const CHART_H = 96;
-  const Y_AXIS_W = 38;
-  const X_LABEL_H = 14;
+  const CHART_H   = 96;
+  const Y_AXIS_W  = 38;
+  const X_LABEL_H = 16;
+  const ZOOM_BAR_W = 30;  // fixed px per bar in zoomed mode
+  const ZOOM_GAP   = 3;
+  const ZOOM_SLOT  = ZOOM_BAR_W + ZOOM_GAP;
+  const PAUSE_W    = 8;   // narrower bar for rest laps in zoom
 
-  // Per-lap metric value (height) + flex weight (width)
+  const isZoomed = selectedLap != null;
+
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
-
-    // Height metric: pace (sec/unit) or power
     let value = 0;
-    if (isBike)                         value = pow;
-    else if (isRun && dist > 0 && dur > 0)  value = dur / (dist / 1000);  // sec/km
-    else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);   // sec/100m
-
-    // Width weight: distance for swim/run, duration for bike
+    if (isBike)                              value = pow;
+    else if (isRun  && dist > 0 && dur > 0)  value = dur / (dist / 1000);
+    else if (isSwim && dist > 0 && dur > 0)  value = dur / (dist / 100);
     const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
-
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
   });
 
   const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
   if (!nonZero.length) return null;
 
-  const maxVal = Math.max(...nonZero);
-  const minVal = Math.min(...nonZero);
-  const pad    = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const maxVal   = Math.max(...nonZero);
+  const minVal   = Math.min(...nonZero);
+  const pad      = (maxVal - minVal) * 0.15 || maxVal * 0.1;
   const chartMin = Math.max(0, minVal - pad);
-  const chartMax = maxVal + pad;
-  const range  = chartMax - chartMin || 1;
+  const range    = (maxVal + pad) - chartMin || 1;
 
-  const getBarH = (val) => {
-    if (!val) return 4;
-    return Math.max(3, ((val - chartMin) / range) * CHART_H);
-  };
+  const getBarH = (val) => !val ? 3 : Math.max(3, ((val - chartMin) / range) * CHART_H);
 
   const fmtTick = (v) => {
     if (isBike) return `${Math.round(v)}`;
-    const m = Math.floor(v / 60);
-    const s = Math.round(v % 60);
+    const m = Math.floor(v / 60), s = Math.round(v % 60);
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
-  const yTicks = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  const step      = Math.max(1, Math.ceil(laps.length / 7));
 
-  // Sparse X labels (evenly spaced, not on click)
-  const step = Math.max(1, Math.ceil(laps.length / 7));
+  // Scroll to center selected bar in zoom mode
+  useEffect(() => {
+    if (!isZoomed || !chartScrollRef?.current) return;
+    const el = chartScrollRef.current;
+    let left = 0;
+    for (let i = 0; i < selectedLap; i++) {
+      left += (entries[i].isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP;
+    }
+    const target = left + ZOOM_BAR_W / 2 - el.clientWidth / 2;
+    requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }));
+  }, [selectedLap, isZoomed]);
 
-  // Selected lap header
-  const sel    = selectedLap != null ? laps[selectedLap] : null;
-  const selEnt = selectedLap != null ? entries[selectedLap] : null;
-  const selPace = selEnt?.value ? `${fmtTick(selEnt.value)} ${unitLabel}` : null;
-  const selDur = sel ? (() => {
+  // Selected header data
+  const sel       = selectedLap != null ? laps[selectedLap] : null;
+  const selEnt    = selectedLap != null ? entries[selectedLap] : null;
+  const selPace   = selEnt?.value ? `${fmtTick(selEnt.value)} ${unitLabel}` : null;
+  const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
+  const selDurStr = sel ? (() => {
     const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
     const m = Math.floor(d / 60), s = Math.round(d % 60);
     return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
   })() : null;
-  const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
 
-  // Bar color: sport color at full opacity when selected, 55% otherwise
-  const hexAlpha = (hex, a) => hex + Math.round(a * 255).toString(16).padStart(2, '0');
+  // Total zoom width
+  const zoomTotalW = entries.reduce((s, e) => s + (e.isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP, 0);
 
   return (
     <div className="px-4 pb-2">
-      {/* Selected lap header */}
-      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg min-h-[30px]">
-        {sel != null ? (
-          <>
-            <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
-            <span className="text-gray-300 text-xs">·</span>
-            <span className="text-xs font-semibold text-gray-600">{selDur}</span>
-            {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold" style={{ color }}>{selPace}</span></>}
-          </>
-        ) : (
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-            {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
-          </span>
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg flex-1 mr-2 min-h-[30px]">
+          {sel != null ? (
+            <>
+              <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
+              <span className="text-gray-300 text-xs">·</span>
+              <span className="text-xs font-semibold text-gray-600">{selDurStr}</span>
+              {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold" style={{ color }}>{selPace}</span></>}
+            </>
+          ) : (
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+              {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
+            </span>
+          )}
+        </div>
+        {isZoomed && (
+          <button
+            onClick={() => onSelectLap(null)}
+            className="flex-shrink-0 text-[10px] px-2 py-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 font-semibold leading-none transition-colors"
+          >
+            zoom out
+          </button>
         )}
       </div>
 
@@ -705,65 +720,62 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
         {/* Y-axis */}
         <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + X_LABEL_H }}>
           {yTicks.map((v, i) => (
-            <span
-              key={i}
-              className="absolute right-1 text-[9px] text-gray-400 leading-none select-none"
-              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}
-            >
+            <span key={i} className="absolute right-1 text-[9px] text-gray-400 leading-none select-none"
+              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
               {fmtTick(v)}
             </span>
           ))}
-          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">
-            {unitLabel}
-          </span>
+          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
         </div>
 
-        {/* Proportional-width bars */}
-        <div
-          ref={chartScrollRef}
-          className="flex-1 min-w-0 overflow-x-auto"
-          style={{ overflowY: 'hidden' }}
-        >
-          <div className="flex items-end gap-px" style={{ minWidth: '100%', height: CHART_H + X_LABEL_H }}>
+        {/* Bars */}
+        <div ref={chartScrollRef} className="flex-1 min-w-0 overflow-x-auto" style={{ overflowY: 'hidden' }}>
+          <div
+            className="flex items-end"
+            style={{
+              height: CHART_H + X_LABEL_H,
+              gap: isZoomed ? ZOOM_GAP : 1,
+              minWidth: isZoomed ? zoomTotalW : '100%',
+            }}
+          >
             {entries.map((ent, i) => {
               const isSelected = selectedLap === i;
-              const lapNum = laps[i].lapNumber ?? (i + 1);
-              const showLabel = i % step === 0;
-              const barH = getBarH(ent.value);
-              const barColor = ent.isPause
-                ? '#E5E7EB'
-                : isSelected ? color : hexAlpha(color, 0.55);
+              const lapNum     = laps[i].lapNumber ?? (i + 1);
+              const showLabel  = isZoomed ? isSelected : (i % step === 0);
+              const barH       = getBarH(ent.value);
+
+              // Colors
+              let barBg;
+              if (ent.isPause)   barBg = isSelected ? color + '60' : '#E5E7EB';
+              else if (isZoomed) barBg = isSelected ? color : color + '40';
+              else               barBg = color + 'AA'; // normal mode: all same tint
+
+              // Width
+              const itemStyle = isZoomed
+                ? { width: ent.isPause ? PAUSE_W : ZOOM_BAR_W, flexShrink: 0, height: CHART_H + X_LABEL_H }
+                : { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H };
 
               return (
                 <div
                   key={i}
-                  className="flex flex-col items-center justify-end cursor-pointer select-none flex-shrink-0"
-                  style={{ flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H }}
-                  onClick={() => onSelectLap(i)}
+                  className="flex flex-col items-center justify-end cursor-pointer select-none"
+                  style={itemStyle}
+                  onClick={() => onSelectLap(isSelected ? null : i)}
                 >
                   {ent.isPause ? (
-                    <div
-                      style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: barColor, marginBottom: X_LABEL_H }}
-                    />
+                    <div style={{ width: isZoomed ? 6 : 4, height: isZoomed ? 6 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: X_LABEL_H }} />
                   ) : (
-                    <div
-                      style={{
-                        width: '100%',
-                        height: barH,
-                        backgroundColor: barColor,
-                        borderRadius: '2px 2px 0 0',
-                        marginBottom: X_LABEL_H,
-                        outline: isSelected ? `2px solid ${color}` : 'none',
-                        outlineOffset: 1,
-                      }}
-                    />
+                    <div style={{ width: isZoomed ? ZOOM_BAR_W : '100%', height: barH, backgroundColor: barBg, borderRadius: '3px 3px 0 0', marginBottom: X_LABEL_H }} />
                   )}
-                  <span
-                    className="text-[9px] leading-none truncate w-full text-center select-none"
-                    style={{ color: isSelected ? color : '#9CA3AF' }}
-                  >
-                    {showLabel ? lapNum : ''}
-                  </span>
+                  {/* X-axis label + bottom selection indicator */}
+                  <div className="relative w-full flex items-center justify-center" style={{ height: X_LABEL_H }}>
+                    {isSelected && (
+                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full" style={{ width: 6, height: 3, backgroundColor: color }} />
+                    )}
+                    <span className="text-[9px] leading-none" style={{ color: isSelected ? color : '#9CA3AF', fontWeight: isSelected ? 700 : 400 }}>
+                      {showLabel ? lapNum : ''}
+                    </span>
+                  </div>
                 </div>
               );
             })}
