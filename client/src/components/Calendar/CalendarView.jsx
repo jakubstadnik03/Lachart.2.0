@@ -3527,7 +3527,9 @@ export default function CalendarView({
                                 borderColor: a.category
                                   ? (isSelected ? catBorderColor(a.category) || undefined : catBorderColor(a.category) || '#e5e7eb')
                                   : (isSelected ? undefined : '#e5e7eb'),
-                                borderLeftWidth: a.category ? '3px' : undefined,
+                                // Always show a sport-color left rail (or category color when assigned)
+                                borderLeftColor: a.category ? (catBorderColor(a.category) || sportColor(a.sport)) : sportColor(a.sport),
+                                borderLeftWidth: '3px',
                               }}
                               title={activityTitle}
                             >

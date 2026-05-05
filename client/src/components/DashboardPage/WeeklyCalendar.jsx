@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   PencilIcon,
   CheckIcon,
+  CheckCircleIcon,
   XMarkIcon,
   FireIcon,
   ArrowTrendingUpIcon,
@@ -460,6 +461,9 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
     document.body
   ) : null;
 
+  // Sport-color left border (matches WeekActCard / CalendarView style)
+  const sportBorderColor = actSportColor(displaySport);
+
   return (
     <div className="relative group">
       <button
@@ -467,21 +471,41 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
           else if (onSelect) onSelect(pw);
         }}
-        className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[10px] ${
+        className={`w-full text-left rounded-xl border transition-colors p-2 flex flex-col gap-1 ${
           isCompletedPair
-            ? 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'
+            ? 'bg-green-50 border-green-200 hover:bg-green-100'
             : isMissedPair
-              ? 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'
-              : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+              ? 'bg-red-50 border-red-200 hover:bg-red-100'
+              : 'bg-white border-gray-200 hover:bg-gray-50 shadow-sm'
         }`}
+        style={{
+          borderLeftColor: isCompletedPair ? '#22c55e' : isMissedPair ? '#ef4444' : sportBorderColor,
+          borderLeftWidth: 3,
+        }}
+        title={pw.title}
       >
-        <div className="flex items-center gap-1">
-          <SportIcon sport={displaySport} className="w-3 h-3" />
-          <span className="truncate font-medium flex-1">{pw.title || 'Planned workout'}</span>
-          {displayDurStr && <span className="text-[9px] opacity-70 flex-shrink-0">{displayDurStr}</span>}
+        {/* Title row — sport icon (with tiny check overlay when completed) + title */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="relative flex-shrink-0">
+            <SportIcon sport={displaySport} className="w-3.5 h-3.5" />
+            {isCompletedPair && (
+              <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
+            )}
+          </span>
+          <span
+            className="text-[11px] font-bold truncate flex-1"
+            style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : '#1e293b' }}
+          >
+            {pw.title || 'Planned workout'}
+          </span>
         </div>
-        {displayDistStr && (
-          <div className="text-[9px] opacity-70 mt-0.5 truncate">{displayDistStr}</div>
+        {/* Stats row — duration · distance */}
+        {(displayDurStr || displayDistStr) && (
+          <div className="flex items-center gap-2 text-[10px]" style={{ color: '#6b7280' }}>
+            {displayDurStr && <span className="tabular-nums">{displayDurStr}</span>}
+            {displayDurStr && displayDistStr && <span style={{ color: '#d1d5db' }}>·</span>}
+            {displayDistStr && <span className="tabular-nums">{displayDistStr}</span>}
+          </div>
         )}
       </button>
       <button
