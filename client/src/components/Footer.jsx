@@ -6,7 +6,7 @@ export default function Footer() {
     <div className="flex flex-wrap gap-4 sm:gap-10 justify-between items-center px-4 sm:px-6 py-4 w-full text-sm leading-none bg-white border-t border-gray-200">
       <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
         <img src="/images/LaChart.png" alt="LaChart" className="h-7 w-auto object-contain" />
-        <span className="font-semibold text-gray-700">LaChart</span>
+        <span className="font-semibold text-primary">LaChart</span>
       </Link>
 
       <div className="self-stretch my-auto text-gray-500 text-xs">

@@ -862,45 +862,6 @@ function StepTestVisual() {
   );
 }
 
-function BluetoothVisual() {
-  return (
-    <div className="w-full space-y-3">
-      <div className="rounded-2xl bg-white border border-gray-100 shadow-sm px-5 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Heart Rate</p>
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-black text-gray-900">142</span>
-              <span className="text-sm text-gray-400">bpm</span>
-            </div>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-500" fill="currentColor">
-                <path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/>
-              </svg>
-            </div>
-            <span className="text-[9px] text-emerald-600 font-semibold">Connected</span>
-          </div>
-        </div>
-        <div className="h-12 flex items-end gap-0.5">
-          {[60,72,68,80,75,142,138,145,142,148,144,142].map((v,i) => (
-            <div key={i} className="flex-1 rounded-sm" style={{ height: `${(v/160)*100}%`, backgroundColor: i > 4 ? '#fca5a5' : '#e5e7eb' }} />
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {[{ label: 'Polar H10', connected: true }, { label: 'Garmin HRM', connected: false }, { label: 'Wahoo TICKR', connected: false }].map(({ label, connected }) => (
-          <div key={label} className={`rounded-xl px-2 py-2.5 border text-center ${connected ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}>
-            <div className={`w-1.5 h-1.5 rounded-full mx-auto mb-1.5 ${connected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-            <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function ReportsVisual() {
   return (
     <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
