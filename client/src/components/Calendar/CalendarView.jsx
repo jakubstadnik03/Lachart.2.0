@@ -625,7 +625,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const X_LABEL_H = 16;
   const ZOOM_BAR_W = 30;  // fixed px per bar in zoomed mode
   const ZOOM_GAP   = 3;
-  const ZOOM_SLOT  = ZOOM_BAR_W + ZOOM_GAP;
   const PAUSE_W    = 8;   // narrower bar for rest laps in zoom
 
   const isZoomed = selectedLap != null;
@@ -641,6 +640,19 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
   });
+
+  // Scroll to center selected bar in zoom mode — must be before any early return
+  useEffect(() => {
+    if (!isZoomed || !chartScrollRef?.current) return;
+    const el = chartScrollRef.current;
+    let left = 0;
+    for (let i = 0; i < selectedLap; i++) {
+      left += (entries[i].isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP;
+    }
+    const target = left + ZOOM_BAR_W / 2 - el.clientWidth / 2;
+    requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLap, isZoomed, chartScrollRef]);
 
   const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
   if (!nonZero.length) return null;
@@ -661,18 +673,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
   const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
   const step      = Math.max(1, Math.ceil(laps.length / 7));
-
-  // Scroll to center selected bar in zoom mode
-  useEffect(() => {
-    if (!isZoomed || !chartScrollRef?.current) return;
-    const el = chartScrollRef.current;
-    let left = 0;
-    for (let i = 0; i < selectedLap; i++) {
-      left += (entries[i].isPause ? PAUSE_W : ZOOM_BAR_W) + ZOOM_GAP;
-    }
-    const target = left + ZOOM_BAR_W / 2 - el.clientWidth / 2;
-    requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }));
-  }, [selectedLap, isZoomed]);
 
   // Selected header data
   const sel       = selectedLap != null ? laps[selectedLap] : null;
