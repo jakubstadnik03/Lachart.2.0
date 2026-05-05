@@ -770,7 +770,7 @@ function LapChart({ laps, color, isBike, isRun, selectedLap, onSelectLap }) {
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
-function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
   const a = activity;
   const color = sportColor(a.sport);
   const sport = String(a.sport || '').toLowerCase();
@@ -2357,7 +2357,9 @@ export default function CalendarView({
   // effectiveSelectedId: use optimistic value immediately, fall back to confirmed prop
   const effectiveSelectedId = optimisticSelectedId ?? selectedActivityId;
 
-  // Auto-expand the day containing the selected activity
+  // Auto-expand the day containing the selected activity AND scroll it
+  // into view (used when navigating from the dashboard's "open in calendar"
+  // button so the user sees their activity without scrolling manually).
   useEffect(() => {
     if (effectiveSelectedId && activities.length > 0) {
       const selectedActivity = activities.find(a => {
@@ -2368,6 +2370,13 @@ export default function CalendarView({
         const activityDate = new Date(selectedActivity.date || selectedActivity.timestamp || selectedActivity.startDate || Date.now());
         const dateKey = getLocalDateString(activityDate);
         setExpandedDays(prev => new Set([...prev, dateKey]));
+        // Defer to next paint so the day cell is mounted/expanded
+        requestAnimationFrame(() => {
+          const el = dayRefs.current[dateKey];
+          if (el && typeof el.scrollIntoView === 'function') {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
       }
     }
   }, [effectiveSelectedId, activities]);

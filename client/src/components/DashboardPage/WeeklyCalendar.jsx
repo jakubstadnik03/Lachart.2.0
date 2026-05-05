@@ -18,8 +18,10 @@ import {
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import LapsTable from '../FitAnalysis/LapsTable';
+import { ActivityFullModal } from '../Calendar/CalendarView';
 import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
@@ -595,6 +597,8 @@ const WeeklyCalendar = ({
   }, [user?.role, selectedAthleteId]);
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
+  const [activityModal, setActivityModal] = useState(null); // { activity, plannedWorkout }
+  const navigate = useNavigate();
   const [trainingDetail, setTrainingDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
@@ -1106,10 +1110,24 @@ const WeeklyCalendar = ({
   }, [trainingDetail]);
 
   const handleActivityClick = async (activity) => {
+    // Open the shared ActivityFullModal (planned + completed) instead of
+    // loading the dashboard's inline detail view. Find a matching planned
+    // workout for that day+sport to populate the PLANNED side of the modal.
+    const actDateRaw = activity?.date || activity?.timestamp || activity?.startDate || activity?.start_time;
+    const dayKey = actDateRaw ? getLocalDateString(new Date(actDateRaw)) : null;
+    const matchPw = dayKey
+      ? (plannedWorkouts || []).find(pw => {
+          const pwDay = String(pw?.date || '').slice(0, 10);
+          if (pwDay !== dayKey) return false;
+          return planSportMatchesActivity(pw.sport, activity?.sport || activity?.type || '');
+        }) || null
+      : null;
+    setActivityModal({ activity, plannedWorkout: matchPw });
+
     setSelectedTraining(activity);
     setLoadingDetail(true);
     setTrainingDetail(null);
-    
+
     if (onSelectActivity) {
       onSelectActivity(activity);
     }
@@ -2177,6 +2195,29 @@ const WeeklyCalendar = ({
             <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
           </div>
         )
+      )}
+
+      {/* Shared activity modal — same UI as Training Calendar */}
+      {activityModal && (
+        <ActivityFullModal
+          activity={activityModal.activity}
+          plannedWorkout={activityModal.plannedWorkout}
+          onClose={() => setActivityModal(null)}
+          onOpenFull={() => {
+            const a = activityModal.activity;
+            const rawId = String(a?.id ?? a?._id ?? '');
+            let prefix = '';
+            if (a?.type === 'strava' || a?.stravaId) prefix = 'strava-';
+            else if (a?.type === 'fit') prefix = 'fit-';
+            else prefix = 'training-';
+            // If id already prefixed (CalendarView merges activities with prefix), skip
+            const id = rawId.startsWith('strava-') || rawId.startsWith('fit-') || rawId.startsWith('training-') || rawId.startsWith('regular-')
+              ? rawId
+              : `${prefix}${rawId}`;
+            setActivityModal(null);
+            navigate(`/training-calendar/${id}`);
+          }}
+        />
       )}
     </div>
   );
