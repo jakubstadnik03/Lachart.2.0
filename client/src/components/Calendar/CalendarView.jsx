@@ -902,7 +902,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
   const a = activity;
   const color = sportColor(a.sport);
   const sport = String(a.sport || '').toLowerCase();
@@ -1386,7 +1386,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </div>
 
           {/* Lactate footer */}
-          {onAddLactate && merged.type === 'strava' && (
+          {onAddLactate && (
             <div className="px-4 pb-6">
               <button onClick={() => { onAddLactate(merged); onClose(); }}
                 className="w-full py-3 rounded-xl text-sm font-semibold border-2"
@@ -1857,7 +1857,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </div>
 
           {/* ── Footer ── */}
-          {onAddLactate && merged.type === 'strava' && (
+          {onAddLactate && (
             <div className="px-5 pb-5">
               <button onClick={() => { onAddLactate(merged); onClose(); }}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
@@ -3332,7 +3332,16 @@ export default function CalendarView({
                     )}
                   </div>
                   {/* Weekly summary card — shown after each Sunday */}
-                  {isSunday && (
+                  {isSunday && (() => {
+                    const weekStart = startOfWeek(dayDate);
+                    const weekEnd = addDays(weekStart, 6);
+                    const weekPlanned = plannedWorkouts.filter(pw => {
+                      if (!pw.date) return false;
+                      const d = new Date(pw.date + 'T00:00:00');
+                      return d >= weekStart && d <= weekEnd;
+                    });
+                    const hasPlan = weekPlanned.length > 0;
+                    return (
                     <div
                       ref={el => { weekSummaryRefs.current[weekKey] = el; }}
                       className="mb-3 rounded-xl border border-violet-100 overflow-hidden"
@@ -3340,12 +3349,12 @@ export default function CalendarView({
                       {/* Summary header with Done/Plan toggle */}
                       <div className="flex items-center justify-between px-3 py-2 bg-violet-50/60">
                         <span className="text-xs font-bold text-violet-700">Week summary</span>
-                        {wkSummary?.plannedSeconds > 0 && (
+                        {hasPlan && (
                           <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-violet-100">
                             {[['done', 'Done'], ['plan', 'Plan']].map(([tab, lbl]) => (
                               <button
                                 key={tab}
-                                onClick={() => setWeekSummaryTab(tab)}
+                                onClick={e => { e.stopPropagation(); setWeekSummaryTab(tab); }}
                                 className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tab ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                               >{lbl}</button>
@@ -3353,14 +3362,45 @@ export default function CalendarView({
                           </div>
                         )}
                       </div>
-                      <WeekSummaryCell
-                        weekSummary={wkSummary}
-                        formatHours={formatHours}
-                        formatKm={formatKm}
-                        user={user}
-                      />
+                      {weekSummaryTab === 'done' || !hasPlan ? (
+                        <WeekSummaryCell
+                          weekSummary={wkSummary}
+                          formatHours={formatHours}
+                          formatKm={formatKm}
+                          user={user}
+                        />
+                      ) : (
+                        /* Plan tab — show planned workouts for this week */
+                        <div className="p-3 space-y-1.5">
+                          {weekPlanned.length === 0 ? (
+                            <div className="text-xs text-gray-400 text-center py-2">No planned workouts</div>
+                          ) : weekPlanned.map((pw, pi) => {
+                            const pwSport = (pw.sport || 'other').toLowerCase();
+                            const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
+                            const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+                            const pwDate = new Date(pw.date + 'T00:00:00');
+                            const dayLabel = pwDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
+                            return (
+                              <div key={pi} className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ backgroundColor: planColor + '15' }}>
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: planColor }} />
+                                <span className="text-xs font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || pw.sport || 'Workout'}</span>
+                                <span className="text-[10px] text-gray-500 flex-shrink-0">{dayLabel}</span>
+                                {secs > 0 && <span className="text-[10px] font-bold flex-shrink-0" style={{ color: planColor }}>{formatHours(secs)}</span>}
+                              </div>
+                            );
+                          })}
+                          {/* Total planned */}
+                          <div className="flex items-center justify-between px-2 pt-1 border-t border-violet-100">
+                            <span className="text-[10px] font-bold text-violet-700 uppercase tracking-wide">Total</span>
+                            <span className="text-xs font-bold text-violet-700">
+                              {formatHours(weekPlanned.reduce((s, pw) => s + (planStepTotalSecs(pw.steps) || pw.plannedDuration || 0), 0))}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
                   </React.Fragment>
                 );
               })}
@@ -3916,6 +3956,7 @@ export default function CalendarView({
           onAddLactate={onAddLactate}
           onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
+          athleteId={athleteId}
         />
       )}
     </motion.div>
