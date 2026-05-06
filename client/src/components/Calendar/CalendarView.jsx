@@ -703,6 +703,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
   const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  const step      = Math.max(1, Math.ceil(laps.length / 7));
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -901,7 +902,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
   const a = activity;
   const color = sportColor(a.sport);
   const sport = String(a.sport || '').toLowerCase();
@@ -1159,6 +1160,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       setSavingCompleted(false);
     }
   };
+
+  // ── Compliance helpers (TrainingPeaks-style) ──
+  const compliancePct = (planned, actual) => (planned > 0 && actual > 0) ? Math.round((actual / planned) * 100) : null;
+  const complianceColorPct = (pct) => {
+    if (pct == null) return '#9ca3af';
+    if (pct >= 95 && pct <= 105) return '#22c55e'; // green
+    if (pct >= 80 && pct <= 120) return '#eab308'; // yellow
+    return '#f97316'; // orange
+  };
+  const durPct  = compliancePct(plannedDur, dur);
+  const distPct = compliancePct(plannedDist * 1000, dist); // plannedDistance is in km
+  const tssPct  = compliancePct(plannedTss, tss);
 
   // ── MOBILE LAYOUT ──
   if (isMobile) {
@@ -2335,7 +2348,10 @@ export default function CalendarView({
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => getLocalDateString(new Date()));
   const dayListRef = useRef(null);
   const dayRefs = useRef({});
+  const weekSummaryRefs = useRef({});
+  const mobileStickyHeaderRef = useRef(null);
   const selectedMobileDayRef = useRef(selectedMobileDay);
+  const [weekSummaryTab, setWeekSummaryTab] = useState('done');
   const isAutoScrollingRef = useRef(false);
 
   // User profile data for TSS calculation
@@ -2399,6 +2415,25 @@ export default function CalendarView({
     scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     return () => scrollTarget.removeEventListener('scroll', onScroll);
   }, [isMobile, mobileTab]);
+
+  // Scroll to a day or week-summary element accounting for the sticky header height
+  const scrollToEl = useCallback((el) => {
+    if (!el) return;
+    const headerEl = mobileStickyHeaderRef.current;
+    const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 0;
+    const elTop = el.getBoundingClientRect().top;
+    const scrollEl = (() => {
+      let s = el.parentElement;
+      while (s && s !== document.documentElement) {
+        const cs = getComputedStyle(s);
+        if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') return s;
+        s = s.parentElement;
+      }
+      return window;
+    })();
+    const offset = elTop - headerHeight - 8;
+    scrollEl.scrollBy({ top: offset, behavior: 'smooth' });
+  }, []);
 
   // Load user profile for FTP and threshold pace
   useEffect(() => {
@@ -3001,7 +3036,7 @@ export default function CalendarView({
       {isMobile ? (
         <div>
           {/* ── Sticky header: tab bar + calendar/charts nav ── */}
-          <div className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+          <div ref={mobileStickyHeaderRef} className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
             {/* Tab switcher */}
             <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
               {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
@@ -3067,12 +3102,16 @@ export default function CalendarView({
                         <button
                           key={key}
                           onClick={() => {
+                            const isSunday = dayDate.getDay() === 0;
+                            const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
                             setSelectedMobileDay(key);
                             isAutoScrollingRef.current = true;
                             setTimeout(() => {
-                              if (dayRefs.current[key]) {
-                                dayRefs.current[key].scrollIntoView({ behavior: 'smooth', block: 'start' });
-                              }
+                              // On Sunday click, scroll to weekly summary card if it exists
+                              const targetEl = (isSunday && weekSummaryRefs.current[weekKey])
+                                ? weekSummaryRefs.current[weekKey]
+                                : dayRefs.current[key];
+                              scrollToEl(targetEl);
                               setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
                             }, 50);
                           }}
@@ -3092,6 +3131,10 @@ export default function CalendarView({
                             {dots.map((sport, si) => (
                               <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
                             ))}
+                            {/* Violet dot on Sundays indicates weekly summary */}
+                            {dayDate.getDay() === 0 && isCurrentMonth && (
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
+                            )}
                           </div>
                         </button>
                       );
@@ -3155,9 +3198,12 @@ export default function CalendarView({
                 const isSelected = key === selectedMobileDay;
                 const hasItems = acts.length > 0 || planned.length > 0;
                 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                const isSunday = dayDate.getDay() === 0;
+                const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
+                const wkSummary = isSunday ? weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === weekKey) : null;
                 return (
+                  <React.Fragment key={key}>
                   <div
-                    key={key}
                     ref={el => { dayRefs.current[key] = el; }}
                     className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
                     onClick={() => setSelectedMobileDay(key)}
@@ -3285,6 +3331,37 @@ export default function CalendarView({
                       <div className="px-3 py-2 text-xs text-gray-300">Rest day</div>
                     )}
                   </div>
+                  {/* Weekly summary card — shown after each Sunday */}
+                  {isSunday && (
+                    <div
+                      ref={el => { weekSummaryRefs.current[weekKey] = el; }}
+                      className="mb-3 rounded-xl border border-violet-100 overflow-hidden"
+                    >
+                      {/* Summary header with Done/Plan toggle */}
+                      <div className="flex items-center justify-between px-3 py-2 bg-violet-50/60">
+                        <span className="text-xs font-bold text-violet-700">Week summary</span>
+                        {wkSummary?.plannedSeconds > 0 && (
+                          <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-violet-100">
+                            {[['done', 'Done'], ['plan', 'Plan']].map(([tab, lbl]) => (
+                              <button
+                                key={tab}
+                                onClick={() => setWeekSummaryTab(tab)}
+                                className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tab ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500'}`}
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                              >{lbl}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <WeekSummaryCell
+                        weekSummary={wkSummary}
+                        formatHours={formatHours}
+                        formatKm={formatKm}
+                        user={user}
+                      />
+                    </div>
+                  )}
+                  </React.Fragment>
                 );
               })}
               <div className="h-4" />
@@ -3834,7 +3911,6 @@ export default function CalendarView({
         <ActivityFullModal
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
-          athleteId={athleteId}
           onClose={() => setActivityModal(null)}
           onEditPlanned={onSelectPlannedWorkout}
           onAddLactate={onAddLactate}
