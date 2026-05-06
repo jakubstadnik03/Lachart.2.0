@@ -1204,26 +1204,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
-          {/* Export button */}
-          <button
-            onClick={() => {
-              const id = String(merged.id || merged._id || '');
-              if (id.startsWith('strava-')) {
-                window.open(`https://www.strava.com/activities/${id.replace('strava-', '')}/export_gpx`, '_blank');
-              } else {
-                const data = { title, date: actDate, duration: dur, distance: dist, sport: a.sport };
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url; link.download = `${title.replace(/\s+/g, '_')}.json`; link.click();
-                URL.revokeObjectURL(url);
-              }
-            }}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0"
-            title="Export activity"
-          >
-            <ArrowDownTrayIcon className="w-5 h-5" />
-          </button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
             <XMarkIcon className="w-5 h-5" />
           </button>
@@ -1422,16 +1402,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <div className="px-4 py-3">
                 {(() => {
-                  const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
                   const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
                   const showSwimPace = isSwim && laps.some(l => Number(l.distance || 0) > 0);
                   const hasPace = (isRun || showSwimPace) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
                   const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                  // Lactate column always shown when onAddLactate is available
+                  const showLactate = !!onAddLactate;
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
                   if (hasCadence) colTokens.push('1fr');
-                  if (hasLactate) colTokens.push('1fr');
+                  if (showLactate) colTokens.push('2.5rem');
                   const cols = colTokens.join(' ');
                   const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                   return (
@@ -1444,7 +1425,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
                         {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
-                        {hasLactate && <span className="text-right">La</span>}
+                        {showLactate && <span className="text-right" style={{ color: '#7c3aed' }}>La</span>}
                       </div>
                       <div className="divide-y divide-gray-50">
                         {laps.map((lap, i) => {
@@ -1478,7 +1459,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
-                              {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
+                              {showLactate && (
+                                lapLa != null ? (
+                                  <span className="text-right tabular-nums font-bold text-xs" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                                ) : (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); onAddLactate(merged, i); }}
+                                    className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}
+                                  >
+                                    <span className="text-sm font-bold leading-none">+</span>
+                                  </button>
+                                )
+                              )}
                             </div>
                           );
                         })}

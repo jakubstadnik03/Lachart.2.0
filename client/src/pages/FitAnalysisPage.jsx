@@ -3713,7 +3713,7 @@ const FitAnalysisPage = () => {
   };
 
   // Calendar "Add Lactate" handlers
-  const handleCalendarAddLactate = useCallback(async (activity) => {
+  const handleCalendarAddLactate = useCallback(async (activity, lapIndex = null) => {
     // Extract Strava numeric ID from calendar activity (id is "strava-<numericId>")
     const rawId = String(activity.id || activity.stravaId || '');
     const stravaNumericId = rawId.replace(/^strava-/i, '');
@@ -3740,8 +3740,11 @@ const FitAnalysisPage = () => {
         setCalendarLactateError('No intervals found for this activity.');
         return;
       }
-      // Open the same full export form
+      // Open the same full export form, optionally scroll to a specific lap
       performExportToTraining('auto', stravaActivity);
+      if (lapIndex != null) {
+        setTrainingFormData(prev => prev ? { ...prev, _initialSelectedLap: lapIndex + 1 } : prev);
+      }
     } catch (err) {
       setCalendarLactateError(
         err.response?.data?.message || err.response?.data?.error || err.message || 'Could not open form'
