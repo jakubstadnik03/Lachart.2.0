@@ -3019,57 +3019,106 @@ export default function CalendarView({
                     {/* Content */}
                     {hasItems ? (
                       <div className="px-2 pb-1.5 pt-1 flex flex-col gap-1">
-                        {planned.map((pw, pi) => {
-                          const pwSport = (pw.sport || 'bike').toLowerCase();
-                          const color = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
-                          const duration = planStepTotalSecs(pw.steps);
-                          const isCompleted = pw.status === 'completed';
-                          const isSkipped = pw.status === 'skipped';
-                          const compliance = findCompliance(pw, acts);
+                        {(() => {
+                          // Pair planned workouts with matching activities (same sport, same day)
+                          const claimedIds = new Set();
+                          const pairs = planned.map(pw => {
+                            const match = acts.find(a => {
+                              const id = String(a.id || a._id);
+                              return !claimedIds.has(id) && sportMatches(pw.sport, a.sport || a.type || '');
+                            });
+                            if (match) claimedIds.add(String(match.id || match._id));
+                            return { pw, act: match || null };
+                          });
+                          const unmatchedActs = acts.filter(a => !claimedIds.has(String(a.id || a._id)));
+
                           return (
-                            <button key={pi}
-                              onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
-                              className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 min-h-[40px]"
-                              style={{ borderStyle: compliance ? 'solid' : 'dashed', borderColor: compliance ? compliance.color : color + '60', backgroundColor: compliance ? compliance.bg : color + '0d', WebkitTapHighlightColor: 'transparent' }}>
-                              {compliance
-                                ? <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
-                                : isCompleted
-                                  ? <CheckCircleIcon className="w-3.5 h-3.5 flex-shrink-0 text-green-500" />
-                                  : <PlayIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" style={{ color }} />}
-                              <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : color }}>{pw.title || 'Planned workout'}</span>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                {compliance
-                                  ? <span className="text-[10px] font-bold" style={{ color: compliance.color }}>{compliance.label}</span>
-                                  : <>{pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={color} width={36} height={12} />}{duration > 0 && <span className="text-[10px] opacity-70" style={{ color }}>{fmtPlanDuration(duration)}</span>}</>}
-                              </div>
-                            </button>
+                            <>
+                              {pairs.map(({ pw, act }, pi) => {
+                                const pwSport = (pw.sport || 'bike').toLowerCase();
+                                const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
+                                const duration = planStepTotalSecs(pw.steps);
+                                const isSkipped = pw.status === 'skipped';
+                                const compliance = act ? findCompliance(pw, [act]) : null;
+
+                                if (act) {
+                                  // Linked pair — clicking opens the activity modal
+                                  const actDur = Number(act.duration || act.elapsed_time || act.movingTime || act.moving_time || act.totalTimerTime || act.totalElapsedTime || 0);
+                                  const actDist = Number(act.distance || act.totalDistance || 0);
+                                  const actDurStr = actDur > 0 ? `${Math.floor(actDur/3600)}h${String(Math.floor((actDur%3600)/60)).padStart(2,'0')}` : null;
+                                  const actDistStr = actDist > 0 ? (actDist >= 1000 ? `${(actDist/1000).toFixed(1)}km` : `${Math.round(actDist)}m`) : null;
+                                  const actTss = Number(act.tss || act.trainingLoad || 0);
+                                  const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
+                                  return (
+                                    <button key={`pw-${pi}`}
+                                      onClick={e => { e.stopPropagation(); handleActivityClick(act, null); }}
+                                      className="w-full text-left flex flex-col px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 gap-1"
+                                      style={{ borderStyle: 'solid', borderColor: cc.color, backgroundColor: cc.bg, WebkitTapHighlightColor: 'transparent' }}>
+                                      {/* Planned row */}
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: cc.color }} />
+                                        <span className="text-[10px] font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
+                                        <span className="text-[10px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
+                                      </div>
+                                      {/* Activity row */}
+                                      <div className="flex items-center gap-1.5 pl-3">
+                                        <SportIcon sport={act.sport} className="w-3.5 h-3.5 flex-shrink-0 text-gray-500" />
+                                        <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{act.title || act.name || 'Activity'}</span>
+                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-shrink-0">
+                                          {actDurStr && <span>{actDurStr}</span>}
+                                          {actDistStr && <span>{actDistStr}</span>}
+                                          {actTss > 0 && <span className="font-bold text-primary">{Math.round(actTss)}</span>}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                }
+
+                                // Planned only — no matching activity yet
+                                return (
+                                  <button key={`pw-${pi}`}
+                                    onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
+                                    className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 min-h-[40px]"
+                                    style={{ borderStyle: 'dashed', borderColor: planColor + '60', backgroundColor: planColor + '0d', WebkitTapHighlightColor: 'transparent' }}>
+                                    <PlayIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" style={{ color: planColor }} />
+                                    <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : planColor }}>{pw.title || 'Planned workout'}</span>
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      {pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={36} height={12} />}
+                                      {duration > 0 && <span className="text-[10px] opacity-70" style={{ color: planColor }}>{fmtPlanDuration(duration)}</span>}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+
+                              {/* Unmatched activities (no planned workout on this day) */}
+                              {unmatchedActs.map((a, i) => {
+                                const activityId = a.id || a._id;
+                                const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
+                                const color = sportColor(a.sport);
+                                const title = a.title || a.name || a.originalFileName || 'Activity';
+                                const dur = Number(a.duration || a.elapsed_time || a.movingTime || a.moving_time || a.totalTimerTime || a.totalElapsedTime || 0);
+                                const durStr = dur > 0 ? `${Math.floor(dur / 3600)}h${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
+                                const dist = Number(a.distance || a.totalDistance || 0);
+                                const distStr = dist > 0 ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
+                                const tss = Number(a.tss || a.trainingLoad || 0);
+                                return (
+                                  <button key={`act-${i}`}
+                                    onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
+                                    className={`w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
+                                    style={{ borderLeftColor: color, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}>
+                                    <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
+                                    <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                                    <div className="flex items-center gap-1.5 text-[10px] flex-shrink-0">
+                                      {durStr && <span className="font-medium text-gray-600">{durStr}</span>}
+                                      {distStr && <span className="text-gray-400">{distStr}</span>}
+                                      {tss > 0 && <span className="font-bold text-primary">{Math.round(tss)}</span>}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </>
                           );
-                        })}
-                        {acts.map((a, i) => {
-                          const activityId = a.id || a._id;
-                          const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
-                          const color = sportColor(a.sport);
-                          const title = a.title || a.name || a.originalFileName || 'Activity';
-                          const dur = Number(a.duration || a.elapsed_time || a.movingTime || a.moving_time || a.totalTimerTime || a.totalElapsedTime || 0);
-                          const durStr = dur > 0 ? `${Math.floor(dur / 3600)}h${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
-                          const dist = Number(a.distance || a.totalDistance || 0);
-                          const distStr = dist > 0 ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
-                          const tss = Number(a.tss || a.trainingLoad || 0);
-                          return (
-                            <button key={i}
-                              onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                              className={`w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
-                              style={{ borderLeftColor: color, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}>
-                              <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
-                              <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
-                              <div className="flex items-center gap-1.5 text-[10px] flex-shrink-0">
-                                {durStr && <span className="font-medium text-gray-600">{durStr}</span>}
-                                {distStr && <span className="text-gray-400">{distStr}</span>}
-                                {tss > 0 && <span className="font-bold text-primary">{Math.round(tss)}</span>}
-                              </div>
-                            </button>
-                          );
-                        })}
+                        })()}
                       </div>
                     ) : (
                       <div className="px-3 py-2 text-xs text-gray-300">Rest day</div>
