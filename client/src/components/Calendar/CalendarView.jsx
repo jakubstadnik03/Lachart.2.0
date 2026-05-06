@@ -1347,7 +1347,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
-          </div>{/* end summary tab scrollable */}
+          </div>
         )}
 
         {/* ── LAPS TAB ── */}
