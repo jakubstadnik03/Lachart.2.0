@@ -1192,6 +1192,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
+          {/* Add Lactate button — always visible in header */}
+          {onAddLactate && (
+            <button
+              onClick={() => { onAddLactate(merged); onClose(); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
+            >
+              <span>🩸</span>
+              <span>Lactate</span>
+            </button>
+          )}
           {/* Export button */}
           <button
             onClick={() => {
@@ -1384,17 +1395,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               )
             )}
           </div>
-
-          {/* Lactate footer */}
-          {onAddLactate && (
-            <div className="px-4 pb-6">
-              <button onClick={() => { onAddLactate(merged); onClose(); }}
-                className="w-full py-3 rounded-xl text-sm font-semibold border-2"
-                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
-                + Lactate
-              </button>
-            </div>
-          )}
 
           </div>
         )}
