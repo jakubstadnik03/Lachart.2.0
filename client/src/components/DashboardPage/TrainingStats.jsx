@@ -313,10 +313,13 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   };
 
   const avgSpeed = Number(training.avgSpeed || 0);
+  // Fallback for Strava swims: compute pace from average_speed (m/s → sec/100m)
+  const stravaSpdMs = Number(training.average_speed || training.avgSpeed || 0);
+  const swimPaceFromStrava = isSwim && stravaSpdMs > 0 ? Math.round(100 / stravaSpdMs) : 0;
   const metricStr = isRun
-    ? fmtPace(curPace)
+    ? fmtPace(curPace || 0)
     : isSwim
-      ? fmtSwimPace(curPace)
+      ? fmtSwimPace(curPace || swimPaceFromStrava)
       : isBike && avgSpeed > 0
         ? formatSpeedForUser(avgSpeed, user)
         : `${curPow} W`;

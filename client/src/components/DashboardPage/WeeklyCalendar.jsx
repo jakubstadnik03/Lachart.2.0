@@ -309,12 +309,16 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
 
 function planStepTotalSecs(steps) {
   if (!Array.isArray(steps)) return 0;
+  const visited = new Set();
   let total = 0;
-  for (const s of steps) {
-    const dur = Number(s.durationSeconds || s.duration || 0);
-    const reps = Number(s.repeat || s.repeatCount || 1);
-    total += dur * (reps > 0 ? reps : 1);
-  }
+  steps.forEach(s => {
+    if (!s.groupId) { total += s.durationSeconds || 0; return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter(x => x.groupId === s.groupId);
+    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
+    group.forEach(gs => { total += (gs.durationSeconds || 0) * reps; });
+  });
   return total;
 }
 
@@ -601,6 +605,7 @@ const WeeklyCalendar = ({
   onStartWorkout = null,
   onCopyPlannedWorkout = null,
   onDeletePlannedWorkout = null,
+  onEditActivity = null,
 }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
@@ -1523,8 +1528,8 @@ const WeeklyCalendar = ({
           </div>
           )}
 
-          {/* Training Details - Right Side - Much Wider */}
-          <AnimatePresence>
+          {/* Training Details - Right Side - Desktop only (mobile uses ActivityFullModal) */}
+          {!isMobile && <AnimatePresence>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -2035,7 +2040,7 @@ const WeeklyCalendar = ({
                 </div>
               )}
             </motion.div>
-          </AnimatePresence>
+          </AnimatePresence>}
         </div>
       ) : (
         /* Calendar - Mobile: Horizontal scroll, Desktop: Grid Layout */
@@ -2227,6 +2232,7 @@ const WeeklyCalendar = ({
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
           onClose={() => setActivityModal(null)}
+          onEditActivity={onEditActivity}
           onOpenFull={() => {
             const a = activityModal.activity;
             const rawId = String(a?.id ?? a?._id ?? '');

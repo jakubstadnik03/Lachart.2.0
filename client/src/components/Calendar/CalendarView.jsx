@@ -703,7 +703,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
   const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
-  const step      = Math.max(1, Math.ceil(laps.length / 7));
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -902,7 +901,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
   const a = activity;
   const color = sportColor(a.sport);
   const sport = String(a.sport || '').toLowerCase();
@@ -1160,18 +1159,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       setSavingCompleted(false);
     }
   };
-
-  // ── Compliance helpers (TrainingPeaks-style) ──
-  const compliancePct = (planned, actual) => (planned > 0 && actual > 0) ? Math.round((actual / planned) * 100) : null;
-  const complianceColorPct = (pct) => {
-    if (pct == null) return '#9ca3af';
-    if (pct >= 95 && pct <= 105) return '#22c55e'; // green
-    if (pct >= 80 && pct <= 120) return '#eab308'; // yellow
-    return '#f97316'; // orange
-  };
-  const durPct  = compliancePct(plannedDur, dur);
-  const distPct = compliancePct(plannedDist * 1000, dist); // plannedDistance is in km
-  const tssPct  = compliancePct(plannedTss, tss);
 
   // ── MOBILE LAYOUT ──
   if (isMobile) {
@@ -3847,6 +3834,7 @@ export default function CalendarView({
         <ActivityFullModal
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
+          athleteId={athleteId}
           onClose={() => setActivityModal(null)}
           onEditPlanned={onSelectPlannedWorkout}
           onAddLactate={onAddLactate}

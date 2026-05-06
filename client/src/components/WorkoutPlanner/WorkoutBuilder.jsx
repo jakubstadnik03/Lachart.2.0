@@ -16,7 +16,7 @@
  *  - buildPresetSteps(key) – returns step array for a given preset key
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { PlusIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon,
+import { PlusIcon, TrashIcon, ChevronDownIcon,
          ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 // ─── Colours ────────────────────────────────────────────────────────────────
@@ -283,7 +283,6 @@ export function buildPresetSteps(preset) {
   const CD  = (dur=600)  => ({ clientId:p(), stepType:'cooldown', isRamp:true, durationSeconds:dur, powerTarget:{type:'zone',value:1} });
   const WRK = (dur, pt)  => ({ clientId:p(), stepType:'work',                  durationSeconds:dur, powerTarget:pt });
   const REC = (dur=120)  => ({ clientId:p(), stepType:'recovery',              durationSeconds:dur, powerTarget:{type:'zone',value:1} });
-  const RST = (dur=60)   => ({ clientId:p(), stepType:'rest',                  durationSeconds:dur, powerTarget:{type:'open'} });
 
   // Helper: build a repeat group (header + work + optional recovery)
   const GROUP = (reps, workDur, workPt, recDur=null, recPt={type:'zone',value:1}) => {
@@ -368,10 +367,6 @@ export function buildPresetSteps(preset) {
   });
   const SWRK = (dist, pt) => ({
     clientId:p(), stepType:'work',
-    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
-  });
-  const SREC = (dist, pt={type:'zone',value:1}) => ({
-    clientId:p(), stepType:'recovery',
     durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
   });
   // Rest between reps stays time-based (e.g. 20s, 30s)

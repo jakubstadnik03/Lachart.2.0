@@ -317,6 +317,9 @@ const TrainingGraph = ({
   useEffect(() => {
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
+      if (!selectedData?.results?.length) {
+        setRanges({ power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } });
+      }
       if (selectedData?.results) {
         const sportKey = normalizeSport(selectedData.sport);
         const isRun  = sportKey === 'running' || sportKey === 'run';
@@ -427,7 +430,7 @@ const TrainingGraph = ({
     }));
   const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
 
-  if (!selectedTrainingData?.results) return (
+  if (!selectedTrainingData?.results?.length) return (
     <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <div className="min-w-0">
@@ -458,7 +461,7 @@ const TrainingGraph = ({
         </div>
       </div>
       <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-slate-400">
-        Select a training to view data
+        {selectedTrainingData ? 'No interval data for this training' : 'Select a training to view data'}
       </div>
     </div>
   );

@@ -611,57 +611,6 @@ export default function CalendarPeriodStats({
     return results;
   }, [activities, userProfile]);
 
-  // Last-year same period
-  const filteredLastYear = useMemo(() => {
-    if (!period?.periodStart || !period?.periodEnd) return [];
-    const shiftYear = (d) => {
-      const n = new Date(d);
-      n.setFullYear(n.getFullYear() - 1);
-      return getLocalDateString(n);
-    };
-    const startK = shiftYear(period.periodStart);
-    const endK = shiftYear(period.periodEnd);
-    if (!startK || !endK) return [];
-    return activities.filter((act) => {
-      const raw = act.date || act.timestamp || act.startDate || act.start_time;
-      if (!raw) return false;
-      const k = getLocalDateString(raw);
-      return k && k >= startK && k <= endK;
-    });
-  }, [activities, period?.periodStart, period?.periodEnd]);
-
-  const aggregatesLY = useMemo(() => {
-    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
-    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
-    const distByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
-    filteredLastYear.forEach((act) => {
-      count++;
-      const sec = actDurationSec(act);
-      const dist = Number(act.distance || 0);
-      const tssVal = computeTssForAct(act, userProfile);
-      totalSec += sec;
-      totalDist += dist;
-      if (tssVal > 0) totalTss += tssVal;
-      const b = sportBucket(act.sport);
-      bySportSec[b] += sec;
-      const ps = profileSportFromActivity(act.sport) || 'other';
-      if (dist > 0) distByProfileSport[ps] = (distByProfileSport[ps] || 0) + dist;
-    });
-    return { count, totalSec, totalDist, totalTss, bySportSec, distByProfileSport };
-  }, [filteredLastYear, userProfile]);
-
-  const lyPeriodLabel = useMemo(() => {
-    if (!period?.periodStart) return '';
-    const d = new Date(period.periodStart);
-    d.setFullYear(d.getFullYear() - 1);
-    if (periodView === 'week') {
-      const end = new Date(period.periodEnd);
-      end.setFullYear(end.getFullYear() - 1);
-      return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    }
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  }, [period?.periodStart, period?.periodEnd, periodView]);
-
   const pmcOption = useMemo(() => {
     if (!pmc || pmc.length === 0) return null;
     const last90 = pmc.slice(-90);
@@ -1123,79 +1072,6 @@ export default function CalendarPeriodStats({
     return { easyPct, midPct, hardPct, badge };
   }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
 
-  const lyCtlAtlEntry = useMemo(() => {
-    if (!pmc || pmc.length === 0 || !period?.periodEnd) return null;
-    const lyEnd = new Date(period.periodEnd);
-    lyEnd.setFullYear(lyEnd.getFullYear() - 1);
-    const lyEndKey = getLocalDateString(lyEnd);
-    return pmc.find((d) => d.date === lyEndKey) || null;
-  }, [pmc, period?.periodEnd]);
-
-  const compareOption = useMemo(() => {
-    const sports = ['cycling', 'running', 'swimming'];
-    const sportLabels = ['Bike', 'Run', 'Swim'];
-    const sportColors = ['#3b82f6', '#f97316', '#06b6d4'];
-    const curHours = sports.map((ps) => {
-      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
-      return +((aggregates.bySportSec[b] || 0) / 3600).toFixed(1);
-    });
-    const lyHours = sports.map((ps) => {
-      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
-      return +((aggregatesLY.bySportSec[b] || 0) / 3600).toFixed(1);
-    });
-    if (!curHours.some((h) => h > 0) && !lyHours.some((h) => h > 0)) return null;
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter(params) {
-          if (!Array.isArray(params)) return '';
-          let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel}</b>`;
-          params.forEach((p) => {
-            if (p.value > 0) html += `<br/>${p.marker}${p.seriesName}: ${p.value}h`;
-          });
-          return html + '</div>';
-        },
-      },
-      legend: { data: ['This year', 'Last year'], textStyle: { fontSize: 10, color: '#6b7280' }, top: 4 },
-      grid: { left: 0, right: 0, top: 36, bottom: 24, containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: sportLabels,
-        axisLabel: { fontSize: 10, color: '#6b7280' },
-        axisLine: { lineStyle: { color: '#f3f4f6' } },
-        axisTick: { show: false },
-      },
-      yAxis: {
-        type: 'value',
-        axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => v + 'h' },
-        splitLine: { lineStyle: { color: '#f3f4f6' } },
-        axisLine: { show: false },
-        axisTick: { show: false },
-      },
-      series: [
-        {
-          name: 'This year',
-          type: 'bar',
-          barMaxWidth: 28,
-          data: curHours.map((h, i) => ({
-            value: h,
-            itemStyle: { color: sportColors[i], borderRadius: [3, 3, 0, 0] },
-          })),
-        },
-        {
-          name: 'Last year',
-          type: 'bar',
-          barMaxWidth: 28,
-          data: lyHours.map((h, i) => ({
-            value: h,
-            itemStyle: { color: sportColors[i] + '55', borderRadius: [3, 3, 0, 0] },
-          })),
-        },
-      ],
-    };
-  }, [aggregates.bySportSec, aggregatesLY.bySportSec]);
 
   // ── Independent compare-tab navigation ──────────────────────────────────
   const compareBounds = useMemo(() => {

@@ -3752,6 +3752,29 @@ const FitAnalysisPage = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- performExportToTraining is intentionally not memoized
   }, [selectedAthleteId, user]);
 
+  // Open TrainingForm for lightweight editing (title + session lactate/RPE) from calendar modal
+  const handleCalendarEditActivity = useCallback((activity) => {
+    const rawSport = (activity.sport || activity.type || 'bike').toLowerCase().replace(/^strava$/, 'bike');
+    const sport = rawSport.includes('run') ? 'run' : rawSport.includes('swim') ? 'swim' : rawSport.includes('ride') || rawSport.includes('cycle') || rawSport.includes('bike') || rawSport.includes('virtual') ? 'bike' : rawSport;
+    const rawId = String(activity.id || activity._id || '');
+    const isStrava = rawId.startsWith('strava-');
+    const dbId = !isStrava && rawId && !rawId.startsWith('strava-') ? rawId : (activity._id || undefined);
+    const initData = {
+      ...(dbId ? { _id: dbId } : {}),
+      title: activity.titleManual || activity.title || activity.name || '',
+      date: activity.date ? String(activity.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      sport,
+      description: activity.description || '',
+      rpe: activity.rpe != null ? String(activity.rpe) : '',
+      lactate: activity.lactate != null ? String(activity.lactate) : '',
+      results: Array.isArray(activity.results) ? activity.results : [],
+      steps: [],
+    };
+    setManualFormInitialData(initData);
+    setManualFormError(null);
+    setShowManualForm(true);
+  }, []);
+
   // Open TrainingForm for lactate entry from FIT training LapsTable
   const handleFitOpenLactateForm = useCallback((lapIndex) => {
     if (!selectedTraining || !selectedTraining.laps?.length) return;
@@ -3999,6 +4022,7 @@ const FitAnalysisPage = () => {
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={handleCalendarActivitySelect}
           onAddLactate={handleCalendarAddLactate}
+          onEditActivity={handleCalendarEditActivity}
           onMonthChange={useCallback(({ year, month }) => {
             // Note: API loads all trainings at once, so no need to reload when month changes
             // Data is already loaded and calendar will filter by date client-side

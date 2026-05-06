@@ -191,7 +191,7 @@ export default function SpiderChart({
   // bikeReady: true once we've received real bike data (cache or API).
   // Prevents the chart from flashing with all-zero data on first render.
   const [bikeReady, setBikeReady] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
@@ -274,7 +274,8 @@ export default function SpiderChart({
         }
 
         // Cache stale or missing — fetch from server
-        setLoading(true);
+        if (!bikeReady) setLoading(true);
+        else setRefreshing(true);
         const params = new URLSearchParams();
         if (comparePeriod) params.append('comparePeriod', comparePeriod);
         selectedMonths.forEach(m => params.append('selectedMonths', m));
@@ -729,7 +730,7 @@ export default function SpiderChart({
         )}
 
         {/* Loading skeleton */}
-        {(loading || isLoadingBike) && (
+        {isLoadingBike && (
           <div className="mt-4 flex items-center justify-center h-56 text-gray-400 text-sm">
             <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -740,7 +741,7 @@ export default function SpiderChart({
         )}
 
         {/* Empty state */}
-        {!loading && !isLoadingBike && isEmpty && (
+        {!isLoadingBike && isEmpty && (
           <div className="mt-4 flex flex-col items-center justify-center h-48 text-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -757,7 +758,7 @@ export default function SpiderChart({
         )}
 
         {/* Radar chart */}
-        {!loading && !isLoadingBike && !isEmpty && (
+        {!isLoadingBike && !isEmpty && (
           <>
             <div className="w-full relative mt-2" style={{ height: '280px' }}>
               {chartData && (

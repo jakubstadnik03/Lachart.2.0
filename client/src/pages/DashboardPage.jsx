@@ -12,7 +12,8 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining } from '../services/api';
+import TrainingForm from '../components/TrainingForm';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
@@ -216,6 +217,37 @@ export default function DashboardPage() {
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [planModal, setPlanModal] = useState(null);
+  const [manualFormData, setManualFormData] = useState(null);
+
+  const handleDashboardEditActivity = useCallback((activity) => {
+    const rawSport = (activity.sport || activity.type || 'bike').toLowerCase();
+    const sport = rawSport.includes('run') ? 'run' : rawSport.includes('swim') ? 'swim' : rawSport.includes('ride') || rawSport.includes('cycle') || rawSport.includes('bike') || rawSport.includes('virtual') ? 'bike' : rawSport;
+    const rawId = String(activity.id || activity._id || '');
+    const isStrava = rawId.startsWith('strava-');
+    const dbId = !isStrava && rawId ? rawId : (activity._id || undefined);
+    setManualFormData({
+      ...(dbId ? { _id: dbId } : {}),
+      title: activity.titleManual || activity.title || activity.name || '',
+      date: activity.date ? String(activity.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      sport,
+      description: activity.description || '',
+      rpe: activity.rpe != null ? String(activity.rpe) : '',
+      lactate: activity.lactate != null ? String(activity.lactate) : '',
+      results: Array.isArray(activity.results) ? activity.results : [],
+      steps: [],
+    });
+  }, []);
+
+  const handleDashboardFormSubmit = useCallback(async (formData) => {
+    const athleteId = selectedAthleteId || user?._id;
+    const payload = { ...formData, athleteId };
+    if (formData._id) {
+      await updateTraining(formData._id, payload);
+    } else {
+      await addTraining(payload);
+    }
+    setManualFormData(null);
+  }, [selectedAthleteId, user]);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
   // work only with a limited number of the most recent trainings to keep calculations fast.
@@ -255,20 +287,11 @@ export default function DashboardPage() {
         const age = Date.now() - parseInt(ts, 10);
         if (!Number.isNaN(age) && age < CACHE_TTL) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             setTrainings(parsed);
             setTrainingsInitialized(true);
             usedCache = true;
             setLoading(false);
-            // Immediately default-select newest so widgets aren't blank while API refreshes
-            const sorted = [...parsed].sort((a, b) =>
-              new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
-            );
-            const newest = sorted[0];
-            if (newest) {
-              setSelectedTitle(prev => prev || newest.title);
-              setSelectedTraining(prev => prev || newest._id || newest.id);
-            }
           }
         }
       }
@@ -309,17 +332,6 @@ export default function DashboardPage() {
 
       setTrainings(allTrainings);
       setTrainingsInitialized(true);
-      // Default-select newest on first visit (no cache) so widgets aren't blank
-      if (!usedCache && allTrainings.length > 0) {
-        const sorted = [...allTrainings].sort((a, b) =>
-          new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
-        );
-        const newest = sorted[0];
-        if (newest) {
-          setSelectedTitle(prev => prev || newest.title);
-          setSelectedTraining(prev => prev || newest._id || newest.id);
-        }
-      }
 
       // 3) Save to localStorage so next dashboard/TrainingPage open is instant
       try {
@@ -829,8 +841,48 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
-  // Auto-sync is handled by Layout.jsx (single trigger per app load, shared across tabs).
-  // Removed duplicate sync here to avoid doubling Strava API usage.
+  // Auto-sync Strava activities if enabled
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.autoSync) {
+      return;
+    }
+
+    // Only auto-sync for the current user (not for coach viewing athlete)
+    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user?._id;
+    if (targetAthleteId !== user._id) {
+      return; // Don't auto-sync when viewing another athlete
+    }
+
+    // Check if we've already synced in this session
+    const syncKey = `strava_auto_sync_dashboard_${user._id}`;
+    const lastSync = sessionStorage.getItem(syncKey);
+    const now = Date.now();
+    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
+      return;
+    }
+
+    // Auto-sync on mount and when user changes
+    const performAutoSync = async () => {
+      try {
+        const result = await autoSyncStravaActivities();
+        sessionStorage.setItem(syncKey, now.toString());
+        if (result.imported > 0 || result.updated > 0) {
+          console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
+          // Reload calendar data after sync
+          loadCalendarData(user._id);
+        }
+      } catch (error) {
+        // 429 errors are already handled in autoSyncStravaActivities
+        console.log('Auto-sync failed:', error);
+        // Silent fail - don't show errors to user
+      }
+    };
+
+    // Delay auto-sync slightly to avoid blocking page load
+    const timeoutId = setTimeout(performAutoSync, 2000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData, isCoachLikeRole]);
 
   // ── Planned workouts for dashboard calendar ───────────────────────────────
   const loadDashboardPlannedWorkouts = useCallback(async () => {
@@ -1128,6 +1180,7 @@ export default function DashboardPage() {
             onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
             onCopyPlannedWorkout={handleDashboardCopyPlan}
             onDeletePlannedWorkout={handleDashboardPlanDelete}
+            onEditActivity={handleDashboardEditActivity}
           />
         </motion.div>
 
@@ -1334,6 +1387,14 @@ export default function DashboardPage() {
         onSave={handleDashboardPlanSave}
         onDelete={handleDashboardPlanDelete}
         onClose={() => setPlanModal(null)}
+      />
+    )}
+    {manualFormData && (
+      <TrainingForm
+        key={manualFormData._id || 'new'}
+        initialData={manualFormData}
+        onClose={() => setManualFormData(null)}
+        onSubmit={handleDashboardFormSubmit}
       />
     )}
     </>
