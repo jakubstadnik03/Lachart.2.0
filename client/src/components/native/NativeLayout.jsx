@@ -710,6 +710,13 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         onDelete={handleNotifDelete}
         onMarkAllRead={handleMarkAllRead}
       />
+
+      {/* Modal portal root — absolute inside this fixed container covers full screen
+          and stacks above the bottom tab bar. Portals should target #app-modal-root. */}
+      <div
+        id="app-modal-root"
+        style={{ position: 'absolute', inset: 0, zIndex: 9000, pointerEvents: 'none' }}
+      />
     </div>
   );
 };

@@ -1375,8 +1375,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          style={{ zIndex: 99999 }}
-          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
         >
           <motion.div
             initial={{ y: '100%', opacity: 0 }}
@@ -1391,7 +1390,7 @@ export default function DashboardPage() {
             />
           </motion.div>
         </motion.div>,
-        document.body
+        document.getElementById('app-modal-root') || document.body
       )}
     </AnimatePresence>
     </>

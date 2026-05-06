@@ -1167,7 +1167,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const hasLaps = laps.length > 0;
 
     return ReactDOM.createPortal(
-      <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: 'auto' }}>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
@@ -1548,12 +1548,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         )}
 
       </div>,
-      document.body
+      document.getElementById('app-modal-root') || document.body
     );
   }
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
@@ -1870,7 +1870,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         </div>{/* end body flex-col */}
       </div>
     </div>,
-    document.body
+    document.getElementById('app-modal-root') || document.body
   );
 }
 

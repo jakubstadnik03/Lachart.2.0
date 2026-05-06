@@ -732,16 +732,15 @@ export default function TrainingPage() {
         />
       )}
 
-      {/* Portal modals — rendered into document.body so iOS fixed-in-overflow-auto
-          issues don't prevent them from covering the CoachAthleteBar header. */}
+      {/* Portal modals — rendered into #app-modal-root (inside NativeLayout's fixed
+          container, above bottom tab bar) so they cover the bottom navigation. */}
       <AnimatePresence>
         {isFormOpen && ReactDOM.createPortal(
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ zIndex: 99998 }}
-            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
@@ -756,7 +755,7 @@ export default function TrainingPage() {
               />
             </motion.div>
           </motion.div>,
-          document.body
+          document.getElementById('app-modal-root') || document.body
         )}
       </AnimatePresence>
 
@@ -766,8 +765,7 @@ export default function TrainingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ zIndex: 99999 }}
-            className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
@@ -789,7 +787,7 @@ export default function TrainingPage() {
               />
             </motion.div>
           </motion.div>,
-          document.body
+          document.getElementById('app-modal-root') || document.body
         )}
       </AnimatePresence>
     </motion.div>
