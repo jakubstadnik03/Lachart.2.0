@@ -2785,7 +2785,7 @@ export default function CalendarView({
   };
 
   const calendarContent = (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white flex flex-col' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white flex flex-col h-full' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
       {/* Header — desktop only */}
       {!isMobile && (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
@@ -2885,7 +2885,7 @@ export default function CalendarView({
 
       {/* Mobile: native app-style layout — mini calendar + scrollable day list */}
       {isMobile ? (
-        <div className="flex flex-col" style={{ height: 'calc(100svh - 56px)' }}>
+        <div className="flex flex-col flex-1 min-h-0">
           {/* ── Tab bar ── */}
           <div className="flex bg-gray-100 rounded-xl p-0.5 mb-3 mx-3 flex-shrink-0">
             {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
