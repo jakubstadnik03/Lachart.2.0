@@ -559,6 +559,57 @@ export default function CalendarPeriodStats({
     return results;
   }, [activities, userProfile]);
 
+  // Last-year same period
+  const filteredLastYear = useMemo(() => {
+    if (!period?.periodStart || !period?.periodEnd) return [];
+    const shiftYear = (d) => {
+      const n = new Date(d);
+      n.setFullYear(n.getFullYear() - 1);
+      return getLocalDateString(n);
+    };
+    const startK = shiftYear(period.periodStart);
+    const endK = shiftYear(period.periodEnd);
+    if (!startK || !endK) return [];
+    return activities.filter((act) => {
+      const raw = act.date || act.timestamp || act.startDate || act.start_time;
+      if (!raw) return false;
+      const k = getLocalDateString(raw);
+      return k && k >= startK && k <= endK;
+    });
+  }, [activities, period?.periodStart, period?.periodEnd]);
+
+  const aggregatesLY = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    const distByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
+    filteredLastYear.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      const dist = Number(act.distance || 0);
+      const tssVal = computeTssForAct(act, userProfile);
+      totalSec += sec;
+      totalDist += dist;
+      if (tssVal > 0) totalTss += tssVal;
+      const b = sportBucket(act.sport);
+      bySportSec[b] += sec;
+      const ps = profileSportFromActivity(act.sport) || 'other';
+      if (dist > 0) distByProfileSport[ps] = (distByProfileSport[ps] || 0) + dist;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec, distByProfileSport };
+  }, [filteredLastYear, userProfile]);
+
+  const lyPeriodLabel = useMemo(() => {
+    if (!period?.periodStart) return '';
+    const d = new Date(period.periodStart);
+    d.setFullYear(d.getFullYear() - 1);
+    if (periodView === 'week') {
+      const end = new Date(period.periodEnd);
+      end.setFullYear(end.getFullYear() - 1);
+      return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [period?.periodStart, period?.periodEnd, periodView]);
+
   const pmcOption = useMemo(() => {
     if (!pmc || pmc.length === 0) return null;
     const last90 = pmc.slice(-90);
@@ -1020,6 +1071,80 @@ export default function CalendarPeriodStats({
     return { easyPct, midPct, hardPct, badge };
   }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
 
+  const lyCtlAtlEntry = useMemo(() => {
+    if (!pmc || pmc.length === 0 || !period?.periodEnd) return null;
+    const lyEnd = new Date(period.periodEnd);
+    lyEnd.setFullYear(lyEnd.getFullYear() - 1);
+    const lyEndKey = getLocalDateString(lyEnd);
+    return pmc.find((d) => d.date === lyEndKey) || null;
+  }, [pmc, period?.periodEnd]);
+
+  const compareOption = useMemo(() => {
+    const sports = ['cycling', 'running', 'swimming'];
+    const sportLabels = ['Bike', 'Run', 'Swim'];
+    const sportColors = ['#3b82f6', '#f97316', '#06b6d4'];
+    const curHours = sports.map((ps) => {
+      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+      return +((aggregates.bySportSec[b] || 0) / 3600).toFixed(1);
+    });
+    const lyHours = sports.map((ps) => {
+      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+      return +((aggregatesLY.bySportSec[b] || 0) / 3600).toFixed(1);
+    });
+    if (!curHours.some((h) => h > 0) && !lyHours.some((h) => h > 0)) return null;
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter(params) {
+          if (!Array.isArray(params)) return '';
+          let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel}</b>`;
+          params.forEach((p) => {
+            if (p.value > 0) html += `<br/>${p.marker}${p.seriesName}: ${p.value}h`;
+          });
+          return html + '</div>';
+        },
+      },
+      legend: { data: ['This year', 'Last year'], textStyle: { fontSize: 10, color: '#6b7280' }, top: 4 },
+      grid: { left: 0, right: 0, top: 36, bottom: 24, containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: sportLabels,
+        axisLabel: { fontSize: 10, color: '#6b7280' },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => v + 'h' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
+      series: [
+        {
+          name: 'This year',
+          type: 'bar',
+          barMaxWidth: 28,
+          data: curHours.map((h, i) => ({
+            value: h,
+            itemStyle: { color: sportColors[i], borderRadius: [3, 3, 0, 0] },
+          })),
+        },
+        {
+          name: 'Last year',
+          type: 'bar',
+          barMaxWidth: 28,
+          data: lyHours.map((h, i) => ({
+            value: h,
+            itemStyle: { color: sportColors[i] + '55', borderRadius: [3, 3, 0, 0] },
+          })),
+        },
+      ],
+    };
+  }, [aggregates.bySportSec, aggregatesLY.bySportSec]);
+
   if (!period?.label) return null;
 
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
@@ -1049,6 +1174,7 @@ export default function CalendarPeriodStats({
     { id: 'overview', label: 'Overview' },
     { id: 'zones', label: 'Zones' },
     { id: 'activities', label: 'Activities' },
+    { id: 'compare', label: 'vs Last Year' },
   ];
 
   return (
@@ -1755,6 +1881,266 @@ export default function CalendarPeriodStats({
                   />
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ===================== COMPARE TAB ===================== */}
+        {activeTab === 'compare' && (
+          <div className="space-y-5">
+            {/* Period vs Period header */}
+            <div className="flex items-stretch gap-3">
+              <div className="flex-1 bg-primary/10 border border-primary/20 rounded-xl p-3">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-primary mb-0.5">This period</div>
+                <div className="text-sm font-bold text-gray-900 leading-tight">{period.label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{aggregates.count} {aggregates.count === 1 ? 'activity' : 'activities'}</div>
+              </div>
+              <div className="flex items-center text-gray-300 font-light text-sm shrink-0">vs</div>
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mb-0.5">Last year</div>
+                <div className="text-sm font-bold text-gray-600 leading-tight">{lyPeriodLabel}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{aggregatesLY.count} {aggregatesLY.count === 1 ? 'activity' : 'activities'}</div>
+              </div>
+            </div>
+
+            {aggregates.count === 0 && aggregatesLY.count === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">No activities found for either period.</p>
+            )}
+
+            {(aggregates.count > 0 || aggregatesLY.count > 0) && (
+              <>
+                {/* Key metric comparison cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { label: 'Activities', cur: aggregates.count, ly: aggregatesLY.count, fmt: (v) => v },
+                    {
+                      label: 'Total time',
+                      cur: aggregates.totalSec,
+                      ly: aggregatesLY.totalSec,
+                      fmt: (v) => (v > 0 ? formatDuration(v) : '—'),
+                    },
+                    {
+                      label: 'Distance',
+                      cur: aggregates.totalDist,
+                      ly: aggregatesLY.totalDist,
+                      fmt: (v) => (v > 0 ? formatDistance(v, user) : '—'),
+                    },
+                    {
+                      label: 'TSS',
+                      cur: aggregates.totalTss,
+                      ly: aggregatesLY.totalTss,
+                      fmt: (v) => (v > 0 ? Math.round(v) : '—'),
+                    },
+                  ].map((card) => {
+                    const delta =
+                      card.ly > 0 ? ((card.cur - card.ly) / card.ly) * 100 : null;
+                    return (
+                      <div key={card.label} className="bg-gray-50 rounded-xl p-3">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">
+                          {card.label}
+                        </div>
+                        <div className="text-sm font-bold text-gray-900 tabular-nums">
+                          {card.fmt(card.cur)}
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">
+                          LY: {card.fmt(card.ly)}
+                        </div>
+                        {delta !== null && (
+                          <div
+                            className={`text-[11px] font-semibold mt-1 ${
+                              delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'
+                            }`}
+                          >
+                            {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
+                            {Math.abs(delta).toFixed(0)}%
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Volume by sport grouped bar chart */}
+                {Chart && compareOption && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Volume by sport (hours)
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <Chart option={compareOption} style={{ height: 210, width: '100%' }} notMerge />
+                    </div>
+                  </div>
+                )}
+
+                {/* Distance comparison by sport */}
+                {(['cycling', 'running', 'swimming'].some(
+                  (ps) =>
+                    (aggregates.distByProfileSport?.[ps] || 0) > 0 ||
+                    (aggregatesLY.distByProfileSport?.[ps] || 0) > 0
+                )) && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Distance by sport
+                    </div>
+                    <div className="space-y-4">
+                      {['cycling', 'running', 'swimming'].map((ps) => {
+                        const cur = aggregates.distByProfileSport?.[ps] || 0;
+                        const ly = aggregatesLY.distByProfileSport?.[ps] || 0;
+                        if (cur === 0 && ly === 0) return null;
+                        const bucket =
+                          ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                        const maxDist = Math.max(cur, ly, 1);
+                        const delta = ly > 0 ? ((cur - ly) / ly) * 100 : null;
+                        return (
+                          <div key={ps}>
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <img
+                                src={`/icon/${bucket}.svg`}
+                                alt={bucket}
+                                className="w-4 h-4 object-contain"
+                              />
+                              <span className="text-xs font-semibold text-gray-600">
+                                {SPORT_LABEL[ps]}
+                              </span>
+                              {delta !== null && (
+                                <span
+                                  className={`text-[10px] font-semibold ml-auto ${
+                                    delta > 2
+                                      ? 'text-green-600'
+                                      : delta < -2
+                                      ? 'text-red-500'
+                                      : 'text-gray-400'
+                                  }`}
+                                >
+                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
+                                  {Math.abs(delta).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="w-14 text-[10px] text-gray-500 shrink-0">
+                                  This year
+                                </span>
+                                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${(cur / maxDist) * 100}%`,
+                                      backgroundColor: BUCKET_COLOR[bucket],
+                                    }}
+                                  />
+                                </div>
+                                <span className="w-16 text-[10px] text-right font-semibold text-gray-700 shrink-0 tabular-nums">
+                                  {cur > 0 ? formatDistance(cur, user) : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-14 text-[10px] text-gray-400 shrink-0">
+                                  Last year
+                                </span>
+                                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${(ly / maxDist) * 100}%`,
+                                      backgroundColor: BUCKET_COLOR[bucket] + '66',
+                                    }}
+                                  />
+                                </div>
+                                <span className="w-16 text-[10px] text-right font-medium text-gray-400 shrink-0 tabular-nums">
+                                  {ly > 0 ? formatDistance(ly, user) : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fitness & Form comparison */}
+                {pmc && pmc.length > 0 && (() => {
+                  const curEntry = pmc[pmc.length - 1];
+                  if (!curEntry) return null;
+                  return (
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                        Fitness &amp; Form snapshot
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {[
+                          {
+                            label: 'CTL (Fitness)',
+                            cur: curEntry.ctl,
+                            ly: lyCtlAtlEntry?.ctl,
+                            color: 'text-blue-600',
+                          },
+                          {
+                            label: 'ATL (Fatigue)',
+                            cur: curEntry.atl,
+                            ly: lyCtlAtlEntry?.atl,
+                            color: 'text-orange-500',
+                          },
+                          {
+                            label: 'TSB (Form)',
+                            cur: curEntry.tsb,
+                            ly: lyCtlAtlEntry?.tsb,
+                            color:
+                              curEntry.tsb >= -10
+                                ? 'text-green-600'
+                                : curEntry.tsb >= -25
+                                ? 'text-yellow-600'
+                                : 'text-red-600',
+                          },
+                        ].map((item) => {
+                          const delta =
+                            item.ly != null && item.ly !== 0
+                              ? ((item.cur - item.ly) / Math.abs(item.ly)) * 100
+                              : null;
+                          return (
+                            <div
+                              key={item.label}
+                              className="bg-white rounded-lg p-3 border border-gray-100"
+                            >
+                              <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                                {item.label}
+                              </div>
+                              <div className={`text-lg font-bold tabular-nums mt-1 ${item.color}`}>
+                                {item.cur ?? '—'}
+                              </div>
+                              {item.ly != null && (
+                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                  LY: {item.ly}
+                                </div>
+                              )}
+                              {!item.ly && (
+                                <div className="text-[10px] text-gray-300 mt-0.5">LY: no data</div>
+                              )}
+                              {delta !== null && (
+                                <div
+                                  className={`text-[11px] font-semibold mt-1 ${
+                                    delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'
+                                  }`}
+                                >
+                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
+                                  {Math.abs(delta).toFixed(0)}%
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {!lyCtlAtlEntry && (
+                        <p className="text-[10px] text-gray-400 mt-3 text-center">
+                          No PMC data found for same period last year — fitness comparison unavailable.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
             )}
           </div>
         )}
