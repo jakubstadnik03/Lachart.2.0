@@ -1398,8 +1398,8 @@ export default function CalendarPeriodStats({
   ];
 
   return (
-    <div className="w-full mt-3 space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+    <div className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div>
@@ -1416,14 +1416,14 @@ export default function CalendarPeriodStats({
           </span>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex gap-1.5 mb-5 flex-wrap">
+        {/* Tab bar — horizontally scrollable on mobile */}
+        <div className="flex gap-1.5 mb-4 overflow-x-auto scrollbar-hide pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === t.id
                   ? 'bg-primary text-white'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1510,20 +1510,20 @@ export default function CalendarPeriodStats({
                   <div className="bg-gray-50 rounded-xl p-3">
                     <Chart
                       option={pmcOption}
-                      style={{ height: 180, width: '100%' }}
+                      style={{ height: isMobile ? 140 : 180, width: '100%' }}
                       notMerge
                     />
-                    <div className="flex gap-3 mt-2 flex-wrap">
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">CTL (Fitness)</div>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
                         <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{lastEntry.ctl}</div>
                       </div>
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">ATL (Fatigue)</div>
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
                         <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{lastEntry.atl}</div>
                       </div>
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">TSB (Form)</div>
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
                         <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
                       </div>
                     </div>
@@ -1580,29 +1580,28 @@ export default function CalendarPeriodStats({
                 </div>
 
                 {/* Sport mileage comparison */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1.5">
                   {['cycling', 'running', 'swimming'].map((ps) => {
                     const cur = aggregates.distByProfileSport?.[ps] || 0;
                     const prev = weekComparison.prevDistByProfileSport?.[ps] || 0;
-                    const bucket =
-                      ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                    if (cur === 0 && prev === 0) return null;
+                    const bucket = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                    const maxDist = Math.max(cur, prev, 1);
                     return (
-                      <div key={ps} className="bg-gray-50 rounded-xl p-3">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <img
-                            src={`/icon/${bucket}.svg`}
-                            alt={bucket}
-                            className="w-4 h-4 object-contain"
-                          />
-                          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-                            {SPORT_LABEL[ps]}
-                          </span>
+                      <div key={ps} className="bg-gray-50 rounded-xl px-3 py-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <img src={`/icon/${bucket}.svg`} alt={bucket} className="w-3.5 h-3.5 object-contain shrink-0" />
+                          <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{SPORT_LABEL[ps]}</span>
+                          <span className="ml-auto text-xs font-bold text-gray-900 tabular-nums">{cur > 0 ? formatDistance(cur, user) : '—'}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums">vs {prev > 0 ? formatDistance(prev, user) : '—'}</span>
                         </div>
-                        <div className="text-sm font-bold text-gray-900 truncate">
-                          {cur > 0 ? formatDistance(cur, user) : '—'}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">
-                          Prev: {prev > 0 ? formatDistance(prev, user) : '—'}
+                        <div className="flex gap-1 items-center">
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${(cur / maxDist) * 100}%`, backgroundColor: BUCKET_COLOR[bucket] }} />
+                          </div>
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${(prev / maxDist) * 100}%`, backgroundColor: BUCKET_COLOR[bucket] + '66' }} />
+                          </div>
                         </div>
                       </div>
                     );
@@ -1675,7 +1674,7 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={intensityDonutOption}
-                    style={{ height: 160, width: '100%' }}
+                    style={{ height: isMobile ? 130 : 160, width: '100%' }}
                     notMerge
                   />
                 </div>
@@ -1690,7 +1689,7 @@ export default function CalendarPeriodStats({
                 </div>
                 <Chart
                   option={dailyStackedOption}
-                  style={{ height: 180, width: '100%' }}
+                  style={{ height: isMobile ? 140 : 180, width: '100%' }}
                   notMerge
                 />
               </div>
@@ -1718,7 +1717,7 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={weeklyTrendOption}
-                    style={{ height: 180, width: '100%' }}
+                    style={{ height: isMobile ? 140 : 180, width: '100%' }}
                     notMerge
                   />
                 </div>
@@ -1790,7 +1789,7 @@ export default function CalendarPeriodStats({
                     </div>
                     <Chart
                       option={zoneBarOptions.power}
-                      style={{ height: 130, width: '100%' }}
+                      style={{ height: isMobile ? 110 : 130, width: '100%' }}
                       notMerge
                     />
                   </div>
@@ -1802,7 +1801,7 @@ export default function CalendarPeriodStats({
                     </div>
                     <Chart
                       option={zoneBarOptions.hr}
-                      style={{ height: 130, width: '100%' }}
+                      style={{ height: isMobile ? 110 : 130, width: '100%' }}
                       notMerge
                     />
                   </div>
@@ -2096,7 +2095,7 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={effortTimelineOption}
-                    style={{ height: 140, width: '100%' }}
+                    style={{ height: isMobile ? 110 : 140, width: '100%' }}
                     notMerge
                   />
                 </div>
@@ -2108,74 +2107,72 @@ export default function CalendarPeriodStats({
         {/* ===================== COMPARE TAB ===================== */}
         {activeTab === 'compare' && (
           <div className="space-y-4">
-            {/* Mode toggle + navigation */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Week / Month toggle */}
-              <div className="flex rounded-xl overflow-hidden border border-gray-200">
-                {['week', 'month'].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setCompareMode(m)}
-                    className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      compareMode === m
-                        ? 'bg-primary text-white'
-                        : 'bg-white text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    {m === 'week' ? 'Week' : 'Month'}
-                  </button>
-                ))}
+            {/* Mode toggle + navigation — 2-row on mobile */}
+            <div className="space-y-2">
+              {/* Row 1: Week/Month toggle + jump button */}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-xl overflow-hidden border border-gray-200 shrink-0">
+                  {['week', 'month'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setCompareMode(m)}
+                      className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        compareMode === m ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      {m === 'week' ? 'Week' : 'Month'}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (period?.periodStart) setCompareRefDate(new Date(period.periodStart));
+                    setCompareMode(periodView);
+                  }}
+                  className="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
+                >
+                  ↵ Current period
+                </button>
               </div>
 
-              {/* Prev */}
-              <button
-                type="button"
-                onClick={() =>
-                  setCompareRefDate((prev) => {
-                    const d = new Date(prev);
-                    if (compareMode === 'week') d.setDate(d.getDate() - 7);
-                    else d.setMonth(d.getMonth() - 1);
-                    return d;
-                  })
-                }
-                className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-bold transition-colors"
-              >
-                ‹
-              </button>
-
-              {/* Period label */}
-              <span className="flex-1 text-center text-sm font-semibold text-gray-800 min-w-0 truncate">
-                {cmpLabel}
-              </span>
-
-              {/* Next */}
-              <button
-                type="button"
-                onClick={() =>
-                  setCompareRefDate((prev) => {
-                    const d = new Date(prev);
-                    if (compareMode === 'week') d.setDate(d.getDate() + 7);
-                    else d.setMonth(d.getMonth() + 1);
-                    return d;
-                  })
-                }
-                className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-bold transition-colors"
-              >
-                ›
-              </button>
-
-              {/* Jump to calendar selection */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (period?.periodStart) setCompareRefDate(new Date(period.periodStart));
-                  setCompareMode(periodView);
-                }}
-                className="px-2.5 py-1.5 rounded-xl text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
-              >
-                ↵ Current
-              </button>
+              {/* Row 2: Prev / Period label / Next */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCompareRefDate((prev) => {
+                      const d = new Date(prev);
+                      if (compareMode === 'week') d.setDate(d.getDate() - 7);
+                      else d.setMonth(d.getMonth() - 1);
+                      return d;
+                    })
+                  }
+                  className="shrink-0 w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center text-gray-600 text-lg font-bold transition-colors touch-manipulation"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  ‹
+                </button>
+                <span className="flex-1 text-center text-sm font-semibold text-gray-800 min-w-0 truncate">
+                  {cmpLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCompareRefDate((prev) => {
+                      const d = new Date(prev);
+                      if (compareMode === 'week') d.setDate(d.getDate() + 7);
+                      else d.setMonth(d.getMonth() + 1);
+                      return d;
+                    })
+                  }
+                  className="shrink-0 w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center text-gray-600 text-lg font-bold transition-colors touch-manipulation"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  ›
+                </button>
+              </div>
             </div>
 
             {/* Year labels */}
@@ -2230,7 +2227,7 @@ export default function CalendarPeriodStats({
                       {compareMode === 'week' ? 'Day-by-day training load (h)' : 'Week-by-week training load (h)'}
                     </div>
                     <div className="bg-gray-50 rounded-xl p-3">
-                      <Chart option={cmpBreakdownOption} style={{ height: 200, width: '100%' }} notMerge />
+                      <Chart option={cmpBreakdownOption} style={{ height: isMobile ? 160 : 200, width: '100%' }} notMerge />
                     </div>
                   </div>
                 )}
