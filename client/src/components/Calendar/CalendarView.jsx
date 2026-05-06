@@ -2142,7 +2142,11 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
 // ─── Richer Summary Column ────────────────────────────────────────────────────
 function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
-  if (!weekSummary) return <div className="bg-gray-50 p-2 min-h-[130px] min-w-[140px]" />;
+  if (!weekSummary) return (
+    <div className="bg-gray-50 p-4 flex items-center justify-center min-h-[60px]">
+      <span className="text-xs text-gray-400">No activities this week</span>
+    </div>
+  );
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
     distanceRun, distanceBike, distanceSwim, tssRun, tssBike, tssSwim, tssStrength,
@@ -2164,7 +2168,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
-    <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
+    <div className="bg-gray-50 p-3 border-l-4 border-primary/30 flex flex-col gap-1.5">
       {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
@@ -2420,7 +2424,8 @@ export default function CalendarView({
   const scrollToEl = useCallback((el) => {
     if (!el) return;
     const headerEl = mobileStickyHeaderRef.current;
-    const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 0;
+    // Use .bottom so safe-area-inset and any above-fold space is included
+    const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 0;
     const elTop = el.getBoundingClientRect().top;
     const scrollEl = (() => {
       let s = el.parentElement;
@@ -2431,7 +2436,7 @@ export default function CalendarView({
       }
       return window;
     })();
-    const offset = elTop - headerHeight - 8;
+    const offset = elTop - headerBottom - 8;
     scrollEl.scrollBy({ top: offset, behavior: 'smooth' });
   }, []);
 
