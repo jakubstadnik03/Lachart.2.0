@@ -253,7 +253,7 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
     // Only sync users whose lastSyncDate is older than (intervalMs - 2 min buffer).
     // This prevents hammering Strava when the scheduler fires more often than expected
     // (e.g. multiple server instances, restarts).
-    const syncIntervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 30 * 60 * 1000);
+    const syncIntervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000);
     const minAgeMs = Math.max(syncIntervalMs - 2 * 60 * 1000, 5 * 60 * 1000); // at least 5 min
     const cutoff = new Date(Date.now() - minAgeMs);
 

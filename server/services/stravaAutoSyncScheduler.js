@@ -19,18 +19,20 @@ function startStravaAutoSyncScheduler() {
     return;
   }
 
-  // Interval — webhook should deliver in real-time; this is a safety net for
-  // events Strava drops or for users connected before the webhook subscription.
-  // Default 10 minutes; bump batch size so the whole user base cycles fast.
-  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 10 * 60 * 1000);
+  // Interval — webhook delivers activities in real-time; this is a fallback
+  // safety net only. Default 60 minutes keeps daily API usage well under
+  // Strava's 6 000/day limit even with many connected users.
+  // Align with the 60-min cutoff used in syncStravaForAllUsers so every tick
+  // actually finds work to do instead of wasting quota re-checking users that
+  // were just synced.
+  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000);
 
-  // Process up to 12 users per tick (was 6). Keeps each tick under ~2 minutes
-  // even with 10 s between users, so the 10-min interval is achievable.
-  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 12);
+  // 6 users per tick is enough: at 60-min cadence the whole base of ~60 users
+  // rotates every ~10 ticks = 10 hours, well inside Strava's daily window.
+  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 6);
 
-  // 10 s between users → spreads API calls; combined with 2 s between pages keeps
-  // us well under Strava's 100 req/15-min limit even with full-history syncs.
-  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 10000);
+  // 15 s between users — plenty of breathing room at the reduced rate.
+  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 15000);
 
   const tick = async () => {
     try {
