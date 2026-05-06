@@ -1572,6 +1572,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
+          {onAddLactate && (
+            <button
+              onClick={() => { onAddLactate(merged); onClose(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 hover:opacity-80 transition-opacity"
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
+            >
+              <BeakerIcon className="w-4 h-4" />
+              <span>Lactate</span>
+            </button>
+          )}
           {onOpenFull && (
             <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
               <ArrowTopRightOnSquareIcon className="w-5 h-5" />
@@ -1670,9 +1680,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {laps.length > 0 && (
             <div className="px-5 py-3">
               {(() => {
-                const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
+                const showLactate = !!onAddLactate;
                 const showPace = isBike || isRun || isSwim;
-                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['2.5rem'] : [])].join(' ');
                 const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                 return (
                   <div className="rounded-xl overflow-hidden border border-gray-100">
@@ -1683,7 +1693,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       <span className="text-right">Time</span>
                       {showPace && <span className="text-right">{paceHeader}</span>}
                       <span className="text-right">HR</span>
-                      {hasLactate && <span className="text-right">La</span>}
+                      {showLactate && <span className="text-right" style={{ color: '#7c3aed' }}>La</span>}
                     </div>
                     <div className="divide-y divide-gray-50">
                       {laps.map((lap, i) => {
@@ -1729,10 +1739,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                             {showPace && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
                             <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
-                            {hasLactate && (
-                              <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>
-                                {lapLa != null ? Number(lapLa).toFixed(1) : '—'}
-                              </span>
+                            {showLactate && (
+                              lapLa != null ? (
+                                <span className="text-right font-bold tabular-nums text-[11px]" style={{ color: '#7c3aed' }}>
+                                  {Number(lapLa).toFixed(1)}
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={e => { e.stopPropagation(); onAddLactate(merged, i); }}
+                                  className="flex items-center justify-center w-6 h-6 rounded-full ml-auto hover:opacity-80 transition-opacity"
+                                  style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
+                                  title="Add lactate for this lap"
+                                >
+                                  <span className="text-sm font-bold leading-none">+</span>
+                                </button>
+                              )
                             )}
                           </div>
                         );
@@ -1850,16 +1871,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           </div>
 
-          {/* ── Footer ── */}
-          {onAddLactate && (
-            <div className="px-5 pb-5">
-              <button onClick={() => { onAddLactate(merged); onClose(); }}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
-                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
-                + Lactate
-              </button>
-            </div>
-          )}
         </div>{/* end scrollable bottom */}
         </div>{/* end body flex-col */}
       </div>
