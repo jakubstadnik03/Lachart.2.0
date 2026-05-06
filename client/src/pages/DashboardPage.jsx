@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import ReactDOM from 'react-dom';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
@@ -12,8 +13,7 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining } from '../services/api';
-import TrainingForm from '../components/TrainingForm';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
@@ -25,7 +25,8 @@ import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWel
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
-import { motion } from 'framer-motion';
+import TrainingForm from '../components/TrainingForm';
+import { motion, AnimatePresence } from 'framer-motion';
 //import { useNotification } from '../context/NotificationContext';
 // import { 
 //   CalendarIcon, 
@@ -217,37 +218,7 @@ export default function DashboardPage() {
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [planModal, setPlanModal] = useState(null);
-  const [manualFormData, setManualFormData] = useState(null);
-
-  const handleDashboardEditActivity = useCallback((activity) => {
-    const rawSport = (activity.sport || activity.type || 'bike').toLowerCase();
-    const sport = rawSport.includes('run') ? 'run' : rawSport.includes('swim') ? 'swim' : rawSport.includes('ride') || rawSport.includes('cycle') || rawSport.includes('bike') || rawSport.includes('virtual') ? 'bike' : rawSport;
-    const rawId = String(activity.id || activity._id || '');
-    const isStrava = rawId.startsWith('strava-');
-    const dbId = !isStrava && rawId ? rawId : (activity._id || undefined);
-    setManualFormData({
-      ...(dbId ? { _id: dbId } : {}),
-      title: activity.titleManual || activity.title || activity.name || '',
-      date: activity.date ? String(activity.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
-      sport,
-      description: activity.description || '',
-      rpe: activity.rpe != null ? String(activity.rpe) : '',
-      lactate: activity.lactate != null ? String(activity.lactate) : '',
-      results: Array.isArray(activity.results) ? activity.results : [],
-      steps: [],
-    });
-  }, []);
-
-  const handleDashboardFormSubmit = useCallback(async (formData) => {
-    const athleteId = selectedAthleteId || user?._id;
-    const payload = { ...formData, athleteId };
-    if (formData._id) {
-      await updateTraining(formData._id, payload);
-    } else {
-      await addTraining(payload);
-    }
-    setManualFormData(null);
-  }, [selectedAthleteId, user]);
+  const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
   // work only with a limited number of the most recent trainings to keep calculations fast.
@@ -1029,6 +1000,14 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDashboardAddTraining = async (formData) => {
+    if (!user?._id) return;
+    const targetId = dashboardDataAthleteId || user._id;
+    const trainingData = { ...formData, athleteId: targetId, coachId: user._id };
+    await addTraining(trainingData);
+    setIsTrainingFormOpen(false);
+  };
+
   if (error) return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -1180,7 +1159,7 @@ export default function DashboardPage() {
             onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
             onCopyPlannedWorkout={handleDashboardCopyPlan}
             onDeletePlannedWorkout={handleDashboardPlanDelete}
-            onEditActivity={handleDashboardEditActivity}
+            onAddTraining={() => setIsTrainingFormOpen(true)}
           />
         </motion.div>
 
@@ -1389,14 +1368,32 @@ export default function DashboardPage() {
         onClose={() => setPlanModal(null)}
       />
     )}
-    {manualFormData && (
-      <TrainingForm
-        key={manualFormData._id || 'new'}
-        initialData={manualFormData}
-        onClose={() => setManualFormData(null)}
-        onSubmit={handleDashboardFormSubmit}
-      />
-    )}
+
+    <AnimatePresence>
+      {isTrainingFormOpen && ReactDOM.createPortal(
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ zIndex: 99999 }}
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+        >
+          <motion.div
+            initial={{ y: '100%', opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: '100%', opacity: 0 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="w-full sm:max-w-2xl"
+          >
+            <TrainingForm
+              onClose={() => setIsTrainingFormOpen(false)}
+              onSubmit={handleDashboardAddTraining}
+            />
+          </motion.div>
+        </motion.div>,
+        document.body
+      )}
+    </AnimatePresence>
     </>
   );
 }

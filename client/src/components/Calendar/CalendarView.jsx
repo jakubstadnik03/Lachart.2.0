@@ -703,7 +703,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
   const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
-  // const step = Math.max(1, Math.ceil(laps.length / 7)); // reserved for future x-axis thinning
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -946,8 +945,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return () => { cancelled = true; };
   }, [a.id, a._id]);
 
-  // Merge summary + full detail — detail wins for laps/stats when available
-  const merged = detail ? { ...a, ...detail } : a;
+  // Merge summary + full detail — detail wins for laps/stats, but preserve
+  // the app-level `type` ('strava'|'fit'|'regular') from the original activity
+  // because Strava's raw detail has type:'Run'/'Ride' which would overwrite it.
+  const merged = detail ? { ...a, ...detail, type: a.type } : a;
 
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
@@ -1180,13 +1181,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
-          {/* Add Lactate button — always visible in header */}
-          {onAddLactate && (
-            <button
-              onClick={() => { onAddLactate(merged); onClose(); }}
+          {onAddLactate && hasLaps && (
+            <button onClick={() => { onAddLactate(merged); onClose(); }}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
-              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
-            >
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
               <BeakerIcon className="w-4 h-4" />
               <span>Lactate</span>
             </button>
@@ -1364,6 +1362,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           </div>
 
+          {/* Lactate footer — only shown when no laps tab (button moves to header when laps exist) */}
+          {onAddLactate && !hasLaps && (
+            <div className="px-4 pb-6">
+              <button onClick={() => { onAddLactate(merged); onClose(); }}
+                className="w-full py-3 rounded-xl text-sm font-semibold border-2"
+                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+                + Lactate
+              </button>
+            </div>
+          )}
+
           </div>
         )}
 
@@ -1389,17 +1398,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <div className="px-4 py-3">
                 {(() => {
+                  const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                  const showLactate = hasLactate || !!onAddLactate;
                   const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
                   const showSwimPace = isSwim && laps.some(l => Number(l.distance || 0) > 0);
                   const hasPace = (isRun || showSwimPace) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
                   const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
-                  // Lactate column always shown when onAddLactate is available
-                  const showLactate = !!onAddLactate;
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
                   if (hasCadence) colTokens.push('1fr');
-                  if (showLactate) colTokens.push('2.5rem');
+                  if (showLactate) colTokens.push('1fr');
                   const cols = colTokens.join(' ');
                   const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                   return (
@@ -1412,7 +1421,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
                         {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
-                        {showLactate && <span className="text-right" style={{ color: '#7c3aed' }}>La</span>}
+                        {showLactate && <span className="text-right">La</span>}
                       </div>
                       <div className="divide-y divide-gray-50">
                         {laps.map((lap, i) => {
@@ -1448,15 +1457,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                               {showLactate && (
                                 lapLa != null ? (
-                                  <span className="text-right tabular-nums font-bold text-xs" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
-                                ) : (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); onAddLactate(merged, i); }}
+                                  <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                                ) : onAddLactate ? (
+                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
                                     className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
-                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}
-                                  >
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
                                     <span className="text-sm font-bold leading-none">+</span>
                                   </button>
+                                ) : (
+                                  <span className="text-right tabular-nums text-gray-400">—</span>
                                 )
                               )}
                             </div>
@@ -1559,12 +1568,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
-          {onAddLactate && (
-            <button
-              onClick={() => { onAddLactate(merged); onClose(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 hover:opacity-80 transition-opacity"
-              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
-            >
+          {onAddLactate && laps.length > 0 && (
+            <button onClick={() => { onAddLactate(merged); onClose(); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 hover:opacity-80 transition-opacity"
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
               <BeakerIcon className="w-4 h-4" />
               <span>Lactate</span>
             </button>
@@ -1667,9 +1674,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {laps.length > 0 && (
             <div className="px-5 py-3">
               {(() => {
-                const showLactate = !!onAddLactate;
+                const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                const showLactate = hasLactate || !!onAddLactate;
                 const showPace = isBike || isRun || isSwim;
-                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['2.5rem'] : [])].join(' ');
+                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
                 const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                 return (
                   <div className="rounded-xl overflow-hidden border border-gray-100">
@@ -1680,7 +1688,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       <span className="text-right">Time</span>
                       {showPace && <span className="text-right">{paceHeader}</span>}
                       <span className="text-right">HR</span>
-                      {showLactate && <span className="text-right" style={{ color: '#7c3aed' }}>La</span>}
+                      {showLactate && <span className="text-right">La</span>}
                     </div>
                     <div className="divide-y divide-gray-50">
                       {laps.map((lap, i) => {
@@ -1728,18 +1736,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                             {showLactate && (
                               lapLa != null ? (
-                                <span className="text-right font-bold tabular-nums text-[11px]" style={{ color: '#7c3aed' }}>
-                                  {Number(lapLa).toFixed(1)}
-                                </span>
+                                <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                              ) : onAddLactate ? (
+                                <div className="flex justify-end">
+                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                    className="flex items-center justify-center w-5 h-5 rounded-full hover:opacity-80 transition-opacity"
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
+                                    title={`Add lactate for lap ${lapNum}`}>
+                                    <span className="text-xs font-bold leading-none">+</span>
+                                  </button>
+                                </div>
                               ) : (
-                                <button
-                                  onClick={e => { e.stopPropagation(); onAddLactate(merged, i); }}
-                                  className="flex items-center justify-center w-6 h-6 rounded-full ml-auto hover:opacity-80 transition-opacity"
-                                  style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
-                                  title="Add lactate for this lap"
-                                >
-                                  <span className="text-sm font-bold leading-none">+</span>
-                                </button>
+                                <span className="text-right tabular-nums text-gray-400">—</span>
                               )
                             )}
                           </div>
@@ -2134,11 +2142,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
 // ─── Richer Summary Column ────────────────────────────────────────────────────
 function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
-  if (!weekSummary) return (
-    <div className="bg-gray-50 p-4 flex items-center justify-center min-h-[60px]">
-      <span className="text-xs text-gray-400">No activities this week</span>
-    </div>
-  );
+  if (!weekSummary) return <div className="bg-gray-50 p-2 min-h-[130px] min-w-[140px]" />;
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
     distanceRun, distanceBike, distanceSwim, tssRun, tssBike, tssSwim, tssStrength,
@@ -2160,7 +2164,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
-    <div className="bg-gray-50 p-3 border-l-4 border-primary/30 flex flex-col gap-1.5">
+    <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
       {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
@@ -2347,8 +2351,8 @@ export default function CalendarView({
   const weekSummaryRefs = useRef({});
   const mobileStickyHeaderRef = useRef(null);
   const selectedMobileDayRef = useRef(selectedMobileDay);
-  const [weekSummaryTab, setWeekSummaryTab] = useState('done');
   const isAutoScrollingRef = useRef(false);
+  const [weekSummaryTab, setWeekSummaryTab] = useState('done');
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -2391,15 +2395,18 @@ export default function CalendarView({
 
     const onScroll = () => {
       if (isAutoScrollingRef.current) return;
-      // Use the day list's current top as the reference point (accounts for sticky header height)
-      const listTop = listEl.getBoundingClientRect().top;
+      // Use the sticky header's bottom as a viewport-fixed reference point.
+      // As the user scrolls, headerBottom stays constant but each day's top changes.
+      const headerEl = mobileStickyHeaderRef.current;
+      const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 0;
       let best = null;
       let bestScore = Infinity;
       Object.entries(dayRefs.current).forEach(([key, el]) => {
         if (!el) return;
-        const relTop = el.getBoundingClientRect().top - listTop;
-        if (relTop <= 16) {
-          const score = Math.abs(relTop);
+        const elTop = el.getBoundingClientRect().top;
+        // Consider days whose top is at or below the sticky header
+        if (elTop <= headerBottom + 16) {
+          const score = Math.abs(elTop - headerBottom);
           if (score < bestScore) { bestScore = score; best = key; }
         }
       });
@@ -3095,16 +3102,16 @@ export default function CalendarView({
                       }))].slice(0, 3);
                       const hasPlanOnly = planned.length > 0 && acts.length === 0;
                       const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+                      const isSunday = dayDate.getDay() === 0;
+                      const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
                       return (
                         <button
                           key={key}
                           onClick={() => {
-                            const isSunday = dayDate.getDay() === 0;
-                            const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
                             setSelectedMobileDay(key);
                             isAutoScrollingRef.current = true;
                             setTimeout(() => {
-                              // On Sunday click, scroll to weekly summary card if it exists
+                              // On Sunday click, scroll to the weekly summary card
                               const targetEl = (isSunday && weekSummaryRefs.current[weekKey])
                                 ? weekSummaryRefs.current[weekKey]
                                 : dayRefs.current[key];
@@ -3129,7 +3136,7 @@ export default function CalendarView({
                               <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
                             ))}
                             {/* Violet dot on Sundays indicates weekly summary */}
-                            {dayDate.getDay() === 0 && isCurrentMonth && (
+                            {isSunday && isCurrentMonth && (
                               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
                             )}
                           </div>
@@ -3329,29 +3336,19 @@ export default function CalendarView({
                     )}
                   </div>
                   {/* Weekly summary card — shown after each Sunday */}
-                  {isSunday && (() => {
-                    const weekStart = startOfWeek(dayDate);
-                    const weekEnd = addDays(weekStart, 6);
-                    const weekPlanned = plannedWorkouts.filter(pw => {
-                      if (!pw.date) return false;
-                      const d = new Date(pw.date + 'T00:00:00');
-                      return d >= weekStart && d <= weekEnd;
-                    });
-                    const hasPlan = weekPlanned.length > 0;
-                    return (
+                  {isSunday && (
                     <div
                       ref={el => { weekSummaryRefs.current[weekKey] = el; }}
                       className="mb-3 rounded-xl border border-violet-100 overflow-hidden"
                     >
-                      {/* Summary header with Done/Plan toggle */}
                       <div className="flex items-center justify-between px-3 py-2 bg-violet-50/60">
                         <span className="text-xs font-bold text-violet-700">Week summary</span>
-                        {hasPlan && (
+                        {wkSummary?.plannedSeconds > 0 && (
                           <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-violet-100">
                             {[['done', 'Done'], ['plan', 'Plan']].map(([tab, lbl]) => (
                               <button
                                 key={tab}
-                                onClick={e => { e.stopPropagation(); setWeekSummaryTab(tab); }}
+                                onClick={() => setWeekSummaryTab(tab)}
                                 className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tab ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                               >{lbl}</button>
@@ -3359,45 +3356,14 @@ export default function CalendarView({
                           </div>
                         )}
                       </div>
-                      {weekSummaryTab === 'done' || !hasPlan ? (
-                        <WeekSummaryCell
-                          weekSummary={wkSummary}
-                          formatHours={formatHours}
-                          formatKm={formatKm}
-                          user={user}
-                        />
-                      ) : (
-                        /* Plan tab — show planned workouts for this week */
-                        <div className="p-3 space-y-1.5">
-                          {weekPlanned.length === 0 ? (
-                            <div className="text-xs text-gray-400 text-center py-2">No planned workouts</div>
-                          ) : weekPlanned.map((pw, pi) => {
-                            const pwSport = (pw.sport || 'other').toLowerCase();
-                            const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
-                            const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
-                            const pwDate = new Date(pw.date + 'T00:00:00');
-                            const dayLabel = pwDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
-                            return (
-                              <div key={pi} className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ backgroundColor: planColor + '15' }}>
-                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: planColor }} />
-                                <span className="text-xs font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || pw.sport || 'Workout'}</span>
-                                <span className="text-[10px] text-gray-500 flex-shrink-0">{dayLabel}</span>
-                                {secs > 0 && <span className="text-[10px] font-bold flex-shrink-0" style={{ color: planColor }}>{formatHours(secs)}</span>}
-                              </div>
-                            );
-                          })}
-                          {/* Total planned */}
-                          <div className="flex items-center justify-between px-2 pt-1 border-t border-violet-100">
-                            <span className="text-[10px] font-bold text-violet-700 uppercase tracking-wide">Total</span>
-                            <span className="text-xs font-bold text-violet-700">
-                              {formatHours(weekPlanned.reduce((s, pw) => s + (planStepTotalSecs(pw.steps) || pw.plannedDuration || 0), 0))}
-                            </span>
-                          </div>
-                        </div>
-                      )}
+                      <WeekSummaryCell
+                        weekSummary={wkSummary}
+                        formatHours={formatHours}
+                        formatKm={formatKm}
+                        user={user}
+                      />
                     </div>
-                    );
-                  })()}
+                  )}
                   </React.Fragment>
                 );
               })}
@@ -3953,7 +3919,6 @@ export default function CalendarView({
           onAddLactate={onAddLactate}
           onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
-          athleteId={athleteId}
         />
       )}
     </motion.div>

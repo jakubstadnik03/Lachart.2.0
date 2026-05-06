@@ -309,16 +309,12 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
 
 function planStepTotalSecs(steps) {
   if (!Array.isArray(steps)) return 0;
-  const visited = new Set();
   let total = 0;
-  steps.forEach(s => {
-    if (!s.groupId) { total += s.durationSeconds || 0; return; }
-    if (visited.has(s.groupId)) return;
-    visited.add(s.groupId);
-    const group = steps.filter(x => x.groupId === s.groupId);
-    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    group.forEach(gs => { total += (gs.durationSeconds || 0) * reps; });
-  });
+  for (const s of steps) {
+    const dur = Number(s.durationSeconds || s.duration || 0);
+    const reps = Number(s.repeat || s.repeatCount || 1);
+    total += dur * (reps > 0 ? reps : 1);
+  }
   return total;
 }
 
@@ -605,7 +601,8 @@ const WeeklyCalendar = ({
   onStartWorkout = null,
   onCopyPlannedWorkout = null,
   onDeletePlannedWorkout = null,
-  onEditActivity = null,
+  onAddLactate = null,
+  onAddTraining = null,
 }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
@@ -1315,6 +1312,16 @@ const WeeklyCalendar = ({
           >
             <ChevronRightIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
           </button>
+          {onAddTraining && (
+            <button
+              onClick={onAddTraining}
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-primary text-white rounded-lg shadow-sm transition-colors font-semibold active:opacity-80 touch-manipulation"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <PlusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              Training
+            </button>
+          )}
         </div>
       </div>
 
@@ -1528,8 +1535,8 @@ const WeeklyCalendar = ({
           </div>
           )}
 
-          {/* Training Details - Right Side - Desktop only (mobile uses ActivityFullModal) */}
-          {!isMobile && <AnimatePresence>
+          {/* Training Details - Right Side - Much Wider */}
+          <AnimatePresence>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -2040,7 +2047,7 @@ const WeeklyCalendar = ({
                 </div>
               )}
             </motion.div>
-          </AnimatePresence>}
+          </AnimatePresence>
         </div>
       ) : (
         /* Calendar - Mobile: Horizontal scroll, Desktop: Grid Layout */
@@ -2232,7 +2239,17 @@ const WeeklyCalendar = ({
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
           onClose={() => setActivityModal(null)}
-          onEditActivity={onEditActivity}
+          onAddLactate={
+            onAddLactate
+              ? (a, lapIndex) => { setActivityModal(null); onAddLactate(a, lapIndex); }
+              : (a) => {
+                  const rawId = String(a?.id ?? a?._id ?? '');
+                  const id = rawId.startsWith('strava-') || rawId.startsWith('fit-') || rawId.startsWith('training-') || rawId.startsWith('regular-')
+                    ? rawId : `strava-${rawId}`;
+                  setActivityModal(null);
+                  navigate(`/training-calendar/${id}`);
+                }
+          }
           onOpenFull={() => {
             const a = activityModal.activity;
             const rawId = String(a?.id ?? a?._id ?? '');
