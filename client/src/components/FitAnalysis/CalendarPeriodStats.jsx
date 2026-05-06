@@ -205,6 +205,54 @@ function categoryChipClass(category) {
   return colors[category] || 'bg-gray-100 border-gray-300 text-gray-700';
 }
 
+function makeGroupedBar(labels, curData, lyData, colorA = '#3b82f6') {
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter(params) {
+        if (!Array.isArray(params)) return '';
+        let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel}</b>`;
+        params.forEach((p) => {
+          if (p.value > 0) html += `<br/>${p.marker}${p.seriesName}: ${(+p.value).toFixed(1)}h`;
+        });
+        return html + '</div>';
+      },
+    },
+    legend: { data: ['This year', 'Last year'], textStyle: { fontSize: 10, color: '#6b7280' }, top: 2, right: 0 },
+    grid: { left: 0, right: 0, top: 32, bottom: 20, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: { fontSize: 9, color: '#6b7280' },
+      axisLine: { lineStyle: { color: '#f3f4f6' } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => v + 'h' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    series: [
+      {
+        name: 'This year',
+        type: 'bar',
+        barMaxWidth: 22,
+        data: curData.map((h) => ({ value: h, itemStyle: { color: colorA, borderRadius: [3, 3, 0, 0] } })),
+      },
+      {
+        name: 'Last year',
+        type: 'bar',
+        barMaxWidth: 22,
+        data: lyData.map((h) => ({ value: h, itemStyle: { color: colorA + '66', borderRadius: [3, 3, 0, 0] } })),
+      },
+    ],
+  };
+}
+
 function ZoneRows({ secMap, colors, zoneNames }) {
   const total = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
   if (total <= 0)
@@ -259,6 +307,10 @@ export default function CalendarPeriodStats({
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showZoneDetails, setShowZoneDetails] = useState(false);
+  const [compareMode, setCompareMode] = useState(() => periodView);
+  const [compareRefDate, setCompareRefDate] = useState(() =>
+    period?.periodStart ? new Date(period.periodStart) : new Date()
+  );
 
   const filtered = useMemo(() => {
     if (!period?.periodStart || !period?.periodEnd) return [];
@@ -1145,6 +1197,174 @@ export default function CalendarPeriodStats({
     };
   }, [aggregates.bySportSec, aggregatesLY.bySportSec]);
 
+  // ── Independent compare-tab navigation ──────────────────────────────────
+  const compareBounds = useMemo(() => {
+    const d = new Date(compareRefDate);
+    if (compareMode === 'week') {
+      const day = d.getDay() || 7;
+      const mon = new Date(d);
+      mon.setDate(d.getDate() - (day - 1));
+      mon.setHours(0, 0, 0, 0);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      return { start: mon, end: sun };
+    }
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { start, end };
+  }, [compareRefDate, compareMode]);
+
+  const compareBoundsLY = useMemo(() => {
+    const s = new Date(compareBounds.start);
+    s.setFullYear(s.getFullYear() - 1);
+    const e = new Date(compareBounds.end);
+    e.setFullYear(e.getFullYear() - 1);
+    return { start: s, end: e };
+  }, [compareBounds]);
+
+  const filteredCmpThis = useMemo(() => {
+    const s = getLocalDateString(compareBounds.start);
+    const e = getLocalDateString(compareBounds.end);
+    return activities.filter((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      return k && k >= s && k <= e;
+    });
+  }, [activities, compareBounds]);
+
+  const filteredCmpPrev = useMemo(() => {
+    const s = getLocalDateString(compareBoundsLY.start);
+    const e = getLocalDateString(compareBoundsLY.end);
+    return activities.filter((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      return k && k >= s && k <= e;
+    });
+  }, [activities, compareBoundsLY]);
+
+  const aggCmpThis = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    filteredCmpThis.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      totalSec += sec;
+      totalDist += Number(act.distance || 0);
+      const tss = computeTssForAct(act, userProfile);
+      if (tss > 0) totalTss += tss;
+      bySportSec[sportBucket(act.sport)] += sec;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec };
+  }, [filteredCmpThis, userProfile]);
+
+  const aggCmpPrev = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    filteredCmpPrev.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      totalSec += sec;
+      totalDist += Number(act.distance || 0);
+      const tss = computeTssForAct(act, userProfile);
+      if (tss > 0) totalTss += tss;
+      bySportSec[sportBucket(act.sport)] += sec;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec };
+  }, [filteredCmpPrev, userProfile]);
+
+  const cmpLabel = useMemo(() => {
+    const d = compareBounds.start;
+    if (compareMode === 'week') {
+      const e = compareBounds.end;
+      const wn = isoWeekKey(d)?.split('-')[1];
+      return `W${wn} · ${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [compareBounds, compareMode]);
+
+  const cmpLYLabel = useMemo(() => {
+    const d = compareBoundsLY.start;
+    if (compareMode === 'week') {
+      const e = compareBoundsLY.end;
+      return `${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [compareBoundsLY, compareMode]);
+
+  const cmpBreakdownOption = useMemo(() => {
+    if (compareMode === 'week') {
+      const DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+      const dayKeysThis = [];
+      const dayKeysLY = [];
+      const curD = new Date(compareBounds.start);
+      const lyD = new Date(compareBoundsLY.start);
+      for (let i = 0; i < 7; i++) {
+        dayKeysThis.push(getLocalDateString(new Date(curD)));
+        dayKeysLY.push(getLocalDateString(new Date(lyD)));
+        curD.setDate(curD.getDate() + 1);
+        lyD.setDate(lyD.getDate() + 1);
+      }
+      const mapThis = new Map();
+      filteredCmpThis.forEach((act) => {
+        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
+      });
+      const mapLY = new Map();
+      filteredCmpPrev.forEach((act) => {
+        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
+      });
+      const curH = dayKeysThis.map((k) => +((mapThis.get(k) || 0) / 3600).toFixed(2));
+      const lyH = dayKeysLY.map((k) => +((mapLY.get(k) || 0) / 3600).toFixed(2));
+      if (!curH.some((h) => h > 0) && !lyH.some((h) => h > 0)) return null;
+      return makeGroupedBar(DOW, curH, lyH);
+    }
+
+    // Month mode: week-by-week breakdown
+    const weekRanges = [];
+    const cur = new Date(compareBounds.start);
+    const dayOfW = cur.getDay() || 7;
+    if (dayOfW !== 1) cur.setDate(cur.getDate() - (dayOfW - 1));
+    const monthEnd = new Date(compareBounds.end);
+    while (cur <= monthEnd) {
+      const wStart = new Date(cur);
+      const wEnd = new Date(cur);
+      wEnd.setDate(cur.getDate() + 6);
+      const wEndCapped = wEnd > monthEnd ? monthEnd : wEnd;
+      const lyWStart = new Date(wStart);
+      lyWStart.setFullYear(lyWStart.getFullYear() - 1);
+      const lyWEndCapped = new Date(wEndCapped);
+      lyWEndCapped.setFullYear(lyWEndCapped.getFullYear() - 1);
+      weekRanges.push({
+        startK: getLocalDateString(wStart),
+        endK: getLocalDateString(wEndCapped),
+        lyStartK: getLocalDateString(lyWStart),
+        lyEndK: getLocalDateString(lyWEndCapped),
+        label: `${wStart.getDate()}.${wStart.getMonth() + 1}`,
+      });
+      cur.setDate(cur.getDate() + 7);
+    }
+    if (!weekRanges.length) return null;
+
+    const mapThis = new Map();
+    filteredCmpThis.forEach((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
+    });
+    const mapLY = new Map();
+    filteredCmpPrev.forEach((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
+    });
+    const sumRange = (map, s, e) => {
+      let total = 0;
+      map.forEach((v, k) => { if (k >= s && k <= e) total += v; });
+      return total;
+    };
+    const curH = weekRanges.map((w) => +((sumRange(mapThis, w.startK, w.endK)) / 3600).toFixed(2));
+    const lyH = weekRanges.map((w) => +((sumRange(mapLY, w.lyStartK, w.lyEndK)) / 3600).toFixed(2));
+    if (!curH.some((h) => h > 0) && !lyH.some((h) => h > 0)) return null;
+    return makeGroupedBar(weekRanges.map((w) => w.label), curH, lyH);
+  }, [compareMode, compareBounds, compareBoundsLY, filteredCmpThis, filteredCmpPrev]);
+
   if (!period?.label) return null;
 
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
@@ -1887,72 +2107,115 @@ export default function CalendarPeriodStats({
 
         {/* ===================== COMPARE TAB ===================== */}
         {activeTab === 'compare' && (
-          <div className="space-y-5">
-            {/* Period vs Period header */}
-            <div className="flex items-stretch gap-3">
-              <div className="flex-1 bg-primary/10 border border-primary/20 rounded-xl p-3">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-primary mb-0.5">This period</div>
-                <div className="text-sm font-bold text-gray-900 leading-tight">{period.label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{aggregates.count} {aggregates.count === 1 ? 'activity' : 'activities'}</div>
+          <div className="space-y-4">
+            {/* Mode toggle + navigation */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Week / Month toggle */}
+              <div className="flex rounded-xl overflow-hidden border border-gray-200">
+                {['week', 'month'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setCompareMode(m)}
+                    className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      compareMode === m
+                        ? 'bg-primary text-white'
+                        : 'bg-white text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {m === 'week' ? 'Week' : 'Month'}
+                  </button>
+                ))}
               </div>
-              <div className="flex items-center text-gray-300 font-light text-sm shrink-0">vs</div>
-              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-3">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mb-0.5">Last year</div>
-                <div className="text-sm font-bold text-gray-600 leading-tight">{lyPeriodLabel}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{aggregatesLY.count} {aggregatesLY.count === 1 ? 'activity' : 'activities'}</div>
+
+              {/* Prev */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCompareRefDate((prev) => {
+                    const d = new Date(prev);
+                    if (compareMode === 'week') d.setDate(d.getDate() - 7);
+                    else d.setMonth(d.getMonth() - 1);
+                    return d;
+                  })
+                }
+                className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-bold transition-colors"
+              >
+                ‹
+              </button>
+
+              {/* Period label */}
+              <span className="flex-1 text-center text-sm font-semibold text-gray-800 min-w-0 truncate">
+                {cmpLabel}
+              </span>
+
+              {/* Next */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCompareRefDate((prev) => {
+                    const d = new Date(prev);
+                    if (compareMode === 'week') d.setDate(d.getDate() + 7);
+                    else d.setMonth(d.getMonth() + 1);
+                    return d;
+                  })
+                }
+                className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-bold transition-colors"
+              >
+                ›
+              </button>
+
+              {/* Jump to calendar selection */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (period?.periodStart) setCompareRefDate(new Date(period.periodStart));
+                  setCompareMode(periodView);
+                }}
+                className="px-2.5 py-1.5 rounded-xl text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
+              >
+                ↵ Current
+              </button>
+            </div>
+
+            {/* Year labels */}
+            <div className="flex items-stretch gap-3">
+              <div className="flex-1 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-primary">This year</div>
+                <div className="text-xs font-bold text-gray-900 mt-0.5">{cmpLabel}</div>
+                <div className="text-[10px] text-gray-500">{aggCmpThis.count} {aggCmpThis.count === 1 ? 'activity' : 'activities'}</div>
+              </div>
+              <div className="flex items-center text-gray-300 text-xs shrink-0">vs</div>
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">Last year</div>
+                <div className="text-xs font-bold text-gray-600 mt-0.5">{cmpLYLabel}</div>
+                <div className="text-[10px] text-gray-400">{aggCmpPrev.count} {aggCmpPrev.count === 1 ? 'activity' : 'activities'}</div>
               </div>
             </div>
 
-            {aggregates.count === 0 && aggregatesLY.count === 0 && (
-              <p className="text-sm text-gray-400 text-center py-6">No activities found for either period.</p>
+            {aggCmpThis.count === 0 && aggCmpPrev.count === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">No activities in either period.</p>
             )}
 
-            {(aggregates.count > 0 || aggregatesLY.count > 0) && (
+            {(aggCmpThis.count > 0 || aggCmpPrev.count > 0) && (
               <>
-                {/* Key metric comparison cards */}
+                {/* Metric cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { label: 'Activities', cur: aggregates.count, ly: aggregatesLY.count, fmt: (v) => v },
-                    {
-                      label: 'Total time',
-                      cur: aggregates.totalSec,
-                      ly: aggregatesLY.totalSec,
-                      fmt: (v) => (v > 0 ? formatDuration(v) : '—'),
-                    },
-                    {
-                      label: 'Distance',
-                      cur: aggregates.totalDist,
-                      ly: aggregatesLY.totalDist,
-                      fmt: (v) => (v > 0 ? formatDistance(v, user) : '—'),
-                    },
-                    {
-                      label: 'TSS',
-                      cur: aggregates.totalTss,
-                      ly: aggregatesLY.totalTss,
-                      fmt: (v) => (v > 0 ? Math.round(v) : '—'),
-                    },
+                    { label: 'Activities', cur: aggCmpThis.count, ly: aggCmpPrev.count, fmt: (v) => v },
+                    { label: 'Total time', cur: aggCmpThis.totalSec, ly: aggCmpPrev.totalSec, fmt: (v) => v > 0 ? formatDuration(v) : '—' },
+                    { label: 'Distance', cur: aggCmpThis.totalDist, ly: aggCmpPrev.totalDist, fmt: (v) => v > 0 ? formatDistance(v, user) : '—' },
+                    { label: 'TSS', cur: aggCmpThis.totalTss, ly: aggCmpPrev.totalTss, fmt: (v) => v > 0 ? Math.round(v) : '—' },
                   ].map((card) => {
-                    const delta =
-                      card.ly > 0 ? ((card.cur - card.ly) / card.ly) * 100 : null;
+                    const delta = card.ly > 0 ? ((card.cur - card.ly) / card.ly) * 100 : null;
                     return (
                       <div key={card.label} className="bg-gray-50 rounded-xl p-3">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">
-                          {card.label}
-                        </div>
-                        <div className="text-sm font-bold text-gray-900 tabular-nums">
-                          {card.fmt(card.cur)}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">
-                          LY: {card.fmt(card.ly)}
-                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">{card.label}</div>
+                        <div className="text-sm font-bold text-gray-900 tabular-nums">{card.fmt(card.cur)}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">LY: {card.fmt(card.ly)}</div>
                         {delta !== null && (
-                          <div
-                            className={`text-[11px] font-semibold mt-1 ${
-                              delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'
-                            }`}
-                          >
-                            {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
-                            {Math.abs(delta).toFixed(0)}%
+                          <div className={`text-[11px] font-semibold mt-1 ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
                           </div>
                         )}
                       </div>
@@ -1960,97 +2223,65 @@ export default function CalendarPeriodStats({
                   })}
                 </div>
 
-                {/* Volume by sport grouped bar chart */}
-                {Chart && compareOption && (
+                {/* Breakdown chart: day-by-day (week) or week-by-week (month) */}
+                {Chart && cmpBreakdownOption && (
                   <div>
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Volume by sport (hours)
+                      {compareMode === 'week' ? 'Day-by-day training load (h)' : 'Week-by-week training load (h)'}
                     </div>
                     <div className="bg-gray-50 rounded-xl p-3">
-                      <Chart option={compareOption} style={{ height: 210, width: '100%' }} notMerge />
+                      <Chart option={cmpBreakdownOption} style={{ height: 200, width: '100%' }} notMerge />
                     </div>
                   </div>
                 )}
 
-                {/* Distance comparison by sport */}
-                {(['cycling', 'running', 'swimming'].some(
-                  (ps) =>
-                    (aggregates.distByProfileSport?.[ps] || 0) > 0 ||
-                    (aggregatesLY.distByProfileSport?.[ps] || 0) > 0
+                {/* Sport volume rows */}
+                {(['bike', 'run', 'swim'].some(
+                  (b) => (aggCmpThis.bySportSec[b] || 0) > 0 || (aggCmpPrev.bySportSec[b] || 0) > 0
                 )) && (
                   <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                      Distance by sport
-                    </div>
-                    <div className="space-y-4">
-                      {['cycling', 'running', 'swimming'].map((ps) => {
-                        const cur = aggregates.distByProfileSport?.[ps] || 0;
-                        const ly = aggregatesLY.distByProfileSport?.[ps] || 0;
-                        if (cur === 0 && ly === 0) return null;
-                        const bucket =
-                          ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
-                        const maxDist = Math.max(cur, ly, 1);
-                        const delta = ly > 0 ? ((cur - ly) / ly) * 100 : null;
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Volume by sport</div>
+                    <div className="space-y-3">
+                      {[
+                        { b: 'bike', ps: 'cycling' },
+                        { b: 'run', ps: 'running' },
+                        { b: 'swim', ps: 'swimming' },
+                      ].map(({ b, ps }) => {
+                        const curSec = aggCmpThis.bySportSec[b] || 0;
+                        const lySec = aggCmpPrev.bySportSec[b] || 0;
+                        if (curSec === 0 && lySec === 0) return null;
+                        const maxSec = Math.max(curSec, lySec, 1);
+                        const delta = lySec > 0 ? ((curSec - lySec) / lySec) * 100 : null;
+                        const fmtH = (s) => {
+                          const h = Math.floor(s / 3600);
+                          const m = Math.floor((s % 3600) / 60);
+                          return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                        };
                         return (
-                          <div key={ps}>
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <img
-                                src={`/icon/${bucket}.svg`}
-                                alt={bucket}
-                                className="w-4 h-4 object-contain"
-                              />
-                              <span className="text-xs font-semibold text-gray-600">
-                                {SPORT_LABEL[ps]}
-                              </span>
+                          <div key={b}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain" />
+                              <span className="text-xs font-semibold text-gray-600">{SPORT_LABEL[ps]}</span>
                               {delta !== null && (
-                                <span
-                                  className={`text-[10px] font-semibold ml-auto ${
-                                    delta > 2
-                                      ? 'text-green-600'
-                                      : delta < -2
-                                      ? 'text-red-500'
-                                      : 'text-gray-400'
-                                  }`}
-                                >
-                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
-                                  {Math.abs(delta).toFixed(0)}%
+                                <span className={`text-[10px] font-semibold ml-auto ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
                                 </span>
                               )}
                             </div>
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="w-14 text-[10px] text-gray-500 shrink-0">
-                                  This year
-                                </span>
+                                <span className="w-14 text-[10px] text-gray-500 shrink-0">This year</span>
                                 <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full transition-all"
-                                    style={{
-                                      width: `${(cur / maxDist) * 100}%`,
-                                      backgroundColor: BUCKET_COLOR[bucket],
-                                    }}
-                                  />
+                                  <div className="h-full rounded-full" style={{ width: `${(curSec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] }} />
                                 </div>
-                                <span className="w-16 text-[10px] text-right font-semibold text-gray-700 shrink-0 tabular-nums">
-                                  {cur > 0 ? formatDistance(cur, user) : '—'}
-                                </span>
+                                <span className="w-14 text-[10px] text-right font-semibold text-gray-700 shrink-0 tabular-nums">{curSec > 0 ? fmtH(curSec) : '—'}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="w-14 text-[10px] text-gray-400 shrink-0">
-                                  Last year
-                                </span>
+                                <span className="w-14 text-[10px] text-gray-400 shrink-0">Last year</span>
                                 <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full transition-all"
-                                    style={{
-                                      width: `${(ly / maxDist) * 100}%`,
-                                      backgroundColor: BUCKET_COLOR[bucket] + '66',
-                                    }}
-                                  />
+                                  <div className="h-full rounded-full" style={{ width: `${(lySec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] + '66' }} />
                                 </div>
-                                <span className="w-16 text-[10px] text-right font-medium text-gray-400 shrink-0 tabular-nums">
-                                  {ly > 0 ? formatDistance(ly, user) : '—'}
-                                </span>
+                                <span className="w-14 text-[10px] text-right font-medium text-gray-400 shrink-0 tabular-nums">{lySec > 0 ? fmtH(lySec) : '—'}</span>
                               </div>
                             </div>
                           </div>
@@ -2060,86 +2291,42 @@ export default function CalendarPeriodStats({
                   </div>
                 )}
 
-                {/* Fitness & Form comparison */}
-                {pmc && pmc.length > 0 && (() => {
-                  const curEntry = pmc[pmc.length - 1];
-                  if (!curEntry) return null;
-                  return (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                        Fitness &amp; Form snapshot
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {[
-                          {
-                            label: 'CTL (Fitness)',
-                            cur: curEntry.ctl,
-                            ly: lyCtlAtlEntry?.ctl,
-                            color: 'text-blue-600',
-                          },
-                          {
-                            label: 'ATL (Fatigue)',
-                            cur: curEntry.atl,
-                            ly: lyCtlAtlEntry?.atl,
-                            color: 'text-orange-500',
-                          },
-                          {
-                            label: 'TSB (Form)',
-                            cur: curEntry.tsb,
-                            ly: lyCtlAtlEntry?.tsb,
-                            color:
-                              curEntry.tsb >= -10
-                                ? 'text-green-600'
-                                : curEntry.tsb >= -25
-                                ? 'text-yellow-600'
-                                : 'text-red-600',
-                          },
-                        ].map((item) => {
-                          const delta =
-                            item.ly != null && item.ly !== 0
-                              ? ((item.cur - item.ly) / Math.abs(item.ly)) * 100
-                              : null;
+                {/* Activities list for selected period */}
+                {filteredCmpThis.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Activities this period</div>
+                    <div className="space-y-1.5">
+                      {[...filteredCmpThis]
+                        .sort((a, b) => new Date(b.date || b.timestamp || b.startDate) - new Date(a.date || a.timestamp || a.startDate))
+                        .map((act, idx) => {
+                          const sec = actDurationSec(act);
+                          const tss = computeTssForAct(act, userProfile);
+                          const dist = Number(act.distance || 0);
+                          const b = sportBucket(act.sport);
                           return (
-                            <div
-                              key={item.label}
-                              className="bg-white rounded-lg p-3 border border-gray-100"
+                            <button
+                              key={`${act.id}-${idx}`}
+                              type="button"
+                              disabled={!onSelectActivity}
+                              onClick={() => onSelectActivity && onSelectActivity(act)}
+                              className={`w-full text-left flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2 ${onSelectActivity ? 'hover:border-gray-200 hover:shadow-sm cursor-pointer' : 'cursor-default'} transition-all`}
                             >
-                              <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-                                {item.label}
+                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
+                                <div className="text-[10px] text-gray-400">{fmtActDate(act)}</div>
                               </div>
-                              <div className={`text-lg font-bold tabular-nums mt-1 ${item.color}`}>
-                                {item.cur ?? '—'}
+                              <div className="flex items-center gap-2 shrink-0 text-[10px] text-gray-500">
+                                {sec > 0 && <span className="tabular-nums">{formatDuration(sec)}</span>}
+                                {dist > 0 && <span className="tabular-nums">{formatDistance(dist, user)}</span>}
+                                {tss > 0 && <span className="text-primary font-semibold tabular-nums">{Math.round(tss)} TSS</span>}
                               </div>
-                              {item.ly != null && (
-                                <div className="text-[10px] text-gray-400 mt-0.5">
-                                  LY: {item.ly}
-                                </div>
-                              )}
-                              {!item.ly && (
-                                <div className="text-[10px] text-gray-300 mt-0.5">LY: no data</div>
-                              )}
-                              {delta !== null && (
-                                <div
-                                  className={`text-[11px] font-semibold mt-1 ${
-                                    delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'
-                                  }`}
-                                >
-                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
-                                  {Math.abs(delta).toFixed(0)}%
-                                </div>
-                              )}
-                            </div>
+                            </button>
                           );
                         })}
-                      </div>
-                      {!lyCtlAtlEntry && (
-                        <p className="text-[10px] text-gray-400 mt-3 text-center">
-                          No PMC data found for same period last year — fitness comparison unavailable.
-                        </p>
-                      )}
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
               </>
             )}
           </div>
