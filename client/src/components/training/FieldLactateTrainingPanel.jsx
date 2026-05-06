@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BeakerIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { BeakerIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
   getIntegrationStatus,
   getPendingLactateActivities,
