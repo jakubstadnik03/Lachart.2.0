@@ -20,6 +20,7 @@ import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import TrainingComments from '../TrainingComments';
 
 // ─── Planned workout helpers ──────────────────────────────────────────────────
 const SPORT_PLAN_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
@@ -618,193 +619,283 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   );
 }
 
-// ─── Lap Chart ───────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, isSwim = false, selectedLap, onSelectLap }) {
-  // Reserve left gutter for y-axis labels (Strava-style scale).
-  const W = 600, H = 110, PAD = { t: 14, b: 18, l: 36, r: 4 };
-  const innerW = W - PAD.l - PAD.r;
-  const innerH = H - PAD.t - PAD.b;
-  const GAP = 2;
+// ─── Lap Chart ────────────────────────────────────────────────────────────────
+function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef, onScrollCenter }) {
+  const CHART_H   = 160;
+  const Y_AXIS_W  = 38;
+  const X_LABEL_H = 16;
+  const ZOOM_GAP  = 3;
+  const PAUSE_W   = 8;    // rest/pause dots in zoomed mode
+  const MIN_BAR_PX = 55; // minimum px for the smallest lap in zoomed mode
 
-  // Lap durations — bar widths are proportional to elapsed time
-  const durations = laps.map(l => l.elapsed_time || l.totalElapsedTime || l.duration || 0);
-  const totalDur  = durations.reduce((s, d) => s + d, 0) || 1;
+  const isZoomed = selectedLap != null;
+  const centerLapRef = useRef(null);
+  const isProgrammaticScroll = useRef(false);
 
-  // Primary metric per lap (height)
-  // - bike: average power (W) — taller is better
-  // - run:  pace sec/km — lower is faster, so we invert when drawing
-  // - swim: pace sec/100m — same inversion
-  const primary = laps.map((lap, i) => {
-    const dur = durations[i];
-    const d   = Number(lap.distance || 0);
-    if (isBike) return Number(lap.average_watts || lap.avgPower || 0);
-    if (isRun && d > 0 && dur > 0) return dur / (d / 1000); // sec/km — lower is faster
-    if (isSwim && d > 0 && dur > 0) return dur / (d / 100); // sec/100m — lower is faster
-    return dur;
-  });
-  const paceLike = isRun || isSwim;
-
-  const hrVals = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0));
-  const hasHr  = hrVals.some(v => v > 0);
-  const hasLa  = laps.some(l => l.lactate != null || l.lactateValue != null);
-
-  const validP = primary.filter(Boolean);
-  const pMax = Math.max(...validP, 1);
-  const pMin = paceLike ? Math.min(...validP, pMax) : 0;
-  const pRange = pMax - pMin || 1;
-
-  const hrMax = hasHr ? Math.max(...hrVals.filter(Boolean), 1) : 1;
-  const hrMin = hasHr ? Math.min(...hrVals.filter(Boolean), hrMax) : 0;
-  const hrRange = hrMax - hrMin || 1;
-
-  const laVals = hasLa ? laps.map(l => { const v = l.lactate ?? l.lactateValue; return v != null ? Number(v) : null; }) : [];
-  const laMax  = hasLa ? Math.max(...laVals.filter(v => v != null), 1) : 1;
-  const laMin  = hasLa ? Math.min(...laVals.filter(v => v != null), laMax) : 0;
-  const laRange = laMax - laMin || 1;
-
-  // Compute x-position and width for each bar
-  const totalGapW = GAP * (laps.length - 1);
-  const availW = innerW - totalGapW;
-  const barXW = laps.map((_, i) => {
-    const bw = (durations[i] / totalDur) * availW;
-    const x  = PAD.l + laps.slice(0, i).reduce((s, _, j) => s + (durations[j] / totalDur) * availW + GAP, 0);
-    return { x, bw };
+  const entries = laps.map((lap) => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
+    const pow  = Number(lap.average_watts || lap.avgPower || 0);
+    let value = 0;
+    if (isBike)                              value = pow;
+    else if (isRun  && dist > 0 && dur > 0)  value = dur / (dist / 1000);
+    else if (isSwim && dist > 0 && dur > 0)  value = dur / (dist / 100);
+    // weight = dist for swim/run (proportional to distance), dur for bike
+    const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
+    return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
   });
 
-  // Bar height: for run/swim pace, lower sec = faster → taller bar (invert)
-  const barH = (val) => {
-    if (!val) return 3;
-    const norm = paceLike ? (pMax - val) / pRange : (val - pMin) / pRange;
-    return Math.max(3, norm * innerH);
-  };
-  const yBar = (val) => PAD.t + innerH - barH(val);
+  // In zoomed mode: scale weights so the smallest non-pause bar is MIN_BAR_PX wide
+  const activeWeights = entries.filter(e => !e.isPause).map(e => e.weight);
+  const minWeight = activeWeights.length ? Math.min(...activeWeights) : 1;
+  const pxPerWeight = MIN_BAR_PX / minWeight;
+  const getZoomW = (ent) => ent.isPause ? PAUSE_W : Math.round(ent.weight * pxPerWeight);
 
-  // HR line
-  const hrY = (v) => v > 0 ? PAD.t + innerH - ((v - hrMin) / hrRange) * innerH : null;
-  const hrPoints = laps.map((_, i) => {
-    const { x, bw } = barXW[i];
-    const cy = hrY(hrVals[i]);
-    return cy != null ? `${x + bw / 2},${cy}` : null;
-  }).filter(Boolean).join(' ');
-
-  const laY = (v) => v != null ? PAD.t + innerH - ((v - laMin) / laRange) * innerH : null;
-
-  const fmtMMSS = (sec) => {
-    const m = Math.floor(sec / 60);
-    const s = Math.round(sec % 60);
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-  const fmtPrimary = (val) => {
-    if (!val) return '';
-    if (isBike) return `${Math.round(val)}W`;
-    if (paceLike) return fmtMMSS(val);
-    return '';
-  };
-  // Y-axis ticks (Strava-style): 4 evenly-spaced labels.
-  const axisUnit = isBike ? 'W' : isRun ? '/km' : isSwim ? '/100m' : '';
-  const TICK_COUNT = 4;
-  const axisTicks = (() => {
-    if (validP.length === 0) return [];
-    const out = [];
-    for (let i = 0; i < TICK_COUNT; i++) {
-      // For pace, smaller value = faster = top of chart, so reverse.
-      const t = i / (TICK_COUNT - 1);
-      const val = paceLike ? pMax - t * pRange : pMax - t * (pMax - pMin);
-      const y = PAD.t + t * innerH;
-      out.push({ y, val });
+  // Scroll to center selected bar in zoom mode — must be before any early return
+  useEffect(() => {
+    if (!isZoomed || !chartScrollRef?.current) return;
+    const el = chartScrollRef.current;
+    let left = 0;
+    for (let i = 0; i < selectedLap; i++) {
+      left += getZoomW(entries[i]) + ZOOM_GAP;
     }
-    return out;
-  })();
+    const selW = getZoomW(entries[selectedLap] || { isPause: false, weight: minWeight });
+    const target = left + selW / 2 - el.clientWidth / 2;
+    isProgrammaticScroll.current = true;
+    requestAnimationFrame(() => {
+      el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+      setTimeout(() => { isProgrammaticScroll.current = false; }, 450);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLap, isZoomed, chartScrollRef]);
+
+  const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
+  if (!nonZero.length) return null;
+
+  const isInverted = isRun || isSwim; // lower pace value = faster = taller bar
+
+  const maxVal   = Math.max(...nonZero);
+  const minVal   = Math.min(...nonZero);
+  const pad      = (maxVal - minVal) * 0.15 || maxVal * 0.1;
+  const chartMin = Math.max(0, minVal - pad);
+  const chartMax = maxVal + pad;
+  const range    = chartMax - chartMin || 1;
+
+  const getBarH = (val) => {
+    if (!val) return 3;
+    const h = isInverted
+      ? ((chartMax - val) / range) * CHART_H
+      : ((val - chartMin) / range) * CHART_H;
+    return Math.max(3, h);
+  };
+
+  // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power
+  const getIntensity = (val) => {
+    if (!val || maxVal === minVal) return 0.5;
+    return isInverted ? (maxVal - val) / (maxVal - minVal) : (val - minVal) / (maxVal - minVal);
+  };
+
+  const fmtTick = (v) => {
+    if (isBike) return `${Math.round(v)}`;
+    const m = Math.floor(v / 60), s = Math.round(v % 60);
+    return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
+  };
+  const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
+  const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  const step      = Math.max(1, Math.ceil(laps.length / 7));
+
+  // ── Elevation outline ────────────────────────────────────────────────────────
+  const hasElevation = laps.some(l =>
+    Number(l.total_ascent ?? l.totalAscent ?? 0) > 0 ||
+    (l.start_altitude != null && !isNaN(Number(l.start_altitude)))
+  );
+
+  let elevPathD = null;
+  if (hasElevation) {
+    let alts;
+    const firstSA = Number(laps[0]?.start_altitude ?? NaN);
+    if (!isNaN(firstSA)) {
+      alts = laps.map(l => Number(l.start_altitude ?? 0));
+      alts.push(Number(laps[laps.length - 1]?.end_altitude ?? alts[alts.length - 1]));
+    } else {
+      let cum = 0;
+      alts = [0, ...laps.map(l => {
+        cum += Number(l.total_ascent ?? l.totalAscent ?? 0) - Number(l.total_descent ?? l.totalDescent ?? 0);
+        return cum;
+      })];
+    }
+    const altMin = Math.min(...alts);
+    const altMax = Math.max(...alts);
+    if (altMax - altMin >= 2) {
+      const altRange = altMax - altMin;
+      const getBarW = (ent) => isZoomed ? getZoomW(ent) : ent.weight;
+      const totalW = entries.reduce((s, e) => s + getBarW(e) + (isZoomed ? ZOOM_GAP : 0), 0) || 1;
+      let cumW = 0;
+      const pts = alts.map((alt, i) => {
+        const x = (cumW / totalW * 100).toFixed(1);
+        if (i < entries.length) cumW += getBarW(entries[i]) + (isZoomed ? ZOOM_GAP : 0);
+        const y = ((1 - (alt - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+        return `${x},${y}`;
+      });
+      const lastX = (cumW / totalW * 100).toFixed(1);
+      elevPathD = `M ${pts[0]} ${pts.slice(1).map(p => `L ${p}`).join(' ')} L ${lastX},${CHART_H} L 0,${CHART_H} Z`;
+    }
+  }
+
+  // Selected header data
+  const sel       = selectedLap != null ? laps[selectedLap] : null;
+  const selEnt    = selectedLap != null ? entries[selectedLap] : null;
+  const selPace   = selEnt?.value ? `${fmtTick(selEnt.value)} ${unitLabel}` : null;
+  const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
+  const selDistStr = selEnt && selEnt.dist > 0
+    ? (selEnt.dist >= 1000 ? `${(selEnt.dist/1000).toFixed(1)} km` : `${Math.round(selEnt.dist)} m`)
+    : null;
+  const selDurStr = sel ? (() => {
+    const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
+    const m = Math.floor(d / 60), s = Math.round(d % 60);
+    return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
+  })() : null;
+
+  // Total zoom width
+  const zoomTotalW = entries.reduce((s, e) => s + getZoomW(e) + ZOOM_GAP, 0);
+
+  // Scroll-sync: fire onScrollCenter with the lap index under the chart viewport center
+  const handleChartScroll = (e) => {
+    if (!onScrollCenter || !isZoomed || isProgrammaticScroll.current) return;
+    const el = e.currentTarget;
+    const centerX = el.scrollLeft + el.clientWidth / 2;
+    let cumX = 0;
+    let found = entries.length - 1;
+    for (let i = 0; i < entries.length; i++) {
+      const w = getZoomW(entries[i]) + ZOOM_GAP;
+      if (cumX + w / 2 >= centerX) { found = i; break; }
+      cumX += w;
+    }
+    if (found !== centerLapRef.current) {
+      centerLapRef.current = found;
+      onScrollCenter(found);
+    }
+  };
 
   return (
-    <div className="px-4 pb-3">
-      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-3">
-        <span>{isBike ? 'Power per lap (width = duration)' : isRun ? 'Pace per lap (width = duration)' : isSwim ? 'Pace per lap (width = duration)' : 'Laps (width = duration)'}</span>
-        {hasHr && <span className="text-red-400">— HR</span>}
-        {hasLa && <span style={{ color: '#7c3aed' }}>· La</span>}
+    <div className="px-4 pb-2">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg flex-1 mr-2 min-h-[30px]">
+          {sel != null ? (
+            <>
+              <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
+              <span className="text-gray-300 text-xs">·</span>
+              <span className="text-xs font-semibold text-gray-600">{selDurStr}</span>
+              {selDistStr && <><span className="text-gray-300 text-xs">·</span><span className="text-xs text-gray-500">{selDistStr}</span></>}
+              {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold" style={{ color }}>{selPace}</span></>}
+            </>
+          ) : (
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+              {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
+            </span>
+          )}
+        </div>
+        {isZoomed && (
+          <button
+            onClick={() => onSelectLap(null)}
+            className="flex-shrink-0 text-[10px] px-2 py-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 font-semibold leading-none transition-colors"
+          >
+            zoom out
+          </button>
+        )}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 110 }}>
-        {/* Y-axis grid + labels (left gutter) */}
-        {axisTicks.map((t, i) => (
-          <g key={`tick-${i}`}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={t.y} y2={t.y} stroke="#f3f4f6" strokeWidth={1} />
-            <text x={PAD.l - 4} y={t.y + 3} textAnchor="end" fontSize={7} fill="#9ca3af">
-              {fmtPrimary(t.val)}
-            </text>
-          </g>
-        ))}
-        {axisUnit && (
-          <text x={PAD.l - 4} y={PAD.t + innerH + 8} textAnchor="end" fontSize={7} fill="#9ca3af">
-            {axisUnit}
-          </text>
-        )}
-        {laps.map((lap, i) => {
-          const { x, bw } = barXW[i];
-          const val = primary[i];
-          const bh  = barH(val);
-          const by  = yBar(val);
-          const sel = selectedLap === i;
-          const lapNum = lap.lapNumber ?? (i + 1);
-          return (
-            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
-              {/* Bar */}
-              <rect
-                x={x} y={by} width={Math.max(bw, 1)} height={bh}
-                rx={2}
-                fill={sel ? color : color + '70'}
-              />
-              {/* Full-height click zone */}
-              <rect x={x} y={PAD.t} width={Math.max(bw, 1)} height={innerH} rx={2} fill="transparent" />
-              {/* Value label above bar (when selected or wide enough) */}
-              {val > 0 && (bw > 28 || sel) && (
-                <text
-                  x={x + bw / 2} y={by - 2}
-                  textAnchor="middle" fontSize={sel ? 8 : 7}
-                  fill={sel ? color : color + 'cc'} fontWeight={sel ? 'bold' : 'normal'}
+
+      <div className="flex gap-1">
+        {/* Y-axis */}
+        <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + X_LABEL_H }}>
+          {yTicks.map((v, i) => (
+            <span key={i} className="absolute right-1 text-[9px] text-gray-400 leading-none select-none"
+              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
+              {fmtTick(v)}
+            </span>
+          ))}
+          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
+        </div>
+
+        {/* Bars — scrollable in zoom mode */}
+        <div ref={chartScrollRef} className="flex-1 min-w-0 overflow-x-auto" style={{ overflowY: 'hidden' }} onScroll={handleChartScroll}>
+          <div
+            style={{
+              position: 'relative',
+              height: CHART_H + X_LABEL_H,
+              minWidth: isZoomed ? zoomTotalW : '100%',
+              width: isZoomed ? zoomTotalW : '100%',
+            }}
+          >
+            {/* Elevation outline */}
+            {elevPathD && (
+              <svg
+                viewBox={`0 0 100 ${CHART_H}`}
+                preserveAspectRatio="none"
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: CHART_H, pointerEvents: 'none', zIndex: 1 }}
+              >
+                <path d={elevPathD} fill={`${color}18`} stroke={`${color}55`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              </svg>
+            )}
+            {/* Bars */}
+            <div
+              className="flex items-end"
+              style={{
+                height: CHART_H + X_LABEL_H,
+                gap: isZoomed ? ZOOM_GAP : 1,
+                width: '100%',
+                position: 'relative',
+                zIndex: 2,
+              }}
+            >
+            {entries.map((ent, i) => {
+              const isSelected = selectedLap === i;
+              const barH       = getBarH(ent.value);
+              const zoomW      = getZoomW(ent);
+
+              // Intensity-based color shading
+              let barBg;
+              if (ent.isPause) {
+                barBg = isSelected ? color + '60' : '#E5E7EB';
+              } else if (isSelected) {
+                barBg = color;
+              } else {
+                const intensity = getIntensity(ent.value);
+                const alpha = Math.round((0.3 + intensity * 0.6) * 255).toString(16).padStart(2, '0');
+                barBg = color + alpha;
+              }
+
+              // Width: proportional by weight in both normal and zoom mode
+              const itemStyle = isZoomed
+                ? { width: zoomW, flexShrink: 0, height: CHART_H + X_LABEL_H }
+                : { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H };
+
+              return (
+                <div
+                  key={i}
+                  className="flex flex-col items-center justify-end cursor-pointer select-none"
+                  style={itemStyle}
+                  onClick={() => onSelectLap(isSelected ? null : i)}
                 >
-                  {fmtPrimary(val)}
-                </text>
-              )}
-              {/* Lap number — only if wide enough */}
-              {bw > 14 && (
-                <text
-                  x={x + bw / 2} y={H - 4}
-                  textAnchor="middle" fontSize={7}
-                  fill={sel ? color : '#9ca3af'}
-                  fontWeight={sel ? 'bold' : 'normal'}
-                >
-                  {lapNum}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {/* HR line */}
-        {hasHr && hrPoints && (
-          <polyline points={hrPoints} fill="none" stroke="#ef4444" strokeWidth={1.5} strokeLinejoin="round" opacity={0.8} />
-        )}
-        {/* HR dots */}
-        {hasHr && hrVals.map((v, i) => {
-          const { x, bw } = barXW[i];
-          const cy = hrY(v);
-          if (!cy) return null;
-          return <circle key={i} cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3 : 2} fill="#ef4444" opacity={0.9} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)} />;
-        })}
-        {/* Lactate dots */}
-        {hasLa && laVals.map((v, i) => {
-          if (v == null) return null;
-          const { x, bw } = barXW[i];
-          const cy = laY(v);
-          return (
-            <g key={i} style={{ cursor: 'pointer' }} onClick={() => onSelectLap(i)}>
-              <circle cx={x + bw / 2} cy={cy} r={selectedLap === i ? 3.5 : 2.5} fill="#7c3aed" opacity={0.9} />
-              {selectedLap === i && (
-                <text x={x + bw / 2 + 4} y={cy - 2} fontSize={7} fill="#7c3aed" fontWeight="bold">{v.toFixed(1)}</text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+                  {ent.isPause ? (
+                    <div style={{ width: isZoomed ? 4 : 3, height: isZoomed ? 4 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: X_LABEL_H }} />
+                  ) : (
+                    <div style={{ width: isZoomed ? Math.max(zoomW - 2, 2) : '100%', height: barH, backgroundColor: barBg, borderRadius: '3px 3px 0 0', marginBottom: X_LABEL_H }} />
+                  )}
+                  {/* X-axis selection indicator */}
+                  <div className="relative w-full flex items-center justify-center" style={{ height: X_LABEL_H }}>
+                    {isSelected && (
+                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full" style={{ width: 6, height: 3, backgroundColor: color }} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            </div>{/* end flex items-end bars */}
+          </div>{/* end relative elevation wrapper */}
+        </div>
+      </div>
     </div>
   );
 }
@@ -860,6 +951,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
   const lapRowRefs = useRef([]);
+  const lapChartScrollRef = useRef(null);
 
   // Mobile detection + view tabs (TrainingPeaks-style)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -1061,32 +1153,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const distPct = compliancePct(plannedDist * 1000, dist); // plannedDistance is in km
   const tssPct  = compliancePct(plannedTss, tss);
 
-  // ── MOBILE LAYOUT (TrainingPeaks-style) ──
+  // ── MOBILE LAYOUT ──
   if (isMobile) {
-    const hasPlanned = !!plannedWorkout && (plannedDur > 0 || plannedDist > 0 || plannedTss > 0);
-    const TabBtn = ({ id, label }) => (
-      <button
-        onClick={() => setMobileView(id)}
-        className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-          mobileView === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400'
-        }`}
-      >
-        {label}
-      </button>
-    );
-    const ComplianceBar = ({ pct }) => {
-      if (pct == null) return null;
-      const c = complianceColorPct(pct);
-      const widthPct = Math.max(8, Math.min(100, pct));
-      return (
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${widthPct}%`, backgroundColor: c }} />
-          </div>
-          <span className="text-xs font-bold tabular-nums w-12 text-right" style={{ color: c }}>{pct}%</span>
-        </div>
-      );
-    };
+    const hasLaps = laps.length > 0;
 
     return ReactDOM.createPortal(
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -1097,211 +1166,464 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             <div className="font-bold text-gray-900 text-base truncate">{title}</div>
             <div className="text-xs text-gray-400">{dateStr}</div>
           </div>
-          {mobileView !== 'edit' && (
-            <button
-              onClick={() => setMobileView('edit')}
-              title="Edit"
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200"
-            >
-              <PencilIcon className="w-5 h-5" />
-            </button>
+          {detailLoading && (
+            <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
           )}
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tabs (hidden in edit mode) */}
-        {mobileView !== 'edit' && (
+        {/* Tab bar — only shown when activity has laps */}
+        {hasLaps && (
           <div className="flex border-b border-gray-100 flex-shrink-0">
-            <TabBtn id="summary" label="Summary" />
-            {laps.length > 0 && <TabBtn id="laps" label={`Laps (${laps.length})`} />}
+            {['summary', 'laps'].map(tab => (
+              <button key={tab} onClick={() => setMobileView(tab)}
+                className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${mobileView === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>
+                {tab === 'summary' ? 'Summary' : 'Laps'}
+              </button>
+            ))}
           </div>
         )}
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto">
-          {mobileView === 'summary' && (
-            <div className="px-4 py-4 space-y-4">
-              {/* Big completed stats */}
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Duration', value: fmtDur(dur) },
-                  ...(dist > 0 ? [{ label: 'Distance', value: fmtDist(dist) }] : []),
-                  ...(paceStr ? [{ label: 'Pace', value: paceStr }] : []),
-                  ...(hr > 0 ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
-                  ...(isBike && power > 0 ? [{ label: 'Power', value: `${Math.round(power)} W` }] : []),
-                  ...(tss > 0 ? [{ label: 'TSS', value: Math.round(tss) }] : []),
-                ].map(({ label, value }) => (
-                  <div key={label} className="rounded-xl bg-gray-50 px-3 py-2">
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
-                    <div className="text-base font-bold text-gray-800 tabular-nums mt-0.5">{value}</div>
-                  </div>
-                ))}
-              </div>
+        {/* ── SUMMARY TAB ── */}
+        {mobileView !== 'laps' && (
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-              {/* Compliance — only if planned exists */}
-              {hasPlanned && (
-                <div className="rounded-xl border border-gray-100 p-3 space-y-3">
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Compliance</div>
-                  {plannedDur > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex items-baseline justify-between text-xs">
-                        <span className="font-semibold text-gray-600">Duration</span>
-                        <span className="text-gray-400 tabular-nums">{fmtDur(plannedDur)} → {fmtDur(dur)}</span>
-                      </div>
-                      <ComplianceBar pct={durPct} />
-                    </div>
-                  )}
-                  {plannedDist > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex items-baseline justify-between text-xs">
-                        <span className="font-semibold text-gray-600">Distance</span>
-                        <span className="text-gray-400 tabular-nums">{fmtDist(plannedDist * 1000)} → {fmtDist(dist)}</span>
-                      </div>
-                      <ComplianceBar pct={distPct} />
-                    </div>
-                  )}
-                  {plannedTss > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex items-baseline justify-between text-xs">
-                        <span className="font-semibold text-gray-600">TSS</span>
-                        <span className="text-gray-400 tabular-nums">{plannedTss} → {Math.round(tss) || '—'}</span>
-                      </div>
-                      <ComplianceBar pct={tssPct} />
-                    </div>
-                  )}
+            {/* Stats grid */}
+            <div className="px-4 pt-4 pb-3 grid grid-cols-2 gap-2 border-b border-gray-50">
+              {[
+                { label: 'Duration', value: fmtDur(dur) },
+                ...(dist > 0 ? [{ label: 'Distance', value: fmtDist(dist) }] : []),
+                ...(paceStr ? [{ label: 'Pace', value: paceStr }] : []),
+                ...(hr > 0 ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
+                ...(isBike && power > 0 ? [{ label: 'Power', value: `${Math.round(power)} W` }] : []),
+                ...(tss > 0 ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+                ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
+                ...(cadence > 0 ? [{ label: isSwim ? 'SPM' : 'Cad', value: Math.round(cadence) }] : []),
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl bg-gray-50 px-3 py-2.5">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
+                  <div className="text-base font-bold text-gray-800 tabular-nums mt-0.5">{value}</div>
+                </div>
+              ))}
+              {complianceRow && (
+                <div className="col-span-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+                  <span className="text-sm font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
                 </div>
               )}
+            </div>
 
-              {/* Notes */}
+            {/* Description / notes */}
+            {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
+              <div className="px-4 py-3 space-y-2 border-b border-gray-50">
+                {notes && (
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
+                  </div>
+                )}
+                {plannedWorkout?.description && (
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
+                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
+                  </div>
+                )}
+                {plannedWorkout?.notes && (
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Coach notes</div>
+                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Comments */}
+            <div className="px-4 py-4 border-b border-gray-100">
+              <TrainingComments trainingId={String(a.id || a._id || '')} isMobile={true} />
+            </div>
+
+            {/* Planned section */}
+            <div className="px-4 py-4 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
+                <div className="flex gap-2">
+                  {plannedWorkout && !editingPlanned && (
+                    <button onClick={() => setEditingPlanned(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50">
+                      <PencilIcon className="w-3 h-3" /> Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {editingPlanned ? (
+                <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
+                  <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
+                    className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Duration</div>
+                    <input type="text" value={planForm.durationDisplay}
+                      onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                      onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
+                      placeholder="1:30" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Distance</div>
+                    <input type="text" value={planForm.distanceDisplay}
+                      onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                      onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
+                      placeholder="10 km" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">TSS</div>
+                    <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder=""
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Description</div>
+                  <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} rows={2}
+                    placeholder="Workout description…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes</div>
+                  <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} rows={2}
+                    placeholder="Coach notes, instructions…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Completed notes</div>
+                  <input type="text" value={completedForm.title} onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))} placeholder="Activity title"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                  <textarea value={completedForm.description} onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))} rows={2}
+                    placeholder="How did it go?" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  {plannedWorkout && (
+                    <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50">Cancel</button>
+                  )}
+                  <button onClick={async () => { await Promise.all([handleSavePlan(), handleSaveCompleted()]); setEditingPlanned(false); }}
+                    disabled={savingPlan || savingCompleted}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: color }}>
+                    {(savingPlan || savingCompleted) ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              plannedWorkout ? (
+                <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+                  {plannedWorkout?.title && <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>}
+                  <div className="flex flex-wrap gap-3">
+                    {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
+                    {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
+                    {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setEditingPlanned(true)}
+                  className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-400 active:bg-gray-50">
+                  + Add planned workout
+                </button>
+              )
+            )}
+          </div>
+
+          {/* Lactate footer */}
+          {onAddLactate && merged.type === 'strava' && (
+            <div className="px-4 pb-6">
+              <button onClick={() => { onAddLactate(merged); onClose(); }}
+                className="w-full py-3 rounded-xl text-sm font-semibold border-2"
+                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+                + Lactate
+              </button>
+            </div>
+          )}
+
+          </div>{/* end summary tab scrollable */}
+        )}
+
+        {/* ── LAPS TAB ── */}
+        {mobileView === 'laps' && hasLaps && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* LapChart — sticky at top */}
+            <div className="flex-shrink-0 border-b border-gray-100">
+              <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+                selectedLap={selectedLap}
+                chartScrollRef={lapChartScrollRef}
+                onSelectLap={(i) => {
+                  setSelectedLap(i);
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }}
+                onScrollCenter={(i) => {
+                  setSelectedLap(i);
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }}
+              />
+            </div>
+            {/* Laps table — scrollable */}
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <div className="px-4 py-3">
+                {(() => {
+                  const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                  const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
+                  const showSwimPace = isSwim && laps.some(l => Number(l.distance || 0) > 0);
+                  const hasPace = (isRun || showSwimPace) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
+                  const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                  const colTokens = ['1.5rem', '1fr', '1fr'];
+                  if (hasPower || hasPace) colTokens.push('1fr');
+                  colTokens.push('1fr');
+                  if (hasCadence) colTokens.push('1fr');
+                  if (hasLactate) colTokens.push('1fr');
+                  const cols = colTokens.join(' ');
+                  const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
+                  return (
+                    <div className="rounded-xl border border-gray-100 overflow-hidden">
+                      <div className="grid text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
+                        style={{ gridTemplateColumns: cols }}>
+                        <span>#</span>
+                        <span className="text-right">Time</span>
+                        <span className="text-right">Dist</span>
+                        {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
+                        <span className="text-right">HR</span>
+                        {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
+                        {hasLactate && <span className="text-right">La</span>}
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {laps.map((lap, i) => {
+                          const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                          const lapDist = Number(lap.distance || 0);
+                          const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
+                          const lapHr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                          const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
+                          const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
+                          const lapLa = lap.lactate ?? lap.lactateValue;
+                          const lapNum = lap.lapNumber ?? (i + 1);
+                          let lapPaceStr = '—';
+                          if (isSwim) {
+                            const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                            if (spd > 0) { const s = Math.round(100 / spd); lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+                          } else if (isRun && lapDist > 0 && lapDur > 0) {
+                            const spk = lapDur / (lapDist / 1000);
+                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                          } else if (isBike) {
+                            lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
+                          }
+                          const isSelected = selectedLap === i;
+                          return (
+                            <div key={i} ref={el => lapRowRefs.current[i] = el}
+                              onClick={() => setSelectedLap(isSelected ? null : i)}
+                              className="grid items-center px-3 py-2.5 text-xs cursor-pointer"
+                              style={{ gridTemplateColumns: cols, backgroundColor: isSelected ? '#EFF6FF' : undefined, borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent' }}>
+                              <span className="font-bold" style={{ color: isSelected ? '#2563EB' : '#9ca3af' }}>{lapNum}</span>
+                              <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
+                              <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
+                              {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
+                              <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                              {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
+                              {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>,
+      document.body
+    );
+  }
+
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
+          <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
+            <div className="text-xs text-gray-400">{dateStr}</div>
+          </div>
+          {detailLoading && (
+            <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+          )}
+          {onOpenFull && (
+            <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+              <ArrowTopRightOnSquareIcon className="w-5 h-5" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body — fixed top + scrollable laps */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+
+        {/* ── Fixed top section ── */}
+        <div className="flex-shrink-0 overflow-y-auto" style={{ maxHeight: '55%' }}>
+
+          {/* ── Stats row ── */}
+          <div className="px-5 pt-4 pb-3 flex flex-wrap gap-2 border-b border-gray-50">
+            {[
+              { label: 'Duration', value: fmtDur(dur) },
+              { label: 'Distance', value: dist > 0 ? fmtDist(dist) : null },
+              ...(tss > 0  ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+              ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
+              ...(paceStr  ? [{ label: 'Pace', value: paceStr }] : []),
+              ...(isBike && power > 0 ? [{ label: 'Pwr', value: `${Math.round(power)}W` }] : []),
+              ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)}W` }] : []),
+              ...(hr > 0   ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
+              ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
+              ...(cadence > 0   ? [{ label: isSwim ? 'SPM' : 'Cad', value: `${Math.round(cadence)}` }] : []),
+            ].filter(s => s.value != null).map(({ label, value }) => (
+              <div key={label} className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{label}</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{value}</span>
+              </div>
+            ))}
+            {/* Compliance badge */}
+            {complianceRow && (
+              <div className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+                <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Description + notes ── */}
+          {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
+            <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-4">
               {notes && (
-                <div className="rounded-xl bg-gray-50 p-3">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
                   <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
                 </div>
               )}
-
-              {/* Planned details (description / intervals) */}
-              {hasPlanned && plannedWorkout?.description && (
-                <div className="rounded-xl bg-gray-50 p-3">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{plannedWorkout.description}</p>
+              {plannedWorkout?.description && (
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
+                </div>
+              )}
+              {plannedWorkout?.notes && (
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Coach notes</div>
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
                 </div>
               )}
             </div>
           )}
 
-          {mobileView === 'laps' && laps.length > 0 && (
-            <div className="px-4 py-3">
-              {/* Selected lap header — Strava-style "Lap N · primary" */}
-              {(() => {
-                const i = selectedLap != null && selectedLap >= 0 && selectedLap < laps.length ? selectedLap : null;
-                const lap = i != null ? laps[i] : null;
-                const lapNum = lap ? (lap.lapNumber ?? (i + 1)) : null;
-                const lapDur = lap ? (lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0) : 0;
-                const lapDist = lap ? Number(lap.distance || 0) : 0;
-                const lapPower = lap ? Number(lap.average_watts || lap.avgPower || lap.avg_power || 0) : 0;
-                let primaryStr = '—';
-                if (lap) {
-                  if (isBike && lapPower > 0) primaryStr = `${Math.round(lapPower)} W`;
-                  else if (isRun && lapDist > 0 && lapDur > 0) {
-                    const spk = lapDur / (lapDist / 1000);
-                    primaryStr = `${Math.floor(spk / 60)}:${String(Math.round(spk % 60)).padStart(2, '0')} /km`;
-                  } else if (isSwim && lapDist > 0 && lapDur > 0) {
-                    const sp100 = lapDur / (lapDist / 100);
-                    primaryStr = `${Math.floor(sp100 / 60)}:${String(Math.round(sp100 % 60)).padStart(2, '0')} /100m`;
-                  } else {
-                    primaryStr = fmtLapDur(lapDur);
-                  }
-                }
-                return (
-                  <div className="mb-2 px-1 flex items-baseline gap-2">
-                    <span className="text-sm font-bold text-gray-900">
-                      {lap ? `Lap ${lapNum}` : 'All laps'}
-                    </span>
-                    {lap && (
-                      <span className="text-xs font-semibold tabular-nums" style={{ color }}>
-                        {primaryStr}
-                      </span>
-                    )}
-                    <span className="ml-auto text-[10px] text-gray-400">{laps.length} laps</span>
-                  </div>
-                );
-              })()}
+          {/* ── Comments ── */}
+          <div className="px-5 py-4 border-b border-gray-100">
+            <TrainingComments trainingId={String(a.id || a._id || '')} />
+          </div>
 
-              {laps.length > 1 && (
-                <div className="mb-3">
-                  <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={selectedLap} onSelectLap={(i) => {
-                    setSelectedLap(prev => prev === i ? null : i);
-                    // defer scroll until after state flush so the row exists
-                    setTimeout(() => lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0);
-                  }} />
-                </div>
-              )}
+          {/* ── Lap chart — full width, taller ── */}
+          {laps.length > 1 && (
+            <div className="border-b border-gray-50">
+              <LapChart
+                laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+                selectedLap={selectedLap}
+                chartScrollRef={lapChartScrollRef}
+                onSelectLap={(i) => {
+                  setSelectedLap(i);
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }}
+                onScrollCenter={(i) => lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })}
+              />
+            </div>
+          )}
+
+        </div>{/* end fixed top */}
+
+        {/* ── Scrollable bottom section ── */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+
+          {/* ── Laps table — full width ── */}
+          {laps.length > 0 && (
+            <div className="px-5 py-3">
               {(() => {
-                const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
-                const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
-                const hasPace = (isRun || isSwim) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
-                const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
-                const colTokens = ['1.5rem', '1fr', '1fr'];
-                if (hasPower) colTokens.push('1fr');
-                if (hasPace)  colTokens.push('1fr');
-                colTokens.push('1fr'); // HR
-                if (hasCadence) colTokens.push('1fr');
-                if (hasLactate) colTokens.push('1fr');
-                const cols = colTokens.join(' ');
+                const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
+                const showPace = isBike || isRun || isSwim;
+                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                 return (
-                  <div className="rounded-xl border border-gray-100 overflow-hidden">
-                    <div className="grid text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
+                  <div className="rounded-xl overflow-hidden border border-gray-100">
+                    <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
                       style={{ gridTemplateColumns: cols }}>
                       <span>#</span>
-                      <span className="text-right">Time</span>
                       <span className="text-right">Dist</span>
-                      {hasPower && <span className="text-right">Pwr</span>}
-                      {hasPace && <span className="text-right">Pace</span>}
+                      <span className="text-right">Time</span>
+                      {showPace && <span className="text-right">{paceHeader}</span>}
                       <span className="text-right">HR</span>
-                      {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
                       {hasLactate && <span className="text-right">La</span>}
                     </div>
                     <div className="divide-y divide-gray-50">
                       {laps.map((lap, i) => {
-                        const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
-                        const lapDist = Number(lap.distance || 0);
-                        const lapHr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
-                        const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
-                        const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
-                        const lapLa = lap.lactate ?? lap.lactateValue;
-                        const lapNum = lap.lapNumber ?? (i + 1);
+                        const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                        const lapDist  = Number(lap.distance || 0);
+                        const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
+                        const lapPower = Number(lap.average_watts || lap.avgPower || 0);
+                        const lapHr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                        const lapLa    = lap.lactate ?? lap.lactateValue;
+                        const lapNum   = lap.lapNumber ?? (i + 1);
+
                         let lapPaceStr = '—';
-                        if (isRun && lapDist > 0 && lapDur > 0) {
-                          const spk = lapDur / (lapDist / 1000);
-                          lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
-                        } else if (isSwim && lapDist > 0 && lapDur > 0) {
-                          const sp100 = lapDur / (lapDist / 100);
-                          lapPaceStr = `${Math.floor(sp100/60)}:${String(Math.round(sp100%60)).padStart(2,'0')}`;
+                        if (isSwim) {
+                          const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                          if (spd > 0) {
+                            const s = Math.round(100 / spd);
+                            lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+                          }
+                        } else if (isRun) {
+                          if (lapDist > 0 && lapDur > 0) {
+                            const spk = lapDur / (lapDist / 1000);
+                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                          }
+                        } else if (isBike) {
+                          lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                         }
+
                         const isSelected = selectedLap === i;
                         return (
                           <div
                             key={i}
                             ref={el => lapRowRefs.current[i] = el}
-                            onClick={() => setSelectedLap(prev => prev === i ? null : i)}
-                            className="grid items-center px-3 py-2 text-xs cursor-pointer transition-colors"
+                            onClick={() => setSelectedLap(isSelected ? null : i)}
+                            className="grid items-center px-3 py-2.5 text-[11px] cursor-pointer transition-colors"
                             style={{
                               gridTemplateColumns: cols,
-                              backgroundColor: isSelected ? color + '18' : undefined,
-                              borderLeft: isSelected ? `3px solid ${color}` : '3px solid transparent',
+                              backgroundColor: isSelected ? '#EFF6FF' : undefined,
+                              borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent',
                             }}
                           >
-                            <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
-                            <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
-                            <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>
-                            {hasPower && <span className="text-right tabular-nums font-semibold" style={{ color }}>{lapPower > 0 ? `${Math.round(lapPower)}W` : '—'}</span>}
-                            {hasPace && <span className="text-right tabular-nums font-semibold" style={{ color }}>{lapPaceStr}</span>}
-                            <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
-                            {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
-                            {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
+                            <span className="font-bold" style={{ color: isSelected ? '#2563EB' : '#9ca3af' }}>{lapNum}</span>
+                            <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
+                            <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
+                            {showPace && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
+                            <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                            {hasLactate && (
+                              <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>
+                                {lapLa != null ? Number(lapLa).toFixed(1) : '—'}
+                              </span>
+                            )}
                           </div>
                         );
                       })}
@@ -1312,170 +1634,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
-          {mobileView === 'edit' && (
-            <div className="px-4 py-4 space-y-5">
-              <div className="grid grid-cols-2 gap-x-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                <div>Planned</div>
-                <div>Completed</div>
-              </div>
-
-              {/* Title row */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
-                <input
-                  type="text"
-                  value={planForm.title}
-                  onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))}
-                  placeholder={title}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                />
-                <input
-                  type="text"
-                  value={completedForm.title}
-                  onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                />
-              </div>
-
-              {/* Duration */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Duration</div>
-                <input
-                  type="text"
-                  value={planForm.durationDisplay}
-                  onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                  onBlur={() => {
-                    const mins = parseDurationToMinutes(planForm.durationDisplay);
-                    if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) }));
-                  }}
-                  placeholder="1:30"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                />
-                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{fmtDur(dur)}</div>
-              </div>
-
-              {/* Distance */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Distance</div>
-                <input
-                  type="text"
-                  value={planForm.distanceDisplay}
-                  onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                  onBlur={() => {
-                    const km = parseDistanceToKm(planForm.distanceDisplay);
-                    if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
-                  }}
-                  placeholder="10 km"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                />
-                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{dist > 0 ? fmtDist(dist) : '—'}</div>
-              </div>
-
-              {/* TSS */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">TSS</div>
-                <input
-                  type="number"
-                  value={planForm.targetTss}
-                  onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))}
-                  placeholder=""
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                  min="0"
-                />
-                <div className="px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 tabular-nums">{tss > 0 ? Math.round(tss) : '—'}</div>
-              </div>
-
-              {/* Description */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Description</div>
-                <textarea
-                  value={planForm.description}
-                  onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))}
-                  rows={3}
-                  placeholder="Workout description…"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
-                />
-                <textarea
-                  value={completedForm.description}
-                  onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
-                  rows={3}
-                  placeholder="How did it go?"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
-                />
-              </div>
-
-              {/* Coach notes (planned only) */}
-              <div>
-                <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes (planned)</div>
-                <textarea
-                  value={planForm.notes}
-                  onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))}
-                  rows={2}
-                  placeholder="Coach notes, instructions…"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer for edit mode */}
-        {mobileView === 'edit' && (
-          <div className="flex gap-2 px-4 py-3 border-t border-gray-100 flex-shrink-0">
-            <button
-              onClick={() => setMobileView('summary')}
-              className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={async () => {
-                await Promise.all([handleSavePlan(), handleSaveCompleted()]);
-                setMobileView('summary');
-              }}
-              disabled={savingPlan || savingCompleted}
-              className="flex-1 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-              style={{ backgroundColor: color }}
-            >
-              {(savingPlan || savingCompleted) ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        )}
-      </div>,
-      document.body
-    );
-  }
-
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
-          <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
-            <div className="text-xs text-gray-400">{dateStr}</div>
-          </div>
-          {onOpenFull && (
-            <button
-              onClick={onOpenFull}
-              title="Open full activity"
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
-            >
-              <ArrowTopRightOnSquareIcon className="w-5 h-5" />
-            </button>
-          )}
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
-            <XMarkIcon className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Body — two columns */}
-        <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-gray-100">
-
-          {/* ── LEFT: Planned workout ── */}
-          <div className="w-2/5 flex-shrink-0 flex flex-col overflow-y-auto">
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2 flex-shrink-0">
+          {/* ── Planned section (edit / view) ── */}
+          <div className="border-t border-gray-100 px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
               {plannedWorkout && !editingPlanned && (
                 <button
@@ -1488,329 +1649,109 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
 
             {editingPlanned ? (
-              <div className="px-4 pb-4 flex flex-col gap-3 flex-1">
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
-                  <input
-                    type="text"
-                    value={planForm.title}
-                    onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))}
-                    placeholder={title}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
+                    <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
+                    <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
+                  </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                      Duration
-                      {planForm.durationMins > 0 && <span className="ml-1 font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
+                      Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
                     </label>
-                    <input
-                      type="text"
-                      value={planForm.durationDisplay}
+                    <input type="text" value={planForm.durationDisplay}
                       onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                      onBlur={() => {
-                        const mins = parseDurationToMinutes(planForm.durationDisplay);
-                        if (mins != null && mins > 0) {
-                          setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) }));
-                        }
-                      }}
+                      onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
                       placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                    />
-                    <div className="text-[9px] text-gray-400 mt-0.5">2 = 2h · 1:30 = 1h30m · 90 = 90min</div>
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
-                    <input
-                      type="text"
-                      value={planForm.distanceDisplay}
+                    <input type="text" value={planForm.distanceDisplay}
                       onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                      onBlur={() => {
-                        const km = parseDistanceToKm(planForm.distanceDisplay);
-                        if (km != null && km > 0) {
-                          setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
-                        }
-                      }}
+                      onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
                       placeholder={dist > 0 ? `${(dist/1000).toFixed(1)} km` : '10 km'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                    />
-                    <div className="text-[9px] text-gray-400 mt-0.5">10 = 10 km · 500m = 0.5 km</div>
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
-                  <input
-                    type="number"
-                    value={planForm.targetTss}
-                    onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))}
-                    placeholder={tss > 0 ? String(Math.round(tss)) : ''}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                    min="0"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</label>
+                    <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout description…" rows={2}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Coach notes</label>
+                    <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} placeholder="Coach notes, instructions…" rows={2}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</label>
-                  <textarea
-                    value={planForm.description}
-                    onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))}
-                    placeholder="Workout description…"
-                    rows={2}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Notes</label>
-                  <textarea
-                    value={planForm.notes}
-                    onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))}
-                    placeholder="Coach notes, instructions…"
-                    rows={2}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none"
-                  />
-                </div>
-                <div className="flex gap-2 mt-auto pt-2">
+                <div className="flex gap-2">
                   {plannedWorkout && (
-                    <button
-                      onClick={() => setEditingPlanned(false)}
-                      className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors"
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
                   )}
-                  <button
-                    onClick={handleSavePlan}
-                    disabled={savingPlan}
-                    className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: color }}
-                  >
+                  <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
                     {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
                   </button>
+                  {plannedWorkout && onEditPlanned && (
+                    <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                      style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
+                      <PencilIcon className="w-3.5 h-3.5" /> Build Workout
+                    </button>
+                  )}
                 </div>
-                {plannedWorkout && onEditPlanned && (
-                  <button
-                    onClick={() => onEditPlanned(plannedWorkout)}
-                    className="w-full py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
-                    style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}
-                  >
-                    <PencilIcon className="w-3.5 h-3.5" /> Build Workout
-                  </button>
-                )}
               </div>
             ) : (
-              <div className="px-4 pb-4 flex flex-col gap-3">
-                {/* Planned stats */}
-                <div className="rounded-xl bg-gray-50 p-3 space-y-2">
-                  {plannedWorkout?.title && (
-                    <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>
-                  )}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                    {plannedDur > 0 && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div>
-                        <div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div>
-                      </div>
-                    )}
-                    {plannedTss > 0 && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div>
-                        <div className="text-sm font-bold text-gray-800">{plannedTss}</div>
-                      </div>
-                    )}
-                    {plannedDist > 0 && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div>
-                        <div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div>
-                      </div>
-                    )}
+              plannedWorkout ? (
+                <div className="flex flex-wrap gap-4 items-start">
+                  <div className="rounded-xl bg-gray-50 p-3 flex gap-4 flex-wrap">
+                    {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
+                    {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
+                    {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
                   </div>
-                  {complianceRow && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
-                      <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+                  {planSteps.length > 0 && (
+                    <div className="flex-1 min-w-[200px]">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
+                      <div className="flex flex-wrap gap-1">
+                        {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
+                          const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
+                          return (
+                            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
+                              <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
+                              <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
-
-                {/* Description / notes */}
-                {(plannedWorkout?.description || plannedWorkout?.notes) && (
-                  <div className="rounded-xl bg-gray-50 p-3 space-y-2">
-                    {plannedWorkout?.description && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Description</div>
-                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
-                      </div>
-                    )}
-                    {plannedWorkout?.notes && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Steps / intervals */}
-                {planSteps.length > 0 && (
-                  <div>
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
-                    <div className="space-y-1">
-                      {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
-                        const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
-                        return (
-                          <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border-l-2" style={{ borderLeftColor: stepColor }}>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[10px] font-semibold text-gray-700 capitalize">{s.type || 'Step'} {s.groupId ? `(×${s.groupRepeat || 1})` : ''}</div>
-                              {s.targetPower > 0 && <div className="text-[10px] text-gray-500">{s.targetPower}W</div>}
-                            </div>
-                            <div className="text-[10px] font-bold text-gray-600 flex-shrink-0">{fmtPlanDuration(s.durationSeconds)}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+              ) : (
+                <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
+                  + Add planned workout
+                </button>
+              )
             )}
           </div>
 
-          {/* ── RIGHT: Completed activity ── */}
-          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-
-            {/* ── STICKY TOP: header + stats + chart ── */}
-            <div className="flex-shrink-0 border-b border-gray-100">
-              <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Completed</span>
-                {detailLoading && (
-                  <svg className="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                )}
-              </div>
-
-              {/* Key stats — compact horizontal row */}
-              <div className="px-4 pb-3 flex flex-wrap gap-2">
-                {[
-                  { label: 'Duration',  value: fmtDur(dur) },
-                  { label: 'Distance',  value: dist > 0 ? fmtDist(dist) : null },
-                  ...(tss > 0  ? [{ label: 'TSS', value: Math.round(tss) }] : []),
-                  ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
-                  ...(paceStr  ? [{ label: 'Pace', value: paceStr }] : []),
-                  ...(isBike && power > 0 ? [{ label: 'Pwr', value: `${Math.round(power)}W` }] : []),
-                  ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)}W` }] : []),
-                  ...(hr > 0   ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
-                  ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
-                  ...(cadence > 0   ? [{ label: isSwim ? 'SPM' : 'Cad', value: `${Math.round(cadence)}` }] : []),
-                ].filter(s => s.value != null).map(({ label, value }) => (
-                  <div key={label} className="rounded-lg bg-gray-50 px-2.5 py-1.5 flex flex-col">
-                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wide leading-none">{label}</span>
-                    <span className="text-xs font-bold text-gray-800 tabular-nums mt-0.5">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Lap chart */}
-              {laps.length > 1 && <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={selectedLap} onSelectLap={(i) => {
-                setSelectedLap(i);
-                lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }} />}
-
-              {notes && (
-                <div className="mx-4 mb-3 p-3 bg-gray-50 rounded-xl">
-                  <p className="text-xs text-gray-600 whitespace-pre-line line-clamp-3">{notes}</p>
-                </div>
-              )}
+          {/* ── Footer ── */}
+          {onAddLactate && merged.type === 'strava' && (
+            <div className="px-5 pb-5">
+              <button onClick={() => { onAddLactate(merged); onClose(); }}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
+                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+                + Lactate
+              </button>
             </div>
-
-            {/* ── SCROLLABLE: laps table ── */}
-            <div className="flex-1 overflow-y-auto">
-              {laps.length > 0 && (
-                <div className="px-4 py-3">
-                  {(() => {
-                    const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
-                    const cols = ['1.5rem', '1fr', ...(dist > 0 ? ['1fr'] : []), ...((isBike || isRun || isSwim) ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
-                    return (
-                      <div className="rounded-xl overflow-hidden border border-gray-100">
-                        {/* Header */}
-                        <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100 sticky top-0 z-10"
-                          style={{ gridTemplateColumns: cols }}>
-                          <span>#</span>
-                          <span className="text-right">Time</span>
-                          {dist > 0 && <span className="text-right">Dist</span>}
-                          {(isBike || isRun || isSwim) && <span className="text-right">{isBike ? 'Pwr' : 'Pace'}</span>}
-                          <span className="text-right">HR</span>
-                          {hasLactate && <span className="text-right">La</span>}
-                        </div>
-                        {/* Rows */}
-                        <div className="divide-y divide-gray-50">
-                          {laps.map((lap, i) => {
-                            const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
-                            const lapDist  = Number(lap.distance || 0);
-                            const lapPower = Number(lap.average_watts || lap.avgPower || 0);
-                            const lapHr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
-                            const lapLa    = lap.lactate ?? lap.lactateValue;
-                            const lapNum   = lap.lapNumber ?? (i + 1);
-                            let lapPaceStr = null;
-                            if (isRun && lapDist > 0 && lapDur > 0) {
-                              const spk = lapDur / (lapDist / 1000);
-                              lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
-                            } else if (isSwim && lapDist > 0 && lapDur > 0) {
-                              const sp100 = lapDur / (lapDist / 100);
-                              lapPaceStr = `${Math.floor(sp100/60)}:${String(Math.round(sp100%60)).padStart(2,'0')}`;
-                            }
-                            const isSelected = selectedLap === i;
-                            return (
-                              <div
-                                key={i}
-                                ref={el => lapRowRefs.current[i] = el}
-                                onClick={() => setSelectedLap(isSelected ? null : i)}
-                                className="grid items-center px-3 py-2 text-[11px] cursor-pointer transition-colors"
-                                style={{
-                                  gridTemplateColumns: cols,
-                                  backgroundColor: isSelected ? color + '18' : undefined,
-                                  borderLeft: isSelected ? `3px solid ${color}` : '3px solid transparent',
-                                }}
-                              >
-                                <span className="font-bold" style={{ color: isSelected ? color : '#9ca3af' }}>{lapNum}</span>
-                                <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
-                                {dist > 0 && <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(2)}` : `${Math.round(lapDist)}m`) : '—'}</span>}
-                                {(isBike || isRun || isSwim) && (
-                                  <span className="text-right tabular-nums font-semibold" style={{ color }}>
-                                    {isBike ? (lapPower > 0 ? `${Math.round(lapPower)}W` : '—') : (lapPaceStr || '—')}
-                                  </span>
-                                )}
-                                <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
-                                {hasLactate && (
-                                  <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>
-                                    {lapLa != null ? Number(lapLa).toFixed(1) : '—'}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="px-4 pb-4 flex gap-2">
-                {onAddLactate && merged.type === 'strava' && (
-                  <button
-                    onClick={() => { onAddLactate(merged); onClose(); }}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
-                    style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
-                  >
-                    + Lactate
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+          )}
+        </div>{/* end scrollable bottom */}
+        </div>{/* end body flex-col */}
       </div>
     </div>,
     document.body
@@ -2521,7 +2462,6 @@ export default function CalendarView({
       const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
       const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
       setActivityModal({ activity: a, plannedWorkout: matchPw });
-      handleSelectActivity(a);
     }
   };
 
