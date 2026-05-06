@@ -640,6 +640,21 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     };
   }, []);
 
+  // Create modal portal root as a sibling of the NativeLayout container so it
+  // sits in the same stacking context as body and above the bottom tab bar.
+  useEffect(() => {
+    const el = document.createElement('div');
+    el.id = 'app-modal-root';
+    Object.assign(el.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '99999',
+      pointerEvents: 'none',
+    });
+    document.body.appendChild(el);
+    return () => { if (el.parentNode) el.parentNode.removeChild(el); };
+  }, []);
+
   const isCoach = isCoachRole(user);
   const tabs = getTabsForRole(user, effectiveAthleteId);
 
@@ -711,12 +726,6 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         onMarkAllRead={handleMarkAllRead}
       />
 
-      {/* Modal portal root — absolute inside this fixed container covers full screen
-          and stacks above the bottom tab bar. Portals should target #app-modal-root. */}
-      <div
-        id="app-modal-root"
-        style={{ position: 'absolute', inset: 0, zIndex: 9000, pointerEvents: 'none' }}
-      />
     </div>
   );
 };
