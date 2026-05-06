@@ -14,6 +14,7 @@ import {
   XMarkIcon,
   PencilIcon,
   ArrowTopRightOnSquareIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import api from '../../services/api';
@@ -966,8 +967,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const [plannedWorkout, setPlannedWorkout] = useState(initialPlannedWorkout || null);
   const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
 
-  // Completed metadata edit state (title/description — works for FIT/Strava/regular)
-  const [completedForm, setCompletedForm] = useState({ title: '', description: '' });
+  // Completed metadata edit state
+  const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', calories: '', rpe: '', lactate: '' });
   const [savingCompleted, setSavingCompleted] = useState(false);
 
   // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
@@ -1038,6 +1039,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const power = Number(merged.normalizedPower || merged.avgPower || merged.averagePower || merged.average_watts || 0);
   const np    = Number(merged.normalizedPower || 0);
   const hr    = Number(merged.averageHeartRate || merged.average_heartrate || merged.avgHR || merged.avgHeartRate || 0);
+  const maxHR = Number(merged.maxHeartRate || merged.max_heartrate || merged.maxHr || 0);
+  const maxPower = Number(merged.maxPower || merged.max_watts || merged.maxWatts || 0);
+  const calories = Number(merged.calories || merged.totalCalories || merged.kilojoules || 0);
+  const rpe = Number(merged.rpe || merged.RPE || 0);
+  const sessionLactate = merged.lactate != null ? Number(merged.lactate) : null;
   const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0);
   const cadence   = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0);
   const avgSpeed  = Number(merged.avgSpeed || merged.averageSpeed || merged.average_speed || 0);
@@ -1097,9 +1103,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       };
       let saved;
       if (plannedWorkout?._id) {
-        saved = await updatePlannedWorkout(plannedWorkout._id, payload);
+        saved = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
       } else {
-        saved = await createPlannedWorkout(payload);
+        saved = await createPlannedWorkout(payload, athleteId);
       }
       setPlannedWorkout(saved);
       setEditingPlanned(false);
@@ -1115,25 +1121,39 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // ── Seed completed-metadata form once activity title/notes are known ──
   useEffect(() => {
-    setCompletedForm({ title: title || '', description: notes || '' });
-  }, [title, notes]);
+    const distKm = dist > 0 ? (dist >= 1000 ? (dist / 1000).toFixed(2) : (dist / 1000).toFixed(3)) : '';
+    const durDisplay = dur > 0 ? fmtDur(dur) : '';
+    setCompletedForm({
+      title: title || '',
+      description: notes || '',
+      distanceKm: distKm,
+      durationDisplay: durDisplay,
+      calories: calories > 0 ? String(Math.round(calories)) : '',
+      rpe: rpe > 0 ? String(rpe) : '',
+      lactate: sessionLactate != null ? String(sessionLactate) : '',
+    });
+  }, [title, notes, dist, dur, calories, rpe, sessionLactate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveCompleted = async () => {
     setSavingCompleted(true);
     try {
       const id = String(merged.id || merged._id || '');
-      const payload = { title: completedForm.title, description: completedForm.description };
+      const extraFields = {};
+      if (completedForm.calories !== '') extraFields.calories = Number(completedForm.calories) || 0;
+      if (completedForm.rpe !== '') extraFields.rpe = Number(completedForm.rpe) || 0;
+      if (completedForm.lactate !== '') extraFields.lactate = Number(completedForm.lactate) || 0;
+      const basePayload = { title: completedForm.title, description: completedForm.description };
       if (id.startsWith('strava-')) {
         const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(id.replace('strava-', ''), payload);
+        await updateStravaActivity(id.replace('strava-', ''), basePayload);
       } else if (id.startsWith('fit-')) {
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(id.replace('fit-', ''), payload);
+        await updateFitTraining(id.replace('fit-', ''), basePayload);
       } else if (id.startsWith('regular-') || id) {
         const { updateTraining } = await import('../../services/api.js');
-        await updateTraining(id.replace('regular-', ''), payload);
+        await updateTraining(id.replace('regular-', ''), { ...basePayload, ...extraFields });
       }
-      setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description }));
+      setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description, ...extraFields }));
     } catch (err) {
       console.error('Failed to save completed metadata', err);
     } finally {
@@ -1172,25 +1192,47 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
+          {/* Export button */}
+          <button
+            onClick={() => {
+              const id = String(merged.id || merged._id || '');
+              if (id.startsWith('strava-')) {
+                window.open(`https://www.strava.com/activities/${id.replace('strava-', '')}/export_gpx`, '_blank');
+              } else {
+                const data = { title, date: actDate, duration: dur, distance: dist, sport: a.sport };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url; link.download = `${title.replace(/\s+/g, '_')}.json`; link.click();
+                URL.revokeObjectURL(url);
+              }
+            }}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0"
+            title="Export activity"
+          >
+            <ArrowDownTrayIcon className="w-5 h-5" />
+          </button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab bar — only shown when activity has laps */}
-        {hasLaps && (
-          <div className="flex border-b border-gray-100 flex-shrink-0">
-            {['summary', 'laps'].map(tab => (
-              <button key={tab} onClick={() => setMobileView(tab)}
-                className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${mobileView === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>
-                {tab === 'summary' ? 'Summary' : 'Laps'}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Tab bar */}
+        <div className="flex border-b border-gray-100 flex-shrink-0">
+          {[
+            { id: 'summary', label: 'Summary' },
+            ...(hasLaps ? [{ id: 'laps', label: 'Laps' }] : []),
+            { id: 'edit', label: 'Edit' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setMobileView(tab.id)}
+              className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${mobileView === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         {/* ── SUMMARY TAB ── */}
-        {mobileView !== 'laps' && (
+        {mobileView === 'summary' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
             {/* Stats grid */}
@@ -1199,11 +1241,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 { label: 'Duration', value: fmtDur(dur) },
                 ...(dist > 0 ? [{ label: 'Distance', value: fmtDist(dist) }] : []),
                 ...(paceStr ? [{ label: 'Pace', value: paceStr }] : []),
-                ...(hr > 0 ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
-                ...(isBike && power > 0 ? [{ label: 'Power', value: `${Math.round(power)} W` }] : []),
+                ...(isBike && avgSpeed > 0 ? [{ label: 'Speed', value: `${(avgSpeed * 3.6).toFixed(1)} km/h` }] : []),
+                ...(hr > 0 ? [{ label: 'Avg HR', value: `${Math.round(hr)} bpm` }] : []),
+                ...(maxHR > 0 ? [{ label: 'Max HR', value: `${Math.round(maxHR)} bpm` }] : []),
+                ...(isBike && power > 0 ? [{ label: 'Avg Pwr', value: `${Math.round(power)} W` }] : []),
+                ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
+                ...(isBike && maxPower > 0 ? [{ label: 'Max Pwr', value: `${Math.round(maxPower)} W` }] : []),
                 ...(tss > 0 ? [{ label: 'TSS', value: Math.round(tss) }] : []),
                 ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
                 ...(cadence > 0 ? [{ label: isSwim ? 'SPM' : 'Cad', value: Math.round(cadence) }] : []),
+                ...(calories > 0 ? [{ label: 'Calories', value: `${Math.round(calories)} kcal` }] : []),
+                ...(rpe > 0 ? [{ label: 'RPE', value: `${rpe} / 10` }] : []),
+                ...(sessionLactate != null ? [{ label: 'Lactate', value: `${sessionLactate.toFixed(1)} mmol` }] : []),
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-xl bg-gray-50 px-3 py-2.5">
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
@@ -1437,6 +1486,73 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── EDIT TAB ── */}
+        {mobileView === 'edit' && (
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="px-4 py-4 space-y-4">
+              <div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
+                <input type="text" value={completedForm.title}
+                  onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="Activity title"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                <textarea value={completedForm.description}
+                  onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
+                  rows={3} placeholder="How did it go?"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Distance (km)</div>
+                  <input type="number" inputMode="decimal" value={completedForm.distanceKm}
+                    onChange={e => setCompletedForm(p => ({ ...p, distanceKm: e.target.value }))}
+                    placeholder="e.g. 10.5"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration</div>
+                  <input type="text" value={completedForm.durationDisplay}
+                    onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
+                    placeholder="1:30:00"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Calories (kcal)</div>
+                  <input type="number" inputMode="numeric" value={completedForm.calories}
+                    onChange={e => setCompletedForm(p => ({ ...p, calories: e.target.value }))}
+                    placeholder="e.g. 800"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">RPE (1–10)</div>
+                  <input type="number" inputMode="numeric" value={completedForm.rpe}
+                    onChange={e => setCompletedForm(p => ({ ...p, rpe: e.target.value }))}
+                    placeholder="e.g. 7" min="1" max="10"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</div>
+                  <input type="number" inputMode="decimal" value={completedForm.lactate}
+                    onChange={e => setCompletedForm(p => ({ ...p, lactate: e.target.value }))}
+                    placeholder="e.g. 2.4" step="0.1"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': '#7c3aed' }} />
+                </div>
+              </div>
+              <button
+                onClick={async () => { await handleSaveCompleted(); setMobileView('summary'); }}
+                disabled={savingCompleted}
+                className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ backgroundColor: color }}>
+                {savingCompleted ? 'Saving…' : 'Save Activity'}
+              </button>
             </div>
           </div>
         )}
@@ -2162,6 +2278,8 @@ export default function CalendarView({
   onOpenActivity = null,
   /** Optional: content to render in the mobile Charts tab (replaces built-in simple charts) */
   mobileChartsContent = null,
+  /** Optional: athleteId for coach context — forwarded to planned workout API calls */
+  athleteId = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -2257,21 +2375,30 @@ export default function CalendarView({
   // Keep ref in sync so scroll spy closure stays fresh
   useEffect(() => { selectedMobileDayRef.current = selectedMobileDay; }, [selectedMobileDay]);
 
-  // Mobile scroll spy — highlight day in mini-calendar as user scrolls day list
+  // Mobile scroll spy — highlight day in mini-calendar as user scrolls
   useEffect(() => {
     if (!isMobile || mobileTab !== 'calendar') return;
-    const container = dayListRef.current;
-    if (!container) return;
+    const listEl = dayListRef.current;
+    if (!listEl) return;
+
+    // Find the nearest scrollable ancestor (works for both browser <main> and NativeLayout content area)
+    let scrollEl = listEl.parentElement;
+    while (scrollEl && scrollEl !== document.documentElement) {
+      const cs = getComputedStyle(scrollEl);
+      if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') break;
+      scrollEl = scrollEl.parentElement;
+    }
+    const scrollTarget = (scrollEl && scrollEl !== document.documentElement) ? scrollEl : window;
 
     const onScroll = () => {
       if (isAutoScrollingRef.current) return;
-      const containerTop = container.getBoundingClientRect().top;
+      // Use the day list's current top as the reference point (accounts for sticky header height)
+      const listTop = listEl.getBoundingClientRect().top;
       let best = null;
       let bestScore = Infinity;
       Object.entries(dayRefs.current).forEach(([key, el]) => {
         if (!el) return;
-        const relTop = el.getBoundingClientRect().top - containerTop;
-        // Pick day whose top is closest to 0 from above (i.e. just entering the top)
+        const relTop = el.getBoundingClientRect().top - listTop;
         if (relTop <= 16) {
           const score = Math.abs(relTop);
           if (score < bestScore) { bestScore = score; best = key; }
@@ -2282,8 +2409,8 @@ export default function CalendarView({
       }
     };
 
-    container.addEventListener('scroll', onScroll, { passive: true });
-    return () => container.removeEventListener('scroll', onScroll);
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true });
+    return () => scrollTarget.removeEventListener('scroll', onScroll);
   }, [isMobile, mobileTab]);
 
   // Load user profile for FTP and threshold pace
@@ -2785,7 +2912,7 @@ export default function CalendarView({
   };
 
   const calendarContent = (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white flex flex-col h-full' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
       {/* Header — desktop only */}
       {!isMobile && (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
@@ -2885,107 +3012,154 @@ export default function CalendarView({
 
       {/* Mobile: native app-style layout — mini calendar + scrollable day list */}
       {isMobile ? (
-        <div className="flex flex-col flex-1 min-h-0">
-          {/* ── Tab bar ── */}
-          <div className="flex bg-gray-100 rounded-xl p-0.5 mb-3 mx-3 flex-shrink-0">
-            {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
-              <button
-                key={tab}
-                onClick={() => setMobileTab(tab)}
-                className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
-                style={{ WebkitTapHighlightColor: 'transparent' }}
-              >{label}</button>
-            ))}
-          </div>
-
-          {mobileTab === 'calendar' ? (<>
-            {/* ── Month nav + mini-cal toggle ── */}
-            <div className="flex items-center justify-between px-3 mb-1 flex-shrink-0">
-              <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
-              </button>
-              <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-              </button>
-              <div className="flex items-center gap-1">
-                <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-600" />
-                </button>
+        <div>
+          {/* ── Sticky header: tab bar + calendar/charts nav ── */}
+          <div className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+            {/* Tab switcher */}
+            <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
+              {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
                 <button
-                  onClick={() => setShowMiniCal(v => !v)}
-                  className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation transition-transform"
+                  key={tab}
+                  onClick={() => setMobileTab(tab)}
+                  className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
-                  title={showMiniCal ? 'Hide calendar' : 'Show calendar'}
-                >
-                  <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showMiniCal ? '' : 'rotate-180'}`} />
-                </button>
-              </div>
+                >{label}</button>
+              ))}
             </div>
 
-            {/* ── Mini month grid (collapsible) ── */}
-            {showMiniCal && (
-              <div className="flex-shrink-0 px-3 mb-2">
-                <div className="grid grid-cols-7 mb-0.5">
-                  {['M','T','W','T','F','S','S'].map((d, i) => (
-                    <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7">
-                  {days.map(dayDate => {
-                    const key = getLocalDateString(dayDate);
-                    const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-                    const isToday = isSameDay(dayDate, new Date());
-                    const isSelected = key === selectedMobileDay;
-                    const acts = activitiesByDay.get(key) || [];
-                    const planned = plannedByDay.get(key) || [];
-                    const dots = [...new Set(acts.map(a => {
-                      const s = (a.sport || '').toLowerCase();
-                      if (s.includes('run') || s.includes('walk')) return 'run';
-                      if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-                      if (s.includes('swim')) return 'swim';
-                      return 'other';
-                    }))].slice(0, 3);
-                    const hasPlanOnly = planned.length > 0 && acts.length === 0;
-                    const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => {
-                          setSelectedMobileDay(key);
-                          isAutoScrollingRef.current = true;
-                          setTimeout(() => {
-                            if (dayRefs.current[key]) {
-                              dayRefs.current[key].scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }
-                            setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-                          }, 50);
-                        }}
-                        className="flex flex-col items-center py-0.5 touch-manipulation"
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
-                      >
-                        <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
-                          isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
-                          isToday ? 'bg-primary text-white' :
-                          isSelected ? 'bg-gray-200 text-gray-900' :
-                          isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
-                        }`}>
-                          {dayDate.getDate()}
-                        </span>
-                        <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
-                          {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
-                          {dots.map((sport, si) => (
-                            <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
-                          ))}
-                        </div>
-                      </button>
-                    );
-                  })}
+            {mobileTab === 'calendar' && (<>
+              {/* ── Month nav + mini-cal toggle ── */}
+              <div className="flex items-center justify-between px-3 mb-1">
+                <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+                </button>
+                <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                    <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+                  </button>
+                  <button
+                    onClick={() => setShowMiniCal(v => !v)}
+                    className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation transition-transform"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    title={showMiniCal ? 'Hide calendar' : 'Show calendar'}
+                  >
+                    <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showMiniCal ? '' : 'rotate-180'}`} />
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* ── Scrollable day list ── */}
-            <div ref={dayListRef} className="flex-1 overflow-y-auto px-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {/* ── Mini month grid (collapsible) ── */}
+              {showMiniCal && (
+                <div className="px-3 pb-2">
+                  <div className="grid grid-cols-7 mb-0.5">
+                    {['M','T','W','T','F','S','S'].map((d, i) => (
+                      <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {days.map(dayDate => {
+                      const key = getLocalDateString(dayDate);
+                      const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
+                      const isToday = isSameDay(dayDate, new Date());
+                      const isSelected = key === selectedMobileDay;
+                      const acts = activitiesByDay.get(key) || [];
+                      const planned = plannedByDay.get(key) || [];
+                      const dots = [...new Set(acts.map(a => {
+                        const s = (a.sport || '').toLowerCase();
+                        if (s.includes('run') || s.includes('walk')) return 'run';
+                        if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+                        if (s.includes('swim')) return 'swim';
+                        return 'other';
+                      }))].slice(0, 3);
+                      const hasPlanOnly = planned.length > 0 && acts.length === 0;
+                      const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setSelectedMobileDay(key);
+                            isAutoScrollingRef.current = true;
+                            setTimeout(() => {
+                              if (dayRefs.current[key]) {
+                                dayRefs.current[key].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }
+                              setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+                            }, 50);
+                          }}
+                          className="flex flex-col items-center py-0.5 touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >
+                          <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
+                            isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
+                            isToday ? 'bg-primary text-white' :
+                            isSelected ? 'bg-gray-200 text-gray-900' :
+                            isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                          }`}>
+                            {dayDate.getDate()}
+                          </span>
+                          <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
+                            {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
+                            {dots.map((sport, si) => (
+                              <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
+                            ))}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>)}
+
+            {mobileTab === 'charts' && (
+              <div className="pb-2">
+                {/* ── Period nav ── */}
+                <div className="flex items-center justify-between px-3 mb-2">
+                  <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                    <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+                  </button>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className="text-sm font-bold text-gray-900">
+                      {view === 'week'
+                        ? `${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                        : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                    </span>
+                    <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                      {[['month', 'Month'], ['week', 'Week']].map(([v, lbl]) => (
+                        <button key={v} onClick={() => setView(v)}
+                          className={`px-3 py-0.5 text-xs font-semibold rounded-md transition-all touch-manipulation ${view === v ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                    <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+                  </button>
+                </div>
+                {/* Chart type switcher */}
+                {!mobileChartsContent && (
+                  <div className="flex gap-1.5 px-3">
+                    {[['volume', 'Volume'], ['tss', 'TSS'], ['sports', 'Sports']].map(([type, label]) => (
+                      <button
+                        key={type}
+                        onClick={() => setChartType(type)}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all touch-manipulation ${chartType === type ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'}`}
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Calendar tab: day list (page scrolls) ── */}
+          {mobileTab === 'calendar' && (
+            <div ref={dayListRef} className="px-3 pt-2">
               {days.filter(d => d.getMonth() === anchorDate.getMonth()).map(dayDate => {
                 const key = getLocalDateString(dayDate);
                 const acts = activitiesByDay.get(key) || [];
@@ -3128,52 +3302,17 @@ export default function CalendarView({
               })}
               <div className="h-4" />
             </div>
-          </>) : (
-            /* ── Charts tab ── */
-            <div className="flex flex-col flex-1 min-h-0">
-              {/* ── Period nav + Month/Week toggle ── */}
-              <div className="flex items-center justify-between px-3 mb-2 flex-shrink-0">
-                <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                  <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
-                </button>
-                <div className="flex flex-col items-center gap-1.5">
-                  <span className="text-sm font-bold text-gray-900">
-                    {view === 'week'
-                      ? `${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
-                      : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-                  </span>
-                  <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-                    {[['month', 'Month'], ['week', 'Week']].map(([v, lbl]) => (
-                      <button key={v} onClick={() => setView(v)}
-                        className={`px-3 py-0.5 text-xs font-semibold rounded-md transition-all touch-manipulation ${view === v ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
-                      >{lbl}</button>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                  <ChevronRightIcon className="w-5 h-5 text-gray-600" />
-                </button>
-              </div>
+          )}
 
+          {/* ── Charts tab: content (page scrolls) ── */}
+          {mobileTab === 'charts' && (
+            <div className="px-3 pt-2">
               {mobileChartsContent ? (
-                <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div>
                   {mobileChartsContent}
                   <div className="h-4" />
                 </div>
               ) : (<>
-              {/* Chart type switcher */}
-              <div className="flex gap-1.5 px-3 mb-3 flex-shrink-0">
-                {[['volume', 'Volume'], ['tss', 'TSS'], ['sports', 'Sports']].map(([type, label]) => (
-                  <button
-                    key={type}
-                    onClick={() => setChartType(type)}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all touch-manipulation ${chartType === type ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'}`}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >{label}</button>
-                ))}
-              </div>
-
               {weeklySummary.length === 0 ? (
                 <div className="text-center text-gray-400 text-sm py-10">No data</div>
               ) : (() => {
@@ -3185,7 +3324,7 @@ export default function CalendarView({
                   : 1;
 
                 return (
-                  <div className="flex-1 overflow-y-auto px-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <div>
                     {/* Bar chart area */}
                     {(chartType === 'volume' || chartType === 'tss') && (
                       <div className="bg-white rounded-xl border border-gray-100 p-3 mb-3">

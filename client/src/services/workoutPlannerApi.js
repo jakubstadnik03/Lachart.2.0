@@ -48,17 +48,20 @@ export const getPlannedWorkout = async (id) => {
   return data;
 };
 
-export const createPlannedWorkout = async (payload) => {
-  const { data } = await api.post(`${BASE}/planned`, payload);
+export const createPlannedWorkout = async (payload, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.post(`${BASE}/planned`, payload, { params });
   return data;
 };
 
-export const updatePlannedWorkout = async (id, payload) => {
-  const { data } = await api.put(`${BASE}/planned/${id}`, payload);
+export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.put(`${BASE}/planned/${id}`, payload, { params });
   return data;
 };
 
-export const deletePlannedWorkout = async (id) => {
-  const { data } = await api.delete(`${BASE}/planned/${id}`);
+export const deletePlannedWorkout = async (id, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.delete(`${BASE}/planned/${id}`, { params });
   return data;
 };

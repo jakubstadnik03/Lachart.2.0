@@ -12,7 +12,7 @@
  *   └─ NativeBottomTabBar   (shrink-0, paddingBottom = safe-area-bottom)
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
@@ -262,14 +262,108 @@ function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
 }
 
 // ─── Coach Athlete Bar ─────────────────────────────────────────────────────────
-function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statuses }) {
+function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statuses, onNavigateManage }) {
   const hasAthletes = athletes && athletes.length > 0;
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('coachAthleteBarCollapsed') === 'true'; } catch { return false; }
+  });
+  const touchStartY = useRef(null);
 
+  const toggleCollapsed = (val) => {
+    const next = val !== undefined ? val : !collapsed;
+    setCollapsed(next);
+    try { localStorage.setItem('coachAthleteBarCollapsed', String(next)); } catch {}
+  };
+
+  const handleTouchStart = (e) => { touchStartY.current = e.touches[0].clientY; };
+  const handleTouchEnd = (e) => {
+    if (touchStartY.current === null) return;
+    const dy = touchStartY.current - e.changedTouches[0].clientY;
+    if (dy > 24) toggleCollapsed(true);
+    else if (dy < -24) toggleCollapsed(false);
+    touchStartY.current = null;
+  };
+
+  /* ── Collapsed: icon-only strip ── */
+  if (collapsed) {
+    return (
+      <div className="flex-shrink-0 bg-white border-b border-gray-100"
+        onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        <div className="flex items-center gap-1 px-3 py-1.5">
+          {/* Me */}
+          {coach && (
+            <button onClick={() => onSelect(String(coach._id))}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+              className={`flex-shrink-0 relative rounded-full ${effectiveAthleteId === String(coach._id) ? 'ring-2 ring-primary/50' : ''}`}>
+              <img src={getAvatarBySportAndGender(coach)} alt="Me"
+                className={`w-6 h-6 rounded-full border ${effectiveAthleteId === String(coach._id) ? 'border-primary' : 'border-transparent'}`}
+                onError={e => { e.currentTarget.src = '/images/coach-avatar.webp'; }} />
+            </button>
+          )}
+
+          {hasAthletes && <div className="w-px h-4 bg-gray-200 flex-shrink-0 mx-0.5" />}
+
+          {/* Athlete icons */}
+          <div className="flex items-center gap-1 flex-1 overflow-hidden"
+            style={{ overflowX: 'auto', scrollbarWidth: 'none', touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}>
+            {hasAthletes && athletes.map(a => {
+              const isSelected = effectiveAthleteId === String(a._id);
+              const dot = statusColor(statuses?.[a._id]);
+              return (
+                <button key={a._id} onClick={() => onSelect(String(a._id))}
+                  style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
+                  className={`relative rounded-full ${isSelected ? 'ring-2 ring-violet-300' : ''}`}>
+                  <img src={getAvatarBySportAndGender(a)} alt={a.name}
+                    className={`w-6 h-6 rounded-full border ${isSelected ? 'border-violet-400' : 'border-transparent'}`} />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white" style={{ background: dot }} />
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Manage + expand chevron */}
+          <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+            {onNavigateManage && (
+              <button onClick={onNavigateManage}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                className="text-[10px] text-gray-400 font-medium whitespace-nowrap">Manage →</button>
+            )}
+            <button onClick={() => toggleCollapsed(false)}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+              className="p-0.5 text-gray-400">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Expanded ── */
   return (
-    <div className="flex-shrink-0 bg-white border-b border-gray-100">
-      {/* touch-action:pan-x lets horizontal swipe scroll but still fires click */}
+    <div className="flex-shrink-0 bg-white border-b border-gray-100"
+      onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      {/* Top row: manage + collapse */}
+      <div className="flex items-center justify-end px-3 pt-1.5 gap-1">
+        {onNavigateManage && (
+          <button onClick={onNavigateManage}
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+            className="text-xs text-gray-400 font-medium">Manage →</button>
+        )}
+        <button onClick={() => toggleCollapsed(true)}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+          className="p-0.5 text-gray-400">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Avatar chips row */}
       <div
-        className="flex gap-1.5 px-3 py-2"
+        className="flex gap-1.5 px-3 pb-2"
         style={{
           overflowX: 'auto',
           overflowY: 'hidden',
@@ -278,26 +372,19 @@ function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statu
           touchAction: 'pan-x',
         }}
       >
-        {/* ── "Me" chip — coach's own profile ── */}
+        {/* "Me" chip */}
         {coach && (() => {
           const isMeSelected = effectiveAthleteId === String(coach._id);
           return (
             <>
-              <button
-                onClick={() => onSelect(String(coach._id))}
+              <button onClick={() => onSelect(String(coach._id))}
                 style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
-                className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
-                  isMeSelected ? 'bg-primary/10' : ''
-                }`}
+                className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${isMeSelected ? 'bg-primary/10' : ''}`}
               >
                 <div className="relative">
-                  <img
-                    src={getAvatarBySportAndGender(coach)}
-                    alt="Me"
+                  <img src={getAvatarBySportAndGender(coach)} alt="Me"
                     className={`w-9 h-9 rounded-full border-2 ${isMeSelected ? 'border-primary' : 'border-transparent'}`}
-                    onError={e => { e.currentTarget.src = '/images/coach-avatar.webp'; }}
-                  />
-                  {/* "Me" badge */}
+                    onError={e => { e.currentTarget.src = '/images/coach-avatar.webp'; }} />
                   <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-white flex items-center justify-center">
                     <svg width="8" height="8" viewBox="0 0 20 20" fill="white">
                       <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
@@ -308,38 +395,24 @@ function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statu
                   {coach.name || 'Me'}
                 </span>
               </button>
-
-              {/* Divider */}
-              {hasAthletes && (
-                <div className="w-px self-stretch bg-gray-200 my-1 flex-shrink-0" />
-              )}
+              {hasAthletes && <div className="w-px self-stretch bg-gray-200 my-1 flex-shrink-0" />}
             </>
           );
         })()}
 
-        {/* ── Athlete chips ── */}
+        {/* Athlete chips */}
         {hasAthletes && athletes.map((a) => {
           const isSelected = effectiveAthleteId === String(a._id);
           const dot = statusColor(statuses?.[a._id]);
           return (
-            <button
-              key={a._id}
-              onClick={() => onSelect(String(a._id))}
+            <button key={a._id} onClick={() => onSelect(String(a._id))}
               style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
-              className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${
-                isSelected ? 'bg-violet-50' : ''
-              }`}
+              className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${isSelected ? 'bg-violet-50' : ''}`}
             >
               <div className="relative">
-                <img
-                  src={getAvatarBySportAndGender(a)}
-                  alt=""
-                  className={`w-9 h-9 rounded-full border-2 ${isSelected ? 'border-violet-400' : 'border-transparent'}`}
-                />
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
-                  style={{ background: dot }}
-                />
+                <img src={getAvatarBySportAndGender(a)} alt=""
+                  className={`w-9 h-9 rounded-full border-2 ${isSelected ? 'border-violet-400' : 'border-transparent'}`} />
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white" style={{ background: dot }} />
               </div>
               <span className={`text-[9px] font-medium truncate max-w-[48px] ${isSelected ? 'text-violet-700' : 'text-gray-500'}`}>
                 {a.name}
@@ -597,6 +670,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           effectiveAthleteId={effectiveAthleteId}
           onSelect={onAthleteSelect}
           statuses={athleteStatuses}
+          onNavigateManage={() => navigate('/athletes')}
         />
       )}
 

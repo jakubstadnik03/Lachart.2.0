@@ -2174,13 +2174,13 @@ const FitAnalysisPage = () => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
-      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
 
       if (planModal?.workout?._id) {
-        const updated = await updatePlannedWorkout(planModal.workout._id, data);
+        const updated = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
         setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === updated._id ? updated : p));
       } else {
-        const created = await createPlannedWorkout({ ...data, ...opts });
+        const created = await createPlannedWorkout(data, coachAthleteId);
         setPlannedWorkoutsCalendar(prev => [...prev, created]);
       }
       setPlanModal(null);
@@ -2190,26 +2190,32 @@ const FitAnalysisPage = () => {
   const handlePlanDelete = useCallback(async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
     try {
-      await deletePlannedWorkout(pw._id);
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      await deletePlannedWorkout(pw._id, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => prev.filter(p => p._id !== pw._id));
       setPlanModal(null);
     } catch (_) {}
-  }, []);
+  }, [selectedAthleteId, user?.role]);
 
   const handleMovePlannedWorkout = useCallback(async (id, newDateStr) => {
     try {
-      const updated = await updatePlannedWorkout(id, { date: newDateStr });
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      const updated = await updatePlannedWorkout(id, { date: newDateStr }, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === id ? { ...p, date: newDateStr, ...updated } : p));
     } catch (_) {}
-  }, []);
+  }, [selectedAthleteId, user?.role]);
 
   const handleCopyPlannedWorkout = useCallback(async (pw, newDateStr) => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
-      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
       const { _id, status, executionData, ...rest } = pw;
-      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned', ...opts });
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' }, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => [...prev, created]);
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);
@@ -4020,6 +4026,7 @@ const FitAnalysisPage = () => {
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onDeletePlannedWorkout={handlePlanDelete}
           onOpenActivity={handleCalendarActivitySelect}
+          athleteId={selectedAthleteId || null}
           mobileChartsContent={calendarPeriod ? (
             <CalendarPeriodStats
               activities={calendarMergedActivities}

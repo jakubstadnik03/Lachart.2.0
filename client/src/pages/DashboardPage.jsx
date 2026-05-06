@@ -222,11 +222,18 @@ export default function DashboardPage() {
   const MAX_DASHBOARD_TRAININGS = 40;
   const recentTrainings = React.useMemo(() => {
     if (!trainings || trainings.length === 0) return [];
-    // Sort by date (or timestamp) from newest to oldest and take only the first N
     return [...trainings]
+      .filter(t => {
+        // Strava activities always have real device data
+        if (t.stravaId || t.raw?.id) return true;
+        // FIT file trainings have a `timestamp` field (from the FIT file header)
+        if (t.timestamp && !t.date) return true;
+        // Regular trainings: only include if they have exported lap results
+        return Array.isArray(t.results) && t.results.length > 0;
+      })
       .sort((a, b) => {
-        const dateA = new Date(a.date || a.timestamp || 0);
-        const dateB = new Date(b.date || b.timestamp || 0);
+        const dateA = new Date(a.date || a.startDate || a.timestamp || 0);
+        const dateB = new Date(b.date || b.startDate || b.timestamp || 0);
         return dateB - dateA;
       })
       .slice(0, MAX_DASHBOARD_TRAININGS);
@@ -234,7 +241,7 @@ export default function DashboardPage() {
 
   // Load athlete trainings with localStorage caching (shared with TrainingPage)
   const loadTrainings = useCallback(async (targetId) => {
-    const cacheKey = `athleteTrainings_${targetId}`;
+    const cacheKey = `athleteTrainings_v2_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -281,7 +288,14 @@ export default function DashboardPage() {
       const allTrainings = [
         ...normalizeApiList(response.data),
         ...normalizeApiList(fitResponse?.data).map(t => ({ ...t, category: t.category || null })),
-        ...normalizeApiList(stravaResponse?.data).map(a => ({ ...a, category: a.category || null }))
+        ...normalizeApiList(stravaResponse?.data).map(a => ({
+          ...a,
+          category: a.category || null,
+          // Strava uses startDate; all rendering/sorting code reads .date
+          date: a.date || a.startDate || a.timestamp || null,
+          // Strava uses name; TrainingGraph/History reads .title
+          title: a.title || a.name || a.titleManual || null,
+        }))
       ];
 
       setTrainings(allTrainings);
@@ -910,7 +924,7 @@ export default function DashboardPage() {
         // always land on the user's latest workout. Strava entries have `id`
         // not `_id`, so fall back to either.
         const latest = [...sportTrainings].sort((a, b) =>
-          new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0)
+          new Date(b.date || b.startDate || b.timestamp || 0) - new Date(a.date || a.startDate || a.timestamp || 0)
         )[0];
         if (latest) {
           setSelectedTitle(latest.title);

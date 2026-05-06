@@ -667,13 +667,14 @@ const LoginPage = () => {
         initial={{ x: 100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
-        className="w-full lg:w-1/2 flex items-center justify-center px-6 sm:px-8 overflow-hidden"
+        className="w-full lg:w-1/2 flex items-center justify-center px-6 sm:px-8"
       >
         <motion.div 
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="max-w-md w-full space-y-8 overflow-hidden"
+          className="max-w-md w-full space-y-8 px-2 py-2"
+          style={{ overflow: 'visible' }}
         >
           <motion.div
             initial={{ scale: 0.9 }}
@@ -698,22 +699,25 @@ const LoginPage = () => {
             </p>
           </motion.div>
 
-          <motion.form 
+          <motion.form
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.8 }}
-            className="mt-8 space-y-6" 
+            className="mt-8 space-y-6"
+            style={{ overflow: 'visible' }}
             onSubmit={handleSubmit}
           >
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5, delay: 1 }}
-              className="space-y-4"
+              className="space-y-4 py-1"
+              style={{ overflow: 'visible' }}
             >
               <motion.div
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
+                style={{ overflow: 'visible' }}
               >
                 <input
                   id="email"
@@ -723,15 +727,17 @@ const LoginPage = () => {
                   required
                   disabled={isLoading}
                   className="appearance-none rounded-xl relative block w-full px-4 py-3 border border-gray-200 placeholder-gray-400 text-gray-900 bg-white/80 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-sm"
+                  style={{ margin: '5px', width: 'calc(100% - 10px)' }}
                   placeholder="Email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
               </motion.div>
-              <motion.div 
+              <motion.div
                 className="relative"
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
+                style={{ overflow: 'visible' }}
               >
                 <input
                   id="password"
@@ -741,6 +747,7 @@ const LoginPage = () => {
                   required
                   disabled={isLoading}
                   className="appearance-none rounded-xl relative block w-full px-4 py-3 border border-gray-200 placeholder-gray-400 text-gray-900 bg-white/80 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-sm"
+                  style={{ margin: '5px', width: 'calc(100% - 10px)' }}
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}

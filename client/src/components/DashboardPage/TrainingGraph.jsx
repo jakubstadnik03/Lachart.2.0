@@ -275,7 +275,7 @@ const TrainingGraph = ({
 
   const handleTitleChange = (newTitle) => {
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
-    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
     if (setSelectedTitle) setSelectedTitle(newTitle);
     if (setSelectedTraining && trainingsWithTitle[0]) setSelectedTraining((trainingsWithTitle[0]._id || trainingsWithTitle[0].id));
   };
@@ -420,10 +420,10 @@ const TrainingGraph = ({
 
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
   const trainingOptions = trainingsWithSelectedTitle
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0))
     .map(training => ({
       value: training._id,
-      label: new Date(training.date).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      label: new Date(training.date || training.startDate).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }));
   const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
 

@@ -1285,7 +1285,7 @@ const TrainingForm = ({
                   <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${descriptionOpen ? "rotate-180" : ""}`} />
                 </button>
                 {descriptionOpen && (
-                  <div className="px-4 pb-4">
+                  <div className="px-4 pb-4 space-y-3">
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -1293,6 +1293,24 @@ const TrainingForm = ({
                       rows={3}
                       className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
                     />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">RPE (1–10)</label>
+                        <input type="number" inputMode="numeric" min="1" max="10"
+                          placeholder="—"
+                          value={formData.rpe || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, rpe: e.target.value }))}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wide block mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</label>
+                        <input type="number" inputMode="decimal" step="0.1"
+                          placeholder="—"
+                          value={formData.lactate || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, lactate: e.target.value }))}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2" style={{ '--tw-ring-color': '#7c3aed' }} />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

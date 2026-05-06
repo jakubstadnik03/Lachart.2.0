@@ -481,13 +481,15 @@ const SignUpPage = () => {
           initial={{ x: 100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="w-full lg:w-1/2 flex items-center justify-center px-8 overflow-y-auto"
+          className="w-full lg:w-1/2 flex items-center justify-center px-8"
+          style={{ overflow: 'visible' }}
         >
-        <motion.div 
+        <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="max-w-md w-full space-y-8 overflow-hidden"
+          className="max-w-md w-full space-y-8 px-2 py-2"
+          style={{ overflow: 'visible' }}
         >
           <motion.div
             initial={{ scale: 0.9 }}
@@ -511,23 +513,26 @@ const SignUpPage = () => {
             </p>
           </motion.div>
 
-          <motion.form 
+          <motion.form
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.8 }}
-            className="mt-6 sm:mt-8 space-y-4 sm:space-y-6" 
+            className="mt-6 sm:mt-8 space-y-4 sm:space-y-6"
+            style={{ overflow: 'visible' }}
             onSubmit={handleSubmit}
           >
-            <motion.div 
+            <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5, delay: 1 }}
-              className="space-y-4"
+              className="space-y-4 py-1"
+              style={{ overflow: 'visible' }}
             >
               <motion.div
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
                 className="flex space-x-4"
+                style={{ overflow: 'visible' }}
               >
                 <div className="relative">
                   <input
@@ -572,6 +577,7 @@ const SignUpPage = () => {
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
                 className="relative"
+                style={{ overflow: 'visible' }}
               >
                 <input
                   id="email"
@@ -580,6 +586,7 @@ const SignUpPage = () => {
                   autoComplete="off"
                   required
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
+                  style={{ margin: '5px', width: 'calc(100% - 10px)' }}
                   placeholder="Email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -596,6 +603,7 @@ const SignUpPage = () => {
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
                 className="relative"
+                style={{ overflow: 'visible' }}
               >
                 <input
                   id="password"
@@ -604,6 +612,7 @@ const SignUpPage = () => {
                   autoComplete="new-password"
                   required
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
+                  style={{ margin: '5px', width: 'calc(100% - 10px)' }}
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -637,6 +646,7 @@ const SignUpPage = () => {
                 whileHover={{ scale: 1.02 }}
                 transition={{ duration: 0.2 }}
                 className="relative"
+                style={{ overflow: 'visible' }}
               >
                 <input
                   id="confirmPassword"
@@ -645,6 +655,7 @@ const SignUpPage = () => {
                   autoComplete="new-password"
                   required
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
+                  style={{ margin: '5px', width: 'calc(100% - 10px)' }}
                   placeholder="Confirm Password"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
