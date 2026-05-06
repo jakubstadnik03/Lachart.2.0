@@ -205,6 +205,54 @@ function categoryChipClass(category) {
   return colors[category] || 'bg-gray-100 border-gray-300 text-gray-700';
 }
 
+function makeGroupedBar(labels, curData, lyData, colorA = '#3b82f6') {
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter(params) {
+        if (!Array.isArray(params)) return '';
+        let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel}</b>`;
+        params.forEach((p) => {
+          if (p.value > 0) html += `<br/>${p.marker}${p.seriesName}: ${(+p.value).toFixed(1)}h`;
+        });
+        return html + '</div>';
+      },
+    },
+    legend: { data: ['This year', 'Last year'], textStyle: { fontSize: 10, color: '#6b7280' }, top: 2, right: 0 },
+    grid: { left: 0, right: 0, top: 32, bottom: 20, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: { fontSize: 9, color: '#6b7280' },
+      axisLine: { lineStyle: { color: '#f3f4f6' } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => v + 'h' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    series: [
+      {
+        name: 'This year',
+        type: 'bar',
+        barMaxWidth: 22,
+        data: curData.map((h) => ({ value: h, itemStyle: { color: colorA, borderRadius: [3, 3, 0, 0] } })),
+      },
+      {
+        name: 'Last year',
+        type: 'bar',
+        barMaxWidth: 22,
+        data: lyData.map((h) => ({ value: h, itemStyle: { color: colorA + '66', borderRadius: [3, 3, 0, 0] } })),
+      },
+    ],
+  };
+}
+
 function ZoneRows({ secMap, colors, zoneNames }) {
   const total = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
   if (total <= 0)
@@ -259,6 +307,10 @@ export default function CalendarPeriodStats({
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showZoneDetails, setShowZoneDetails] = useState(false);
+  const [compareMode, setCompareMode] = useState(() => periodView);
+  const [compareRefDate, setCompareRefDate] = useState(() =>
+    period?.periodStart ? new Date(period.periodStart) : new Date()
+  );
 
   const filtered = useMemo(() => {
     if (!period?.periodStart || !period?.periodEnd) return [];
@@ -558,6 +610,57 @@ export default function CalendarPeriodStats({
     }
     return results;
   }, [activities, userProfile]);
+
+  // Last-year same period
+  const filteredLastYear = useMemo(() => {
+    if (!period?.periodStart || !period?.periodEnd) return [];
+    const shiftYear = (d) => {
+      const n = new Date(d);
+      n.setFullYear(n.getFullYear() - 1);
+      return getLocalDateString(n);
+    };
+    const startK = shiftYear(period.periodStart);
+    const endK = shiftYear(period.periodEnd);
+    if (!startK || !endK) return [];
+    return activities.filter((act) => {
+      const raw = act.date || act.timestamp || act.startDate || act.start_time;
+      if (!raw) return false;
+      const k = getLocalDateString(raw);
+      return k && k >= startK && k <= endK;
+    });
+  }, [activities, period?.periodStart, period?.periodEnd]);
+
+  const aggregatesLY = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    const distByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
+    filteredLastYear.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      const dist = Number(act.distance || 0);
+      const tssVal = computeTssForAct(act, userProfile);
+      totalSec += sec;
+      totalDist += dist;
+      if (tssVal > 0) totalTss += tssVal;
+      const b = sportBucket(act.sport);
+      bySportSec[b] += sec;
+      const ps = profileSportFromActivity(act.sport) || 'other';
+      if (dist > 0) distByProfileSport[ps] = (distByProfileSport[ps] || 0) + dist;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec, distByProfileSport };
+  }, [filteredLastYear, userProfile]);
+
+  const lyPeriodLabel = useMemo(() => {
+    if (!period?.periodStart) return '';
+    const d = new Date(period.periodStart);
+    d.setFullYear(d.getFullYear() - 1);
+    if (periodView === 'week') {
+      const end = new Date(period.periodEnd);
+      end.setFullYear(end.getFullYear() - 1);
+      return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [period?.periodStart, period?.periodEnd, periodView]);
 
   const pmcOption = useMemo(() => {
     if (!pmc || pmc.length === 0) return null;
@@ -1020,6 +1123,248 @@ export default function CalendarPeriodStats({
     return { easyPct, midPct, hardPct, badge };
   }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
 
+  const lyCtlAtlEntry = useMemo(() => {
+    if (!pmc || pmc.length === 0 || !period?.periodEnd) return null;
+    const lyEnd = new Date(period.periodEnd);
+    lyEnd.setFullYear(lyEnd.getFullYear() - 1);
+    const lyEndKey = getLocalDateString(lyEnd);
+    return pmc.find((d) => d.date === lyEndKey) || null;
+  }, [pmc, period?.periodEnd]);
+
+  const compareOption = useMemo(() => {
+    const sports = ['cycling', 'running', 'swimming'];
+    const sportLabels = ['Bike', 'Run', 'Swim'];
+    const sportColors = ['#3b82f6', '#f97316', '#06b6d4'];
+    const curHours = sports.map((ps) => {
+      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+      return +((aggregates.bySportSec[b] || 0) / 3600).toFixed(1);
+    });
+    const lyHours = sports.map((ps) => {
+      const b = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+      return +((aggregatesLY.bySportSec[b] || 0) / 3600).toFixed(1);
+    });
+    if (!curHours.some((h) => h > 0) && !lyHours.some((h) => h > 0)) return null;
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter(params) {
+          if (!Array.isArray(params)) return '';
+          let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel}</b>`;
+          params.forEach((p) => {
+            if (p.value > 0) html += `<br/>${p.marker}${p.seriesName}: ${p.value}h`;
+          });
+          return html + '</div>';
+        },
+      },
+      legend: { data: ['This year', 'Last year'], textStyle: { fontSize: 10, color: '#6b7280' }, top: 4 },
+      grid: { left: 0, right: 0, top: 36, bottom: 24, containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: sportLabels,
+        axisLabel: { fontSize: 10, color: '#6b7280' },
+        axisLine: { lineStyle: { color: '#f3f4f6' } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { fontSize: 9, color: '#9ca3af', formatter: (v) => v + 'h' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
+      series: [
+        {
+          name: 'This year',
+          type: 'bar',
+          barMaxWidth: 28,
+          data: curHours.map((h, i) => ({
+            value: h,
+            itemStyle: { color: sportColors[i], borderRadius: [3, 3, 0, 0] },
+          })),
+        },
+        {
+          name: 'Last year',
+          type: 'bar',
+          barMaxWidth: 28,
+          data: lyHours.map((h, i) => ({
+            value: h,
+            itemStyle: { color: sportColors[i] + '55', borderRadius: [3, 3, 0, 0] },
+          })),
+        },
+      ],
+    };
+  }, [aggregates.bySportSec, aggregatesLY.bySportSec]);
+
+  // ── Independent compare-tab navigation ──────────────────────────────────
+  const compareBounds = useMemo(() => {
+    const d = new Date(compareRefDate);
+    if (compareMode === 'week') {
+      const day = d.getDay() || 7;
+      const mon = new Date(d);
+      mon.setDate(d.getDate() - (day - 1));
+      mon.setHours(0, 0, 0, 0);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      return { start: mon, end: sun };
+    }
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { start, end };
+  }, [compareRefDate, compareMode]);
+
+  const compareBoundsLY = useMemo(() => {
+    const s = new Date(compareBounds.start);
+    s.setFullYear(s.getFullYear() - 1);
+    const e = new Date(compareBounds.end);
+    e.setFullYear(e.getFullYear() - 1);
+    return { start: s, end: e };
+  }, [compareBounds]);
+
+  const filteredCmpThis = useMemo(() => {
+    const s = getLocalDateString(compareBounds.start);
+    const e = getLocalDateString(compareBounds.end);
+    return activities.filter((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      return k && k >= s && k <= e;
+    });
+  }, [activities, compareBounds]);
+
+  const filteredCmpPrev = useMemo(() => {
+    const s = getLocalDateString(compareBoundsLY.start);
+    const e = getLocalDateString(compareBoundsLY.end);
+    return activities.filter((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      return k && k >= s && k <= e;
+    });
+  }, [activities, compareBoundsLY]);
+
+  const aggCmpThis = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    filteredCmpThis.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      totalSec += sec;
+      totalDist += Number(act.distance || 0);
+      const tss = computeTssForAct(act, userProfile);
+      if (tss > 0) totalTss += tss;
+      bySportSec[sportBucket(act.sport)] += sec;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec };
+  }, [filteredCmpThis, userProfile]);
+
+  const aggCmpPrev = useMemo(() => {
+    let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
+    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    filteredCmpPrev.forEach((act) => {
+      count++;
+      const sec = actDurationSec(act);
+      totalSec += sec;
+      totalDist += Number(act.distance || 0);
+      const tss = computeTssForAct(act, userProfile);
+      if (tss > 0) totalTss += tss;
+      bySportSec[sportBucket(act.sport)] += sec;
+    });
+    return { count, totalSec, totalDist, totalTss, bySportSec };
+  }, [filteredCmpPrev, userProfile]);
+
+  const cmpLabel = useMemo(() => {
+    const d = compareBounds.start;
+    if (compareMode === 'week') {
+      const e = compareBounds.end;
+      const wn = isoWeekKey(d)?.split('-')[1];
+      return `W${wn} · ${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [compareBounds, compareMode]);
+
+  const cmpLYLabel = useMemo(() => {
+    const d = compareBoundsLY.start;
+    if (compareMode === 'week') {
+      const e = compareBoundsLY.end;
+      return `${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
+    }
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }, [compareBoundsLY, compareMode]);
+
+  const cmpBreakdownOption = useMemo(() => {
+    if (compareMode === 'week') {
+      const DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+      const dayKeysThis = [];
+      const dayKeysLY = [];
+      const curD = new Date(compareBounds.start);
+      const lyD = new Date(compareBoundsLY.start);
+      for (let i = 0; i < 7; i++) {
+        dayKeysThis.push(getLocalDateString(new Date(curD)));
+        dayKeysLY.push(getLocalDateString(new Date(lyD)));
+        curD.setDate(curD.getDate() + 1);
+        lyD.setDate(lyD.getDate() + 1);
+      }
+      const mapThis = new Map();
+      filteredCmpThis.forEach((act) => {
+        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
+      });
+      const mapLY = new Map();
+      filteredCmpPrev.forEach((act) => {
+        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
+      });
+      const curH = dayKeysThis.map((k) => +((mapThis.get(k) || 0) / 3600).toFixed(2));
+      const lyH = dayKeysLY.map((k) => +((mapLY.get(k) || 0) / 3600).toFixed(2));
+      if (!curH.some((h) => h > 0) && !lyH.some((h) => h > 0)) return null;
+      return makeGroupedBar(DOW, curH, lyH);
+    }
+
+    // Month mode: week-by-week breakdown
+    const weekRanges = [];
+    const cur = new Date(compareBounds.start);
+    const dayOfW = cur.getDay() || 7;
+    if (dayOfW !== 1) cur.setDate(cur.getDate() - (dayOfW - 1));
+    const monthEnd = new Date(compareBounds.end);
+    while (cur <= monthEnd) {
+      const wStart = new Date(cur);
+      const wEnd = new Date(cur);
+      wEnd.setDate(cur.getDate() + 6);
+      const wEndCapped = wEnd > monthEnd ? monthEnd : wEnd;
+      const lyWStart = new Date(wStart);
+      lyWStart.setFullYear(lyWStart.getFullYear() - 1);
+      const lyWEndCapped = new Date(wEndCapped);
+      lyWEndCapped.setFullYear(lyWEndCapped.getFullYear() - 1);
+      weekRanges.push({
+        startK: getLocalDateString(wStart),
+        endK: getLocalDateString(wEndCapped),
+        lyStartK: getLocalDateString(lyWStart),
+        lyEndK: getLocalDateString(lyWEndCapped),
+        label: `${wStart.getDate()}.${wStart.getMonth() + 1}`,
+      });
+      cur.setDate(cur.getDate() + 7);
+    }
+    if (!weekRanges.length) return null;
+
+    const mapThis = new Map();
+    filteredCmpThis.forEach((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
+    });
+    const mapLY = new Map();
+    filteredCmpPrev.forEach((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
+    });
+    const sumRange = (map, s, e) => {
+      let total = 0;
+      map.forEach((v, k) => { if (k >= s && k <= e) total += v; });
+      return total;
+    };
+    const curH = weekRanges.map((w) => +((sumRange(mapThis, w.startK, w.endK)) / 3600).toFixed(2));
+    const lyH = weekRanges.map((w) => +((sumRange(mapLY, w.lyStartK, w.lyEndK)) / 3600).toFixed(2));
+    if (!curH.some((h) => h > 0) && !lyH.some((h) => h > 0)) return null;
+    return makeGroupedBar(weekRanges.map((w) => w.label), curH, lyH);
+  }, [compareMode, compareBounds, compareBoundsLY, filteredCmpThis, filteredCmpPrev]);
+
   if (!period?.label) return null;
 
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
@@ -1049,11 +1394,12 @@ export default function CalendarPeriodStats({
     { id: 'overview', label: 'Overview' },
     { id: 'zones', label: 'Zones' },
     { id: 'activities', label: 'Activities' },
+    { id: 'compare', label: 'vs Last Year' },
   ];
 
   return (
-    <div className="w-full mt-3 space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+    <div className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div>
@@ -1070,14 +1416,14 @@ export default function CalendarPeriodStats({
           </span>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex gap-1.5 mb-5 flex-wrap">
+        {/* Tab bar — horizontally scrollable on mobile */}
+        <div className="flex gap-1.5 mb-4 overflow-x-auto scrollbar-hide pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === t.id
                   ? 'bg-primary text-white'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1164,20 +1510,20 @@ export default function CalendarPeriodStats({
                   <div className="bg-gray-50 rounded-xl p-3">
                     <Chart
                       option={pmcOption}
-                      style={{ height: 180, width: '100%' }}
+                      style={{ height: isMobile ? 140 : 180, width: '100%' }}
                       notMerge
                     />
-                    <div className="flex gap-3 mt-2 flex-wrap">
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">CTL (Fitness)</div>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
                         <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{lastEntry.ctl}</div>
                       </div>
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">ATL (Fatigue)</div>
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
                         <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{lastEntry.atl}</div>
                       </div>
-                      <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex-1 min-w-[80px]">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">TSB (Form)</div>
+                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
+                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
                         <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
                       </div>
                     </div>
@@ -1234,29 +1580,28 @@ export default function CalendarPeriodStats({
                 </div>
 
                 {/* Sport mileage comparison */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1.5">
                   {['cycling', 'running', 'swimming'].map((ps) => {
                     const cur = aggregates.distByProfileSport?.[ps] || 0;
                     const prev = weekComparison.prevDistByProfileSport?.[ps] || 0;
-                    const bucket =
-                      ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                    if (cur === 0 && prev === 0) return null;
+                    const bucket = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';
+                    const maxDist = Math.max(cur, prev, 1);
                     return (
-                      <div key={ps} className="bg-gray-50 rounded-xl p-3">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <img
-                            src={`/icon/${bucket}.svg`}
-                            alt={bucket}
-                            className="w-4 h-4 object-contain"
-                          />
-                          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-                            {SPORT_LABEL[ps]}
-                          </span>
+                      <div key={ps} className="bg-gray-50 rounded-xl px-3 py-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <img src={`/icon/${bucket}.svg`} alt={bucket} className="w-3.5 h-3.5 object-contain shrink-0" />
+                          <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{SPORT_LABEL[ps]}</span>
+                          <span className="ml-auto text-xs font-bold text-gray-900 tabular-nums">{cur > 0 ? formatDistance(cur, user) : '—'}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums">vs {prev > 0 ? formatDistance(prev, user) : '—'}</span>
                         </div>
-                        <div className="text-sm font-bold text-gray-900 truncate">
-                          {cur > 0 ? formatDistance(cur, user) : '—'}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">
-                          Prev: {prev > 0 ? formatDistance(prev, user) : '—'}
+                        <div className="flex gap-1 items-center">
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${(cur / maxDist) * 100}%`, backgroundColor: BUCKET_COLOR[bucket] }} />
+                          </div>
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${(prev / maxDist) * 100}%`, backgroundColor: BUCKET_COLOR[bucket] + '66' }} />
+                          </div>
                         </div>
                       </div>
                     );
@@ -1329,7 +1674,7 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={intensityDonutOption}
-                    style={{ height: 160, width: '100%' }}
+                    style={{ height: isMobile ? 130 : 160, width: '100%' }}
                     notMerge
                   />
                 </div>
@@ -1344,7 +1689,7 @@ export default function CalendarPeriodStats({
                 </div>
                 <Chart
                   option={dailyStackedOption}
-                  style={{ height: 180, width: '100%' }}
+                  style={{ height: isMobile ? 140 : 180, width: '100%' }}
                   notMerge
                 />
               </div>
@@ -1372,7 +1717,7 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={weeklyTrendOption}
-                    style={{ height: 180, width: '100%' }}
+                    style={{ height: isMobile ? 140 : 180, width: '100%' }}
                     notMerge
                   />
                 </div>
@@ -1444,7 +1789,7 @@ export default function CalendarPeriodStats({
                     </div>
                     <Chart
                       option={zoneBarOptions.power}
-                      style={{ height: 130, width: '100%' }}
+                      style={{ height: isMobile ? 110 : 130, width: '100%' }}
                       notMerge
                     />
                   </div>
@@ -1456,7 +1801,7 @@ export default function CalendarPeriodStats({
                     </div>
                     <Chart
                       option={zoneBarOptions.hr}
-                      style={{ height: 130, width: '100%' }}
+                      style={{ height: isMobile ? 110 : 130, width: '100%' }}
                       notMerge
                     />
                   </div>
@@ -1750,11 +2095,236 @@ export default function CalendarPeriodStats({
                   </div>
                   <Chart
                     option={effortTimelineOption}
-                    style={{ height: 140, width: '100%' }}
+                    style={{ height: isMobile ? 110 : 140, width: '100%' }}
                     notMerge
                   />
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ===================== COMPARE TAB ===================== */}
+        {activeTab === 'compare' && (
+          <div className="space-y-4">
+            {/* Mode toggle + navigation — 2-row on mobile */}
+            <div className="space-y-2">
+              {/* Row 1: Week/Month toggle + jump button */}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-xl overflow-hidden border border-gray-200 shrink-0">
+                  {['week', 'month'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setCompareMode(m)}
+                      className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        compareMode === m ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      {m === 'week' ? 'Week' : 'Month'}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (period?.periodStart) setCompareRefDate(new Date(period.periodStart));
+                    setCompareMode(periodView);
+                  }}
+                  className="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
+                >
+                  ↵ Current period
+                </button>
+              </div>
+
+              {/* Row 2: Prev / Period label / Next */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCompareRefDate((prev) => {
+                      const d = new Date(prev);
+                      if (compareMode === 'week') d.setDate(d.getDate() - 7);
+                      else d.setMonth(d.getMonth() - 1);
+                      return d;
+                    })
+                  }
+                  className="shrink-0 w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center text-gray-600 text-lg font-bold transition-colors touch-manipulation"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  ‹
+                </button>
+                <span className="flex-1 text-center text-sm font-semibold text-gray-800 min-w-0 truncate">
+                  {cmpLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCompareRefDate((prev) => {
+                      const d = new Date(prev);
+                      if (compareMode === 'week') d.setDate(d.getDate() + 7);
+                      else d.setMonth(d.getMonth() + 1);
+                      return d;
+                    })
+                  }
+                  className="shrink-0 w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center text-gray-600 text-lg font-bold transition-colors touch-manipulation"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            {/* Year labels */}
+            <div className="flex items-stretch gap-3">
+              <div className="flex-1 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-primary">This year</div>
+                <div className="text-xs font-bold text-gray-900 mt-0.5">{cmpLabel}</div>
+                <div className="text-[10px] text-gray-500">{aggCmpThis.count} {aggCmpThis.count === 1 ? 'activity' : 'activities'}</div>
+              </div>
+              <div className="flex items-center text-gray-300 text-xs shrink-0">vs</div>
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">Last year</div>
+                <div className="text-xs font-bold text-gray-600 mt-0.5">{cmpLYLabel}</div>
+                <div className="text-[10px] text-gray-400">{aggCmpPrev.count} {aggCmpPrev.count === 1 ? 'activity' : 'activities'}</div>
+              </div>
+            </div>
+
+            {aggCmpThis.count === 0 && aggCmpPrev.count === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">No activities in either period.</p>
+            )}
+
+            {(aggCmpThis.count > 0 || aggCmpPrev.count > 0) && (
+              <>
+                {/* Metric cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { label: 'Activities', cur: aggCmpThis.count, ly: aggCmpPrev.count, fmt: (v) => v },
+                    { label: 'Total time', cur: aggCmpThis.totalSec, ly: aggCmpPrev.totalSec, fmt: (v) => v > 0 ? formatDuration(v) : '—' },
+                    { label: 'Distance', cur: aggCmpThis.totalDist, ly: aggCmpPrev.totalDist, fmt: (v) => v > 0 ? formatDistance(v, user) : '—' },
+                    { label: 'TSS', cur: aggCmpThis.totalTss, ly: aggCmpPrev.totalTss, fmt: (v) => v > 0 ? Math.round(v) : '—' },
+                  ].map((card) => {
+                    const delta = card.ly > 0 ? ((card.cur - card.ly) / card.ly) * 100 : null;
+                    return (
+                      <div key={card.label} className="bg-gray-50 rounded-xl p-3">
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">{card.label}</div>
+                        <div className="text-sm font-bold text-gray-900 tabular-nums">{card.fmt(card.cur)}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">LY: {card.fmt(card.ly)}</div>
+                        {delta !== null && (
+                          <div className={`text-[11px] font-semibold mt-1 ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Breakdown chart: day-by-day (week) or week-by-week (month) */}
+                {Chart && cmpBreakdownOption && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      {compareMode === 'week' ? 'Day-by-day training load (h)' : 'Week-by-week training load (h)'}
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <Chart option={cmpBreakdownOption} style={{ height: isMobile ? 160 : 200, width: '100%' }} notMerge />
+                    </div>
+                  </div>
+                )}
+
+                {/* Sport volume rows */}
+                {(['bike', 'run', 'swim'].some(
+                  (b) => (aggCmpThis.bySportSec[b] || 0) > 0 || (aggCmpPrev.bySportSec[b] || 0) > 0
+                )) && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Volume by sport</div>
+                    <div className="space-y-3">
+                      {[
+                        { b: 'bike', ps: 'cycling' },
+                        { b: 'run', ps: 'running' },
+                        { b: 'swim', ps: 'swimming' },
+                      ].map(({ b, ps }) => {
+                        const curSec = aggCmpThis.bySportSec[b] || 0;
+                        const lySec = aggCmpPrev.bySportSec[b] || 0;
+                        if (curSec === 0 && lySec === 0) return null;
+                        const maxSec = Math.max(curSec, lySec, 1);
+                        const delta = lySec > 0 ? ((curSec - lySec) / lySec) * 100 : null;
+                        const fmtH = (s) => {
+                          const h = Math.floor(s / 3600);
+                          const m = Math.floor((s % 3600) / 60);
+                          return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                        };
+                        return (
+                          <div key={b}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain" />
+                              <span className="text-xs font-semibold text-gray-600">{SPORT_LABEL[ps]}</span>
+                              {delta !== null && (
+                                <span className={`text-[10px] font-semibold ml-auto ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="w-14 text-[10px] text-gray-500 shrink-0">This year</span>
+                                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                  <div className="h-full rounded-full" style={{ width: `${(curSec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] }} />
+                                </div>
+                                <span className="w-14 text-[10px] text-right font-semibold text-gray-700 shrink-0 tabular-nums">{curSec > 0 ? fmtH(curSec) : '—'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-14 text-[10px] text-gray-400 shrink-0">Last year</span>
+                                <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                  <div className="h-full rounded-full" style={{ width: `${(lySec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] + '66' }} />
+                                </div>
+                                <span className="w-14 text-[10px] text-right font-medium text-gray-400 shrink-0 tabular-nums">{lySec > 0 ? fmtH(lySec) : '—'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Activities list for selected period */}
+                {filteredCmpThis.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Activities this period</div>
+                    <div className="space-y-1.5">
+                      {[...filteredCmpThis]
+                        .sort((a, b) => new Date(b.date || b.timestamp || b.startDate) - new Date(a.date || a.timestamp || a.startDate))
+                        .map((act, idx) => {
+                          const sec = actDurationSec(act);
+                          const tss = computeTssForAct(act, userProfile);
+                          const dist = Number(act.distance || 0);
+                          const b = sportBucket(act.sport);
+                          return (
+                            <button
+                              key={`${act.id}-${idx}`}
+                              type="button"
+                              disabled={!onSelectActivity}
+                              onClick={() => onSelectActivity && onSelectActivity(act)}
+                              className={`w-full text-left flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2 ${onSelectActivity ? 'hover:border-gray-200 hover:shadow-sm cursor-pointer' : 'cursor-default'} transition-all`}
+                            >
+                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
+                                <div className="text-[10px] text-gray-400">{fmtActDate(act)}</div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 text-[10px] text-gray-500">
+                                {sec > 0 && <span className="tabular-nums">{formatDuration(sec)}</span>}
+                                {dist > 0 && <span className="tabular-nums">{formatDistance(dist, user)}</span>}
+                                {tss > 0 && <span className="text-primary font-semibold tabular-nums">{Math.round(tss)} TSS</span>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

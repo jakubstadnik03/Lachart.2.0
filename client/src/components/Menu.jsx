@@ -224,6 +224,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       iconWhite: "/icon/calendar-white.svg",
       showFor: ["coach", "athlete"]
      },
+    {
+      name: "Workout Planner",
+      path: "/workout-planner",
+      icon: "/icon/calendar.svg",
+      iconWhite: "/icon/calendar-white.svg",
+      showFor: ["coach", "tester", "testing"]
+    },
     // {
     //   name: "Lactate Statistics",
     //   path: "/lactate-statistics",

@@ -159,22 +159,18 @@ export function MiniWorkoutChart({ steps, height = 20, width = 120 }) {
   );
 }
 
-// ─── Duration string parser (h:mm:ss or mm:ss or minutes) ───────────────────
+// ─── Duration string parser (h:mm:ss or mm:ss or bare minutes) ──────────────
 function parseDurStr(s) {
   if (!s) return 0;
   const t = String(s).trim().toLowerCase();
   if (t.endsWith('h')) return parseFloat(t) * 3600;
   if (t.endsWith('m')) return parseFloat(t) * 60;
-  if (/^\d+(\.\d+)?$/.test(t)) {
-    const n = parseFloat(t);
-    // bare number ≤ 9 → hours (e.g. "2" = 2h), larger → minutes (e.g. "90" = 90min)
-    return n <= 9 ? n * 3600 : n * 60;
-  }
+  // Bare integer or decimal → minutes (35 = 35min, 1.5 = 1h30m)
+  if (/^\d+(\.\d+)?$/.test(t)) return parseFloat(t) * 60;
   const parts = t.split(':').map(Number);
   if (parts.length === 2) {
-    // Two-part is ambiguous: "1:30" = 1h30m, but "30:00" = 30min not 30h.
-    // Heuristic: first part ≥ 10 → MM:SS; otherwise H:MM.
     const [a, b] = [parts[0] || 0, parts[1] || 0];
+    // "1:30" = 1h30m, "35:00" = 35min
     return a >= 10 ? a * 60 + b : a * 3600 + b * 60;
   }
   if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
@@ -278,7 +274,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }}
         exit={{ y: '100%', opacity: 0 }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ maxHeight: '92vh' }}
       >
         {/* ─── Lactate saved notification screen ─── */}
@@ -453,20 +449,21 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
                 {/* Planned stats table */}
                 <div className="grid grid-cols-3 gap-2">
-                  {/* Duration */}
+                  {/* Duration — always editable; steps-derived value shown as placeholder */}
                   <div className="bg-slate-50 rounded-xl p-3 min-h-[70px]">
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">Duration</span>
-                    {stepsDuration > 0 ? (
-                      <span className="text-base font-bold text-slate-800">{secsToHMS(stepsDuration)}</span>
-                    ) : (
-                      <input
-                        type="text" value={plannedDurStr} onChange={e => setPlannedDurStr(e.target.value)}
-                        onBlur={() => { const s = parseDurStr(plannedDurStr); if (s > 0) setPlannedDurStr(secsToHMS(s)); }}
-                        placeholder="h:mm:ss"
-                        className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
-                      />
-                    )}
-                    <span className="text-[10px] text-slate-400">h:mm:ss</span>
+                    <input
+                      type="text"
+                      value={plannedDurStr}
+                      onChange={e => setPlannedDurStr(e.target.value)}
+                      onBlur={() => { const s = parseDurStr(plannedDurStr); if (s > 0) setPlannedDurStr(secsToHMS(s)); else if (!plannedDurStr && stepsDuration > 0) setPlannedDurStr(secsToHMS(stepsDuration)); }}
+                      onFocus={() => { if (!plannedDurStr && stepsDuration > 0) setPlannedDurStr(secsToHMS(stepsDuration)); }}
+                      placeholder={stepsDuration > 0 ? secsToHMS(stepsDuration) : '35 or 1:30:00'}
+                      className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-400 placeholder:font-normal"
+                    />
+                    <span className="text-[10px] text-slate-400">
+                      {stepsDuration > 0 && !plannedDurStr ? 'from steps · click to edit' : 'h:mm:ss or minutes'}
+                    </span>
                   </div>
 
                   {/* Distance */}
@@ -499,9 +496,31 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                 </div>
               </div>
 
-              {/* ── Build Workout section ── */}
-              <div className="px-5 py-4 flex-1 flex flex-col gap-4">
+              {/* ── Build Workout section — 2-col on lg+ ── */}
+              <div className="px-5 py-4 flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6">
 
+                {/* On lg+: comment/desc go in left column, builder in right */}
+                <div className="lg:w-72 xl:w-80 shrink-0 flex flex-col gap-3 order-2 lg:order-1">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
+                      Comment <span className="normal-case font-normal text-slate-300">· shown on calendar card</span>
+                    </label>
+                    <textarea
+                      rows={2} value={comment} onChange={e => setComment(e.target.value)}
+                      placeholder="Short note shown on the calendar card…"
+                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Description / Coach notes</label>
+                    <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)}
+                      placeholder="Focus, context, feel…"
+                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col gap-4 order-1 lg:order-2">
                 {!showBuilder ? (
                   /* Collapsed: big dashed button */
                   <button
@@ -616,27 +635,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     )}
                   </div>
                 )}
-
-                {/* ── Comment + Description ── */}
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
-                      Comment <span className="normal-case font-normal text-slate-300">· shown on calendar card</span>
-                    </label>
-                    <textarea
-                      rows={2} value={comment} onChange={e => setComment(e.target.value)}
-                      placeholder="Short note shown on the calendar card…"
-                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Description / Coach notes</label>
-                    <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)}
-                      placeholder="Focus, context, feel…"
-                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                    />
-                  </div>
-                </div>
+                </div>{/* end flex-1 builder column */}
               </div>
             </motion.div>
           )}

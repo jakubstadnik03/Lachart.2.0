@@ -332,7 +332,7 @@ const AthletesPage = () => {
 
   return (
     <>
-    <div className="min-h-screen py-4 sm:py-6">
+    <div className="py-4 sm:py-6">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100">

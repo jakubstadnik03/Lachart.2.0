@@ -54,7 +54,8 @@ export function fmtShort(secs) {
 export function parseDuration(str) {
   if (!str) return 0;
   const trimmed = String(str).trim();
-  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  // Bare number → treat as minutes (e.g. "35" = 35min, "90" = 1h30m)
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10) * 60;
   const parts = trimmed.split(':').map(Number);
   if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
   if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
@@ -77,9 +78,10 @@ export function resolveTargetWatts(target, context) {
   if (target.type === 'percent_ftp')  return ftp * (mid(target) / 100);
   if (target.type === 'percent_lt1')  return (lt1Power || ftp * 0.75) * (mid(target) / 100);
   if (target.type === 'percent_lt2')  return (lt2Power || ftp) * (mid(target) / 100);
-  if (target.type === 'lt1')          return lt1Power || cyclingZones?.lt1 || ftp * 0.75;
-  if (target.type === 'lt2')          return lt2Power || cyclingZones?.lt2 || ftp;
+  if (target.type === 'lt1')          return target.override ?? (lt1Power || cyclingZones?.lt1 || ftp * 0.75);
+  if (target.type === 'lt2')          return target.override ?? (lt2Power || cyclingZones?.lt2 || ftp);
   if (target.type === 'zone') {
+    if (target.override != null) return target.override;
     const z = target.value || 2;
     // Use actual profile zone midpoint when available
     const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
@@ -105,13 +107,14 @@ export function resolveTargetPace(target, context) {
   if (!target || target.type === 'open') return lt2p * 1.25; // easy jog
   const mid = (t) => t.useRange ? (t.rangeMin + t.rangeMax) / 2 : (t.value || 0);
   const lt1p = lt1Pace || runningZones?.lt1 || lt2p * 1.12;
-  if (target.type === 'lt1')         return lt1p;
-  if (target.type === 'lt2')         return lt2p;
+  if (target.type === 'lt1')         return target.override ?? lt1p;
+  if (target.type === 'lt2')         return target.override ?? lt2p;
   // For % targets: 100% LT2 = lt2Pace, 105% LT2 means 5% faster (÷1.05 to get sec/km)
   if (target.type === 'percent_lt1') return lt1p / (mid(target) / 100);
   if (target.type === 'percent_lt2') return lt2p / (mid(target) / 100);
   if (target.type === 'percent_ftp') return lt2p / (mid(target) / 100);
   if (target.type === 'zone') {
+    if (target.override != null) return target.override;
     const z = target.value || 2;
     // Use actual profile zone midpoint when available
     const pz = runningZones?.[`zone${z}`];
@@ -136,12 +139,13 @@ export function resolveTargetSwimPace(target, context) {
   if (!target || target.type === 'open') return lt2p * 1.2;
   const mid = (t) => t.useRange ? (t.rangeMin + t.rangeMax) / 2 : (t.value || 0);
   const lt1p = lt1Swim || swimmingZones?.lt1 || lt2p * 1.10;
-  if (target.type === 'lt1')         return lt1p;
-  if (target.type === 'lt2')         return lt2p;
+  if (target.type === 'lt1')         return target.override ?? lt1p;
+  if (target.type === 'lt2')         return target.override ?? lt2p;
   if (target.type === 'percent_lt1') return lt1p / (mid(target) / 100);
   if (target.type === 'percent_lt2') return lt2p / (mid(target) / 100);
   if (target.type === 'percent_ftp') return lt2p / (mid(target) / 100);
   if (target.type === 'zone') {
+    if (target.override != null) return target.override;
     const z = target.value || 2;
     const pz = swimmingZones?.[`zone${z}`];
     if (pz) {
@@ -267,7 +271,7 @@ export const PRESET_CATALOG = [
   // ── Swim ────────────────────────────────────────────────────────────────────
   { key: 'swim_endurance',      name: 'Endurance Set',       sport: 'swim', desc: '30min steady @Z2',       color: '#38bdf8' },
   { key: 'swim_threshold',      name: 'Threshold Set',       sport: 'swim', desc: '10×100m @LT2',           color: '#0ea5e9' },
-  { key: 'swim_sprint',         name: 'Sprint Set',          sport: 'swim', desc: '12×30sec @Z5 + 60s rest', color: '#ef4444' },
+  { key: 'swim_sprint',         name: 'Sprint Set',          sport: 'swim', desc: '12×25m @Z5 + 30s rest',  color: '#ef4444' },
   { key: 'swim_pyramid',        name: 'Pyramid',             sport: 'swim', desc: '400-300-200-100m @LT2',  color: '#6366f1' },
   { key: 'swim_pull',           name: 'Pull Set',            sport: 'swim', desc: '3×400m @90%LT2',         color: '#a855f7' },
   { key: 'swim_warmup_drills',  name: 'Drill Focus',         sport: 'swim', desc: 'WU + 8×50m drills + CD', color: '#22c55e' },
@@ -351,38 +355,61 @@ export function buildPresetSteps(preset) {
     steps.push(CD(300)); return steps;
   }
 
-  // ── Swim ────────────────────────────────────────────────────────────────────
+  // ── Swim (distance-based: durationType='distance', distanceMeters) ──────────
+  // Estimate ~2:00/100m = 120 sec/100m for chart sizing
+  const swDist = (m) => Math.round(m * 1.2); // approx durationSeconds from meters
+  const SWU = (dist=400, pt={type:'zone',value:1}) => ({
+    clientId:p(), stepType:'warmup', isRamp:true,
+    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
+  });
+  const SCD = (dist=200, pt={type:'zone',value:1}) => ({
+    clientId:p(), stepType:'cooldown', isRamp:true,
+    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
+  });
+  const SWRK = (dist, pt) => ({
+    clientId:p(), stepType:'work',
+    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
+  });
+  const SREC = (dist, pt={type:'zone',value:1}) => ({
+    clientId:p(), stepType:'recovery',
+    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
+  });
+  // Rest between reps stays time-based (e.g. 20s, 30s)
+  const SRST = (secs=20) => ({ clientId:p(), stepType:'rest', durationSeconds:secs, powerTarget:{type:'open'} });
+
+  // Swim group helper (distance-based work + time-based rest)
+  const SGROUP = (reps, dist, workPt, restSecs=20) => {
+    const gid = p();
+    return [
+      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work',
+        durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:workPt },
+      { clientId:p(), groupId:gid, stepType:'rest', durationSeconds:restSecs, powerTarget:{type:'open'} },
+    ];
+  };
+
   if (preset === 'swim_endurance')
-    return [WU(300), WRK(1800,{type:'zone',value:2}), CD(300)];
-  if (preset === 'swim_threshold') {
-    const steps = [WU(300)];
-    for (let i = 0; i < 10; i++) { steps.push(WRK(90,{type:'lt2'})); steps.push(RST(30)); }
-    steps.push(CD(300)); return steps;
-  }
-  if (preset === 'swim_sprint') {
-    const steps = [WU(300)];
-    for (let i = 0; i < 12; i++) { steps.push(WRK(30,{type:'zone',value:5})); steps.push(RST(60)); }
-    steps.push(CD(300)); return steps;
-  }
+    return [SWU(400), SWRK(1600,{type:'zone',value:2}), SCD(200)];
+
+  if (preset === 'swim_threshold')
+    return [SWU(400), ...SGROUP(10, 100, {type:'lt2'}, 20), SCD(200)];
+
+  if (preset === 'swim_sprint')
+    return [SWU(400), ...SGROUP(12, 25, {type:'zone',value:5}, 30), SCD(200)];
+
   if (preset === 'swim_pyramid') {
-    const steps = [WU(300)];
-    // 400m~8min, 300m~6min, 200m~4min, 100m~2min (approximate)
-    [480,360,240,120].forEach((dur,i,arr) => {
-      steps.push(WRK(dur,{type:'lt2'}));
-      if(i < arr.length-1) steps.push(RST(60));
+    const steps = [SWU(400)];
+    [400,300,200,100].forEach((dist,i,arr) => {
+      steps.push(SWRK(dist,{type:'lt2'}));
+      if (i < arr.length-1) steps.push(SRST(20));
     });
-    steps.push(CD(300)); return steps;
+    steps.push(SCD(200)); return steps;
   }
-  if (preset === 'swim_pull') {
-    const steps = [WU(300)];
-    for (let i = 0; i < 3; i++) { steps.push(WRK(480,{type:'percent_lt2',value:90})); if(i<2) steps.push(RST(60)); }
-    steps.push(CD(300)); return steps;
-  }
-  if (preset === 'swim_warmup_drills') {
-    const steps = [WU(300)];
-    for (let i = 0; i < 8; i++) { steps.push(WRK(60,{type:'zone',value:2})); steps.push(RST(30)); }
-    steps.push(CD(300)); return steps;
-  }
+
+  if (preset === 'swim_pull')
+    return [SWU(400), ...SGROUP(3, 400, {type:'percent_lt2',value:90}, 30), SCD(200)];
+
+  if (preset === 'swim_warmup_drills')
+    return [SWU(400), ...SGROUP(8, 50, {type:'zone',value:2}, 20), SCD(200)];
   return [];
 }
 
@@ -955,7 +982,32 @@ function QuickProgressiveAdder({ context, onAdd }) {
 function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
   const t = value || {};
   const set = (k, v) => onChange({ ...t, [k]: v });
-  const watts = Math.round(resolveTargetWatts(t, context));
+  const isSwim = context.sport === 'swim';
+  const isRun  = context.sport === 'run';
+
+  // Override: for zone/lt1/lt2 the user can pin a custom value (pace or watts)
+  const isOverridable = t.type === 'zone' || t.type === 'lt1' || t.type === 'lt2';
+  const [overrideInput, setOverrideInput] = useState(() => {
+    if (t.override == null) return '';
+    if (isSwim || isRun) return fmtPace(t.override);
+    return String(Math.round(t.override));
+  });
+
+  const commitOverride = (raw) => {
+    const s = String(raw).trim();
+    if (!s) { const n = { ...t }; delete n.override; onChange(n); return; }
+    // Accept mm:ss as pace, or plain number as watts
+    if (s.includes(':')) {
+      const secs = parseDuration(s);
+      if (secs > 0) { onChange({ ...t, override: secs }); return; }
+    }
+    const num = parseFloat(s);
+    if (!isNaN(num) && num > 0) onChange({ ...t, override: num });
+    else { const n = { ...t }; delete n.override; onChange(n); }
+  };
+
+  const paceInfo = resolvePaceForSport(t, context);
+  const watts    = Math.round(resolveTargetWatts(t, context));
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 bg-primary/5 border-t border-primary/10">
@@ -1007,23 +1059,26 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         </div>
       )}
 
-      {/* Exact watts */}
+      {/* Exact watts / pace */}
       {t.type === 'watts' && (
         <div className="flex items-center gap-1.5">
           {t.useRange ? (
             <>
               <input type="number" autoFocus value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}
-                className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="min W"/>
+                className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                placeholder={isSwim || isRun ? 'fast' : 'min W'}/>
               <span className="text-slate-400 text-xs">-</span>
               <input type="number" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}
-                className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="max W"/>
-              <span className="text-xs text-slate-400">W</span>
+                className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                placeholder={isSwim || isRun ? 'slow' : 'max W'}/>
+              <span className="text-xs text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
             </>
           ) : (
             <>
               <input type="number" autoFocus value={t.value||''} onChange={e=>set('value',Number(e.target.value))}
-                className="w-20 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="watts"/>
-              <span className="text-xs text-slate-400">W</span>
+                className="w-20 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                placeholder={isSwim || isRun ? 'mm:ss' : 'watts'}/>
+              <span className="text-xs text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
             </>
           )}
           <button onClick={()=>set('useRange',!t.useRange)}
@@ -1033,9 +1088,32 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         </div>
       )}
 
-      {/* Resolved watts preview */}
-      {context.ftp && t.type !== 'open' && (
-        <span className="text-[10px] text-slate-400 ml-1">~{watts} W</span>
+      {/* Override input for zone/lt1/lt2 — keep the label, pin custom pace/watts */}
+      {isOverridable && (
+        <div className="flex items-center gap-1 border-l border-primary/20 pl-2 ml-1">
+          <span className="text-[10px] text-slate-400">Override:</span>
+          <input
+            type="text"
+            value={overrideInput}
+            onChange={e => setOverrideInput(e.target.value)}
+            onBlur={e => commitOverride(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && commitOverride(overrideInput)}
+            placeholder={isSwim || isRun ? 'mm:ss' : 'W'}
+            className="w-16 text-xs text-center border border-primary/30 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+          />
+          <span className="text-[10px] text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
+          {t.override != null && (
+            <button onClick={() => { const n={...t}; delete n.override; onChange(n); setOverrideInput(''); }}
+              className="text-[10px] text-slate-400 hover:text-red-400 leading-none" title="Reset to auto">×</button>
+          )}
+        </div>
+      )}
+
+      {/* Resolved preview */}
+      {t.type !== 'open' && (
+        paceInfo
+          ? <span className="text-[10px] text-slate-400 ml-1">~{paceInfo.label}{paceInfo.unit}</span>
+          : context.ftp && <span className="text-[10px] text-slate-400 ml-1">~{watts} W</span>
       )}
 
       {/* Done */}
@@ -1048,9 +1126,10 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
 }
 
 // ─── Single step row ────────────────────────────────────────────────────────
-function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown, context, highlighted = false }) {
+function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
   const [expanded, setExpanded]   = useState(false);
   const [powerOpen, setPowerOpen] = useState(false);
+  const [noteOpen,  setNoteOpen]  = useState(false);
   const col = STEP_COLORS[step.stepType] || STEP_COLORS.work;
 
   // Duration / distance input state
@@ -1097,7 +1176,14 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
     >
       <div className="h-1" style={{ backgroundColor: col.bg }}/>
       <div className="flex items-center gap-2 px-3 py-2">
-        <span className="text-[11px] font-bold text-slate-300 w-5 text-center select-none">{index+1}</span>
+        {/* Drag handle */}
+        <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-400 shrink-0 touch-none select-none px-0.5" title="Drag to reorder">
+          <svg viewBox="0 0 10 16" className="w-2.5 h-4" fill="currentColor">
+            <circle cx="3" cy="3"  r="1.5"/><circle cx="7" cy="3"  r="1.5"/>
+            <circle cx="3" cy="8"  r="1.5"/><circle cx="7" cy="8"  r="1.5"/>
+            <circle cx="3" cy="13" r="1.5"/><circle cx="7" cy="13" r="1.5"/>
+          </svg>
+        </div>
         <select value={step.stepType} onChange={e=>onUpdate({...step,stepType:e.target.value})}
           className="text-xs font-semibold px-2 py-0.5 rounded-full border-0 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
           style={{ backgroundColor:col.light, color:col.text }}>
@@ -1168,20 +1254,41 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
           </button>
         )}
         <div className="flex items-center gap-0.5 shrink-0">
-          <button onClick={()=>{ setExpanded(v=>!v); setPowerOpen(false); }} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+          {/* Inline note button */}
+          <button onClick={()=>{ setNoteOpen(v=>!v); setPowerOpen(false); setExpanded(false); }}
+            title={step.notes ? step.notes : 'Add note / description'}
+            className={`p-1 rounded-lg transition-colors ${step.notes ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}>
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+              <path d="M2 2h12v9H9l-3 3v-3H2V2zm1 1v7h3v1.6L8.4 10H13V3H3z"/>
+            </svg>
+          </button>
+          <button onClick={()=>{ setExpanded(v=>!v); setPowerOpen(false); setNoteOpen(false); }} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
             <ChevronDownIcon className={`w-3 h-3 transition-transform duration-150 ${expanded?'rotate-180':''}`}/>
-          </button>
-          <button onClick={onMoveUp} disabled={index===0} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 disabled:opacity-20 transition-colors">
-            <ChevronUpIcon className="w-3 h-3"/>
-          </button>
-          <button onClick={onMoveDown} disabled={index===total-1} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 disabled:opacity-20 transition-colors">
-            <ChevronDownIcon className="w-3 h-3"/>
           </button>
           <button onClick={onDelete} className="p-1 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
             <TrashIcon className="w-3.5 h-3.5"/>
           </button>
         </div>
       </div>
+
+      {/* Inline note editor */}
+      {noteOpen && (
+        <div className="px-3 pb-2 pt-1 border-t border-amber-100 bg-amber-50/30">
+          <textarea
+            autoFocus
+            value={step.notes||''} onChange={e=>onUpdate({...step,notes:e.target.value})} rows={2}
+            placeholder="e.g. 400 fre, 4×50 kick + 4×50 progressive..."
+            className="w-full text-xs border border-amber-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-300 resize-none bg-white"/>
+        </div>
+      )}
+
+      {/* Note preview when note is set and panel is closed */}
+      {!noteOpen && step.notes && (
+        <button onClick={()=>setNoteOpen(true)}
+          className="w-full text-left px-3 pb-1.5 text-[10px] text-slate-400 hover:text-slate-600 truncate border-t border-slate-50 bg-slate-50/30 pt-1">
+          📝 {step.notes}
+        </button>
+      )}
 
       {/* Inline power editor */}
       {powerOpen && (
@@ -1193,7 +1300,7 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
         />
       )}
 
-      {/* Full expanded section (label, notes, HR) */}
+      {/* Full expanded section (label, HR) */}
       {expanded && (
         <div className="px-3 pb-3 pt-1 border-t border-slate-50 bg-slate-50/50 flex flex-col gap-3">
           <TargetEditor label="Power target" value={step.powerTarget} onChange={pt=>onUpdate({...step,powerTarget:pt})}/>
@@ -1203,12 +1310,6 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
             <input type="text" value={step.label||''} onChange={e=>onUpdate({...step,label:e.target.value})}
               placeholder="e.g. Main set interval"
               className="mt-1 w-full text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"/>
-          </div>
-          <div>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Notes</span>
-            <textarea value={step.notes||''} onChange={e=>onUpdate({...step,notes:e.target.value})} rows={2}
-              placeholder="Instructions for this step..."
-              className="mt-1 w-full text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary resize-none"/>
           </div>
         </div>
       )}
@@ -1226,7 +1327,33 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
 
   const notify = useCallback((newSteps) => { setSteps(newSteps); onChange?.(newSteps); }, [onChange]);
 
+  // Drag-and-drop reorder state
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const handleDragStart = useCallback((idx) => setDragIdx(idx), []);
+  const handleDragOver  = useCallback((idx) => setDragOverIdx(idx), []);
+  const handleDrop      = useCallback((dropIdx) => {
+    if (dragIdx == null || dragIdx === dropIdx) { setDragIdx(null); setDragOverIdx(null); return; }
+    const n = [...steps];
+    const [moved] = n.splice(dragIdx, 1);
+    n.splice(dropIdx, 0, moved);
+    notify(n);
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, [dragIdx, steps, notify]);
+  const handleDragEnd   = useCallback(() => { setDragIdx(null); setDragOverIdx(null); }, []);
+
   const addStep = (type='work') => {
+    // Swim and run default to distance-based steps; bike defaults to time
+    const distMode = sport === 'swim' || sport === 'run' ? 'distance' : undefined;
+    const distDefaults = {
+      warmup:   { distanceMeters: sport==='swim' ? 400 : 1000 },
+      work:     { distanceMeters: sport==='swim' ? 100 : 1000 },
+      recovery: { distanceMeters: sport==='swim' ? 100 : 400  },
+      cooldown: { distanceMeters: sport==='swim' ? 200 : 800  },
+      rest:     { distanceMeters: 0 },
+    };
     const defaults = {
       warmup:   { durationSeconds:600,  powerTarget:{type:'zone',value:1} },
       work:     { durationSeconds:300,  powerTarget:{type:'zone',value:4} },
@@ -1234,7 +1361,8 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
       cooldown: { durationSeconds:600,  powerTarget:{type:'zone',value:1} },
       rest:     { durationSeconds:60,   powerTarget:{type:'open'} },
     };
-    notify([...steps, { clientId:uid(), stepType:type, ...defaults[type] }]);
+    const extra = distMode ? { durationType: distMode, ...distDefaults[type] } : {};
+    notify([...steps, { clientId:uid(), stepType:type, ...defaults[type], ...extra }]);
   };
 
   const updateStep   = (idx, u)  => { const n=[...steps]; n[idx]=u; notify(n); };
@@ -1355,14 +1483,25 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
               }
             } else {
               rendered.push(
-                <div key={s.clientId||idx} className="flex gap-2 items-start">
+                <div
+                  key={s.clientId||idx}
+                  className={`flex gap-2 items-start transition-opacity ${dragIdx === idx ? 'opacity-40' : ''} ${dragOverIdx === idx && dragIdx !== idx ? 'ring-2 ring-primary/40 rounded-xl' : ''}`}
+                  onDragOver={e => { e.preventDefault(); handleDragOver(idx); }}
+                  onDrop={() => handleDrop(idx)}
+                >
                   <input type="checkbox" className="mt-3 w-3.5 h-3.5 accent-violet-500 shrink-0 cursor-pointer"
                     checked={selectedIndices.has(idx)} onChange={()=>toggleSelect(idx)}/>
                   <div className="flex-1 min-w-0">
                     <StepRow step={s} index={idx} total={steps.length}
                       onUpdate={u=>updateStep(idx,u)} onDelete={()=>deleteStep(idx)}
                       onMoveUp={()=>moveStep(idx,-1)} onMoveDown={()=>moveStep(idx,1)} context={ctx}
-                      highlighted={highlightedStepId === s.clientId}/>
+                      highlighted={highlightedStepId === s.clientId}
+                      dragHandleProps={{
+                        draggable: true,
+                        onDragStart: () => handleDragStart(idx),
+                        onDragEnd: handleDragEnd,
+                      }}
+                    />
                   </div>
                 </div>
               );

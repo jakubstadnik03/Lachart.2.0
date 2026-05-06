@@ -317,7 +317,7 @@ export default function SpiderChart({
       }
     };
     load();
-  }, [sport, comparePeriod, selectedMonths, targetAthleteId]);
+  }, [sport, comparePeriod, selectedMonths, targetAthleteId, bikeReady]);
 
   // ── Derived: bike all-time best (stable normalisation) ────────────────────
   const bikeAllTimeBest = useMemo(() => {

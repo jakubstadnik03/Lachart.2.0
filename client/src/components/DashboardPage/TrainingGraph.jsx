@@ -212,6 +212,12 @@ const TrainingGraph = ({
     if (t == null || id == null) return false;
     return String(t._id) === String(id) || String(t.id) === String(id);
   }, []);
+  // Strava: startDate/start_date, FIT: timestamp, regular: date.
+  const trainingDateMs = useCallback((t) => {
+    const v = t?.date || t?.timestamp || t?.startDate || t?.start_date || t?.startDateLocal;
+    const ms = v ? new Date(v).getTime() : 0;
+    return Number.isFinite(ms) ? ms : 0;
+  }, []);
 
   const availableSports = [...new Set((trainingList || []).map((t) => trainingSport(t)))].filter(Boolean);
 
@@ -269,7 +275,7 @@ const TrainingGraph = ({
 
   const handleTitleChange = (newTitle) => {
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
-    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle).sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
     if (setSelectedTitle) setSelectedTitle(newTitle);
     if (setSelectedTraining && trainingsWithTitle[0]) setSelectedTraining((trainingsWithTitle[0]._id || trainingsWithTitle[0].id));
   };
@@ -286,6 +292,10 @@ const TrainingGraph = ({
     setLoading(false);
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     if (sportTrainings.length === 0) { if (setSelectedTitle) setSelectedTitle(null); if (setSelectedTraining) setSelectedTraining(null); return; }
+    // Chart needs `.results` (intervals) to render — used below when
+    // *defaulting*. We DON'T strip a user's explicit pick that lacks results;
+    // if the resolved training matches sport, we keep it.
+    const hasResults = (t) => Array.isArray(t?.results) && t.results.length > 0;
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
       if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
@@ -294,13 +304,14 @@ const TrainingGraph = ({
       }
     }
     if (selectedTitle) {
-      const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => new Date(b.date) - new Date(a.date));
-      if (trainingsWithTitle.length > 0) { if (setSelectedTraining) setSelectedTraining((trainingsWithTitle[0]._id || trainingsWithTitle[0].id)); return; }
+      const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
+      const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
+      if (pick) { if (setSelectedTraining) setSelectedTraining((pick._id || pick.id)); return; }
     }
-    const sortedTrainings = [...sportTrainings].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const newest = sortedTrainings[0];
+    const sortedTrainings = [...sportTrainings].sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
+    const newest = sortedTrainings.find(hasResults) ?? sortedTrainings[0];
     if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id || newest.id); }
-  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs]);
 
   // Update ranges + close-on-outside-click
   useEffect(() => {
@@ -409,10 +420,10 @@ const TrainingGraph = ({
 
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
   const trainingOptions = trainingsWithSelectedTitle
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0))
     .map(training => ({
       value: training._id,
-      label: new Date(training.date).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      label: new Date(training.date || training.startDate).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }));
   const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
 

@@ -2174,13 +2174,13 @@ const FitAnalysisPage = () => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
-      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
 
       if (planModal?.workout?._id) {
-        const updated = await updatePlannedWorkout(planModal.workout._id, data);
+        const updated = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
         setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === updated._id ? updated : p));
       } else {
-        const created = await createPlannedWorkout({ ...data, ...opts });
+        const created = await createPlannedWorkout(data, coachAthleteId);
         setPlannedWorkoutsCalendar(prev => [...prev, created]);
       }
       setPlanModal(null);
@@ -2190,26 +2190,32 @@ const FitAnalysisPage = () => {
   const handlePlanDelete = useCallback(async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
     try {
-      await deletePlannedWorkout(pw._id);
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      await deletePlannedWorkout(pw._id, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => prev.filter(p => p._id !== pw._id));
       setPlanModal(null);
     } catch (_) {}
-  }, []);
+  }, [selectedAthleteId, user?.role]);
 
   const handleMovePlannedWorkout = useCallback(async (id, newDateStr) => {
     try {
-      const updated = await updatePlannedWorkout(id, { date: newDateStr });
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      const updated = await updatePlannedWorkout(id, { date: newDateStr }, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === id ? { ...p, date: newDateStr, ...updated } : p));
     } catch (_) {}
-  }, []);
+  }, [selectedAthleteId, user?.role]);
 
   const handleCopyPlannedWorkout = useCallback(async (pw, newDateStr) => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
-      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
       const { _id, status, executionData, ...rest } = pw;
-      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned', ...opts });
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' }, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => [...prev, created]);
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);
@@ -3876,7 +3882,7 @@ const FitAnalysisPage = () => {
 
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className={`${isMobile ? 'min-h-full flex flex-col p-0' : 'min-h-screen px-2 sm:px-4 py-4 md:p-6'}`}>
       <UpgradeModal {...UpgradeModalProps} />
       {showAutoClassify && (
         <AutoClassifyModal
@@ -3903,7 +3909,7 @@ const FitAnalysisPage = () => {
           onClose={() => setCompareModal(null)}
         />
       )}
-      <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
+      <div className={isMobile ? 'w-full flex flex-col flex-1 min-h-0' : 'max-w-[1600px] mx-auto'}>
         {!isMobile && (
           <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="flex items-center justify-between mb-4 md:mb-6">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Training Calendar</h1>
@@ -3934,7 +3940,7 @@ const FitAnalysisPage = () => {
           </motion.div>
         )}
         {isMobile && !(selectedTraining || selectedStrava) && (
-          <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+          <div className="flex-shrink-0 px-4 pt-4 pb-2 flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">Training Calendar</h1>
             <div className="flex items-center gap-1.5">
               <button
@@ -3973,7 +3979,7 @@ const FitAnalysisPage = () => {
           )}
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'px-2' : ''}`}>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'flex-1 min-h-0' : ''}`}>
         <CalendarView
           activities={calendarMergedActivities}
           selectedActivityId={
@@ -4020,6 +4026,7 @@ const FitAnalysisPage = () => {
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onDeletePlannedWorkout={handlePlanDelete}
           onOpenActivity={handleCalendarActivitySelect}
+          athleteId={selectedAthleteId || null}
           mobileChartsContent={calendarPeriod ? (
             <CalendarPeriodStats
               activities={calendarMergedActivities}

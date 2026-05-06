@@ -117,6 +117,7 @@ export default function WorkoutPlannerPage() {
 
   const isCoachLike = ['coach','tester','testing','admin'].includes(String(user?.role||'').toLowerCase());
   const athleteId   = urlAthleteId || (isCoachLike ? (globalAthleteId || user?._id) : user?._id);
+  const coachAthleteId = isCoachLike && globalAthleteId && globalAthleteId !== user?._id ? globalAthleteId : null;
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [planned,   setPlanned]   = useState([]);
@@ -189,15 +190,11 @@ export default function WorkoutPlannerPage() {
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   const handleSave = async (data) => {
     try {
-      const params = {};
-      if (isCoachLike && globalAthleteId && globalAthleteId !== user?._id) {
-        params.athleteId = globalAthleteId;
-      }
       if (modal.workout?._id) {
-        const updated = await updatePlannedWorkout(modal.workout._id, data);
+        const updated = await updatePlannedWorkout(modal.workout._id, data, coachAthleteId);
         setPlanned(prev => prev.map(p => p._id === updated._id ? updated : p));
       } else {
-        const created = await createPlannedWorkout({ ...data, ...params });
+        const created = await createPlannedWorkout(data, coachAthleteId);
         setPlanned(prev => [...prev, created]);
       }
       setModal(null);
@@ -210,7 +207,7 @@ export default function WorkoutPlannerPage() {
   const handleDelete = async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
     try {
-      await deletePlannedWorkout(pw._id);
+      await deletePlannedWorkout(pw._id, coachAthleteId);
       setPlanned(prev => prev.filter(p => p._id !== pw._id));
       setModal(null);
       addNotification('Deleted', 'success');
@@ -221,7 +218,7 @@ export default function WorkoutPlannerPage() {
 
   const handleComplete = async (pw) => {
     try {
-      const updated = await updatePlannedWorkout(pw._id, { status: 'completed' });
+      const updated = await updatePlannedWorkout(pw._id, { status: 'completed' }, coachAthleteId);
       setPlanned(prev => prev.map(p => p._id === updated._id ? updated : p));
       addNotification('Marked as completed', 'success');
     } catch {
