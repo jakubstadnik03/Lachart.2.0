@@ -301,16 +301,18 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
     let cancelled = false;
 
-    // On-load: 60 s cooldown so reopening the same tab doesn't hammer the API.
-    // On foreground-return: 30 s cooldown so switching back from Strava syncs quickly.
-    const runStrava = async (cooldownMs = 60000) => {
+    // Cooldown uses localStorage (shared across tabs) with 30 min TTL so opening
+    // multiple tabs or refreshing doesn't generate extra Strava API calls.
+    // On foreground-return we use a shorter 5 min cooldown to catch a fresh
+    // upload the user just made in the Strava app.
+    const runStrava = async (cooldownMs = 30 * 60 * 1000) => {
       const syncKey = `strava_auto_sync_${user._id}`;
       const now = Date.now();
-      const lastSync = sessionStorage.getItem(syncKey);
+      const lastSync = localStorage.getItem(syncKey);
       if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
       try {
         const result = await autoSyncStravaActivities();
-        sessionStorage.setItem(syncKey, now.toString());
+        localStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
@@ -323,14 +325,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    const runGarmin = async (cooldownMs = 60000) => {
+    const runGarmin = async (cooldownMs = 30 * 60 * 1000) => {
       const syncKey = `garmin_auto_sync_${user._id}`;
       const now = Date.now();
-      const lastSync = sessionStorage.getItem(syncKey);
+      const lastSync = localStorage.getItem(syncKey);
       if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
       try {
         const result = await autoSyncGarminActivities();
-        sessionStorage.setItem(syncKey, now.toString());
+        localStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Garmin auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
@@ -354,8 +356,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     // while the user was away from LaChart.
     const onForeground = async () => {
       if (cancelled) return;
-      if (hasStrava) await runStrava(30000);  // 30 s cooldown on foreground
-      if (hasGarmin) await runGarmin(30000);
+      if (hasStrava) await runStrava(5 * 60 * 1000);  // 5 min on foreground return
+      if (hasGarmin) await runGarmin(5 * 60 * 1000);
     };
 
     // Capacitor native: use App plugin appStateChange event

@@ -815,48 +815,8 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
-  // Auto-sync Strava activities if enabled
-  useEffect(() => {
-    if (!user?._id || !user?.strava?.autoSync) {
-      return;
-    }
-
-    // Only auto-sync for the current user (not for coach viewing athlete)
-    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user?._id;
-    if (targetAthleteId !== user._id) {
-      return; // Don't auto-sync when viewing another athlete
-    }
-
-    // Check if we've already synced in this session
-    const syncKey = `strava_auto_sync_dashboard_${user._id}`;
-    const lastSync = sessionStorage.getItem(syncKey);
-    const now = Date.now();
-    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
-      return;
-    }
-
-    // Auto-sync on mount and when user changes
-    const performAutoSync = async () => {
-      try {
-        const result = await autoSyncStravaActivities();
-        sessionStorage.setItem(syncKey, now.toString());
-        if (result.imported > 0 || result.updated > 0) {
-          console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
-          // Reload calendar data after sync
-          loadCalendarData(user._id);
-        }
-      } catch (error) {
-        // 429 errors are already handled in autoSyncStravaActivities
-        console.log('Auto-sync failed:', error);
-        // Silent fail - don't show errors to user
-      }
-    };
-
-    // Delay auto-sync slightly to avoid blocking page load
-    const timeoutId = setTimeout(performAutoSync, 2000);
-    
-    return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData, isCoachLikeRole]);
+  // Auto-sync is handled by Layout.jsx (single trigger per app load, shared across tabs).
+  // Removed duplicate sync here to avoid doubling Strava API usage.
 
   // ── Planned workouts for dashboard calendar ───────────────────────────────
   const loadDashboardPlannedWorkouts = useCallback(async () => {
