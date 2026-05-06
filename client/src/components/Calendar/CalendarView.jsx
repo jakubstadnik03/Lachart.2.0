@@ -15,6 +15,7 @@ import {
   PencilIcon,
   ArrowTopRightOnSquareIcon,
   ArrowDownTrayIcon,
+  BeakerIcon,
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import api from '../../services/api';
@@ -1199,7 +1200,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
               style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}
             >
-              <span>🩸</span>
+              <BeakerIcon className="w-4 h-4" />
               <span>Lactate</span>
             </button>
           )}
