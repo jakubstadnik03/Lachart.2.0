@@ -610,7 +610,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         {/* On mobile the header is position:fixed. For athletes the main needs pt to clear it.
             For coaches the CoachAthleteBar already carries that mt offset, so main needs pt-0. */}
         <main
-          className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2 sm:px-3 md:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] lg:px-4 lg:pb-0 lg:pt-0 ${isCoachRole(user) ? 'pt-0' : 'pt-14'}`}
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] lg:px-4 lg:pb-0 lg:pt-0 ${isCoachRole(user) ? 'pt-0' : 'pt-14'}`}
         >
           <div className="mx-auto w-full max-w-[1600px] flex flex-col flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}

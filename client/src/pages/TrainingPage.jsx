@@ -739,19 +739,6 @@ export default function TrainingPage() {
         onSave={handleQuickAddLactate}
       />
 
-      {/* Record field lactate measurement → save to DB → show in Field Lactate panel */}
-      {showRecordLactate && (
-        <RecordLactateModal
-          onClose={() => setShowRecordLactate(false)}
-          onSave={async (data) => {
-            await createFieldLactateMeasurement({
-              ...data,
-              athleteId: selectedAthleteId || undefined,
-            });
-            setFieldLactatePanelKey(k => k + 1);
-          }}
-        />
-      )}
 
       {/* Portal modals — rendered into #app-modal-root (inside NativeLayout's fixed
           container, above bottom tab bar) so they cover the bottom navigation. */}
@@ -776,6 +763,25 @@ export default function TrainingPage() {
               />
             </motion.div>
           </motion.div>,
+          document.getElementById('app-modal-root') || document.body
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRecordLactate && ReactDOM.createPortal(
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+            <RecordLactateModal
+              onClose={() => setShowRecordLactate(false)}
+              onSave={async (data) => {
+                await createFieldLactateMeasurement({
+                  ...data,
+                  athleteId: selectedAthleteId || undefined,
+                });
+                setFieldLactatePanelKey(k => k + 1);
+                setShowRecordLactate(false);
+              }}
+            />
+          </div>,
           document.getElementById('app-modal-root') || document.body
         )}
       </AnimatePresence>

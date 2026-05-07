@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { Link } from 'react-router-dom';
 import { BeakerIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
@@ -345,22 +346,28 @@ export default function FieldLactateTrainingPanel({
         </div>
       </div>
 
-      {/* Record Lactate modal */}
-      {showRecord && (
-        <RecordLactateModal
-          onClose={() => setShowRecord(false)}
-          onSave={handleSaveMeasurement}
-        />
+      {/* Record Lactate modal — rendered into portal so it covers bottom tab bar */}
+      {showRecord && ReactDOM.createPortal(
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+          <RecordLactateModal
+            onClose={() => setShowRecord(false)}
+            onSave={async (data) => { await handleSaveMeasurement(data); setShowRecord(false); }}
+          />
+        </div>,
+        document.getElementById('app-modal-root') || document.body
       )}
 
-      {/* Assign Lactate modal */}
-      {assignTarget && (
-        <AssignLactateModal
-          measurement={assignTarget}
-          athleteId={integrationAthleteId || null}
-          onClose={() => setAssignTarget(null)}
-          onAssigned={() => { loadMeasurements(); load(); }}
-        />
+      {/* Assign Lactate modal — rendered into portal so it covers bottom tab bar */}
+      {assignTarget && ReactDOM.createPortal(
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+          <AssignLactateModal
+            measurement={assignTarget}
+            athleteId={integrationAthleteId || null}
+            onClose={() => setAssignTarget(null)}
+            onAssigned={() => { loadMeasurements(); load(); }}
+          />
+        </div>,
+        document.getElementById('app-modal-root') || document.body
       )}
     </>
   );

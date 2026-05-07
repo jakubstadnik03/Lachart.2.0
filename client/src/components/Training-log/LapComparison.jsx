@@ -8,10 +8,10 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
+  Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChartBarIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon } from '@heroicons/react/24/outline';
 import { getStravaActivityDetail, getFitTraining } from '../../services/api';
 
 // ─── constants ────────────────────────────────────────────────────────────────

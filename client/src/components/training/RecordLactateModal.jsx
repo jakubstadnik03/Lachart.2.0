@@ -32,9 +32,10 @@ export default function RecordLactateModal({ onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="absolute inset-0 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 pb-8 sm:pb-5">
+      <div className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 16px) + 16px, 32px)' }}>
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

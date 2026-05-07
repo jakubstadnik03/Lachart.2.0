@@ -3258,7 +3258,6 @@ export default function CalendarView({
                                   const actDist = Number(act.distance || act.totalDistance || 0);
                                   const actDurStr  = actDur > 0 ? `${Math.floor(actDur/3600)}h${String(Math.floor((actDur%3600)/60)).padStart(2,'0')}` : null;
                                   const actDistStr = actDist > 0 ? (actDist >= 1000 ? `${(actDist/1000).toFixed(1)}km` : `${Math.round(actDist)}m`) : null;
-                                  const actTss   = Number(act.tss || act.trainingLoad || 0);
                                   const actHr    = Number(act.averageHeartRate || act.average_heartrate || 0);
                                   const actPower = Number(act.normalizedPower || act.avgPower || act.average_watts || 0);
                                   const actSport = String(act.sport || pwSport || '').toLowerCase();
