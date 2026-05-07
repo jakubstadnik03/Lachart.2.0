@@ -347,7 +347,7 @@ const userSchema = new mongoose.Schema({
     default: null,
     validate: {
       validator(v) {
-        return v == null || ['email', 'google', 'facebook', 'coach_invite'].includes(v);
+        return v == null || ['email', 'google', 'apple', 'facebook', 'coach_invite'].includes(v);
       },
       message: 'Invalid signupMethod'
     }

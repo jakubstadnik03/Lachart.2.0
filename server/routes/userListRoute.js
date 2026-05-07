@@ -2327,7 +2327,7 @@ router.post("/apple-auth", async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        await userDao.update(user._id, {
+        await User.findByIdAndUpdate(user._id, {
             $set: { lastLogin: new Date() },
             $inc: { loginCount: 1 },
         });
