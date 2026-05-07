@@ -479,7 +479,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
               : 'bg-white border-gray-200 hover:bg-gray-50 shadow-sm'
         }`}
         style={{
-          borderLeftColor: isCompletedPair ? '#22c55e' : isMissedPair ? '#ef4444' : sportBorderColor,
+          borderLeftColor: sportBorderColor,
           borderLeftWidth: 3,
         }}
         title={pw.title}

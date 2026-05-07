@@ -274,11 +274,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
     // compliance hit (legacy)        → uses compliance ring color
     const isCompletedPair = pairingState === 'completed' || isCompleted;
     const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
-    const leftBorderColor = isCompletedPair
-      ? '#22c55e'
-      : isMissedPair
-        ? '#ef4444'
-        : (compliance ? compliance.color : color);
+    const leftBorderColor = color; // always sport color on left
 
     let cardClass;
     if (isCompletedPair) {
