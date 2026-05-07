@@ -989,6 +989,17 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Strava not connected' });
     }
 
+    // Server-side cooldown: don't hammer Strava if the client calls too often.
+    // 15 minutes is the minimum gap between frontend-triggered syncs per user.
+    // The webhook handles real-time delivery; this endpoint is just a fallback.
+    const MIN_AUTO_SYNC_GAP_MS = 15 * 60 * 1000;
+    if (user.strava?.lastSyncDate) {
+      const msSinceLast = Date.now() - new Date(user.strava.lastSyncDate).getTime();
+      if (msSinceLast < MIN_AUTO_SYNC_GAP_MS) {
+        return res.json({ imported: 0, updated: 0, skipped: true, message: 'Synced recently, skipping' });
+      }
+    }
+
     // Use the service function
     const { syncStravaForUser } = require('../services/stravaAutoSyncService');
     const result = await syncStravaForUser(user);

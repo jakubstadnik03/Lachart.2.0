@@ -289,6 +289,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, hasCheckedProfile, location.pathname]);
 
+  // Keep notifications in a ref so the sync effect can read the latest value
+  // without needing it as a dependency (which would cause the effect to re-run
+  // on every notification and generate extra Strava API calls).
+  const userNotificationsRef = useRef(user?.notifications);
+  useEffect(() => { userNotificationsRef.current = user?.notifications; }, [user?.notifications]);
+
   // Strava then Garmin (sequential) — avoids two heavy backend jobs at once after login.
   // Coaches who connect Strava use the same user-scoped tokens; sync must run for them too.
   // Also re-syncs when the app returns to foreground (user uploads to Strava then switches back).
@@ -317,7 +323,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
           if (result.imported > 0) {
-            maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
+            maybeNotifyStravaActivitiesImported(result.imported, userNotificationsRef.current);
           }
         }
       } catch (error) {
@@ -342,22 +348,25 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    // Initial sync on app load (small delay so auth is fully settled)
+    // Initial sync on app load (small delay so auth is fully settled).
+    // 30-min cooldown matches the default so opening multiple tabs or
+    // navigating back to the app quickly doesn't burn extra Strava quota.
     const run = async () => {
       await new Promise((r) => setTimeout(r, 3500));
       if (cancelled) return;
-      if (hasStrava) await runStrava(60000);
+      if (hasStrava) await runStrava(30 * 60 * 1000);
       await new Promise((r) => setTimeout(r, 4500));
       if (cancelled) return;
-      if (hasGarmin) await runGarmin(60000);
+      if (hasGarmin) await runGarmin(30 * 60 * 1000);
     };
 
     // Re-sync when app returns to foreground — catches activities uploaded to Strava
-    // while the user was away from LaChart.
+    // while the user was away from LaChart. 15-min cooldown is short enough to
+    // feel responsive but won't drain the daily Strava quota on frequent switches.
     const onForeground = async () => {
       if (cancelled) return;
-      if (hasStrava) await runStrava(5 * 60 * 1000);  // 5 min on foreground return
-      if (hasGarmin) await runGarmin(5 * 60 * 1000);
+      if (hasStrava) await runStrava(15 * 60 * 1000);
+      if (hasGarmin) await runGarmin(15 * 60 * 1000);
     };
 
     // Capacitor native: use App plugin appStateChange event
@@ -382,6 +391,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       cancelled = true;
       capacitorCleanup?.remove?.();
     };
+  // NOTE: user?.notifications deliberately excluded — incoming notifications
+  // must NOT re-trigger the sync effect (they changed too frequently and
+  // caused a runaway cascade of extra Strava API calls).
   }, [
     user?._id,
     user?.role,
@@ -389,7 +401,6 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?.strava?.athleteId,
     user?.garmin?.autoSync,
     user?.garmin?.accessToken,
-    user?.notifications
   ]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)

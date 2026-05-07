@@ -1133,7 +1133,7 @@ export const autoSyncStravaActivities = async () => {
   const last429Key = 'strava_auto_sync_last_429';
   const last429 = localStorage.getItem(last429Key);
   const now = Date.now();
-  if (last429 && (now - parseInt(last429)) < 60000) { // Wait 1 minute after 429
+  if (last429 && (now - parseInt(last429)) < 15 * 60 * 1000) { // Wait 15 min after 429
     console.log('Strava auto-sync: Too many requests, waiting...');
     return { imported: 0, updated: 0 };
   }
@@ -1193,7 +1193,7 @@ export const autoSyncGarminActivities = async () => {
   const last429Key = 'garmin_auto_sync_last_429';
   const last429 = localStorage.getItem(last429Key);
   const now = Date.now();
-  if (last429 && (now - parseInt(last429)) < 60000) { // Wait 1 minute after 429
+  if (last429 && (now - parseInt(last429)) < 15 * 60 * 1000) { // Wait 15 min after 429
     console.log('Garmin auto-sync: Too many requests, waiting...');
     return { imported: 0, updated: 0 };
   }
