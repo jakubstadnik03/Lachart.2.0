@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { Link } from 'react-router-dom';
-import { BeakerIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { BeakerIcon, BoltIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
   getIntegrationStatus,
   getPendingLactateActivities,
@@ -77,7 +77,7 @@ function ConfidenceBadge({ score }) {
   );
   if (score >= 4) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
-      ⚡ Intervals?
+      <BoltIcon className="w-3 h-3" /> Intervals?
     </span>
   );
   return null;
@@ -202,8 +202,8 @@ export default function FieldLactateTrainingPanel({
           </div>
         </div>
 
-        {/* Body — scrollable */}
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: '32rem' }}>
+        {/* Body — scrollable, ~4 items visible */}
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: '18rem' }}>
 
           {/* ── Pending measurements ── */}
           {(measLoading || measurements.length > 0) && (
