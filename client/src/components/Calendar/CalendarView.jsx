@@ -531,22 +531,33 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel }) {
   const title = a.title || a.name || a.originalFileName || 'Activity';
 
-  // Duration formatting
-  const dur = a.duration || a.elapsed_time || a.movingTime || 0;
-  const durStr = dur > 0 ? `${Math.floor(dur/3600)}:${String(Math.floor((dur%3600)/60)).padStart(2,'0')}` : null;
+  const dur  = Number(a.duration || a.elapsed_time || a.movingTime || 0);
+  const dist = Number(a.distance || a.totalDistance || 0);
+  const tss  = Number(a.tss || a.trainingLoad || 0);
+  const hr   = Number(a.averageHeartRate || a.average_heartrate || 0);
+  const power = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
 
-  // Distance
-  const dist = a.distance || a.totalDistance || 0;
-  const distStr = dist > 0 ? (dist > 1000 ? `${(dist/1000).toFixed(1)} km` : `${Math.round(dist)} m`) : null;
+  const s = String(a.sport || '').toLowerCase();
+  const isSwim = s.includes('swim');
+  const isRun  = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
+  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
 
-  // TSS
-  const tss = a.tss || a.trainingLoad || 0;
+  const durStr = dur > 0 ? `${Math.floor(dur/3600)}h ${String(Math.floor((dur%3600)/60)).padStart(2,'0')}m` : null;
+  const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(1)} km` : `${Math.round(dist)} m`) : null;
 
-  // Power & HR
-  const power = a.normalizedPower || a.avgPower || a.average_watts || 0;
-  const hr = a.averageHeartRate || a.average_heartrate || 0;
+  // Pace: sec/km for run, sec/100m for swim
+  const paceStr = (() => {
+    if (isSwim && dist > 0 && dur > 0) {
+      const sper100 = dur / (dist / 100);
+      return `${Math.floor(sper100/60)}:${String(Math.round(sper100%60)).padStart(2,'0')}/100m`;
+    }
+    if (isRun && dist > 0 && dur > 0) {
+      const sperkm = dur / (dist / 1000);
+      return `${Math.floor(sperkm/60)}:${String(Math.round(sperkm%60)).padStart(2,'0')}/km`;
+    }
+    return null;
+  })();
 
-  // Color based on sport
   const color = sportColor(a.sport);
 
   const handleClick = (e) => {
@@ -575,11 +586,14 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
           <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-[11px] font-bold truncate flex-1">{title}</span>
         </div>
-        {/* Duration + Distance */}
-        {(durStr || distStr) && (
-          <div className="flex items-center gap-2 text-[10px] flex-wrap">
-            {durStr && <span className={isSelected ? 'text-white/80' : 'text-gray-500'}>{durStr}</span>}
-            {distStr && <><span className={isSelected ? 'text-white/40' : 'text-gray-300'}>·</span><span className={isSelected ? 'text-white/80' : 'text-gray-500'}>{distStr}</span></>}
+        {/* Single stats row: duration · distance · pace/power · HR */}
+        {(durStr || distStr || paceStr || (isBike && power > 0) || hr > 0) && (
+          <div className={`flex items-center gap-1.5 text-[10px] flex-wrap ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+            {durStr && <span>{durStr}</span>}
+            {distStr && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span>{distStr}</span></>}
+            {paceStr && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span className="font-medium">{paceStr}</span></>}
+            {isBike && power > 0 && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span className="font-medium">{Math.round(power)} W</span></>}
+            {hr > 0 && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span>♥ {Math.round(hr)}</span></>}
           </div>
         )}
         {/* TSS bar */}
@@ -589,21 +603,6 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
               <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (tss/150)*100)}%`, backgroundColor: tss > 100 ? '#ef4444' : tss > 70 ? '#f59e0b' : '#22c55e' }} />
             </div>
             <span className={`text-[9px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
-          </div>
-        )}
-        {/* Power & HR secondary row */}
-        {(power > 0 || hr > 0) && (
-          <div className="flex items-center gap-2 text-[10px] flex-wrap mt-0.5">
-            {power > 0 && (
-              <span className={isSelected ? 'text-white/70' : 'text-gray-400'}>
-                {Math.round(power)}W
-              </span>
-            )}
-            {hr > 0 && (
-              <span className={isSelected ? 'text-white/70' : 'text-gray-400'}>
-                ♥ {Math.round(hr)} bpm
-              </span>
-            )}
           </div>
         )}
       </button>
@@ -3257,9 +3256,20 @@ export default function CalendarView({
                                   // Linked pair — clicking opens the activity modal
                                   const actDur = Number(act.duration || act.elapsed_time || act.movingTime || act.moving_time || act.totalTimerTime || act.totalElapsedTime || 0);
                                   const actDist = Number(act.distance || act.totalDistance || 0);
-                                  const actDurStr = actDur > 0 ? `${Math.floor(actDur/3600)}h${String(Math.floor((actDur%3600)/60)).padStart(2,'0')}` : null;
+                                  const actDurStr  = actDur > 0 ? `${Math.floor(actDur/3600)}h${String(Math.floor((actDur%3600)/60)).padStart(2,'0')}` : null;
                                   const actDistStr = actDist > 0 ? (actDist >= 1000 ? `${(actDist/1000).toFixed(1)}km` : `${Math.round(actDist)}m`) : null;
-                                  const actTss = Number(act.tss || act.trainingLoad || 0);
+                                  const actTss   = Number(act.tss || act.trainingLoad || 0);
+                                  const actHr    = Number(act.averageHeartRate || act.average_heartrate || 0);
+                                  const actPower = Number(act.normalizedPower || act.avgPower || act.average_watts || 0);
+                                  const actSport = String(act.sport || pwSport || '').toLowerCase();
+                                  const actIsSwim = actSport.includes('swim');
+                                  const actIsRun  = actSport.includes('run') || actSport.includes('hike') || actSport.includes('walk') || actSport.includes('trail');
+                                  const actIsBike = actSport.includes('ride') || actSport.includes('cycle') || actSport.includes('bike') || actSport.includes('virtual');
+                                  const actPaceStr = (() => {
+                                    if (actIsSwim && actDist > 0 && actDur > 0) { const s = actDur/(actDist/100); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/100m`; }
+                                    if (actIsRun  && actDist > 0 && actDur > 0) { const s = actDur/(actDist/1000); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/km`; }
+                                    return null;
+                                  })();
                                   const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
                                   return (
                                     <button key={`pw-${pi}`}
@@ -3279,13 +3289,15 @@ export default function CalendarView({
                                         <span className="text-[10px] font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
                                         <span className="text-[10px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
-                                      {/* Row 2: sport icon (sport color) + stats + category badge */}
+                                      {/* Row 2: sport icon + stats (dur · dist · pace/power · HR) + category */}
                                       <div className="flex items-center gap-1.5 pl-0.5">
                                         <SportIcon sport={act.sport || pwSport} className="w-3.5 h-3.5 flex-shrink-0" />
-                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-1 min-w-0">
-                                          {actDurStr && <span className="font-medium">{actDurStr}</span>}
+                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-1 min-w-0 flex-wrap">
+                                          {actDurStr && <span>{actDurStr}</span>}
                                           {actDistStr && <><span className="text-gray-300">·</span><span>{actDistStr}</span></>}
-                                          {actTss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(actTss)}</span></>}
+                                          {actPaceStr && <><span className="text-gray-300">·</span><span className="font-medium">{actPaceStr}</span></>}
+                                          {actIsBike && actPower > 0 && <><span className="text-gray-300">·</span><span className="font-medium">{Math.round(actPower)}W</span></>}
+                                          {actHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(actHr)}</span></>}
                                         </div>
                                         {act.category && (
                                           <div className="text-[8px] px-1.5 py-0.5 rounded flex-shrink-0 font-semibold border"
@@ -3321,21 +3333,37 @@ export default function CalendarView({
                                 const color = sportColor(a.sport);
                                 const title = a.title || a.name || a.originalFileName || 'Activity';
                                 const dur = Number(a.duration || a.elapsed_time || a.movingTime || a.moving_time || a.totalTimerTime || a.totalElapsedTime || 0);
-                                const durStr = dur > 0 ? `${Math.floor(dur / 3600)}h${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
                                 const dist = Number(a.distance || a.totalDistance || 0);
-                                const distStr = dist > 0 ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
                                 const tss = Number(a.tss || a.trainingLoad || 0);
+                                const mHr = Number(a.averageHeartRate || a.average_heartrate || 0);
+                                const mPower = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
+                                const mSport = String(a.sport || '').toLowerCase();
+                                const mIsSwim = mSport.includes('swim');
+                                const mIsRun  = mSport.includes('run') || mSport.includes('hike') || mSport.includes('walk') || mSport.includes('trail');
+                                const mIsBike = mSport.includes('ride') || mSport.includes('cycle') || mSport.includes('bike') || mSport.includes('virtual');
+                                const durStr  = dur > 0 ? `${Math.floor(dur/3600)}h${String(Math.floor((dur%3600)/60)).padStart(2,'0')}` : null;
+                                const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
+                                const mPaceStr = (() => {
+                                  if (mIsSwim && dist > 0 && dur > 0) { const s = dur/(dist/100); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/100m`; }
+                                  if (mIsRun  && dist > 0 && dur > 0) { const s = dur/(dist/1000); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/km`; }
+                                  return null;
+                                })();
                                 return (
                                   <button key={`act-${i}`}
                                     onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                                    className={`w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
+                                    className={`w-full text-left flex flex-col gap-0.5 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
                                     style={{ borderLeftColor: color, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}>
-                                    <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
-                                    <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
-                                    <div className="flex items-center gap-1.5 text-[10px] flex-shrink-0">
-                                      {durStr && <span className="font-medium text-gray-600">{durStr}</span>}
-                                      {distStr && <span className="text-gray-400">{distStr}</span>}
-                                      {tss > 0 && <span className="font-bold text-primary">{Math.round(tss)}</span>}
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
+                                      <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-500 pl-6 flex-wrap">
+                                      {durStr && <span>{durStr}</span>}
+                                      {distStr && <><span className="text-gray-300">·</span><span>{distStr}</span></>}
+                                      {mPaceStr && <><span className="text-gray-300">·</span><span className="font-medium">{mPaceStr}</span></>}
+                                      {mIsBike && mPower > 0 && <><span className="text-gray-300">·</span><span className="font-medium">{Math.round(mPower)}W</span></>}
+                                      {mHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(mHr)}</span></>}
+                                      {tss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(tss)}</span></>}
                                     </div>
                                   </button>
                                 );
