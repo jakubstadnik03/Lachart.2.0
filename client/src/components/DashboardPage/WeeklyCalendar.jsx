@@ -544,6 +544,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
   return (
     <button
       onClick={onClick}
+      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       className={`w-full text-left rounded-xl border transition-all flex flex-col gap-1 ${
         compact ? 'p-1.5' : 'p-2'
       } ${
@@ -1370,8 +1371,8 @@ const WeeklyCalendar = ({
               
               <div 
                 ref={scrollContainerRef}
-                className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
-                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
               >
                 <div className="flex gap-2 min-w-max">
                 {weekDays.map((day, idx) => {
@@ -2093,8 +2094,8 @@ const WeeklyCalendar = ({
             
             <div 
               ref={scrollContainerNoTrainingRef}
-              className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+              className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
             >
               <div className="flex gap-2 min-w-max">
           {weekDays.map((day, idx) => {
