@@ -171,10 +171,10 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       if (record.distance !== undefined && record.distance !== null && record.distance > 0) {
         cumulativeDistance = record.distance / 1000; // Convert meters to km
       } else if (i > 0) {
-        const prevRecord = records[i - 1];
+        const prevRecord = recordsToProcess[i - 1];
         const timeDiff = record.timeFromStart - prevRecord.timeFromStart;
         const avgSpeed = record.speed || prevRecord.speed || 0;
-        cumulativeDistance += (avgSpeed / 3.6) * timeDiff; // Convert km/h to m/s, then to km
+        cumulativeDistance += (avgSpeed * timeDiff) / 3600; // km/h × s ÷ 3600 = km
       }
       
       return {

@@ -1007,10 +1007,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const velocity  = streams.velocity_smooth?.data || streams.velocity_smooth || [];
     const cadence   = streams.cadence?.data || streams.cadence || [];
     const altitude  = streams.altitude?.data || streams.altitude || [];
+    const distArr   = streams.distance?.data || streams.distance || [];
     const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
     const startMs   = new Date(startDate).getTime();
     const records = time.map((t, i) => ({
       timestamp: new Date(startMs + t * 1000).toISOString(),
+      distance:  distArr[i] != null ? distArr[i] : undefined, // cumulative metres from Strava
       power:     watts[i] > 0 ? watts[i] : null,
       heartRate: heartrate[i] > 0 ? heartrate[i] : null,
       speed:     velocity[i] > 0 ? velocity[i] : null,
@@ -1697,11 +1699,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </button>
         </div>
 
-        {/* Body — fixed top + scrollable laps */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-
-        {/* ── Fixed top section ── */}
-        <div className="flex-shrink-0 overflow-y-auto" style={{ maxHeight: '55%' }}>
+        {/* Body — single scrollable column */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div>
 
           {/* ── Stats row ── */}
           <div className="px-5 pt-4 pb-3 flex flex-wrap gap-2 border-b border-gray-50">
@@ -1817,10 +1817,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
-        </div>{/* end fixed top */}
-
-        {/* ── Scrollable bottom section ── */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        </div>{/* end fixed content */}
 
           {/* ── Laps table — full width ── */}
           {laps.length > 0 && (
@@ -2018,8 +2015,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           </div>
 
-        </div>{/* end scrollable bottom */}
-        </div>{/* end body flex-col */}
+        </div>{/* end single scrollable column */}
       </div>
     </div>,
     document.getElementById('app-modal-root') || document.body
