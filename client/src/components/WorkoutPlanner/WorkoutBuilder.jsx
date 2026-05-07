@@ -16,7 +16,7 @@
  *  - buildPresetSteps(key) – returns step array for a given preset key
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { PlusIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon,
+import { PlusIcon, TrashIcon, ChevronDownIcon, // eslint-disable-line no-unused-vars
          ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 // ─── Colours ────────────────────────────────────────────────────────────────
@@ -283,6 +283,7 @@ export function buildPresetSteps(preset) {
   const CD  = (dur=600)  => ({ clientId:p(), stepType:'cooldown', isRamp:true, durationSeconds:dur, powerTarget:{type:'zone',value:1} });
   const WRK = (dur, pt)  => ({ clientId:p(), stepType:'work',                  durationSeconds:dur, powerTarget:pt });
   const REC = (dur=120)  => ({ clientId:p(), stepType:'recovery',              durationSeconds:dur, powerTarget:{type:'zone',value:1} });
+  // eslint-disable-next-line no-unused-vars
   const RST = (dur=60)   => ({ clientId:p(), stepType:'rest',                  durationSeconds:dur, powerTarget:{type:'open'} });
 
   // Helper: build a repeat group (header + work + optional recovery)
@@ -370,6 +371,7 @@ export function buildPresetSteps(preset) {
     clientId:p(), stepType:'work',
     durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
   });
+  // eslint-disable-next-line no-unused-vars
   const SREC = (dist, pt={type:'zone',value:1}) => ({
     clientId:p(), stepType:'recovery',
     durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,

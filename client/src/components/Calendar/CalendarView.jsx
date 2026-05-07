@@ -703,7 +703,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
   const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
-  const step      = Math.max(1, Math.ceil(laps.length / 7));
+  const _step     = Math.max(1, Math.ceil(laps.length / 7)); // eslint-disable-line no-unused-vars
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -1165,6 +1165,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // ── Compliance helpers (TrainingPeaks-style) ──
   const compliancePct = (planned, actual) => (planned > 0 && actual > 0) ? Math.round((actual / planned) * 100) : null;
+  /* eslint-disable no-unused-vars */
   const complianceColorPct = (pct) => {
     if (pct == null) return '#9ca3af';
     if (pct >= 95 && pct <= 105) return '#22c55e'; // green
@@ -1174,10 +1175,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const durPct  = compliancePct(plannedDur, dur);
   const distPct = compliancePct(plannedDist * 1000, dist); // plannedDistance is in km
   const tssPct  = compliancePct(plannedTss, tss);
+  /* eslint-enable no-unused-vars */
 
   // ── MOBILE LAYOUT ──
   if (isMobile) {
     const hasLaps = laps.length > 0;
+    // eslint-disable-next-line no-unused-vars
     const isStrava = merged.type === 'strava' || !!merged.stravaId;
 
     return ReactDOM.createPortal(

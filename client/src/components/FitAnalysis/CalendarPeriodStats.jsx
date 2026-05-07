@@ -650,6 +650,7 @@ export default function CalendarPeriodStats({
     return { count, totalSec, totalDist, totalTss, bySportSec, distByProfileSport };
   }, [filteredLastYear, userProfile]);
 
+  // eslint-disable-next-line no-unused-vars
   const lyPeriodLabel = useMemo(() => {
     if (!period?.periodStart) return '';
     const d = new Date(period.periodStart);
@@ -1123,6 +1124,7 @@ export default function CalendarPeriodStats({
     return { easyPct, midPct, hardPct, badge };
   }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
 
+  // eslint-disable-next-line no-unused-vars
   const lyCtlAtlEntry = useMemo(() => {
     if (!pmc || pmc.length === 0 || !period?.periodEnd) return null;
     const lyEnd = new Date(period.periodEnd);
@@ -1131,6 +1133,7 @@ export default function CalendarPeriodStats({
     return pmc.find((d) => d.date === lyEndKey) || null;
   }, [pmc, period?.periodEnd]);
 
+  // eslint-disable-next-line no-unused-vars
   const compareOption = useMemo(() => {
     const sports = ['cycling', 'running', 'swimming'];
     const sportLabels = ['Bike', 'Run', 'Swim'];
