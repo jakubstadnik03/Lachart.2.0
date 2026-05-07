@@ -221,39 +221,137 @@ function normalizeSport(sport) {
 }
 
 
-function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
+const SPORT_COLORS_SUMMARY = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
+
+function sportColorForSummary(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return SPORT_COLORS_SUMMARY.bike;
+  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return SPORT_COLORS_SUMMARY.run;
+  if (s.includes('swim')) return SPORT_COLORS_SUMMARY.swim;
+  return SPORT_COLORS_SUMMARY.other;
+}
+
+function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWorkouts = [], weekStart = null, tab = 'done', onTabChange }) {
   const { totalTss, totalSec, bySport } = summary;
   const tssRounded = Math.round(totalTss);
   const prevRounded = prevWeekTss != null ? Math.round(Number(prevWeekTss)) : null;
   const showTrend = prevRounded != null && prevRounded > 0 && tssRounded !== prevRounded;
 
+  // Planned totals from weekPlannedWorkouts
+  const plannedTotalSec = weekPlannedWorkouts.reduce((s, pw) => s + (planStepTotalSecs(pw.steps) || pw.plannedDuration || 0), 0);
+  const hasPlan = plannedTotalSec > 0;
+  const completionPct = hasPlan && totalSec > 0 ? Math.min(100, Math.round((totalSec / plannedTotalSec) * 100)) : null;
+
   const totalTssForBar = bySport.reduce((s, r) => s + r.tss, 0);
-  const sportColors = { cycling: '#3b82f6', running: '#f97316', swimming: '#06b6d4', strength: '#8b5cf6' };
 
-  const hoursStr = totalSec > 0
-    ? (() => { const h = Math.floor(totalSec / 3600); const m = Math.floor((totalSec % 3600) / 60); return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ''}`.trim() : `${m}m`; })()
-    : null;
+  const hoursStr = totalSec > 0 ? formatWeekDurationSeconds(totalSec) : null;
+  const plannedHoursStr = plannedTotalSec > 0 ? formatWeekDurationSeconds(plannedTotalSec) : null;
 
+  // Plan tab — planned workouts by day
+  if (tab === 'plan') {
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const ws = weekStart ? new Date(weekStart) : null;
+    const byDay = ws ? Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(ws);
+      day.setDate(ws.getDate() + i);
+      const dayKey = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`;
+      const pws = weekPlannedWorkouts.filter(pw => String(pw.date || '').slice(0, 10) === dayKey);
+      return { dow: DOW[i], dayKey, pws };
+    }).filter(d => d.pws.length > 0) : [];
+
+    return (
+      <div
+        className={`flex flex-col rounded-lg border border-gray-200 bg-gray-50 border-l-4 border-l-primary/40 text-left ${compact ? 'p-2 min-w-[130px]' : 'p-2.5 min-w-0'}`}
+        data-testid="weekly-calendar-summary"
+      >
+        {/* Tab switcher */}
+        <div className="flex gap-0.5 mb-1.5 bg-gray-200 rounded-md p-0.5">
+          {['done', 'plan'].map(t => (
+            <button key={t} onClick={() => onTabChange?.(t)}
+              style={{ touchAction: 'manipulation' }}
+              className={`flex-1 text-[9px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {t === 'done' ? 'Done' : 'Plan'}
+            </button>
+          ))}
+        </div>
+        {/* Planned total */}
+        <div className="flex items-baseline gap-1 leading-tight mb-1">
+          <span className={`font-extrabold text-gray-900 tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>{plannedHoursStr || '—'}</span>
+        </div>
+        {byDay.length === 0 ? (
+          <span className={`text-gray-400 italic flex-1 flex items-center ${compact ? 'text-[9px]' : 'text-[10px]'}`}>No plan</span>
+        ) : (
+          <div className="space-y-1 flex-1 overflow-hidden">
+            {byDay.map(({ dow, pws }) => (
+              <div key={dow} className="flex items-start gap-1">
+                <span className={`font-bold text-gray-400 w-5 shrink-0 mt-0.5 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>{dow}</span>
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  {pws.map((pw, i) => {
+                    const color = sportColorForSummary(pw.sport || 'bike');
+                    const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+                    return (
+                      <div key={i} className="flex items-center gap-1 min-w-0">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className={`text-gray-700 font-medium truncate flex-1 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>{pw.title || 'Workout'}</span>
+                        {secs > 0 && <span className={`text-gray-400 shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>{secsToHMShort(secs)}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Done tab
   return (
     <div
       className={`flex flex-col rounded-lg border border-gray-200 bg-gray-50 border-l-4 border-l-primary/40 text-left ${
-        compact ? 'p-2 min-w-[120px]' : 'p-2.5 min-w-0'
+        compact ? 'p-2 min-w-[130px]' : 'p-2.5 min-w-0'
       }`}
       data-testid="weekly-calendar-summary"
     >
-      {/* Header: total time + TSS + trend */}
+      {/* Tab switcher */}
+      <div className="flex gap-0.5 mb-1.5 bg-gray-200 rounded-md p-0.5">
+        {['done', 'plan'].map(t => (
+          <button key={t} onClick={() => onTabChange?.(t)}
+            style={{ touchAction: 'manipulation' }}
+            className={`flex-1 text-[9px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {t === 'done' ? 'Done' : 'Plan'}
+          </button>
+        ))}
+      </div>
+
+      {/* Header: actual vs planned time + TSS + trend */}
       <div className="flex items-start justify-between gap-1 mb-1">
         <div>
-          <div className={`font-extrabold text-gray-900 leading-tight tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>
-            {hoursStr || '—'}
-          </div>
-          {tssRounded > 0 && (
-            <div className="flex items-center gap-0.5 mt-0.5">
-              <FireIcon className={`text-primary shrink-0 ${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
-              <span className={`font-bold text-primary tabular-nums ${compact ? 'text-[9px]' : 'text-xs'}`}>{tssRounded}</span>
-              <span className={`text-gray-400 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>TSS</span>
+          {hasPlan ? (
+            <div className="flex items-baseline gap-1 leading-tight">
+              <span className={`font-medium text-gray-400 tabular-nums ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{plannedHoursStr}</span>
+              <span className={`font-extrabold text-gray-900 tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>{hoursStr || '—'}</span>
+            </div>
+          ) : (
+            <div className={`font-extrabold text-gray-900 leading-tight tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>
+              {hoursStr || '—'}
             </div>
           )}
+          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+            {tssRounded > 0 && (
+              <div className="flex items-center gap-0.5">
+                <FireIcon className={`text-primary shrink-0 ${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+                <span className={`font-bold text-primary tabular-nums ${compact ? 'text-[9px]' : 'text-xs'}`}>{tssRounded}</span>
+                <span className={`text-gray-400 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>TSS</span>
+              </div>
+            )}
+            {completionPct !== null && (
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-500'}`}>
+                {completionPct}%
+              </span>
+            )}
+          </div>
         </div>
         {showTrend && (
           <span className={`mt-0.5 flex-shrink-0 ${tssRounded > prevRounded ? 'text-green-500' : 'text-red-400'}`}>
@@ -264,15 +362,21 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
         )}
       </div>
 
-      {/* TSS distribution bar */}
-      {totalTssForBar > 0 && (
-        <div className="flex h-1.5 rounded-full overflow-hidden gap-px mb-1.5">
+      {/* Completion progress bar (when there's a plan) */}
+      {hasPlan && (
+        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1">
+          <div className="h-full rounded-full transition-all"
+            style={{ width: `${Math.min(100, (totalSec / plannedTotalSec) * 100)}%`, backgroundColor: completionPct >= 100 ? '#22c55e' : completionPct >= 70 ? '#f59e0b' : '#767EB5' }} />
+        </div>
+      )}
+
+      {/* TSS distribution bar (when no plan) */}
+      {!hasPlan && totalTssForBar > 0 && (
+        <div className="flex h-1.5 rounded-full overflow-hidden gap-px mb-1">
           {bySport.map(row => {
             const ratio = row.tss / totalTssForBar;
             if (ratio <= 0) return null;
-            const s = String(row.sport || '').toLowerCase();
-            const color = sportColors[s.toLowerCase()] || '#8b5cf6';
-            return <div key={row.sport} style={{ width: `${ratio * 100}%`, backgroundColor: color }} className="rounded-full" />;
+            return <div key={row.sport} style={{ width: `${ratio * 100}%`, backgroundColor: sportColorForSummary(row.sport) }} className="rounded-full" />;
           })}
         </div>
       )}
@@ -286,7 +390,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
             const timePart = row.sec > 0 ? formatDecimalHours(row.sec) || formatWeekDurationSeconds(row.sec) : '—';
             return (
               <div key={row.sport} className="flex items-center gap-1">
-                <SportIcon sport={row.sport} className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                <SportIcon sport={row.sport} className={compact ? 'w-3.5 h-3.5 text-gray-500' : 'w-4 h-4 text-gray-500'} />
                 <span className={`font-semibold text-gray-700 flex-1 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}>{timePart}</span>
                 {row.dist > 0 && (
                   <span className={`text-gray-400 flex-shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
@@ -636,6 +740,7 @@ const WeeklyCalendar = ({
   const [editingCategory, setEditingCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [weekSummaryTab, setWeekSummaryTab] = useState('done');
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(true);
   const [showLeftScrollNoTraining, setShowLeftScrollNoTraining] = useState(false);
@@ -1277,9 +1382,28 @@ const WeeklyCalendar = ({
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  const weekPlannedWorkouts = useMemo(() => {
+    const start = startOfWeek(currentWeek);
+    const keys = new Set(Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }));
+    return (plannedWorkouts || []).filter(pw => keys.has(String(pw.date || '').slice(0, 10)));
+  }, [plannedWorkouts, currentWeek]);
+
   const weekSummaryAside = (compact) => (
-    <div className={compact ? 'min-w-[112px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
-      <WeekSummaryColumn summary={weekSummary} user={user} prevWeekTss={prevWeekSummary.totalTss} compact={compact} />
+    <div className={compact ? 'min-w-[138px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
+      <WeekSummaryColumn
+        summary={weekSummary}
+        user={user}
+        prevWeekTss={prevWeekSummary.totalTss}
+        compact={compact}
+        weekPlannedWorkouts={weekPlannedWorkouts}
+        weekStart={startOfWeek(currentWeek)}
+        tab={weekSummaryTab}
+        onTabChange={setWeekSummaryTab}
+      />
     </div>
   );
 
