@@ -36,7 +36,7 @@ echo "→ Building web app…"
 CI=false npm run build
 
 echo "→ Syncing Capacitor…"
-npx cap sync ios --no-deps
+npx cap sync ios
 
 # ── CocoaPods ─────────────────────────────────────────────────────────────────
 echo "→ Installing CocoaPods…"
