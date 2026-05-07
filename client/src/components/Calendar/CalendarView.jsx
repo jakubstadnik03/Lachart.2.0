@@ -2137,7 +2137,9 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 }
 
 // ─── Richer Summary Column ────────────────────────────────────────────────────
-function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
+const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
+
+function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done', weekPlannedWorkouts = [] }) {
   if (!weekSummary) return <div className="bg-gray-50 p-2 min-h-[130px] min-w-[140px]" />;
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
@@ -2147,16 +2149,65 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
   const hasPlan = plannedSeconds > 0;
   const completionPct = hasPlan ? Math.min(100, Math.round((totalSeconds / plannedSeconds) * 100)) : null;
 
-  // TSS distribution bar segments
+  // Plan tab — show planned workouts by day
+  if (tab === 'plan') {
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const weekStart = weekSummary.weekStart;
+    const byDay = Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + i);
+      const dayKey = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`;
+      const pws = weekPlannedWorkouts.filter(pw => pw.date === dayKey);
+      return { dow: DOW[i], dayKey, pws };
+    }).filter(d => d.pws.length > 0);
+
+    return (
+      <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
+        <div className="flex items-baseline gap-1 leading-tight mb-0.5">
+          <span className="text-base font-extrabold text-gray-900">{formatHours(plannedSeconds)}</span>
+          {plannedTSS > 0 && (
+            <span className="text-[10px] font-bold text-primary">{Math.round(plannedTSS)} TSS</span>
+          )}
+        </div>
+        {byDay.length === 0 ? (
+          <span className="text-xs text-gray-400 flex-1 flex items-center">No plan</span>
+        ) : (
+          <div className="space-y-1 flex-1 overflow-hidden">
+            {byDay.map(({ dow, pws }) => (
+              <div key={dow} className="flex items-start gap-1">
+                <span className="text-[9px] font-bold text-gray-400 w-6 shrink-0 mt-0.5">{dow}</span>
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  {pws.map((pw, i) => {
+                    const sport = (pw.sport || 'bike').toLowerCase();
+                    const color = SPORT_PLAN_COLORS[sport] || '#767EB5';
+                    const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+                    return (
+                      <div key={i} className="flex items-center gap-1 min-w-0">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-[10px] text-gray-700 font-medium truncate flex-1">{pw.title || 'Workout'}</span>
+                        {secs > 0 && <span className="text-[9px] text-gray-400 shrink-0">{formatHours(secs)}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Done tab — existing view
   const totalTssForBar = tssRun + tssBike + tssSwim + tssStrength;
   const bikeRatio = totalTssForBar > 0 ? tssBike / totalTssForBar : 0;
   const runRatio  = totalTssForBar > 0 ? tssRun  / totalTssForBar : 0;
   const swimRatio = totalTssForBar > 0 ? tssSwim / totalTssForBar : 0;
 
   const sports = [
-    { key: 'bike', icon: '/icon/bike.svg', seconds: bikeSeconds, dist: distanceBike, tss: tssBike, color: '#3b82f6' },
-    { key: 'run',  icon: '/icon/run.svg',  seconds: runSeconds,  dist: distanceRun,  tss: tssRun,  color: '#f97316' },
-    { key: 'swim', icon: '/icon/swim.svg', seconds: swimSeconds, dist: distanceSwim, tss: tssSwim, color: '#06b6d4' },
+    { key: 'bike', icon: '/icon/bike.svg', seconds: bikeSeconds, dist: distanceBike, tss: tssBike, color: SPORT_COLORS_CELL.bike },
+    { key: 'run',  icon: '/icon/run.svg',  seconds: runSeconds,  dist: distanceRun,  tss: tssRun,  color: SPORT_COLORS_CELL.run },
+    { key: 'swim', icon: '/icon/swim.svg', seconds: swimSeconds, dist: distanceSwim, tss: tssSwim, color: SPORT_COLORS_CELL.swim },
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
@@ -2213,11 +2264,11 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user }) {
       {/* TSS distribution bar (only when no plan bar) */}
       {!hasPlan && totalTssForBar > 0 && (
         <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-          {bikeRatio > 0 && <div style={{ width: `${bikeRatio*100}%`, backgroundColor: '#3b82f6' }} className="rounded-full" />}
-          {runRatio  > 0 && <div style={{ width: `${runRatio*100}%`,  backgroundColor: '#f97316' }} className="rounded-full" />}
-          {swimRatio > 0 && <div style={{ width: `${swimRatio*100}%`, backgroundColor: '#06b6d4' }} className="rounded-full" />}
+          {bikeRatio > 0 && <div style={{ width: `${bikeRatio*100}%`, backgroundColor: SPORT_COLORS_CELL.bike }} className="rounded-full" />}
+          {runRatio  > 0 && <div style={{ width: `${runRatio*100}%`,  backgroundColor: SPORT_COLORS_CELL.run }} className="rounded-full" />}
+          {swimRatio > 0 && <div style={{ width: `${swimRatio*100}%`, backgroundColor: SPORT_COLORS_CELL.swim }} className="rounded-full" />}
           {(1 - bikeRatio - runRatio - swimRatio) > 0.01 && (
-            <div style={{ flex: 1, backgroundColor: '#8b5cf6' }} className="rounded-full" />
+            <div style={{ flex: 1, backgroundColor: '#9ca3af' }} className="rounded-full" />
           )}
         </div>
       )}
@@ -3375,17 +3426,17 @@ export default function CalendarView({
                   {isSunday && (
                     <div
                       ref={el => { weekSummaryRefs.current[weekKey] = el; }}
-                      className="mb-3 rounded-xl border border-violet-100 overflow-hidden"
+                      className="mb-3 rounded-xl border border-primary/20 overflow-hidden"
                     >
-                      <div className="flex items-center justify-between px-3 py-2 bg-violet-50/60">
-                        <span className="text-xs font-bold text-violet-700">Week summary</span>
+                      <div className="flex items-center justify-between px-3 py-2 bg-primary/5">
+                        <span className="text-xs font-bold text-primary">Week summary</span>
                         {wkSummary?.plannedSeconds > 0 && (
-                          <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-violet-100">
-                            {[['done', 'Done'], ['plan', 'Plan']].map(([tab, lbl]) => (
+                          <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-primary/20">
+                            {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
                               <button
-                                key={tab}
-                                onClick={() => setWeekSummaryTab(tab)}
-                                className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tab ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-500'}`}
+                                key={tabId}
+                                onClick={e => { e.stopPropagation(); setWeekSummaryTab(tabId); }}
+                                className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                               >{lbl}</button>
                             ))}
@@ -3397,6 +3448,11 @@ export default function CalendarView({
                         formatHours={formatHours}
                         formatKm={formatKm}
                         user={user}
+                        tab={weekSummaryTab}
+                        weekPlannedWorkouts={plannedWorkouts.filter(pw => {
+                          if (!pw.date) return false;
+                          return startOfWeek(new Date(pw.date)).toISOString().slice(0,10) === weekKey;
+                        })}
                       />
                     </div>
                   )}
@@ -3449,10 +3505,10 @@ export default function CalendarView({
                                 <div className="w-full flex flex-col justify-end" style={{ height: '80px' }}>
                                   {chartType === 'volume' && wk.totalSeconds > 0 ? (
                                     <div className="w-full rounded-t-sm overflow-hidden flex flex-col-reverse" style={{ height: `${pct}%` }}>
-                                      {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: '#3b82f6' }} />}
-                                      {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: '#f97316' }} />}
-                                      {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: '#06b6d4' }} />}
-                                      {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: '#8b5cf6' }} />}
+                                      {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: SPORT_COLORS_CELL.bike }} />}
+                                      {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: SPORT_COLORS_CELL.run }} />}
+                                      {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: SPORT_COLORS_CELL.swim }} />}
+                                      {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: SPORT_COLORS_CELL.other }} />}
                                     </div>
                                   ) : (
                                     <div
@@ -3485,10 +3541,10 @@ export default function CalendarView({
                           });
                           const total = totals.bike + totals.run + totals.swim + totals.strength;
                           const sports = [
-                            { key: 'bike', label: 'Bike', color: '#3b82f6', sec: totals.bike },
-                            { key: 'run', label: 'Run', color: '#f97316', sec: totals.run },
-                            { key: 'swim', label: 'Swim', color: '#06b6d4', sec: totals.swim },
-                            { key: 'strength', label: 'Strength', color: '#8b5cf6', sec: totals.strength },
+                            { key: 'bike', label: 'Bike', color: SPORT_COLORS_CELL.bike, sec: totals.bike },
+                            { key: 'run', label: 'Run', color: SPORT_COLORS_CELL.run, sec: totals.run },
+                            { key: 'swim', label: 'Swim', color: SPORT_COLORS_CELL.swim, sec: totals.swim },
+                            { key: 'strength', label: 'Strength', color: SPORT_COLORS_CELL.other, sec: totals.strength },
                           ].filter(s => s.sec > 0);
                           return (<>
                             <div className="flex h-4 rounded-full overflow-hidden gap-px mb-3">
@@ -3539,10 +3595,10 @@ export default function CalendarView({
                           </div>
                           {wk.totalSeconds > 0 && (
                             <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-                              {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: '#3b82f6' }} />}
-                              {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: '#f97316' }} />}
-                              {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: '#06b6d4' }} />}
-                              {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: '#8b5cf6' }} />}
+                              {wk.bikeSeconds > 0 && <div style={{ flex: wk.bikeSeconds, backgroundColor: SPORT_COLORS_CELL.bike }} />}
+                              {wk.runSeconds > 0 && <div style={{ flex: wk.runSeconds, backgroundColor: SPORT_COLORS_CELL.run }} />}
+                              {wk.swimSeconds > 0 && <div style={{ flex: wk.swimSeconds, backgroundColor: SPORT_COLORS_CELL.swim }} />}
+                              {wk.strengthSeconds > 0 && <div style={{ flex: wk.strengthSeconds, backgroundColor: SPORT_COLORS_CELL.other }} />}
                             </div>
                           )}
                         </div>
