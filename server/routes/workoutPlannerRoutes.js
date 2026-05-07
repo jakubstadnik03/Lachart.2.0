@@ -166,7 +166,7 @@ router.post('/planned', verifyToken, async (req, res) => {
     const { athleteId } = await resolveAthleteId(req);
     const { date, sport, title, description, templateId, steps,
             coachNotes, comment, targetTss,
-            plannedDuration, plannedDistance, isLactateTest } = req.body;
+            plannedDuration, plannedDistance, isLactateTest, category } = req.body;
 
     if (!date || !sport || !title) {
       return res.status(400).json({ error: 'date, sport and title are required' });
@@ -181,6 +181,7 @@ router.post('/planned', verifyToken, async (req, res) => {
       steps: steps || [],
       coachNotes, comment, targetTss,
       plannedDuration, plannedDistance, isLactateTest,
+      category: category || undefined,
       status: 'planned',
     });
     res.status(201).json(pw);
@@ -204,7 +205,7 @@ router.put('/planned/:id', verifyToken, async (req, res) => {
 
     const fields = ['date','sport','title','description','steps','status',
                     'completedTrainingId','coachNotes','comment','targetTss',
-                    'plannedDuration','plannedDistance','isLactateTest'];
+                    'plannedDuration','plannedDistance','isLactateTest','category'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
     if (req.body.date) pw.date = new Date(req.body.date);
 

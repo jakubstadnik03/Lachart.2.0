@@ -65,6 +65,7 @@ const plannedWorkoutSchema = new mongoose.Schema({
   plannedDuration: Number,       // seconds — used when no structured steps
   plannedDistance: Number,       // metres — used when no structured steps
   isLactateTest:   Boolean,
+  category:        String,       // category id from CategoryContext
 }, { timestamps: true });
 
 plannedWorkoutSchema.index({ athleteId: 1, date: -1 });

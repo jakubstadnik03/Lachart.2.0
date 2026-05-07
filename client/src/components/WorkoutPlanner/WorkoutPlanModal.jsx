@@ -21,6 +21,7 @@ import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleSta
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
+import { useCategories } from '../../context/CategoryContext';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
@@ -185,6 +186,7 @@ function secsToHMS(s) {
 // ─── Main modal ────────────────────────────────────────────────────────────────
 export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [] }) {
   const isEdit = Boolean(workout?._id);
+  const { categories } = useCategories();
   // 'pick' = sport selector (new workouts only), 'build' = full builder
   const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
@@ -192,6 +194,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [desc, setDesc]           = useState(workout?.description || '');
   const [tss, setTss]             = useState(workout?.targetTss || '');
   const [steps, setSteps]         = useState(workout?.steps || []);
+  const [category, setCategory]   = useState(workout?.category || '');
   const [saving, setSaving]       = useState(false);
   const [tab, setTab]             = useState('builder');
   const [presetSport, setPresetSport] = useState(workout?.sport || 'bike');
@@ -228,6 +231,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
       comment: comment.trim() || undefined,
       targetTss:       tss ? Number(tss) : (estTss || undefined),
       steps,
+      category:        category || undefined,
       plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
       plannedDistance: plannedDistStr ? parseFloat(plannedDistStr) * 1000 : undefined,
       isLactateTest:   sport === 'lactate' || undefined,
@@ -427,8 +431,8 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
               {/* ── Sport + planned stats row ── */}
               <div className="px-5 py-3 border-b border-slate-100">
-                {/* Sport pill row */}
-                <div className="flex items-center gap-2 mb-3">
+                {/* Sport pill + category row */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
                   {!isEdit ? (
                     <button
                       onClick={() => setStep('pick')}
@@ -445,6 +449,28 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       {selectedSportMeta?.label}
                     </div>
                   )}
+                  {/* Category picker */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => setCategory('')}
+                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${!category ? 'bg-slate-100 border-slate-300 text-slate-600' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                    >
+                      No category
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setCategory(cat.id === category ? '' : cat.id)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all"
+                        style={category === cat.id
+                          ? { backgroundColor: cat.color + '20', borderColor: cat.color + '60', color: cat.color }
+                          : { borderColor: 'transparent', color: '#94a3b8' }}
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Planned stats table */}
