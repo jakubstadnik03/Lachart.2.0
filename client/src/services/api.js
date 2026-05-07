@@ -1460,3 +1460,13 @@ export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`)
 // Mobile push token registration (Capacitor / Expo)
 export const registerPushToken = (expoPushToken) =>
   api.post('/user/push-token', { expoPushToken });
+// Field Lactate Measurements
+export const createFieldLactateMeasurement = (data) => api.post('/api/field-lactate', data).then(r => r.data);
+export const getFieldLactateMeasurements = (athleteId = null, status = null) => {
+  const params = {};
+  if (athleteId) params.athleteId = athleteId;
+  if (status) params.status = status;
+  return api.get('/api/field-lactate', { params }).then(r => r.data);
+};
+export const deleteFieldLactateMeasurement = (id) => api.delete(`/api/field-lactate/${id}`).then(r => r.data);
+export const assignFieldLactateMeasurement = (id, assignment) => api.put(`/api/field-lactate/${id}/assign`, assignment).then(r => r.data);

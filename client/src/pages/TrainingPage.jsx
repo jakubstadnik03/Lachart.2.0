@@ -7,10 +7,11 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, getStravaActivityDetail } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement } from '../services/api';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import QuickAddLactateModal from '../components/training/QuickAddLactateModal';
+import RecordLactateModal from '../components/training/RecordLactateModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCategories } from '../context/CategoryContext';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -66,6 +67,7 @@ export default function TrainingPage() {
   });
   const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
   const [quickLactateOpen, setQuickLactateOpen] = useState(false);
+  const [showRecordLactate, setShowRecordLactate] = useState(false);
 
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
@@ -567,9 +569,9 @@ export default function TrainingPage() {
           {/* Add Lactate — icon + label on sm+, icon-only on mobile */}
           <motion.button
             whileTap={{ scale: 0.96 }}
-            onClick={() => setQuickLactateOpen(true)}
+            onClick={() => setShowRecordLactate(true)}
             className="flex items-center gap-1 h-8 px-2.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
-            title="Add Lactate"
+            title="Record Lactate Measurement"
           >
             <BeakerIcon className="w-4 h-4 flex-shrink-0" />
             <span className="hidden sm:inline">Add Lactate</span>
@@ -715,6 +717,20 @@ export default function TrainingPage() {
         trainings={trainings}
         onSave={handleQuickAddLactate}
       />
+
+      {/* Record field lactate measurement → save to DB → show in Field Lactate panel */}
+      {showRecordLactate && (
+        <RecordLactateModal
+          onClose={() => setShowRecordLactate(false)}
+          onSave={async (data) => {
+            await createFieldLactateMeasurement({
+              ...data,
+              athleteId: selectedAthleteId || undefined,
+            });
+            setFieldLactatePanelKey(k => k + 1);
+          }}
+        />
+      )}
 
       {/* Portal modals — rendered into document.body so iOS fixed-in-overflow-auto
           issues don't prevent them from covering the CoachAthleteBar header. */}

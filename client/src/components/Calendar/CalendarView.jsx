@@ -14,7 +14,7 @@ import {
   XMarkIcon,
   PencilIcon,
   ArrowTopRightOnSquareIcon,
-  ArrowDownTrayIcon,
+  BeakerIcon,
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import api from '../../services/api';
@@ -946,8 +946,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return () => { cancelled = true; };
   }, [a.id, a._id]);
 
-  // Merge summary + full detail — detail wins for laps/stats when available
-  const merged = detail ? { ...a, ...detail } : a;
+  // Merge summary + full detail — detail wins for laps/stats, but preserve
+  // the app-level `type` ('strava'|'fit'|'regular') from the original activity
+  // because Strava's raw detail has type:'Run'/'Ride' which would overwrite it.
+  const merged = detail ? { ...a, ...detail, type: a.type } : a;
 
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
@@ -1176,6 +1178,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // ── MOBILE LAYOUT ──
   if (isMobile) {
     const hasLaps = laps.length > 0;
+    const isStrava = merged.type === 'strava' || !!merged.stravaId;
 
     return ReactDOM.createPortal(
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -1192,26 +1195,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
-          {/* Export button */}
-          <button
-            onClick={() => {
-              const id = String(merged.id || merged._id || '');
-              if (id.startsWith('strava-')) {
-                window.open(`https://www.strava.com/activities/${id.replace('strava-', '')}/export_gpx`, '_blank');
-              } else {
-                const data = { title, date: actDate, duration: dur, distance: dist, sport: a.sport };
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url; link.download = `${title.replace(/\s+/g, '_')}.json`; link.click();
-                URL.revokeObjectURL(url);
-              }
-            }}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0"
-            title="Export activity"
-          >
-            <ArrowDownTrayIcon className="w-5 h-5" />
-          </button>
+          {onAddLactate && hasLaps && (
+            <button onClick={() => { onAddLactate(merged); onClose(); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+              <BeakerIcon className="w-4 h-4" />
+              <span>Lactate</span>
+            </button>
+          )}
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
             <XMarkIcon className="w-5 h-5" />
           </button>
@@ -1385,8 +1376,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           </div>
 
-          {/* Lactate footer */}
-          {onAddLactate && merged.type === 'strava' && (
+          {/* Lactate footer — only shown when no laps tab (button moves to header when laps exist) */}
+          {onAddLactate && !hasLaps && (
             <div className="px-4 pb-6">
               <button onClick={() => { onAddLactate(merged); onClose(); }}
                 className="w-full py-3 rounded-xl text-sm font-semibold border-2"
@@ -1422,6 +1413,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <div className="px-4 py-3">
                 {(() => {
                   const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                  const showLactate = hasLactate || !!onAddLactate;
                   const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
                   const showSwimPace = isSwim && laps.some(l => Number(l.distance || 0) > 0);
                   const hasPace = (isRun || showSwimPace) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
@@ -1430,7 +1422,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
                   if (hasCadence) colTokens.push('1fr');
-                  if (hasLactate) colTokens.push('1fr');
+                  if (showLactate) colTokens.push('1fr');
                   const cols = colTokens.join(' ');
                   const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                   return (
@@ -1443,7 +1435,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
                         {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
-                        {hasLactate && <span className="text-right">La</span>}
+                        {showLactate && <span className="text-right">La</span>}
                       </div>
                       <div className="divide-y divide-gray-50">
                         {laps.map((lap, i) => {
@@ -1477,7 +1469,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
-                              {hasLactate && <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{lapLa != null ? Number(lapLa).toFixed(1) : '—'}</span>}
+                              {showLactate && (
+                                lapLa != null ? (
+                                  <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                                ) : onAddLactate ? (
+                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                    className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
+                                    <span className="text-sm font-bold leading-none">+</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-right tabular-nums text-gray-400">—</span>
+                                )
+                              )}
                             </div>
                           );
                         })}
@@ -1578,6 +1582,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
           )}
+          {onAddLactate && laps.length > 0 && (
+            <button onClick={() => { onAddLactate(merged); onClose(); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 hover:opacity-80 transition-opacity"
+              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+              <BeakerIcon className="w-4 h-4" />
+              <span>Lactate</span>
+            </button>
+          )}
           {onOpenFull && (
             <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
               <ArrowTopRightOnSquareIcon className="w-5 h-5" />
@@ -1676,9 +1688,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {laps.length > 0 && (
             <div className="px-5 py-3">
               {(() => {
-                const hasLactate = merged.laps?.[0]?.lactate != null || merged.laps?.[0]?.lactateValue != null;
+                const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                const showLactate = hasLactate || !!onAddLactate;
                 const showPace = isBike || isRun || isSwim;
-                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasLactate ? ['1fr'] : [])].join(' ');
+                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
                 const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                 return (
                   <div className="rounded-xl overflow-hidden border border-gray-100">
@@ -1689,7 +1702,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       <span className="text-right">Time</span>
                       {showPace && <span className="text-right">{paceHeader}</span>}
                       <span className="text-right">HR</span>
-                      {hasLactate && <span className="text-right">La</span>}
+                      {showLactate && <span className="text-right">La</span>}
                     </div>
                     <div className="divide-y divide-gray-50">
                       {laps.map((lap, i) => {
@@ -1735,10 +1748,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                             {showPace && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
                             <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
-                            {hasLactate && (
-                              <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>
-                                {lapLa != null ? Number(lapLa).toFixed(1) : '—'}
-                              </span>
+                            {showLactate && (
+                              lapLa != null ? (
+                                <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                              ) : onAddLactate ? (
+                                <div className="flex justify-end">
+                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                    className="flex items-center justify-center w-5 h-5 rounded-full hover:opacity-80 transition-opacity"
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
+                                    title={`Add lactate for lap ${lapNum}`}>
+                                    <span className="text-xs font-bold leading-none">+</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-right tabular-nums text-gray-400">—</span>
+                              )
                             )}
                           </div>
                         );
@@ -1856,16 +1880,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           </div>
 
-          {/* ── Footer ── */}
-          {onAddLactate && merged.type === 'strava' && (
-            <div className="px-5 pb-5">
-              <button onClick={() => { onAddLactate(merged); onClose(); }}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors"
-                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
-                + Lactate
-              </button>
-            </div>
-          )}
         </div>{/* end scrollable bottom */}
         </div>{/* end body flex-col */}
       </div>
@@ -2392,15 +2406,18 @@ export default function CalendarView({
 
     const onScroll = () => {
       if (isAutoScrollingRef.current) return;
-      // Use the day list's current top as the reference point (accounts for sticky header height)
-      const listTop = listEl.getBoundingClientRect().top;
+      // Use the sticky header's bottom as a viewport-fixed reference point.
+      // As the user scrolls, headerBottom stays constant but each day's top changes.
+      const headerEl = mobileStickyHeaderRef.current;
+      const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 0;
       let best = null;
       let bestScore = Infinity;
       Object.entries(dayRefs.current).forEach(([key, el]) => {
         if (!el) return;
-        const relTop = el.getBoundingClientRect().top - listTop;
-        if (relTop <= 16) {
-          const score = Math.abs(relTop);
+        const elTop = el.getBoundingClientRect().top;
+        // Consider days whose top is at or below the sticky header
+        if (elTop <= headerBottom + 16) {
+          const score = Math.abs(elTop - headerBottom);
           if (score < bestScore) { bestScore = score; best = key; }
         }
       });

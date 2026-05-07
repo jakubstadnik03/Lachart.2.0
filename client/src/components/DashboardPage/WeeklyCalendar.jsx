@@ -601,6 +601,7 @@ const WeeklyCalendar = ({
   onStartWorkout = null,
   onCopyPlannedWorkout = null,
   onDeletePlannedWorkout = null,
+  onAddLactate = null,
 }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
@@ -2227,6 +2228,17 @@ const WeeklyCalendar = ({
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
           onClose={() => setActivityModal(null)}
+          onAddLactate={
+            onAddLactate
+              ? (a, lapIndex) => { setActivityModal(null); onAddLactate(a, lapIndex); }
+              : (a) => {
+                  const rawId = String(a?.id ?? a?._id ?? '');
+                  const id = rawId.startsWith('strava-') || rawId.startsWith('fit-') || rawId.startsWith('training-') || rawId.startsWith('regular-')
+                    ? rawId : `strava-${rawId}`;
+                  setActivityModal(null);
+                  navigate(`/training-calendar/${id}`);
+                }
+          }
           onOpenFull={() => {
             const a = activityModal.activity;
             const rawId = String(a?.id ?? a?._id ?? '');
