@@ -86,13 +86,10 @@ const ForgotPasswordPage = () => {
           <div className="flex-1 flex flex-col justify-center px-6" style={{ minHeight: '100%' }}>
             {/* Logo */}
             <div className="mb-8 text-center">
-              <div className="mx-auto h-16 w-16 rounded-2xl shadow-md mb-3 flex items-center justify-center">
-                <picture>
-                  
-                  <img className="h-16 w-16 object-contain" src="/images/LaChart.png" alt="LaChart" />
-                </picture>
+              <div className="mx-auto h-20 w-20 rounded-2xl shadow-md mb-3 flex items-center justify-center bg-white p-3.5">
+                <img className="w-full h-full object-contain" src="/images/LaChart.png" alt="LaChart" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">LaChart</h1>
+              <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
               <p className="mt-1 text-sm text-gray-500">Reset your password</p>
             </div>
 

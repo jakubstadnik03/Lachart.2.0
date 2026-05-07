@@ -197,9 +197,12 @@ const SignUpPage = () => {
         </div>
 
         <div className="flex-1 flex flex-col justify-center px-6" style={{ minHeight: 0 }}>
-          {/* Title */}
-          <div className="mb-4">
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Create Account</h1>
+          {/* Logo + Title */}
+          <div className="mb-4 text-center">
+            <div className="mx-auto h-20 w-20 rounded-2xl shadow-md mb-3 flex items-center justify-center bg-white p-3.5">
+              <img className="w-full h-full object-contain" src="/images/LaChart.png" alt="LaChart" />
+            </div>
+            <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
             <p className="mt-0.5 text-sm text-gray-500">Join LaChart to start tracking</p>
           </div>
 
