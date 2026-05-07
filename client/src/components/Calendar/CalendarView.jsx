@@ -3276,9 +3276,9 @@ export default function CalendarView({
                                       className="w-full text-left flex flex-col px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 gap-1"
                                       style={{
                                         borderStyle: 'solid',
-                                        borderColor: cc.color,          // left/top/bottom = green
-                                        borderRightColor: planColor,    // right = sport color
-                                        borderRightWidth: 3,
+                                        borderColor: cc.color,          // top/right/bottom = green
+                                        borderLeftColor: planColor,     // left = sport color
+                                        borderLeftWidth: 3,
                                         backgroundColor: cc.bg,
                                         WebkitTapHighlightColor: 'transparent'
                                       }}>
