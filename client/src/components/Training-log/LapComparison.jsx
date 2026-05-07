@@ -1,10 +1,3 @@
-/**
- * LapComparison — compare laps across sessions with the same title.
- *
- * Works for Strava, FIT and manual (results-based) trainings.
- * Fetches lap data lazily per session and overlays them on a shared
- * X-axis (Lap 1, Lap 2 …). Metrics: Pace, HR, Power.
- */
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid,
