@@ -902,7 +902,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
   const a = activity;
   const color = sportColor(a.sport);
   const sport = String(a.sport || '').toLowerCase();
@@ -2364,6 +2364,7 @@ export default function CalendarView({
   const dayRefs = useRef({});
   const selectedMobileDayRef = useRef(selectedMobileDay);
   const isAutoScrollingRef = useRef(false);
+  const mobileStickyHeaderRef = useRef(null);
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -3869,6 +3870,7 @@ export default function CalendarView({
           onAddLactate={onAddLactate}
           onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
+          athleteId={athleteId}
         />
       )}
     </motion.div>

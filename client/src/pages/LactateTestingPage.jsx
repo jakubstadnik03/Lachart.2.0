@@ -178,6 +178,17 @@ const LactateTestingPage = () => {
   const [borgInput,    setBorgInput]    = useState('');
   const lactateInputRef = useRef(null);
 
+  // ── Landscape detection (mobile landscape only) ───────────
+  const [isLandscape, setIsLandscape] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth > window.innerHeight && window.innerHeight < 520
+  );
+  useEffect(() => {
+    const check = () => setIsLandscape(window.innerWidth > window.innerHeight && window.innerHeight < 520);
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => { window.removeEventListener('resize', check); window.removeEventListener('orientationchange', check); };
+  }, []);
+
   // ── Timer refs ────────────────────────────────────────────
   const intervalTimerRef       = useRef(null);
   const dataCollectionRef      = useRef(null);
@@ -899,7 +910,7 @@ const LactateTestingPage = () => {
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 pb-20">
+    <div className={`min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 ${isLandscape ? 'pb-2' : 'pb-20'}`}>
 
       {/* ── Modals ─────────────────────────────────────────── */}
       {showTrainerModal && (
@@ -916,10 +927,10 @@ const LactateTestingPage = () => {
         />
       )}
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <div className={`max-w-5xl mx-auto px-4 sm:px-6 space-y-5 ${isLandscape ? 'py-2' : 'py-6'}`}>
 
         {/* ── Page header ─────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-4">
+        <div className={`flex items-start justify-between gap-4 ${isLandscape && testState !== 'idle' ? 'hidden' : ''}`}>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
               <BeakerIcon className="inline w-7 h-7 mr-2 text-primary align-middle" />Lactate Threshold Testing
@@ -1385,8 +1396,9 @@ const LactateTestingPage = () => {
                 <motion.div key="work"
                   initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.2 }}
-                  className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5 space-y-4"
+                  className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4 space-y-3"
                 >
+                  {/* Header */}
                   <div className="flex items-center gap-2">
                     {testState === 'running'
                       ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
@@ -1402,123 +1414,138 @@ const LactateTestingPage = () => {
                     </span>
                   </div>
 
-                  {/* Big metrics */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {/* Target */}
-                    <div className="bg-primary/8 border border-primary/20 rounded-2xl p-4 text-center">
-                      <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-1">Target</div>
-                      <div className="text-4xl sm:text-5xl font-black text-primary tabular-nums leading-none">{effectiveTargetPower}</div>
-                      {wattOffset !== 0 && (
-                        <div className={`text-[10px] font-semibold mt-1 ${wattOffset > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                          base {targetPower}W {wattOffset > 0 ? `+${wattOffset}` : wattOffset}
+                  {/* Landscape: left col = power + progress + watt adjust  |  right col = HR + cadence + controls */}
+                  <div className={isLandscape ? 'flex gap-3' : 'space-y-3'}>
+
+                    {/* LEFT: target + actual power + progress bar + watt buttons */}
+                    <div className={isLandscape ? 'flex-1 min-w-0 flex flex-col gap-2' : 'space-y-3'}>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Target */}
+                        <div className="bg-primary/8 border border-primary/20 rounded-2xl p-3 text-center">
+                          <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-1">Target</div>
+                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black text-primary tabular-nums leading-none`}>{effectiveTargetPower}</div>
+                          {wattOffset !== 0 && (
+                            <div className={`text-[10px] font-semibold mt-1 ${wattOffset > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              base {targetPower}W {wattOffset > 0 ? `+${wattOffset}` : wattOffset}
+                            </div>
+                          )}
+                          {wattOffset === 0 && <div className="text-xs text-primary/50 mt-1">watts</div>}
                         </div>
-                      )}
-                      {wattOffset === 0 && <div className="text-xs text-primary/50 mt-1.5">watts</div>}
-                    </div>
-                    {/* Actual */}
-                    <div className={`rounded-2xl p-4 text-center border transition-colors ${
-                      !trainerConnected                  ? 'bg-gray-50 border-gray-100' :
-                      Math.abs(powerDelta) <= 15         ? 'bg-emerald-50 border-emerald-200' :
-                      Math.abs(powerDelta) <= 30         ? 'bg-amber-50 border-amber-200' :
-                                                           'bg-red-50 border-red-200'
-                    }`}>
-                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
-                      <div className={`text-4xl sm:text-5xl font-black tabular-nums leading-none ${
-                        !trainerConnected          ? 'text-gray-300' :
-                        Math.abs(powerDelta) <= 15 ? 'text-emerald-600' :
-                        Math.abs(powerDelta) <= 30 ? 'text-amber-600' : 'text-red-500'
-                      }`}>{trainerConnected ? actualPower : '—'}</div>
-                      {trainerConnected && (
-                        <div className={`text-xs mt-1.5 font-bold ${
-                          Math.abs(powerDelta) <= 5 ? 'text-gray-400' :
-                          powerDelta > 0            ? 'text-emerald-600' : 'text-red-500'
+                        {/* Actual */}
+                        <div className={`rounded-2xl p-3 text-center border transition-colors ${
+                          !trainerConnected                  ? 'bg-gray-50 border-gray-100' :
+                          Math.abs(powerDelta) <= 15         ? 'bg-emerald-50 border-emerald-200' :
+                          Math.abs(powerDelta) <= 30         ? 'bg-amber-50 border-amber-200' :
+                                                               'bg-red-50 border-red-200'
                         }`}>
-                          {powerDelta > 0 ? `+${powerDelta}W` : powerDelta < 0 ? `${powerDelta}W` : '±0W'}
+                          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
+                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black tabular-nums leading-none ${
+                            !trainerConnected          ? 'text-gray-300' :
+                            Math.abs(powerDelta) <= 15 ? 'text-emerald-600' :
+                            Math.abs(powerDelta) <= 30 ? 'text-amber-600' : 'text-red-500'
+                          }`}>{trainerConnected ? actualPower : '—'}</div>
+                          {trainerConnected && (
+                            <div className={`text-xs mt-1 font-bold ${
+                              Math.abs(powerDelta) <= 5 ? 'text-gray-400' :
+                              powerDelta > 0            ? 'text-emerald-600' : 'text-red-500'
+                            }`}>
+                              {powerDelta > 0 ? `+${powerDelta}W` : powerDelta < 0 ? `${powerDelta}W` : '±0W'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Interval progress bar */}
+                      <div>
+                        <div className="flex justify-between text-xs text-gray-400 mb-1">
+                          <span className="font-medium">Interval</span>
+                          <span className="font-bold text-gray-600 tabular-nums">
+                            {fmtTime(intervalTimer)} / {fmtTime(currentStepData.duration || 360)}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-primary rounded-full"
+                            animate={{ width: `${stepProgress * 100}%` }}
+                            transition={{ duration: 0.8, ease: 'linear' }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Live watt adjustment */}
+                      {ergActive && testState === 'running' && (
+                        <div className="flex items-center gap-1.5 p-2 bg-gray-50 rounded-xl border border-gray-100">
+                          <div className="flex gap-1 flex-1">
+                            {[-20, -10, -5].map(d => (
+                              <button key={d} onClick={() => adjustWatts(d)}
+                                className="flex-1 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-bold hover:bg-red-200 active:scale-95 transition-all">
+                                {d}
+                              </button>
+                            ))}
+                            {[5, 10, 20].map(d => (
+                              <button key={d} onClick={() => adjustWatts(d)}
+                                className="flex-1 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-200 active:scale-95 transition-all">
+                                +{d}
+                              </button>
+                            ))}
+                          </div>
+                          {wattOffset !== 0 && (
+                            <button onClick={() => adjustWatts(-wattOffset)}
+                              className="flex-shrink-0 px-2 py-1.5 bg-gray-200 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-300 transition-colors">
+                              Reset
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
-                    {/* HR */}
-                    <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-center">
-                      <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-0.5">
-                        <HeartIcon className="w-3 h-3" /> HR
-                      </div>
-                      <div className="text-4xl sm:text-5xl font-black text-rose-600 tabular-nums leading-none">
-                        {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
-                      </div>
-                      <div className="text-xs text-rose-300 mt-1.5">bpm</div>
-                    </div>
-                    {/* Cadence */}
-                    <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 text-center">
-                      <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Cadence</div>
-                      <div className="text-4xl sm:text-5xl font-black text-sky-600 tabular-nums leading-none">
-                        {trainerConnected && liveData.cadence > 0 ? Math.round(liveData.cadence) : '—'}
-                      </div>
-                      <div className="text-xs text-sky-300 mt-1.5">rpm</div>
-                    </div>
-                  </div>
 
-                  {/* ── Live watt adjustment ────────────── */}
-                  {ergActive && testState === 'running' && (
-                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-100">
-                      <span className="text-xs font-semibold text-gray-500 flex-shrink-0 w-16">Adjust W:</span>
-                      <div className="flex gap-1.5 flex-1">
-                        {[-20, -10, -5].map(d => (
-                          <button key={d} onClick={() => adjustWatts(d)}
-                            className="flex-1 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-bold hover:bg-red-200 active:scale-95 transition-all">
-                            {d}
-                          </button>
-                        ))}
-                        {[5, 10, 20].map(d => (
-                          <button key={d} onClick={() => adjustWatts(d)}
-                            className="flex-1 py-2 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-200 active:scale-95 transition-all">
-                            +{d}
-                          </button>
-                        ))}
+                    {/* RIGHT (landscape) / bottom (portrait): HR + cadence + controls */}
+                    <div className={isLandscape ? 'w-44 flex-shrink-0 flex flex-col gap-2' : 'space-y-3'}>
+                      <div className={`grid gap-2 ${isLandscape ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                        {/* HR */}
+                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-3 text-center">
+                          <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-0.5">
+                            <HeartIcon className="w-3 h-3" /> HR
+                          </div>
+                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black text-rose-600 tabular-nums leading-none`}>
+                            {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
+                          </div>
+                          <div className="text-xs text-rose-300 mt-1">bpm</div>
+                        </div>
+                        {/* Cadence */}
+                        <div className="bg-sky-50 border border-sky-100 rounded-2xl p-3 text-center">
+                          <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Cadence</div>
+                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black text-sky-600 tabular-nums leading-none`}>
+                            {trainerConnected && liveData.cadence > 0 ? Math.round(liveData.cadence) : '—'}
+                          </div>
+                          <div className="text-xs text-sky-300 mt-1">rpm</div>
+                        </div>
                       </div>
-                      {wattOffset !== 0 && (
-                        <button onClick={() => adjustWatts(-wattOffset)}
-                          className="flex-shrink-0 px-2.5 py-2 bg-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-300 transition-colors">
-                          Reset
+
+                      {/* Controls */}
+                      <div className={`flex gap-2 ${isLandscape ? 'flex-col' : 'flex-wrap pt-1'}`}>
+                        {testState === 'running' ? (
+                          <button onClick={handlePauseTest}
+                            className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-200 transition-colors${isLandscape ? ' w-full' : ''}`}>
+                            <PauseIcon className="w-4 h-4" /> Pause
+                          </button>
+                        ) : (
+                          <button onClick={handleResumeTest}
+                            className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm${isLandscape ? ' w-full' : ''}`}>
+                            <PlayIcon className="w-4 h-4" /> Resume
+                          </button>
+                        )}
+                        <button onClick={handleSkipInterval}
+                          className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors${isLandscape ? ' w-full' : ''}`}>
+                          <StopIcon className="w-4 h-4" /> End Early
                         </button>
-                      )}
+                        <button onClick={handleStopTest}
+                          className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors${isLandscape ? ' w-full' : ' ml-auto'}`}>
+                          <StopIcon className="w-4 h-4" /> Stop Test
+                        </button>
+                      </div>
                     </div>
-                  )}
-
-                  {/* Interval progress bar */}
-                  <div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-1.5">
-                      <span className="font-medium">Interval progress</span>
-                      <span className="font-bold text-gray-600 tabular-nums">
-                        {fmtTime(intervalTimer)} / {fmtTime(currentStepData.duration || 360)}
-                      </span>
-                    </div>
-                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-primary rounded-full"
-                        animate={{ width: `${stepProgress * 100}%` }}
-                        transition={{ duration: 0.8, ease: 'linear' }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Controls */}
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {testState === 'running' ? (
-                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-200 transition-colors">
-                        <PauseIcon className="w-4 h-4" /> Pause
-                      </button>
-                    ) : (
-                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                        <PlayIcon className="w-4 h-4" /> Resume
-                      </button>
-                    )}
-                    <button onClick={handleSkipInterval} className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> End Early
-                    </button>
-                    <button onClick={handleStopTest} className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> Stop Test
-                    </button>
-                  </div>
+                  </div>{/* end landscape flex */}
                 </motion.div>
               )}
 
@@ -1543,109 +1570,119 @@ const LactateTestingPage = () => {
                 <motion.div key="recovery"
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.25 }}
-                  className="bg-sky-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-sky-200 p-5 space-y-4"
+                  className="bg-sky-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-sky-200 p-4"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
-                    <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
-                    {isLastStep && (
-                      <span className="ml-2 text-xs font-semibold text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full">
-                        {cooldown.enabled
-                          ? <><SparklesIcon className="inline w-3.5 h-3.5 mr-0.5" />Cooldown next</>
-                          : <><FlagIcon className="inline w-3.5 h-3.5 mr-0.5" />Last step</>
-                        }
-                      </span>
-                    )}
-                    <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
-                      {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
-                    </span>
-                  </div>
+                  {/* Landscape: left=timer+summary+buttons  |  right=lactate input */}
+                  <div className={isLandscape ? 'flex gap-3' : 'space-y-3'}>
 
-                  <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
-                    <motion.div className="h-full bg-sky-400 rounded-full"
-                      animate={{ width: `${recoveryProgress * 100}%` }}
-                      transition={{ duration: 0.8, ease: 'linear' }}
-                    />
-                  </div>
-
-                  {/* Interval summary */}
-                  <div className="flex items-center gap-4 p-3 bg-white/70 rounded-xl text-sm flex-wrap">
-                    <span className="text-gray-500 font-medium">Interval {currentStep + 1} complete</span>
-                    {avgStepPower != null && <span className="font-bold text-gray-800 flex items-center gap-1"><BoltIcon className="w-3.5 h-3.5 text-amber-500" />{avgStepPower}W avg</span>}
-                    {avgStepHR   != null && <span className="font-bold text-rose-600 flex items-center gap-1"><HeartIcon className="w-3.5 h-3.5" />{avgStepHR} bpm</span>}
-                  </div>
-
-                  {/* Lactate entry */}
-                  {!stepLactateEntered ? (
-                    <div className="space-y-3">
-                      <div className="text-sm font-bold text-gray-700">Enter Lactate Value</div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Lactate <span className="text-gray-400">(mmol/L)</span>
-                          </label>
-                          <input
-                            ref={lactateInputRef}
-                            type="number" step="0.1" min="0.1" max="25"
-                            value={lactateInput}
-                            onChange={e => setLactateInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
-                            placeholder="e.g. 2.4"
-                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            BORG <span className="text-gray-400">(6–20, optional)</span>
-                          </label>
-                          <input
-                            type="number" min="6" max="20" step="1"
-                            value={borgInput}
-                            onChange={e => setBorgInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
-                            placeholder="6–20"
-                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
-                          />
-                          {borgInput && BORG_LABELS[borgInput] && (
-                            <p className="text-xs text-gray-400 mt-1 truncate">{BORG_LABELS[borgInput]}</p>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleAddLactate}
-                        disabled={!lactateInput}
-                        className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-sm shadow-primary/20"
-                      >
-                        <CheckCircleIcon className="w-4 h-4" /> Save Lactate Value
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                      <CheckCircleSolid className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                      <span className="text-sm text-emerald-700">
-                        Recorded: <strong>{lactateValues.find(l => l.step === currentStep + 1)?.lactate.toFixed(1)} mmol/L</strong>
-                        {lactateValues.find(l => l.step === currentStep + 1)?.borg && (
-                          <span className="text-emerald-600"> · BORG {lactateValues.find(l => l.step === currentStep + 1)?.borg}</span>
+                    {/* LEFT: header + timer bar + summary + action buttons */}
+                    <div className={isLandscape ? 'flex-1 min-w-0 flex flex-col gap-2' : 'space-y-3'}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
+                        <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
+                        {isLastStep && (
+                          <span className="ml-2 text-xs font-semibold text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full">
+                            {cooldown.enabled
+                              ? <><SparklesIcon className="inline w-3.5 h-3.5 mr-0.5" />Cooldown next</>
+                              : <><FlagIcon className="inline w-3.5 h-3.5 mr-0.5" />Last step</>
+                            }
+                          </span>
                         )}
-                      </span>
-                    </div>
-                  )}
+                        <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
+                          {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
+                        </span>
+                      </div>
 
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={handleStartInterval}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                      {isLastStep
-                        ? cooldown.enabled
-                          ? <><SparklesIcon className="w-4 h-4" /> Start Cooldown</>
-                          : <><FlagIcon className="w-4 h-4" /> Finish Test</>
-                        : <><PlayIcon className="w-4 h-4" /> Start Next Interval</>
-                      }
-                    </button>
-                    <button onClick={handleStopTest}
-                      className="flex items-center gap-1.5 px-3 py-2.5 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> Finish Test
-                    </button>
-                  </div>
+                      <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
+                        <motion.div className="h-full bg-sky-400 rounded-full"
+                          animate={{ width: `${recoveryProgress * 100}%` }}
+                          transition={{ duration: 0.8, ease: 'linear' }}
+                        />
+                      </div>
+
+                      {/* Interval summary */}
+                      <div className="flex items-center gap-3 p-2 bg-white/70 rounded-xl text-xs flex-wrap">
+                        <span className="text-gray-500 font-medium">Interval {currentStep + 1} complete</span>
+                        {avgStepPower != null && <span className="font-bold text-gray-800 flex items-center gap-1"><BoltIcon className="w-3 h-3 text-amber-500" />{avgStepPower}W avg</span>}
+                        {avgStepHR   != null && <span className="font-bold text-rose-600 flex items-center gap-1"><HeartIcon className="w-3 h-3" />{avgStepHR} bpm</span>}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className={`flex gap-2 ${isLandscape ? 'flex-col mt-auto' : 'pt-1'}`}>
+                        <button onClick={handleStartInterval}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                          {isLastStep
+                            ? cooldown.enabled
+                              ? <><SparklesIcon className="w-4 h-4" /> Start Cooldown</>
+                              : <><FlagIcon className="w-4 h-4" /> Finish Test</>
+                            : <><PlayIcon className="w-4 h-4" /> Next Interval</>
+                          }
+                        </button>
+                        <button onClick={handleStopTest}
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
+                          <StopIcon className="w-4 h-4" /> Finish
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT (landscape) / bottom (portrait): lactate + BORG entry */}
+                    <div className={isLandscape ? 'w-52 flex-shrink-0 flex flex-col' : ''}>
+                      {!stepLactateEntered ? (
+                        <div className="space-y-2">
+                          {!isLandscape && <div className="text-sm font-bold text-gray-700">Enter Lactate Value</div>}
+                          <div className={`grid gap-2 ${isLandscape ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">
+                                Lactate <span className="text-gray-400">(mmol/L)</span>
+                              </label>
+                              <input
+                                ref={lactateInputRef}
+                                type="number" step="0.1" min="0.1" max="25"
+                                value={lactateInput}
+                                onChange={e => setLactateInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
+                                placeholder="e.g. 2.4"
+                                className="w-full px-3 py-2 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">
+                                BORG <span className="text-gray-400">(6–20, opt.)</span>
+                              </label>
+                              <input
+                                type="number" min="6" max="20" step="1"
+                                value={borgInput}
+                                onChange={e => setBorgInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
+                                placeholder="6–20"
+                                className="w-full px-3 py-2 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
+                              />
+                              {borgInput && BORG_LABELS[borgInput] && (
+                                <p className="text-xs text-gray-400 mt-1 truncate">{BORG_LABELS[borgInput]}</p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleAddLactate}
+                            disabled={!lactateInput}
+                            className="w-full py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-sm shadow-primary/20"
+                          >
+                            <CheckCircleIcon className="w-4 h-4" /> Save Lactate
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl h-full">
+                          <CheckCircleSolid className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                          <span className="text-sm text-emerald-700">
+                            <strong>{lactateValues.find(l => l.step === currentStep + 1)?.lactate.toFixed(1)} mmol/L</strong>
+                            {lactateValues.find(l => l.step === currentStep + 1)?.borg && (
+                              <span className="text-emerald-600"> · BORG {lactateValues.find(l => l.step === currentStep + 1)?.borg}</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>{/* end landscape flex */}
                 </motion.div>
               )}
 
