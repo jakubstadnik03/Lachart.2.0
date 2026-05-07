@@ -627,7 +627,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const X_LABEL_H = 16;
   const ZOOM_GAP  = 3;
   const PAUSE_W   = 8;    // rest/pause dots in zoomed mode
-  const MIN_BAR_PX = 55; // minimum px for the smallest lap in zoomed mode
+  const MAX_BAR_PX = 60; // largest bar width in zoomed mode
+  const MIN_ZOOM_BAR = 16; // floor width for any non-pause bar
 
   const isZoomed = selectedLap != null;
   const centerLapRef = useRef(null);
@@ -646,11 +647,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
   });
 
-  // In zoomed mode: scale weights so the smallest non-pause bar is MIN_BAR_PX wide
+  // In zoomed mode: scale weights so the largest non-pause bar is MAX_BAR_PX wide
   const activeWeights = entries.filter(e => !e.isPause).map(e => e.weight);
-  const minWeight = activeWeights.length ? Math.min(...activeWeights) : 1;
-  const pxPerWeight = MIN_BAR_PX / minWeight;
-  const getZoomW = (ent) => ent.isPause ? PAUSE_W : Math.round(ent.weight * pxPerWeight);
+  const maxWeight = activeWeights.length ? Math.max(...activeWeights) : 1;
+  const pxPerWeight = MAX_BAR_PX / maxWeight;
+  const getZoomW = (ent) => ent.isPause ? PAUSE_W : Math.max(Math.round(ent.weight * pxPerWeight), MIN_ZOOM_BAR);
 
   // Scroll to center selected bar in zoom mode — must be before any early return
   useEffect(() => {
@@ -660,7 +661,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     for (let i = 0; i < selectedLap; i++) {
       left += getZoomW(entries[i]) + ZOOM_GAP;
     }
-    const selW = getZoomW(entries[selectedLap] || { isPause: false, weight: minWeight });
+    const selW = getZoomW(entries[selectedLap] || { isPause: false, weight: maxWeight });
     const target = left + selW / 2 - el.clientWidth / 2;
     isProgrammaticScroll.current = true;
     requestAnimationFrame(() => {
