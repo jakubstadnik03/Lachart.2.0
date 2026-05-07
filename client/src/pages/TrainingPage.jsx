@@ -17,6 +17,7 @@ import { useCategories } from '../context/CategoryContext';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
+const LapComparison = lazy(() => import('../components/Training-log/LapComparison'));
 
 const COACH_LIKE_ROLES = ['coach', 'tester', 'testing', 'admin'];
 
@@ -696,11 +697,31 @@ export default function TrainingPage() {
           </Suspense>
         </motion.div>
 
-        {/* Row 4: Training Table — full width */}
+        {/* Row 4: Lap Comparison — full width */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
+          className="lg:col-span-5 md:col-span-2 min-w-0"
+        >
+          <Suspense fallback={
+            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
+              <p className="text-sm text-gray-400">Loading lap comparison…</p>
+            </div>
+          }>
+            <LapComparison
+              trainings={trainings}
+              selectedTitle={selectedTitle}
+              setSelectedTitle={setSelectedTitle}
+            />
+          </Suspense>
+        </motion.div>
+
+        {/* Row 5: Training Table — full width */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
           className="lg:col-span-5 md:col-span-2 min-w-0"
         >
           <UserTrainingsTable trainings={filteredTrainings} />
