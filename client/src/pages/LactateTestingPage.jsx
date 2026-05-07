@@ -1263,7 +1263,10 @@ const LactateTestingPage = () => {
         {/* ACTIVE TEST VIEW                                  */}
         {/* ══════════════════════════════════════════════════ */}
         {(testState === 'running' || testState === 'paused') && (
-          <div className="space-y-4">
+          <div className="lg:grid lg:grid-cols-[1fr_380px] lg:gap-5 space-y-4 lg:space-y-0">
+
+            {/* LEFT column: step progress + phase panel */}
+            <div className="space-y-4">
 
             {/* Step progress — hide during warmup */}
             {phase !== 'warmup' && (
@@ -1751,52 +1754,57 @@ const LactateTestingPage = () => {
                 </motion.div>
               )}
             </AnimatePresence>
+            </div>{/* end left column */}
 
-            {/* Device status chips */}
-            <div className="flex flex-wrap gap-2">
-              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${trainerConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                <CpuChipIcon className="w-3.5 h-3.5" /> {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
-                {ergActive && <span className="ml-1">· ERG ✓</span>}
+            {/* RIGHT column: device status + live chart + lactate curve */}
+            <div className="space-y-4">
+
+              {/* Device status chips */}
+              <div className="flex flex-wrap gap-2">
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${trainerConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <CpuChipIcon className="w-3.5 h-3.5" /> {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
+                  {ergActive && <span className="ml-1">· ERG ✓</span>}
+                </div>
+                {devices.heartRate?.connected && liveData.heartRate > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-700">
+                    <HeartIcon className="w-3.5 h-3.5" /> {Math.round(liveData.heartRate)} bpm
+                  </div>
+                )}
+                {devices.moxy?.connected && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-100 text-blue-700">
+                    <ChartBarIcon className="w-3.5 h-3.5" /> SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
+                  </div>
+                )}
+                {devices.coreTemp?.connected && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700">
+                    <SunIcon className="w-3.5 h-3.5" /> {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
+                  </div>
+                )}
               </div>
-              {devices.heartRate?.connected && liveData.heartRate > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-700">
-                  <HeartIcon className="w-3.5 h-3.5" /> {Math.round(liveData.heartRate)} bpm
-                </div>
-              )}
-              {devices.moxy?.connected && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-100 text-blue-700">
-                  <ChartBarIcon className="w-3.5 h-3.5" /> SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
-                </div>
-              )}
-              {devices.coreTemp?.connected && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700">
-                  <SunIcon className="w-3.5 h-3.5" /> {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
-                </div>
-              )}
-            </div>
 
-            {/* Live dashboard chart */}
-            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
-              <LiveDashboard
-                liveData={liveData}
-                devices={devices}
-                testState={testState}
-                historicalData={historicalData}
-                intervalTimer={intervalTimer}
-                protocol={protocol}
-                currentStep={currentStep}
-              />
-            </div>
-
-            {/* Live lactate curve */}
-            {lactateValues.length > 0 && (
+              {/* Live dashboard chart */}
               <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
-                <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve (Live)
-                </div>
-                <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
+                <LiveDashboard
+                  liveData={liveData}
+                  devices={devices}
+                  testState={testState}
+                  historicalData={historicalData}
+                  intervalTimer={intervalTimer}
+                  protocol={protocol}
+                  currentStep={currentStep}
+                />
               </div>
-            )}
+
+              {/* Live lactate curve */}
+              {lactateValues.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                  <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve (Live)
+                  </div>
+                  <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
+                </div>
+              )}
+            </div>{/* end right column */}
           </div>
         )}
 

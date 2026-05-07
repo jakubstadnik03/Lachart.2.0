@@ -58,6 +58,9 @@ export class FTMSAdapter implements TrainerAdapter {
   // FE-C keepalive: ANT+ FE-C requires continuous commands (~4 Hz) or trainer reverts to free-wheel
   private fecKeepAliveTimer: ReturnType<typeof setInterval> | null = null;
   private fecLastTargetWatts: number | null = null;
+  // FTMS keepalive: some FTMS trainers drop ERG control during recovery/inactivity
+  private ftmsKeepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private ftmsLastTargetWatts: number | null = null;
   private state: TrainerState = 'disconnected';
   private capabilities: TrainerCapabilities | null = null;
   private telemetryCallbacks: Set<(t: Telemetry) => void> = new Set();
@@ -490,6 +493,13 @@ export class FTMSAdapter implements TrainerAdapter {
     }
     this.fecLastTargetWatts = null;
 
+    // Stop FTMS keepalive
+    if (this.ftmsKeepAliveTimer) {
+      clearInterval(this.ftmsKeepAliveTimer);
+      this.ftmsKeepAliveTimer = null;
+    }
+    this.ftmsLastTargetWatts = null;
+
     this.tacxFecTxChar = null;
     this.tacxFecFallbackChar = null;
     this.wahooControlChar = null;
@@ -585,38 +595,82 @@ export class FTMSAdapter implements TrainerAdapter {
     try {
       // Use FTMS control point if available
       if (this.useFTMS && this.controlPointChar) {
+        // Auto-re-request control if needed (trainer may drop control during recovery/inactivity)
         if (this.state !== 'controlled' && this.state !== 'erg_active') {
-          throw new Error('Control not granted. Call requestControl() first.');
+          logger.info('setErgWatts: not controlled — requesting control first');
+          await this.requestControl();
+          await this.start();
         }
 
-        // Set up the response promise BEFORE writing
-        const ergResponsePromise = new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            // Treat as success on timeout — trainer may not send a response for every power update
-            resolve();
-          }, 3000);
+        const sendFtmsErgCommand = async (): Promise<void> => {
+          // Set up the response promise BEFORE writing
+          const ergResponsePromise = new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              // Treat as success on timeout — trainer may not send a response for every power update
+              resolve();
+            }, 3000);
 
-          this.pendingErgResolve = () => {
-            clearTimeout(timer);
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            resolve();
-          };
-          this.pendingErgReject = (err: Error) => {
-            clearTimeout(timer);
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            reject(err);
-          };
-        });
+            this.pendingErgResolve = () => {
+              clearTimeout(timer);
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              resolve();
+            };
+            this.pendingErgReject = (err: Error) => {
+              clearTimeout(timer);
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              reject(err);
+            };
+          });
 
-        const command = buildSetTargetPowerCommand(clampedWatts);
-        await this.controlPointChar.writeValueWithResponse(command);
-        await ergResponsePromise;
+          const command = buildSetTargetPowerCommand(clampedWatts);
+          await this.controlPointChar!.writeValueWithResponse(command);
+          await ergResponsePromise;
+        };
+
+        try {
+          await sendFtmsErgCommand();
+        } catch (ergErr: any) {
+          // "Control not permitted" — trainer dropped ERG state. Re-request and retry once.
+          const msg = ergErr?.message || '';
+          if (msg.includes('not permitted') || msg.includes('Control') || msg.includes('GATT')) {
+            logger.warn('FTMS ERG failed (control dropped?), re-requesting and retrying:', msg);
+            this.state = 'ready'; // force re-request path in requestControl()
+            await this.requestControl();
+            await this.start();
+            await sendFtmsErgCommand();
+          } else {
+            throw ergErr;
+          }
+        }
 
         this.state = 'erg_active';
+
+        // FTMS keepalive: re-send current power every 3 s to keep trainer in ERG mode.
+        // Some FTMS trainers silently revert to free-wheel after a period without commands.
+        this.ftmsLastTargetWatts = clampedWatts;
+        if (!this.ftmsKeepAliveTimer) {
+          this.ftmsKeepAliveTimer = setInterval(async () => {
+            if (this.ftmsLastTargetWatts == null || !this.controlPointChar) return;
+            if (this.pendingErgResolve) return; // skip if a real command is in flight
+            try {
+              const ka = buildSetTargetPowerCommand(this.ftmsLastTargetWatts);
+              // Prefer writeWithoutResponse to avoid triggering the response-promise machinery
+              if (this.controlPointChar.properties.writeWithoutResponse) {
+                await this.controlPointChar.writeValueWithoutResponse(ka);
+              } else {
+                await this.controlPointChar.writeValueWithResponse(ka);
+              }
+            } catch {
+              // Keepalive failures are silent — a real ERG command will catch real errors
+            }
+          }, 3000);
+          logger.info('FTMS ERG keepalive started (3 s interval)');
+        }
+
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
       } else if (this.tacxFecTxChar) {
         // Tacx proprietary FE-C BLE service — ANT+ FE-C page 49 (Set Target Power).
@@ -752,9 +806,9 @@ export class FTMSAdapter implements TrainerAdapter {
     }
   }
 
-  async requestControl(): Promise<void> {
-    // Already controlled — no need to request again
-    if (this.state === 'controlled' || this.state === 'erg_active') {
+  async requestControl(force = false): Promise<void> {
+    // Already controlled — no need to request again unless forced
+    if (!force && (this.state === 'controlled' || this.state === 'erg_active')) {
       logger.info('Already controlled, skipping requestControl');
       return;
     }
