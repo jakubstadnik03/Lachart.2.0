@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor-community/apple-sign-in": "^7.1.0",
     "@capacitor-community/bluetooth-le": "^6.1.0",
     "@capacitor/android": "^6.2.1",
     "@capacitor/app": "^6.0.3",

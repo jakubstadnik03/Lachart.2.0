@@ -16,6 +16,7 @@ import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { signInWithGoogleNative } from '../utils/nativeGoogleAuth';
+import { signInWithAppleNative } from '../utils/nativeAppleAuth';
 
 /** Shown after Google sign-in errors so users can recover without Google (same email in LaChart). */
 function withGoogleLoginPasswordHint(message) {
@@ -385,6 +386,37 @@ const LoginPage = () => {
     }
   };
 
+  // Native Apple Sign In
+  const handleNativeAppleSignIn = async () => {
+    if (isLoading) return;
+    try {
+      setIsLoading(true);
+      setGoogleAuthError(null);
+      const { identityToken, user: appleUser } = await signInWithAppleNative();
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/apple-auth`, {
+        identityToken,
+        user: appleUser,
+      });
+      if (result.data.token) {
+        localStorage.setItem('token', result.data.token);
+        const { saveUserToStorage } = await import('../utils/userStorage');
+        saveUserToStorage(result.data.user);
+        api.defaults.headers.common['Authorization'] = `Bearer ${result.data.token}`;
+        await login(null, null, result.data.token, result.data.user);
+        addNotification('Signed in with Apple', 'success');
+        navigate(from, { replace: true });
+      }
+    } catch (err) {
+      if (err?.message?.includes('cancel') || err?.message?.includes('Cancel') || err?.code === '1001') {
+        // User cancelled — silent
+      } else {
+        addNotification(err?.message || 'Apple sign-in failed', 'error');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ── Native iOS layout ──────────────────────────────────────────
   if (isCapacitorNative()) {
     return (
@@ -404,11 +436,8 @@ const LoginPage = () => {
 
           {/* Logo */}
           <div className="mb-8 text-center">
-            <div className="mx-auto h-16 w-16 rounded-2xl shadow-md mb-3 flex items-center justify-center">
-              <picture>
-                
-                <img className="h-16 w-16 object-contain" src="/images/LaChart.png" alt="LaChart" />
-              </picture>
+            <div className="mx-auto h-20 w-20 rounded-2xl shadow-md mb-3 flex items-center justify-center bg-white p-3.5">
+              <img className="w-full h-full object-contain" src="/images/LaChart.png" alt="LaChart" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">LaChart</h1>
             <p className="mt-1 text-sm text-gray-500">Sign in to your account</p>
@@ -495,7 +524,6 @@ const LoginPage = () => {
             disabled={isLoading}
             className="mt-3 w-full flex items-center justify-center gap-3 py-3 px-4 bg-white border border-gray-300 rounded-2xl shadow-sm active:bg-gray-50 transition-colors disabled:opacity-50"
           >
-            {/* Google G logo */}
             <svg width="20" height="20" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -504,6 +532,21 @@ const LoginPage = () => {
             </svg>
             <span className="text-base font-medium text-gray-700">
               {isLoading ? 'Signing in…' : 'Continue with Google'}
+            </span>
+          </button>
+
+          {/* Native Apple Sign-In */}
+          <button
+            type="button"
+            onClick={handleNativeAppleSignIn}
+            disabled={isLoading}
+            className="mt-2.5 w-full flex items-center justify-center gap-3 py-3 px-4 bg-black rounded-2xl shadow-sm active:opacity-80 transition-opacity disabled:opacity-50"
+          >
+            <svg width="18" height="22" viewBox="0 0 814 1000" fill="white">
+              <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105.6-57.8-155.5-127.4C46 411.3 8 330.8 8 251.8c0-120.7 78.7-184.6 155.5-184.6 79.7 0 122.9 43.5 163.3 43.5 36.4 0 96.8-45.8 168.7-45.8 26.4 0 108.2 2.6 164 100.9zm-130.5-219.6c-31.1 36.4-63.9 66.9-106.4 93.7-24.4 15.4-74.1 53.9-110.1 54.4 0-137.2 78.7-219 178.4-247.4 18.7-5.1 44.1-8.3 63.3-8.3 1.9 0 3.8.6 5.8.6 0 6.4.6 12.8.6 19.2 0 29.8-8.3 58.3-31.6 88z"/>
+            </svg>
+            <span className="text-base font-medium text-white">
+              {isLoading ? 'Signing in…' : 'Continue with Apple'}
             </span>
           </button>
 

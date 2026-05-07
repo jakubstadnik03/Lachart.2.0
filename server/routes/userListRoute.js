@@ -2257,6 +2257,99 @@ router.post("/google-auth", async (req, res) => {
     }
 });
 
+// ── Apple Sign In ──────────────────────────────────────────────────────────────
+// Verifies an Apple identity token (produced by the iOS native plugin) and
+// returns a LaChart JWT. Apple only sends the user's name on the FIRST login,
+// so we fall back to "Apple User" if it's missing on subsequent logins.
+router.post("/apple-auth", async (req, res) => {
+    try {
+        const { identityToken, user: appleUser, role } = req.body;
+        if (!identityToken) {
+            return res.status(400).json({ error: "Missing Apple identity token" });
+        }
+
+        const appleSignin = require('apple-signin-auth');
+        let applePayload;
+        try {
+            applePayload = await appleSignin.verifyIdToken(identityToken, {
+                audience: process.env.APPLE_BUNDLE_ID || 'net.lachart.app',
+                ignoreExpiration: false,
+            });
+        } catch (verifyErr) {
+            console.error('[AppleAuth] Token verification failed:', verifyErr.message);
+            return res.status(401).json({ error: 'Apple identity token is invalid or expired' });
+        }
+
+        const { sub: appleId, email } = applePayload;
+        if (!appleId) {
+            return res.status(400).json({ error: 'Apple token missing subject (user ID)' });
+        }
+
+        const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
+
+        // Apple only provides email on first sign-in. After that, look up by appleId.
+        let user = await userDao.findOne({ appleId });
+        if (!user && email) {
+            user = await userDao.findByEmail(email);
+        }
+
+        if (!user) {
+            // First time — create account. Name may come from the client payload.
+            const firstName = appleUser?.givenName || appleUser?.name?.split(' ')[0] || 'Apple';
+            const lastName  = appleUser?.familyName || (appleUser?.name?.includes(' ') ? appleUser.name.split(' ').slice(1).join(' ') : 'User');
+            const userEmail = email || `apple_${appleId}@privaterelay.appleid.com`;
+
+            user = await userDao.createUser({
+                email: userEmail,
+                name: firstName,
+                surname: lastName,
+                appleId,
+                signupMethod: 'apple',
+                emailVerified: true, // Apple verifies emails
+                role: normalizedRole,
+                isRegistrationComplete: true,
+                onboarding: {
+                    basicProfileDone: false,
+                    unitsDone: false,
+                    trainingZonesDone: false,
+                    walkthroughDone: false,
+                },
+            });
+            saveRegistrationLocation(userDao, user._id, req);
+        } else if (!user.appleId) {
+            // Link Apple ID to existing account (same email, different login method)
+            user = await userDao.updateUser(user._id, { appleId });
+        }
+
+        const token = jwt.sign(
+            { userId: String(user._id), role: user.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        await userDao.update(user._id, {
+            $set: { lastLogin: new Date() },
+            $inc: { loginCount: 1 },
+        });
+        saveLoginLocation(userDao, user, req);
+
+        res.json({
+            token,
+            user: {
+                _id: user._id,
+                role: user.role,
+                name: user.name,
+                surname: user.surname,
+                email: user.email,
+                appleId: user.appleId,
+            },
+        });
+    } catch (error) {
+        console.error('[AppleAuth] Error:', error?.message || error);
+        res.status(500).json({ error: 'Apple authentication failed' });
+    }
+});
+
 // Change password endpoint
 router.post("/change-password", verifyToken, async (req, res) => {
     try {
