@@ -1150,6 +1150,12 @@ const WeeklyCalendar = ({
       : null;
     setActivityModal({ activity, plannedWorkout: matchPw });
 
+    if (isMobile) {
+      // On mobile just open the modal — no inline detail panel
+      if (onSelectActivity) onSelectActivity(activity);
+      return;
+    }
+
     setSelectedTraining(activity);
     setLoadingDetail(true);
     setTrainingDetail(null);
