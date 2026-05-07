@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
+import { getStravaActivityDetail } from '../../services/api';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -240,6 +241,58 @@ const TrainingGraph = ({
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [fetchedLaps, setFetchedLaps] = useState(null); // { id, results } — lazy-loaded Strava laps
+  const [lapsLoading, setLapsLoading] = useState(false);
+
+  // Convert Strava lap to TrainingGraph results format
+  const stravaLapToResult = useCallback((lap, idx, sport) => {
+    const normalized = normalizeSport(sport);
+    const isRun  = normalized === 'running';
+    const isSwim = normalized === 'swimming';
+    let power = null;
+    if (isRun || isSwim) {
+      // Use speed → pace (sec/km or sec/100m)
+      const speedMps = lap.average_speed ?? 0;
+      if (speedMps > 0) {
+        power = isSwim ? (100 / speedMps) : (1000 / speedMps); // sec/100m or sec/km
+      }
+    } else {
+      power = lap.average_watts ?? lap.watts ?? null;
+    }
+    return {
+      interval: idx + 1,
+      power,
+      heartRate: lap.average_heartrate ?? lap.heartrate ?? null,
+      duration: lap.elapsed_time ?? lap.moving_time ?? null,
+      distance: lap.distance ?? null,
+      moving_time: lap.moving_time ?? null,
+    };
+  }, [normalizeSport]);
+
+  // Lazy-fetch Strava laps when selected activity has no results
+  useEffect(() => {
+    const t = trainingList?.find(t => matchesId(t, selectedTraining));
+    if (!t) { setFetchedLaps(null); return; }
+    if (Array.isArray(t.results) && t.results.length > 0) { setFetchedLaps(null); return; }
+    const rawId = t.stravaId || (String(t.id || '').replace(/^strava-/, '')) || null;
+    if (!rawId || t.type !== 'strava') { setFetchedLaps(null); return; }
+    // Already fetched for this activity
+    if (fetchedLaps?.id === String(rawId)) return;
+    let cancelled = false;
+    setLapsLoading(true);
+    setFetchedLaps(null);
+    getStravaActivityDetail(rawId).then(raw => {
+      if (cancelled) return;
+      const laps = raw?.laps ?? [];
+      const results = laps.map((lap, idx) => stravaLapToResult(lap, idx, t.sport));
+      setFetchedLaps({ id: String(rawId), results });
+    }).catch(() => {
+      if (!cancelled) setFetchedLaps({ id: String(rawId), results: [] });
+    }).finally(() => {
+      if (!cancelled) setLapsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedTraining, trainingList, fetchedLaps, matchesId, stravaLapToResult]);
 
   const formatPace = (seconds) => {
     const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
@@ -313,45 +366,39 @@ const TrainingGraph = ({
     if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id || newest.id); }
   }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs]);
 
+  const computeRanges = useCallback((resultsArr, sport) => {
+    const sportKey = normalizeSport(sport);
+    const isRun  = sportKey === 'running' || sportKey === 'run';
+    const isSwim = sportKey === 'swimming' || sportKey === 'swim';
+    const isPace = isRun || isSwim;
+    const powers = resultsArr.map(r => parsePowerToNumber(r.power, isPace)).filter(v => v !== null && v > 0);
+    const heartRates = resultsArr.map(r => { const n = Number(r.heartRate); return isFinite(n) && n > 0 ? n : null; }).filter(v => v !== null);
+    const newRanges = { power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } };
+    if (powers.length > 0) {
+      const pad = isPace ? 30 : 20;
+      newRanges.power = { min: Math.floor(Math.min(...powers) - pad), max: Math.ceil(Math.max(...powers) + pad) };
+    }
+    if (heartRates.length > 0) {
+      newRanges.heartRate = { min: Math.floor(Math.min(...heartRates) - 5), max: Math.ceil(Math.max(...heartRates) + 5) };
+    }
+    return newRanges;
+  }, [normalizeSport]);
+
   // Update ranges + close-on-outside-click
   useEffect(() => {
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
-      if (!selectedData?.results?.length) {
+      const resultsArr = selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []);
+      if (resultsArr.length > 0) {
+        setRanges(computeRanges(resultsArr, selectedData?.sport));
+      } else {
         setRanges({ power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } });
-      }
-      if (selectedData?.results) {
-        const sportKey = normalizeSport(selectedData.sport);
-        const isRun  = sportKey === 'running' || sportKey === 'run';
-        const isSwim = sportKey === 'swimming' || sportKey === 'swim';
-        const isPace = isRun || isSwim;
-        const powers = selectedData.results
-          .map(r => parsePowerToNumber(r.power, isPace))
-          .filter(v => v !== null && v > 0);
-        const heartRates = selectedData.results
-          .map(r => { const n = Number(r.heartRate); return isFinite(n) && n > 0 ? n : null; })
-          .filter(v => v !== null);
-        const newRanges = { power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } };
-        if (powers.length > 0) {
-          const pad = isPace ? 30 : 20;
-          newRanges.power = {
-            min: Math.floor(Math.min(...powers) - pad),
-            max: Math.ceil(Math.max(...powers) + pad),
-          };
-        }
-        if (heartRates.length > 0) {
-          newRanges.heartRate = {
-            min: Math.floor(Math.min(...heartRates) - 5),
-            max: Math.ceil(Math.max(...heartRates) + 5),
-          };
-        }
-        setRanges(newRanges);
       }
     }
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList, normalizeSport, matchesId]);
+  }, [selectedTraining, trainingList, fetchedLaps, normalizeSport, matchesId, computeRanges]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
@@ -421,6 +468,11 @@ const TrainingGraph = ({
 
   const selectedTrainingData = trainingList.find(t => matchesId(t, selectedTraining));
 
+  // Use fetched Strava laps when the activity has no local results
+  const effectiveResults = (selectedTrainingData?.results?.length > 0)
+    ? selectedTrainingData.results
+    : (fetchedLaps?.results ?? []);
+
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
   const trainingOptions = trainingsWithSelectedTitle
     .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0))
@@ -430,7 +482,7 @@ const TrainingGraph = ({
     }));
   const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
 
-  if (!selectedTrainingData?.results?.length) return (
+  if (!effectiveResults.length) return (
     <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <div className="min-w-0">
@@ -461,7 +513,9 @@ const TrainingGraph = ({
         </div>
       </div>
       <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-slate-400">
-        {selectedTrainingData ? 'No interval data for this training' : 'Select a training to view data'}
+        {lapsLoading
+          ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+          : selectedTrainingData ? 'No interval data for this training' : 'Select a training to view data'}
       </div>
     </div>
   );
@@ -596,13 +650,13 @@ const TrainingGraph = ({
       <div className="flex-1 min-h-0 relative px-3 pt-2 pb-1">
         <Line
           data={{
-            labels: selectedTrainingData.results.map((r, i) =>
+            labels: effectiveResults.map((r, i) =>
               r.interval != null ? String(r.interval) : String(i + 1)
             ),
             datasets: [
               {
                 label: isPaceScale ? "Pace" : "Power",
-                data: selectedTrainingData.results.map(r =>
+                data: effectiveResults.map(r =>
                   parsePowerToNumber(r.power, isPaceScale)
                 ),
                 borderColor: "#3B82F6",
@@ -616,7 +670,7 @@ const TrainingGraph = ({
               },
               {
                 label: "Heart Rate",
-                data: selectedTrainingData.results.map(r => {
+                data: effectiveResults.map(r => {
                   const n = Number(r.heartRate);
                   return isFinite(n) && n > 0 ? n : null;
                 }),
@@ -637,7 +691,7 @@ const TrainingGraph = ({
         {tooltip && (
           <CustomTooltip
             tooltip={tooltip}
-            datasets={selectedTrainingData.results.map(r => ({
+            datasets={effectiveResults.map(r => ({
               ...r,
               duration: r.moving_time ?? r.totalTimerTime ?? r.duration ?? r.durationSeconds
             }))}

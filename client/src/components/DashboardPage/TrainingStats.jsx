@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
 import { SearchableSelect } from "../SearchableSelect";
+import { getStravaActivityDetail } from "../../services/api";
 
 /** Matches LapsBarChart / TrainingItem palette exactly. */
 const INTERVAL_TYPE_BAR = {
@@ -279,10 +280,10 @@ function Scale({ values, formatValue }) {
 }
 
 /* ── Training comparison row ───────────────────────────────────────────────── */
-function TrainingComparison({ training, previousTraining, sport, onTrainingClick, user }) {
+function TrainingComparison({ training, trainingResults, previousTraining, previousResults, sport, onTrainingClick, user }) {
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
-  const results    = trainingResultsOf(training);
-  const prevRes    = trainingResultsOf(previousTraining);
+  const results    = trainingResults ?? trainingResultsOf(training);
+  const prevRes    = previousResults ?? trainingResultsOf(previousTraining);
 
   const isRun  = (sport || "").toLowerCase() === "run";
   const isSwim = (sport || "").toLowerCase() === "swim";
@@ -429,6 +430,62 @@ export function TrainingStats({
     [trainingsList, currentSelectedSport, currentSelectedTitle]
   );
 
+  // Lazy-fetch Strava laps for filtered trainings that have no results
+  const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
+
+  const stravaLapToResult = useCallback((lap, sport) => {
+    const s = String(sport || '').toLowerCase();
+    const isRun  = s === 'run' || s === 'running';
+    const isSwim = s === 'swim' || s === 'swimming';
+    let power = null;
+    const speedMps = lap.average_speed ?? 0;
+    if (isRun  && speedMps > 0) power = Math.round(1000  / speedMps);
+    else if (isSwim && speedMps > 0) power = Math.round(100 / speedMps);
+    else power = lap.average_watts ?? lap.watts ?? null;
+    return {
+      power,
+      heartRate: lap.average_heartrate ?? null,
+      distance: lap.distance ?? null,
+      durationSeconds: lap.elapsed_time ?? lap.moving_time ?? null,
+      moving_time: lap.moving_time ?? null,
+      intervalType: null,
+    };
+  }, []);
+
+  useEffect(() => {
+    const stravaNeeded = filteredTrainings.filter(t => {
+      if (t.type !== 'strava') return false;
+      if (Array.isArray(t.results) && t.results.length > 0) return false;
+      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
+      if (!rawId) return false;
+      return !(rawId in stravaLapsCache);
+    });
+    if (!stravaNeeded.length) return;
+    let cancelled = false;
+    stravaNeeded.forEach(t => {
+      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
+      getStravaActivityDetail(rawId).then(raw => {
+        if (cancelled) return;
+        const laps = raw?.laps ?? [];
+        const results = laps.map(lap => stravaLapToResult(lap, t.sport));
+        setStravaLapsCache(prev => ({ ...prev, [rawId]: results }));
+      }).catch(() => {
+        if (!cancelled) setStravaLapsCache(prev => ({ ...prev, [rawId]: [] }));
+      });
+    });
+    return () => { cancelled = true; };
+  }, [filteredTrainings, stravaLapsCache, stravaLapToResult]);
+
+  // Enrich a training's results with fetched Strava laps when needed
+  const getResults = useCallback((t) => {
+    if (Array.isArray(t?.results) && t.results.length > 0) return t.results;
+    if (t?.type === 'strava') {
+      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
+      if (rawId && stravaLapsCache[rawId]) return stravaLapsCache[rawId];
+    }
+    return [];
+  }, [stravaLapsCache]);
+
   useEffect(() => { setProgressIndex(0); }, [filteredTrainings.length, currentSelectedTitle]);
 
   const handleTitleChange = (title) => {
@@ -478,7 +535,7 @@ export function TrainingStats({
 
     if (isPaceSport) {
       const allPaces = filteredTrainings.flatMap(t =>
-        trainingResultsOf(t).map(r => parsePaceSecs(r.power))
+        getResults(t).map(r => parsePaceSecs(r.power))
       ).filter(p => p != null && p > 0);
       const rawMin = allPaces.length ? Math.min(...allPaces) : 180;
       const rawMax = allPaces.length ? Math.max(...allPaces) : 600;
@@ -491,7 +548,7 @@ export function TrainingStats({
       };
     } else {
       const allPowers = filteredTrainings.flatMap(t =>
-        trainingResultsOf(t).map(r => { const p = Number(r.power); return !isNaN(p) && p > 0 ? p : null; })
+        getResults(t).map(r => { const p = Number(r.power); return !isNaN(p) && p > 0 ? p : null; })
       ).filter(Boolean);
       const rawMin = allPowers.length ? Math.min(...allPowers) : 0;
       const rawMax = allPowers.length ? Math.max(...allPowers) : 100;
@@ -503,7 +560,7 @@ export function TrainingStats({
         minPower: minP, maxPower: maxP, minPace: 0, maxPace: 600,
       };
     }
-  }, [filteredTrainings, isPaceSport]);
+  }, [filteredTrainings, isPaceSport, getResults]);
 
   /* per-column width in px */
   const colCount         = Math.max(visibleTrainings.length, 1);
@@ -612,7 +669,7 @@ export function TrainingStats({
             style={{ minHeight: `${GRAPH_H}px`, overflow: "visible" }}
           >
             {visibleTrainings.map((training, tIdx) => {
-              const results = trainingResultsOf(training);
+              const results = getResults(training);
 
               /* compute proportional widths for intervals within column */
               const hasDistData = results.some(r => {
@@ -727,7 +784,9 @@ export function TrainingStats({
               <TrainingComparison
                 key={t._id || t.id || i}
                 training={t}
+                trainingResults={getResults(t)}
                 previousTraining={filteredTrainings[progressIndex + i + 1] ?? null}
+                previousResults={getResults(filteredTrainings[progressIndex + i + 1] ?? null)}
                 sport={currentSelectedSport === "all" ? (t.sport || "bike") : currentSelectedSport}
                 onTrainingClick={handleTrainingClick}
                 user={user}
