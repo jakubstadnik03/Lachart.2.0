@@ -4035,6 +4035,14 @@ const FitAnalysisPage = () => {
           user={user}
           commentCounts={commentCounts}
           plannedWorkouts={plannedWorkoutsCalendar}
+          onActivityUpdate={(updated) => {
+            setExternalActivities(prev => prev.map(a => {
+              const aId = String(a.stravaId || a.id || a._id || '');
+              const uId = String(updated.stravaId || updated.id || updated._id || '');
+              if (aId && aId === uId) return { ...a, titleManual: updated.titleManual, name: updated.title, title: updated.title };
+              return a;
+            }));
+          }}
           onSelectPlannedWorkout={(pw) => {
             if (pw.status === 'completed' && pw.executionData) {
               setCompareModal(pw);

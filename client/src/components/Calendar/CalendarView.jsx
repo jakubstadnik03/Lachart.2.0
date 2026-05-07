@@ -2483,6 +2483,8 @@ export default function CalendarView({
   mobileChartsContent = null,
   /** Optional: athleteId for coach context — forwarded to planned workout API calls */
   athleteId = null,
+  /** Optional: called with updated activity object when CalendarView renames an activity */
+  onActivityUpdate = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -2859,6 +2861,48 @@ export default function CalendarView({
     });
     return map;
   }, [plannedWorkouts]);
+
+  // Auto-rename activities when they get paired with a planned workout
+  const autoRenamedRef = useRef(new Set()); // track activity IDs already renamed this session
+  useEffect(() => {
+    if (!plannedWorkouts.length || !filteredActivities.length) return;
+    plannedByDay.forEach((pws, dateKey) => {
+      const acts = activitiesByDay.get(dateKey) || [];
+      if (!acts.length) return;
+      const { pwToAct } = pairPlannedWithActivities(pws, acts);
+      pwToAct.forEach((act, pwId) => {
+        const pw = pws.find(p => String(p._id) === pwId);
+        if (!pw?.title) return;
+        const actId = String(act.id || act._id || '');
+        if (!actId || autoRenamedRef.current.has(actId)) return;
+        // Only rename if the activity has no custom title set yet
+        if (act.titleManual) return;
+        autoRenamedRef.current.add(actId);
+        const newTitle = pw.title;
+        // Fire-and-forget API rename
+        (async () => {
+          try {
+            if (act.type === 'strava' || act.stravaId) {
+              const { updateStravaActivity } = await import('../../services/api.js');
+              const rawId = String(act.stravaId || act.id || '').replace(/^strava-/, '');
+              await updateStravaActivity(rawId, { title: newTitle });
+            } else if (act.type === 'fit' || act._id) {
+              const { updateFitTraining } = await import('../../services/api.js');
+              const rawId = String(act._id || act.id || '').replace(/^fit-/, '');
+              await updateFitTraining(rawId, { titleManual: newTitle });
+            }
+            // Notify parent so the title updates in UI
+            if (onActivityUpdate) {
+              onActivityUpdate({ ...act, titleManual: newTitle, title: newTitle });
+            }
+          } catch {
+            // Non-critical — silently ignore rename errors
+            autoRenamedRef.current.delete(actId);
+          }
+        })();
+      });
+    });
+  }, [activitiesByDay, plannedByDay, filteredActivities, plannedWorkouts, onActivityUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const days = useMemo(() => {
     if (view === 'week' && !isMobile) {
