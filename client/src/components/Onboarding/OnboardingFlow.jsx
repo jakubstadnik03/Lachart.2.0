@@ -180,18 +180,22 @@ function ProfileStep({ user, onSave, saving }) {
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">I am a</label>
           <div className="grid grid-cols-2 gap-2">
-            {['athlete', 'coach'].map(r => (
+            {[
+              { role: 'athlete', label: 'Athlete', icon: <UserIcon className="w-5 h-5 flex-shrink-0" /> },
+              { role: 'coach',   label: 'Coach',   icon: <Users    className="w-5 h-5 flex-shrink-0" /> },
+            ].map(({ role: r, label, icon }) => (
               <button
                 type="button"
                 key={r}
                 onClick={() => set('role', r)}
-                className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                className={`h-12 flex items-center justify-center gap-2 rounded-xl border-2 text-sm font-semibold transition-all ${
                   form.role === r
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                 }`}
               >
-                {r === 'athlete' ? '🏃 Athlete' : '👥 Coach'}
+                {icon}
+                {label}
               </button>
             ))}
           </div>
@@ -447,7 +451,7 @@ function StravaStep({ user, onSkip, onConnect }) {
   );
 }
 
-/** Step 4a — Training Zones (athlete) — enter LT1/LT2, generate zones */
+/** Step 4a — Training Zones (athlete) — enter LT1/LT2, generate zones, edit & confirm */
 function ZonesStep({ onSkip, onSave, saving }) {
   const [sport, setSport] = useState('cycling');
   const [lt1, setLt1] = useState('');
@@ -455,7 +459,7 @@ function ZonesStep({ onSkip, onSave, saving }) {
   const [lt1hr, setLt1hr] = useState('');
   const [lt2hr, setLt2hr] = useState('');
   const [maxhr, setMaxhr] = useState('');
-  const [generated, setGenerated] = useState(null);
+  const [editableZones, setEditableZones] = useState(null); // { power: {...}, hr: {...} } — editable after generation
   const [err, setErr] = useState('');
 
   const sportLabel = sport === 'cycling' ? 'W' : sport === 'running' ? 'sec/km' : 'm/min';
@@ -464,118 +468,175 @@ function ZonesStep({ onSkip, onSave, saving }) {
     const l1 = Number(lt1); const l2 = Number(lt2);
     if (!l1 || !l2 || l1 >= l2) { setErr('Enter valid LT1 and LT2 (LT1 must be less than LT2)'); return; }
     setErr('');
-    // Power zones based on LT1/LT2
     const pz = {
       lt1: l1, lt2: l2,
-      zone1: { min: 0,              max: Math.round(l1 * 0.75), description: 'Active Recovery' },
-      zone2: { min: Math.round(l1 * 0.75), max: l1,            description: 'Aerobic Base' },
-      zone3: { min: l1,             max: Math.round(l1 + (l2 - l1) * 0.5), description: 'Tempo' },
-      zone4: { min: Math.round(l1 + (l2 - l1) * 0.5), max: l2, description: 'Threshold' },
-      zone5: { min: l2,             max: Math.round(l2 * 1.20), description: 'VO2 Max' },
+      zone1: { min: 0,                                           max: Math.round(l1 * 0.75),              description: 'Active Recovery' },
+      zone2: { min: Math.round(l1 * 0.75),                      max: l1,                                  description: 'Aerobic Base'    },
+      zone3: { min: l1,                                          max: Math.round(l1 + (l2 - l1) * 0.5),   description: 'Tempo'           },
+      zone4: { min: Math.round(l1 + (l2 - l1) * 0.5),           max: l2,                                  description: 'Threshold'       },
+      zone5: { min: l2,                                          max: Math.round(l2 * 1.20),               description: 'VO2 Max'         },
     };
-    // HR zones if provided
     let hz = null;
     const h1 = Number(lt1hr); const h2 = Number(lt2hr); const hmax = Number(maxhr);
     if (h1 && h2 && h1 < h2) {
       hz = {
         maxHeartRate: hmax || Math.round(h2 * 1.05),
-        zone1: { min: 0,   max: h1,  description: 'Active Recovery' },
-        zone2: { min: h1,  max: Math.round(h1 + (h2 - h1) * 0.4), description: 'Aerobic Base' },
-        zone3: { min: Math.round(h1 + (h2 - h1) * 0.4), max: Math.round(h1 + (h2 - h1) * 0.8), description: 'Tempo' },
-        zone4: { min: Math.round(h1 + (h2 - h1) * 0.8), max: h2, description: 'Threshold' },
-        zone5: { min: h2,  max: hmax || Math.round(h2 * 1.05), description: 'VO2 Max' },
+        zone1: { min: 0,                                                  max: h1,                                       description: 'Active Recovery' },
+        zone2: { min: h1,                                                 max: Math.round(h1 + (h2 - h1) * 0.4),         description: 'Aerobic Base'    },
+        zone3: { min: Math.round(h1 + (h2 - h1) * 0.4),                  max: Math.round(h1 + (h2 - h1) * 0.8),         description: 'Tempo'           },
+        zone4: { min: Math.round(h1 + (h2 - h1) * 0.8),                  max: h2,                                        description: 'Threshold'       },
+        zone5: { min: h2,                                                 max: hmax || Math.round(h2 * 1.05),             description: 'VO2 Max'         },
       };
     }
-    setGenerated({ power: pz, hr: hz });
+    setEditableZones({ power: pz, hr: hz });
+  };
+
+  const updateZone = (type, zoneKey, field, value) => {
+    setEditableZones(prev => ({
+      ...prev,
+      [type]: { ...prev[type], [zoneKey]: { ...prev[type][zoneKey], [field]: value === '' ? '' : Number(value) } },
+    }));
   };
 
   const handleSave = () => {
-    if (!generated) return;
-    const payload = {
-      powerZones: { [sport]: generated.power },
-      ...(generated.hr ? { heartRateZones: { [sport]: generated.hr } } : {}),
+    if (!editableZones) return;
+    onSave({
+      powerZones: { [sport]: editableZones.power },
+      ...(editableZones.hr ? { heartRateZones: { [sport]: editableZones.hr } } : {}),
       onboarding: { trainingZonesDone: true },
-    };
-    onSave(payload);
+    });
   };
 
-  const ZONE_COLORS = ['bg-blue-50 text-blue-700 border-blue-100','bg-green-50 text-green-700 border-green-100','bg-yellow-50 text-yellow-700 border-yellow-100','bg-orange-50 text-orange-700 border-orange-100','bg-red-50 text-red-700 border-red-100'];
+  const ZONE_COLORS = [
+    { row: 'bg-blue-50   border-blue-100',   text: 'text-blue-700',   input: 'border-blue-200   bg-blue-50/60'   },
+    { row: 'bg-green-50  border-green-100',  text: 'text-green-700',  input: 'border-green-200  bg-green-50/60'  },
+    { row: 'bg-yellow-50 border-yellow-100', text: 'text-yellow-700', input: 'border-yellow-200 bg-yellow-50/60' },
+    { row: 'bg-orange-50 border-orange-100', text: 'text-orange-700', input: 'border-orange-200 bg-orange-50/60' },
+    { row: 'bg-red-50    border-red-100',    text: 'text-red-700',    input: 'border-red-200    bg-red-50/60'    },
+  ];
+
+  const ZoneEditor = ({ zonesObj, type, unit }) => (
+    <div className="space-y-1.5">
+      {Object.entries(zonesObj).filter(([k]) => k.startsWith('zone')).map(([key, z], i) => {
+        const c = ZONE_COLORS[i];
+        return (
+          <div key={key} className={`rounded-xl px-3 py-2.5 border ${c.row}`}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className={`text-xs font-bold ${c.text}`}>{key.replace('zone', 'Zone ')}</span>
+              <span className="text-[10px] text-gray-400">{z.description}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={z.min}
+                onChange={e => updateZone(type, key, 'min', e.target.value)}
+                className={`flex-1 text-center text-xs font-semibold rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
+              />
+              <span className={`text-xs font-bold ${c.text}`}>–</span>
+              <input
+                type="number"
+                value={z.max}
+                onChange={e => updateZone(type, key, 'max', e.target.value)}
+                className={`flex-1 text-center text-xs font-semibold rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
+              />
+              <span className={`text-[10px] font-medium w-8 flex-shrink-0 ${c.text}`}>{unit}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
-    <div className="space-y-4 pb-6">
-      <div className="text-center">
-        <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Generate Training Zones</h3>
-        <p className="text-sm text-gray-500 mt-1">Enter your LT1 & LT2 thresholds to auto-calculate zones</p>
-      </div>
-
-      {/* Sport selector */}
-      <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
-        {['cycling','running','swimming'].map(s => (
-          <button key={s} type="button" onClick={() => { setSport(s); setGenerated(null); }}
-            className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* LT inputs */}
-      <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power / Pace Thresholds ({sportLabel})</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 (Aerobic)</label>
-            <input type="number" value={lt1} onChange={e => { setLt1(e.target.value); setGenerated(null); }} placeholder={sport === 'cycling' ? '180' : '240'} className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 (Anaerobic)</label>
-            <input type="number" value={lt2} onChange={e => { setLt2(e.target.value); setGenerated(null); }} placeholder={sport === 'cycling' ? '250' : '290'} className={INPUT} />
-          </div>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Scrollable body */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-4">
+        <div className="text-center">
+          <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
+          <h3 className="text-lg font-bold text-gray-900">Generate Training Zones</h3>
+          <p className="text-sm text-gray-500 mt-1">Enter your LT1 & LT2 thresholds to auto-calculate zones</p>
         </div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Heart Rate (bpm) — optional</p>
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 HR</label>
-            <input type="number" value={lt1hr} onChange={e => { setLt1hr(e.target.value); setGenerated(null); }} placeholder="145" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 HR</label>
-            <input type="number" value={lt2hr} onChange={e => { setLt2hr(e.target.value); setGenerated(null); }} placeholder="168" className={INPUT} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Max HR</label>
-            <input type="number" value={maxhr} onChange={e => { setMaxhr(e.target.value); setGenerated(null); }} placeholder="185" className={INPUT} />
-          </div>
+
+        {/* Sport selector */}
+        <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
+          {['cycling', 'running', 'swimming'].map(s => (
+            <button key={s} type="button" onClick={() => { setSport(s); setEditableZones(null); }}
+              className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+              {s}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {err && <p className="text-xs text-red-600 text-center">{err}</p>}
-
-      {!generated ? (
-        <button type="button" onClick={handleGenerate} className={BTN_PRIMARY}>Generate Zones</button>
-      ) : (
-        <>
-          <div className="space-y-1.5">
-            {Object.entries(generated.power).filter(([k]) => k.startsWith('zone')).map(([key, z], i) => (
-              <div key={key} className={`flex items-center justify-between rounded-xl px-3 py-2 border ${ZONE_COLORS[i]}`}>
-                <div>
-                  <span className="text-xs font-bold capitalize">{key.replace('zone','Zone ')} </span>
-                  <span className="text-[10px] opacity-70">— {z.description}</span>
-                </div>
-                <span className="text-xs font-semibold">{z.min}–{z.max} {sportLabel}</span>
+        {/* LT inputs — hidden once zones are generated */}
+        {!editableZones && (
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power / Pace Thresholds ({sportLabel})</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 (Aerobic)</label>
+                <input type="number" value={lt1} onChange={e => setLt1(e.target.value)} placeholder={sport === 'cycling' ? '180' : '240'} className={INPUT} />
               </div>
-            ))}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 (Anaerobic)</label>
+                <input type="number" value={lt2} onChange={e => setLt2(e.target.value)} placeholder={sport === 'cycling' ? '250' : '290'} className={INPUT} />
+              </div>
+            </div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Heart Rate (bpm) — optional</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 HR</label>
+                <input type="number" value={lt1hr} onChange={e => setLt1hr(e.target.value)} placeholder="145" className={INPUT} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 HR</label>
+                <input type="number" value={lt2hr} onChange={e => setLt2hr(e.target.value)} placeholder="168" className={INPUT} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Max HR</label>
+                <input type="number" value={maxhr} onChange={e => setMaxhr(e.target.value)} placeholder="185" className={INPUT} />
+              </div>
+            </div>
           </div>
-          <button type="button" onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
-            {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Save Zones'}
-          </button>
-          <button type="button" onClick={() => setGenerated(null)} className={BTN_GHOST}>Edit values</button>
-        </>
-      )}
+        )}
 
-      <button type="button" onClick={onSkip} className={BTN_GHOST}>
-        Skip — I'll set zones later
-      </button>
+        {err && <p className="text-xs text-red-600 text-center">{err}</p>}
+
+        {/* Editable zone tables — shown after generation */}
+        {editableZones && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power Zones ({sportLabel})</p>
+              <button type="button" onClick={() => setEditableZones(null)}
+                className="text-[11px] text-primary font-semibold hover:underline">
+                ← Recalculate
+              </button>
+            </div>
+            <ZoneEditor zonesObj={editableZones.power} type="power" unit={sportLabel} />
+
+            {editableZones.hr && (
+              <>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Heart Rate Zones (bpm)</p>
+                <ZoneEditor zonesObj={editableZones.hr} type="hr" unit="bpm" />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Sticky bottom actions */}
+      <div className="flex-shrink-0 pt-3 border-t border-gray-100 space-y-2"
+           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
+        {!editableZones ? (
+          <button type="button" onClick={handleGenerate} className={BTN_PRIMARY}>Generate Zones</button>
+        ) : (
+          <button type="button" onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
+            {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Confirm & Save Zones'}
+          </button>
+        )}
+        <button type="button" onClick={onSkip} className={BTN_GHOST}>
+          Skip — I'll set zones later
+        </button>
+      </div>
     </div>
   );
 }
