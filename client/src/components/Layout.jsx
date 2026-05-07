@@ -4,8 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
-import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalNotification";
+import api, { autoSyncGarminActivities } from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
@@ -289,47 +288,23 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, hasCheckedProfile, location.pathname]);
 
-  // Keep notifications in a ref so the sync effect can read the latest value
-  // without needing it as a dependency (which would cause the effect to re-run
-  // on every notification and generate extra Strava API calls).
-  const userNotificationsRef = useRef(user?.notifications);
-  useEffect(() => { userNotificationsRef.current = user?.notifications; }, [user?.notifications]);
+  // ── Strava: webhook-only sync ─────────────────────────────────────────────
+  // Strava delivers new activities to /api/integrations/strava/webhook the
+  // moment the athlete saves them. The backend fetches exactly that one
+  // activity and stores it in the DB. The frontend never needs to poll Strava.
+  //
+  // The server-side scheduler (stravaAutoSyncScheduler) runs every hour as a
+  // safety net for missed webhooks (server restart, Strava delivery failure).
+  //
+  // No frontend polling = no wasted Strava API quota.
 
-  // Strava then Garmin (sequential) — avoids two heavy backend jobs at once after login.
-  // Coaches who connect Strava use the same user-scoped tokens; sync must run for them too.
-  // Also re-syncs when the app returns to foreground (user uploads to Strava then switches back).
+  // ── Garmin: frontend polling (no webhook support) ─────────────────────────
   useEffect(() => {
     if (!user?._id) return undefined;
-
-    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.athleteId);
     const hasGarmin = !!(user?.garmin?.autoSync && user?.garmin?.accessToken);
-    if (!hasStrava && !hasGarmin) return undefined;
+    if (!hasGarmin) return undefined;
 
     let cancelled = false;
-
-    // Cooldown uses localStorage (shared across tabs) with 30 min TTL so opening
-    // multiple tabs or refreshing doesn't generate extra Strava API calls.
-    // On foreground-return we use a shorter 5 min cooldown to catch a fresh
-    // upload the user just made in the Strava app.
-    const runStrava = async (cooldownMs = 30 * 60 * 1000) => {
-      const syncKey = `strava_auto_sync_${user._id}`;
-      const now = Date.now();
-      const lastSync = localStorage.getItem(syncKey);
-      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
-      try {
-        const result = await autoSyncStravaActivities();
-        localStorage.setItem(syncKey, now.toString());
-        if (result.imported > 0 || result.updated > 0) {
-          console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
-          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
-          if (result.imported > 0) {
-            maybeNotifyStravaActivitiesImported(result.imported, userNotificationsRef.current);
-          }
-        }
-      } catch (error) {
-        console.log('Auto-sync failed:', error);
-      }
-    };
 
     const runGarmin = async (cooldownMs = 30 * 60 * 1000) => {
       const syncKey = `garmin_auto_sync_${user._id}`;
@@ -348,39 +323,25 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    // Initial sync on app load (small delay so auth is fully settled).
-    // 30-min cooldown matches the default so opening multiple tabs or
-    // navigating back to the app quickly doesn't burn extra Strava quota.
     const run = async () => {
       await new Promise((r) => setTimeout(r, 3500));
       if (cancelled) return;
-      if (hasStrava) await runStrava(30 * 60 * 1000);
-      await new Promise((r) => setTimeout(r, 4500));
-      if (cancelled) return;
-      if (hasGarmin) await runGarmin(30 * 60 * 1000);
+      await runGarmin(30 * 60 * 1000);
     };
 
-    // Re-sync when app returns to foreground — catches activities uploaded to Strava
-    // while the user was away from LaChart. 15-min cooldown is short enough to
-    // feel responsive but won't drain the daily Strava quota on frequent switches.
     const onForeground = async () => {
       if (cancelled) return;
-      if (hasStrava) await runStrava(15 * 60 * 1000);
-      if (hasGarmin) await runGarmin(15 * 60 * 1000);
+      await runGarmin(15 * 60 * 1000);
     };
 
-    // Capacitor native: use App plugin appStateChange event
     let capacitorCleanup = null;
     if (isCapacitorNative()) {
       import('@capacitor/app').then(({ App }) => {
         App.addListener('appStateChange', ({ isActive }) => {
           if (isActive) onForeground();
-        }).then((handle) => {
-          capacitorCleanup = handle;
-        });
+        }).then((handle) => { capacitorCleanup = handle; });
       }).catch(() => {});
     } else {
-      // Web fallback: visibilitychange
       const onVisible = () => { if (document.visibilityState === 'visible') onForeground(); };
       document.addEventListener('visibilitychange', onVisible);
       capacitorCleanup = { remove: () => document.removeEventListener('visibilitychange', onVisible) };
@@ -391,14 +352,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       cancelled = true;
       capacitorCleanup?.remove?.();
     };
-  // NOTE: user?.notifications deliberately excluded — incoming notifications
-  // must NOT re-trigger the sync effect (they changed too frequently and
-  // caused a runaway cascade of extra Strava API calls).
   }, [
     user?._id,
-    user?.role,
-    user?.strava?.autoSync,
-    user?.strava?.athleteId,
     user?.garmin?.autoSync,
     user?.garmin?.accessToken,
   ]);

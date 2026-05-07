@@ -709,6 +709,9 @@ router.post('/strava/webhook', async (req, res) => {
 
     if (aspect_type === 'create' || aspect_type === 'update') {
       const { isNew } = await fetchAndSaveStravaActivity(user, object_id);
+      // Update lastSyncDate so the scheduler doesn't redundantly re-fetch this
+      // activity on its next tick (the webhook already handled it).
+      await User.findByIdAndUpdate(user._id, { 'strava.lastSyncDate': new Date() });
       if (aspect_type === 'create' && isNew) {
         notifyStravaImportedPush(user._id, 1);
       }
