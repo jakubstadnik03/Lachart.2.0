@@ -975,10 +975,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Merge summary + full detail — detail wins for laps/stats, but preserve
   // the app-level `type` ('strava'|'fit'|'regular') from the original activity
   // because Strava's raw detail has type:'Run'/'Ride' which would overwrite it.
-  const merged = useMemo(
-    () => (detail ? { ...a, ...detail, type: a.type } : a),
-    [a, detail]
-  );
+  const merged = detail ? { ...a, ...detail, type: a.type } : a;
 
   // Build GPS points from streams (Strava) or FIT records
   const gpsData = useMemo(() => {
