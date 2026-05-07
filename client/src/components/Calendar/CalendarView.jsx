@@ -2305,49 +2305,64 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   const hasPlan = plannedSeconds > 0;
   const completionPct = hasPlan ? Math.min(100, Math.round((totalSeconds / plannedSeconds) * 100)) : null;
 
-  // Plan tab — show planned workouts by day
+  // Plan tab — show planned workouts grouped by sport
   if (tab === 'plan') {
-    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const weekStart = weekSummary.weekStart;
-    const byDay = Array.from({ length: 7 }, (_, i) => {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + i);
-      const dayKey = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`;
-      const pws = weekPlannedWorkouts.filter(pw => pw.date === dayKey);
-      return { dow: DOW[i], dayKey, pws };
-    }).filter(d => d.pws.length > 0);
+    const SPORT_META = {
+      bike:       { label: 'Bike',       icon: '/icon/bike.svg',  color: '#767EB5', isImg: true },
+      run:        { label: 'Run',        icon: '/icon/run.svg',   color: '#f97316', isImg: true },
+      swim:       { label: 'Swim',       icon: '/icon/swim.svg',  color: '#38bdf8', isImg: true },
+      strength:   { label: 'Strength',   icon: null,              color: '#8b5cf6', isImg: false },
+      walk:       { label: 'Walk',       icon: null,              color: '#22c55e', isImg: false },
+      brick:      { label: 'Brick',      icon: null,              color: '#f59e0b', isImg: false },
+      crosstrain: { label: 'Cross',      icon: null,              color: '#ec4899', isImg: false },
+      mtbike:     { label: 'MTB',        icon: '/icon/bike.svg',  color: '#a16207', isImg: true },
+      rowing:     { label: 'Rowing',     icon: null,              color: '#06b6d4', isImg: false },
+      lactate:    { label: 'Lactate',    icon: null,              color: '#ef4444', isImg: false },
+      other:      { label: 'Other',      icon: null,              color: '#6b7280', isImg: false },
+    };
+
+    // Group by sport
+    const bySport = {};
+    weekPlannedWorkouts.forEach(pw => {
+      const sport = (pw.sport || 'other').toLowerCase();
+      if (!bySport[sport]) bySport[sport] = { secs: 0, dist: 0, tss: 0 };
+      bySport[sport].secs += planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+      bySport[sport].dist += pw.plannedDistance || 0;
+      bySport[sport].tss  += pw.targetTss || 0;
+    });
+
+    const sportRows = Object.entries(bySport).filter(([, v]) => v.secs > 0 || v.dist > 0);
+    const totalSecs = sportRows.reduce((s, [, v]) => s + v.secs, 0);
+    const totalTssP = sportRows.reduce((s, [, v]) => s + v.tss, 0);
 
     return (
       <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
-        <div className="flex items-baseline gap-1 leading-tight mb-0.5">
-          <span className="text-base font-extrabold text-gray-900">{formatHours(plannedSeconds)}</span>
-          {plannedTSS > 0 && (
-            <span className="text-[10px] font-bold text-primary">{Math.round(plannedTSS)} TSS</span>
+        {/* Totals */}
+        <div className="flex items-baseline gap-1 leading-tight">
+          <span className="text-base font-extrabold text-gray-900">{formatHours(totalSecs || plannedSeconds)}</span>
+          {totalTssP > 0 && (
+            <span className="text-[10px] font-bold text-primary">{Math.round(totalTssP)} TSS</span>
           )}
         </div>
-        {byDay.length === 0 ? (
+        {sportRows.length === 0 ? (
           <span className="text-xs text-gray-400 flex-1 flex items-center">No plan</span>
         ) : (
-          <div className="space-y-1 flex-1 overflow-hidden">
-            {byDay.map(({ dow, pws }) => (
-              <div key={dow} className="flex items-start gap-1">
-                <span className="text-[9px] font-bold text-gray-400 w-6 shrink-0 mt-0.5">{dow}</span>
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  {pws.map((pw, i) => {
-                    const sport = (pw.sport || 'bike').toLowerCase();
-                    const color = SPORT_PLAN_COLORS[sport] || '#767EB5';
-                    const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
-                    return (
-                      <div key={i} className="flex items-center gap-1 min-w-0">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span className="text-[10px] text-gray-700 font-medium truncate flex-1">{pw.title || 'Workout'}</span>
-                        {secs > 0 && <span className="text-[9px] text-gray-400 shrink-0">{formatHours(secs)}</span>}
-                      </div>
-                    );
-                  })}
+          <div className="space-y-1 flex-1">
+            {sportRows.map(([sport, v]) => {
+              const meta = SPORT_META[sport] || SPORT_META.other;
+              return (
+                <div key={sport} className="flex items-center gap-1">
+                  {meta.isImg && meta.icon
+                    ? <img src={meta.icon} alt={sport} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+                    : <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: meta.color }} />
+                  }
+                  <span className="text-[10px] font-semibold text-gray-500 w-8 shrink-0">{meta.label}</span>
+                  <span className="text-[10px] font-bold text-gray-800 flex-1">{formatHours(v.secs)}</span>
+                  {v.dist > 0 && <span className="text-[9px] text-gray-400 shrink-0">{formatKm(v.dist)}</span>}
+                  {v.tss > 0 && <span className="text-[9px] font-bold shrink-0" style={{ color: meta.color }}>{Math.round(v.tss)}</span>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -3936,12 +3951,31 @@ export default function CalendarView({
                   })}
 
                   {/* Summary column */}
-                  <WeekSummaryCell
-                    weekSummary={wkSummary}
-                    formatHours={formatHours}
-                    formatKm={formatKm}
-                    user={user}
-                  />
+                  <div className="flex flex-col">
+                    {wkSummary?.plannedSeconds > 0 && (
+                      <div className="flex justify-center pt-1 pb-0.5">
+                        <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                          {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
+                            <button key={tabId}
+                              onClick={() => setWeekSummaryTab(tabId)}
+                              className={`px-2 py-0.5 text-[9px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
+                            >{lbl}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <WeekSummaryCell
+                      weekSummary={wkSummary}
+                      formatHours={formatHours}
+                      formatKm={formatKm}
+                      user={user}
+                      tab={weekSummaryTab}
+                      weekPlannedWorkouts={plannedWorkouts.filter(pw => {
+                        if (!pw.date) return false;
+                        return startOfWeek(new Date(pw.date)).toISOString().slice(0,10) === weekKey;
+                      })}
+                    />
+                  </div>
                 </div>
               </div>
             );
@@ -4173,13 +4207,31 @@ export default function CalendarView({
                 );
               }),
               // Week summary column — richer redesign
-              <WeekSummaryCell
-                key={`summary-${weekIdx}`}
-                weekSummary={weekSummary}
-                formatHours={formatHours}
-                formatKm={formatKm}
-                user={user}
-              />
+              <div key={`summary-${weekIdx}`} className="flex flex-col bg-white">
+                {weekSummary?.plannedSeconds > 0 && (
+                  <div className="flex justify-center pt-1.5 pb-0.5">
+                    <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                      {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
+                        <button key={tabId}
+                          onClick={() => setWeekSummaryTab(tabId)}
+                          className={`px-2 py-0.5 text-[9px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
+                        >{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <WeekSummaryCell
+                  weekSummary={weekSummary}
+                  formatHours={formatHours}
+                  formatKm={formatKm}
+                  user={user}
+                  tab={weekSummaryTab}
+                  weekPlannedWorkouts={plannedWorkouts.filter(pw => {
+                    if (!pw.date) return false;
+                    return startOfWeek(new Date(pw.date)).toISOString().slice(0,10) === weekKey;
+                  })}
+                />
+              </div>
             ].filter(Boolean);
           });
         })()}
