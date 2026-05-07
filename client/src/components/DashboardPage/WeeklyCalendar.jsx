@@ -23,8 +23,9 @@ import { useNavigate } from 'react-router-dom';
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import LapsTable from '../FitAnalysis/LapsTable';
 import { ActivityFullModal } from '../Calendar/CalendarView';
-import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
+import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, createFieldLactateMeasurement } from '../../services/api';
 import api from '../../services/api';
+import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
@@ -741,6 +742,7 @@ const WeeklyCalendar = ({
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
+  const [showRecordLactate, setShowRecordLactate] = useState(false);
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(true);
   const [showLeftScrollNoTraining, setShowLeftScrollNoTraining] = useState(false);
@@ -1442,16 +1444,14 @@ const WeeklyCalendar = ({
           >
             <ChevronRightIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
           </button>
-          {onAddTraining && (
-            <button
-              onClick={onAddTraining}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-primary text-white rounded-lg shadow-sm transition-colors font-semibold active:opacity-80 touch-manipulation"
-              style={{ WebkitTapHighlightColor: 'transparent' }}
-            >
-              <PlusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              Training
-            </button>
-          )}
+          <button
+            onClick={() => setShowRecordLactate(true)}
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-primary text-white rounded-lg shadow-sm transition-colors font-semibold active:opacity-80 touch-manipulation"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
+          >
+            <PlusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            Training
+          </button>
         </div>
       </div>
 
@@ -2395,6 +2395,22 @@ const WeeklyCalendar = ({
             navigate(`/training-calendar/${id}`);
           }}
         />
+      )}
+
+      {showRecordLactate && ReactDOM.createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, pointerEvents: 'auto' }}>
+          <RecordLactateModal
+            onClose={() => setShowRecordLactate(false)}
+            onSave={async (data) => {
+              await createFieldLactateMeasurement({
+                ...data,
+                athleteId: selectedAthleteId || user?._id || undefined,
+              });
+              setShowRecordLactate(false);
+            }}
+          />
+        </div>,
+        document.getElementById('app-modal-root') || document.body
       )}
     </div>
   );
