@@ -625,7 +625,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const MAX_BAR_PX = 60; // largest bar width in zoomed mode
   const MIN_ZOOM_BAR = 16; // floor width for any non-pause bar
 
-  const isZoomed = selectedLap != null;
+  // Don't use fixed-width zoom when there are few laps — bars would cluster on the left.
+  // Instead keep proportional flex bars and just highlight the selection visually.
+  const totalDur = laps.reduce((s, l) => s + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
+  const maxDur   = Math.max(...laps.map(l => Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0)), 1);
+  const skipZoom = laps.length <= 8 || (totalDur > 0 && maxDur / totalDur > 0.40);
+  const isZoomed = selectedLap != null && !skipZoom;
   const centerLapRef = useRef(null);
   const isProgrammaticScroll = useRef(false);
 
@@ -847,8 +852,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             >
             {entries.map((ent, i) => {
               const isSelected = selectedLap === i;
-              const barH       = getBarH(ent.value);
               const zoomW      = getZoomW(ent);
+
+              // In skipZoom mode boost the selected bar height by 15%
+              const rawBarH = getBarH(ent.value);
+              const barH = skipZoom && isSelected && !ent.isPause
+                ? Math.min(rawBarH * 1.15, CHART_H)
+                : rawBarH;
 
               // Intensity-based color shading
               let barBg;
@@ -858,11 +868,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 barBg = color;
               } else {
                 const intensity = getIntensity(ent.value);
-                const alpha = Math.round((0.3 + intensity * 0.6) * 255).toString(16).padStart(2, '0');
+                // Dim non-selected bars when something IS selected (both zoom modes)
+                const dimmed = selectedLap != null && !isSelected;
+                const alpha = Math.round((dimmed ? 0.25 : (0.3 + intensity * 0.6)) * 255).toString(16).padStart(2, '0');
                 barBg = color + alpha;
               }
 
-              // Width: proportional by weight in both normal and zoom mode
+              // Width: fixed in zoom mode, proportional in normal/skipZoom mode
               const itemStyle = isZoomed
                 ? { width: zoomW, flexShrink: 0, height: CHART_H + X_LABEL_H }
                 : { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H };
@@ -877,7 +889,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                   {ent.isPause ? (
                     <div style={{ width: isZoomed ? 4 : 3, height: isZoomed ? 4 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: X_LABEL_H }} />
                   ) : (
-                    <div style={{ width: isZoomed ? Math.max(zoomW - 2, 2) : '100%', height: barH, backgroundColor: barBg, borderRadius: '3px 3px 0 0', marginBottom: X_LABEL_H }} />
+                    <div style={{
+                      width: isZoomed ? Math.max(zoomW - 2, 2) : '100%',
+                      height: barH,
+                      backgroundColor: barBg,
+                      borderRadius: '3px 3px 0 0',
+                      marginBottom: X_LABEL_H,
+                      boxShadow: skipZoom && isSelected ? `0 0 0 2px ${color}, 0 2px 8px ${color}60` : undefined,
+                      transition: 'height 0.2s ease, opacity 0.15s ease',
+                    }} />
                   )}
                   {/* X-axis selection indicator */}
                   <div className="relative w-full flex items-center justify-center" style={{ height: X_LABEL_H }}>
