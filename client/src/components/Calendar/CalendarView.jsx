@@ -22,6 +22,15 @@ import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import TrainingChart from '../FitAnalysis/TrainingChart';
+
+function MapInvalidator() {
+  const map = useMap();
+  useEffect(() => { setTimeout(() => map.invalidateSize(), 100); }, [map]);
+  return null;
+}
 
 // ─── Planned workout helpers ──────────────────────────────────────────────────
 const SPORT_PLAN_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
@@ -928,6 +937,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Full detail loaded async (for laps)
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(true);
+  const [streams, setStreams] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -940,6 +950,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           const { getStravaActivityDetail } = await import('../../services/api.js');
           const raw = await getStravaActivityDetail(id.replace('strava-', ''));
           data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual };
+          if (!cancelled && raw.streams) setStreams(raw.streams);
         } else if (id.startsWith('fit-')) {
           const { getFitTraining } = await import('../../services/api.js');
           data = await getFitTraining(id.replace('fit-', ''));
@@ -965,6 +976,46 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // the app-level `type` ('strava'|'fit'|'regular') from the original activity
   // because Strava's raw detail has type:'Run'/'Ride' which would overwrite it.
   const merged = detail ? { ...a, ...detail, type: a.type } : a;
+
+  // Build GPS points from streams (Strava) or FIT records
+  const gpsData = useMemo(() => {
+    const latlngArr = streams?.latlng?.data || streams?.latlng || [];
+    if (latlngArr.length > 0) return latlngArr.filter(p => Array.isArray(p) && p[0] != null);
+    const records = merged?.records || [];
+    const fromRecords = records.map(r => {
+      const lat = r.positionLat ?? r.position_lat ?? r.lat ?? r.latitude;
+      const lng = r.positionLong ?? r.position_long ?? r.lng ?? r.longitude;
+      if (lat == null || lng == null) return null;
+      const lt = Math.abs(lat) > 180 ? lat / 11930464.711111111 : lat;
+      const ln = Math.abs(lng) > 180 ? lng / 11930464.711111111 : lng;
+      return (Math.abs(lt) <= 90 && Math.abs(ln) <= 180) ? [lt, ln] : null;
+    }).filter(Boolean);
+    return fromRecords;
+  }, [merged, streams]);
+
+  // Build records for TrainingChart from Strava streams (or use FIT records directly)
+  const chartTraining = useMemo(() => {
+    if (merged?.records?.length > 0) return merged;
+    if (!streams) return null;
+    const time = streams.time?.data || streams.time || [];
+    if (time.length === 0) return null;
+    const watts     = streams.watts?.data || streams.watts || [];
+    const heartrate = streams.heartrate?.data || streams.heartrate || [];
+    const velocity  = streams.velocity_smooth?.data || streams.velocity_smooth || [];
+    const cadence   = streams.cadence?.data || streams.cadence || [];
+    const altitude  = streams.altitude?.data || streams.altitude || [];
+    const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
+    const startMs   = new Date(startDate).getTime();
+    const records = time.map((t, i) => ({
+      timestamp: new Date(startMs + t * 1000).toISOString(),
+      power:     watts[i] > 0 ? watts[i] : null,
+      heartRate: heartrate[i] > 0 ? heartrate[i] : null,
+      speed:     velocity[i] > 0 ? velocity[i] : null,
+      cadence:   cadence[i] > 0 ? cadence[i] : null,
+      altitude:  altitude[i] != null ? altitude[i] : null,
+    }));
+    return { ...merged, records };
+  }, [merged, streams]);
 
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
@@ -1259,6 +1310,47 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 </div>
               )}
             </div>
+
+            {/* Route Map */}
+            {gpsData.length > 0 && (
+              <div className="border-b border-gray-50">
+                <div className="relative overflow-hidden" style={{ height: 200 }}>
+                  <MapContainer
+                    key={`modal-map-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
+                    center={gpsData[Math.floor(gpsData.length / 2)]}
+                    zoom={13}
+                    style={{ height: '100%', width: '100%', zIndex: 0 }}
+                    scrollWheelZoom={false}
+                    zoomControl={true}
+                    attributionControl={false}
+                  >
+                    <MapInvalidator />
+                    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                    <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+                    <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
+                    </CircleMarker>
+                    <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
+                    </CircleMarker>
+                  </MapContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Training Chart (power/HR/pace over time) */}
+            {chartTraining?.records?.length > 0 && (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+                <TrainingChart
+                  training={chartTraining}
+                  user={null}
+                  userProfile={null}
+                  onHover={() => {}}
+                  onLeave={() => {}}
+                />
+              </div>
+            )}
 
             {/* Description / notes */}
             {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
@@ -1664,6 +1756,47 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           <div className="px-5 py-4 border-b border-gray-100">
             <TrainingComments trainingId={String(a.id || a._id || '')} />
           </div>
+
+          {/* ── Route Map ── */}
+          {gpsData.length > 0 && (
+            <div className="border-b border-gray-50">
+              <div className="relative overflow-hidden" style={{ height: 240 }}>
+                <MapContainer
+                  key={`modal-map-desktop-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
+                  center={gpsData[Math.floor(gpsData.length / 2)]}
+                  zoom={13}
+                  style={{ height: '100%', width: '100%', zIndex: 0 }}
+                  scrollWheelZoom={false}
+                  zoomControl={true}
+                  attributionControl={false}
+                >
+                  <MapInvalidator />
+                  <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                  <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+                  <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                    <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
+                  </CircleMarker>
+                  <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                    <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
+                  </CircleMarker>
+                </MapContainer>
+              </div>
+            </div>
+          )}
+
+          {/* ── Training Chart (power/HR/pace over time) ── */}
+          {chartTraining?.records?.length > 0 && (
+            <div className="px-5 py-3 border-b border-gray-50">
+              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+              <TrainingChart
+                training={chartTraining}
+                user={null}
+                userProfile={null}
+                onHover={() => {}}
+                onLeave={() => {}}
+              />
+            </div>
+          )}
 
           {/* ── Lap chart — full width, taller ── */}
           {laps.length > 1 && (
