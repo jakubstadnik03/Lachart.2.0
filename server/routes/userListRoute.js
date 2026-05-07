@@ -2272,7 +2272,7 @@ router.post("/apple-auth", async (req, res) => {
         let applePayload;
         try {
             applePayload = await appleSignin.verifyIdToken(identityToken, {
-                audience: process.env.APPLE_BUNDLE_ID || 'net.lachart.app',
+                audience: process.env.APPLE_BUNDLE_ID || 'com.lachart.app',
                 ignoreExpiration: false,
             });
         } catch (verifyErr) {
