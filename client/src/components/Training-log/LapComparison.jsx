@@ -222,6 +222,15 @@ export default function LapComparison({ trainings, selectedTitle: externalTitle,
 
   const sport = selectedSessions[0]?.sport || '';
 
+  // Auto-switch metric when sport changes
+  useEffect(() => {
+    if (!sport) return;
+    const s = sport.toLowerCase();
+    const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+    const isSwim = s.includes('swim');
+    setMetric(isBike ? 'power' : isSwim ? 'pace' : 'pace');
+  }, [sport]);
+
   // Chart series + data
   const { series, chartData } = useMemo(() => {
     if (selectedSessions.length === 0) return { series: [], chartData: [] };
