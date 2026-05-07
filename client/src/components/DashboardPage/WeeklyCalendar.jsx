@@ -544,7 +544,6 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
   return (
     <button
       onClick={onClick}
-      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       className={`w-full text-left rounded-xl border transition-all flex flex-col gap-1 ${
         compact ? 'p-1.5' : 'p-2'
       } ${
@@ -552,7 +551,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
           ? 'bg-gradient-to-br from-primary to-primary-dark shadow-md ring-2 ring-primary/20 border-transparent'
           : 'bg-white hover:bg-gray-50 shadow-sm hover:shadow-md border-gray-200'
       }`}
-      style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+      style={{ borderLeftColor: color, borderLeftWidth: 3, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       title={title}
     >
       <div className="flex items-center gap-1.5 min-w-0">
