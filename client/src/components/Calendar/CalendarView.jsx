@@ -3265,22 +3265,34 @@ export default function CalendarView({
                                     <button key={`pw-${pi}`}
                                       onClick={e => { e.stopPropagation(); handleActivityClick(act, null); }}
                                       className="w-full text-left flex flex-col px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 gap-1"
-                                      style={{ borderStyle: 'solid', borderColor: cc.color, backgroundColor: cc.bg, WebkitTapHighlightColor: 'transparent' }}>
-                                      {/* Planned row */}
+                                      style={{
+                                        borderStyle: 'solid',
+                                        borderColor: cc.color,          // left/top/bottom = green
+                                        borderRightColor: planColor,    // right = sport color
+                                        borderRightWidth: 3,
+                                        backgroundColor: cc.bg,
+                                        WebkitTapHighlightColor: 'transparent'
+                                      }}>
+                                      {/* Row 1: green dot + planned title + Done/compliance badge */}
                                       <div className="flex items-center gap-1.5">
                                         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: cc.color }} />
                                         <span className="text-[10px] font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
                                         <span className="text-[10px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
-                                      {/* Activity row */}
-                                      <div className="flex items-center gap-1.5 pl-3">
-                                        <SportIcon sport={act.sport} className="w-3.5 h-3.5 flex-shrink-0 text-gray-500" />
-                                        <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{act.title || act.name || 'Activity'}</span>
-                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-shrink-0">
-                                          {actDurStr && <span>{actDurStr}</span>}
-                                          {actDistStr && <span>{actDistStr}</span>}
-                                          {actTss > 0 && <span className="font-bold text-primary">{Math.round(actTss)}</span>}
+                                      {/* Row 2: sport icon (sport color) + stats + category badge */}
+                                      <div className="flex items-center gap-1.5 pl-0.5">
+                                        <SportIcon sport={act.sport || pwSport} className="w-3.5 h-3.5 flex-shrink-0" />
+                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-1 min-w-0">
+                                          {actDurStr && <span className="font-medium">{actDurStr}</span>}
+                                          {actDistStr && <><span className="text-gray-300">·</span><span>{actDistStr}</span></>}
+                                          {actTss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(actTss)}</span></>}
                                         </div>
+                                        {act.category && (
+                                          <div className="text-[8px] px-1.5 py-0.5 rounded flex-shrink-0 font-semibold border"
+                                            style={catBadgeStyle(act.category)}>
+                                            {catLabel(act.category).substring(0, 8)}
+                                          </div>
+                                        )}
                                       </div>
                                     </button>
                                   );
