@@ -15,7 +15,7 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
@@ -221,6 +221,9 @@ export default function DashboardPage() {
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [planModal, setPlanModal] = useState(null);
+  // Native mobile dashboard — fitness metrics
+  const [todayMetrics, setTodayMetrics] = useState({});
+  const [sparklineData, setSparklineData] = useState([]);
   const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
@@ -873,6 +876,27 @@ export default function DashboardPage() {
 
   useEffect(() => { loadDashboardPlannedWorkouts(); }, [loadDashboardPlannedWorkouts]);
 
+  // ── Native dashboard: fitness/form metrics (only fetched when native) ─────
+  const loadFormFitness = useCallback(async (targetId) => {
+    if (!targetId) return;
+    try {
+      const [todayRes, sparkRes] = await Promise.all([
+        getTodayMetrics(targetId).catch(() => ({ data: {} })),
+        getFormFitnessData(targetId, 90, 'all').catch(() => ({ data: [] })),
+      ]);
+      if (todayRes?.data) setTodayMetrics(todayRes.data);
+      if (sparkRes?.data) {
+        const raw = Array.isArray(sparkRes.data) ? sparkRes.data : (sparkRes.data?.data || []);
+        setSparklineData(raw);
+      }
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    loadFormFitness(dashboardDataAthleteId);
+  }, [dashboardDataAthleteId, loadFormFitness]);
+
   const handleDashboardPlanSave = useCallback(async (data) => {
     try {
       const role = String(user?.role || '').toLowerCase();
@@ -1014,7 +1038,17 @@ export default function DashboardPage() {
   };
 
   // ── Mobile/Native: render the redesigned native dashboard ──────────────────
-  if (isCapacitorNative()) return <NativeDashboardPage />;
+  if (isCapacitorNative()) return (
+    <NativeDashboardPage
+      activities={calendarData}
+      plannedWorkouts={plannedWorkouts}
+      tests={tests}
+      todayMetrics={todayMetrics}
+      sparklineData={sparklineData}
+      loading={loading}
+      user={user}
+    />
+  );
 
   if (error) return (
     <motion.div
