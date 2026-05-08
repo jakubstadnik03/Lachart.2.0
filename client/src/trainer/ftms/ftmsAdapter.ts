@@ -64,6 +64,8 @@ export class FTMSAdapter implements TrainerAdapter {
   private controlRequested: boolean = false;
   private reconnectAttempts: number = 0;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private disconnectListener: (() => void) | null = null;
+  private _isReconnecting: boolean = false;
   private useFTMS: boolean = false; // Track which service we're using
   private cscPreviousValues: { wheelRevolutions: number | null; lastWheelTime: number | null; crankRevolutions: number | null; lastCrankTime: number | null; timestamp: number } | null = null;
   // CPS crank revolution tracking for cadence calculation
@@ -151,7 +153,10 @@ export class FTMSAdapter implements TrainerAdapter {
     }
 
     this.state = 'connecting';
-    this.reconnectAttempts = 0;
+    // Reset counter on fresh user-initiated connect only (not during internal reconnect loop)
+    if (!this._isReconnecting) {
+      this.reconnectAttempts = 0;
+    }
 
     try {
       let device: BluetoothDevice | null = null;
@@ -186,16 +191,20 @@ export class FTMSAdapter implements TrainerAdapter {
 
       this.device = device;
 
-      // Handle disconnection
-      device.addEventListener('gattserverdisconnected', (event) => {
-        logger.warn('Device disconnected', { 
-          deviceId: device.id, 
+      // Remove old listener to prevent stacking multiple handlers across reconnects
+      if (this.disconnectListener) {
+        device.removeEventListener('gattserverdisconnected', this.disconnectListener);
+      }
+      this.disconnectListener = () => {
+        logger.warn('Device disconnected', {
+          deviceId: device.id,
           deviceName: device.name,
           state: this.state,
-          gattConnected: device.gatt?.connected 
+          gattConnected: device.gatt?.connected
         });
         this.handleDisconnection();
-      });
+      };
+      device.addEventListener('gattserverdisconnected', this.disconnectListener);
 
       // Connect to GATT server
       logger.info('Connecting to GATT server...');
@@ -1263,10 +1272,13 @@ export class FTMSAdapter implements TrainerAdapter {
         this.reconnectAttempts++;
         try {
           if (this.device) {
+            this._isReconnecting = true;
             await this.connect(this.device.id);
+            this._isReconnecting = false;
             this.reconnectAttempts = 0;
           }
         } catch (e) {
+          this._isReconnecting = false;
           logger.error('Reconnection failed:', e);
           this.handleDisconnection();
         }
