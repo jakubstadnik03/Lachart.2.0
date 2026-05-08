@@ -227,12 +227,15 @@ export default function DashboardPage() {
     if (!trainings || trainings.length === 0) return [];
     return [...trainings]
       .filter(t => {
-        // Strava activities always have real device data
-        if (t.stravaId || t.raw?.id) return true;
-        // FIT file trainings have a `timestamp` field (from the FIT file header)
-        if (t.timestamp && !t.date) return true;
-        // Regular trainings: only include if they have exported lap results
-        return Array.isArray(t.results) && t.results.length > 0;
+        // Strava activities (id or stravaId set)
+        if (t.stravaId || t.id || t.raw?.id) return true;
+        // FIT file trainings (have timestamp)
+        if (t.timestamp) return true;
+        // Regular trainings with exported lap results
+        if (Array.isArray(t.results) && t.results.length > 0) return true;
+        // Regular trainings with a title and some duration/date — include them too
+        if ((t.title || t.titleManual) && (t.date || t.duration)) return true;
+        return false;
       })
       .sort((a, b) => {
         const dateA = new Date(a.date || a.startDate || a.timestamp || 0);
@@ -290,7 +293,22 @@ export default function DashboardPage() {
 
       const allTrainings = [
         ...normalizeApiList(response.data),
-        ...normalizeApiList(fitResponse?.data).map(t => ({ ...t, category: t.category || null })),
+        ...normalizeApiList(fitResponse?.data).map(t => ({
+          ...t,
+          category: t.category || null,
+          // FIT trainings use titleManual; TrainingGraph/History reads .title
+          title: t.title || t.titleManual || t.titleAuto || t.originalFileName || null,
+          // FIT trainings use timestamp as their date anchor
+          date: t.date || t.timestamp || null,
+          // Normalize sport from FIT values to short form
+          sport: (() => {
+            const s = String(t.sport || '').toLowerCase();
+            if (s === 'cycling' || s.includes('cycle') || s.includes('bike') || s.includes('ride')) return 'bike';
+            if (s === 'running' || s.includes('run')) return 'run';
+            if (s === 'swimming' || s.includes('swim')) return 'swim';
+            return t.sport || null;
+          })(),
+        })),
         ...normalizeApiList(stravaResponse?.data).map(a => ({
           ...a,
           category: a.category || null,

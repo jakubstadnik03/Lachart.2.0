@@ -132,7 +132,19 @@ export default function TrainingPage() {
       
       const allTrainings = [
         ...response.data,
-        ...(fitResponse.data || []).map(t => ({ ...t, category: t.category || null })),
+        ...(fitResponse.data || []).map(t => ({
+          ...t,
+          category: t.category || null,
+          title: t.title || t.titleManual || t.titleAuto || t.originalFileName || null,
+          date: t.date || t.timestamp || null,
+          sport: (() => {
+            const s = String(t.sport || '').toLowerCase();
+            if (s === 'cycling' || s.includes('cycle') || s.includes('bike') || s.includes('ride')) return 'bike';
+            if (s === 'running' || s.includes('run')) return 'run';
+            if (s === 'swimming' || s.includes('swim')) return 'swim';
+            return t.sport || null;
+          })(),
+        })),
         ...(stravaResponse.data || []).map(a => ({ ...a, category: a.category || null }))
       ];
       
