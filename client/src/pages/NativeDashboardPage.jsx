@@ -123,6 +123,7 @@ function AnimatedCard({ children, animKey }) {
 }
 
 // ─── Day activities card ───────────────────────────────────────────────────────
+// onOpenActivity receives the full activity object so the caller can build the right URL
 function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity }) {
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
@@ -194,10 +195,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity }
         return (
           <button
             key={pw._id || `pw-${pi}`}
-            onClick={() => {
-              const id = linkedAct?._id || linkedAct?.id;
-              if (id) onOpenActivity(id);
-            }}
+            onClick={() => { if (linkedAct) onOpenActivity(linkedAct); }}
             disabled={!linkedAct}
             style={{
               display: 'flex',
@@ -297,7 +295,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity }
         return (
           <button
             key={id || `act-${i}`}
-            onClick={() => id && onOpenActivity(id)}
+            onClick={() => onOpenActivity(act)}
             style={{
               display: 'flex', alignItems: 'center', gap: 10,
               width: '100%', padding: '10px 11px', borderRadius: 13,
@@ -355,7 +353,24 @@ export default function NativeDashboardPage({
     setAnimKey(k => k + 1);
   };
 
-  const openActivity = (id) => navigate(`/training-calendar/${id}`);
+  // Build the canonical URL just like TrainingTable does
+  const openActivity = (actOrId) => {
+    // If called with a raw id string (legacy), fall back gracefully
+    if (typeof actOrId === 'string') {
+      navigate(`/training-calendar/${encodeURIComponent(actOrId)}`);
+      return;
+    }
+    const a = actOrId;
+    if (a.type === 'fit' && a._id) {
+      navigate(`/training-calendar/${encodeURIComponent(`fit-${a._id}`)}`);
+    } else if ((a.type === 'strava' || a.stravaId || a.source === 'strava') && (a.stravaId || a.id)) {
+      navigate(`/training-calendar/${encodeURIComponent(`strava-${a.stravaId || a.id}`)}`);
+    } else if (a.type === 'regular' && a._id) {
+      navigate(`/training-calendar/${encodeURIComponent(`regular-${a._id}`)}`);
+    } else if (a._id) {
+      navigate(`/training-calendar/${encodeURIComponent(`training-${a._id}`)}`);
+    }
+  };
 
   return (
     <>
