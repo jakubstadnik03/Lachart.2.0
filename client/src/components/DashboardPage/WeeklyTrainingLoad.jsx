@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getWeeklyTrainingLoad } from '../../services/api';
@@ -156,8 +157,8 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
         </div>
       </div>
 
-      {/* Settings modal */}
-      {showSettings && (
+      {/* Settings modal — portal to body to escape any parent stacking context */}
+      {showSettings && ReactDOM.createPortal(
         <div
           className="fixed inset-0 z-[9999] bg-black/40 flex items-end sm:items-center justify-center"
           onMouseDown={(e) => {
@@ -229,7 +230,8 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {loading ? (
