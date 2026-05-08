@@ -7,7 +7,9 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities } from '../services/api';
+import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
+import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import QuickAddLactateModal from '../components/training/QuickAddLactateModal';
@@ -25,6 +27,7 @@ export default function TrainingPage() {
   const { athleteId } = useParams();
   const location = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const { addNotification } = useNotification();
   const coachLike = COACH_LIKE_ROLES.includes(String(user?.role || '').toLowerCase());
   // ── Single source of truth for athlete selection ─────────────────────────────
   const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
@@ -191,6 +194,31 @@ export default function TrainingPage() {
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
   }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings, coachLike]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-sync Strava on page load so Field Lactate shows latest activities
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.autoSync) return;
+    const syncKey = `strava_auto_sync_training_${user._id}`;
+    const lastSync = sessionStorage.getItem(syncKey);
+    const now = Date.now();
+    if (lastSync && (now - parseInt(lastSync)) < 5 * 60 * 1000) return;
+
+    const performAutoSync = async () => {
+      try {
+        const result = await autoSyncStravaActivities();
+        sessionStorage.setItem(syncKey, now.toString());
+        if (result.imported > 0) {
+          maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
+          addNotification(`Strava: ${result.imported} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
+          const targetId = selectedAthleteId || user._id;
+          loadTrainings(targetId);
+          setFieldLactatePanelKey(k => k + 1);
+        }
+      } catch (_) {}
+    };
+    const t = setTimeout(performAutoSync, 2000);
+    return () => clearTimeout(t);
+  }, [user?._id, user?.strava?.autoSync, user?.notifications, selectedAthleteId, loadTrainings, addNotification]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (location.hash !== '#field-lactate') return;
