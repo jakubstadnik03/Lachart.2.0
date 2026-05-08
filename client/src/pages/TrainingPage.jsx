@@ -788,7 +788,7 @@ export default function TrainingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
@@ -809,7 +809,7 @@ export default function TrainingPage() {
 
       <AnimatePresence>
         {showRecordLactate && ReactDOM.createPortal(
-          <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
             <RecordLactateModal
               onClose={() => setShowRecordLactate(false)}
               onSave={async (data) => {
@@ -832,7 +832,7 @@ export default function TrainingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}

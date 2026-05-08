@@ -348,7 +348,7 @@ export default function FieldLactateTrainingPanel({
 
       {/* Record Lactate modal — rendered into portal so it covers bottom tab bar */}
       {showRecord && ReactDOM.createPortal(
-        <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
           <RecordLactateModal
             onClose={() => setShowRecord(false)}
             onSave={async (data) => { await handleSaveMeasurement(data); setShowRecord(false); }}
@@ -359,7 +359,7 @@ export default function FieldLactateTrainingPanel({
 
       {/* Assign Lactate modal — rendered into portal so it covers bottom tab bar */}
       {assignTarget && ReactDOM.createPortal(
-        <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
           <AssignLactateModal
             measurement={assignTarget}
             athleteId={integrationAthleteId || null}
