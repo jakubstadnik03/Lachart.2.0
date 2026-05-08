@@ -260,7 +260,8 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 
   const plannedSport = (pw.sport || 'bike').toLowerCase();
   const color = SPORT_PLAN_COLORS[plannedSport] || '#767EB5';
-  const plannedDur = planStepTotalSecs(pw.steps);
+  // Fall back to plannedDuration (seconds) when workout has no structured steps
+  const plannedDur = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
   const isCompleted = pw.status === 'completed';
   const isSkipped   = pw.status === 'skipped';
 
@@ -274,26 +275,40 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const linkedDistStr = (linkedActivity && actDistMeters > 0)
     ? (actDistMeters >= 1000 ? `${(actDistMeters/1000).toFixed(actDistMeters % 1000 === 0 ? 0 : 1)} km` : `${Math.round(actDistMeters)} m`)
     : null;
+  // Planned distance (km) — shown when no linked activity yet
+  const plannedDistKm = Number(pw.plannedDistance || 0);
+  const plannedDistStr = (!linkedActivity && plannedDistKm > 0)
+    ? (plannedDistKm >= 1 ? `${plannedDistKm % 1 === 0 ? plannedDistKm : plannedDistKm.toFixed(1)} km` : `${Math.round(plannedDistKm * 1000)} m`)
+    : null;
 
   if (compact) {
-    // ── Match WeekActivityCard visual style ──
-    // planned (upcoming)            → white bg, solid left border in sport color
-    // pairingState 'completed'       → light green tint  (training was done that day)
-    // pairingState 'missed'          → light red tint    (date past, no matching activity)
-    // compliance hit (legacy)        → uses compliance ring color
     const isCompletedPair = pairingState === 'completed' || isCompleted;
     const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
-    const leftBorderColor = color; // always sport color on left
+    const isPurelyPlanned = !isCompletedPair && !isMissedPair && !compliance;
 
-    let cardClass;
+    // ── Card appearance ────────────────────────────────────────────────────
+    // completed pair  → green tint, solid border
+    // missed          → red tint, solid border
+    // pure planned    → very light sport-tint bg, dashed border (ghost style)
+    // compliance      → white bg, solid border (legacy)
+    let cardBgColor, cardBorderStyle, cardBorderColor;
     if (isCompletedPair) {
-      cardClass = 'bg-green-50 border-green-200 shadow-sm hover:bg-green-100';
+      cardBgColor   = '#f0fdf4';
+      cardBorderColor = '#bbf7d0';
+      cardBorderStyle = 'solid';
     } else if (isMissedPair) {
-      cardClass = 'bg-red-50 border-red-200 shadow-sm hover:bg-red-100';
-    } else if (compliance) {
-      cardClass = 'bg-white border-gray-200 shadow-sm hover:bg-gray-50';
+      cardBgColor   = '#fef2f2';
+      cardBorderColor = '#fecaca';
+      cardBorderStyle = 'solid';
+    } else if (isPurelyPlanned) {
+      // Ghost style: very faint sport-color tint + dashed border
+      cardBgColor   = color + '10'; // ~6% opacity
+      cardBorderColor = color + '55'; // ~33% opacity
+      cardBorderStyle = 'dashed';
     } else {
-      cardClass = 'bg-white border-gray-200 shadow-sm hover:bg-gray-50 hover:shadow-md';
+      cardBgColor   = '#ffffff';
+      cardBorderColor = '#e5e7eb';
+      cardBorderStyle = 'solid';
     }
 
     return (
@@ -309,10 +324,14 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
             else if (onSelect) onSelect(pw);
           }}
-          className={`w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${cardClass}`}
+          className="w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 hover:brightness-95"
           style={{
-            borderLeftColor: leftBorderColor,
+            backgroundColor: cardBgColor,
+            borderColor: cardBorderColor,
+            borderStyle: cardBorderStyle,
+            borderLeftColor: color,
             borderLeftWidth: 3,
+            borderLeftStyle: 'solid',
             minWidth: 0, overflow: 'hidden',
             cursor: (!isCompleted && !isSkipped) ? 'grab' : 'pointer',
           }}
@@ -328,7 +347,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             </span>
             <span
               className="text-[11px] font-bold truncate flex-1"
-              style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : '#1e293b' }}
+              style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : isPurelyPlanned ? color : '#1e293b' }}
             >
               {pw.title || 'Planned'}
             </span>
@@ -338,21 +357,21 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             )}
           </div>
           {/* Duration + stats row */}
-          {(duration > 0 || pw.targetTss > 0 || linkedDistStr) && (
-            <div className="flex items-center gap-2 text-[10px] mt-0.5">
+          {(duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
+            <div className="flex items-center gap-1.5 text-[10px] mt-0.5 flex-wrap">
               {duration > 0 && (
-                <span style={{ color: '#6b7280' }}>{fmtPlanDuration(duration)}</span>
+                <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{fmtPlanDuration(duration)}</span>
               )}
-              {linkedDistStr && (
+              {(linkedDistStr || plannedDistStr) && (
                 <>
                   <span style={{ color: '#d1d5db' }}>·</span>
-                  <span style={{ color: '#6b7280' }}>{linkedDistStr}</span>
+                  <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{linkedDistStr || plannedDistStr}</span>
                 </>
               )}
-              {!linkedDistStr && pw.targetTss > 0 && (
+              {!(linkedDistStr || plannedDistStr) && pw.targetTss > 0 && (
                 <>
                   <span style={{ color: '#d1d5db' }}>·</span>
-                  <span style={{ color: '#6b7280' }}>{pw.targetTss} TSS</span>
+                  <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{pw.targetTss} TSS</span>
                 </>
               )}
               {compliance && (
@@ -3509,7 +3528,9 @@ export default function CalendarView({
                               {pairs.map(({ pw, act }, pi) => {
                                 const pwSport = (pw.sport || 'bike').toLowerCase();
                                 const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
-                                const duration = planStepTotalSecs(pw.steps);
+                                // Fall back to plannedDuration when no structured steps exist
+                                const duration = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+                                const plannedDistKmMobile = Number(pw.plannedDistance || 0);
                                 const isSkipped = pw.status === 'skipped';
                                 const compliance = act ? findCompliance(pw, [act]) : null;
 
@@ -3570,18 +3591,26 @@ export default function CalendarView({
                                   );
                                 }
 
-                                // Planned only — no matching activity yet
+                                // Planned only — no matching activity yet (ghost style)
                                 return (
                                   <button key={`pw-${pi}`}
                                     onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
-                                    className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 min-h-[40px]"
-                                    style={{ borderStyle: 'dashed', borderColor: planColor + '60', backgroundColor: planColor + '0d', WebkitTapHighlightColor: 'transparent' }}>
-                                    <PlayIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" style={{ color: planColor }} />
-                                    <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : planColor }}>{pw.title || 'Planned workout'}</span>
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    className="w-full text-left flex flex-col gap-1 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70"
+                                    style={{ borderStyle: 'dashed', borderColor: planColor + '55', borderLeftColor: planColor, borderLeftWidth: 3, borderLeftStyle: 'solid', backgroundColor: planColor + '10', WebkitTapHighlightColor: 'transparent' }}>
+                                    {/* Title row */}
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <SportIcon sport={pwSport} className="w-3.5 h-3.5 flex-shrink-0 opacity-80" style={{ color: planColor }} />
+                                      <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : planColor }}>{pw.title || 'Planned workout'}</span>
                                       {pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={36} height={12} />}
-                                      {duration > 0 && <span className="text-[10px] opacity-70" style={{ color: planColor }}>{fmtPlanDuration(duration)}</span>}
                                     </div>
+                                    {/* Stats row */}
+                                    {(duration > 0 || plannedDistKmMobile > 0 || pw.targetTss > 0) && (
+                                      <div className="flex items-center gap-1.5 text-[10px] pl-0.5" style={{ color: planColor + 'bb' }}>
+                                        {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
+                                        {plannedDistKmMobile > 0 && <><span className="opacity-40">·</span><span>{plannedDistKmMobile >= 1 ? `${plannedDistKmMobile % 1 === 0 ? plannedDistKmMobile : plannedDistKmMobile.toFixed(1)} km` : `${Math.round(plannedDistKmMobile * 1000)} m`}</span></>}
+                                        {pw.targetTss > 0 && <><span className="opacity-40">·</span><span>{pw.targetTss} TSS</span></>}
+                                      </div>
+                                    )}
                                   </button>
                                 );
                               })}
