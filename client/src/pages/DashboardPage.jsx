@@ -14,6 +14,7 @@ import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining } from '../services/api';
+import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
@@ -846,7 +847,7 @@ export default function DashboardPage() {
     const syncKey = `strava_auto_sync_dashboard_${user._id}`;
     const lastSync = sessionStorage.getItem(syncKey);
     const now = Date.now();
-    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
+    if (lastSync && (now - parseInt(lastSync)) < 5 * 60 * 1000) { // Don't sync more than once per 5 minutes
       return;
     }
 
@@ -857,8 +858,12 @@ export default function DashboardPage() {
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
-          // Reload calendar data after sync
-          loadCalendarData(user._id);
+          maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
+          addNotification(`Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
+          // Reload all data after sync
+          const regTrainings = await loadRegularTrainings(user._id);
+          loadTrainings(user._id);
+          loadCalendarData(user._id, regTrainings);
         }
       } catch (error) {
         // 429 errors are already handled in autoSyncStravaActivities
@@ -871,7 +876,7 @@ export default function DashboardPage() {
     const timeoutId = setTimeout(performAutoSync, 2000);
     
     return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData, isCoachLikeRole]);
+  }, [user?._id, user?.strava?.autoSync, user?.notifications, selectedAthleteId, user?.role, loadCalendarData, loadTrainings, loadRegularTrainings, addNotification, isCoachLikeRole]);
 
   // ── Planned workouts for dashboard calendar ───────────────────────────────
   const loadDashboardPlannedWorkouts = useCallback(async () => {

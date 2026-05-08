@@ -18,6 +18,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
+import { useNotification } from '../../context/NotificationContext';
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -554,6 +555,7 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
 // ─── Main NativeLayout ─────────────────────────────────────────────────────────
 const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId, onAthleteSelect }) => {
   const { user, logout, isAuthenticated } = useAuth();
+  const { addNotification } = useNotification();
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -577,10 +579,21 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     if (!isAuthenticated) return;
     loadNotifs();
     const t = setInterval(loadNotifs, 60000);
-    const onPush = () => loadNotifs();
+    const onPush = (e) => {
+      loadNotifs();
+      // Show in-app toast for foreground push notifications
+      const notif = e?.detail;
+      const title = notif?.title || notif?.data?.title;
+      const body = notif?.body || notif?.data?.body;
+      if (body) {
+        addNotification(body, 'info');
+      } else if (title) {
+        addNotification(title, 'info');
+      }
+    };
     window.addEventListener('pushNotificationReceived', onPush);
     return () => { clearInterval(t); window.removeEventListener('pushNotificationReceived', onPush); };
-  }, [isAuthenticated, loadNotifs]);
+  }, [isAuthenticated, loadNotifs, addNotification]);
 
   // Auto-mark all read 1.5s after opening the sheet
   const handleBellTap = () => {

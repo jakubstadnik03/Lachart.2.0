@@ -993,9 +993,9 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
     }
 
     // Server-side cooldown: don't hammer Strava if the client calls too often.
-    // 15 minutes is the minimum gap between frontend-triggered syncs per user.
+    // 5 minutes is the minimum gap between frontend-triggered syncs per user.
     // The webhook handles real-time delivery; this endpoint is just a fallback.
-    const MIN_AUTO_SYNC_GAP_MS = 15 * 60 * 1000;
+    const MIN_AUTO_SYNC_GAP_MS = 5 * 60 * 1000;
     if (user.strava?.lastSyncDate) {
       const msSinceLast = Date.now() - new Date(user.strava.lastSyncDate).getTime();
       if (msSinceLast < MIN_AUTO_SYNC_GAP_MS) {

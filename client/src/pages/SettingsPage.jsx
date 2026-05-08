@@ -821,7 +821,7 @@ const SettingsPage = () => {
     if (isSyncingStrava) return;
     try {
       setIsSyncingStrava(true);
-      const res = await syncStravaActivities();
+      const res = await syncStravaActivities(user?.strava?.lastSyncDate || null);
       if (res?.status === 'in_progress') {
         addNotification('Strava sync is already running in background. Please wait a moment.', 'info');
         return;
