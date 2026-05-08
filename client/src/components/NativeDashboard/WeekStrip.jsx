@@ -20,7 +20,9 @@ function toLocalDateStr(d) {
 }
 
 function isSameDay(a, b) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return a.getFullYear() === b.getFullYear() &&
+         a.getMonth()    === b.getMonth()    &&
+         a.getDate()     === b.getDate();
 }
 
 function getDotType(activities, date, plannedWorkouts) {
@@ -33,7 +35,9 @@ function getDotType(activities, date, plannedWorkouts) {
     return key === toLocalDateStr(date);
   });
 
-  const hasLac = dayActs.some(a => Array.isArray(a.results) && a.results.some(r => r.lactate != null || r.mmol != null || r.lac != null));
+  const hasLac = dayActs.some(a =>
+    Array.isArray(a.results) && a.results.some(r => r.lactate != null || r.mmol != null || r.lac != null)
+  );
   if (hasLac)              return 'lac';
   if (dayActs.length > 0) return 'done';
   if (dayPlan.length > 0) return 'plan';
@@ -63,8 +67,8 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
       {weekDays.map((d, i) => {
         const isToday    = isSameDay(d, today);
         const isSelected = selectedDate && isSameDay(d, selectedDate);
+        const isActive   = isToday || isSelected;
         const dotType    = getDotType(activities, d, plannedWorkouts);
-        const isRest     = dotType === 'rest';
         const sportColor = getSportColor(activities, d);
 
         const dotColor =
@@ -79,16 +83,42 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
             onClick={() => onSelectDate && onSelectDate(d)}
             style={{
               ...styles.day,
-              ...(isToday || isSelected ? styles.dayActive : {}),
+              ...(isActive ? styles.dayActive : {}),
             }}
           >
-            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: isToday || isSelected ? 'rgba(255,255,255,.8)' : '#6B7280' }}>
+            {/* Day letter */}
+            <span style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: isActive ? 'rgba(255,255,255,.8)' : '#6B7280',
+            }}>
               {DOW[i][0]}
             </span>
-            <span style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isToday || isSelected ? '#fff' : isRest ? 'rgba(10,14,26,.3)' : '#0A0E1A' }}>
+
+            {/* Date number */}
+            <span style={{
+              fontSize: 15,
+              fontWeight: 700,
+              fontVariantNumeric: 'tabular-nums',
+              color: isActive ? '#fff' : dotType === 'rest' ? 'rgba(10,14,26,.3)' : '#0A0E1A',
+            }}>
               {d.getDate()}
             </span>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isToday || isSelected ? '#fff' : dotColor, marginTop: 1, display: 'block' }} />
+
+            {/* Activity dot — always show sport color even when active */}
+            <span style={{
+              width: 5,
+              height: 5,
+              borderRadius: '50%',
+              // When active: show dot only if there's an activity (not just white)
+              background: isActive
+                ? (dotType !== 'rest' ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.3)')
+                : dotColor,
+              marginTop: 1,
+              display: 'block',
+            }} />
           </button>
         );
       })}
@@ -100,8 +130,8 @@ const styles = {
   card: {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: 4,
-    padding: 6,
+    gap: 3,
+    padding: '6px 4px',
     background: 'rgba(255,255,255,.65)',
     backdropFilter: 'blur(22px) saturate(170%)',
     WebkitBackdropFilter: 'blur(22px) saturate(170%)',
@@ -110,22 +140,22 @@ const styles = {
     borderRadius: 16,
   },
   day: {
-    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     gap: 2,
-    padding: '8px 0',
+    padding: '7px 0',
     borderRadius: 11,
     background: 'transparent',
     border: '1px solid transparent',
     fontFamily: 'inherit',
     cursor: 'pointer',
-    transition: 'all .2s',
+    WebkitTapHighlightColor: 'transparent',
+    touchAction: 'manipulation',
+    transition: 'all .15s',
   },
   dayActive: {
     background: 'linear-gradient(160deg,#5E6590,#767EB5)',
-    boxShadow: '0 6px 16px -6px rgba(94,101,144,.5)',
-    border: '1px solid transparent',
+    boxShadow: '0 4px 12px -4px rgba(94,101,144,.5)',
   },
 };
