@@ -77,9 +77,17 @@ export default function TrainingPage() {
   // console.log('Current user:', user);
 
   const loadTrainings = useCallback(async (targetId) => {
-    const cacheKey = `athleteTrainings_${targetId}`;
+    // Keep key in sync with DashboardPage so navigating between pages hits
+    // the same localStorage entry and avoids a redundant network round-trip.
+    const cacheKey = `athleteTrainings_v2_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+    // One-time cleanup: remove old v1 entries that waste localStorage quota.
+    try {
+      localStorage.removeItem(`athleteTrainings_${targetId}`);
+      localStorage.removeItem(`athleteTrainings_${targetId}_ts`);
+    } catch (_) {}
 
     // TrainingGraph renders blank when the picked training has no `.results`
     // (intervals). FIT/Strava activities don't ship with `.results` — only
@@ -148,7 +156,14 @@ export default function TrainingPage() {
             return t.sport || null;
           })(),
         })),
-        ...(stravaResponse.data || []).map(a => ({ ...a, category: a.category || null }))
+        // Normalize Strava fields to match DashboardPage so shared cache entries
+        // are always valid regardless of which page writes them first.
+        ...(stravaResponse.data || []).map(a => ({
+          ...a,
+          category: a.category || null,
+          date: a.date || a.startDate || a.timestamp || null,
+          title: a.title || a.name || a.titleManual || null,
+        }))
       ];
       
       setTrainings(allTrainings);
