@@ -10,10 +10,12 @@ const typeIcon = (type) => {
   if (!type) return '🔔';
   if (type.includes('comment'))  return '💬';
   if (type.includes('lactate'))  return '🩸';
-  if (type.includes('strava'))   return '🔗';
-  if (type.includes('fit'))      return '📁';
-  if (type.includes('training')) return '🏋️';
-  if (type.includes('test'))     return '📊';
+  if (type.includes('strava'))   return '🚴';
+  if (type.includes('fit'))      return '📤';
+  if (type.includes('training')) return '🏃';
+  if (type.includes('test'))     return '🔬';
+  if (type.includes('plan'))     return '📅';
+  if (type.includes('coach'))    return '👤';
   return '🔔';
 };
 
