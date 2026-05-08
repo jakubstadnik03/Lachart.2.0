@@ -423,7 +423,7 @@ export default function NativeDashboardPage({
           />
 
           {/* 5 · Zone distribution */}
-          <ZoneDistCard activities={activities} />
+          <ZoneDistCard activities={activities} tests={tests} />
 
           {/* 6 · Last lab test */}
           <LastTestCard tests={tests} />
