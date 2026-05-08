@@ -206,6 +206,7 @@ const { startWeeklyReportsScheduler } = require('./services/weeklyReportSchedule
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
+const { bootstrapStravaWebhook } = require('./services/stravaWebhookBootstrap');
 
 // Routes
 app.use("/test", testRoutes);
@@ -229,6 +230,9 @@ startWeeklyReportsScheduler();
 
 // Strava auto-sync scheduler (periodic sync for all users with auto-sync enabled)
 startStravaAutoSyncScheduler();
+
+// Ensure Strava webhook subscription is registered (runs once on startup, idempotent)
+setTimeout(() => bootstrapStravaWebhook().catch(e => console.error('[StravaWebhook] Bootstrap failed:', e.message)), 5000);
 
 startLactateTestFollowUpScheduler();
 
