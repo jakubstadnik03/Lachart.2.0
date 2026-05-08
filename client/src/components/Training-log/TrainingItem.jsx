@@ -613,7 +613,16 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
 
   // ── Normalise fields from manual / Strava / FIT sources ──────────────────
   const title    = resolveTitle(merged);
-  const sport    = resolveSport(merged);
+  const rawSport = resolveSport(merged);
+  // FIT trainings from lactate sessions may have sport='generic' (saved before sport selection was added).
+  // Infer from available data: if avgPower exists it's likely cycling, otherwise keep generic.
+  const sport = (() => {
+    if (rawSport && rawSport !== 'generic') return rawSport;
+    if (merged.avgPower || merged.normalizedPower) return 'cycling';
+    const firstLap = Array.isArray(merged.laps) && merged.laps[0];
+    if (firstLap?.avgPower) return 'cycling';
+    return rawSport || '';
+  })();
   const date     = training.date; // already formatted by UserTrainingsTable
 
   const { results, laps, specifics, description, comments, category } = merged;

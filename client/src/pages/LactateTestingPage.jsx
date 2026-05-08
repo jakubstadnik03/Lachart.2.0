@@ -166,6 +166,7 @@ const LactateTestingPage = () => {
   const [protocol, setProtocol] = useState({
     workDuration: 360, recoveryDuration: 60,
     steps: [], startPower: 100, powerIncrement: 20, maxSteps: 8,
+    sport: 'bike',
   });
 
   // ── Historical & lactate ──────────────────────────────────
@@ -772,14 +773,14 @@ const LactateTestingPage = () => {
         protocol,     measurements: historicalData,
         lactateValues, testDuration: totalTestTime,
         currentStep,  status: 'completed',
-        sport:        'bike',
+        sport:        protocol.sport || 'bike',
         title:        `Lactate Test – ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
       };
       const response  = await saveLactateSession(sessionData);
       const sessionId = response?.data?.session?._id ?? response?.data?._id ?? response?._id;
       if (sessionId) {
         const fitData = {
-          sport:            'bike',
+          sport:            protocol.sport || 'bike',
           totalElapsedTime: totalTestTime,
           records:          historicalData.map((m, i) => ({
             timestamp:    new Date(startTime.getTime() + (m.totalTime ?? i) * 1000),
@@ -970,6 +971,32 @@ const LactateTestingPage = () => {
                     <Cog6ToothIcon className="w-3.5 h-3.5" /> Edit steps
                   </button>
                 )}
+              </div>
+
+              {/* Sport selector */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Sport</label>
+                <div className="flex gap-2">
+                  {[
+                    { key: 'bike', label: 'Bike', icon: '/icon/bike.svg' },
+                    { key: 'run',  label: 'Run',  icon: '/icon/run.svg'  },
+                    { key: 'swim', label: 'Swim', icon: '/icon/swim.svg' },
+                  ].map(s => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setProtocol(prev => ({ ...prev, sport: s.key }))}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all ${
+                        protocol.sport === s.key
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      <img src={s.icon} alt={s.label} className="w-4 h-4" />
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
