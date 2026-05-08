@@ -448,11 +448,14 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   }
 
   // full card for mobile selected-day view — matches activity card style
-  const isGreenFull = compliance?.color === '#22c55e' || (isCompleted && !compliance);
-  const leftBorderFull = isGreenFull ? '#22c55e' : compliance ? compliance.color : color;
+  const isCompletedFull = pairingState === 'completed' || isCompleted;
+  const isMissedFull    = pairingState === 'missed' && !isCompletedFull;
+  const isGreenFull = compliance?.color === '#22c55e' || isCompletedFull;
+  const leftBorderFull = isGreenFull ? '#22c55e' : isMissedFull ? '#ef4444' : compliance ? compliance.color : color;
+  const fullCardBg = isGreenFull ? 'bg-green-50 border-green-200' : isMissedFull ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200';
   return (
     <div
-      className="w-full rounded-xl border border-gray-200 overflow-hidden transition-all bg-white shadow-sm"
+      className={`w-full rounded-xl border overflow-hidden transition-all shadow-sm ${fullCardBg}`}
       style={{ borderLeftColor: leftBorderFull, borderLeftWidth: 4 }}
     >
       {/* Clickable header — opens edit modal */}
