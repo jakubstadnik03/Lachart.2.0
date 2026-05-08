@@ -246,7 +246,9 @@ export default function DashboardPage() {
       .slice(0, MAX_DASHBOARD_TRAININGS);
   }, [trainings]);
 
-  // Load athlete trainings with localStorage caching (shared with TrainingPage)
+  // Load athlete trainings with localStorage caching (shared with TrainingPage).
+  // Also sets regularTrainings state so loadCalendarData can be called without
+  // a separate /user/athlete/:id/trainings round-trip.
   const loadTrainings = useCallback(async (targetId) => {
     const cacheKey = `athleteTrainings_v2_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
@@ -286,6 +288,11 @@ export default function DashboardPage() {
         cacheTtlMs: 60000,
       });
 
+      // Extract and store regular trainings before merging with FIT/Strava data.
+      // This avoids a second fetch of the same endpoint by loadRegularTrainings.
+      const regularTrainingsData = normalizeApiList(response.data);
+      setRegularTrainings(regularTrainingsData);
+
       // Optionally enrich with FIT trainings and Strava activities (same as TrainingPage)
       const [fitResponse, stravaResponse] = await Promise.all([
         api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
@@ -293,7 +300,7 @@ export default function DashboardPage() {
       ]);
 
       const allTrainings = [
-        ...normalizeApiList(response.data),
+        ...regularTrainingsData,
         ...normalizeApiList(fitResponse?.data).map(t => ({
           ...t,
           category: t.category || null,
@@ -334,7 +341,9 @@ export default function DashboardPage() {
         console.warn('Error saving trainings cache (dashboard):', e);
       }
 
-      return allTrainings;
+      // Return both merged list and raw regular trainings so callers can pass
+      // regularTrainings directly to loadCalendarData without another fetch.
+      return { allTrainings, regularTrainings: regularTrainingsData };
     } catch (error) {
       console.error('Error loading trainings (dashboard):', error);
       // setError(error.message);
@@ -804,20 +813,18 @@ export default function DashboardPage() {
           return;
         }
 
-        // Load regular trainings first (needed by both loadTrainings and loadCalendarData)
-        const regTrainingsResponse = await loadRegularTrainings(targetAthleteId);
+        // loadTrainings fetches /user/athlete/:id/trainings AND sets regularTrainings state,
+        // so we no longer need a separate loadRegularTrainings call for that endpoint.
+        const trainingsResult = await loadTrainings(targetAthleteId);
 
-        // Load all other data in parallel, passing regularTrainings directly to loadCalendarData
-        const [trainingsData, athleteData] = await Promise.all([
-          loadTrainings(targetAthleteId),
+        // Load the remaining data in parallel, passing regularTrainings directly to
+        // loadCalendarData so it doesn't need to wait for state to propagate.
+        const [athleteData] = await Promise.all([
           loadAthlete(targetAthleteId),
           loadTests(targetAthleteId),
-          loadCalendarData(targetAthleteId, regTrainingsResponse)
+          loadCalendarData(targetAthleteId, trainingsResult?.regularTrainings)
         ]);
 
-        if (trainingsData) {
-          setTrainings(trainingsData);
-        }
         if (athleteData && athleteData._id !== selectedAthleteId) {
           // Keep current selection stable to avoid effect loops.
         }
@@ -829,7 +836,7 @@ export default function DashboardPage() {
     loadData();
   // selectedSport intentionally excluded — sport is a client-side filter, not a data-load trigger.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
+  }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
@@ -860,10 +867,10 @@ export default function DashboardPage() {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
           addNotification(`Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
-          // Reload all data after sync
-          const regTrainings = await loadRegularTrainings(user._id);
-          loadTrainings(user._id);
-          loadCalendarData(user._id, regTrainings);
+          // Reload all data after sync — loadTrainings sets regularTrainings state internally,
+          // so one call replaces the old loadRegularTrainings + loadTrainings pair.
+          const trainingsResult = await loadTrainings(user._id);
+          loadCalendarData(user._id, trainingsResult?.regularTrainings);
         }
       } catch (error) {
         // 429 errors are already handled in autoSyncStravaActivities
@@ -876,7 +883,7 @@ export default function DashboardPage() {
     const timeoutId = setTimeout(performAutoSync, 2000);
     
     return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.strava?.autoSync, user?.notifications, selectedAthleteId, user?.role, loadCalendarData, loadTrainings, loadRegularTrainings, addNotification, isCoachLikeRole]);
+  }, [user?._id, user?.strava?.autoSync, user?.notifications, selectedAthleteId, user?.role, loadCalendarData, loadTrainings, addNotification, isCoachLikeRole]);
 
   // ── Planned workouts for dashboard calendar ───────────────────────────────
   const loadDashboardPlannedWorkouts = useCallback(async () => {
