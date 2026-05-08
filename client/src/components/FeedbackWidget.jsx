@@ -31,7 +31,7 @@ const FeedbackWidget = () => {
       const subject = formData.get('subject') || 'Feedback';
       await logFeedbackSent(subject);
       
-      addNotification('Feedback sent! Thank you 🙏', 'success');
+      addNotification('Feedback sent! Thank you', 'success');
       setOpen(false);
     } catch (error) {
       console.error(error);

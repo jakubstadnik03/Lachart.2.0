@@ -30,7 +30,7 @@ const WelcomeModal = ({ open, onClose }) => {
       const subject = formData.get('subject') || 'Welcome Feedback';
       await logFeedbackSent(subject);
       
-      addNotification('Feedback sent! Thank you 🙏', 'success');
+      addNotification('Feedback sent! Thank you', 'success');
       onClose?.();
     } catch (error) {
       console.error(error);
