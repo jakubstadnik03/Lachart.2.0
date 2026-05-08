@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import ReactDOM from 'react-dom';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
@@ -1011,8 +1013,11 @@ export default function DashboardPage() {
     setIsTrainingFormOpen(false);
   };
 
+  // ── Mobile/Native: render the redesigned native dashboard ──────────────────
+  if (isCapacitorNative()) return <NativeDashboardPage />;
+
   if (error) return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
