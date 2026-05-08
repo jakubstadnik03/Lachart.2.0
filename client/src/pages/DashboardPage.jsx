@@ -389,33 +389,6 @@ export default function DashboardPage() {
     }
   }, [setLoading]);
 
-  const loadRegularTrainings = useCallback(async (targetId) => {
-    try {
-      const athleteId = user?.role === 'athlete' ? user._id : targetId;
-      
-      if (isCoachLikeRole && !athleteId) {
-        setRegularTrainings([]);
-        return [];
-      }
-      
-      if (!athleteId) return [];
-      
-      const response = await api.get(`/user/athlete/${athleteId}/trainings`);
-      if (response && response.data) {
-        setRegularTrainings(response.data);
-        return response.data;
-      }
-      return [];
-    } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limit exceeded when loading regular trainings.');
-        return [];
-      }
-      console.error('Error loading regular trainings:', error);
-      return [];
-    }
-  }, [isCoachLikeRole, user?._id, user?.role]);
-
   // Load training calendar data (FIT files and Strava activities) with localStorage caching.
   // Accepts optional regularTrainingsParam so the main loader can pass data directly
   // without waiting for a state update cycle.
