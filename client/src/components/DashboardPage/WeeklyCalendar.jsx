@@ -1411,11 +1411,10 @@ const WeeklyCalendar = ({
 
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-2 sm:mb-3">
+      <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
         <div className="min-w-0">
-          <h3 className="text-base sm:text-lg font-semibold text-text">Weekly Calendar</h3>
           {weekRangeMeta.primary && (
-            <p className="text-xs sm:text-sm text-lighterText mt-0.5 truncate" title={weekRangeMeta.primary}>
+            <p className="text-xs sm:text-sm font-medium text-text truncate" title={weekRangeMeta.primary}>
               {weekRangeMeta.primary}
             </p>
           )}
@@ -1425,7 +1424,7 @@ const WeeklyCalendar = ({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-1 sm:gap-1.5 self-end sm:self-start flex-shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
           <button
             onClick={prevWeek}
             className="p-1 sm:p-1.5 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-colors"
