@@ -241,9 +241,14 @@ function intervalPaceSec(item) {
   if (!item) return null;
   // Direct pace fields
   if (item.paceSeconds && item.paceSeconds > 0) return item.paceSeconds;
-  if (item.pace && typeof item.pace === 'string' && item.pace.includes(':')) {
-    const [m, s] = item.pace.split(':').map(Number);
-    if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
+  // Run/swim Training records store pace as "MM:SS" inside the `power` field
+  // (the export-to-training flow writes pace there for non-bike sports).
+  const paceLike = (v) => typeof v === 'string' && /^\d+:\d{2}$/.test(v.trim());
+  for (const candidate of [item.pace, item.power]) {
+    if (paceLike(candidate)) {
+      const [m, s] = candidate.trim().split(':').map(Number);
+      if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
+    }
   }
   // Derived: distance + duration
   const dist = Number(item.distanceMeters || item.distance) || 0;
@@ -1296,6 +1301,12 @@ export default function NativeTrainingPage({
                   }}>
                     {METRICS.map(m => {
                       const on = selectedMetric === m.id;
+                      // For run/swim the "power" slot represents PACE (sec/km
+                      // or sec/100m). Show that as the label so the runners
+                      // don't see "Power" with no values.
+                      const label = m.id === 'power' && (currentSport === 'run' || currentSport === 'swim')
+                        ? 'Pace'
+                        : m.label;
                       return (
                         <button
                           key={m.id}
@@ -1315,7 +1326,7 @@ export default function NativeTrainingPage({
                             WebkitTapHighlightColor: 'transparent',
                           }}
                         >
-                          {m.label}
+                          {label}
                         </button>
                       );
                     })}
