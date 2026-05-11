@@ -310,10 +310,11 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
             dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             Fitness: Math.round(ctl),
             Form: Math.round(form),
-            Fatigue: Math.round(atl)
+            Fatigue: Math.round(atl),
+            TSS: Math.round(tssToday)
           });
         }
-        
+
         // Suggest GC every 100 days
         gcCounter++;
         if (gcCounter % 100 === 0 && global.gc) {
@@ -348,7 +349,8 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
             dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             Fitness: Math.round(ctl),
             Form: Math.round(form),
-            Fatigue: Math.round(atl)
+            Fatigue: Math.round(atl),
+            TSS: Math.round(tssToday)
           });
         }
       }

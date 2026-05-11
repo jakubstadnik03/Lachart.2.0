@@ -59,6 +59,9 @@ async function getValidStravaToken(user) {
  */
 async function syncStravaForUser(user) {
   let imported = 0;
+  // Track stravaId of newly-imported activities so the push notification can
+  // deep-link to the most recent one (great for the "tap → add lactate" flow).
+  const importedActivityIds = [];
   let updated = 0;
   
   try {
@@ -145,8 +148,10 @@ async function syncStravaForUser(user) {
               { upsert: true }
             );
             
-            if (resUp.upsertedCount > 0) imported += 1;
-            else if (resUp.modifiedCount > 0) updated += 1;
+            if (resUp.upsertedCount > 0) {
+              imported += 1;
+              importedActivityIds.push(a.id);
+            } else if (resUp.modifiedCount > 0) updated += 1;
           } catch (dbErr) {
             console.error(`[StravaAutoSync] Error saving activity ${a.id}:`, dbErr.message);
           }
@@ -197,8 +202,14 @@ async function syncStravaForUser(user) {
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
 
     if (imported > 0) {
+      // Push the newest imported activity ID so the mobile app can deep-link
+      // straight into that activity (single-activity case = "tap → add lactate")
+      const latestImportedId = importedActivityIds.length === 1
+        ? importedActivityIds[0]
+        : null;
+
       const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-      notifyUserStravaActivitiesImported(user._id, imported).catch((e) =>
+      notifyUserStravaActivitiesImported(user._id, imported, { latestActivityId: latestImportedId }).catch((e) =>
         console.error('[StravaAutoSync] push notify:', e.message || e)
       );
 
@@ -207,13 +218,14 @@ async function syncStravaForUser(user) {
       // stayed empty after a background import.
       const { sendNotification } = require('../utils/notificationHelper');
       const body = imported === 1
-        ? '1 new activity imported from Strava.'
+        ? '1 new activity imported — tap to add lactate.'
         : `${imported} new activities imported from Strava.`;
       sendNotification(String(user._id), {
         type: 'strava_import',
         title: 'Strava sync',
         body,
         resourceType: 'strava',
+        resourceId: latestImportedId ? String(latestImportedId) : undefined,
       }).catch((e) => console.error('[StravaAutoSync] in-app notify:', e.message || e));
     }
 

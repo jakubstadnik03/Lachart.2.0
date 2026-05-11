@@ -514,6 +514,89 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                     ))}
                   </div>
 
+                  {/* Training zones — derived from this test's thresholds */}
+                  {(() => {
+                    const zones = calculateZonesFromTest(selected);
+                    if (!zones) return null;
+                    const isPace = isPaceSport(selectedTh.sport);
+                    const root = isPace ? zones.pace : zones.power;
+                    const hr = zones.heartRate;
+                    if (!root && !hr) return null;
+                    const primaryHeader = isPace ? 'Pace' : 'Power';
+                    return (
+                      <div style={{
+                        marginBottom: 11,
+                        padding: '8px 10px',
+                        borderRadius: 11,
+                        background: 'rgba(255,255,255,.5)',
+                        border: '1px solid rgba(118,126,181,.12)',
+                        animation: 'ndPopIn .45s 280ms cubic-bezier(.22,1.4,.36,1) both',
+                      }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          marginBottom: 6,
+                        }}>
+                          <SectionTitle>Training zones</SectionTitle>
+                        </div>
+                        {/* Header */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '52px 1fr 1fr',
+                          gap: 6,
+                          padding: '0 0 4px',
+                          borderBottom: '1px solid rgba(118,126,181,.1)',
+                          fontSize: 8.5, fontWeight: 800, color: '#9CA3AF',
+                          letterSpacing: '0.04em', textTransform: 'uppercase',
+                        }}>
+                          <span>Zone</span>
+                          <span style={{ textAlign: 'right' }}>{primaryHeader}</span>
+                          <span style={{ textAlign: 'right' }}>HR</span>
+                        </div>
+                        {ZONE_DEFS.map((z, i) => {
+                          const primary = root && root[z.zoneKey]
+                            ? (isPace
+                              ? `${root[z.zoneKey].min}–${root[z.zoneKey].max}`
+                              : `${root[z.zoneKey].min}–${root[z.zoneKey].max} W`)
+                            : '—';
+                          const hrCell = hr && hr[z.zoneKey]
+                            ? `${hr[z.zoneKey].min}–${hr[z.zoneKey].max}`
+                            : '—';
+                          return (
+                            <div key={z.key} style={{
+                              display: 'grid',
+                              gridTemplateColumns: '52px 1fr 1fr',
+                              gap: 6, alignItems: 'center',
+                              padding: '5px 0',
+                              borderBottom: i < ZONE_DEFS.length - 1
+                                ? '1px solid rgba(118,126,181,.07)'
+                                : 'none',
+                              animation: `ndFadeIn .35s ${i * 35}ms cubic-bezier(.22,1,.36,1) both`,
+                            }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 10, fontWeight: 800, color: z.color,
+                              }}>
+                                <span style={{
+                                  width: 6, height: 6, borderRadius: '50%',
+                                  background: z.color, flexShrink: 0,
+                                }} />
+                                Z{i + 1}
+                              </span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: '#0A0E1A',
+                                fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                              }}>{primary}</span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: '#B84238',
+                                fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                              }}>{hrCell}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
                   {/* Open in full editor */}
                   <button
                     onClick={() => navigate(`/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1`)}

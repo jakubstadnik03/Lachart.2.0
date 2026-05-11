@@ -43,7 +43,10 @@ export const NotificationProvider = ({ children }) => {
   return (
     <NotificationContext.Provider value={{ addNotification, removeNotification }}>
       {children}
-      <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 pointer-events-none">
+      <div
+        className="fixed right-4 z-[10000] flex flex-col gap-2 pointer-events-none"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)', left: 16 }}
+      >
         <AnimatePresence>
           {notifications.map((notification) => {
             let styleObj = {};

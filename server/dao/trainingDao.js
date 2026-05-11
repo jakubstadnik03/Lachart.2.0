@@ -15,7 +15,11 @@ class TrainingDao {
       // Convert ObjectId to string since athleteId is stored as String in the schema
       const athleteIdStr = athleteId instanceof mongoose.Types.ObjectId ? athleteId.toString() : String(athleteId);
       const trainings = await this.Training.find({ athleteId: athleteIdStr })
-        .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
+        // Return all fields. The earlier .select() projection dropped
+        // `type`, `description`, top-level `lactate`/`rpe`, and `createdAt`
+        // — which the client uses to render exported lactate trainings.
+        // Performance is fine without it: per-athlete docs are small and
+        // few thousand at most.
         .lean();
       if (process.env.NODE_ENV !== 'production') {
       console.log('Found trainings:', trainings.length);
@@ -44,7 +48,11 @@ class TrainingDao {
         id instanceof mongoose.Types.ObjectId ? id.toString() : String(id)
       );
       const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } })
-        .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
+        // Return all fields. The earlier .select() projection dropped
+        // `type`, `description`, top-level `lactate`/`rpe`, and `createdAt`
+        // — which the client uses to render exported lactate trainings.
+        // Performance is fine without it: per-athlete docs are small and
+        // few thousand at most.
         .lean();
       if (process.env.NODE_ENV !== 'production') {
       console.log('Found trainings:', trainings.length);
@@ -159,7 +167,6 @@ class TrainingDao {
         athleteId: userIdStr 
       })
       .sort({ date: -1 })
-      .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
       .lean();
       
       if (process.env.NODE_ENV !== 'production') {

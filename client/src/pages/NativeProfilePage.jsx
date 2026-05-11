@@ -5,7 +5,7 @@ import {
   SportTile, LacValueChip, ThresholdChip, KpiTile, GlassCard, SectionTitle,
   normSport, SPORT_TINT,
 } from '../components/native/shared/Tiles';
-import api, { getTestingsByAthleteId } from '../services/api';
+import api, { getTestingsByAthleteId, updateUserProfile } from '../services/api';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
@@ -455,7 +455,14 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
             </GlassCard>
           </div>
 
-          <div style={{ height: 16 }} />
+          {/* ─── Training zones per sport (editable) ─── */}
+          {!isViewingOtherAthlete && (
+            <div style={{ ...cardEntry(4), ...snap }}>
+              <TrainingZonesSection user={u} tests={tests} />
+            </div>
+          )}
+
+          <div style={{ height: 32 }} />
         </div>
       </div>
     </>
@@ -512,3 +519,367 @@ const styles = {
     WebkitTapHighlightColor: 'transparent',
   },
 };
+
+// ─── TrainingZonesSection — editable LT1/LT2/MaxHR per sport ─────────────────
+// Shows the current power/pace + heart-rate zones derived from the user's
+// thresholds for each sport. "Edit" expands an inline form where the user can
+// override LT1, LT2 and MaxHR; on save we recompute the 5 zones and PUT the
+// full powerZones + heartRateZones objects to the user via /user/edit-profile.
+
+const ZONE_DEFS = [
+  { key: 'zone1', label: 'Z1 Recovery',   color: '#60A5FA' },
+  { key: 'zone2', label: 'Z2 Endurance',  color: '#34D399' },
+  { key: 'zone3', label: 'Z3 Tempo',      color: '#FBBF24' },
+  { key: 'zone4', label: 'Z4 Threshold',  color: '#F97316' },
+  { key: 'zone5', label: 'Z5 VO2max',     color: '#F43F5E' },
+];
+
+// Server keys are 'cycling' / 'running' / 'swimming' but native pages use
+// 'bike' / 'run' / 'swim'. Map both ways.
+const SHORT_TO_LONG = { bike: 'cycling', run: 'running', swim: 'swimming' };
+
+// Compute power/pace + HR zones from raw threshold inputs (mirrors zoneCalculator).
+function computeZonesFromThresholds({ sport, lt1, lt2, hr1, hr2 }) {
+  const v = (n) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null;
+  const lt1v = v(lt1); const lt2v = v(lt2);
+  const hr1v = v(hr1); const hr2v = v(hr2);
+  const heartRateZones = (hr1v && hr2v) ? {
+    zone1: { min: Math.round(hr1v * 0.50), max: Math.round(hr1v * 0.90) },
+    zone2: { min: Math.round(hr1v * 0.90), max: Math.round(hr1v * 1.00) },
+    zone3: { min: Math.round(hr1v * 1.00), max: Math.round(hr2v * 0.95) },
+    zone4: { min: Math.round(hr2v * 0.96), max: Math.round(hr2v * 1.04) },
+    zone5: { min: Math.round(hr2v * 1.05), max: Math.round(hr2v * 1.30) },
+    maxHeartRate: Math.round(hr2v * 1.10),
+  } : null;
+  if (!lt1v || !lt2v) return { primary: null, heartRateZones };
+  if (sport === 'bike') {
+    return {
+      primary: {
+        zone1: { min: Math.round(lt1v * 0.50), max: Math.round(lt1v * 0.90) },
+        zone2: { min: Math.round(lt1v * 0.90), max: Math.round(lt1v * 1.00) },
+        zone3: { min: Math.round(lt1v * 1.00), max: Math.round(lt2v * 0.95) },
+        zone4: { min: Math.round(lt2v * 0.96), max: Math.round(lt2v * 1.04) },
+        zone5: { min: Math.round(lt2v * 1.05), max: Math.round(lt2v * 1.30) },
+        lt1: lt1v, lt2: lt2v,
+      },
+      heartRateZones,
+    };
+  }
+  // run / swim — pace seconds (smaller = faster)
+  return {
+    primary: {
+      zone1: { min: Math.round(lt1v / 0.50), max: Math.round(lt1v / 0.90) },
+      zone2: { min: Math.round(lt1v / 0.90), max: Math.round(lt1v / 1.00) },
+      zone3: { min: Math.round(lt1v / 1.00), max: Math.round(lt2v / 0.95) },
+      zone4: { min: Math.round(lt2v / 0.96), max: Math.round(lt2v / 1.04) },
+      zone5: { min: Math.round(lt2v / 1.05), max: Math.round(lt2v / 1.10) },
+      lt1: lt1v, lt2: lt2v,
+    },
+    heartRateZones,
+  };
+}
+
+// Pick best initial threshold values: explicit user override → latest test extract.
+function pickInitialThresholds(user, tests, sport) {
+  const longKey = SHORT_TO_LONG[sport];
+  const userPZ = user?.powerZones?.[longKey];
+  const userHR = user?.heartRateZones?.[longKey];
+  let lt1 = userPZ?.lt1 ?? null;
+  let lt2 = userPZ?.lt2 ?? null;
+  let hr1 = userHR?.lt1 ?? null;
+  let hr2 = userHR?.lt2 ?? userHR?.maxHeartRate ?? null;
+  if (lt1 == null || lt2 == null || hr1 == null || hr2 == null) {
+    const sportTests = (tests || [])
+      .filter(t => normSport(t?.sport) === sport)
+      .sort((a, b) => new Date(b?.date || b?.testDate || 0) - new Date(a?.date || a?.testDate || 0));
+    const latest = sportTests[0];
+    if (latest) {
+      const th = extractThresholds(latest);
+      if (th) {
+        if (lt1 == null) lt1 = th.lt1;
+        if (lt2 == null) lt2 = th.lt2;
+        if (hr1 == null) hr1 = th.lt1Hr;
+        if (hr2 == null) hr2 = th.lt2Hr;
+      }
+    }
+  }
+  return { lt1, lt2, hr1, hr2 };
+}
+
+function fmtPaceVal(sec) {
+  if (!sec) return '—';
+  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+}
+
+function TrainingZonesSection({ user, tests }) {
+  const [openSport, setOpenSport] = useState(null); // 'bike' | 'run' | 'swim' | null
+  const [overrides, setOverrides] = useState({});  // { bike: {primary, heartRateZones}, ... } — applied locally after save
+  return (
+    <GlassCard>
+      <div style={{ marginBottom: 9 }}>
+        <SectionTitle>Training zones</SectionTitle>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {['bike', 'run', 'swim'].map(sport => (
+          <SportZonesBlock
+            key={sport}
+            sport={sport}
+            user={user}
+            tests={tests}
+            override={overrides[sport]}
+            isOpen={openSport === sport}
+            onToggle={() => setOpenSport(prev => (prev === sport ? null : sport))}
+            onSaved={(zones) => {
+              setOverrides(prev => ({ ...prev, [sport]: zones }));
+              setOpenSport(null);
+            }}
+          />
+        ))}
+      </div>
+    </GlassCard>
+  );
+}
+
+function SportZonesBlock({ sport, user, tests, override, isOpen, onToggle, onSaved }) {
+  const isPace = isPaceSport(sport);
+  const tint = SPORT_TINT[sport];
+  const initial = useMemo(() => pickInitialThresholds(user, tests, sport), [user, tests, sport]);
+
+  // Computed zones for display (local override > user.powerZones > derived from latest test)
+  const display = useMemo(() => {
+    if (override?.primary || override?.heartRateZones) return override;
+    const longKey = SHORT_TO_LONG[sport];
+    const userPZ = user?.powerZones?.[longKey];
+    const userHR = user?.heartRateZones?.[longKey];
+    const hasUserPrimary = userPZ?.zone1 && userPZ?.zone1.min != null;
+    const hasUserHR      = userHR?.zone1 && userHR?.zone1.min != null;
+    if (hasUserPrimary || hasUserHR) {
+      return {
+        primary: hasUserPrimary ? userPZ : null,
+        heartRateZones: hasUserHR ? userHR : null,
+      };
+    }
+    // fall back to derive from initial extracted thresholds
+    return computeZonesFromThresholds({
+      sport,
+      lt1: initial.lt1, lt2: initial.lt2,
+      hr1: initial.hr1, hr2: initial.hr2,
+    });
+  }, [override, user, sport, initial]);
+
+  const hasAnything = display?.primary || display?.heartRateZones;
+  return (
+    <div style={{
+      borderRadius: 12,
+      background: 'rgba(255,255,255,.55)',
+      border: `1px solid ${tint}26`,
+      borderLeft: `3px solid ${tint}`,
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 11px',
+      }}>
+        <SportTile sport={sport} size={28} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#0A0E1A', textTransform: 'capitalize' }}>
+            {sport}
+          </div>
+          <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600 }}>
+            {hasAnything ? `LT1 ${isPace ? fmtPaceVal(display.primary?.lt1 || initial.lt1) : `${Math.round(display.primary?.lt1 || initial.lt1 || 0)} W`} · LT2 ${isPace ? fmtPaceVal(display.primary?.lt2 || initial.lt2) : `${Math.round(display.primary?.lt2 || initial.lt2 || 0)} W`}` : 'No thresholds set'}
+          </div>
+        </div>
+        <button
+          onClick={onToggle}
+          style={{
+            padding: '4px 10px', borderRadius: 9999,
+            background: isOpen ? tint : `${tint}1f`,
+            color: isOpen ? '#fff' : tint,
+            border: 'none', fontFamily: 'inherit',
+            fontSize: 10.5, fontWeight: 800, cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+          }}
+        >
+          {isOpen ? 'Cancel' : 'Edit'}
+        </button>
+      </div>
+
+      {/* Zones table */}
+      {hasAnything && (
+        <div style={{ padding: '0 11px 8px' }}>
+          {ZONE_DEFS.map((z, i) => {
+            const p = display.primary?.[z.key];
+            const h = display.heartRateZones?.[z.key];
+            const primaryStr = p
+              ? (isPace ? `${p.min}–${p.max}` : `${p.min}–${p.max} W`)
+              : '—';
+            const hrStr = h ? `${h.min}–${h.max} bpm` : '—';
+            return (
+              <div key={z.key} style={{
+                display: 'grid',
+                gridTemplateColumns: '90px 1fr 80px',
+                gap: 6, alignItems: 'center',
+                padding: '4px 0',
+                borderTop: i === 0 ? '1px solid rgba(118,126,181,.1)' : 'none',
+                borderBottom: i < ZONE_DEFS.length - 1 ? '1px solid rgba(118,126,181,.07)' : 'none',
+              }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontSize: 10, fontWeight: 800, color: z.color,
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: z.color, flexShrink: 0 }} />
+                  {z.label}
+                </span>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 700, color: '#0A0E1A',
+                  fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                }}>{primaryStr}</span>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 700, color: '#B84238',
+                  fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                }}>{hrStr}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Edit form */}
+      {isOpen && (
+        <ZonesEditor
+          sport={sport}
+          initial={initial}
+          tint={tint}
+          onCancel={onToggle}
+          onSaved={onSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+function ZonesEditor({ sport, initial, tint, onCancel, onSaved }) {
+  const isPace = isPaceSport(sport);
+  // Pace inputs use MM:SS, power inputs use raw numbers
+  const fmtIn = (v) => {
+    if (v == null) return '';
+    if (isPace) return fmtPaceVal(v);
+    return String(Math.round(v));
+  };
+  const parseIn = (str) => {
+    if (str == null || str === '') return null;
+    if (isPace) {
+      const m = String(str).trim().match(/^(\d+):(\d{1,2})$/);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+      const n = Number(str);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    const n = Number(str);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  const [lt1, setLt1] = useState(fmtIn(initial.lt1));
+  const [lt2, setLt2] = useState(fmtIn(initial.lt2));
+  const [hr1, setHr1] = useState(initial.hr1 ? String(Math.round(initial.hr1)) : '');
+  const [hr2, setHr2] = useState(initial.hr2 ? String(Math.round(initial.hr2)) : '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const lt1v = parseIn(lt1);
+      const lt2v = parseIn(lt2);
+      const hr1v = Number(hr1) || null;
+      const hr2v = Number(hr2) || null;
+      const computed = computeZonesFromThresholds({ sport, lt1: lt1v, lt2: lt2v, hr1: hr1v, hr2: hr2v });
+      const longKey = SHORT_TO_LONG[sport];
+      const payload = {
+        powerZones: { [longKey]: { ...(computed.primary || {}), lastUpdated: new Date() } },
+        heartRateZones: { [longKey]: { ...(computed.heartRateZones || {}), lastUpdated: new Date() } },
+        zonesSource: 'profile-mobile',
+      };
+      await updateUserProfile(payload);
+      onSaved(computed);
+    } catch (e) {
+      setErr(e?.response?.data?.message || e?.message || 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputStyle = {
+    flex: 1, minWidth: 0,
+    padding: '6px 9px', borderRadius: 8,
+    border: '1px solid rgba(118,126,181,.25)', background: '#fff',
+    fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#0A0E1A',
+    fontVariantNumeric: 'tabular-nums',
+    outline: 'none',
+    WebkitAppearance: 'none',
+  };
+  const labelStyle = {
+    fontSize: 9, fontWeight: 800, color: '#6B7280',
+    letterSpacing: '0.06em', textTransform: 'uppercase',
+    marginBottom: 3,
+  };
+
+  return (
+    <div style={{
+      padding: '10px 11px 12px',
+      borderTop: '1px solid rgba(118,126,181,.12)',
+      background: 'rgba(118,126,181,.05)',
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={labelStyle}>LT1 ({isPace ? 'MM:SS' : 'W'})</span>
+          <input value={lt1} onChange={e => setLt1(e.target.value)} placeholder={isPace ? '5:30' : '180'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={labelStyle}>LT2 ({isPace ? 'MM:SS' : 'W'})</span>
+          <input value={lt2} onChange={e => setLt2(e.target.value)} placeholder={isPace ? '4:30' : '250'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={labelStyle}>LT1 HR (bpm)</span>
+          <input value={hr1} onChange={e => setHr1(e.target.value)} placeholder="140" style={inputStyle} inputMode="numeric" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={labelStyle}>LT2 HR (bpm)</span>
+          <input value={hr2} onChange={e => setHr2(e.target.value)} placeholder="170" style={inputStyle} inputMode="numeric" />
+        </div>
+      </div>
+      {err && (
+        <div style={{ fontSize: 10.5, color: '#B84238', fontWeight: 700 }}>{err}</div>
+      )}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          style={{
+            padding: '6px 12px', borderRadius: 8,
+            background: 'rgba(118,126,181,.12)', color: '#5E6590',
+            border: 'none', fontFamily: 'inherit',
+            fontSize: 11, fontWeight: 800, cursor: busy ? 'not-allowed' : 'pointer',
+            opacity: busy ? 0.5 : 1,
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >Cancel</button>
+        <button
+          onClick={save}
+          disabled={busy}
+          style={{
+            padding: '6px 14px', borderRadius: 8,
+            background: tint, color: '#fff',
+            border: 'none', fontFamily: 'inherit',
+            fontSize: 11, fontWeight: 800, cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.7 : 1,
+            boxShadow: `0 2px 6px -1px ${tint}66`,
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >{busy ? 'Saving…' : 'Save zones'}</button>
+      </div>
+    </div>
+  );
+}

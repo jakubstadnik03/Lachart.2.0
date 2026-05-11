@@ -631,12 +631,16 @@ export default function NativeDashboardPage({
             <ZoneDistCard activities={activities} tests={tests} />
           </div>
 
-          {/* 6 · Last lab test */}
-          <div style={{ ...cardEntry(6), ...snapStyle }}>
+          {/* 6 · Last lab test — drop snap-align on the last card so its tail
+              isn't clipped by scroll-snap when the content is tall (zones table
+              pushes the card past one viewport on smaller phones). */}
+          <div style={{ ...cardEntry(6) }}>
             <LastTestCard tests={tests} />
           </div>
 
-          <div style={{ height: 16 }} />
+          {/* Generous bottom spacer so the very last row isn't hidden behind
+              the bottom tab bar + iOS home-indicator on tall layouts. */}
+          <div style={{ height: 48 }} />
         </div>
       </div>
 

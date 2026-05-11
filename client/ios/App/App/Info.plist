@@ -50,6 +50,10 @@
 	<!-- NSBluetoothAlwaysUsageDescription only (NSBluetoothPeripheralUsageDescription is deprecated since iOS 13) -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>LaChart connects to your smart trainer, heart rate monitor, and other training sensors via Bluetooth to record power, cadence, heart rate, and other metrics.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>LaChart imports your workouts from Apple Health so they appear alongside your tests and training history.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>LaChart never writes to Apple Health — only reads workouts to display them.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

@@ -31,6 +31,14 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      // Optional custom inline fallback — used by partial-page boundaries
+      // (e.g. test detail) so a single bad item shows a small error card
+      // instead of taking over the whole viewport.
+      if (this.props.fallback) {
+        return typeof this.props.fallback === 'function'
+          ? this.props.fallback(this.state.error)
+          : this.props.fallback;
+      }
       return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">

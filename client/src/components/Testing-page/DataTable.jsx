@@ -1302,7 +1302,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     }
 
     const isPaceSport = sport === 'run' || sport === 'swim';
-    const effectiveBaseLactate = baseLactate || 1.0;
+    // Sanitise baseLactate the same way as analyzeLactateTest: never let it
+    // exceed the lowest measured lactate (would otherwise cascade into bogus
+    // thresholds and, historically, freeze the page).
+    const rawBase = baseLactate != null && Number.isFinite(Number(baseLactate)) && Number(baseLactate) > 0
+      ? Number(baseLactate) : null;
+    const allLac = results
+      .map(r => Number(String(r.lactate ?? '').replace(',', '.')))
+      .filter(v => Number.isFinite(v) && v > 0);
+    const minLac = allLac.length ? Math.min(...allLac) : null;
+    const effectiveBaseLactate = rawBase != null
+      ? (minLac != null ? Math.min(rawBase, minLac) : rawBase)
+      : 1.0;
     
     // Seřadit data podle power/pace
     const sortedResults = [...results].sort((a, b) => {
@@ -2787,9 +2798,21 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   
     // Najít LTP body pomocí D-max metody (PŘED interpolací, aby měly prioritu)
     const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport);
-    
-    // Definice cílových laktátů (použít baseLactate pokud je definováno, jinak použít výchozí hodnoty)
-    const effectiveBaseLactate = baseLactate || 1.0; // Fallback na 1.0 pokud není definováno
+
+    // Definice cílových laktátů. Stejná sanity check jako uvnitř
+    // findLactateThresholds: baseLactate se nesmí dostat nad nejmenší naměřenou
+    // hodnotu, jinak interpolace LT1 = base + 0.5 vrátí targety mimo data → NaN.
+    const rawBaseEff = baseLactate != null && Number.isFinite(Number(baseLactate)) && Number(baseLactate) > 0
+      ? Number(baseLactate) : null;
+    const minLacEff = (() => {
+      const vs = sortedResults
+        .map(r => Number(String(r.lactate ?? '').replace(',', '.')))
+        .filter(v => Number.isFinite(v) && v > 0);
+      return vs.length ? Math.min(...vs) : null;
+    })();
+    const effectiveBaseLactate = rawBaseEff != null
+      ? (minLacEff != null ? Math.min(rawBaseEff, minLacEff) : rawBaseEff)
+      : 1.0;
     
     // Použít stejnou polynomiální křivku jako v grafu pro výpočet LTP1 a LTP2
     // Toto zajistí konzistenci mezi grafem a tabulkou

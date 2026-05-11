@@ -9,7 +9,7 @@
 // Tapping any activity opens the same ActivityFullModal CalendarView uses
 // (Summary / Laps / Edit · stats · map · chart · Lactate button).
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
@@ -83,9 +83,37 @@ function hasLaps(a) {
 function activityKey(a) { if (!a) return ''; return String(a.stravaId || a._id || a.id || ''); }
 
 // Parse a "result" interval's duration (seconds). Mirrors TrainingComparison.
+// Handles both time-based intervals (duration is seconds) and distance-based
+// intervals (duration field actually holds the distance — e.g. "800" for 800m
+// — so we derive time from distance × pace).
 function parseResultDurationSec(r) {
   if (!r) return 0;
   if (r.durationSeconds > 0) return r.durationSeconds;
+  // Distance-type intervals: derive time from distance + pace (power field
+  // stores pace as sec/km for run / sec/100m for swim).
+  if (r.durationType === 'distance') {
+    const distM = Number(r.distanceMeters || r.distance || r.duration) || 0;
+    if (distM > 0) {
+      // Pace can be MM:SS string or numeric string of seconds
+      let paceSec = 0;
+      const p = r.power;
+      if (typeof p === 'string') {
+        const mmss = p.trim().match(/^(\d+):(\d{2})$/);
+        if (mmss) paceSec = Number(mmss[1]) * 60 + Number(mmss[2]);
+        else if (/^\d+(\.\d+)?$/.test(p.trim())) paceSec = Number(p);
+      } else if (typeof p === 'number') {
+        paceSec = p;
+      }
+      if (paceSec > 0) {
+        // Pace assumed sec/km unless distance suggests swim (≤ 1000m laps usually)
+        // — bar width doesn't need to be exact, just proportional.
+        return (distM / 1000) * paceSec;
+      }
+      // No pace info — fall back to distance as a relative weight so the
+      // bars at least get sized proportionally to the lap's distance.
+      return distM;
+    }
+  }
   if (r.durationType === 'time' && typeof r.duration === 'number' && r.duration > 0) return r.duration;
   if (typeof r.duration === 'string') {
     const parts = r.duration.split(':');
@@ -237,26 +265,67 @@ function fmtPace(secPerKm) {
 }
 
 // Compute pace seconds/km from a result interval (run/swim)
-function intervalPaceSec(item) {
+function intervalPaceSec(item, sport) {
   if (!item) return null;
+  // Realistic pace bounds upfront so every branch can validate.
+  const minSec = sport === 'swim' ? 25 : 100;
+  const maxSec = sport === 'swim' ? 600 : 1200;
+  const inRange = (n) => Number.isFinite(n) && n >= minSec && n <= maxSec;
   // Direct pace fields
-  if (item.paceSeconds && item.paceSeconds > 0) return item.paceSeconds;
-  // Run/swim Training records store pace as "MM:SS" inside the `power` field
-  // (the export-to-training flow writes pace there for non-bike sports).
-  const paceLike = (v) => typeof v === 'string' && /^\d+:\d{2}$/.test(v.trim());
-  for (const candidate of [item.pace, item.power]) {
-    if (paceLike(candidate)) {
-      const [m, s] = candidate.trim().split(':').map(Number);
-      if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
+  if (item.paceSeconds && inRange(item.paceSeconds)) return item.paceSeconds;
+  // Try to read pace from `pace` first, then `power`. Run/swim Training
+  // records store pace inside `power` — TrainingForm submits it either as
+  // "MM:SS" (free-text) OR as a plain numeric string of seconds. We must
+  // ONLY accept a raw number when we know the sport is run/swim, otherwise
+  // a wattage value (e.g. 250 W) would be mistaken for "4:10/km".
+  const allowNumeric = sport === 'run' || sport === 'swim';
+  const paceFromField = (v) => {
+    if (v == null) return null;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      const mmss = s.match(/^(\d+):(\d{2})$/);
+      if (mmss) {
+        const m = Number(mmss[1]);
+        const sec = Number(mmss[2]);
+        if (Number.isFinite(m) && Number.isFinite(sec)) {
+          const total = m * 60 + sec;
+          if (total >= minSec && total <= maxSec) return total;
+          if (!allowNumeric) return null;
+          return total;
+        }
+      }
+      if (allowNumeric && /^\d+(\.\d+)?$/.test(s)) {
+        const n = Number(s);
+        if (n >= minSec && n <= maxSec) return n;
+      }
+    } else if (typeof v === 'number' && allowNumeric && v >= minSec && v <= maxSec) {
+      return v;
     }
+    return null;
+  };
+  for (const candidate of [item.pace, item.power]) {
+    const p = paceFromField(candidate);
+    if (p != null) return p;
   }
   // Derived: distance + duration
   const dist = Number(item.distanceMeters || item.distance) || 0;
   const dur  = parseResultDurationSec(item);
-  if (dist > 0 && dur > 0) return (dur / dist) * 1000; // sec per km
-  // Strava lap shape
+  if (dist > 0 && dur > 0) {
+    const pace = (dur / dist) * 1000; // sec per km
+    // Convert to sec/100m for swim
+    if (sport === 'swim') {
+      const pace100 = pace / 10;
+      if (pace100 >= minSec && pace100 <= maxSec) return pace100;
+      return null;
+    }
+    if (pace >= minSec && pace <= maxSec) return pace;
+    return null;
+  }
   const speed = Number(item.average_speed) || 0; // m/s
-  if (speed > 0) return 1000 / speed;
+  if (speed > 0) {
+    const sec = sport === 'swim' ? 100 / speed : 1000 / speed;
+    if (sec >= minSec && sec <= maxSec) return sec;
+  }
   return null;
 }
 
@@ -273,26 +342,38 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
   const sportIsPace = sport === 'run' || sport === 'swim';
   const isPace = sportIsPace && metric === 'power';
 
-  // Tap-tooltip state — first tap shows lap details, "Open" button opens activity
-  const [tooltip, setTooltip] = useState(null);
-  // { session, lapIdx, value, lactate, durationSec, x, y, color }
-  const closeTooltip = () => setTooltip(null);
+  // Selection state — tapped lap shows its details ABOVE the chart in a fixed
+  // info row instead of a floating popup. Tap the same bar (or empty area)
+  // to deselect.
+  const [selected, setSelected] = useState(null);
+  // { sessionId, lapIdx, sessionTitle, sessionDate, sessionColor,
+  //   value, lactate, durationSec, session }
+  const clearSelection = () => setSelected(null);
 
-  // Build per-session data: [{ id, date, laps:[{value, lactate, durationSec}], color }]
+  // Build per-session data with full per-lap details so the SelectedLapInfo
+  // strip can show distance, time, HR, lactate, RPE alongside the active metric.
   const data = useMemo(() => {
     return sessions.map((s, i) => {
       const intervals = getIntervals(s);
       const laps = intervals.map((iv, idx) => {
         let v = null;
-        if (isPace) v = intervalPaceSec(iv);
+        if (isPace) v = intervalPaceSec(iv, sport);
         else        v = getIntervalMetric(iv, metric);
         const durSec = parseResultDurationSec(iv) ||
                        Number(iv.moving_time || iv.elapsed_time) || 0;
+        const hr = Number(iv.heartRate ?? iv.average_heartrate ?? iv.avgHeartRate) || null;
+        const dist = Number(iv.distanceMeters ?? iv.distance) || null;
+        const pace = (sport === 'run' || sport === 'swim') ? intervalPaceSec(iv, sport) : null;
+        const power = sport === 'bike'
+          ? Number(iv.power ?? iv.average_watts ?? iv.avgPower) || null
+          : null;
+        const rpe = Number(iv.RPE ?? iv.rpe) || null;
         return {
           idx,
           value: v,
           lactate: intervalLactate(iv),
           durationSec: durSec,
+          hr, dist, pace, power, rpe,
         };
       }).filter(l => l.value != null && l.value > 0);
       return {
@@ -303,7 +384,7 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
         meta: s,
       };
     }).filter(s => s.laps.length > 0);
-  }, [sessions, metric, isPace]);
+  }, [sessions, metric, isPace, sport]);
 
   if (data.length === 0) {
     return (
@@ -368,10 +449,23 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
   return (
     <div style={{ position: 'relative', width: '100%' }}
       onClick={(e) => {
-        // Tap on chart background (not a bar) → close any open tooltip
-        if (e.target.tagName !== 'rect') closeTooltip();
+        // Tap on chart background (not a bar) → clear selection
+        if (e.target.tagName !== 'rect') clearSelection();
       }}
     >
+    {/* Selected-lap info row — sits ABOVE the chart so the user always sees
+        which lap they tapped without a popup obscuring the bars. */}
+    <SelectedLapInfo
+      selected={selected}
+      onOpen={() => {
+        if (!selected) return;
+        const s = selected.session;
+        clearSelection();
+        onSessionTap && onSessionTap(s);
+      }}
+      onClear={clearSelection}
+      formatValue={fmtTooltipValue}
+    />
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
       style={{ width: '100%', height: H, display: 'block' }}>
 
@@ -439,11 +533,16 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
                 const lacCol = lactateColor(l.lactate);
                 const fill = lacCol || s.color;
 
-                // Tap a bar → show tooltip with lap details. Tooltip "Open" → activity.
+                const isSelectedBar = selected
+                  && selected.sessionId === s.id
+                  && selected.lapIdx === li + 1;
+
+                // Tap a bar → select (or deselect on second tap of same bar)
                 const handleBarTap = (e) => {
                   e.stopPropagation();
-                  // Position tooltip in chart coordinate space (0..W, 0..H)
-                  setTooltip({
+                  if (isSelectedBar) { clearSelection(); return; }
+                  setSelected({
+                    sessionId: s.id,
                     session: s.meta,
                     sessionDate: s.date,
                     sessionTitle: s.meta?.title || s.meta?.name || s.meta?.titleManual || 'Training',
@@ -453,9 +552,13 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
                     value: l.value,
                     lactate: l.lactate,
                     durationSec: l.durationSec,
+                    hr: l.hr,
+                    dist: l.dist,
+                    pace: l.pace,
+                    power: l.power,
+                    rpe: l.rpe,
+                    sport,
                     isPace,
-                    barX: x + lapW / 2,
-                    barY: barTop,
                     metric,
                   });
                 };
@@ -469,11 +572,15 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
                     height={Math.max(1.5, h)}
                     rx={Math.min(2, lapW / 2)}
                     fill={fill}
+                    stroke={isSelectedBar ? '#0A0E1A' : 'none'}
+                    strokeWidth={isSelectedBar ? 1.5 : 0}
                     onClick={handleBarTap}
                     style={{
                       transformOrigin: `${x + lapW / 2}px ${baselineY}px`,
                       animation: `ndBarGrow .55s ${100 + si * 50 + li * 25}ms cubic-bezier(.22,1,.36,1) both`,
                       cursor: 'pointer',
+                      filter: selected && !isSelectedBar ? 'opacity(0.55)' : 'none',
+                      transition: 'filter .2s ease',
                     }}
                   />
                 );
@@ -501,33 +608,156 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
       })()}
     </svg>
 
-    {/* Floating lap tooltip — appears on bar tap */}
-    {tooltip && (() => {
-      const leftPct = (tooltip.barX / W) * 100;
-      const topPx = (tooltip.barY / H) * H;
-      const showAbove = tooltip.barY > 80;
-      return (
-        <ChartTooltip
-          leftPct={leftPct}
-          topPx={topPx}
-          showAbove={showAbove}
-          color={tooltip.sessionColor}
-          title={tooltip.sessionTitle}
-          date={tooltip.sessionDate}
-          lapIdx={tooltip.lapIdx}
-          lapCount={tooltip.lapCount}
-          value={fmtTooltipValue(tooltip.value)}
-          lactate={tooltip.lactate}
-          durationSec={tooltip.durationSec}
-          onClose={closeTooltip}
-          onOpen={() => {
-            const s = tooltip.session;
-            closeTooltip();
-            onSessionTap && onSessionTap(s);
-          }}
-        />
-      );
-    })()}
+    </div>
+  );
+}
+
+// ─── Metric — tiny LABEL · VALUE pair used inside SelectedLapInfo ──────────
+
+function Metric({ label, value, color }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, lineHeight: 1.1 }}>
+      <span style={{
+        fontSize: 8.5, fontWeight: 800, color: '#9CA3AF',
+        letterSpacing: '0.04em', textTransform: 'uppercase',
+      }}>{label}</span>
+      <span style={{
+        fontSize: 10.5, fontWeight: 700,
+        color: color || '#0A0E1A',
+      }}>{value}</span>
+    </span>
+  );
+}
+
+// ─── SelectedLapInfo — fixed strip above the chart showing tapped lap ────────
+// Replaces the floating popup so the chart stays unobscured. Always reserves
+// vertical space; shows a hint when nothing is selected.
+
+function SelectedLapInfo({ selected, onOpen, onClear, formatValue }) {
+  const empty = !selected;
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        minHeight: 44,
+        marginBottom: 6,
+        padding: '6px 9px',
+        borderRadius: 10,
+        background: empty ? 'rgba(118,126,181,.06)' : 'rgba(255,255,255,.7)',
+        border: `1px solid ${empty ? 'rgba(118,126,181,.14)' : (selected.sessionColor + '55')}`,
+        display: 'flex', alignItems: 'center', gap: 8,
+        transition: 'background .2s ease, border-color .2s ease',
+      }}
+    >
+      {empty ? (
+        <span style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600 }}>
+          Tap a bar to inspect a lap
+        </span>
+      ) : (
+        <>
+          <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {/* Title + date */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: selected.sessionColor, flexShrink: 0,
+              }} />
+              <span style={{
+                fontSize: 11, fontWeight: 800, color: '#0A0E1A',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {selected.sessionTitle || 'Training'}
+              </span>
+              <span style={{
+                fontSize: 9.5, color: '#9CA3AF', fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+              }}>
+                · {selected.sessionDate ? selected.sessionDate.toLocaleDateString('en', { day: 'numeric', month: 'short' }) : ''}
+              </span>
+            </div>
+            {/* Lap pill + active metric value */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{
+                fontWeight: 800, color: selected.sessionColor,
+                background: selected.sessionColor + '18',
+                padding: '1px 6px', borderRadius: 5,
+              }}>
+                Lap {selected.lapIdx}{selected.lapCount ? `/${selected.lapCount}` : ''}
+              </span>
+              <span style={{ fontWeight: 800, color: '#0A0E1A' }}>
+                {formatValue(selected.value)}
+              </span>
+            </div>
+            {/* Per-lap metrics row — distance · time · pace · power · HR · lactate · RPE.
+                Only shows fields the lap actually has so the strip stays compact. */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
+              fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280', marginTop: 2,
+            }}>
+              {selected.dist > 0 && (
+                <Metric label="DIST" value={
+                  selected.dist >= 1000
+                    ? `${(selected.dist / 1000).toFixed(selected.dist >= 10000 ? 1 : 2)} km`
+                    : `${Math.round(selected.dist)} m`
+                } />
+              )}
+              {selected.durationSec > 0 && (
+                <Metric label="TIME" value={
+                  selected.durationSec >= 60
+                    ? `${Math.floor(selected.durationSec / 60)}:${String(Math.round(selected.durationSec % 60)).padStart(2, '0')}`
+                    : `${Math.round(selected.durationSec)}s`
+                } />
+              )}
+              {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
+                <Metric label="PACE" value={`${Math.floor(selected.pace / 60)}:${String(Math.round(selected.pace % 60)).padStart(2, '0')}/${selected.sport === 'swim' ? '100m' : 'km'}`} />
+              )}
+              {selected.power > 0 && (
+                <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
+              )}
+              {selected.hr > 0 && (
+                <Metric label="HR" value={`${Math.round(selected.hr)} bpm`} color="#B84238" />
+              )}
+              {selected.lactate != null && (
+                <Metric label="LAC" value={`${Number(selected.lactate).toFixed(1)} mmol`} color="#B45309" />
+              )}
+              {selected.rpe > 0 && (
+                <Metric label="RPE" value={String(Math.round(selected.rpe))} />
+              )}
+            </div>
+          </div>
+          {/* Open + close */}
+          <button
+            onClick={onOpen}
+            style={{
+              flexShrink: 0,
+              padding: '5px 10px', borderRadius: 8,
+              background: selected.sessionColor, border: 'none', color: '#fff',
+              fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
+              cursor: 'pointer',
+              boxShadow: `0 2px 6px -1px ${selected.sessionColor}66`,
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            Open
+          </button>
+          <button
+            onClick={onClear}
+            aria-label="Clear selection"
+            style={{
+              flexShrink: 0,
+              width: 22, height: 22, borderRadius: '50%',
+              border: 'none', background: 'rgba(118,126,181,.12)',
+              color: '#5E6590', cursor: 'pointer', padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -710,22 +940,38 @@ function BarGroupChart({ sessions, metric, highlightId, onBarTap }) {
 function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
   const W = 320, H = 170, padX = 26, padY = 18;
 
-  // Tap-tooltip state
-  const [tooltip, setTooltip] = useState(null);
-  const closeTooltip = () => setTooltip(null);
+  // Selection state — same pattern as SessionBarChart: tapped point shows
+  // its details ABOVE the chart in a fixed info row.
+  const [selected, setSelected] = useState(null);
+  const clearSelection = () => setSelected(null);
   const fmtTooltipValue = (v) => {
     const unit = metric === 'power' ? 'W' : metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : '';
     return `${Math.round(v)}${unit ? ' ' + unit : ''}`;
   };
 
-  // Build per-session data points: { id, color, points: [[x,y],...] }
+  // Build per-session data points carrying full per-lap details so the
+  // SelectedLapInfo strip can show distance / time / pace / HR / lactate.
   const series = useMemo(() => {
     return sessions.map((s, i) => {
+      const sportKey = normSport(s.sport);
       const intervals = getIntervals(s);
       const points = intervals.map((iv, idx) => {
         const v = getIntervalMetric(iv, metric);
         if (v == null) return null;
-        return [idx + 1, v]; // 1-based interval number
+        return {
+          x: idx + 1,
+          y: v,
+          lactate: intervalLactate(iv),
+          durationSec: parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0,
+          hr: Number(iv.heartRate ?? iv.average_heartrate ?? iv.avgHeartRate) || null,
+          dist: Number(iv.distanceMeters ?? iv.distance) || null,
+          pace: (sportKey === 'run' || sportKey === 'swim') ? intervalPaceSec(iv, sportKey) : null,
+          power: sportKey === 'bike'
+            ? Number(iv.power ?? iv.average_watts ?? iv.avgPower) || null
+            : null,
+          rpe: Number(iv.RPE ?? iv.rpe) || null,
+          sport: sportKey,
+        };
       }).filter(Boolean);
       return {
         id: activityKey(s),
@@ -738,8 +984,8 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
   }, [sessions, metric]);
 
   // Domain
-  const allXs = series.flatMap(s => s.points.map(p => p[0]));
-  const allYs = series.flatMap(s => s.points.map(p => p[1]));
+  const allXs = series.flatMap(s => s.points.map(p => p.x));
+  const allYs = series.flatMap(s => s.points.map(p => p.y));
   if (allXs.length === 0 || allYs.length === 0) {
     return (
       <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 11 }}>
@@ -768,8 +1014,19 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
 
   return (
     <div style={{ position: 'relative', width: '100%' }}
-      onClick={(e) => { if (e.target.tagName !== 'circle') closeTooltip(); }}
+      onClick={(e) => { if (e.target.tagName !== 'circle') clearSelection(); }}
     >
+    <SelectedLapInfo
+      selected={selected}
+      onOpen={() => {
+        if (!selected) return;
+        const s = selected.session;
+        clearSelection();
+        onPointTap && onPointTap(s);
+      }}
+      onClear={clearSelection}
+      formatValue={fmtTooltipValue}
+    />
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
       style={{ width: '100%', height: H, display: 'block' }}>
       <defs>
@@ -812,7 +1069,7 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
         const strokeWidth = isHighlight ? 2.6 : (isLast ? 2.2 : 1.6);
 
         const pathD = s.points.length >= 2
-          ? s.points.reduce((acc, [x, y], idx) => acc + (idx === 0 ? `M${px(x)},${py(y)}` : ` L${px(x)},${py(y)}`), '')
+          ? s.points.reduce((acc, p, idx) => acc + (idx === 0 ? `M${px(p.x)},${py(p.y)}` : ` L${px(p.x)},${py(p.y)}`), '')
           : '';
 
         return (
@@ -823,7 +1080,7 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
             {/* Soft fill below newest / highlighted line */}
             {(isLast || isHighlight) && pathD && (
               <path
-                d={`${pathD} L${px(s.points[s.points.length - 1][0])},${H - padY} L${px(s.points[0][0])},${H - padY} Z`}
+                d={`${pathD} L${px(s.points[s.points.length - 1].x)},${H - padY} L${px(s.points[0].x)},${H - padY} Z`}
                 fill={`url(#mlc-fill-${i})`}
                 style={{ animation: 'ndFadeIn .55s ease both' }}
               />
@@ -845,61 +1102,53 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
               />
             )}
             {/* Points */}
-            {s.points.map(([x, y], pi) => (
-              <circle
-                key={pi}
-                cx={px(x)} cy={py(y)} r={isHighlight ? 4 : 3.2}
-                fill="#fff" stroke={s.color} strokeWidth={isHighlight ? 1.8 : 1.4}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setTooltip({
-                    session: s.meta,
-                    sessionDate: s.date,
-                    sessionTitle: s.meta?.title || s.meta?.name || s.meta?.titleManual || 'Training',
-                    sessionColor: s.color,
-                    lapIdx: x,
-                    lapCount: s.points.length,
-                    value: y,
-                    barX: px(x),
-                    barY: py(y),
-                  });
-                }}
-                style={{
-                  cursor: 'pointer',
-                  animation: `ndPopIn .3s ${300 + i * 80 + pi * 30}ms cubic-bezier(.22,1.4,.36,1) both`,
-                }}
-              />
-            ))}
+            {s.points.map((p, pi) => {
+              const isSelectedPoint = selected
+                && selected.sessionId === s.id
+                && selected.lapIdx === p.x;
+              return (
+                <circle
+                  key={pi}
+                  cx={px(p.x)} cy={py(p.y)}
+                  r={isSelectedPoint ? 5.5 : (isHighlight ? 4 : 3.2)}
+                  fill={isSelectedPoint ? s.color : '#fff'}
+                  stroke={s.color}
+                  strokeWidth={isSelectedPoint ? 2.4 : (isHighlight ? 1.8 : 1.4)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isSelectedPoint) { clearSelection(); return; }
+                    setSelected({
+                      sessionId: s.id,
+                      session: s.meta,
+                      sessionDate: s.date,
+                      sessionTitle: s.meta?.title || s.meta?.name || s.meta?.titleManual || 'Training',
+                      sessionColor: s.color,
+                      lapIdx: p.x,
+                      lapCount: s.points.length,
+                      value: p.y,
+                      lactate: p.lactate,
+                      durationSec: p.durationSec,
+                      hr: p.hr,
+                      dist: p.dist,
+                      pace: p.pace,
+                      power: p.power,
+                      rpe: p.rpe,
+                      sport: p.sport,
+                    });
+                  }}
+                  style={{
+                    cursor: 'pointer',
+                    animation: `ndPopIn .3s ${300 + i * 80 + pi * 30}ms cubic-bezier(.22,1.4,.36,1) both`,
+                    transition: 'r .15s ease, fill .15s ease',
+                  }}
+                />
+              );
+            })}
           </g>
         );
       })}
     </svg>
 
-    {/* Floating tooltip on point tap */}
-    {tooltip && (() => {
-      const leftPct = (tooltip.barX / W) * 100;
-      const topPx = tooltip.barY;
-      const showAbove = tooltip.barY > 60;
-      return (
-        <ChartTooltip
-          leftPct={leftPct}
-          topPx={topPx}
-          showAbove={showAbove}
-          color={tooltip.sessionColor}
-          title={tooltip.sessionTitle}
-          date={tooltip.sessionDate}
-          lapIdx={tooltip.lapIdx}
-          lapCount={tooltip.lapCount}
-          value={fmtTooltipValue(tooltip.value)}
-          onClose={closeTooltip}
-          onOpen={() => {
-            const s = tooltip.session;
-            closeTooltip();
-            onPointTap && onPointTap(s);
-          }}
-        />
-      );
-    })()}
     </div>
   );
 }
@@ -1456,14 +1705,14 @@ export default function NativeTrainingPage({
                           const avg = isPaceMetric
                             ? (() => {
                                 const ivs = getIntervals(s);
-                                const vals = ivs.map(intervalPaceSec).filter(v => v != null);
+                                const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
                             : sessionAvg(s, selectedMetric);
                           const baseAvg = isPaceMetric
                             ? (() => {
                                 const ivs = getIntervals(sessions[0]);
-                                const vals = ivs.map(intervalPaceSec).filter(v => v != null);
+                                const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
                             : firstAvg;
@@ -1964,7 +2213,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
       const hr    = Number(iv.heartRate || iv.average_heartrate || iv.avgHeartRate) || null;
       const lac   = intervalLactate(iv);
       const dur   = parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0;
-      const pace  = isPaceSport ? intervalPaceSec(iv) : null;
+      const pace  = isPaceSport ? intervalPaceSec(iv, sport) : null;
       const intervalType = iv.intervalType || null;
       return { idx: i + 1, power, hr, lac, dur, pace, intervalType };
     });
@@ -2162,7 +2411,7 @@ function LapStrip({ activity, sport, height = 38, width = 130 }) {
     let intensityValue = null;
     if (sportIsPace) {
       // Faster pace = higher intensity. Convert pace (sec/km) → "lower is harder".
-      intensityValue = intervalPaceSec(iv);
+      intensityValue = intervalPaceSec(iv, sport);
     } else {
       intensityValue = getIntervalMetric(iv, 'power') ?? getIntervalMetric(iv, 'heartRate');
     }
@@ -2274,198 +2523,6 @@ function LapStrip({ activity, sport, height = 38, width = 130 }) {
   );
 }
 
-// ─── ChartTooltip — floating callout on chart bar/point tap ──────────────────
-// Shows lap details (date, lap #, value, lactate, duration) with an "Open" CTA.
-// Positioned in % horizontally (leftPct) and px vertically (topPx) within the
-// chart's relative container.
-
-function ChartTooltip({ leftPct, topPx, showAbove, color, title, date, lapIdx, lapCount, value, lactate, durationSec, onClose, onOpen }) {
-  // Measure parent + tooltip after layout, then shift horizontally to keep
-  // the tooltip fully on-screen even when the tapped bar is near the chart
-  // edge. Arrow stays anchored to the bar via a counter-shift.
-  const wrapRef = useRef(null);
-  const cardRef = useRef(null);
-  const [shift, setShift] = useState(0);
-
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current;
-    const card = cardRef.current;
-    if (!wrap || !card) return;
-    const parent = wrap.offsetParent || wrap.parentElement;
-    if (!parent) return;
-    const pw = parent.getBoundingClientRect().width;
-    const tw = card.getBoundingClientRect().width;
-    const anchorPx = (leftPct / 100) * pw;
-    const margin = 8;
-    let s = 0;
-    const leftEdge  = anchorPx - tw / 2;
-    const rightEdge = anchorPx + tw / 2;
-    if (leftEdge  < margin)         s = margin - leftEdge;
-    else if (rightEdge > pw - margin) s = (pw - margin) - rightEdge;
-    setShift(s);
-  }, [leftPct, value, lapIdx, title, date, durationSec]);
-
-  return (
-    <div
-      ref={wrapRef}
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        position: 'absolute',
-        left: `${leftPct}%`,
-        top: showAbove ? Math.max(0, topPx - 8) : topPx + 12,
-        transform: showAbove
-          ? `translate(calc(-50% + ${shift}px), -100%)`
-          : `translate(calc(-50% + ${shift}px), 0)`,
-        zIndex: 5,
-        pointerEvents: 'auto',
-        animation: 'ndPopIn .25s cubic-bezier(.22,1.4,.36,1) both',
-      }}
-    >
-      <div ref={cardRef} style={{
-        background: 'rgba(255,255,255,.98)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
-        border: `1.5px solid ${color}40`,
-        borderRadius: 12,
-        boxShadow: '0 6px 18px -6px rgba(10,14,26,.25), 0 2px 4px -2px rgba(10,14,26,.08)',
-        padding: '8px 10px 9px 11px',
-        minWidth: 150,
-        maxWidth: 220,
-        display: 'flex', flexDirection: 'column', gap: 4,
-      }}>
-        {/* Top line: session title (truncated) + close X */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1,
-            fontSize: 11, fontWeight: 800, color: '#0A0E1A',
-            letterSpacing: '-0.01em',
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-            <span style={{
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {title || 'Training'}
-            </span>
-          </span>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-              border: 'none', background: 'rgba(118,126,181,.12)',
-              color: '#5E6590', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: 0, marginLeft: 2,
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
-              <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Date sub-line */}
-        {date && (
-          <span style={{
-            fontSize: 9.5, fontWeight: 700, color: '#9CA3AF',
-            letterSpacing: '0.04em', textTransform: 'uppercase',
-            fontVariantNumeric: 'tabular-nums', marginTop: -2,
-          }}>
-            {date.toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}
-          </span>
-        )}
-
-        {/* Lap header — pill so it's clearly the tapped lap */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            fontSize: 10.5, fontWeight: 800,
-            color, background: color + '18',
-            padding: '2px 7px', borderRadius: 6,
-            letterSpacing: '0.02em',
-          }}>
-            Lap {lapIdx}{lapCount ? ` / ${lapCount}` : ''}
-          </span>
-          <span style={{
-            fontSize: 14.5, fontWeight: 800, color: '#0A0E1A',
-            fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em',
-          }}>
-            {value}
-          </span>
-        </div>
-
-        {/* Lactate + duration sub-line */}
-        {(lactate != null || (durationSec && durationSec > 0)) && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 10, fontWeight: 600, color: '#6B7280',
-            fontVariantNumeric: 'tabular-nums',
-          }}>
-            {lactate != null && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                color: '#B45309', fontWeight: 700,
-              }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 2v6L4 18a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3L15 8V2" />
-                  <line x1="6.5" y1="13" x2="17.5" y2="13" />
-                </svg>
-                {Number(lactate).toFixed(1)} mmol
-              </span>
-            )}
-            {durationSec > 0 && (
-              <>
-                {lactate != null && <span style={{ color: '#D1D5DB' }}>·</span>}
-                <span>
-                  {durationSec >= 60
-                    ? `${Math.floor(durationSec / 60)}:${String(Math.round(durationSec % 60)).padStart(2, '0')}`
-                    : `${Math.round(durationSec)}s`}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Open training CTA */}
-        <button
-          onClick={onOpen}
-          style={{
-            marginTop: 4,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-            padding: '5px 10px', borderRadius: 8,
-            background: color, border: 'none', color: '#fff',
-            fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
-            cursor: 'pointer',
-            boxShadow: `0 2px 6px -1px ${color}66`,
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          Open training
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Arrow notch pointing to bar — counter-shifts to stay anchored
-          to the actual data point even when the card is offset to fit
-          on screen. */}
-      <div style={{
-        position: 'absolute',
-        left: `calc(50% - ${shift}px)`,
-        [showAbove ? 'bottom' : 'top']: -5,
-        transform: 'translateX(-50%) rotate(45deg)',
-        width: 9, height: 9,
-        background: 'rgba(255,255,255,.98)',
-        borderRight: showAbove ? `1.5px solid ${color}40` : 'none',
-        borderBottom: showAbove ? `1.5px solid ${color}40` : 'none',
-        borderLeft: !showAbove ? `1.5px solid ${color}40` : 'none',
-        borderTop: !showAbove ? `1.5px solid ${color}40` : 'none',
-      }} />
-    </div>
-  );
-}
 
 // ─── ChevronBtn — small circular prev/next arrow used in the training history header ──
 

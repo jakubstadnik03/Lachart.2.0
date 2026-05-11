@@ -403,6 +403,33 @@ userSchema.pre('validate', function normalizeSignupMethod(next) {
   next();
 });
 
+// Sport normalisation: the app uses the short keys 'bike' | 'run' | 'swim'
+// everywhere downstream (charts, filtering, grouping). Some signup paths and
+// historical records used the long form ("cycling" / "running" / "swimming"),
+// which silently broke the coach dashboard for users like Andrea (her athlete
+// "cycling" didn't match any of the bike/run/swim branches). Coerce to short
+// form on every save so downstream code can rely on a single value.
+function normaliseSport(s) {
+  if (!s || typeof s !== 'string') return s;
+  const v = s.trim().toLowerCase();
+  if (v === 'cycling' || v === 'cycle' || v === 'ride' || v === 'mtb' || v === 'mountainbike' || v === 'mtbike') return 'bike';
+  if (v === 'running') return 'run';
+  if (v === 'swimming') return 'swim';
+  return v;
+}
+userSchema.pre('validate', function normaliseUserSport(next) {
+  if (this.sport) this.sport = normaliseSport(this.sport);
+  next();
+});
+// findOneAndUpdate / updateOne paths bypass pre('validate'); cover them too.
+userSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function normaliseUpdateSport(next) {
+  const update = this.getUpdate();
+  if (!update) return next();
+  if (update.sport) update.sport = normaliseSport(update.sport);
+  if (update.$set && update.$set.sport) update.$set.sport = normaliseSport(update.$set.sport);
+  next();
+});
+
 // Odstranění starého indexu, pokud existuje; oprava email indexu na sparse (umožní více uživatelů bez emailu)
 mongoose.connection.on('connected', async () => {
   try {

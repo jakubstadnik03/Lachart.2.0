@@ -1,8 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }) => {
+  // ESC key always closes the modal — keyboard escape hatch so a user can
+  // never get permanently stuck if the close button / backdrop click fails.
+  useEffect(() => {
+    if (!isOpen || typeof onClose !== 'function') return;
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return ReactDOM.createPortal(

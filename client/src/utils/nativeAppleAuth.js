@@ -12,8 +12,11 @@ export async function signInWithAppleNative() {
 
   const { SignInWithApple } = await import('@capacitor-community/apple-sign-in');
 
+  // clientId MUST match the iOS app's PRODUCT_BUNDLE_IDENTIFIER and the server's
+  // APPLE_BUNDLE_ID — otherwise the token's `aud` claim won't pass verification
+  // (server returns 401 "Apple identity token is invalid or expired").
   const result = await SignInWithApple.authorize({
-    clientId: process.env.REACT_APP_APPLE_BUNDLE_ID || 'net.lachart.app',
+    clientId: process.env.REACT_APP_APPLE_BUNDLE_ID || 'com.lachart.app',
     redirectURI: '',
     scopes: 'email name',
     state: '',

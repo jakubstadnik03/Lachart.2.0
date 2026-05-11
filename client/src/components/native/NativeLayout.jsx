@@ -238,7 +238,8 @@ function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
   const avatar = user ? getAvatarBySportAndGender(user) : null;
   return (
     <div
-      className="flex-shrink-0 bg-white border-b border-gray-100"
+      data-native-bar="top"
+      className="nl-top-bar flex-shrink-0 bg-white border-b border-gray-100"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <div className="flex items-center justify-between px-4 h-11">
@@ -458,7 +459,8 @@ function NativeBottomTabBar({ tabs }) {
 
   return (
     <div
-      className="flex-shrink-0"
+      data-native-bar="bottom"
+      className="nl-bottom-bar flex-shrink-0"
       style={{
         paddingBottom: 'env(safe-area-inset-bottom)',
         background: 'rgba(255,255,255,.85)',

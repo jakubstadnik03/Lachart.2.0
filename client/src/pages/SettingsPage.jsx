@@ -2996,6 +2996,9 @@ const SettingsPage = () => {
                   )}
                 </div>
 
+                {/* ── Apple Health (iOS native only) ───────────────────────── */}
+                <AppleHealthCard isMobile={isMobile} />
+
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
@@ -3260,5 +3263,91 @@ const SettingsPage = () => {
     </>
   );
 };
+
+// ─── Apple Health card ────────────────────────────────────────────────────────
+// Conservative HealthKit integration: visible only on iOS native, with a
+// manual Sync button. Auto-sync (1× / 24h on app open) lives in
+// initCapacitorShell — this card is the visible status + manual override.
+
+function AppleHealthCard({ isMobile }) {
+  const [supported, setSupported] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [last, setLast] = React.useState(null);
+  const [msg, setMsg] = React.useState(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { isHealthKitSupported, lastSyncedAt } = await import('../services/healthKitSync');
+      if (cancelled) return;
+      setSupported(isHealthKitSupported());
+      setLast(lastSyncedAt());
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Hide entirely on web — there's nothing meaningful to show.
+  if (!supported) return null;
+
+  const handleSync = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { syncHealthKit, lastSyncedAt } = await import('../services/healthKitSync');
+      const result = await syncHealthKit({ force: true });
+      setLast(lastSyncedAt());
+      if (result?.imported > 0) setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
+      else if (result?.skipped === 'denied') setMsg('Permission denied in Apple Health settings.');
+      else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}.`);
+      else setMsg('No new workouts found.');
+    } catch (e) {
+      setMsg(`Sync failed: ${e?.message || 'unknown error'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lastStr = last ? last.toLocaleString() : 'never';
+
+  return (
+    <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+      <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+        <div className="flex items-center gap-2">
+          <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-pink-50 rounded-lg`}>
+            <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} fill="#EF4444">
+              <path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" />
+            </svg>
+          </div>
+          <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Apple Health</h4>
+        </div>
+        <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${last ? 'text-green-600' : 'text-gray-500'}`}>
+          {last ? 'Synced' : 'Not synced'}
+        </span>
+      </div>
+      <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+        Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone, etc).
+        Syncs automatically once a day when you open the app.
+      </p>
+      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col' : ''}`}>
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={busy}
+          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+        >
+          {busy ? 'Syncing…' : 'Sync now'}
+        </button>
+        <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
+          Last sync: {lastStr}
+        </span>
+      </div>
+      {msg && (
+        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700`}>
+          {msg}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default SettingsPage;

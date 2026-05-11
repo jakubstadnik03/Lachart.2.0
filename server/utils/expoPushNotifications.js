@@ -47,7 +47,7 @@ async function sendExpoPushToTokens(tokens, { title, body, data = {} }) {
 /**
  * Notify user when new Strava activities were imported (Expo mobile app with registered token).
  */
-async function notifyUserStravaActivitiesImported(userId, importedCount) {
+async function notifyUserStravaActivitiesImported(userId, importedCount, opts = {}) {
   try {
     const n = Number(importedCount);
     if (!userId || !Number.isFinite(n) || n < 1) return;
@@ -60,15 +60,23 @@ async function notifyUserStravaActivitiesImported(userId, importedCount) {
     const tokens = Array.isArray(user.expoPushTokens) ? user.expoPushTokens : [];
     if (tokens.length === 0) return;
 
+    // When exactly one activity was imported, encourage the "add lactate" flow
+    // and include the activity id so the app can deep-link to it.
     const body =
       n === 1
-        ? '1 new activity imported from Strava.'
+        ? '1 new activity imported — tap to add lactate.'
         : `${n} new activities imported from Strava.`;
+
+    const data = { type: 'strava_import', count: n };
+    if (opts.latestActivityId) {
+      data.activityId   = String(opts.latestActivityId);
+      data.activityType = 'strava';
+    }
 
     await sendExpoPushToTokens(tokens, {
       title: 'LaChart — Strava',
       body,
-      data: { type: 'strava_import', count: n },
+      data,
     });
   } catch (e) {
     console.error('[ExpoPush] notifyUserStravaActivitiesImported:', e.message || e);

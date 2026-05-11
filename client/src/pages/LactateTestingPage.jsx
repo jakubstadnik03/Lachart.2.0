@@ -218,6 +218,27 @@ const LactateTestingPage = () => {
     return () => { window.removeEventListener('resize', check); window.removeEventListener('orientationchange', check); };
   }, []);
 
+  // Fullscreen mode — hides NativeLayout's top bar + bottom tab bar so the
+  // training UI gets the full viewport. Auto-enters when the user rotates to
+  // landscape (typical "watch the chart" pose); a button in the header lets
+  // the user toggle it manually too.
+  const [fullscreen, setFullscreen] = useState(false);
+  // Auto-flip on orientation change without losing manual override during the same orientation.
+  const lastOrientationRef = useRef(isLandscape);
+  useEffect(() => {
+    if (isLandscape !== lastOrientationRef.current) {
+      setFullscreen(isLandscape);
+      lastOrientationRef.current = isLandscape;
+    }
+  }, [isLandscape]);
+  // Apply / remove the body class that hides the native bars.
+  useEffect(() => {
+    const cls = 'lactate-fullscreen';
+    if (fullscreen) document.body.classList.add(cls);
+    else document.body.classList.remove(cls);
+    return () => document.body.classList.remove(cls);
+  }, [fullscreen]);
+
   // Keep refs in sync
   useEffect(() => { liveDataRef.current       = liveData;      }, [liveData]);
   useEffect(() => { currentStepRef.current    = currentStep;   }, [currentStep]);
@@ -912,6 +933,13 @@ const LactateTestingPage = () => {
   // ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 pb-20">
+      {/* Fullscreen mode CSS — hides the NativeLayout top & bottom bars so the
+          training UI gets the whole viewport. Triggered by toggling the
+          `lactate-fullscreen` class on document.body (see useEffect above). */}
+      <style>{`
+        body.lactate-fullscreen .nl-top-bar,
+        body.lactate-fullscreen .nl-bottom-bar { display: none !important; }
+      `}</style>
 
       {/* ── Modals ─────────────────────────────────────────── */}
       {showTrainerModal && (
@@ -1292,14 +1320,25 @@ const LactateTestingPage = () => {
         {(testState === 'running' || testState === 'paused') && (
           <div className="space-y-4">
 
-            {/* ── Sticky mobile control header ───────────────────
-                Stays pinned at top while user scrolls to chart so
-                lap timer, power, HR and pause/stop are always
-                reachable. Compact single-row layout works in both
-                portrait and landscape. */}
+            {/* ── Fixed mobile control header ───────────────────
+                Pinned to the very top of the viewport (above the
+                NativeLayout LaChart header) via inline styles to
+                avoid any Tailwind purge / class-collision issues.
+                z-index 9999 keeps it above the layout header but
+                below modal scrims (which use position: fixed too
+                but render later in the DOM tree). */}
             <div
-              className="sticky z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-white/85 backdrop-blur-xl border-b border-gray-200/70 shadow-sm"
-              style={{ top: 'env(safe-area-inset-top, 0px)' }}
+              className="px-4 sm:px-6 pb-2 bg-white/95 border-b border-gray-200/70 shadow-sm"
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 9999,
+                paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
+                backdropFilter: 'blur(16px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+              }}
             >
               <div className="max-w-5xl mx-auto flex items-center gap-2 sm:gap-3">
                 {/* Phase + lap timer */}
@@ -1380,6 +1419,25 @@ const LactateTestingPage = () => {
                   >
                     <StopIcon className="w-4 h-4" />
                   </button>
+                  {/* Fullscreen toggle — hides NativeLayout's top + bottom bars
+                      so the chart and controls fill the whole screen. Auto-on
+                      when the user rotates to landscape. */}
+                  <button
+                    onClick={() => setFullscreen(v => !v)}
+                    className="flex items-center justify-center w-9 h-9 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 active:scale-95 transition-all"
+                    aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                    title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                  >
+                    {fullscreen ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -1401,6 +1459,14 @@ const LactateTestingPage = () => {
                 />
               </div>
             </div>
+
+            {/* Spacer below the fixed header so subsequent content doesn't
+                slide under it. ~64px = lap timer row + mini progress bar +
+                safe-area top, matching the fixed header's rendered height. */}
+            <div
+              aria-hidden="true"
+              style={{ height: 'calc(env(safe-area-inset-top, 0px) + 56px)' }}
+            />
 
             {/* Step progress — hide during warmup */}
             {phase !== 'warmup' && (

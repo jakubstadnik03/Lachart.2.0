@@ -337,8 +337,21 @@ export function analyzeLactateTest(mockData) {
   const lacRaw = rows.map((r) => r.lactate);
   const lac = smoothLactateWeighted(lacRaw);
 
-  const baselineLactate =
-    baseForm != null && Number.isFinite(baseForm) ? baseForm : lac[0];
+  // Clamp the user-entered baseLactate to the lowest measured lactate.
+  // A user can save baseLactate=1.0 while later measurements dip to 0.5 (typo
+  // or warmup artefact). That made downstream threshold math produce
+  // infinities / NaNs and froze the page when opening the test (Federico's
+  // case). Treat the form value as an *upper hint* — never let it exceed the
+  // smallest measurement, never let it be a non-finite value.
+  const lowestMeasured = (() => {
+    const finite = lac.filter(v => Number.isFinite(v) && v > 0);
+    if (finite.length === 0) return null;
+    return Math.min(...finite);
+  })();
+  const sanitisedForm = (baseForm != null && Number.isFinite(baseForm) && baseForm > 0)
+    ? (lowestMeasured != null ? Math.min(baseForm, lowestMeasured) : baseForm)
+    : null;
+  const baselineLactate = sanitisedForm != null ? sanitisedForm : (lac[0] ?? 0);
 
   let baselineLevel = 'normal';
   if (baselineLactate >= 3.0) baselineLevel = 'very_high';

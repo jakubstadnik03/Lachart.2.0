@@ -219,7 +219,10 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // Only show once per day to avoid annoying users
           const lastShown = localStorage.getItem('profileModalLastShown');
           const now = Date.now();
-          const oneDayAgo = now - (24 * 60 * 60 * 1000); // 24 hours
+          // 7-day throttle (was 24h) — onboarding modals are pushy. The per-modal
+          // *Done flag (above) handles the "already saw it" case; this just
+          // prevents the second modal from popping in the same session window.
+          const oneDayAgo = now - (7 * 24 * 60 * 60 * 1000);
           
           // Only show modal if:
           // 1. Something is incomplete (basic profile, units, zones, Strava) and not already done/skipped
@@ -246,17 +249,30 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const stillNeedsZones = stillNoZones && !finalZonesDone;
                 const stillNeedsStrava = stillNotConnected && !finalStravaSkipped;
                 
+                // SAFETY: set the *Done flag in localStorage IMMEDIATELY when
+                // we decide to open a modal. If anything in the modal breaks
+                // (JS error, broken backdrop, network failure on save), the
+                // user just refreshes and won't see it again — instead of being
+                // permanently locked out like Andrea was.
+                // The flag re-opens only if the user explicitly clears it.
+                const markShown = (key) => {
+                  if (finalUser?._id) localStorage.setItem(`${key}_${finalUser._id}`, 'true');
+                };
                 if (stillNeedsBasic) {
+                  markShown('basicProfileModalDone');
                   setProfileForModal(finalUser);
                   setShowBasicProfileModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNeedsUnits) {
+                  markShown('unitsPreferencesModalDone');
                   setShowUnitsPreferencesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNeedsZones) {
+                  markShown('trainingZonesModalDone');
                   setShowTrainingZonesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNeedsStrava) {
+                  markShown('stravaConnectModalDone');
                   setShowStravaModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 }

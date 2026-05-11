@@ -5,6 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import api, { invalidateCache, addTest } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
+import ErrorBoundary from "../components/common/ErrorBoundary";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1422,17 +1423,27 @@ const TestingPage = () => {
                 )}
               </AnimatePresence>
 
-              {/* Tests list */}
+              {/* Tests list — wrapped in ErrorBoundary so a single bad
+                  test (NaN, weird lactate sequence, etc.) can't freeze
+                  the whole page like Federico's did. */}
               <div data-tour="tour-test-list" style={sectionSnap}>
-                <PreviousTestingComponent
-                  key={selectedAthleteId || user?._id}
-                  selectedSport={selectedSport}
-                  tests={tests}
-                  setTests={setTests}
-                  selectedTestId={testIdFromUrl}
-                  onSelectTestId={handleUrlTestSelection}
-                  externalActivities={externalActivities}
-                />
+                <ErrorBoundary
+                  fallback={(
+                    <div style={{ padding: 24, textAlign: 'center', color: '#B84238', fontSize: 13 }}>
+                      Couldn't render this test — try selecting a different one from the list.
+                    </div>
+                  )}
+                >
+                  <PreviousTestingComponent
+                    key={selectedAthleteId || user?._id}
+                    selectedSport={selectedSport}
+                    tests={tests}
+                    setTests={setTests}
+                    selectedTestId={testIdFromUrl}
+                    onSelectTestId={handleUrlTestSelection}
+                    externalActivities={externalActivities}
+                  />
+                </ErrorBoundary>
               </div>
             </motion.div>
           )}

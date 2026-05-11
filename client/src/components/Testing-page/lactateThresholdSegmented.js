@@ -26,12 +26,19 @@ const BOOTSTRAP_ITERATIONS = 200;
 export function isotonicRegression(power, lactate) {
   const n = power.length;
   if (n === 0) return [];
-  let y = [...lactate];
+  // Skip values that aren't finite — they'd propagate NaN forever and
+  // freeze the page (was the Federico-test bug).
+  let y = lactate.map(v => Number.isFinite(v) ? v : 0);
   let changed = true;
-  while (changed) {
+  // Hard safety cap. PAV converges in O(n) blocks; n² is a generous ceiling
+  // against floating-point round-off or unexpected input.
+  const MAX_ITER = n * n + 10;
+  let iter = 0;
+  while (changed && iter < MAX_ITER) {
+    iter += 1;
     changed = false;
     for (let i = 0; i < n - 1; i++) {
-      if (y[i] > y[i + 1]) {
+      if (y[i] > y[i + 1] + 1e-9) {
         const avg = (y[i] + y[i + 1]) / 2;
         y[i] = avg;
         y[i + 1] = avg;

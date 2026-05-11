@@ -1,5 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { calculateZonesFromTest } from '../Testing-page/zoneCalculator';
+
+// ─── zone metadata (shared with NativeTestingPage) ────────────────────────────
+const ZONE_DEFS = [
+  { key: 'z1', zoneKey: 'zone1', name: 'Recovery',  color: '#60A5FA' },
+  { key: 'z2', zoneKey: 'zone2', name: 'Endurance', color: '#34D399' },
+  { key: 'z3', zoneKey: 'zone3', name: 'Tempo',     color: '#FBBF24' },
+  { key: 'z4', zoneKey: 'zone4', name: 'Threshold', color: '#F97316' },
+  { key: 'z5', zoneKey: 'zone5', name: 'VO2max',    color: '#F43F5E' },
+];
 
 // ─── sport metadata ───────────────────────────────────────────────────────────
 
@@ -602,6 +612,106 @@ export default function LastTestCard({ tests = [] }) {
             </div>
           ))}
         </div>
+
+        {/* Training zones — derived from this test's thresholds */}
+        {(() => {
+          const zones = calculateZonesFromTest(last.raw);
+          if (!zones) return null;
+          const root = last.isPace ? zones.pace : zones.power;
+          const hr = zones.heartRate;
+          if (!root && !hr) return null;
+          const primaryHeader = last.isPace ? 'Pace' : 'Power';
+          // Compact 5-row zones strip — sized to fit on screen alongside the
+          // curve + LT tiles + Open button (no inner scroll needed).
+          return (
+            <div style={{
+              marginTop: 6, marginBottom: 8,
+              padding: '6px 8px',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,.5)',
+              border: '1px solid rgba(118,126,181,.12)',
+            }}>
+              {/* Header row: title + Edit pill */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginBottom: 3,
+              }}>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 800, color: '#0A0E1A',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                }}>
+                  Zones · {primaryHeader} · HR
+                </span>
+                <button
+                  onClick={() => testId && navigate(`/testing?testId=${encodeURIComponent(testId)}&full=1#zones`)}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+                  onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+                  onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+                  onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+                  onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    padding: '2px 7px', borderRadius: 9999,
+                    background: 'rgba(124,58,237,.12)', color: '#7C3AED',
+                    border: 'none', fontFamily: 'inherit',
+                    fontSize: 9, fontWeight: 800,
+                    cursor: 'pointer',
+                    transition: 'background .2s ease, transform .12s ease',
+                    WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                  }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  Edit
+                </button>
+              </div>
+              {/* 5 zone rows — single line, no header row, ~16px tall each */}
+              {ZONE_DEFS.map((z, i) => {
+                const primary = root && root[z.zoneKey]
+                  ? (last.isPace
+                    ? `${root[z.zoneKey].min}–${root[z.zoneKey].max}`
+                    : `${root[z.zoneKey].min}–${root[z.zoneKey].max} W`)
+                  : '—';
+                const hrCell = hr && hr[z.zoneKey]
+                  ? `${hr[z.zoneKey].min}–${hr[z.zoneKey].max}`
+                  : '—';
+                return (
+                  <div key={z.key} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '38px 1fr 64px',
+                    gap: 4, alignItems: 'center',
+                    padding: '2px 0',
+                    borderTop: i === 0 ? '1px solid rgba(118,126,181,.1)' : 'none',
+                    borderBottom: i < ZONE_DEFS.length - 1
+                      ? '1px solid rgba(118,126,181,.07)'
+                      : 'none',
+                  }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                      fontSize: 9.5, fontWeight: 800, color: z.color,
+                    }}>
+                      <span style={{
+                        width: 5, height: 5, borderRadius: '50%',
+                        background: z.color, flexShrink: 0,
+                      }} />
+                      Z{i + 1}
+                    </span>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, color: '#0A0E1A',
+                      fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                    }}>{primary}</span>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, color: '#B84238',
+                      fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+                    }}>{hrCell}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Open full test button */}
         <button

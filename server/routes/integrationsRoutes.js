@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { JWT_SECRET } = require('../config/jwt.config');
 const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
+const AppleHealthActivity = require('../models/AppleHealthActivity');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
@@ -198,7 +199,9 @@ function getGarminActivityApiBaseUrl() {
   return `${getGarminApiBaseUrl()}/activity-api`;
 }
 
-const EXTERNAL_SOURCE_PRIORITY = ['strava', 'garmin', 'coros', 'polar', 'fit'];
+// Apple Health is LAST so when the same workout exists in Strava/Garmin (very
+// common — both feed Health) the better-quality source wins the merge.
+const EXTERNAL_SOURCE_PRIORITY = ['strava', 'garmin', 'coros', 'polar', 'fit', 'apple_health'];
 
 function getExternalSourcePriority(source) {
   const idx = EXTERNAL_SOURCE_PRIORITY.indexOf(String(source || '').toLowerCase());
@@ -2153,8 +2156,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         })();
     const activityLimit = isHRTestPlan ? 5000 : 2000; // More activities for HR test plan
     
-    const [stravaActs, garminActs] = await Promise.all([
-      StravaActivity.find({ 
+    const [stravaActs, garminActs, appleHealthActs] = await Promise.all([
+      StravaActivity.find({
         userId: targetUserId.toString(),
         startDate: { $gte: dateCutoff }
       })
@@ -2164,14 +2167,21 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower'
       )
         .lean(),
-      GarminActivity.find({ 
+      GarminActivity.find({
         userId: targetUserId.toString(),
         startDate: { $gte: dateCutoff }
       })
         .sort({ startDate: -1 })
         .limit(activityLimit)
         .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
-        .lean()
+        .lean(),
+      AppleHealthActivity.find({
+        userId: targetUserId,
+        startDate: { $gte: dateCutoff },
+      })
+        .sort({ startDate: -1 })
+        .limit(activityLimit)
+        .lean(),
     ]);
 
     // Deduplicate activities from Strava and Garmin
@@ -2257,7 +2267,18 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         averageHeartRate: a.averageHeartRate ?? a.averageHR ?? null,
         source: 'garmin',
         sourceId: a.garminId
-      }))
+      })),
+      // Apple Health uses different field names — normalize to the same shape
+      // the calendar/dedup expect (elapsedTime/movingTime/distance/averageHeartRate).
+      ...appleHealthActs.map(a => ({
+        ...a,
+        elapsedTime:      a.durationSeconds ?? null,
+        movingTime:       a.durationSeconds ?? null,
+        distance:         a.distanceMeters ?? null,
+        averageHeartRate: a.avgHeartRate ?? null,
+        source: 'apple_health',
+        sourceId: a.healthKitId,
+      })),
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
     // Optimized deduplication: use Map for O(1) lookups instead of O(n²) nested loops
@@ -3770,7 +3791,8 @@ router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
 });
 
 // ─── Apple Health ─────────────────────────────────────────────────────────────
-const AppleHealthActivity = require('../models/AppleHealthActivity');
+// (AppleHealthActivity is required at the top of the file alongside Strava/Garmin
+// so the /activities aggregator can use it.)
 
 const APPLE_HEALTH_SPORT_MAP = {
   Running: 'running',

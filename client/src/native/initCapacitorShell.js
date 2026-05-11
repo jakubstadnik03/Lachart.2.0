@@ -38,6 +38,15 @@ export async function initCapacitorShell() {
         void App.exitApp();
       });
     }
+
+    // Apple Health auto-sync — runs once on cold-start, then again whenever
+    // the app comes back to foreground (throttled to 1× / 24h via localStorage
+    // inside healthKitSync.maybeSyncOnAppOpen).
+    const { maybeSyncOnAppOpen } = await import('../services/healthKitSync');
+    void maybeSyncOnAppOpen();
+    App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void maybeSyncOnAppOpen();
+    });
   } catch {
     // ignore
   }
