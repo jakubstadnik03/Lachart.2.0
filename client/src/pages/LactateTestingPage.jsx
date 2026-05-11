@@ -20,7 +20,7 @@ import {
   BeakerIcon, ClipboardDocumentListIcon, FireIcon,
   ExclamationTriangleIcon, WrenchScrewdriverIcon, LinkIcon,
   BoltIcon, FolderIcon, FlagIcon, CpuChipIcon,
-  SignalIcon, SunIcon, SparklesIcon,
+  SignalIcon, SunIcon, SparklesIcon, ForwardIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid, BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 
@@ -1291,6 +1291,116 @@ const LactateTestingPage = () => {
         {/* ══════════════════════════════════════════════════ */}
         {(testState === 'running' || testState === 'paused') && (
           <div className="space-y-4">
+
+            {/* ── Sticky mobile control header ───────────────────
+                Stays pinned at top while user scrolls to chart so
+                lap timer, power, HR and pause/stop are always
+                reachable. Compact single-row layout works in both
+                portrait and landscape. */}
+            <div
+              className="sticky z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-white/85 backdrop-blur-xl border-b border-gray-200/70 shadow-sm"
+              style={{ top: 'env(safe-area-inset-top, 0px)' }}
+            >
+              <div className="max-w-5xl mx-auto flex items-center gap-2 sm:gap-3">
+                {/* Phase + lap timer */}
+                <div className="flex flex-col min-w-0 flex-shrink-0">
+                  <span className={`text-[10px] font-black uppercase tracking-wider leading-none ${
+                    phase === 'work' ? (testState === 'paused' ? 'text-amber-600' : 'text-red-600') :
+                    phase === 'recovery' ? 'text-sky-600' :
+                    phase === 'warmup' ? 'text-amber-600' :
+                    phase === 'cooldown' ? 'text-teal-600' : 'text-gray-500'
+                  }`}>
+                    {phase === 'work' ? `Step ${currentStep + 1}/${protocol.steps.length}` :
+                     phase === 'recovery' ? 'Recovery' :
+                     phase === 'warmup' ? `Warmup${warmup.type === 'steps' ? ` ${warmupStep + 1}/${warmup.stepCount}` : ''}` :
+                     phase === 'cooldown' ? 'Cooldown' : phase}
+                  </span>
+                  <span className="text-base sm:text-lg font-black tabular-nums leading-tight text-gray-900">
+                    {phase === 'work' ? `${fmtTime(intervalTimer)}/${fmtTime(currentStepData.duration || 360)}` :
+                     phase === 'recovery' ? `${fmtTime(recoveryTimer)}/${fmtTime(protocol.recoveryDuration)}` :
+                     phase === 'warmup' ? `${fmtTime(warmupTimer)}/${fmtTime(warmupDuration)}` :
+                     phase === 'cooldown' ? `${fmtTime(cooldownTimer)}/${fmtTime(cooldown.duration)}` :
+                     fmtTime(totalTestTime)}
+                  </span>
+                </div>
+
+                {/* Power */}
+                {(phase === 'work' || phase === 'warmup' || phase === 'cooldown') && (
+                  <div className="flex flex-col items-center px-2 border-l border-gray-200/70 min-w-0">
+                    <span className="text-[9px] font-bold uppercase text-gray-400 leading-none">PWR</span>
+                    <span className="text-base sm:text-lg font-black text-primary tabular-nums leading-tight whitespace-nowrap">
+                      {trainerConnected ? actualPower : '—'}
+                      <span className="text-[10px] text-gray-400 ml-0.5 font-bold">
+                        /{phase === 'work' ? effectiveTargetPower : phase === 'warmup' ? currentWarmupPower : cooldown.power}
+                      </span>
+                    </span>
+                  </div>
+                )}
+
+                {/* Heart rate */}
+                <div className="flex flex-col items-center px-2 border-l border-gray-200/70 min-w-0">
+                  <span className="text-[9px] font-bold uppercase text-gray-400 leading-none">HR</span>
+                  <span className="text-base sm:text-lg font-black text-rose-600 tabular-nums leading-tight">
+                    {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
+                  </span>
+                </div>
+
+                {/* Controls */}
+                <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                  {testState === 'running' ? (
+                    <button
+                      onClick={handlePauseTest}
+                      className="flex items-center justify-center w-9 h-9 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 active:scale-95 transition-all"
+                      aria-label="Pause"
+                    >
+                      <PauseIcon className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleResumeTest}
+                      className="flex items-center justify-center w-9 h-9 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 active:scale-95 transition-all shadow-sm"
+                      aria-label="Resume"
+                    >
+                      <PlayIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                  {phase === 'work' && (
+                    <button
+                      onClick={handleSkipInterval}
+                      className="flex items-center justify-center w-9 h-9 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 active:scale-95 transition-all"
+                      aria-label="Skip interval"
+                    >
+                      <ForwardIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={handleStopTest}
+                    className="flex items-center justify-center w-9 h-9 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200 active:scale-95 transition-all"
+                    aria-label="Stop test"
+                  >
+                    <StopIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Mini progress bar — shows progress of current phase */}
+              <div className="mt-1.5 h-0.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    phase === 'work' ? 'bg-red-500' :
+                    phase === 'recovery' ? 'bg-sky-400' :
+                    phase === 'warmup' ? 'bg-amber-400' :
+                    phase === 'cooldown' ? 'bg-teal-400' : 'bg-gray-400'
+                  }`}
+                  style={{ width: `${(
+                    phase === 'work' ? stepProgress :
+                    phase === 'recovery' ? recoveryProgress :
+                    phase === 'warmup' ? warmupProgress :
+                    phase === 'cooldown' ? cooldownProgress : 0
+                  ) * 100}%` }}
+                />
+              </div>
+            </div>
 
             {/* Step progress — hide during warmup */}
             {phase !== 'warmup' && (

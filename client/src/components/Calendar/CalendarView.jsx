@@ -3173,11 +3173,31 @@ export default function CalendarView({
       if (!pw.date) return;
       const d = new Date(pw.date);
       if (isNaN(d.getTime())) return;
-      const key = startOfWeek(d).toISOString().slice(0, 10);
-      if (!plannedByWeek[key]) plannedByWeek[key] = { plannedSeconds: 0, plannedTSS: 0 };
+      const weekStart = startOfWeek(d);
+      const key = weekStart.toISOString().slice(0, 10);
+      // Only count weeks the calendar is currently rendering — keeps the
+      // summary fast and matches what the user can see.
+      if (!visibleWeekKeys.has(key)) return;
+      if (!plannedByWeek[key]) plannedByWeek[key] = { weekStart, plannedSeconds: 0, plannedTSS: 0 };
       const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
       plannedByWeek[key].plannedSeconds += secs;
       plannedByWeek[key].plannedTSS += Number(pw.targetTss || 0);
+    });
+
+    // Seed empty summary entries for visible weeks that have ONLY planned
+    // workouts (no activities yet). Without this, future weeks render no
+    // weekly-summary column at all even when plans exist.
+    Object.keys(plannedByWeek).forEach(key => {
+      if (!summary[key]) {
+        summary[key] = {
+          weekStart: plannedByWeek[key].weekStart,
+          totalSeconds: 0,
+          runSeconds: 0, bikeSeconds: 0, swimSeconds: 0, strengthSeconds: 0,
+          distanceRun: 0, distanceBike: 0, distanceSwim: 0,
+          tssRun: 0, tssBike: 0, tssSwim: 0, tssStrength: 0,
+          totalTSS: 0, hasTss: false,
+        };
+      }
     });
 
     const sorted = Object.values(summary)

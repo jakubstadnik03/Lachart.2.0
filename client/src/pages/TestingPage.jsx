@@ -8,6 +8,8 @@ import PreviousTestingComponent from "../components/Testing-page/PreviousTesting
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import NativeTestingPage from './NativeTestingPage';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus } from '../services/api';
 import { logTestCreated } from '../utils/eventLogger';
@@ -82,6 +84,37 @@ const TestingPage = () => {
   navigateRef.current = navigate;
   const userRef = useRef(user);
   userRef.current = user;
+
+  // Native-mode scroll-snap: when this page is shown inside the native app
+  // (?full=1 path), enable y-proximity snap on the parent NativeLayout scroll
+  // container so each major section lands cleanly. No-op on desktop.
+  const pageRootRef = useRef(null);
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const el = pageRootRef.current;
+    if (!el) return;
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const cs = window.getComputedStyle(node);
+      if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') break;
+      node = node.parentElement;
+    }
+    if (!node || node === document.body) return;
+    const prev = {
+      st: node.style.scrollSnapType,
+      sp: node.style.scrollPaddingTop,
+      sb: node.style.scrollBehavior,
+    };
+    node.style.scrollSnapType   = 'y proximity';
+    // Sticky top bar inside this page is ~52px tall — snap targets should land below it.
+    node.style.scrollPaddingTop = '60px';
+    node.style.scrollBehavior   = 'smooth';
+    return () => {
+      node.style.scrollSnapType   = prev.st || '';
+      node.style.scrollPaddingTop = prev.sp || '';
+      node.style.scrollBehavior   = prev.sb || '';
+    };
+  }, []);
   /**
    * Same rule as DashboardPage: coach/tester use selected athlete (or coach self);
    * plain athletes always use user._id (selectedAthleteId state stays null for them).
@@ -106,6 +139,19 @@ const TestingPage = () => {
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
+
+  // Honor ?new=1 from the native testing page's "+ New" button — open the
+  // new-test form on first paint, then strip the flag so back-navigation
+  // doesn't keep re-opening it.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setShowNewTesting(true);
+    setMobileTab('tests');
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUrlTestSelection = (nextTestId) => {
     setSearchParams((prev) => {
@@ -1222,12 +1268,27 @@ const TestingPage = () => {
     </motion.div>
   );
 
+  // Native app: show the mobile-optimised test list / curve view.
+  // Desktop view stays accessible via `?full=1` query param (used by "Open full data" button).
+  if (isCapacitorNative() && !searchParams.get('full')) {
+    return <NativeTestingPage user={user} athleteId={selectedAthleteId || user?._id} />;
+  }
+
   // activeTab drives both mobile and desktop — 'tests' | 'history'
   const activeTab = mobileTab; // reuse existing state
   const setActiveTab = setMobileTab;
 
+  // When opened in native mode (?full=1), each major section should snap into
+  // view as the user scrolls — matches the native dashboard / testing pages.
+  // Pure styling helper; no-op on desktop.
+  const isNativeFull = isCapacitorNative();
+  const sectionSnap = isNativeFull
+    ? { scrollSnapAlign: 'start', scrollSnapStop: 'normal' }
+    : {};
+
   return (
     <motion.div
+      ref={pageRootRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="flex flex-col w-full max-w-[1600px] mx-auto min-h-0 overflow-x-hidden"
@@ -1351,6 +1412,7 @@ const TestingPage = () => {
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.22 }}
                     className="overflow-hidden"
+                    style={sectionSnap}
                   >
                     <NewTestingComponent
                       selectedSport={selectedSport}
@@ -1361,7 +1423,7 @@ const TestingPage = () => {
               </AnimatePresence>
 
               {/* Tests list */}
-              <div data-tour="tour-test-list">
+              <div data-tour="tour-test-list" style={sectionSnap}>
                 <PreviousTestingComponent
                   key={selectedAthleteId || user?._id}
                   selectedSport={selectedSport}
@@ -1400,16 +1462,18 @@ const TestingPage = () => {
               ) : (
                 <>
                   {/* Threshold progression */}
-                  <ThresholdHistory
-                    tests={tests}
-                    onSelectTestId={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
-                    externalActivities={externalActivities}
-                    bikePowerMetrics={bikePowerMetrics}
-                    onClose={null}
-                  />
+                  <div style={sectionSnap}>
+                    <ThresholdHistory
+                      tests={tests}
+                      onSelectTestId={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
+                      externalActivities={externalActivities}
+                      bikePowerMetrics={bikePowerMetrics}
+                      onClose={null}
+                    />
+                  </div>
 
                   {/* Desktop: two-column for protocol + insights */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={sectionSnap}>
                     {recommendationsEligible && (
                       <TestRecommendationCard
                         sportsWithPastTests={sportsWithPastTests}

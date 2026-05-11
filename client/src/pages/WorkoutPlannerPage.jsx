@@ -226,6 +226,41 @@ export default function WorkoutPlannerPage() {
     }
   };
 
+  // ── Week summary (planned + completed totals, per-sport breakdown) ────────
+  const weekSummary = useMemo(() => {
+    const sportKey = (s) => {
+      const x = String(s || '').toLowerCase();
+      if (x.includes('run')) return 'run';
+      if (x.includes('swim')) return 'swim';
+      if (x.includes('ride') || x.includes('cycle') || x.includes('bike') || x.includes('virtual')) return 'bike';
+      return 'other';
+    };
+    const sec = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
+
+    const plannedTotals = { sec: 0, tss: 0, run: 0, bike: 0, swim: 0, other: 0 };
+    planned.forEach(pw => {
+      const s = (stepTotalSecs(pw.steps) || 0) || sec(pw.plannedDuration);
+      plannedTotals.sec += s;
+      plannedTotals.tss += sec(pw.targetTss);
+      plannedTotals[sportKey(pw.sport)] += s;
+    });
+
+    const doneTotals = { sec: 0, tss: 0, run: 0, bike: 0, swim: 0, other: 0 };
+    trainings.forEach(t => {
+      const s = sec(t.totalTimerTime || t.moving_time || t.movingTime || t.totalElapsedTime || t.elapsedTime || t.duration);
+      doneTotals.sec += s;
+      doneTotals.tss += sec(t.tss || t.TSS || t.totalTSS);
+      doneTotals[sportKey(t.sport || t.sport_type || t.type)] += s;
+    });
+
+    return { planned: plannedTotals, done: doneTotals };
+  }, [planned, trainings]);
+
+  const fmtHours = (s) => (s > 0 ? `${(s / 3600).toFixed(1)}h` : '0h');
+  const completionPct = weekSummary.planned.sec > 0
+    ? Math.min(100, Math.round((weekSummary.done.sec / weekSummary.planned.sec) * 100))
+    : null;
+
   // ── Render ────────────────────────────────────────────────────────────────
   const today = new Date();
 
@@ -280,6 +315,75 @@ export default function WorkoutPlannerPage() {
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">
               LT2 {Math.round(context.lt2Power)} W
             </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Week summary ─────────────────────────────────────────────────── */}
+      {(weekSummary.planned.sec > 0 || weekSummary.done.sec > 0) && (
+        <div className="mb-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            {/* Total time — Done / Planned */}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Time</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-bold text-slate-900 tabular-nums">{fmtHours(weekSummary.done.sec)}</span>
+                {weekSummary.planned.sec > 0 && (
+                  <span className="text-xs font-semibold text-slate-400 tabular-nums">/ {fmtHours(weekSummary.planned.sec)}</span>
+                )}
+              </div>
+            </div>
+
+            {/* TSS — Done / Planned */}
+            {(weekSummary.planned.tss > 0 || weekSummary.done.tss > 0) && (
+              <div className="flex flex-col">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TSS</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-lg font-bold text-slate-900 tabular-nums">{Math.round(weekSummary.done.tss)}</span>
+                  {weekSummary.planned.tss > 0 && (
+                    <span className="text-xs font-semibold text-slate-400 tabular-nums">/ {Math.round(weekSummary.planned.tss)}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Per-sport hours (planned, since this is a planner) */}
+            {weekSummary.planned.sec > 0 && (
+              <div className="flex items-center gap-3 ml-auto">
+                {weekSummary.planned.bike > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-blue-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> {fmtHours(weekSummary.planned.bike)}
+                  </span>
+                )}
+                {weekSummary.planned.run > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> {fmtHours(weekSummary.planned.run)}
+                  </span>
+                )}
+                {weekSummary.planned.swim > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-cyan-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" /> {fmtHours(weekSummary.planned.swim)}
+                  </span>
+                )}
+                {weekSummary.planned.other > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-slate-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> {fmtHours(weekSummary.planned.other)}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Progress bar — done vs planned */}
+          {completionPct != null && (
+            <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  completionPct >= 100 ? 'bg-emerald-500' : completionPct >= 70 ? 'bg-amber-500' : 'bg-primary'
+                }`}
+                style={{ width: `${completionPct}%` }}
+              />
+            </div>
           )}
         </div>
       )}

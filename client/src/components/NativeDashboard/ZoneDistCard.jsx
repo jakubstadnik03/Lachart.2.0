@@ -25,6 +25,7 @@ function intensityToZone(val) {
 }
 
 function normalizeSport(t) {
+  if (!t) return null;
   const s = (t.sport || t.sport_type || t.type || '').toLowerCase();
   if (s.includes('run'))                               return 'run';
   if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
@@ -50,6 +51,7 @@ function totalTrainingSecs(t) {
 }
 
 function estimateTestThresholds(test) {
+  if (!test) return { lt1Hr: null, lt2Hr: null, lt1Power: null, lt2Power: null };
   const ov = test.thresholdOverrides || {};
   let lt1Hr    = ov.LTP1_hr != null ? Number(ov.LTP1_hr) : null;
   let lt2Hr    = ov.LTP2_hr != null ? Number(ov.LTP2_hr) : null;
@@ -92,8 +94,8 @@ function estimateTestThresholds(test) {
 
 function computeThresholds(tests, sport) {
   if (!Array.isArray(tests) || tests.length === 0 || !sport) return null;
-  const matching = tests.filter(t => t.sport === sport)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const matching = tests.filter(t => t && t.sport === sport)
+    .sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0));
   if (matching.length === 0) return null;
   const th = estimateTestThresholds(matching[0]);
   if (!th.lt2Hr && !th.lt2Power) return null;
@@ -120,6 +122,7 @@ function classifyByThreshold(hr, power, th) {
 }
 
 function extractZones(training, thresholds) {
+  if (!training) return null;
   const empty = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
 
   // 1. Structured zone arrays
@@ -231,14 +234,29 @@ function fmtDuration(secs) {
   return `${h}h ${m}m`;
 }
 
+// ─── sport icon paths (matches CalendarView) ──────────────────────────────────
+const SPORT_ICONS = {
+  bike: '/icon/bike.svg',
+  run:  '/icon/run.svg',
+  swim: '/icon/swim.svg',
+};
+
+// Sport tint colours — same palette as WeekStrip
+const SPORT_TINT = {
+  bike: '#3b82f6',
+  run:  '#f97316',
+  swim: '#06b6d4',
+};
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export default function ZoneDistCard({ activities = [], tests = [] }) {
   const [range, setRange] = useState('week');
+  const [sport, setSport] = useState('all');
   const today = new Date();
 
   // Filter activities by time range
-  const filtered = activities.filter(a => {
+  const inRange = activities.filter(a => {
     const d = new Date(a.date || a.startDate || a.timestamp || 0);
     if (range === 'week')  return isSameWeek(d, today);
     if (range === 'month') return isSameMonth(d, today);
@@ -247,17 +265,29 @@ export default function ZoneDistCard({ activities = [], tests = [] }) {
     return d >= cutoff;
   });
 
+  // Detect which sports have data in the selected range (for sport toggle)
+  const sportsAvailable = new Set();
+  inRange.forEach(a => {
+    const s = normalizeSport(a);
+    if (s) sportsAvailable.add(s);
+  });
+
+  // Apply sport filter
+  const filtered = sport === 'all'
+    ? inRange
+    : inRange.filter(a => normalizeSport(a) === sport);
+
   // Aggregate zones using threshold-based classification
   const totals = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
   let hasData = false;
   const threshCache = {};
 
   filtered.forEach(t => {
-    const sport = normalizeSport(t);
-    if (!(sport in threshCache)) {
-      threshCache[sport] = computeThresholds(tests, sport);
+    const tSport = normalizeSport(t);
+    if (!(tSport in threshCache)) {
+      threshCache[tSport] = computeThresholds(tests, tSport);
     }
-    const z = extractZones(t, threshCache[sport]);
+    const z = extractZones(t, threshCache[tSport]);
     if (z) {
       hasData = true;
       Object.keys(totals).forEach(k => { totals[k] += z[k] || 0; });
@@ -278,27 +308,50 @@ export default function ZoneDistCard({ activities = [], tests = [] }) {
     else if (pct.z1 > pct.z2 && pct.z2 > pct.z3) distLabel = { text: 'Pyramidal', color: '#f59e0b' };
   }
 
+  // Sport toggle items (always show All; show sport buttons only if data exists)
+  const sportToggles = [
+    { key: 'all',  label: 'All',  icon: null },
+    { key: 'bike', label: 'Bike', icon: SPORT_ICONS.bike },
+    { key: 'run',  label: 'Run',  icon: SPORT_ICONS.run  },
+    { key: 'swim', label: 'Swim', icon: SPORT_ICONS.swim },
+  ].filter(t => t.key === 'all' || sportsAvailable.has(t.key));
+
   return (
     <div style={styles.card}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <span style={styles.sectionLabel}>Time in Zones</span>
           {distLabel && (
-            <span style={{
-              fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999,
-              background: distLabel.color + '18', color: distLabel.color,
-            }}>
+            <span
+              key={distLabel.text}
+              style={{
+                fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999,
+                background: distLabel.color + '18', color: distLabel.color,
+                whiteSpace: 'nowrap',
+                animation: 'ndPopIn .5s .25s cubic-bezier(.22,1.4,.36,1) both',
+                transition: 'background .25s ease, color .25s ease',
+              }}
+            >
               {distLabel.text}
             </span>
           )}
         </div>
         <div style={styles.seg}>
-          {[['week', 'Week'], ['4w', '4 wks'], ['month', 'Month']].map(([val, lbl]) => (
+          {[['week', 'Wk'], ['4w', '4w'], ['month', 'Mo']].map(([val, lbl]) => (
             <button
               key={val}
-              style={{ ...styles.segBtn, ...(range === val ? styles.segBtnOn : {}) }}
+              style={{
+                ...styles.segBtn,
+                ...(range === val ? styles.segBtnOn : {}),
+                transition: 'background .25s ease, color .25s ease, box-shadow .25s ease, transform .12s ease',
+              }}
               onClick={() => setRange(val)}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+              onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+              onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
             >
               {lbl}
             </button>
@@ -306,59 +359,146 @@ export default function ZoneDistCard({ activities = [], tests = [] }) {
         </div>
       </div>
 
+      {/* Sport toggle row — only show if more than one sport in range */}
+      {sportToggles.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 11, flexWrap: 'wrap' }}>
+          {sportToggles.map(({ key, label, icon }, idx) => {
+            const on = sport === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setSport(key)}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+                onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+                onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: icon ? '4px 9px 4px 6px' : '4px 10px',
+                  borderRadius: 9999,
+                  border: on ? '1px solid #5E6590' : '1px solid rgba(118,126,181,.18)',
+                  background: on ? '#5E6590' : 'rgba(255,255,255,.5)',
+                  color: on ? '#fff' : '#6B7280',
+                  fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'background .25s ease, color .25s ease, border-color .25s ease, transform .12s ease',
+                  animation: `ndPopIn .35s ${idx * 50}ms cubic-bezier(.22,1.4,.36,1) both`,
+                }}
+              >
+                {icon && (
+                  <span
+                    aria-label={label}
+                    style={{
+                      width: 13, height: 13, display: 'block', flexShrink: 0,
+                      background: on ? '#fff' : (SPORT_TINT[key] || '#6B7280'),
+                      WebkitMaskImage: `url(${icon})`,
+                      maskImage:       `url(${icon})`,
+                      WebkitMaskRepeat: 'no-repeat',
+                      maskRepeat: 'no-repeat',
+                      WebkitMaskPosition: 'center',
+                      maskPosition: 'center',
+                      WebkitMaskSize: 'contain',
+                      maskSize: 'contain',
+                    }}
+                  />
+                )}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* No data state */}
       {!hasData ? (
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
-          <div style={{ fontSize: 24, marginBottom: 6 }}>📊</div>
+          {/* Bar-chart icon — empty zones state */}
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 6 }}>
+            <line x1="12" y1="20" x2="12" y2="10" />
+            <line x1="18" y1="20" x2="18" y2="4" />
+            <line x1="6"  y1="20" x2="6"  y2="14" />
+            <line x1="3"  y1="20" x2="21" y2="20" />
+          </svg>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>No zone data</div>
           <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>
-            Add a lactate test to enable threshold-based classification
+            {sport === 'all'
+              ? 'Add a lactate test to enable threshold-based classification'
+              : `No ${sport} data in this range`}
           </div>
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {ZONES.map(({ key, name, color }) => {
+          <div
+            key={`zones-${range}-${sport}`}
+            style={{ display: 'flex', flexDirection: 'column', gap: 7 }}
+          >
+            {ZONES.map(({ key, name, color }, idx) => {
               const secs = totals[key];
               const pct  = totalSecs > 0 ? (secs / totalSecs) * 100 : 0;
               const barW = (secs / maxSecs) * 100;
+              const barDelay = idx * 60;
 
               return (
-                <div key={key} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 50px', alignItems: 'center', gap: 8 }}>
-                  {/* Label */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div
+                  key={key}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '88px 1fr 60px',
+                    alignItems: 'center',
+                    gap: 8,
+                    animation: `ndFadeIn .4s ${barDelay}ms cubic-bezier(.22,1,.36,1) both`,
+                  }}>
+                  {/* Label: zone pill + name */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{
                       fontSize: 9.5, fontWeight: 800, color,
-                      width: 20, textAlign: 'center',
+                      width: 22, textAlign: 'center',
                       padding: '2px 0', borderRadius: 4,
                       background: color + '18',
+                      flexShrink: 0,
                     }}>
                       {key.toUpperCase()}
                     </span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>{name}</span>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 600, color: '#374151',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {name}
+                    </span>
                   </div>
 
-                  {/* Bar track */}
+                  {/* Bar track — bar slides right from 0 width */}
                   <div style={{ position: 'relative', height: 7, borderRadius: 4, background: 'rgba(118,126,181,.1)', overflow: 'hidden' }}>
                     <div style={{
                       position: 'absolute', left: 0, top: 0, bottom: 0,
                       width: `${barW}%`, borderRadius: 4,
                       background: color,
                       opacity: secs > 0 ? 1 : 0,
-                      transition: 'width .4s ease',
+                      transformOrigin: 'left center',
+                      transition: 'width .55s cubic-bezier(.22,1,.36,1), background .25s ease',
+                      animation: secs > 0 ? `ndBarWidthIn .8s ${barDelay + 60}ms cubic-bezier(.22,1,.36,1) both` : 'none',
+                      '--nd-bar-w': `${barW}%`,
                     }} />
                   </div>
 
-                  {/* Time + % */}
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: secs > 0 ? '#0A0E1A' : '#D1D5DB', fontVariantNumeric: 'tabular-nums' }}>
+                  {/* Time + percentage — right-aligned, fixed width */}
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+                    fontVariantNumeric: 'tabular-nums', lineHeight: 1.2,
+                  }}>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700,
+                      color: secs > 0 ? '#0A0E1A' : '#D1D5DB',
+                    }}>
                       {fmtDuration(secs)}
-                    </div>
-                    {secs > 0 && (
-                      <div style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600 }}>
-                        {pct.toFixed(0)}%
-                      </div>
-                    )}
+                    </span>
+                    <span style={{
+                      fontSize: 9, color: secs > 0 ? '#9CA3AF' : 'transparent', fontWeight: 600,
+                      minHeight: 11,
+                    }}>
+                      {secs > 0 ? `${pct.toFixed(0)}%` : '·'}
+                    </span>
                   </div>
                 </div>
               );

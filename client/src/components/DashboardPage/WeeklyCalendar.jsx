@@ -1036,7 +1036,10 @@ const WeeklyCalendar = ({
     const map = new Map();
     plannedWorkouts.forEach(pw => {
       if (!pw.date) return;
-      const key = pw.date.slice(0, 10);
+      // pw.date is normally an ISO string from the API ("2026-05-15T00:00:00.000Z")
+      // but optimistic-update paths can leave it as a Date object — coerce to
+      // string first so .slice doesn't throw and silently break the whole map.
+      const key = String(pw.date).slice(0, 10);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(pw);
     });

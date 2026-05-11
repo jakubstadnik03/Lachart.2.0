@@ -20,6 +20,8 @@ import {
 } from '@heroicons/react/24/outline';
 import api, { getFitTrainings, listExternalActivities } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import NativeProfilePage from './NativeProfilePage';
 
 const ProfilePage = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -555,7 +557,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   );
 
   if (!userInfo) return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="p-6 text-gray-600"
@@ -563,6 +565,11 @@ const [selectedTitle, setSelectedTitle] = useState(null);
       No user data available
     </motion.div>
   );
+
+  // Native app gets a mobile-optimised view that reuses the dashboard's design language
+  if (isCapacitorNative()) {
+    return <NativeProfilePage userInfo={userInfo} calendarData={calendarData} />;
+  }
 
   return (
     <motion.div

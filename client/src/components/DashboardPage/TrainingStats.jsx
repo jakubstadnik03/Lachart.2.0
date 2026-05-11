@@ -355,6 +355,9 @@ export function TrainingStats({
   selectedTitle, setSelectedTitle,
   selectedTrainingId, setSelectedTrainingId,
   isFullWidth = false, user = null,
+  // Coach viewing another athlete: pass the athlete's id so the Strava
+  // detail endpoint resolves their token, not the coach's.
+  integrationAthleteId = null,
 }) {
   const navigate   = useNavigate();
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
@@ -414,21 +417,46 @@ export function TrainingStats({
     }
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
-  const trainingOptions = useMemo(() => {
-    const titles = [...new Set(
-      trainingsList
-        .filter(t => currentSelectedSport === "all" || t.sport === currentSelectedSport)
-        .map(t => t.title)
-    )];
-    return titles.map(t => ({ value: t, label: t }));
-  }, [trainingsList, currentSelectedSport]);
+  // Sentinel option that surfaces every lactate-tagged training regardless
+  // of its title — mirrors the mobile "Lactate-tested" panel so coaches /
+  // athletes can see every export with lactate even if the original Strava
+  // name differs.
+  const LACTATE_OPTION = '__lactate__';
+  const hasLactateValue = useCallback((t) => {
+    if (!t) return false;
+    if (t.lactate != null && Number(t.lactate) > 0) return true;
+    if (Array.isArray(t.results)) {
+      if (t.results.some(r => r && (r.lactate != null || r.mmol != null))) return true;
+    }
+    if (Array.isArray(t.laps)) {
+      if (t.laps.some(l => l && (l.lactate != null || l.lactateValue != null))) return true;
+    }
+    return false;
+  }, []);
 
-  const filteredTrainings = useMemo(() =>
-    trainingsList
-      .filter(t => (currentSelectedSport === "all" || t.sport === currentSelectedSport) && t.title === currentSelectedTitle)
-      .sort((a, b) => new Date(b.date) - new Date(a.date)),
-    [trainingsList, currentSelectedSport, currentSelectedTitle]
-  );
+  const trainingOptions = useMemo(() => {
+    const sportFiltered = trainingsList.filter(t =>
+      currentSelectedSport === "all" || t.sport === currentSelectedSport
+    );
+    const titles = [...new Set(sportFiltered.map(t => t.title).filter(Boolean))];
+    const lactateCount = sportFiltered.filter(hasLactateValue).length;
+    const opts = titles.map(t => ({ value: t, label: t }));
+    if (lactateCount > 0) {
+      opts.unshift({
+        value: LACTATE_OPTION,
+        label: `Lactate trainings (${lactateCount})`,
+      });
+    }
+    return opts;
+  }, [trainingsList, currentSelectedSport, hasLactateValue]);
+
+  const filteredTrainings = useMemo(() => {
+    const sportOk = (t) => currentSelectedSport === "all" || t.sport === currentSelectedSport;
+    const list = currentSelectedTitle === LACTATE_OPTION
+      ? trainingsList.filter(t => sportOk(t) && hasLactateValue(t))
+      : trainingsList.filter(t => sportOk(t) && t.title === currentSelectedTitle);
+    return list.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [trainingsList, currentSelectedSport, currentSelectedTitle, hasLactateValue]);
 
   // Lazy-fetch Strava laps for filtered trainings that have no results
   const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
@@ -454,7 +482,11 @@ export function TrainingStats({
 
   useEffect(() => {
     const stravaNeeded = filteredTrainings.filter(t => {
-      if (t.type !== 'strava') return false;
+      // Strava activities from /api/integrations/activities have source='strava';
+      // t.type holds the sport (Ride/Swim/Run), so checking it was a no-op.
+      const isStrava = t.source === 'strava' || t.type === 'strava' || !!t.stravaId
+                       || String(t.id || '').startsWith('strava-');
+      if (!isStrava) return false;
       if (Array.isArray(t.results) && t.results.length > 0) return false;
       const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
       if (!rawId) return false;
@@ -464,7 +496,7 @@ export function TrainingStats({
     let cancelled = false;
     stravaNeeded.forEach(t => {
       const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
-      getStravaActivityDetail(rawId).then(raw => {
+      getStravaActivityDetail(rawId, integrationAthleteId).then(raw => {
         if (cancelled) return;
         const laps = raw?.laps ?? [];
         const results = laps.map(lap => stravaLapToResult(lap, t.sport));
@@ -474,12 +506,14 @@ export function TrainingStats({
       });
     });
     return () => { cancelled = true; };
-  }, [filteredTrainings, stravaLapsCache, stravaLapToResult]);
+  }, [filteredTrainings, stravaLapsCache, stravaLapToResult, integrationAthleteId]);
 
   // Enrich a training's results with fetched Strava laps when needed
   const getResults = useCallback((t) => {
     if (Array.isArray(t?.results) && t.results.length > 0) return t.results;
-    if (t?.type === 'strava') {
+    const isStrava = t?.source === 'strava' || t?.type === 'strava' || !!t?.stravaId
+                     || String(t?.id || '').startsWith('strava-');
+    if (isStrava) {
       const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
       if (rawId && stravaLapsCache[rawId]) return stravaLapsCache[rawId];
     }

@@ -87,19 +87,39 @@ function getTabsForRole(user, effectiveAthleteId) {
 }
 
 // ─── Notification helpers ──────────────────────────────────────────────────────
-const notifTypeIcon = (type) => {
-  if (!type) return '🔔';
-  if (type.includes('comment'))  return '💬';
-  if (type.includes('lactate'))  return '🩸';
-  if (type.includes('strava'))   return '🟠';
-  if (type.includes('fit'))      return '📤';
-  if (type.includes('training')) return '🏃';
-  if (type.includes('test'))     return '📊';
-  if (type.includes('plan'))     return '📅';
-  if (type.includes('coach'))    return '👤';
-  return '🔔';
+// Returns an SVG node + tint color for each notification type — replaces emoji.
+const NOTIF_ICONS = {
+  bell:    { color: '#5E6590', d: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0' },
+  comment: { color: '#5E6590', d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  lactate: { color: '#B45309', d: 'M9 2v6L4 18a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3L15 8V2 M6.5 13h11 M9 2h6' },
+  strava:  { color: '#FC4C02', d: 'M11 1L4 14h4l3-6 3 6h4z M14 14l-3 6-3-6' },
+  upload:  { color: '#0891b2', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12' },
+  run:     { color: '#f97316', d: 'M13 4a3 3 0 1 0-6 0 3 3 0 0 0 6 0z M5 22l5-7 4 5 5-3' },
+  test:    { color: '#5E6590', d: 'M3 20h2V10H3v10z M7 20h2V4H7v16z M11 20h2v-7h-2v7z M15 20h2V7h-2v13z M19 20h2v-4h-2v4z' },
+  plan:    { color: '#5E6590', d: 'M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z M16 2v4 M8 2v4 M3 10h18' },
+  coach:   { color: '#5E6590', d: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
 };
-
+const notifTypeKey = (type) => {
+  if (!type) return 'bell';
+  if (type.includes('comment'))  return 'comment';
+  if (type.includes('lactate'))  return 'lactate';
+  if (type.includes('strava'))   return 'strava';
+  if (type.includes('fit'))      return 'upload';
+  if (type.includes('training')) return 'run';
+  if (type.includes('test'))     return 'test';
+  if (type.includes('plan'))     return 'plan';
+  if (type.includes('coach'))    return 'coach';
+  return 'bell';
+};
+const NotifIcon = ({ type, size = 18 }) => {
+  const key = notifTypeKey(type);
+  const def = NOTIF_ICONS[key] || NOTIF_ICONS.bell;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={def.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d={def.d} />
+    </svg>
+  );
+};
 const fmtNotifTime = (d) => {
   const diff = Date.now() - new Date(d).getTime();
   const mins = Math.floor(diff / 60000);
@@ -161,8 +181,12 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                 <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
               )}
               {!loading && notifs.length === 0 && (
-                <div className="py-12 text-center">
-                  <div className="text-4xl mb-3">🔔</div>
+                <div className="py-12 text-center flex flex-col items-center">
+                  {/* Bell SVG — replaces 🔔 emoji */}
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mb-3">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
                   <p className="text-sm text-gray-400 font-medium">No notifications yet</p>
                 </div>
               )}
@@ -173,9 +197,9 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   className={`w-full flex items-start gap-3 px-5 py-3.5 border-b border-gray-50 active:bg-gray-50 text-left ${!n.read ? 'bg-primary/[0.03]' : ''}`}
                 >
-                  {/* Icon circle */}
-                  <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-base ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
-                    {notifTypeIcon(n.type)}
+                  {/* Icon circle — SVG per type, replaces emoji */}
+                  <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                    <NotifIcon type={n.type} size={18} />
                   </div>
 
                   {/* Text */}
@@ -434,10 +458,29 @@ function NativeBottomTabBar({ tabs }) {
 
   return (
     <div
-      className="flex-shrink-0 bg-white border-t border-gray-200"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className="flex-shrink-0"
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        background: 'rgba(255,255,255,.85)',
+        backdropFilter: 'blur(18px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(160%)',
+        borderTop: '1px solid rgba(118,126,181,.14)',
+      }}
     >
-      <div className="flex" style={{ height: 50 }}>
+      {/* Local keyframes for the active pill pop-in */}
+      <style>{`
+        @keyframes ndTabPop {
+          from { opacity: 0; transform: scale(.6); }
+          60%  { opacity: 1; transform: scale(1.05); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes ndTabIconPop {
+          from { transform: translateY(2px) scale(.92); }
+          to   { transform: translateY(0) scale(1); }
+        }
+      `}</style>
+
+      <div className="flex" style={{ height: 56, padding: '4px 6px' }}>
         {tabs.map((tab) => {
           const isActive = (() => {
             const p = location.pathname;
@@ -456,15 +499,62 @@ function NativeBottomTabBar({ tabs }) {
             <NavLink
               key={tab.key}
               to={tab.path}
-              style={{ touchAction: 'manipulation' }}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5"
+              style={{
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+                position: 'relative',
+                transition: 'transform .14s ease',
+              }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+              onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+              onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+              className="flex-1 flex items-center justify-center"
             >
-              <span className={isActive ? 'text-primary' : 'text-gray-400'}>
-                <Icon d={tab.icon} size={22} strokeWidth={isActive ? 2.2 : 1.8} />
-              </span>
-              <span className={`text-[10px] font-medium leading-none ${isActive ? 'text-primary' : 'text-gray-400'}`}>
-                {tab.label}
-              </span>
+              {/* Minimal stack: icon + label, with a subtle dot under the label when active */}
+              <div
+                style={{
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 3,
+                  position: 'relative',
+                }}
+              >
+                {/* Icon */}
+                <span
+                  style={{
+                    color: isActive ? '#5E6590' : '#9CA3AF',
+                    transition: 'color .25s ease',
+                  }}
+                >
+                  <Icon d={tab.icon} size={22} strokeWidth={isActive ? 2.2 : 1.8} />
+                </span>
+
+                {/* Label */}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: isActive ? 700 : 500,
+                    lineHeight: 1,
+                    color: isActive ? '#5E6590' : '#9CA3AF',
+                    transition: 'color .25s ease, font-weight .25s ease',
+                  }}
+                >
+                  {tab.label}
+                </span>
+
+                {/* Tiny indicator dot below the label — only when active */}
+                <span
+                  style={{
+                    width: 4, height: 4, borderRadius: '50%',
+                    background: '#5E6590',
+                    marginTop: 2,
+                    opacity: isActive ? 1 : 0,
+                    transform: isActive ? 'scale(1)' : 'scale(0)',
+                    transition: 'opacity .2s ease, transform .25s cubic-bezier(.22,1.5,.36,1)',
+                  }}
+                />
+              </div>
             </NavLink>
           );
         })}

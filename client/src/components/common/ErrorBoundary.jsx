@@ -11,8 +11,22 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
+    // Native Capacitor console serialises objects via JSON.stringify, which
+    // drops non-enumerable Error fields (message/stack/name). Log everything
+    // as plain strings so the iOS console actually shows what blew up.
+    const message = error?.message || String(error);
+    const name    = error?.name    || 'Error';
+    const stack   = error?.stack   || '(no stack)';
+    const componentStack = errorInfo?.componentStack || '(no component stack)';
+    // eslint-disable-next-line no-console
+    console.error(
+      `[ErrorBoundary] ${name}: ${message}` +
+      `\n--- error.stack ---\n${stack}` +
+      `\n--- componentStack ---\n${componentStack}`
+    );
+    // Also keep the structured log for browsers that handle it well
+    // eslint-disable-next-line no-console
     console.error('Error caught by boundary:', error, errorInfo);
-    // Zde můžete implementovat logging chyb do služby jako Sentry
   }
 
   render() {

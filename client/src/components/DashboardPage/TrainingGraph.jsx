@@ -189,7 +189,10 @@ const TrainingGraph = ({
   selectedTraining,
   setSelectedTraining,
   selectedSport,
-  setSelectedSport
+  setSelectedSport,
+  // Coach viewing another athlete: passed through to the Strava detail
+  // endpoint so it resolves the athlete's tokens, not the coach's.
+  integrationAthleteId = null,
 }) => {
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
@@ -274,14 +277,19 @@ const TrainingGraph = ({
     const t = trainingList?.find(t => matchesId(t, selectedTraining));
     if (!t) { setFetchedLaps(null); return; }
     if (Array.isArray(t.results) && t.results.length > 0) { setFetchedLaps(null); return; }
+    // Strava activities surface as { source: 'strava', stravaId, ... } from
+    // /api/integrations/activities. `t.type` on those is the activity sport
+    // (Ride/Swim/Run), not the source — checking it broke the lazy-fetch.
+    const isStrava = t.source === 'strava' || t.type === 'strava' || !!t.stravaId
+                     || String(t.id || '').startsWith('strava-');
     const rawId = t.stravaId || (String(t.id || '').replace(/^strava-/, '')) || null;
-    if (!rawId || t.type !== 'strava') { setFetchedLaps(null); return; }
+    if (!rawId || !isStrava) { setFetchedLaps(null); return; }
     // Already fetched for this activity
     if (fetchedLaps?.id === String(rawId)) return;
     let cancelled = false;
     setLapsLoading(true);
     setFetchedLaps(null);
-    getStravaActivityDetail(rawId).then(raw => {
+    getStravaActivityDetail(rawId, integrationAthleteId).then(raw => {
       if (cancelled) return;
       const laps = raw?.laps ?? [];
       const results = laps.map((lap, idx) => stravaLapToResult(lap, idx, t.sport));
@@ -292,7 +300,7 @@ const TrainingGraph = ({
       if (!cancelled) setLapsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [selectedTraining, trainingList, fetchedLaps, matchesId, stravaLapToResult]);
+  }, [selectedTraining, trainingList, fetchedLaps, matchesId, stravaLapToResult, integrationAthleteId]);
 
   const formatPace = (seconds) => {
     const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
@@ -473,14 +481,32 @@ const TrainingGraph = ({
     ? selectedTrainingData.results
     : (fetchedLaps?.results ?? []);
 
-  const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
+  // Sentinel option that lists every lactate-tagged training regardless of
+  // its title — same idea as the mobile "Lactate-tested" panel.
+  const LACTATE_OPTION = '__lactate__';
+  const hasLactateTag = (t) => {
+    if (!t) return false;
+    if (t.lactate != null && Number(t.lactate) > 0) return true;
+    if (Array.isArray(t.results) && t.results.some(r => r && (r.lactate != null || r.mmol != null))) return true;
+    if (Array.isArray(t.laps)    && t.laps.some(l => l && (l.lactate != null || l.lactateValue != null))) return true;
+    return false;
+  };
+  const lactateTrainings = sportTrainings.filter(hasLactateTag);
+  const trainingsWithSelectedTitle = selectedTitle === LACTATE_OPTION
+    ? lactateTrainings
+    : sportTrainings.filter(t => t.title === selectedTitle);
   const trainingOptions = trainingsWithSelectedTitle
     .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0))
     .map(training => ({
-      value: training._id,
+      value: training._id || training.id,
       label: new Date(training.date || training.startDate).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })
     }));
-  const titleOptions = uniqueTitles.map(t => ({ value: t, label: t }));
+  const titleOptions = [
+    ...(lactateTrainings.length > 0
+      ? [{ value: LACTATE_OPTION, label: `Lactate trainings (${lactateTrainings.length})` }]
+      : []),
+    ...uniqueTitles.filter(Boolean).map(t => ({ value: t, label: t })),
+  ];
 
   if (!effectiveResults.length) return (
     <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">

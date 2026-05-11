@@ -27,39 +27,112 @@ function DeltaPill({ value }) {
   );
 }
 
-// Build SVG path string from array of numbers
-function sparklinePath(values, w, h, pad = 4) {
+// Build SVG path from values with explicit [min,max] domain
+function makePath(values, w, h, domMin, domMax, padX = 0, padY = 6) {
   if (!values || values.length < 2) return '';
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
+  const range = domMax - domMin || 1;
   const pts = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * (w - pad * 2);
-    const y = pad + (1 - (v - min) / range) * (h - pad * 2);
+    const x = padX + (i / (values.length - 1)) * (w - padX * 2);
+    const y = padY + (1 - (v - domMin) / range) * (h - padY * 2);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   return 'M' + pts.join(' L');
 }
 
+// y-pixel for a value given domain (used for reference lines)
+function yForVal(val, h, domMin, domMax, padY = 6) {
+  const range = domMax - domMin || 1;
+  return padY + (1 - (val - domMin) / range) * (h - padY * 2);
+}
+
+// Read a value from a data point — API returns capitalised keys (Fitness/Form/Fatigue)
+// but some legacy paths use lowercase; support both.
+function readField(d, ...keys) {
+  for (const k of keys) {
+    const v = d[k] ?? d[k.toLowerCase()] ?? d[k.toUpperCase()];
+    if (v !== undefined && v !== null) return Number(v);
+  }
+  return 0;
+}
+
 export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], loading = false }) {
   const [heroView, setHeroView] = useState('status');
-  const [formRange, setFormRange] = useState('14d');
+  const [formRange, setFormRange] = useState('3m');
+  // Which metric to highlight in the status sparkline
+  const [statusMetric, setStatusMetric] = useState('form'); // 'fitness' | 'fatigue' | 'form'
+  // Animation key — bumps when statusMetric / day changes to retrigger SVG fade-in
+  const [animTick, setAnimTick] = useState(0);
+  // Day offset: 0 = today, -1 = yesterday, etc. Lets the user scrub through
+  // past days to see how their TSB / fitness evolved.
+  const [dayOffset, setDayOffset] = useState(0);
 
-  const fitness = Math.round(todayMetrics.fitness || 0);
-  const fatigue = Math.round(todayMetrics.fatigue || 0);
-  const form    = Math.round(todayMetrics.form    || 0);
-  const fitnessDelta = todayMetrics.fitnessChange;
-  const fatigueDelta = todayMetrics.fatigueChange;
-  const formDelta    = todayMetrics.formChange;
+  // Build a date → sparkline-point lookup so we can resolve metrics for any day.
+  const sparkByDate = React.useMemo(() => {
+    const map = {};
+    (sparklineData || []).forEach(d => {
+      const key = d?.date ? String(d.date).slice(0, 10) : null;
+      if (key) map[key] = d;
+    });
+    return map;
+  }, [sparklineData]);
+
+  const today = new Date();
+  const selectedDate = new Date(today);
+  selectedDate.setDate(today.getDate() + dayOffset);
+  const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const selectedKey = dateKey(selectedDate);
+  const selectedPt  = sparkByDate[selectedKey];
+  const isToday     = dayOffset === 0;
+  // Cap forward navigation at today — we don't have future data points yet.
+  const canGoForward = dayOffset < 0;
+  // Cap backward navigation at the oldest sparkline point we have.
+  const oldestKey = sparklineData.length > 0 ? String(sparklineData[0].date || '').slice(0, 10) : null;
+  const canGoBack = !!sparklineData.length && selectedKey > oldestKey;
+
+  // Last data point from sparkline as fallback when todayMetrics is empty
+  const lastPt = sparklineData.length > 0 ? sparklineData[sparklineData.length - 1] : null;
+
+  // For today: prefer authoritative todayMetrics (server-computed). For other
+  // days: read from sparkline. Falls back to last sparkline point if neither exists.
+  const fitness = Math.round(
+    isToday
+      ? (todayMetrics.fitness ?? (lastPt ? readField(lastPt, 'Fitness', 'fitness', 'ctl') : 0))
+      : (selectedPt ? readField(selectedPt, 'Fitness', 'fitness', 'ctl') : 0)
+  );
+  const fatigue = Math.round(
+    isToday
+      ? (todayMetrics.fatigue ?? (lastPt ? readField(lastPt, 'Fatigue', 'fatigue', 'atl') : 0))
+      : (selectedPt ? readField(selectedPt, 'Fatigue', 'fatigue', 'atl') : 0)
+  );
+  const form = Math.round(
+    isToday
+      ? (todayMetrics.form != null ? todayMetrics.form : lastPt ? readField(lastPt, 'Form', 'form', 'tsb') : 0)
+      : (selectedPt ? readField(selectedPt, 'Form', 'form', 'tsb') : 0)
+  );
+
+  // Delta vs the day before the selected one (not the cached today-vs-yesterday)
+  const prev = new Date(selectedDate);
+  prev.setDate(selectedDate.getDate() - 1);
+  const prevPt = sparkByDate[dateKey(prev)];
+  const computeDelta = (curr, todayKey, prevKey) => {
+    if (isToday && todayMetrics[todayKey] != null) return todayMetrics[todayKey];
+    if (!prevPt) return null;
+    const prevVal = readField(prevPt, prevKey[0], prevKey[1], prevKey[2]);
+    return Math.round(curr - prevVal);
+  };
+  const fitnessDelta = computeDelta(fitness, 'fitnessChange', ['Fitness','fitness','ctl']);
+  const fatigueDelta = computeDelta(fatigue, 'fatigueChange', ['Fatigue','fatigue','atl']);
+  const formDelta    = computeDelta(form,    'formChange',    ['Form','form','tsb']);
 
   const status = getTsbStatus(form);
 
   // Build sparkline arrays from chartData
+  // API returns: { Fitness, Fatigue, Form, dateLabel, date }
   const rangeMap = { '14d': 14, '6w': 42, '3m': 90 };
   const pts = sparklineData.slice(-rangeMap[formRange]);
-  const tsbSeries = pts.map(d => d.form  ?? d.tsb  ?? 0);
-  const ctlSeries = pts.map(d => d.fitness ?? d.ctl ?? 0);
-  const atlSeries = pts.map(d => d.fatigue ?? d.atl ?? 0);
+  const tsbSeries = pts.map(d => readField(d, 'Form',    'form',    'tsb'));
+  const ctlSeries = pts.map(d => readField(d, 'Fitness', 'fitness', 'ctl'));
+  const atlSeries = pts.map(d => readField(d, 'Fatigue', 'fatigue', 'atl'));
 
   // ring fill % — clamp TSB to -40..+40 range, map to 0–100%
   const ringPct = Math.min(1, Math.max(0, (form + 40) / 80));
@@ -67,7 +140,17 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   const circ = 2 * Math.PI * r;
   const dash = ringPct * circ * 0.82; // 82% of circumference = full
 
-  const W = 320, H_SPARK = 48, H_FORM = 130;
+  const W = 320, H_SPARK = 52, H_FORM = 150;
+
+  // Shared y-domain for form chart: all three series + 0
+  const allFormVals = [...ctlSeries, ...atlSeries, ...tsbSeries, 0];
+  const domMin = Math.min(...allFormVals) - 2;
+  const domMax = Math.max(...allFormVals) + 2;
+  const zeroY  = yForVal(0, H_FORM, domMin, domMax, 10);
+
+  // Date tick labels (first and last)
+  const firstLabel = pts.length > 0 ? (pts[0].dateLabel || '') : '';
+  const lastLabel  = pts.length > 0 ? (pts[pts.length - 1].dateLabel || '') : '';
 
   if (loading) {
     return (
@@ -81,9 +164,58 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
 
   return (
     <div style={styles.card}>
-      {/* Header row */}
+      {/* Inject keyframes once */}
+      <style>{`
+        @keyframes ndFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes ndDrawLine { to { stroke-dashoffset: 0; } }
+        @keyframes ndScaleIn  { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+        @keyframes ndSpin     { to { transform: rotate(360deg); } }
+      `}</style>
+      {/* Header row — date navigator on the left, view toggle on the right */}
       <div style={styles.headerRow}>
-        <span style={styles.eyebrow}>Today · {new Date().toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        {heroView === 'status' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            <button
+              onClick={() => { if (canGoBack) { setDayOffset(o => o - 1); setAnimTick(t => t + 1); } }}
+              disabled={!canGoBack}
+              aria-label="Previous day"
+              style={{ ...dateNavBtn, opacity: canGoBack ? 1 : 0.35, cursor: canGoBack ? 'pointer' : 'not-allowed' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <span style={{ ...styles.eyebrow, whiteSpace: 'nowrap' }}>
+              {isToday ? 'Today' : dayOffset === -1 ? 'Yesterday' : selectedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+            <button
+              onClick={() => { if (canGoForward) { setDayOffset(o => o + 1); setAnimTick(t => t + 1); } }}
+              disabled={!canGoForward}
+              aria-label="Next day"
+              style={{ ...dateNavBtn, opacity: canGoForward ? 1 : 0.35, cursor: canGoForward ? 'pointer' : 'not-allowed' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            {!isToday && (
+              <button
+                onClick={() => { setDayOffset(0); setAnimTick(t => t + 1); }}
+                style={{
+                  fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 9999,
+                  background: 'rgba(118,126,181,.12)', color: '#5E6590', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  letterSpacing: '0.04em', textTransform: 'uppercase', marginLeft: 2,
+                  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                }}
+              >
+                Today
+              </button>
+            )}
+          </div>
+        ) : (
+          <span style={styles.eyebrow}>Form · last {formRange}</span>
+        )}
         <div style={styles.seg}>
           {['status', 'form'].map(v => (
             <button key={v} style={{ ...styles.segBtn, ...(heroView === v ? styles.segBtnOn : {}) }}
@@ -98,76 +230,219 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
         <>
           {/* Ring + stats */}
           <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: 14, alignItems: 'center', marginBottom: 10 }}>
-            {/* Ring */}
+            {/* Ring — sweeps in on mount, retransitions smoothly when value changes */}
             <div style={{ position: 'relative', width: 92, height: 92 }}>
               <svg width="92" height="92" viewBox="0 0 92 92">
                 <circle cx="46" cy="46" r={r} fill="none" stroke="rgba(118,126,181,.12)" strokeWidth="8" />
-                <circle cx="46" cy="46" r={r} fill="none" stroke={status.color} strokeWidth="8"
-                  strokeDasharray={`${dash} 999`} strokeLinecap="round"
-                  transform="rotate(-90 46 46)" style={{ transition: 'stroke-dasharray .4s ease' }} />
+                <circle
+                  cx="46" cy="46" r={r}
+                  fill="none"
+                  stroke={status.color}
+                  strokeWidth="8"
+                  strokeDasharray={`${dash} 999`}
+                  strokeLinecap="round"
+                  transform="rotate(-90 46 46)"
+                  style={{
+                    transition: 'stroke-dasharray .8s cubic-bezier(.22,1,.36,1), stroke .35s ease',
+                    animation: 'ndRingSweep 1s cubic-bezier(.22,1,.36,1) both',
+                  }}
+                />
               </svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: '#0A0E1A', fontVariantNumeric: 'tabular-nums', lineHeight: 1, letterSpacing: '-0.02em' }}>
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                animation: 'ndPopIn .5s .25s cubic-bezier(.22,1.4,.36,1) both',
+              }}>
+                <span style={{
+                  fontSize: 22, fontWeight: 700, color: '#0A0E1A',
+                  fontVariantNumeric: 'tabular-nums', lineHeight: 1, letterSpacing: '-0.02em',
+                  transition: 'color .35s ease',
+                }}>
                   {form >= 0 ? `+${form}` : form}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', letterSpacing: '0.08em', marginTop: 2 }}>TSB</span>
               </div>
             </div>
 
-            {/* Stats */}
+            {/* Stats — labels are clickable to switch sparkline metric */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Status pill */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 9999, background: status.color + '1f', alignSelf: 'flex-start' }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.color, display: 'inline-block' }} />
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: status.color }}>{status.label}</span>
+              {/* Status pill — pops in, smoothly tween color when crossing thresholds */}
+              <div
+                key={status.label}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 9999,
+                  background: status.color + '1f', alignSelf: 'flex-start',
+                  transition: 'background .35s ease',
+                  animation: 'ndPopIn .5s .15s cubic-bezier(.22,1.4,.36,1) both',
+                }}
+              >
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', background: status.color, display: 'inline-block',
+                  transition: 'background .35s ease',
+                  animation: 'ndPulse 2.4s 1s ease-in-out infinite',
+                }} />
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: status.color, transition: 'color .35s ease' }}>{status.label}</span>
               </div>
 
-              {/* CTL / ATL */}
+              {/* Fitness / Fatigue — clickable */}
               <div style={{ display: 'flex', gap: 14 }}>
                 {[
-                  { label: 'Fitness', val: fitness, delta: fitnessDelta },
-                  { label: 'Fatigue', val: fatigue, delta: fatigueDelta },
-                ].map(({ label, val, delta }) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
-                    <span style={{ fontSize: 18, fontWeight: 700, color: '#0A0E1A', fontVariantNumeric: 'tabular-nums' }}>{val}</span>
-                    <DeltaPill value={delta} />
-                  </div>
-                ))}
+                  { key: 'fitness', label: 'Fitness', val: fitness, delta: fitnessDelta, color: '#3b82f6' },
+                  { key: 'fatigue', label: 'Fatigue', val: fatigue, delta: fatigueDelta, color: '#9333ea' },
+                ].map(({ key, label, val, delta, color }) => {
+                  const on = statusMetric === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => { setStatusMetric(key); setAnimTick(t => t + 1); }}
+                      style={{
+                        display: 'flex', alignItems: 'baseline', gap: 5,
+                        padding: '2px 0',
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        position: 'relative',
+                        transition: 'transform .15s ease',
+                        transform: on ? 'scale(1.02)' : 'scale(1)',
+                      }}
+                    >
+                      <span style={{
+                        fontSize: 10, fontWeight: 700,
+                        color: on ? color : '#6B7280',
+                        letterSpacing: '0.06em', textTransform: 'uppercase',
+                        transition: 'color .25s ease',
+                      }}>{label}</span>
+                      <span style={{
+                        fontSize: 18, fontWeight: 700,
+                        color: on ? color : '#0A0E1A',
+                        fontVariantNumeric: 'tabular-nums',
+                        transition: 'color .25s ease',
+                      }}>{val}</span>
+                      <DeltaPill value={delta} />
+                      {/* Underline indicator */}
+                      <span style={{
+                        position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 2,
+                        background: color,
+                        opacity: on ? 1 : 0,
+                        transform: on ? 'scaleX(1)' : 'scaleX(0)',
+                        transition: 'opacity .25s ease, transform .25s ease',
+                      }} />
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Form delta */}
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Form</span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#0A0E1A', fontVariantNumeric: 'tabular-nums' }}>{form >= 0 ? `+${form}` : form}</span>
+              {/* Form — clickable */}
+              <button
+                onClick={() => { setStatusMetric('form'); setAnimTick(t => t + 1); }}
+                style={{
+                  display: 'flex', alignItems: 'baseline', gap: 5,
+                  padding: '2px 0', background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  position: 'relative', alignSelf: 'flex-start',
+                  transition: 'transform .15s ease',
+                  transform: statusMetric === 'form' ? 'scale(1.02)' : 'scale(1)',
+                }}
+              >
+                <span style={{
+                  fontSize: 10, fontWeight: 700,
+                  color: statusMetric === 'form' ? status.color : '#6B7280',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                  transition: 'color .25s ease',
+                }}>Form</span>
+                <span style={{
+                  fontSize: 14, fontWeight: 700,
+                  color: statusMetric === 'form' ? status.color : '#0A0E1A',
+                  fontVariantNumeric: 'tabular-nums',
+                  transition: 'color .25s ease',
+                }}>{form >= 0 ? `+${form}` : form}</span>
                 <DeltaPill value={formDelta} />
-              </div>
+                <span style={{
+                  position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 2,
+                  background: status.color,
+                  opacity: statusMetric === 'form' ? 1 : 0,
+                  transform: statusMetric === 'form' ? 'scaleX(1)' : 'scaleX(0)',
+                  transition: 'opacity .25s ease, transform .25s ease, background .25s ease',
+                }} />
+              </button>
             </div>
           </div>
 
-          {/* TSB Sparkline */}
-          {tsbSeries.length >= 2 && (
-            <svg viewBox={`0 0 ${W} ${H_SPARK}`} preserveAspectRatio="none" style={{ width: '100%', height: H_SPARK, display: 'block', marginTop: 4 }}>
-              <defs>
-                <linearGradient id="ndtsb-g" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0" stopColor={status.color} stopOpacity=".22" />
-                  <stop offset="1" stopColor={status.color} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={sparklinePath(tsbSeries, W, H_SPARK) + ` L ${W} ${H_SPARK} L 0 ${H_SPARK} Z`} fill="url(#ndtsb-g)" />
-              <path d={sparklinePath(tsbSeries, W, H_SPARK)} fill="none" stroke={status.color} strokeWidth="1.8" />
-            </svg>
-          )}
+          {/* Sparkline — switches between fitness/fatigue/form with cross-fade */}
+          {(() => {
+            // Pick the right series for the selected metric
+            const series = statusMetric === 'fitness' ? ctlSeries
+                         : statusMetric === 'fatigue' ? atlSeries
+                         : tsbSeries;
+            if (!series || series.length < 2) return null;
+            const seriesColor = statusMetric === 'fitness' ? '#3b82f6'
+                              : statusMetric === 'fatigue' ? '#9333ea'
+                              : status.color;
+            const showZero = statusMetric === 'form';
+            const spMin = Math.min(...series, showZero ? 0 : Math.min(...series)) - 2;
+            const spMax = Math.max(...series, showZero ? 0 : Math.max(...series)) + 2;
+            const spZeroY = yForVal(0, H_SPARK, spMin, spMax, 4);
+            const path  = makePath(series, W, H_SPARK, spMin, spMax, 0, 4);
+            const baseY = showZero ? spZeroY : H_SPARK;
+            const gradId = `ndspark-${statusMetric}`;
+
+            return (
+              <div
+                key={animTick}
+                style={{
+                  marginTop: 4,
+                  animation: 'ndFadeIn .4s cubic-bezier(.22,1,.36,1) both',
+                }}
+              >
+                <svg viewBox={`0 0 ${W} ${H_SPARK}`} preserveAspectRatio="none"
+                  style={{ width: '100%', height: H_SPARK, display: 'block' }}>
+                  <defs>
+                    <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0" stopColor={seriesColor} stopOpacity=".28" />
+                      <stop offset="1" stopColor={seriesColor} stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  {showZero && (
+                    <line x1="0" y1={spZeroY} x2={W} y2={spZeroY}
+                      stroke="rgba(10,14,26,.1)" strokeDasharray="2 3" />
+                  )}
+                  <path
+                    d={`${path} L ${W} ${baseY} L 0 ${baseY} Z`}
+                    fill={`url(#${gradId})`}
+                    style={{ animation: 'ndFadeIn .5s cubic-bezier(.22,1,.36,1) both' }}
+                  />
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={seriesColor}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      strokeDasharray: 1000,
+                      strokeDashoffset: 1000,
+                      animation: 'ndDrawLine .9s cubic-bezier(.22,1,.36,1) forwards',
+                    }}
+                  />
+                </svg>
+              </div>
+            );
+          })()}
         </>
       ) : (
         <>
-          {/* Form chart */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <div style={{ display: 'flex', gap: 14 }}>
-              {[{ l: 'CTL', v: fitness, c: '#5E6590' }, { l: 'ATL', v: fatigue, c: '#FF6B4A' }, { l: 'TSB', v: form, c: '#4BA87D' }].map(({ l, v, c }) => (
-                <div key={l} style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                  <span style={{ fontSize: 9.5, color: '#6B7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
-                  <span style={{ fontSize: 18, fontWeight: 700, color: c, fontVariantNumeric: 'tabular-nums' }}>{l === 'TSB' && v >= 0 ? `+${v}` : v}</span>
+          {/* Form chart header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {[
+                { l: 'CTL', v: fitness, c: '#3b82f6' },
+                { l: 'ATL', v: fatigue, c: '#9333ea' },
+                { l: 'TSB', v: form,    c: '#f97316' },
+              ].map(({ l, v, c }) => (
+                <div key={l} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ fontSize: 9, color: '#6B7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                    {l === 'TSB' && v >= 0 ? `+${v}` : v}
+                  </span>
                 </div>
               ))}
             </div>
@@ -179,27 +454,99 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
             </div>
           </div>
 
-          {ctlSeries.length >= 2 && (
-            <svg viewBox={`0 0 ${W} ${H_FORM}`} preserveAspectRatio="none" style={{ width: '100%', height: H_FORM, display: 'block' }}>
-              <defs>
-                <linearGradient id="ndtsb2" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0" stopColor="#4BA87D" stopOpacity=".22" />
-                  <stop offset="1" stopColor="#4BA87D" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <line x1="0" y1={H_FORM / 2} x2={W} y2={H_FORM / 2} stroke="rgba(10,14,26,.06)" strokeDasharray="2 3" />
-              <path d={sparklinePath(tsbSeries, W, H_FORM, 12) + ` L ${W} ${H_FORM} L 0 ${H_FORM} Z`} fill="url(#ndtsb2)" />
-              <path d={sparklinePath(ctlSeries, W, H_FORM, 12)} fill="none" stroke="#5E6590" strokeWidth="2" />
-              <path d={sparklinePath(atlSeries, W, H_FORM, 12)} fill="none" stroke="#FF6B4A" strokeWidth="1.8" strokeDasharray="3 3" />
-              <path d={sparklinePath(tsbSeries, W, H_FORM, 12)} fill="none" stroke="#4BA87D" strokeWidth="2.2" />
-            </svg>
+          {ctlSeries.length >= 2 ? (
+            <>
+              <svg
+                key={`form-${formRange}`}
+                viewBox={`0 0 ${W} ${H_FORM}`} preserveAspectRatio="none"
+                style={{
+                  width: '100%', height: H_FORM, display: 'block',
+                  animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
+                }}>
+                <defs>
+                  <linearGradient id="ndctl-g" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0" stopColor="#3b82f6" stopOpacity=".18" />
+                    <stop offset="1" stopColor="#3b82f6" stopOpacity="0" />
+                  </linearGradient>
+                  <linearGradient id="ndtsb-g2" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0" stopColor="#f97316" stopOpacity=".15" />
+                    <stop offset="1" stopColor="#f97316" stopOpacity="0" />
+                  </linearGradient>
+                  <clipPath id="ndAboveZero">
+                    <rect x="0" y="0" width={W} height={zeroY} />
+                  </clipPath>
+                  <clipPath id="ndBelowZero">
+                    <rect x="0" y={zeroY} width={W} height={H_FORM - zeroY} />
+                  </clipPath>
+                </defs>
+
+                {/* Grid lines */}
+                {[0.25, 0.5, 0.75].map(f => (
+                  <line key={f} x1="0" y1={H_FORM * f} x2={W} y2={H_FORM * f}
+                    stroke="rgba(10,14,26,.04)" strokeDasharray="2 4" />
+                ))}
+
+                {/* Zero reference line */}
+                <line x1="0" y1={zeroY} x2={W} y2={zeroY}
+                  stroke="rgba(10,14,26,.14)" strokeDasharray="3 4" />
+
+                {/* CTL fill + line — animated draw */}
+                <path
+                  d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${H_FORM} L 0 ${H_FORM} Z`}
+                  fill="url(#ndctl-g)"
+                  style={{ animation: 'ndFadeIn .5s ease both' }}
+                />
+                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 10)}
+                  fill="none" stroke="#3b82f6" strokeWidth="2.2"
+                  style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.1s cubic-bezier(.22,1,.36,1) forwards' }}
+                />
+
+                {/* ATL line (dashed) — animated draw */}
+                <path d={makePath(atlSeries, W, H_FORM, domMin, domMax, 0, 10)}
+                  fill="none" stroke="#9333ea" strokeWidth="1.8" strokeDasharray="4 3"
+                  style={{ animation: 'ndFadeIn .8s .15s ease both' }}
+                />
+
+                {/* TSB fill (green above 0, red below 0) + line — animated */}
+                <path
+                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
+                  fill="rgba(34,197,94,.15)" clipPath="url(#ndAboveZero)"
+                  style={{ animation: 'ndFadeIn .6s .2s ease both' }}
+                />
+                <path
+                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
+                  fill="rgba(239,68,68,.12)" clipPath="url(#ndBelowZero)"
+                  style={{ animation: 'ndFadeIn .6s .2s ease both' }}
+                />
+                <path d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10)}
+                  fill="none" stroke="#f97316" strokeWidth="2.4"
+                  style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.2s .15s cubic-bezier(.22,1,.36,1) forwards' }}
+                />
+              </svg>
+
+              {/* X-axis date labels */}
+              {firstLabel && lastLabel && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+                  <span style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 600 }}>{firstLabel}</span>
+                  <span style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 600 }}>{lastLabel}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No data yet</span>
+            </div>
           )}
 
           {/* Legend */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-            {[['#5E6590', 'CTL'], ['#FF6B4A', 'ATL'], ['#4BA87D', 'TSB']].map(([c, l]) => (
-              <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
-                <span style={{ display: 'inline-block', width: 10, height: 2, borderRadius: 1, background: c }} />
+          <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
+            {[['#3b82f6', 'CTL (Fitness)', false], ['#9333ea', 'ATL (Fatigue)', true], ['#f97316', 'TSB (Form)', false]].map(([c, l, dashed]) => (
+              <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#6B7280', fontWeight: 600 }}>
+                <span style={{
+                  display: 'inline-block', width: 12, height: 2, borderRadius: 1,
+                  background: dashed ? 'transparent' : c,
+                  borderTop: dashed ? `2px dashed ${c}` : 'none',
+                }} />
                 {l}
               </span>
             ))}
@@ -209,6 +556,16 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
     </div>
   );
 }
+
+// Compact circular chevron button used by the day navigator at the top.
+const dateNavBtn = {
+  width: 22, height: 22, borderRadius: '50%',
+  background: 'rgba(118,126,181,.12)', border: 'none',
+  color: '#5E6590', fontFamily: 'inherit',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: 0, flexShrink: 0,
+  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+};
 
 const styles = {
   card: {

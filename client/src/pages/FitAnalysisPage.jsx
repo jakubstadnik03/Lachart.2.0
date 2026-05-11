@@ -32,13 +32,57 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 /** Calls map.invalidateSize() after mount + after a short delay — fixes blank map on mobile */
-function MapInvalidator() {
+function MapInvalidator({ positions }) {
   const map = useMap();
+
+  // Fit map to the full route. Robust against:
+  //   1. Container being 0×0 at first paint (mobile, tab switches)
+  //   2. The map's `center`/`zoom` props "winning" against fitBounds on initial mount
+  //   3. Layout reflow after fonts / surrounding content settles
   React.useEffect(() => {
-    map.invalidateSize();
-    const t = setTimeout(() => map.invalidateSize(), 300);
-    return () => clearTimeout(t);
-  }, [map]);
+    if (!Array.isArray(positions) || positions.length < 2) return;
+    let bounds;
+    try {
+      bounds = L.latLngBounds(positions);
+      if (!bounds.isValid()) return;
+    } catch (_) { return; }
+
+    let cancelled = false;
+    const fit = () => {
+      if (cancelled) return;
+      try {
+        map.invalidateSize();
+        map.fitBounds(bounds, { padding: [22, 22], animate: false });
+      } catch (_) { /* ignore */ }
+    };
+
+    // Run several times, escalating, so we cover slow layouts on mobile.
+    // Using rAF + delayed timeouts catches ~99% of paint-timing edge cases.
+    const r1 = requestAnimationFrame(fit);
+    const t1 = setTimeout(fit, 60);
+    const t2 = setTimeout(fit, 250);
+    const t3 = setTimeout(fit, 600);
+    const t4 = setTimeout(fit, 1200);
+
+    // Re-fit whenever the map container actually resizes (covers tab switches,
+    // safe-area insets settling, etc.) — only do this for ~3 seconds after mount
+    // so it doesn't interfere with user pan/zoom afterwards.
+    const container = map.getContainer();
+    let ro = null;
+    if (typeof ResizeObserver !== 'undefined' && container) {
+      ro = new ResizeObserver(() => fit());
+      ro.observe(container);
+      setTimeout(() => { if (ro) { ro.disconnect(); ro = null; } }, 3000);
+    }
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(r1);
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4);
+      if (ro) ro.disconnect();
+    };
+  }, [map, positions]);
+
   return null;
 }
 
@@ -4191,7 +4235,7 @@ const FitAnalysisPage = () => {
                           zoomControl={false}
                           attributionControl={false}
                         >
-                          <MapInvalidator />
+                          <MapInvalidator positions={getGpsData} />
                           <TileLayer
                             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                           />
@@ -5582,7 +5626,7 @@ const FitAnalysisPage = () => {
                       zoomControl={false}
                       attributionControl={false}
                     >
-                      <MapInvalidator />
+                      <MapInvalidator positions={getGpsData} />
                       <TileLayer
                         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                       />

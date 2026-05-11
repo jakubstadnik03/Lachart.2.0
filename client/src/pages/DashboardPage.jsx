@@ -1047,6 +1047,14 @@ export default function DashboardPage() {
       sparklineData={sparklineData}
       loading={loading}
       user={user}
+      athleteId={dashboardDataAthleteId}
+      onPlannedWorkoutChanged={({ type, planned, id }) => {
+        if (type === 'updated' && planned?._id) {
+          setPlannedWorkouts(prev => prev.map(p => p._id === planned._id ? planned : p));
+        } else if (type === 'deleted' && id) {
+          setPlannedWorkouts(prev => prev.filter(p => p._id !== id));
+        }
+      }}
     />
   );
 

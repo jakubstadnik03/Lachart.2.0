@@ -83,22 +83,38 @@ export async function initCapacitorShell() {
         }));
       });
 
-      // Notification tap — navigate to the relevant screen
+      // Notification tap — navigate to the relevant screen.
+      // Strava imports + activity-type pushes route to the dashboard with
+      // `?openActivity=<prefix>-<id>` so the dashboard auto-opens the
+      // ActivityFullModal (Lactate button included) for one-tap annotation.
       await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
         console.log('[Push] Tapped:', action);
         const data = action.notification?.data || {};
+
         const resourceId   = data.resourceId   || data.resource_id;
         const resourceType = data.resourceType || data.resource_type || 'training';
+        const pushType     = data.type;
+        const activityId   = data.activityId   || data.activity_id;
+        const activityType = data.activityType || data.activity_type;
 
-        let path = '/training-calendar';
-        if (resourceId) {
-          // Match the convention used in NotificationBell & TrainingStats
+        // Activity deep-link → dashboard with auto-opened ActivityFullModal
+        const isActivityDeepLink =
+          (activityId && activityType) ||
+          (pushType === 'strava_import' && (activityId || resourceId));
+
+        let path;
+        if (isActivityDeepLink) {
+          const id     = activityId || resourceId;
+          const prefix = activityType || (pushType === 'strava_import' ? 'strava' : resourceType);
+          path = `/?openActivity=${encodeURIComponent(`${prefix}-${id}`)}`;
+        } else if (resourceId) {
           path = resourceType === 'training'
             ? `/training-calendar/training-${resourceId}`
             : `/training-calendar/${resourceId}`;
+        } else {
+          path = '/';
         }
 
-        // Use replace to avoid stacking history entries from notification taps
         window.location.replace(`${window.location.origin}${path}`);
       });
     }

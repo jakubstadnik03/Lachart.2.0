@@ -36,6 +36,7 @@ function inWeek(date, monday, sunday) {
 
 // Use the normalized totalTime field first (set by DashboardPage for all activity types)
 function actSecs(a) {
+  if (!a) return 0;
   return Number(
     a.totalTime ||
     a.duration  || a.movingTime || a.moving_time ||
@@ -45,11 +46,129 @@ function actSecs(a) {
 }
 
 function actDist(a) {
+  if (!a) return 0;
   return Number(a.distance || a.totalDistance || 0);
 }
 
 function actTss(a) {
-  return Number(a.tss || a.trainingLoad || a.totalTSS || 0);
+  if (!a) return 0;
+  return Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0);
+}
+
+// ─── client-side TSS fallback (mirrors server `calculateActivityTSS`) ─────────
+// Used when activities don't have stored TSS (typical for Strava activities).
+// `thresholds` is { bike: { lt2Power }, run: { lt2Pace }, swim: { lt2Pace } }
+
+function normalizeSportKey(s) {
+  const v = String(s || '').toLowerCase();
+  if (v.includes('ride') || v.includes('cycle') || v.includes('bike') || v.includes('virtual')) return 'bike';
+  if (v.includes('run')  || v.includes('walk')  || v.includes('hike')) return 'run';
+  if (v.includes('swim')) return 'swim';
+  return null;
+}
+
+// Extract LT2 thresholds per sport from lactate tests (most recent test per sport)
+function extractThresholds(tests) {
+  const out = { bike: null, run: null, swim: null };
+  if (!Array.isArray(tests) || !tests.length) return out;
+  const bySport = {};
+  tests.forEach(t => {
+    if (!t) return;                      // guard against undefined entries
+    const sp = normalizeSportKey(t.sport || t.testType);
+    if (!sp) return;
+    if (!bySport[sp]) bySport[sp] = [];
+    bySport[sp].push(t);
+  });
+  Object.keys(bySport).forEach(sp => {
+    bySport[sp].sort((a, b) => new Date(b?.date || b?.testDate || 0) - new Date(a?.date || a?.testDate || 0));
+    const t = bySport[sp][0];
+    if (!t) return;                      // guard against empty bucket
+    const ov = t.thresholdOverrides || {};
+    // For bike: LTP2 = power (Watts). For run/swim: LTP2 = pace (sec/km or sec/100m)
+    const ltp2 = Number(ov.LTP2) || null;
+    out[sp] = {
+      lt2Power: sp === 'bike' ? ltp2 : null,
+      lt2Pace:  sp !== 'bike' ? ltp2 : null,
+      lt2Hr:    Number(ov.LTP2_hr) || null,
+    };
+    // Fallback: derive from results array (find first stage at lactate >= 4)
+    if (Array.isArray(t.results)) {
+      const stage = t.results.find(r => Number(r.lactate) >= 4);
+      if (stage) {
+        if (sp === 'bike' && !out[sp].lt2Power) {
+          out[sp].lt2Power = Number(stage.power) || Number(stage.interval) || null;
+        } else if (sp !== 'bike' && !out[sp].lt2Pace) {
+          // For run/swim: `interval` field on a stage is the pace
+          out[sp].lt2Pace = Number(stage.interval) || Number(stage.pace) || null;
+        }
+        out[sp].lt2Hr = out[sp].lt2Hr || Number(stage.heartRate) || null;
+      }
+    }
+  });
+  return out;
+}
+
+// Compute TSS for an activity. Returns 0 if not computable.
+function computeActivityTSS(a, thresholds) {
+  if (!a) return 0;
+  const sport = normalizeSportKey(a.sport);
+  const secs  = actSecs(a);
+  if (!sport || secs <= 0) return 0;
+  const th = thresholds?.[sport];
+
+  // ─── Bike: power-based TSS ────────────────────────────────────────────────
+  if (sport === 'bike') {
+    const np  = Number(a.weightedAveragePower || a.normalizedPower || a.avgPower || a.averagePower || a.average_watts || 0);
+    const ftp = Number(th?.lt2Power || 0);
+    if (np > 0 && ftp > 0) {
+      return Math.round((secs * np * np) / (ftp * ftp * 3600) * 100);
+    }
+    // hrTSS fallback: use HR with LT2 HR if available
+    const avgHr = Number(a.avgHeartRate || a.averageHeartRate || a.average_heartrate || 0);
+    const lthr  = Number(th?.lt2Hr || 0);
+    if (avgHr > 0 && lthr > 0) {
+      const ratio = avgHr / lthr;
+      return Math.round((secs * ratio * ratio) / 3600 * 100);
+    }
+  }
+
+  // ─── Run: pace-based TSS ──────────────────────────────────────────────────
+  if (sport === 'run') {
+    const speed = Number(a.avgSpeed || a.averageSpeed || a.average_speed || 0); // m/s
+    const refPace = Number(th?.lt2Pace || 0); // sec/km
+    if (speed > 0 && refPace > 0) {
+      const avgPace = 1000 / speed; // sec/km
+      const ratio = refPace / avgPace; // >1 if faster than reference
+      return Math.round((secs * ratio * ratio) / 3600 * 100);
+    }
+    // hrTSS fallback
+    const avgHr = Number(a.avgHeartRate || a.averageHeartRate || a.average_heartrate || 0);
+    const lthr  = Number(th?.lt2Hr || 0);
+    if (avgHr > 0 && lthr > 0) {
+      const ratio = avgHr / lthr;
+      return Math.round((secs * ratio * ratio) / 3600 * 100);
+    }
+  }
+
+  // ─── Swim: pace-based TSS (per 100 m) ─────────────────────────────────────
+  if (sport === 'swim') {
+    const speed = Number(a.avgSpeed || a.averageSpeed || a.average_speed || 0); // m/s
+    const refPace = Number(th?.lt2Pace || 0); // sec / 100m
+    if (speed > 0 && refPace > 0) {
+      const avgPace = 100 / speed;
+      const ratio = refPace / avgPace;
+      return Math.round((secs * ratio * ratio) / 3600 * 100);
+    }
+  }
+
+  return 0;
+}
+
+// TSS for an activity: stored value if present, else computed
+function tssOrCompute(a, thresholds) {
+  const stored = actTss(a);
+  if (stored > 0) return stored;
+  return computeActivityTSS(a, thresholds);
 }
 
 // Planned workout accessors
@@ -94,11 +213,30 @@ function fmtDist(m) {
 const DOW_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const METRICS = ['TSS', 'Time', 'Distance'];
 
-export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [] }) {
+// Square chevron button used by the week navigator at the top of the card.
+const navBtnStyle = {
+  width: 28, height: 28, borderRadius: 8,
+  background: 'rgba(118,126,181,.12)', border: 'none',
+  color: '#5E6590', cursor: 'pointer', fontFamily: 'inherit',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: 0, flexShrink: 0,
+  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+};
+
+export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], tests = [] }) {
   const [metric, setMetric] = useState('TSS');
+  // Week offset: 0 = current, +1 = next, -1 = previous, etc. Lets the user
+  // peek at next-week planned totals without leaving the dashboard.
+  const [weekOffset, setWeekOffset] = useState(0);
   const today    = new Date();
-  const { monday, sunday } = getWeekBounds(today);
-  const weekDays = getWeekDays(today);
+  const refDate  = new Date(today);
+  refDate.setDate(today.getDate() + weekOffset * 7);
+  const { monday, sunday } = getWeekBounds(refDate);
+  const weekDays = getWeekDays(refDate);
+  const isCurrentWeek = weekOffset === 0;
+
+  // Threshold map for client-side TSS fallback
+  const thresholds = extractThresholds(tests);
 
   // ── filter this week ───────────────────────────────────────────────────────
   const weekActs = activities.filter(a => {
@@ -111,10 +249,35 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     return inWeek(d, monday, sunday);
   });
 
+  // ── TSS from sparklineData (backend-computed, authoritative) ───────────────
+  // sparklineData points have { date: 'YYYY-MM-DD', TSS: number }
+  // Build a map: dateStr → TSS for fast lookup
+  const sparkleTssMap = {};
+  for (const pt of sparklineData) {
+    if (pt.date && pt.TSS != null) {
+      sparkleTssMap[pt.date.slice(0, 10)] = Number(pt.TSS);
+    }
+  }
+
+  // Sum TSS for each day in this week from sparklineData
+  const weekSparkTss = weekDays.reduce((sum, d) => {
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return sum + (sparkleTssMap[key] || 0);
+  }, 0);
+
+  // Per-day TSS from sparkline (for bars)
+  const daySparkTss = weekDays.map(d => {
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return sparkleTssMap[key] || 0;
+  });
+
   // ── totals ─────────────────────────────────────────────────────────────────
   const totalSecs    = weekActs.reduce((s, a) => s + actSecs(a), 0);
   const totalDist    = weekActs.reduce((s, a) => s + actDist(a), 0);
-  const totalTss     = weekActs.reduce((s, a) => s + actTss(a), 0);
+  // Use sparkline TSS when available (has Strava TSS, FIT TSS, all computed server-side)
+  // Fall back to activity-level tss field, then client-side computed TSS using lactate-test thresholds
+  const activityTss  = weekActs.reduce((s, a) => s + tssOrCompute(a, thresholds), 0);
+  const totalTss     = weekSparkTss > 0 ? weekSparkTss : activityTss;
   const sessions     = weekActs.length;
 
   const plannedTotalTss  = weekPlanned.reduce((s, p) => s + pwTss(p), 0);
@@ -125,10 +288,19 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const getVal = (a) => metric === 'TSS' ? actTss(a) : metric === 'Time' ? actSecs(a) : actDist(a);
   const getPw  = (p) => metric === 'TSS' ? pwTss(p)  : metric === 'Time' ? pwSecs(p)  : pwDist(p);
 
-  const dayCompleted = weekDays.map(d =>
-    weekActs.filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
-            .reduce((s, a) => s + getVal(a), 0)
-  );
+  const dayCompleted = weekDays.map((d, i) => {
+    if (metric === 'TSS') {
+      // Use sparkline TSS when available (more accurate — includes server-computed values)
+      if (daySparkTss[i] > 0) return daySparkTss[i];
+      // Fall back to stored or client-computed activity TSS
+      return weekActs
+        .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
+        .reduce((s, a) => s + tssOrCompute(a, thresholds), 0);
+    }
+    return weekActs
+      .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
+      .reduce((s, a) => s + getVal(a), 0);
+  });
   const dayPlanned = weekDays.map(d =>
     weekPlanned.filter(p => isSameLocalDay(new Date(p.date || 0), d))
                .reduce((s, p) => s + getPw(p), 0)
@@ -156,8 +328,66 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     return null;
   })();
 
+  // Label for the current week selection (shown in the navigator)
+  const weekLabel = (() => {
+    if (weekOffset === 0)  return 'This week';
+    if (weekOffset === 1)  return 'Next week';
+    if (weekOffset === -1) return 'Last week';
+    const fmt = (d) => `${d.getDate()}.${d.getMonth()+1}.`;
+    return `${fmt(monday)}–${fmt(sunday)}`;
+  })();
+
   return (
     <div style={styles.card}>
+      {/* ── Week navigator ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 10, gap: 6,
+      }}>
+        <button
+          onClick={() => setWeekOffset(w => w - 1)}
+          aria-label="Previous week"
+          style={navBtnStyle}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span style={{
+            fontSize: 12, fontWeight: 800, color: '#0A0E1A',
+            letterSpacing: '-0.01em', whiteSpace: 'nowrap',
+          }}>
+            {weekLabel}
+          </span>
+          {!isCurrentWeek && (
+            <button
+              onClick={() => setWeekOffset(0)}
+              style={{
+                fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 9999,
+                background: 'rgba(118,126,181,.12)', color: '#5E6590', border: 'none',
+                cursor: 'pointer', fontFamily: 'inherit',
+                letterSpacing: '0.04em', textTransform: 'uppercase',
+                WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+              }}
+            >
+              Today
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => setWeekOffset(w => w + 1)}
+          aria-label="Next week"
+          style={navBtnStyle}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
+
       {/* ── KPI row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 7, marginBottom: 12 }}>
         {[
@@ -165,31 +395,33 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
           { label: 'TSS',      value: totalTss > 0 ? Math.round(totalTss) : '—' },
           { label: 'Distance', value: fmtDist(totalDist) },
           { label: 'Sessions', value: sessions },
-        ].map(({ label, value }) => (
-          <div key={label} style={styles.kpi}>
+        ].map(({ label, value }, idx) => (
+          <div
+            key={label}
+            style={{
+              ...styles.kpi,
+              animation: `ndPopIn .5s ${idx * 60}ms cubic-bezier(.22,1.4,.36,1) both`,
+            }}
+          >
             <span style={styles.kpiLabel}>{label}</span>
-            <span style={styles.kpiValue}>{value}</span>
+            <span
+              key={`${label}-${value}`}
+              style={{
+                ...styles.kpiValue,
+                animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
+              }}
+            >
+              {value}
+            </span>
           </div>
         ))}
       </div>
 
       {/* ── Divider + toggle ── */}
       <div style={{ borderTop: '1px solid rgba(118,126,181,.14)', paddingTop: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          {/* Section label + planned target */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={styles.sectionLabel}>Daily {metric}</span>
-            {plannedLabel && (
-              <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
-                {completedLabel} / {plannedLabel}
-                {progressPct != null && (
-                  <span style={{ marginLeft: 4, color: progressPct >= 90 ? '#22c55e' : progressPct >= 60 ? '#f59e0b' : '#ef4444' }}>
-                    {Math.round(progressPct)}%
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
+        {/* Title row + toggle */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: plannedLabel ? 9 : 8 }}>
+          <span style={styles.sectionLabel}>Daily {metric}</span>
 
           {/* Metric toggle */}
           <div style={styles.seg}>
@@ -197,7 +429,16 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
               <button
                 key={m}
                 onClick={() => setMetric(m)}
-                style={{ ...styles.segBtn, ...(metric === m ? styles.segBtnOn : {}) }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+                onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+                onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+                style={{
+                  ...styles.segBtn,
+                  ...(metric === m ? styles.segBtnOn : {}),
+                  transition: 'background .25s ease, color .25s ease, box-shadow .25s ease, transform .12s ease',
+                }}
               >
                 {m === 'Distance' ? 'Dist' : m}
               </button>
@@ -205,21 +446,95 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
           </div>
         </div>
 
-        {/* Progress bar (only when planned target exists) */}
-        {progressPct != null && (
-          <div style={{ height: 4, borderRadius: 2, background: 'rgba(118,126,181,.15)', marginBottom: 10, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 2, transition: 'width .4s ease',
-              width: `${progressPct}%`,
-              background: progressPct >= 90 ? 'linear-gradient(90deg,#4ade80,#22c55e)'
-                : progressPct >= 60 ? 'linear-gradient(90deg,#fbbf24,#f59e0b)'
-                : 'linear-gradient(90deg,#f87171,#ef4444)',
-            }} />
-          </div>
-        )}
+        {/* Modern planned vs completed indicator (only when target exists) */}
+        {plannedLabel && (() => {
+          const pct = progressPct ?? 0;
+          // Status palette by progress state
+          const status = pct >= 100
+            ? { label: 'Achieved',    fg: '#15803D', bg: '#DCFCE7', grad: ['#4ade80','#22c55e'], track: 'rgba(34,197,94,.12)' }
+            : pct >= 90
+            ? { label: 'On target',   fg: '#15803D', bg: '#DCFCE7', grad: ['#4ade80','#22c55e'], track: 'rgba(34,197,94,.12)' }
+            : pct >= 60
+            ? { label: 'Building',    fg: '#9A3412', bg: '#FFEDD5', grad: ['#fbbf24','#f59e0b'], track: 'rgba(245,158,11,.12)' }
+            : pct > 0
+            ? { label: 'Below target',fg: '#991B1B', bg: '#FEE2E2', grad: ['#f87171','#ef4444'], track: 'rgba(239,68,68,.12)' }
+            : { label: 'Not started', fg: '#6B7280', bg: '#F3F4F6', grad: ['#9CA3AF','#6B7280'], track: 'rgba(156,163,175,.12)' };
 
-        {/* ── Daily bars ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, alignItems: 'flex-end' }}>
+          const fillW = Math.max(0, Math.min(100, pct));
+
+          return (
+            <div
+              key={`prog-${metric}`}
+              style={{
+                marginBottom: 10,
+                animation: 'ndFadeIn .4s cubic-bezier(.22,1,.36,1) both',
+              }}
+            >
+              {/* Stat row: completed · / planned · status pill */}
+              <div style={{
+                display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+                gap: 8, marginBottom: 6,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+                  <span style={{
+                    fontSize: 18, fontWeight: 800, color: '#0A0E1A',
+                    fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                    letterSpacing: '-0.02em',
+                  }}>
+                    {completedLabel}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, color: '#9CA3AF',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    / {plannedLabel}
+                  </span>
+                </div>
+
+                {/* Status pill */}
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 9999,
+                  background: status.bg, color: status.fg,
+                  fontSize: 9.5, fontWeight: 800,
+                  letterSpacing: '0.04em', textTransform: 'uppercase',
+                  fontVariantNumeric: 'tabular-nums',
+                  whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  <span style={{
+                    width: 5, height: 5, borderRadius: '50%',
+                    background: `linear-gradient(160deg, ${status.grad[0]}, ${status.grad[1]})`,
+                  }} />
+                  {Math.round(pct)}% · {status.label}
+                </span>
+              </div>
+
+              {/* Modern progress bar — taller, rounded, gradient fill, soft shadow */}
+              <div style={{
+                position: 'relative',
+                height: 7, borderRadius: 9999,
+                background: status.track,
+                overflow: 'hidden',
+                boxShadow: 'inset 0 1px 1px rgba(10,14,26,.04)',
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: `${fillW}%`,
+                  borderRadius: 9999,
+                  background: `linear-gradient(90deg, ${status.grad[0]}, ${status.grad[1]})`,
+                  boxShadow: `0 0 0 1px rgba(255,255,255,.4) inset, 0 1px 4px -1px ${status.grad[1]}66`,
+                  transition: 'width .55s cubic-bezier(.22,1,.36,1), background .25s ease',
+                  transformOrigin: 'left center',
+                  animation: fillW > 0 ? `ndBarWidthIn .8s cubic-bezier(.22,1,.36,1) both` : 'none',
+                  '--nd-bar-w': `${fillW}%`,
+                }} />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Daily bars (re-key on metric switch to retrigger grow animation) ── */}
+        <div key={`bars-${metric}`} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, alignItems: 'flex-end' }}>
           {weekDays.map((d, i) => {
             const comp   = dayCompleted[i];
             const plan   = dayPlanned[i];
@@ -240,12 +555,14 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
               ? 'linear-gradient(180deg,#767EB5,#5E6590)'
               : null;
 
+            const dayDelay = i * 35; // staggered by weekday
+
             return (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                 {/* Bar column */}
                 <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', position: 'relative', gap: 2 }}>
 
-                  {/* Planned ghost bar (behind) */}
+                  {/* Planned ghost bar (behind) — grows from 0 height */}
                   {plan > 0 && (
                     <div style={{
                       position: 'absolute', bottom: 0, left: '50%',
@@ -253,10 +570,13 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
                       width: 18, height: planH, borderRadius: '4px 4px 2px 2px',
                       background: 'rgba(118,126,181,.15)',
                       border: '1px dashed rgba(118,126,181,.35)',
+                      transformOrigin: 'bottom center',
+                      animation: `ndBarGrow .55s ${dayDelay}ms cubic-bezier(.22,1,.36,1) both`,
+                      transition: 'height .35s ease',
                     }} />
                   )}
 
-                  {/* Completed bar (on top) */}
+                  {/* Completed bar (on top) — grows from 0 height */}
                   {comp > 0 && (
                     <div style={{
                       position: 'absolute', bottom: 0, left: '50%',
@@ -264,6 +584,9 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
                       width: 14, height: compH, borderRadius: '4px 4px 2px 2px',
                       background: compColor,
                       boxShadow: isToday ? '0 2px 6px -2px rgba(255,107,74,.5)' : 'none',
+                      transformOrigin: 'bottom center',
+                      animation: `ndBarGrow .65s ${dayDelay + 80}ms cubic-bezier(.22,1,.36,1) both`,
+                      transition: 'height .35s ease, background .25s ease',
                     }} />
                   )}
 

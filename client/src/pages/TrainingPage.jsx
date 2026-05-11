@@ -10,7 +10,9 @@ import { useAuth } from '../context/AuthProvider';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import NativeTrainingPage from './NativeTrainingPage';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import QuickAddLactateModal from '../components/training/QuickAddLactateModal';
 import RecordLactateModal from '../components/training/RecordLactateModal';
@@ -49,6 +51,7 @@ export default function TrainingPage() {
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
@@ -514,9 +517,21 @@ export default function TrainingPage() {
   };
 
 
-  // Apply sport & category filters for all visual components
+  // Apply sport & category filters for all visual components.
+  // Excludes raw external activities (Strava `source==='strava'`, FIT `source==='fit'`,
+  // ids prefixed with strava-/fit-) — Training History/Graph should only show
+  // records that actually live in the Training collection (i.e. were exported
+  // via Add lactate). The Field Lactate panel still receives the full Strava
+  // list separately so users can add lactate to fresh activities.
   const filteredTrainings = useMemo(() => {
-    let data = trainings || [];
+    let data = (trainings || []).filter(t => {
+      if (!t) return false;
+      if (t.source === 'strava' || t.source === 'fit') return false;
+      const idStr = String(t.id || '');
+      if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+      // Keep entries that have a Mongo _id (Training collection records)
+      return !!t._id || !t.source;
+    });
     if (selectedSport !== 'all') {
       data = data.filter(t => t.sport === selectedSport);
     }
@@ -531,7 +546,7 @@ export default function TrainingPage() {
   }, [trainings, selectedSport, selectedCategory]);
 
   if (error) return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
@@ -539,6 +554,19 @@ export default function TrainingPage() {
       {error}
     </motion.div>
   );
+
+  // Native app: show the mobile-optimised training page (focused on lactate
+  // annotation + same-workout exploration). `?full=1` falls through to the
+  // desktop view (used by "menu" button or deep links into edit forms).
+  if (isCapacitorNative() && !searchParams.get('full')) {
+    return (
+      <NativeTrainingPage
+        user={user}
+        trainings={trainings}
+        athleteId={selectedAthleteId || user?._id}
+      />
+    );
+  }
 
   return (
     <motion.div
@@ -698,6 +726,7 @@ export default function TrainingPage() {
                 setSelectedTitle={setSelectedTitle}
                 selectedTraining={selectedTraining}
                 setSelectedTraining={setSelectedTraining}
+                integrationAthleteId={integrationAthleteId}
               />
             </motion.div>
           </>
@@ -733,6 +762,7 @@ export default function TrainingPage() {
             onSportChange={setSelectedSport}
             isFullWidth={true}
             user={user}
+            integrationAthleteId={integrationAthleteId}
           />
         </motion.div>
 
