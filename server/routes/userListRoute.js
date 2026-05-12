@@ -2269,15 +2269,32 @@ router.post("/apple-auth", async (req, res) => {
         }
 
         const appleSignin = require('apple-signin-auth');
+        const expectedAudience = process.env.APPLE_BUNDLE_ID || 'com.lachart.app';
         let applePayload;
         try {
             applePayload = await appleSignin.verifyIdToken(identityToken, {
-                audience: process.env.APPLE_BUNDLE_ID || 'com.lachart.app',
+                audience: expectedAudience,
                 ignoreExpiration: false,
             });
         } catch (verifyErr) {
-            console.error('[AppleAuth] Token verification failed:', verifyErr.message);
-            return res.status(401).json({ error: 'Apple identity token is invalid or expired' });
+            // Surface the exact reason so the client (and logs) can tell whether
+            // it's an audience mismatch, expired token, network issue fetching
+            // Apple's JWKS, etc. Don't leak the raw token, but the reason is fine.
+            const reason = verifyErr?.message || 'unknown verification error';
+            console.error('[AppleAuth] Token verification failed:', reason, {
+                expectedAudience,
+                tokenAud: (() => {
+                    try {
+                        const part = String(identityToken).split('.')[1];
+                        return JSON.parse(Buffer.from(part, 'base64').toString('utf8'))?.aud;
+                    } catch { return null; }
+                })(),
+            });
+            return res.status(401).json({
+                error: 'Apple identity token is invalid or expired',
+                reason,
+                hint: 'If `reason` mentions audience/aud, the iOS bundle ID does not match the server APPLE_BUNDLE_ID env variable.',
+            });
         }
 
         const { sub: appleId, email } = applePayload;

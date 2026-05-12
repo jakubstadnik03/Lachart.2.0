@@ -418,7 +418,12 @@ const LoginPage = () => {
         msg.includes('error 1001') ||
         msg.includes('error 1000');
       if (!isCancel) {
-        addNotification(err?.message || 'Apple sign-in failed', 'error');
+        // Surface server's detailed reason when available (e.g. audience
+        // mismatch on token verification) so the user can actually diagnose
+        // 401 errors instead of just seeing "Request failed with status code 401".
+        const serverErr = err?.response?.data;
+        const detail = serverErr?.reason || serverErr?.error || err?.message;
+        addNotification(detail || 'Apple sign-in failed', 'error');
       }
     } finally {
       setIsLoading(false);
