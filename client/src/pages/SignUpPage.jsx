@@ -15,6 +15,7 @@ import api from '../services/api';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { signInWithGoogleNative } from '../utils/nativeGoogleAuth';
+import { signInWithAppleNative } from '../utils/nativeAppleAuth';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -118,6 +119,49 @@ const SignUpPage = () => {
         : 'Google sign-up failed. Please try again.';
       addNotification(msg, 'error');
       setError(msg);
+    }
+  };
+
+  // Native Apple Sign-Up (iOS). Apple requires Sign in with Apple as an
+  // equivalent option to any third-party login (App Store guideline 4.8),
+  // so we expose it on signup too — not just login.
+  const handleNativeAppleSignUp = async () => {
+    try {
+      setError(null);
+      if (!acceptedTerms) {
+        setError('Please accept the Terms & Privacy Policy first.');
+        return;
+      }
+      const { identityToken, user: appleUser } = await signInWithAppleNative();
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/apple-auth`, {
+        identityToken,
+        user: appleUser,
+        role: formData.role || 'athlete',
+      });
+      if (result?.data?.token) {
+        trackUserRegistration('apple', formData.role);
+        trackConversionFunnel('signup_complete', { method: 'apple', role: formData.role });
+        await logUserRegistration('apple', result.data.user?._id);
+        navigate('/login', { replace: true });
+        await login(null, null, result.data.token, result.data.user);
+        return;
+      }
+      addNotification('Apple authentication failed', 'error');
+    } catch (err) {
+      // ASAuthorizationError.canceled = 1001 — silent on cancel.
+      const msg = String(err?.message || err || '').toLowerCase();
+      const code = String(err?.code ?? err?.errorCode ?? '');
+      const isCancel =
+        code === '1001' || code === '1000' ||
+        msg.includes('cancel') ||
+        msg.includes('error 1001') ||
+        msg.includes('error 1000');
+      if (!isCancel) {
+        const serverErr = err?.response?.data;
+        const detail = serverErr?.reason || serverErr?.error || err?.message;
+        addNotification(detail || 'Apple sign-up failed', 'error');
+        setError(detail || 'Apple sign-up failed');
+      }
     }
   };
 
@@ -348,6 +392,19 @@ const SignUpPage = () => {
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
             <span className="text-base font-medium text-gray-700">Continue with Google</span>
+          </button>
+
+          {/* Native Apple Sign-Up (App Store guideline 4.8) */}
+          <button
+            type="button"
+            onClick={handleNativeAppleSignUp}
+            className="mt-2.5 w-full flex items-center justify-center gap-3 py-3 px-4 bg-black rounded-2xl shadow-sm active:opacity-80 transition-opacity"
+          >
+            <svg width="18" height="22" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.54 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09z"/>
+              <path d="M15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/>
+            </svg>
+            <span className="text-base font-medium text-white">Continue with Apple</span>
           </button>
 
           <p className="mt-4 text-center text-sm text-gray-500">
