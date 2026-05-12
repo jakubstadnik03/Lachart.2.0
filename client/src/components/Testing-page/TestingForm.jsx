@@ -241,7 +241,18 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     baseLa: testData?.baseLa !== undefined && testData?.baseLa !== null ? String(testData.baseLa) : (testData?.baseLactate !== undefined && testData?.baseLactate !== null ? String(testData.baseLactate) : ''),
     date: formatDate(testData?.date),
     specifics: testData?.specifics || { specific: '', weather: '' },
-    comments: testData?.comments || ''
+    comments: testData?.comments || '',
+    // Protocol metadata — saved alongside the test for cross-test comparison
+    // and future use by improved LT analysis (Modified Dmax / IAT). None of
+    // these influence the current curve fit directly.
+    restingHR: testData?.restingHR ?? '',
+    preLoadHR: testData?.preLoadHR ?? '',
+    maxHR: testData?.maxHR ?? '',
+    maxLactate: testData?.maxLactate ?? '',
+    recoveryHR3min: testData?.recoveryHR3min ?? '',
+    recoveryLactate3min: testData?.recoveryLactate3min ?? '',
+    stageDurationSec: testData?.stageDurationSec ?? '',
+    restBetweenStagesSec: testData?.restBetweenStagesSec ?? '',
   });
 
   useEffect(() => {
@@ -629,7 +640,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             lactate: row.lactate ? String(row.lactate) : '',
             glucose: row.glucose ? String(row.glucose) : '',
             vo2: row.vo2 ? String(row.vo2) : '',
-            RPE: row.RPE ? String(row.RPE) : ''
+            RPE: row.RPE ? String(row.RPE) : '',
+            // 'work' rows feed the LT curve; 'recovery' rows are saved but
+            // excluded from regression / LT1 / LT2. Default to 'work' for
+            // backwards-compat with older saved tests.
+            intervalType: row.intervalType === 'recovery' ? 'recovery' : 'work',
           };
         });
         setRows(initialRows);
@@ -641,7 +656,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           lactate: '',
           glucose: '',
           vo2: '',
-          RPE: ''
+          RPE: '',
+          intervalType: 'work',
         }]);
       }
     }
@@ -902,8 +918,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const newFormData = { ...formData, [field]: value };
     setFormData(newFormData);
 
+    // Spread newFormData FIRST so optional fields (restingHR, maxLactate,
+    // stageDurationSec, etc.) propagate up without each one having to be
+    // listed explicitly. Then re-override the canonical fields below to
+    // preserve previous semantics for date / baseLa / specifics.
     const updatedTestData = {
       ...testData,
+      ...newFormData,
       title: newFormData.title,
       description: newFormData.description,
       weight: newFormData.weight,
@@ -936,10 +957,93 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       heartRate: '',
       lactate: '',
       glucose: '',
-      RPE: ''
+      RPE: '',
+      intervalType: 'work',
     };
-    
+
     setRows([...rows, newRow]);
+  };
+
+  // Toggle a row between 'work' (counted in the LT curve) and 'recovery'
+  // (saved but excluded from regression / LT1 / LT2). Used when the user
+  // logs a post-test recovery sample at low intensity — without this flag
+  // that sample would distort the polynomial fit and the X axis.
+  const handleToggleRecoveryRow = (rowIndex) => {
+    setRows(prev => prev.map((r, i) =>
+      i === rowIndex ? { ...r, intervalType: r.intervalType === 'recovery' ? 'work' : 'recovery' } : r
+    ));
+  };
+
+  // ── Step-test wizard ─────────────────────────────────────────────────────
+  // Generates an evenly-spaced ladder of intervals: starting value, increment
+  // per step, number of steps. Replaces the current rows.
+  const [stepWizardOpen, setStepWizardOpen] = useState(false);
+  const [stepWizard, setStepWizard] = useState({
+    start: '',
+    increment: '',
+    steps: 8,
+    stageDurationSec: 180,
+  });
+
+  const formatPaceSeconds = (totalSec) => {
+    const s = Math.max(0, Math.round(Number(totalSec) || 0));
+    const m = Math.floor(s / 60);
+    const ss = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  };
+
+  const parsePaceInput = (val) => {
+    if (val == null) return NaN;
+    const s = String(val).trim();
+    const mmss = s.match(/^(\d+):(\d{1,2})$/);
+    if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+    const n = Number(s.replace(',', '.'));
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  const handleApplyStepWizard = () => {
+    const sport = formData.sport;
+    const isPace = sport === 'run' || sport === 'swim';
+    const stepsN = Math.max(1, Math.min(30, parseInt(stepWizard.steps, 10) || 0));
+
+    let startN, incN;
+    if (isPace) {
+      // Pace input: MM:SS strings. Increment is in SECONDS (negative = getting faster).
+      startN = parsePaceInput(stepWizard.start);
+      incN = Number(String(stepWizard.increment).replace(',', '.'));
+    } else {
+      // Bike: watts. Both are numeric.
+      startN = Number(String(stepWizard.start).replace(',', '.'));
+      incN = Number(String(stepWizard.increment).replace(',', '.'));
+    }
+    if (!Number.isFinite(startN) || !Number.isFinite(incN) || stepsN < 1) {
+      addNotification('Fill in start, increment and step count first.', 'warning');
+      return;
+    }
+    const generated = Array.from({ length: stepsN }, (_, i) => {
+      const v = startN + incN * i;
+      return {
+        interval: i + 1,
+        power: isPace ? formatPaceSeconds(v) : String(Math.round(v)),
+        heartRate: '',
+        lactate: '',
+        glucose: '',
+        vo2: '',
+        RPE: '',
+        intervalType: 'work',
+      };
+    });
+    setRows(generated);
+    // Also propagate stage duration to the test-level metadata so the curve
+    // calculator (and exports) can apply stage-duration corrections later.
+    onTestDataChange({
+      ...testData,
+      ...formData,
+      stageDurationSec: Number(stepWizard.stageDurationSec) || undefined,
+      results: generated.map(r => ({ ...r })),
+    });
+    setStepWizardOpen(false);
+    addNotification(`Generated ${stepsN} step intervals.`, 'success');
   };
 
   const handleDeleteTest = () => {
@@ -1463,13 +1567,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
           <div className="min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weather</label>
-        <input 
+        <input
               ref={el => inputRefs.current['specifics'] = el}
               type="text"
               value={formData.specifics.weather}
-              onChange={(e) => handleFormDataChange('specifics', { 
-                ...formData.specifics, 
-                weather: e.target.value 
+              onChange={(e) => handleFormDataChange('specifics', {
+                ...formData.specifics,
+                weather: e.target.value
               })}
               onFocus={(e) => handleInputFocus('specifics', e)}
               onBlur={handleInputBlur}
@@ -1479,6 +1583,105 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
       </div>
       </div>
+
+      {/* Optional protocol / pre-and-post values. These don't influence the
+          curve fit on their own, but they're saved on the test so future
+          comparisons and a Modified-Dmax / IAT analysis can use them. */}
+      {(isNewTest || isEditMode) && (
+        <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50/40">
+          <summary className="cursor-pointer px-2 py-1.5 text-xs font-semibold text-gray-700 select-none">
+            Protocol & pre/post values <span className="text-gray-400 font-normal">(optional)</span>
+          </summary>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2 pt-1">
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Resting HR</label>
+              <input
+                type="number"
+                value={formData.restingHR ?? ''}
+                onChange={(e) => handleFormDataChange('restingHR', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="bpm"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Pre-load HR</label>
+              <input
+                type="number"
+                value={formData.preLoadHR ?? ''}
+                onChange={(e) => handleFormDataChange('preLoadHR', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="bpm"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Max HR</label>
+              <input
+                type="number"
+                value={formData.maxHR ?? ''}
+                onChange={(e) => handleFormDataChange('maxHR', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="bpm"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Max Lactate</label>
+              <input
+                type="text"
+                value={formData.maxLactate ?? ''}
+                onChange={(e) => handleFormDataChange('maxLactate', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="mmol/L"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Recovery HR +3min</label>
+              <input
+                type="number"
+                value={formData.recoveryHR3min ?? ''}
+                onChange={(e) => handleFormDataChange('recoveryHR3min', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="bpm"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Recovery La +3min</label>
+              <input
+                type="text"
+                value={formData.recoveryLactate3min ?? ''}
+                onChange={(e) => handleFormDataChange('recoveryLactate3min', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="mmol/L"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Stage duration</label>
+              <input
+                type="number"
+                min={30}
+                max={900}
+                step={30}
+                value={formData.stageDurationSec ?? ''}
+                onChange={(e) => handleFormDataChange('stageDurationSec', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="seconds"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Rest between</label>
+              <input
+                type="number"
+                min={0}
+                max={300}
+                step={5}
+                value={formData.restBetweenStagesSec ?? ''}
+                onChange={(e) => handleFormDataChange('restBetweenStagesSec', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="seconds"
+              />
+            </div>
+          </div>
+        </details>
+      )}
       </div>
 
         {/* Data Table */}
@@ -1536,13 +1739,29 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   ref={rowsScrollRef}
                   className={`h-full w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden ${rowsCanScroll ? 'pr-1' : ''}`}
                 >
-                  {rows.map((row, index) => (
+                  {rows.map((row, index) => {
+                    const isRecovery = row.intervalType === 'recovery';
+                    return (
                     <div
                       key={index}
-                      className="grid gap-0.5 items-center mt-0.5 p-0.5 sm:p-1 bg-white rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors w-full min-w-0 max-w-full"
+                      className={`grid gap-0.5 items-center mt-0.5 p-0.5 sm:p-1 rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors w-full min-w-0 max-w-full ${isRecovery ? 'bg-amber-50/60 italic opacity-80' : 'bg-white'}`}
                       style={{ gridTemplateColumns }}
+                      title={isRecovery ? 'Recovery sample — excluded from the lactate curve' : undefined}
                     >
-                      <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
+                      {(isNewTest || isEditMode) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRecoveryRow(index)}
+                          className={`mx-auto w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold transition-colors ${isRecovery ? 'bg-amber-200 text-amber-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                          title={isRecovery ? 'Recovery row — click to mark as work' : 'Click to mark as recovery (excluded from curve)'}
+                        >
+                          {isRecovery ? 'R' : index + 1}
+                        </button>
+                      ) : (
+                        <div className={`text-center text-xs min-w-0 overflow-hidden ${isRecovery ? 'text-amber-700' : ''}`}>
+                          {isRecovery ? 'R' : index + 1}
+                        </div>
+                      )}
                       {renderInput(index, 'power', row.power,
                         formData.sport === 'bike' ? 'W' :
                         (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'MM:SS' :
@@ -1568,7 +1787,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {rowsCanScroll && !rowsAtTop && (
                   <div className="pointer-events-none absolute top-0 left-0 right-0 h-5 bg-gradient-to-b from-white via-white/80 to-transparent rounded-t-lg" />
@@ -1595,19 +1815,40 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Action buttons only when editing — view mode gives full height to the measurements table */}
         {(isNewTest || isEditMode) && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
-            <button
-              data-tour="tour-add-interval"
-              type="button"
-              disabled={!isPremium && !isNewTest}
-              onClick={() => {
-                if (!isPremium && !isNewTest) return;
-                logClick('Add Interval Button');
-                handleAddRow();
-              }}
-              className={`w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
-            </button>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button
+                data-tour="tour-add-interval"
+                type="button"
+                disabled={!isPremium && !isNewTest}
+                onClick={() => {
+                  if (!isPremium && !isNewTest) return;
+                  logClick('Add Interval Button');
+                  handleAddRow();
+                }}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  logClick('Open Step Wizard');
+                  // Default the wizard with sensible per-sport seeds.
+                  const isPace = formData.sport === 'run' || formData.sport === 'swim';
+                  setStepWizard({
+                    start: isPace ? (formData.sport === 'swim' ? '02:00' : '06:00') : '100',
+                    increment: isPace ? '-10' : '25',
+                    steps: 6,
+                    stageDurationSec: 180,
+                  });
+                  setStepWizardOpen(true);
+                }}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-colors"
+                title="Generate a step-test ladder of intervals"
+              >
+                <Settings2 size={14} /> Step wizard
+              </button>
+            </div>
 
             <div className="flex gap-2 w-full sm:w-auto">
               {!isNewTest && !demoMode && (
@@ -1650,12 +1891,123 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       )}
 
       {/* Glossary Modal */}
-      <TrainingGlossary 
-        isOpen={showGlossary} 
-        onClose={() => setShowGlossary(false)} 
+      <TrainingGlossary
+        isOpen={showGlossary}
+        onClose={() => setShowGlossary(false)}
         initialTerm="Lactate Testing"
         initialCategory="Lactate"
       />
+
+      {/* Step-test wizard — generates an evenly-spaced ladder of intervals. */}
+      {stepWizardOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setStepWizardOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-gray-900">Step-test wizard</h3>
+              <button
+                type="button"
+                onClick={() => setStepWizardOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Generates intervals automatically. Existing rows will be replaced.
+              {formData.sport === 'bike'
+                ? ' Start watts + increment in watts.'
+                : ' Pace as MM:SS; increment in seconds (negative = getting faster).'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                  Start {formData.sport === 'bike' ? '(W)' : '(MM:SS)'}
+                </label>
+                <input
+                  type="text"
+                  value={stepWizard.start}
+                  onChange={(e) => setStepWizard(s => ({ ...s, start: e.target.value }))}
+                  placeholder={formData.sport === 'bike' ? '100' : '06:00'}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                  Step {formData.sport === 'bike' ? '(W)' : '(seconds)'}
+                </label>
+                <input
+                  type="text"
+                  value={stepWizard.increment}
+                  onChange={(e) => setStepWizard(s => ({ ...s, increment: e.target.value }))}
+                  placeholder={formData.sport === 'bike' ? '25' : '-10'}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Steps</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={stepWizard.steps}
+                  onChange={(e) => setStepWizard(s => ({ ...s, steps: e.target.value }))}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Stage (sec)</label>
+                <input
+                  type="number"
+                  min={30}
+                  max={900}
+                  step={30}
+                  value={stepWizard.stageDurationSec}
+                  onChange={(e) => setStepWizard(s => ({ ...s, stageDurationSec: e.target.value }))}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg bg-gray-50 border border-gray-100 p-2 text-[11px] text-gray-600">
+              {(() => {
+                const isPace = formData.sport === 'run' || formData.sport === 'swim';
+                const stepsN = Math.max(1, Math.min(30, parseInt(stepWizard.steps, 10) || 0));
+                const startN = isPace ? parsePaceInput(stepWizard.start) : Number(String(stepWizard.start).replace(',', '.'));
+                const incN = Number(String(stepWizard.increment).replace(',', '.'));
+                if (!Number.isFinite(startN) || !Number.isFinite(incN)) return 'Fill all fields to preview.';
+                const first = isPace ? formatPaceSeconds(startN) : `${Math.round(startN)} W`;
+                const last = isPace ? formatPaceSeconds(startN + incN * (stepsN - 1)) : `${Math.round(startN + incN * (stepsN - 1))} W`;
+                return `Preview: ${stepsN} stages, ${first} → ${last}, ${stepWizard.stageDurationSec || 180}s each.`;
+              })()}
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setStepWizardOpen(false)}
+                className="flex-1 px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyStepWizard}
+                className="flex-1 px-3 py-2 text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600"
+              >
+                Generate
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

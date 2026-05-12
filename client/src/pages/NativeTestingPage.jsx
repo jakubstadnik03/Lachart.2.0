@@ -11,6 +11,7 @@ import {
 import { getTestingsByAthleteId } from '../services/api';
 import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculator';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
+import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -233,7 +234,10 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSport, setSelectedSport] = useState('all');
+  // Default to 'bike' so the page lands on the latest bike test on first open;
+  // the toggle below lets the user switch to 'run'. Tests list is filtered to
+  // the active sport, and the most-recent test in that sport is auto-selected.
+  const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTestId, setSelectedTestId] = useState(testIdFromUrl || null);
   // Compare mode: tap to multi-select up to 2 tests, page shows side-by-side comparison
   const [compareMode, setCompareMode] = useState(false);
@@ -276,6 +280,25 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   useEffect(() => {
     if (testIdFromUrl) setSelectedTestId(testIdFromUrl);
   }, [testIdFromUrl]);
+
+  // Auto-select the latest test for the active sport when no URL-driven
+  // selection exists. Runs when tests load or when the user flips the sport
+  // toggle — so "Bike" lands on the newest bike test, "Run" lands on the
+  // newest run test, etc.
+  useEffect(() => {
+    if (testIdFromUrl) return;
+    if (selectedSport === 'all') return;
+    const newestForSport = tests
+      .filter(t => normSport(t.sport) === selectedSport)
+      .sort((a, b) => new Date(b.date || b.testDate || 0) - new Date(a.date || a.testDate || 0))[0];
+    if (newestForSport) {
+      const id = String(newestForSport._id || newestForSport.id);
+      if (id !== String(selectedTestId)) setSelectedTestId(id);
+    } else {
+      setSelectedTestId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tests, selectedSport, testIdFromUrl]);
 
   // ── Filter tests by sport ──────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -382,6 +405,41 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
         </div>
 
         <div style={styles.body}>
+          {/* ─── Bike / Run sport switch at the top — flips which test is
+              auto-selected below and which sport feeds LT2TrendSparkline. ─── */}
+          <div style={{ ...cardEntry(1), ...snap, display: 'flex', gap: 8, padding: '4px 4px 0' }}>
+            {['bike', 'run'].map((sp) => {
+              const on = selectedSport === sp;
+              const hasTests = tests.some(t => normSport(t.sport) === sp);
+              return (
+                <button
+                  key={sp}
+                  onClick={() => setSelectedSport(sp)}
+                  disabled={!hasTests && !on}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 12,
+                    fontSize: 13, fontWeight: 700,
+                    background: on ? '#5E6590' : 'rgba(255,255,255,.6)',
+                    color: on ? '#fff' : (hasTests ? '#5E6590' : '#C7CAD3'),
+                    border: `1px solid ${on ? '#5E6590' : 'rgba(118,126,181,.18)'}`,
+                    backdropFilter: 'blur(8px) saturate(160%)',
+                    WebkitBackdropFilter: 'blur(8px) saturate(160%)',
+                    textTransform: 'capitalize',
+                    cursor: hasTests || on ? 'pointer' : 'default',
+                    transition: 'background .15s ease, color .15s ease',
+                  }}
+                >
+                  {sp}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ─── LT2 Trend — same component as PC dashboard, sport-synced. ─── */}
+          <div style={{ ...cardEntry(2), ...snap }}>
+            <LT2TrendSparkline tests={tests} sport={selectedSport} />
+          </div>
+
           {/* ─── Selected test (top) — shows curve + KPIs when one is picked ─── */}
           {selected && selectedTh && (
             <div style={{ ...cardEntry(1), ...snap }}>

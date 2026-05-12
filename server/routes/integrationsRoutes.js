@@ -1021,7 +1021,12 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
       });
     }
     
-    res.json({ imported: result.imported, updated: result.updated, message: result.message });
+    res.json({
+      imported: result.imported,
+      updated: result.updated,
+      message: result.message,
+      latestActivityId: result.latestActivityId || null,
+    });
   } catch (error) {
     console.error('Strava auto-sync error:', error);
     res.json({ imported: 0, updated: 0, error: error.message });

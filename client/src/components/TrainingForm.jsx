@@ -6,6 +6,7 @@ import ReactDOM from "react-dom";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
+import { isCapacitorNative } from "../utils/isNativeApp";
 import LapsBarChart from "./FitAnalysis/LapsBarChart";
 import { Zap, TrendingUp, TrendingDown, RotateCcw } from 'lucide-react';
 
@@ -580,21 +581,28 @@ const TrainingForm = ({
 }) => {
   const { addNotification } = useNotification();
   const dragControls = useDragControls();
-  const [formData, setFormData] = useState(initialData || {
-    sport: "bike",
-    type: "interval",
-    category: "",
-    title: "",
-    customTitle: "",
-    description: "",
-    date: new Date().toISOString().slice(0, 16),
-    specifics: {
-      specific: "",
-      weather: "",
-      customSpecific: "",
-      customWeather: ""
-    },
-    results: []
+  const [formData, setFormData] = useState(() => {
+    const defaults = {
+      sport: "bike",
+      type: "interval",
+      category: "",
+      title: "",
+      customTitle: "",
+      description: "",
+      date: new Date().toISOString().slice(0, 16),
+      specifics: { specific: "", weather: "", customSpecific: "", customWeather: "" },
+      results: [],
+    };
+    if (!initialData) return defaults;
+    // Callers (NativeTrainingPage, ActivityFullModal, …) may pass a raw activity
+    // that lacks `results`/`specifics`. Reading `.results.length` on undefined
+    // crashes the form, so normalize defensively.
+    return {
+      ...defaults,
+      ...initialData,
+      specifics: { ...defaults.specifics, ...(initialData.specifics || {}) },
+      results: Array.isArray(initialData.results) ? initialData.results : [],
+    };
   });
 
   const [trainingTitles, setTrainingTitles] = useState([]);
@@ -1093,7 +1101,18 @@ const TrainingForm = ({
       exit={{ y: '100%', opacity: 0 }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl flex flex-col relative shadow-xl overflow-hidden"
-      style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}
+      style={{
+        // On native: push the whole form up by the tab bar (56px) + home
+        // indicator so the sticky Save/Cancel footer is always above the
+        // bottom tab bar — regardless of which page opens the form. On web
+        // there's no tab bar; just keep the existing safe-area logic.
+        marginBottom: isCapacitorNative()
+          ? 'calc(56px + env(safe-area-inset-bottom, 0px))'
+          : undefined,
+        maxHeight: isCapacitorNative()
+          ? 'calc(100dvh - env(safe-area-inset-top, 0px) - 56px - env(safe-area-inset-bottom, 0px) - 12px)'
+          : 'calc(95vh - env(safe-area-inset-top, 0px))',
+      }}
     >
 
       {/* Drag handle — mobile only; touching it starts the swipe-to-close drag */}
@@ -1738,7 +1757,7 @@ const TrainingForm = ({
       {/* ── Sticky footer ── */}
       <div
         className="shrink-0 bg-white border-t border-gray-100 px-4 flex gap-3"
-        style={{ paddingTop: '0.75rem', paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+        style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
       >
         <button
           type="button"

@@ -20,7 +20,7 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
-import { addTraining, updateTraining } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail } from '../services/api';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -289,9 +289,11 @@ function intervalPaceSec(item, sport) {
         const sec = Number(mmss[2]);
         if (Number.isFinite(m) && Number.isFinite(sec)) {
           const total = m * 60 + sec;
+          // Always require realistic pace bounds. A "48:19" value on a 28 m
+          // recovery lap is not a real pace; without this guard it blows up
+          // the bar-chart Y axis.
           if (total >= minSec && total <= maxSec) return total;
-          if (!allowNumeric) return null;
-          return total;
+          return null;
         }
       }
       if (allowNumeric && /^\d+(\.\d+)?$/.test(s)) {
@@ -1269,10 +1271,93 @@ export default function NativeTrainingPage({
   const [activityModal, setActivityModal] = useState(null);
   // ── TrainingForm sheet — opens directly when user taps "Add" lactate pill ──
   const [trainingFormActivity, setTrainingFormActivity] = useState(null);
-  const openTrainingForm = (act) => {
+  const openTrainingForm = async (act) => {
     if (!act) return;
     // Strip native-only / runtime fields and ensure date is parseable
     const { _animDelay, _ndKey, ...clean } = act;
+
+    // Strava activities from the listing payload have no `laps` (server omits
+    // them for performance). If the user opens the form for one without the
+    // detail having been fetched yet, the form would render empty. Fetch the
+    // detail now so we always end up with usable laps.
+    const isStravaActivity =
+      clean.type === 'strava' || !!clean.stravaId ||
+      /^strava-/i.test(String(clean.id || ''));
+    const hasUsableLaps = Array.isArray(clean.laps) && clean.laps.length > 0;
+    const hasUsableResults = Array.isArray(clean.results) && clean.results.length > 0;
+    if (isStravaActivity && !hasUsableLaps && !hasUsableResults) {
+      try {
+        const rawId = String(clean.stravaId || clean.id || '').replace(/^strava-/i, '');
+        if (rawId) {
+          const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+          const integAthleteId = isCoachViewing ? String(athleteId) : null;
+          const data = await getStravaActivityDetail(rawId, integAthleteId);
+          if (Array.isArray(data?.laps) && data.laps.length > 0) {
+            clean.laps = data.laps;
+          }
+          if (data?.titleManual && !clean.titleManual) clean.titleManual = data.titleManual;
+          if (data?.category && !clean.category) clean.category = data.category;
+          if (data?.description && !clean.description) clean.description = data.description;
+        }
+      } catch (_) {
+        // Fall through — form will open empty, user can still add rows manually
+      }
+    }
+
+    // TrainingForm needs `results` (intervals). Strava/FIT activities arrive
+    // with `laps` instead — map them so the form has rows to annotate.
+    if (!Array.isArray(clean.results) || clean.results.length === 0) {
+      const laps = Array.isArray(clean.laps) ? clean.laps : [];
+      const sportRaw = String(clean.sport || clean.sportType || '').toLowerCase();
+      const sport = sportRaw.includes('swim') ? 'swim' : sportRaw.includes('run') ? 'run' : 'bike';
+      const isRun = sport === 'run';
+      const isSwim = sport === 'swim';
+      const fmtDur = (sec) => {
+        const s = Number(sec) || 0;
+        const m = Math.floor(s / 60);
+        const ss = Math.round(s % 60);
+        return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+      };
+      clean.sport = sport;
+      clean.results = laps.map((lap, idx) => {
+        const durationSec = Math.round(
+          lap.moving_time ?? lap.totalTimerTime ?? lap.totalElapsedTime ?? lap.elapsed_time ?? lap.duration ?? 0
+        );
+        const distM = Math.round(lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? 0);
+        const speed = lap.average_speed ?? lap.avgSpeed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? 0;
+        let powerValue = '';
+        if (isRun || isSwim) {
+          const eff = speed > 0.05 ? speed : (distM > 0 && durationSec > 0 ? distM / durationSec : 0);
+          if (eff > 0.05) {
+            const paceSec = isSwim ? Math.round(100 / eff) : Math.round(1000 / eff);
+            powerValue = fmtDur(paceSec);
+          }
+        } else {
+          const w = lap.average_watts ?? lap.avgPower ?? lap.average_power ?? 0;
+          powerValue = w > 0 ? String(Math.round(w)) : '';
+        }
+        const isSwimRest = isSwim && distM < 10;
+        return {
+          interval: idx + 1,
+          power: powerValue,
+          heartRate: String(Math.round(lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? 0) || ''),
+          lactate: lap.lactate != null ? String(lap.lactate) : '',
+          RPE: '',
+          elevation: (() => {
+            const g = lap.total_elevation_gain ?? lap.elevation_gain ?? null;
+            return g != null && Number.isFinite(Number(g)) ? String(Math.round(Number(g))) : '';
+          })(),
+          duration: fmtDur(durationSec),
+          durationSeconds: durationSec,
+          durationType: 'time',
+          distanceMeters: distM > 0 ? distM : undefined,
+          repeatCount: 1,
+          isRecovery: isSwimRest,
+          isSelected: !isSwimRest,
+        };
+      });
+    }
+
     setTrainingFormActivity(clean);
   };
   const closeTrainingForm = () => setTrainingFormActivity(null);
@@ -2003,7 +2088,9 @@ export default function NativeTrainingPage({
       )}
 
       {/* TrainingForm sheet — opens directly from the "Add lactate" pill so
-          users can record values without going through the preview modal. */}
+          users can record values without going through the preview modal.
+          TrainingForm itself reserves space for the native tab bar in its
+          sticky footer, so the modal container can stay full-viewport. */}
       {trainingFormActivity && ReactDOM.createPortal(
         <div
           onClick={closeTrainingForm}

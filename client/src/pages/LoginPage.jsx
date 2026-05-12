@@ -407,9 +407,17 @@ const LoginPage = () => {
         navigate(from, { replace: true });
       }
     } catch (err) {
-      if (err?.message?.includes('cancel') || err?.message?.includes('Cancel') || err?.code === '1001') {
-        // User cancelled — silent
-      } else {
+      // ASAuthorizationError.canceled = 1001 — surfaces as either err.code or as
+      // a wrapped NSError string "AuthorizationError error 1001". Treat all
+      // forms (and "1000 unknown" which also fires on benign dismissals) as silent.
+      const msg = String(err?.message || err || '').toLowerCase();
+      const code = String(err?.code ?? err?.errorCode ?? '');
+      const isCancel =
+        code === '1001' || code === '1000' ||
+        msg.includes('cancel') ||
+        msg.includes('error 1001') ||
+        msg.includes('error 1000');
+      if (!isCancel) {
         addNotification(err?.message || 'Apple sign-in failed', 'error');
       }
     } finally {

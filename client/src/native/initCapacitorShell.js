@@ -51,6 +51,25 @@ export async function initCapacitorShell() {
     // ignore
   }
 
+  // ── Local notifications (client-scheduled, e.g. Strava sync result) ───────
+  // Same deep-link behaviour as server-pushed notifications so the user lands
+  // on the imported activity with the ActivityFullModal open.
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    await LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+      const extra = event?.notification?.extra || {};
+      const type = extra.type;
+      const latestActivityId = extra.latestActivityId;
+      let path = '/';
+      if (type === 'strava_import' && latestActivityId) {
+        path = `/?openActivity=${encodeURIComponent(`strava-${latestActivityId}`)}`;
+      }
+      window.location.replace(`${window.location.origin}${path}`);
+    });
+  } catch (err) {
+    console.warn('[LocalNotifications] init failed:', err?.message || err);
+  }
+
   // ── Push notifications ─────────────────────────────────────────────────────
   try {
     const { PushNotifications } = await import('@capacitor/push-notifications');

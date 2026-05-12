@@ -385,7 +385,7 @@ const SettingsPage = () => {
                 addNotification(`Strava sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
               }
               if (syncResult.imported > 0) {
-                maybeNotifyStravaActivitiesImported(syncResult.imported, user?.notifications);
+                maybeNotifyStravaActivitiesImported(syncResult.imported, user?.notifications, syncResult.latestActivityId);
               }
 
               // Reload user profile to reflect autoSync + avatar updates
@@ -828,7 +828,7 @@ const SettingsPage = () => {
       }
       addNotification(`Strava sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       if ((res.imported || 0) > 0) {
-        maybeNotifyStravaActivitiesImported(res.imported, user?.notifications);
+        maybeNotifyStravaActivitiesImported(res.imported, user?.notifications, res.latestActivityId);
       }
       await handleSyncComplete();
     } catch (e) {

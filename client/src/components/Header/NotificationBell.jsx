@@ -4,20 +4,7 @@ import { BellAlertIcon } from '@heroicons/react/24/solid';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
-
-// Emoji icon based on notification type
-const typeIcon = (type) => {
-  if (!type) return '🔔';
-  if (type.includes('comment'))  return '💬';
-  if (type.includes('lactate'))  return '🩸';
-  if (type.includes('strava'))   return '🚴';
-  if (type.includes('fit'))      return '📤';
-  if (type.includes('training')) return '🏃';
-  if (type.includes('test'))     return '🔬';
-  if (type.includes('plan'))     return '📅';
-  if (type.includes('coach'))    return '👤';
-  return '🔔';
-};
+import NotifIcon from '../Notifications/NotifIcon';
 
 export default function NotificationBell() {
   const { isAuthenticated } = useAuth();
@@ -153,8 +140,8 @@ export default function NotificationBell() {
                 onClick={() => handleNotifClick(n)}
                 className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors group ${!n.read ? 'bg-primary/5' : ''}`}
               >
-                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-sm ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
-                  {typeIcon(n.type)}
+                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                  <NotifIcon type={n.type} size={16} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-gray-900 truncate">{n.title}</p>

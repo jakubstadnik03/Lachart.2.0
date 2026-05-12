@@ -1,5 +1,7 @@
-import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import ReactDOM from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
 import WeekStrip         from '../components/NativeDashboard/WeekStrip';
@@ -8,6 +10,8 @@ import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
+import TrainingForm from '../components/TrainingForm';
+import { getStravaActivityDetail, addTraining, updateTraining } from '../services/api';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -160,6 +164,10 @@ const SLIDE_IN_STYLE = `
 @keyframes ndSlideIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ndSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 `;
 
@@ -440,6 +448,8 @@ export default function NativeDashboardPage({
   user            = null,
   onPlannedWorkoutChanged,        // (updatedOrDeletedId) => void — for parent to refresh
   athleteId       = null,         // selected athlete id (coach view) or own id
+  stravaConnected = false,        // gates the manual-sync refresh button
+  onRequestStravaSync = null,     // () => Promise<{imported,updated,...}> — bypasses autoSync flag
 }) {
   const navigate      = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -545,6 +555,174 @@ export default function NativeDashboardPage({
   const openPlanned = (pw, linkedAct) => setEditingPlanned({ pw, linkedAct });
   const closePlanned = () => setEditingPlanned(null);
 
+  // ── + Lactate from activity modal: open TrainingForm prefilled with laps ──
+  const [lactateModal, setLactateModal] = useState({ isOpen: false, initialData: null });
+  const [lactateSubmitting, setLactateSubmitting] = useState(false);
+  const [lactateError, setLactateError] = useState(null);
+
+  const closeLactateModal = useCallback(() => {
+    setLactateModal({ isOpen: false, initialData: null });
+    setLactateError(null);
+  }, []);
+
+  // Helper: build TrainingForm interval rows from Strava/FIT laps. Sport-aware:
+  // power for bike, pace for run/swim.
+  const lapsToResults = useCallback((laps, sportKey) => {
+    const arr = Array.isArray(laps) ? laps : [];
+    const isRun = sportKey === 'run';
+    const isSwim = sportKey === 'swim';
+    const fmtDur = (sec) => {
+      const s = Number(sec) || 0;
+      const m = Math.floor(s / 60);
+      const ss = Math.round(s % 60);
+      return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    };
+    return arr.map((lap, idx) => {
+      const durationSec = Math.round(
+        lap.moving_time ?? lap.totalTimerTime ?? lap.totalElapsedTime ?? lap.elapsed_time ?? lap.duration ?? 0
+      );
+      const distM = Math.round(lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? 0);
+      const speed = lap.average_speed ?? lap.avgSpeed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? 0;
+      let powerValue = '';
+      if (isRun || isSwim) {
+        const eff = speed > 0.05 ? speed : (distM > 0 && durationSec > 0 ? distM / durationSec : 0);
+        if (eff > 0.05) {
+          const paceSec = isSwim ? Math.round(100 / eff) : Math.round(1000 / eff);
+          powerValue = fmtDur(paceSec);
+        }
+      } else {
+        const w = lap.average_watts ?? lap.avgPower ?? lap.average_power ?? 0;
+        powerValue = w > 0 ? String(Math.round(w)) : '';
+      }
+      const isSwimRest = isSwim && distM < 10;
+      return {
+        interval: idx + 1,
+        power: powerValue,
+        heartRate: String(Math.round(lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? 0) || ''),
+        lactate: lap.lactate != null ? String(lap.lactate) : '',
+        RPE: '',
+        elevation: (() => {
+          const g = lap.total_elevation_gain ?? lap.elevation_gain ?? null;
+          return g != null && Number.isFinite(Number(g)) ? String(Math.round(Number(g))) : '';
+        })(),
+        duration: fmtDur(durationSec),
+        durationSeconds: durationSec,
+        durationType: 'time',
+        distanceMeters: distM > 0 ? distM : undefined,
+        repeatCount: 1,
+        isRecovery: isSwimRest,
+        isSelected: !isSwimRest,
+      };
+    });
+  }, []);
+
+  const handleAddLactate = useCallback(async (activity, lapIndex = null) => {
+    if (!activity) return;
+    setLactateError(null);
+
+    const rawId = String(activity?.id || activity?.stravaId || activity?._id || '');
+    const stravaNumericId = rawId.replace(/^strava-/i, '');
+    const isStrava = activity?.type === 'strava' || !!activity?.stravaId ||
+                     /^strava-/i.test(String(activity?.id || ''));
+    const sportRaw = String(activity?.sport || activity?.sport_type || activity?.sportType || 'bike').toLowerCase();
+    const sport = sportRaw.includes('swim') ? 'swim' : sportRaw.includes('run') ? 'run' : 'bike';
+
+    // Strava activities: fetch full detail (laps live there, not in the calendar item).
+    if (isStrava && stravaNumericId) {
+      try {
+        const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+        const integAthleteId = isCoachViewing ? String(athleteId) : null;
+        const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
+        const detail = data.detail || {};
+        const laps = Array.isArray(data.laps) ? data.laps : [];
+        const detailSport = (detail.sport_type || detail.sport || sport).toLowerCase();
+        const finalSport = detailSport.includes('swim') ? 'swim' : detailSport.includes('run') ? 'run' : 'bike';
+        const activityDate = detail.start_date_local || detail.start_date || new Date();
+        const parsedDate = new Date(activityDate);
+        const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
+        const initialData = {
+          sport: finalSport,
+          type: 'interval',
+          category: data.category || '',
+          title: data.titleManual || detail.name || 'Untitled Training',
+          customTitle: '',
+          description: data.description || detail.description || '',
+          date: dateStr,
+          sourceStravaActivityId: String(detail.id || detail.stravaId || stravaNumericId),
+          specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
+          results: lapsToResults(laps, finalSport),
+          ...(lapIndex != null ? { _initialSelectedLap: lapIndex + 1 } : {}),
+        };
+        setLactateModal({ isOpen: true, initialData });
+        return;
+      } catch (err) {
+        setLactateError(
+          err?.response?.data?.message ||
+            err?.response?.data?.error ||
+            err?.message ||
+            'Could not open lactate form'
+        );
+        return;
+      }
+    }
+
+    // FIT and regular trainings: use whatever laps/results the activity already
+    // carries. The form opens even with empty results so the user can add rows
+    // manually.
+    const laps = Array.isArray(activity.laps) ? activity.laps : [];
+    const existingResults = Array.isArray(activity.results) ? activity.results : [];
+    const results = existingResults.length > 0 ? existingResults : lapsToResults(laps, sport);
+    const activityDate = activity.date || activity.startDate || activity.timestamp || new Date();
+    const parsedDate = new Date(activityDate);
+    const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
+    const initialData = {
+      ...(activity._id ? { _id: activity._id } : {}),
+      sport,
+      type: 'interval',
+      category: activity.category || '',
+      title: activity.titleManual || activity.title || activity.name || 'Untitled Training',
+      customTitle: '',
+      description: activity.description || '',
+      date: dateStr,
+      specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
+      results,
+      ...(lapIndex != null ? { _initialSelectedLap: lapIndex + 1 } : {}),
+    };
+    setLactateModal({ isOpen: true, initialData });
+  }, [athleteId, user, lapsToResults]);
+
+  // ── Manual Strava sync (refresh icon in greeting row) ───────────────────
+  const [syncingStrava, setSyncingStrava] = useState(false);
+  const handleManualSync = useCallback(async () => {
+    if (syncingStrava || !onRequestStravaSync) return;
+    setSyncingStrava(true);
+    try { await onRequestStravaSync(); } finally { setSyncingStrava(false); }
+  }, [syncingStrava, onRequestStravaSync]);
+
+  const handleLactateSubmit = useCallback(async (formData) => {
+    try {
+      setLactateSubmitting(true);
+      setLactateError(null);
+      const targetId = athleteId || user?._id || user?.id;
+      const payload = { ...formData, athleteId: targetId, coachId: user?._id || user?.id };
+      if (formData._id) {
+        await updateTraining(formData._id, payload);
+      } else {
+        await addTraining(payload);
+      }
+      closeLactateModal();
+    } catch (err) {
+      setLactateError(
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Save failed'
+      );
+    } finally {
+      setLactateSubmitting(false);
+    }
+  }, [athleteId, user, closeLactateModal]);
+
   return (
     <>
       {/* Inject keyframes once (shared across all native dashboard components) */}
@@ -570,8 +748,36 @@ export default function NativeDashboardPage({
               </svg>
             </span>
           </div>
-          <div style={styles.dateText}>
-            {today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={styles.dateText}>
+              {today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </div>
+            {stravaConnected && onRequestStravaSync && (
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={syncingStrava}
+                aria-label="Sync Strava"
+                title="Sync Strava activities"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, borderRadius: 16, border: '1px solid rgba(255,255,255,.7)',
+                  background: 'rgba(255,255,255,.65)',
+                  backdropFilter: 'blur(10px) saturate(170%)',
+                  WebkitBackdropFilter: 'blur(10px) saturate(170%)',
+                  color: '#5E6590',
+                  opacity: syncingStrava ? 0.6 : 1,
+                  cursor: syncingStrava ? 'wait' : 'pointer',
+                  padding: 0,
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                  style={syncingStrava ? { animation: 'ndSpin 0.9s linear infinite' } : undefined}>
+                  <path d="M21 12a9 9 0 1 1-3-6.7" />
+                  <path d="M21 4v5h-5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -674,8 +880,11 @@ export default function NativeDashboardPage({
             setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev);
             onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned: saved });
           }}
-          // Quick lactate add (no-op stub here — modal also has its own inline form)
-          onAddLactate={() => { /* opens lactate flow inside the modal */ }}
+          // Quick lactate add: fetch Strava laps and open prefilled TrainingForm
+          onAddLactate={(a, lapIndex) => {
+            closeActivityModal();
+            handleAddLactate(a, lapIndex);
+          }}
           // "Open in full editor" → fall back to FitAnalysisPage if user wants more
           onOpenFull={() => {
             const a = activityModal.activity;
@@ -693,6 +902,58 @@ export default function NativeDashboardPage({
         />
         </Suspense>
       )}
+
+      {/* Error toast for lactate-from-dashboard failures (no laps, network, etc.) */}
+      {lactateError && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed', left: 12, right: 12, bottom: 92, zIndex: 9998,
+            background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
+            borderRadius: 12, padding: '10px 12px', fontSize: 13,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+          }}
+        >
+          <span style={{ flex: 1 }}>{lactateError}</span>
+          <button
+            type="button"
+            onClick={() => setLactateError(null)}
+            style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 8, padding: '4px 8px', fontSize: 12, color: '#991b1b' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {lactateModal.isOpen && lactateModal.initialData && ReactDOM.createPortal(
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          >
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="w-full sm:max-w-2xl"
+            >
+              <TrainingForm
+                key={lactateModal.initialData.sourceStravaActivityId || 'native-dash-lac'}
+                onClose={closeLactateModal}
+                onSubmit={handleLactateSubmit}
+                initialData={lactateModal.initialData}
+                isEditing={false}
+                isLoading={lactateSubmitting}
+                initialSelectedLap={lactateModal.initialData?._initialSelectedLap ?? null}
+              />
+            </motion.div>
+          </motion.div>,
+          document.getElementById('app-modal-root') || document.body
+        )}
+      </AnimatePresence>
     </>
   );
 }

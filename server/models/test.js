@@ -6,7 +6,15 @@ const testResultSchema = new mongoose.Schema({
     lactate: Number,
     glucose: Number,
     vo2: Number,
-    RPE: Number
+    RPE: Number,
+    // 'work' (default — counted in the curve) or 'recovery' (saved but
+    // excluded from regression / LT1 / LT2). The UI lets users flip a row
+    // to recovery for post-test/cool-down lactate samples.
+    intervalType: {
+        type: String,
+        enum: ['work', 'recovery'],
+        default: 'work',
+    },
 });
 
 const testSchema = new mongoose.Schema({
@@ -52,8 +60,24 @@ const testSchema = new mongoose.Schema({
         lactate: Number,
         glucose: Number,
         vo2: Number,
-        RPE: Number
+        RPE: Number,
+        intervalType: {
+            type: String,
+            enum: ['work', 'recovery'],
+            default: 'work',
+        },
     }],
+    // Protocol metadata — pre/post values and stage configuration. Saved on
+    // the test so future cross-test comparisons and improved LT analysis
+    // (Modified Dmax / Individual Anaerobic Threshold) can use them.
+    restingHR:           { type: Number, default: null },
+    preLoadHR:           { type: Number, default: null },
+    maxHR:               { type: Number, default: null },
+    maxLactate:          { type: Number, default: null },
+    recoveryHR3min:      { type: Number, default: null },
+    recoveryLactate3min: { type: Number, default: null },
+    stageDurationSec:    { type: Number, default: null },
+    restBetweenStagesSec:{ type: Number, default: null },
     // User-edited zone values linked to this specific test (Set Zones modal)
     zoneOverrides: {
       powerZones: mongoose.Schema.Types.Mixed,

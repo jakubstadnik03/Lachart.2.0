@@ -8,8 +8,10 @@ const DEDUP_MS = 5000;
  * On Capacitor iOS/Android, show a system notification when new Strava activities were imported.
  * Skips web; respects user.notifications.pushStravaImport when `userNotifications` is passed.
  * When native, appends hint about adding field lactate if any recent activities are still missing lap lactate.
+ * `latestActivityId` (Strava numeric id) is embedded in the notification's `extra` so the tap handler
+ * in initCapacitorShell can deep-link directly into the activity for one-tap lactate entry.
  */
-export async function maybeNotifyStravaActivitiesImported(importedCount, userNotifications) {
+export async function maybeNotifyStravaActivitiesImported(importedCount, userNotifications, latestActivityId = null) {
   if (userNotifications && userNotifications.pushStravaImport === false) return;
 
   const n = Number(importedCount);
@@ -50,6 +52,14 @@ export async function maybeNotifyStravaActivitiesImported(importedCount, userNot
           title: 'LaChart — Strava',
           body,
           schedule: { at: new Date(now + 800) },
+          // Picked up by `localNotificationActionPerformed` listener in initCapacitorShell.
+          // `type: 'strava_import'` routes to the dashboard; when a single activity is known,
+          // `latestActivityId` opens its ActivityFullModal directly.
+          extra: {
+            type: 'strava_import',
+            latestActivityId: latestActivityId ? String(latestActivityId) : null,
+            count: n,
+          },
         },
       ],
     });

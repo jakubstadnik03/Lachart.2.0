@@ -105,12 +105,17 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     const maxDays = 180;
     const effectiveDays = Math.min(days, maxDays);
     
-    // Calculate date range: we need activities from (days + 60) ago to ensure accurate CTL/ATL calculation
-    // CTL has 42-day time constant, so we need at least 60 days of history for accurate calculation
+    // Calculate date range. CTL has a 42-day time constant; to make today's
+    // CTL/ATL/Form identical regardless of the requested `days` (so the mobile
+    // dashboard, PC dashboard, and calendar all show the same form value), we
+    // warm up the EMA over 6× CTL_TC = 252 days of history before the
+    // displayed window. With < 60 days of warmup the series was only ~76%
+    // converged, which caused the values to drift between views.
+    const WARMUP_DAYS = 252;
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const queryStartDate = new Date(today);
-    queryStartDate.setDate(queryStartDate.getDate() - (effectiveDays + 60)); // Extra 60 days for CTL calculation
+    queryStartDate.setDate(queryStartDate.getDate() - (effectiveDays + WARMUP_DAYS));
     queryStartDate.setHours(0, 0, 0, 0);
     
     // Get user profile for TSS calculation

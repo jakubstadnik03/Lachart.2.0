@@ -226,7 +226,7 @@ export default function TrainingPage() {
         const result = await autoSyncStravaActivities();
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0) {
-          maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
+          maybeNotifyStravaActivitiesImported(result.imported, user?.notifications, result.latestActivityId);
           addNotification(`Strava: ${result.imported} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
           const targetId = selectedAthleteId || user._id;
           loadTrainings(targetId);

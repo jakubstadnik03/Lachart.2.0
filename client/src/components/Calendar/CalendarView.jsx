@@ -1521,11 +1521,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 chartScrollRef={lapChartScrollRef}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  // Only scroll the table when the user explicitly TAPS a bar.
+                  // 'auto' instead of 'smooth' avoids fighting an in-progress
+                  // finger scroll on the laps table.
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
                 }}
+                // Horizontal scroll on the zoomed chart only updates the
+                // highlighted lap — it no longer jumps the table. Auto-
+                // scrolling the table on every chart scroll-tick was causing
+                // the laps list to "fight" vertical finger scrolling.
                 onScrollCenter={(i) => {
                   setSelectedLap(i);
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }}
               />
             </div>
@@ -1832,9 +1838,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 chartScrollRef={lapChartScrollRef}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
                 }}
-                onScrollCenter={(i) => lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })}
+                // Horizontal chart scroll only highlights — does NOT pull the
+                // laps table. Auto-scrolling the table while the user is
+                // scrolling it themselves caused the jittery "fights me back"
+                // behaviour.
+                onScrollCenter={(i) => setSelectedLap(i)}
               />
             </div>
           )}
@@ -2708,6 +2718,32 @@ export default function CalendarView({
       window.removeEventListener('keyup', handleKey);
     };
   }, [draggedPw != null]); // eslint-disable-line
+
+  // Tapping the active Calendar tab in the native bottom bar fires
+  // `nl-tab-reclicked`. Reset the view to today and scroll the page so the
+  // current day is visible — mirrors the "tap-the-tab-again to go home"
+  // pattern on iOS/Android.
+  useEffect(() => {
+    const onReclick = (e) => {
+      if (e?.detail?.key !== 'calendar') return;
+      const today = new Date();
+      setAnchorDate(today);
+      // Find the scrollable parent and scroll to top so the calendar (which
+      // is now showing today's week/month) is fully visible.
+      requestAnimationFrame(() => {
+        let node = fullscreenScrollRef.current?.parentElement || document.body;
+        while (node && node !== document.body) {
+          const cs = window.getComputedStyle(node);
+          if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') break;
+          node = node.parentElement;
+        }
+        if (node && node !== document.body) node.scrollTo({ top: 0, behavior: 'smooth' });
+        else window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    };
+    window.addEventListener('nl-tab-reclicked', onReclick);
+    return () => window.removeEventListener('nl-tab-reclicked', onReclick);
+  }, []);
 
   // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
   // Also detect month change and notify parent

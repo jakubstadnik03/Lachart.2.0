@@ -229,7 +229,10 @@ async function syncStravaForUser(user) {
       }).catch((e) => console.error('[StravaAutoSync] in-app notify:', e.message || e));
     }
 
-    return { imported, updated };
+    const latestImportedId = importedActivityIds.length === 1
+      ? importedActivityIds[0]
+      : (importedActivityIds.length > 1 ? importedActivityIds[importedActivityIds.length - 1] : null);
+    return { imported, updated, latestActivityId: latestImportedId };
   } catch (error) {
     // Ensure we never crash the server - catch all errors
     const errorMessage = error.response?.data?.message || error.message || 'Unknown error';

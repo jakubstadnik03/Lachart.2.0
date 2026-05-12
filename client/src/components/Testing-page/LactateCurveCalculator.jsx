@@ -1204,14 +1204,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const zones = calculateZonesFromTest(mockDataWithOverrides);
   
   // First, filter out only truly invalid results (empty, missing, zero values)
-  // Keep all valid numeric values for display, even if they might be filtered later for calculations
+  // Keep all valid numeric values for display, even if they might be filtered later for calculations.
+  // Rows the user marked as `intervalType === 'recovery'` are post-test samples
+  // (e.g. a low-intensity cool-down measurement) — they're saved on the test
+  // but must NOT feed the curve fit or LT1/LT2 calc, otherwise the polynomial
+  // gets distorted and the X axis shows a duplicate low-power point.
   const allResultsForDisplay = results.filter(r => {
     if (!r) return false;
+    if (r.intervalType === 'recovery') return false;
     const powerStr = r.power?.toString().trim();
     const lactateStr = r.lactate?.toString().trim();
-    if (!powerStr || powerStr === '' || powerStr === '0' || 
+    if (!powerStr || powerStr === '' || powerStr === '0' ||
         !lactateStr || lactateStr === '' || lactateStr === '0' ||
-        r.power === undefined || r.power === null || 
+        r.power === undefined || r.power === null ||
         r.lactate === undefined || r.lactate === null) {
       return false;
     }
