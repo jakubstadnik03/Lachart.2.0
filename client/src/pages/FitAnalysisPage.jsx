@@ -4114,6 +4114,7 @@ const FitAnalysisPage = () => {
               userProfile={userProfile}
               isMobile={true}
               onSelectActivity={handleCalendarActivitySelect}
+              athleteId={selectedAthleteId || user?._id || null}
             />
           ) : null}
         />
@@ -4128,6 +4129,7 @@ const FitAnalysisPage = () => {
               userProfile={userProfile}
               isMobile={false}
               onSelectActivity={handleCalendarActivitySelect}
+              athleteId={selectedAthleteId || user?._id || null}
             />
           </motion.div>
         )}

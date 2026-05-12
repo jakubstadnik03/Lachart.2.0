@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
+import { getFormFitnessData } from '../../services/api';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
@@ -302,7 +303,36 @@ export default function CalendarPeriodStats({
   userProfile = null,
   isMobile = false,
   onSelectActivity = null,
+  athleteId = null,
 }) {
+  // Server-side authoritative CTL/ATL/TSB series. Same data the native
+  // dashboard and the Form/Fitness card use, so the numbers on the Calendar
+  // Charts tab match what the user sees on the Dashboard. Falls back to a
+  // client-side recompute if the fetch fails (offline / coach-without-access).
+  const effectiveAthleteId = athleteId || user?._id || user?.id || null;
+  const [serverPmc, setServerPmc] = useState(null);
+  useEffect(() => {
+    if (!effectiveAthleteId) return;
+    let cancelled = false;
+    getFormFitnessData(effectiveAthleteId, 180, 'all')
+      .then((res) => {
+        if (cancelled) return;
+        const data = Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
+        // Normalize to the same shape pmc uses: { date, ctl, atl, tsb, tss }.
+        const norm = (data || [])
+          .filter(d => d && d.date)
+          .map(d => ({
+            date: d.date,
+            ctl: Number(d.Fitness ?? d.fitness ?? d.ctl ?? 0),
+            atl: Number(d.Fatigue ?? d.fatigue ?? d.atl ?? 0),
+            tsb: Number(d.Form ?? d.form ?? d.tsb ?? 0),
+            tss: Number(d.TSS ?? d.tss ?? 0),
+          }));
+        setServerPmc(norm.length ? norm : null);
+      })
+      .catch(() => setServerPmc(null));
+    return () => { cancelled = true; };
+  }, [effectiveAthleteId]);
   const periodView = period?.view === 'week' ? 'week' : 'month';
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -579,8 +609,18 @@ export default function CalendarPeriodStats({
     };
   }, [periodView, period?.periodStart, period?.periodEnd, activities, userProfile, aggregates.totalTss]);
 
-  // Performance Management Chart (CTL / ATL / TSB) — built from ALL activities
+  // Performance Management Chart (CTL / ATL / TSB).
+  // Prefer the SERVER's authoritative series so the numbers match the
+  // Dashboard (which calls the same endpoint via getTodayMetrics +
+  // calculateFormFitnessData with a 252-day warmup, individualized TSS,
+  // and unified sport filter). When the server fetch hasn't returned yet —
+  // or the user isn't allowed to read this athlete's data — fall back to
+  // a client-side EMA from the activities prop. Both representations are
+  // shaped { date, ctl, atl, tsb, tss }, so downstream code is unchanged.
   const pmc = useMemo(() => {
+    if (Array.isArray(serverPmc) && serverPmc.length > 0) {
+      return serverPmc;
+    }
     const dailyTssMap = new Map();
     activities.forEach(act => {
       const raw = act.date || act.timestamp || act.startDate || act.start_time;
@@ -609,7 +649,7 @@ export default function CalendarPeriodStats({
       cur.setDate(cur.getDate() + 1);
     }
     return results;
-  }, [activities, userProfile]);
+  }, [serverPmc, activities, userProfile]);
 
   const pmcOption = useMemo(() => {
     if (!pmc || pmc.length === 0) return null;
