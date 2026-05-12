@@ -2376,6 +2376,13 @@ const SettingsPage = () => {
         const alreadyTrialed = !!subData?.subscription?.trialStart;
         const showTrial = !alreadyTrialed && currentPlan === 'free';
 
+        // App Store guideline 3.1.1: iOS apps may not link to external
+        // payment flows for digital content. On native we hide all
+        // purchase / manage-on-Stripe buttons and show a status-only
+        // view. Existing subscriptions purchased on the web continue to
+        // work and unlock premium features in the app.
+        const isNativeIos = isCapacitorNative();
+
         const PLANS_UI = [
           {
             id: 'free',
@@ -2485,8 +2492,9 @@ const SettingsPage = () => {
                   )}
                 </div>
                 <div className="flex flex-col gap-2 items-end">
-                  {/* Manage billing portal */}
-                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && (
+                  {/* Manage billing portal — web only. App Store 3.1.1
+                      bans linking to Stripe customer portal from iOS apps. */}
+                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && !isNativeIos && (
                     <>
                       {cancelAtPeriodEnd ? (
                         <button
@@ -2515,6 +2523,11 @@ const SettingsPage = () => {
                         </button>
                       )}
                     </>
+                  )}
+                  {isNativeIos && !isManualPremium && currentPlan !== 'free' && (
+                    <p className="text-xs text-gray-500">
+                      Manage your subscription at lachart.net in a web browser. Apple billing isn't available in this app version.
+                    </p>
                   )}
                 </div>
               </div>
@@ -2604,6 +2617,14 @@ const SettingsPage = () => {
                           <div className="text-center text-sm text-gray-400 font-medium py-2">Your current plan</div>
                         ) : plan.id === 'free' ? (
                           <div className="text-center text-sm text-gray-400 py-2">Downgrade via cancel</div>
+                        ) : isNativeIos ? (
+                          // App Store 3.1.1: iOS apps may not advertise or
+                          // link out to external payment for paid digital
+                          // content. Show a status-only note instead of a
+                          // checkout button.
+                          <div className="text-center text-xs text-gray-500 py-2 border border-dashed border-gray-200 rounded-xl">
+                            Available at lachart.net
+                          </div>
                         ) : systemEnabled ? (
                           <button
                             onClick={() => handleUpgrade(plan.id)}

@@ -54,6 +54,23 @@
 	<string>LaChart imports your workouts from Apple Health so they appear alongside your tests and training history.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>LaChart never writes to Apple Health — only reads workouts to display them.</string>
+	<!-- Required by iOS for ANY <input type="file"> in WKWebView. Even though
+	     LaChart's only file input accepts FIT files, iOS' file picker UI
+	     still shows "Take Photo or Video" and "Photo Library" options to the
+	     user, and tapping them without these usage strings present makes
+	     the WebView crash hard (App Store Review test on iPad caught this). -->
+	<key>NSCameraUsageDescription</key>
+	<string>LaChart uses the camera only if you choose "Take Photo or Video" while attaching a FIT/workout file. We don't capture photos for any other purpose.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LaChart accesses Photos only if you pick "Photo Library" when attaching a workout file or profile picture. Nothing is read automatically.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LaChart doesn't record audio. iOS may request microphone permission only when you choose "Take Photo or Video" from a file picker.</string>
+	<!-- App Tracking Transparency. LaChart does not track users for
+	     advertising or share data with third-party data brokers. This
+	     description is required by Apple if the app links the
+	     AppTrackingTransparency framework, which we do via Capacitor. -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>LaChart does not track you across apps or websites owned by other companies. We only use your data to power your own training analytics inside LaChart.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

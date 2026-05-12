@@ -3,6 +3,7 @@ import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 import { logFeedbackSent } from '../utils/eventLogger';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const SERVICE_ID = 'service_sdkyhzd';
 const TEMPLATE_ID = 'template_wphmbwc';
@@ -91,20 +92,24 @@ const WelcomeModal = ({ open, onClose }) => {
               <p className="sm:hidden">
                 If something doesn't work or you have ideas, I'd love to hear from you.
               </p>
-              <div className="mt-2 sm:mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs text-gray-700 mb-2">
-                  <strong>Enjoying LaChart?</strong> If the app helps you, consider supporting its development:
-                </p>
-                <a
-                  href="https://buymeacoffee.com/lachart"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors"
-                >
-                  <span className="text-sm">☕</span>
-                  Support on Buy Me a Coffee
-                </a>
-              </div>
+              {/* Donation CTA — web only. App Store 3.1.1 forbids external
+                  donation links inside iOS apps unless they go through IAP. */}
+              {!isCapacitorNative() && (
+                <div className="mt-2 sm:mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-gray-700 mb-2">
+                    <strong>Enjoying LaChart?</strong> If the app helps you, consider supporting its development:
+                  </p>
+                  <a
+                    href="https://buymeacoffee.com/lachart"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors"
+                  >
+                    <span className="text-sm">☕</span>
+                    Support on Buy Me a Coffee
+                  </a>
+                </div>
+              )}
               <p className="mt-2 sm:mt-4">
                 Thank you for trying LaChart and enjoy exploring your data!
               </p>

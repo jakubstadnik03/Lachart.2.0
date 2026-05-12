@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const PLAN_DETAILS = {
   pro: {
@@ -103,19 +104,27 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
             ))}
           </ul>
 
-          {/* CTA */}
-          <button
-            onClick={handleUpgrade}
-            className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            🎁 Try {plan.name} free for 1 month
-          </button>
+          {/* CTA — on native iOS we don't offer in-app checkout (App Store
+              3.1.1). Instead the user is informed that this is a paid
+              feature available on the web. */}
+          {isCapacitorNative() ? (
+            <div className="w-full py-3 rounded-xl bg-gray-100 text-gray-700 text-center text-sm">
+              This is a {plan.name} feature. Manage subscriptions at lachart.net in a web browser.
+            </div>
+          ) : (
+            <button
+              onClick={handleUpgrade}
+              className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              🎁 Try {plan.name} free for 1 month
+            </button>
+          )}
 
           <button
             onClick={onClose}
             className="w-full mt-2 py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors"
           >
-            Maybe later
+            {isCapacitorNative() ? 'Close' : 'Maybe later'}
           </button>
         </div>
       </div>
