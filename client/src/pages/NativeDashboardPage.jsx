@@ -931,35 +931,33 @@ export default function NativeDashboardPage({
         </div>
       )}
 
-      <AnimatePresence>
-        {lactateModal.isOpen && lactateModal.initialData && ReactDOM.createPortal(
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-          >
-            <motion.div
-              initial={{ y: '100%', opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: '100%', opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="w-full sm:max-w-2xl"
-            >
-              <TrainingForm
-                key={lactateModal.initialData.sourceStravaActivityId || 'native-dash-lac'}
-                onClose={closeLactateModal}
-                onSubmit={handleLactateSubmit}
-                initialData={lactateModal.initialData}
-                isEditing={false}
-                isLoading={lactateSubmitting}
-                initialSelectedLap={lactateModal.initialData?._initialSelectedLap ?? null}
-              />
-            </motion.div>
-          </motion.div>,
-          document.getElementById('app-modal-root') || document.body
-        )}
-      </AnimatePresence>
+      {/* TrainingForm modal — plain conditional render, no portal, no
+          AnimatePresence. This is the same pattern FitAnalysisPage uses on
+          the Calendar tab, which works reliably. Earlier the modal was
+          portaled into app-modal-root inside AnimatePresence; that combo had
+          a render race where the new modal occasionally never mounted after
+          ActivityFullModal closed. */}
+      {lactateModal.isOpen && lactateModal.initialData && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ zIndex: 99998 }}
+        >
+          <div className="w-full sm:max-w-2xl">
+            <TrainingForm
+              key={lactateModal.initialData.sourceStravaActivityId || lactateModal.initialData._id || 'native-dash-lac'}
+              onClose={closeLactateModal}
+              onSubmit={handleLactateSubmit}
+              initialData={lactateModal.initialData}
+              isEditing={false}
+              isLoading={lactateSubmitting}
+              initialSelectedLap={lactateModal.initialData?._initialSelectedLap ?? null}
+            />
+          </div>
+        </motion.div>
+      )}
     </>
   );
 }
