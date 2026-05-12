@@ -850,14 +850,30 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
           <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
         </div>
 
-        {/* Bars — scrollable in zoom mode */}
-        <div ref={chartScrollRef} className="flex-1 min-w-0 overflow-x-auto" style={{ overflowY: 'hidden' }} onScroll={handleChartScroll}>
+        {/* Bars — scrollable horizontally only when zoomed bars genuinely
+            exceed the container width. Otherwise width:100% lets flex bars
+            spread to fill the chart.
+            touchAction: pan-x prevents the horizontal lap scroller from
+            stealing vertical touches on iOS — otherwise the parent modal
+            body's vertical scroll judders when the user starts a swipe near
+            the bars. */}
+        <div
+          ref={chartScrollRef}
+          className="flex-1 min-w-0 overflow-x-auto"
+          style={{
+            overflowY: 'hidden',
+            touchAction: 'pan-x',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorX: 'contain',
+          }}
+          onScroll={handleChartScroll}
+        >
           <div
             style={{
               position: 'relative',
               height: CHART_H + X_LABEL_H,
               minWidth: isZoomed ? zoomTotalW : '100%',
-              width: isZoomed ? zoomTotalW : '100%',
+              width: '100%',
             }}
           >
             {/* Elevation outline */}
@@ -905,9 +921,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 barBg = color + alpha;
               }
 
-              // Width: fixed in zoom mode, proportional in normal/skipZoom mode
+              // Width: even in zoom mode let bars grow proportionally so the
+              // chart spans 100% of the container; only scroll horizontally
+              // when bars genuinely don't fit (totalZoomW > container width).
+              // The earlier fixed-width zoom packed everything into the left
+              // half on wide screens — the chart looked half-empty.
               const itemStyle = isZoomed
-                ? { width: zoomW, flexShrink: 0, height: CHART_H + X_LABEL_H }
+                ? { flex: `${ent.weight} 1 ${zoomW}px`, minWidth: zoomW, height: CHART_H + X_LABEL_H }
                 : { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H };
 
               return (
@@ -921,12 +941,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                     <div style={{ width: isZoomed ? 4 : 3, height: isZoomed ? 4 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: X_LABEL_H }} />
                   ) : (
                     <div style={{
-                      width: isZoomed ? Math.max(zoomW - 2, 2) : '100%',
+                      // Always 100% of the flex slot — slot itself handles
+                      // proportional sizing (see itemStyle).
+                      width: '100%',
                       height: barH,
                       backgroundColor: barBg,
                       borderRadius: '3px 3px 0 0',
                       marginBottom: X_LABEL_H,
-                      boxShadow: skipZoom && isSelected ? `0 0 0 2px ${color}, 0 2px 8px ${color}60` : undefined,
+                      boxShadow: isSelected ? `0 0 0 2px ${color}, 0 2px 8px ${color}60` : undefined,
                       transition: 'height 0.2s ease, opacity 0.15s ease',
                     }} />
                   )}
@@ -1727,9 +1749,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </button>
         </div>
 
-        {/* Body — single scrollable column */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-        <div>
+        {/* Body — single scrollable column.
+            We deliberately keep the body as the direct sticky parent for the
+            LapChart (no extra <div> wrapper) — otherwise the chart unsticks
+            as soon as you scroll past the wrapper's bottom, and the user can
+            no longer see which lap is selected while skimming the laps table.
+            WebkitOverflowScrolling/overscrollBehavior enable iOS native
+            momentum scroll and prevent the lap-chart horizontal scroller
+            from hijacking vertical touch events on mobile. */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y',
+          }}
+        >
 
           {/* ── Stats row ── */}
           <div className="px-5 pt-4 pb-3 flex flex-wrap gap-2 border-b border-gray-50">
@@ -1829,9 +1864,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
-          {/* ── Lap chart — full width, taller ── */}
+          {/* ── Lap chart — sticky on desktop so the bars stay visible
+              while the user scrolls through the laps table below. Mobile
+              keeps natural flow (sticky steals too much height). ── */}
           {laps.length > 1 && (
-            <div className="border-b border-gray-50">
+            <div className="border-b border-gray-50 md:sticky md:top-0 md:z-10 bg-white">
               <LapChart
                 laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
                 selectedLap={selectedLap}
@@ -1848,8 +1885,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               />
             </div>
           )}
-
-        </div>{/* end fixed content */}
 
           {/* ── Laps table — full width ── */}
           {laps.length > 0 && (
