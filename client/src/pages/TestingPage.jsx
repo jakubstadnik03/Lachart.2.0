@@ -1409,25 +1409,26 @@ const TestingPage = () => {
               transition={{ duration: 0.15 }}
               className="space-y-4"
             >
-              {/* New test form */}
-              <AnimatePresence>
-                {showNewTesting && (
-                  <motion.div
-                    key="new-test-form"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.22 }}
-                    className="overflow-hidden"
-                    style={sectionSnap}
-                  >
-                    <NewTestingComponent
-                      selectedSport={selectedSport}
-                      onSubmit={handleAddTest}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* New test form — height auto-animation removed because it
+                  was janky on mobile (the form is ~1500px tall and
+                  animating height to/from 0 caused layout thrash plus a
+                  rendering glitch where the inputs flickered). Plain fade
+                  is enough. */}
+              {showNewTesting && (
+                <motion.div
+                  key="new-test-form"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  style={sectionSnap}
+                >
+                  <NewTestingComponent
+                    selectedSport={selectedSport}
+                    onSubmit={handleAddTest}
+                  />
+                </motion.div>
+              )}
 
               {/* Tests list — wrapped in ErrorBoundary so a single bad
                   test (NaN, weird lactate sequence, etc.) can't freeze
