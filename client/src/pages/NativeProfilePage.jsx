@@ -10,6 +10,8 @@ import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
+import EditProfileModal from '../components/Profile/EditProfileModal';
+import { useNotification } from '../context/NotificationContext';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,26 @@ function extractThresholds(test) {
 
 export default function NativeProfilePage({ user, userInfo, calendarData = [] }) {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
+  // Inline profile-edit modal — previously the Edit button navigated to
+  // /profile-edit which has no registered route, so nothing happened.
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const handleProfileUpdate = async (updatedData) => {
+    try {
+      await updateUserProfile(updatedData);
+      addNotification('Profile updated', 'success');
+      setIsEditOpen(false);
+      // Trigger a soft reload so the displayed values reflect the save.
+      // Parent (the auth/user provider) typically refetches on focus, but
+      // here we just dispatch a custom event the layout listens for.
+      window.dispatchEvent(new CustomEvent('lachart-user-updated'));
+    } catch (err) {
+      addNotification(
+        err?.response?.data?.message || err?.message || 'Failed to update profile',
+        'error',
+      );
+    }
+  };
   // Logged-in user (coach or athlete)
   const me = userInfo || user || {};
   const myId = String(me._id || me.id || '');
@@ -243,7 +265,7 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
           {/* Edit button only on own profile (coaches edit athletes elsewhere) */}
           {!isViewingOtherAthlete && (
             <button
-              onClick={() => navigate('/profile-edit')}
+              onClick={() => setIsEditOpen(true)}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
               onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
               onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
@@ -465,6 +487,17 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
           <div style={{ height: 32 }} />
         </div>
       </div>
+
+      {/* Profile edit modal — opens from the Edit button in the header.
+          Routes to /user/edit-profile via updateUserProfile on submit. */}
+      {isEditOpen && (
+        <EditProfileModal
+          isOpen={isEditOpen}
+          onClose={() => setIsEditOpen(false)}
+          onSubmit={handleProfileUpdate}
+          userData={u}
+        />
+      )}
     </>
   );
 }
