@@ -42,7 +42,10 @@ const AdminDashboard = () => {
   const [outreachLeadsLoading, setOutreachLeadsLoading] = useState(false);
   const [outreachLeadUpdatingId, setOutreachLeadUpdatingId] = useState(null);
   // Outreach contacts CRM
-  const [outreachFilter, setOutreachFilter] = useState('all'); // all | lab | coach | priority | email-only
+  // Default to the actionable list: contacts that have an email and haven't
+  // been emailed yet. The admin can switch to 'all' / 'priority' / etc. via
+  // the chip filters at the top of the Outreach panel.
+  const [outreachFilter, setOutreachFilter] = useState('not-contacted'); // all | lab | coach | priority | email-only | not-contacted
   const [outreachCountry, setOutreachCountry] = useState('');
   const [outreachSearch, setOutreachSearch] = useState('');
   const [composeContact, setComposeContact] = useState(null); // contact being composed
@@ -814,7 +817,10 @@ const AdminDashboard = () => {
         if (outreachFilter === 'coach') return c.category === 'coach';
         if (outreachFilter === 'priority') return c.priority;
         if (outreachFilter === 'email-only') return !!c.email;
-        if (outreachFilter === 'not-contacted') return !leadByEmail[c.email];
+        // Default "not contacted" filter — only contacts with an email AND
+        // not yet logged as sent in the DB. This is the actionable list
+        // (you can't send to someone without an email).
+        if (outreachFilter === 'not-contacted') return !!c.email && !leadByEmail[c.email];
         return true;
       })
       .filter(c => !outreachCountry || c.country === outreachCountry)
@@ -2512,10 +2518,13 @@ const AdminDashboard = () => {
             <div className="bg-white rounded-xl shadow p-4 space-y-3">
               <div className="flex flex-wrap gap-2">
                 {[
+                  // 'not-contacted' is now the default — it returns contacts
+                  // that have an email AND haven't been logged as sent yet.
+                  // That's the only actionable filter in practice.
+                  { key: 'not-contacted', label: '🎯 To contact' },
                   { key: 'all', label: '🌍 All' },
                   { key: 'priority', label: '⭐ Top 10' },
                   { key: 'email-only', label: '📧 Has email' },
-                  { key: 'not-contacted', label: '🕐 Not contacted' },
                   { key: 'lab', label: '🔬 Labs' },
                   { key: 'coach', label: '🏊 Coaches' },
                 ].map(f => (
