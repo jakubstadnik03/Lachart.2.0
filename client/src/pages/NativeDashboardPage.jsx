@@ -627,56 +627,21 @@ export default function NativeDashboardPage({
     const sportRaw = String(activity?.sport || activity?.sport_type || activity?.sportType || 'bike').toLowerCase();
     const sport = sportRaw.includes('swim') ? 'swim' : sportRaw.includes('run') ? 'run' : 'bike';
 
-    // Strava activities: fetch full detail (laps live there, not in the calendar item).
-    if (isStrava && stravaNumericId) {
-      try {
-        const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
-        const integAthleteId = isCoachViewing ? String(athleteId) : null;
-        const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
-        const detail = data.detail || {};
-        const laps = Array.isArray(data.laps) ? data.laps : [];
-        const detailSport = (detail.sport_type || detail.sport || sport).toLowerCase();
-        const finalSport = detailSport.includes('swim') ? 'swim' : detailSport.includes('run') ? 'run' : 'bike';
-        const activityDate = detail.start_date_local || detail.start_date || new Date();
-        const parsedDate = new Date(activityDate);
-        const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
-        const initialData = {
-          sport: finalSport,
-          type: 'interval',
-          category: data.category || '',
-          title: data.titleManual || detail.name || 'Untitled Training',
-          customTitle: '',
-          description: data.description || detail.description || '',
-          date: dateStr,
-          sourceStravaActivityId: String(detail.id || detail.stravaId || stravaNumericId),
-          specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
-          results: lapsToResults(laps, finalSport),
-          ...(lapIndex != null ? { _initialSelectedLap: lapIndex + 1 } : {}),
-        };
-        setLactateModal({ isOpen: true, initialData });
-        return;
-      } catch (err) {
-        setLactateError(
-          err?.response?.data?.message ||
-            err?.response?.data?.error ||
-            err?.message ||
-            'Could not open lactate form'
-        );
-        return;
-      }
-    }
-
-    // FIT and regular trainings: use whatever laps/results the activity already
-    // carries. The form opens even with empty results so the user can add rows
-    // manually.
-    const laps = Array.isArray(activity.laps) ? activity.laps : [];
+    // CRITICAL: Open the modal IMMEDIATELY with whatever we have on hand —
+    // never wait for the Strava detail fetch to "succeed" before showing
+    // anything. Even if the activity carries no laps yet, the form pops
+    // open and the user sees the loading/empty state. We then asynchronously
+    // enrich it from the Strava detail endpoint (if applicable). Previous
+    // behaviour bailed silently when the fetch failed, which looked to the
+    // user like "+ Lactate doesn't do anything".
+    const baseLaps = Array.isArray(activity.laps) ? activity.laps : [];
     const existingResults = Array.isArray(activity.results) ? activity.results : [];
-    const results = existingResults.length > 0 ? existingResults : lapsToResults(laps, sport);
+    const initialResults = existingResults.length > 0 ? existingResults : lapsToResults(baseLaps, sport);
     const activityDate = activity.date || activity.startDate || activity.timestamp || new Date();
     const parsedDate = new Date(activityDate);
     const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
     const initialData = {
-      ...(activity._id ? { _id: activity._id } : {}),
+      ...(activity._id && !isStrava ? { _id: activity._id } : {}),
       sport,
       type: 'interval',
       category: activity.category || '',
@@ -684,11 +649,49 @@ export default function NativeDashboardPage({
       customTitle: '',
       description: activity.description || '',
       date: dateStr,
+      ...(isStrava && stravaNumericId ? { sourceStravaActivityId: stravaNumericId } : {}),
       specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
-      results,
+      results: initialResults,
       ...(lapIndex != null ? { _initialSelectedLap: lapIndex + 1 } : {}),
     };
     setLactateModal({ isOpen: true, initialData });
+
+    // Enrich with Strava detail if applicable. If this fails or yields no
+    // extra data, the modal is already open — the user can still add rows
+    // manually. Surface the error softly as a toast, not as a block.
+    if (isStrava && stravaNumericId && initialResults.length === 0) {
+      try {
+        const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+        const integAthleteId = isCoachViewing ? String(athleteId) : null;
+        const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
+        const detail = data.detail || {};
+        const laps = Array.isArray(data.laps) ? data.laps : [];
+        if (laps.length === 0) return;
+        const detailSport = (detail.sport_type || detail.sport || sport).toLowerCase();
+        const finalSport = detailSport.includes('swim') ? 'swim' : detailSport.includes('run') ? 'run' : 'bike';
+        const enrichedDate = detail.start_date_local || detail.start_date || activityDate;
+        const enrichedParsed = new Date(enrichedDate);
+        const enrichedDateStr = (Number.isNaN(enrichedParsed.getTime()) ? parsedDate : enrichedParsed).toISOString().slice(0, 16);
+        setLactateModal({
+          isOpen: true,
+          initialData: {
+            ...initialData,
+            sport: finalSport,
+            category: data.category || initialData.category,
+            title: data.titleManual || detail.name || initialData.title,
+            description: data.description || detail.description || initialData.description,
+            date: enrichedDateStr,
+            sourceStravaActivityId: String(detail.id || detail.stravaId || stravaNumericId),
+            results: lapsToResults(laps, finalSport),
+          },
+        });
+      } catch (err) {
+        // Non-blocking: form is already open with empty rows.
+        setLactateError(
+          'Couldn\'t load Strava laps automatically — you can add rows manually.'
+        );
+      }
+    }
   }, [athleteId, user, lapsToResults]);
 
   // ── Manual Strava sync (refresh icon in greeting row) ───────────────────
