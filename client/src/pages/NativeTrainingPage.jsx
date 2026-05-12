@@ -2069,9 +2069,10 @@ export default function NativeTrainingPage({
               onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned: saved });
             }}
             onAddLactate={(act) => {
-              // ActivityFullModal calls this with the merged activity; route
-              // straight into the same TrainingForm sheet.
-              closeActivityModal();
+              // ActivityFullModal calls this with the merged activity, then
+              // its own onClose() runs right after — no need to call
+              // closeActivityModal here. Doing both caused a double-render
+              // race that occasionally swallowed the openTrainingForm state.
               openTrainingForm(act || activityModal.activity);
             }}
             onOpenFull={() => {

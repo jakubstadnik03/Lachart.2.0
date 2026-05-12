@@ -883,9 +883,12 @@ export default function NativeDashboardPage({
             setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev);
             onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned: saved });
           }}
-          // Quick lactate add: fetch Strava laps and open prefilled TrainingForm
+          // Quick lactate add: open the prefilled TrainingForm. We DON'T close
+          // the ActivityFullModal here — CalendarView's button already calls
+          // its own onClose() after onAddLactate. Calling closeActivityModal()
+          // here too caused a double-render race that sometimes swallowed
+          // the lactateModal state update on slower devices.
           onAddLactate={(a, lapIndex) => {
-            closeActivityModal();
             handleAddLactate(a, lapIndex);
           }}
           // "Open in full editor" → fall back to FitAnalysisPage if user wants more
