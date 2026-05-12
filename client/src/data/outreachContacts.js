@@ -1170,6 +1170,352 @@ export const OUTREACH_CONTACTS = [
     note: 'Blood lactate threshold and VO2max testing open to students, staff, and the public.',
     priority: false,
   },
+
+  // ─── LABS — JAPAN ───────────────────────────────────────────────────────────
+  {
+    id: 'jiss-tokyo',
+    category: 'lab',
+    name: 'Japan Institute of Sports Sciences (JISS)',
+    country: 'Japan',
+    website: 'https://www.jpnsport.go.jp/jiss/english/tabid/521/default.aspx',
+    email: 'jiss-info@jpnsport.go.jp',
+    contactMethod: 'email',
+    note: 'National Olympic training centre lab; conducts lactate, VO2max and physiological testing for elite athletes.',
+    priority: false,
+  },
+  {
+    id: 'tsukuba-sports-research',
+    category: 'lab',
+    name: 'University of Tsukuba — Sports Science Research Centre',
+    country: 'Japan',
+    website: 'https://www.taiiku.tsukuba.ac.jp/en/',
+    email: 'kokusai@taiiku.tsukuba.ac.jp',
+    contactMethod: 'email',
+    note: 'Leading sport science research; endurance, lactate threshold and physiology programmes.',
+    priority: false,
+  },
+
+  // ─── LABS — SOUTH KOREA ────────────────────────────────────────────────────
+  {
+    id: 'kisss-korea',
+    category: 'lab',
+    name: 'Korea Institute of Sport Science (KISS)',
+    country: 'South Korea',
+    website: 'https://www.sports.re.kr/eng/main/main.do',
+    email: 'kiss@sports.re.kr',
+    contactMethod: 'email',
+    note: 'State-run elite-sport lab; physiology, lactate, VO2 testing for national-team athletes.',
+    priority: false,
+  },
+
+  // ─── LABS — CHINA / HONG KONG ──────────────────────────────────────────────
+  {
+    id: 'hk-elite-sports-institute',
+    category: 'lab',
+    name: 'Hong Kong Sports Institute — Sport Science Department',
+    country: 'Hong Kong',
+    website: 'https://www.hksi.org.hk/sport-science-and-medicine',
+    email: 'sportsscience@hksi.org.hk',
+    contactMethod: 'email',
+    note: 'National elite training institute; lactate, VO2max, biomechanics testing.',
+    priority: false,
+  },
+
+  // ─── LABS — SINGAPORE ──────────────────────────────────────────────────────
+  {
+    id: 'singapore-sport-institute',
+    category: 'lab',
+    name: 'Singapore Sport Institute — Sport Physiology',
+    country: 'Singapore',
+    website: 'https://www.sportsingapore.gov.sg/Singapore-Sport-Institute',
+    email: 'sport_info@sport.gov.sg',
+    contactMethod: 'email',
+    note: 'High-performance lab supporting Team Singapore; lactate threshold testing.',
+    priority: false,
+  },
+
+  // ─── LABS — INDIA ──────────────────────────────────────────────────────────
+  {
+    id: 'sai-india-nis',
+    category: 'lab',
+    name: 'Sports Authority of India — NIS Patiala',
+    country: 'India',
+    website: 'https://nispatiala.gov.in/',
+    email: 'principalnispatiala@yahoo.in',
+    contactMethod: 'email',
+    note: 'Premier national sports institute; sports-physiology + biomechanics lab.',
+    priority: false,
+  },
+
+  // ─── LABS — UAE ────────────────────────────────────────────────────────────
+  {
+    id: 'pure-health-dubai',
+    category: 'lab',
+    name: 'Pure Health Performance Lab Dubai',
+    country: 'UAE',
+    website: 'https://www.purehealth.ae/',
+    email: 'info@purehealth.ae',
+    contactMethod: 'email',
+    note: 'Endurance / triathlon performance testing in Dubai; VO2max + lactate.',
+    priority: false,
+  },
+
+  // ─── LABS — ISRAEL ─────────────────────────────────────────────────────────
+  {
+    id: 'wingate-institute-israel',
+    category: 'lab',
+    name: 'Wingate Institute — Ribstein Center for Sport Medicine',
+    country: 'Israel',
+    website: 'https://www.wingate.org.il/en/',
+    email: 'info@wingate.org.il',
+    contactMethod: 'email',
+    note: 'National sport-medicine centre; physiological testing & threshold protocols.',
+    priority: false,
+  },
+
+  // ─── LABS — BRAZIL ─────────────────────────────────────────────────────────
+  {
+    id: 'eefe-usp-brazil',
+    category: 'lab',
+    name: 'USP São Paulo — School of Physical Education and Sport',
+    country: 'Brazil',
+    website: 'https://www.eefe.usp.br/',
+    email: 'eefe@usp.br',
+    contactMethod: 'email',
+    note: 'Top Brazilian sport-science school; LT and VO2 testing for elite athletes and research.',
+    priority: false,
+  },
+  {
+    id: 'cob-brazil',
+    category: 'lab',
+    name: 'COB Brazilian Olympic Committee — Sport Science',
+    country: 'Brazil',
+    website: 'https://www.cob.org.br/',
+    email: 'cienciasdoesporte@cob.org.br',
+    contactMethod: 'email',
+    note: 'Brazilian Olympic high-performance physiology programme.',
+    priority: false,
+  },
+
+  // ─── LABS — ARGENTINA ──────────────────────────────────────────────────────
+  {
+    id: 'cenard-argentina',
+    category: 'lab',
+    name: 'CeNARD — Centro Nacional de Alto Rendimiento Deportivo',
+    country: 'Argentina',
+    website: 'https://www.argentina.gob.ar/deporte/cenard',
+    email: 'cenard@deportes.gob.ar',
+    contactMethod: 'email',
+    note: 'National high-performance centre; lactate testing supports endurance disciplines.',
+    priority: false,
+  },
+
+  // ─── LABS — CHILE ──────────────────────────────────────────────────────────
+  {
+    id: 'mindep-chile-cas',
+    category: 'lab',
+    name: 'Centro de Alto Rendimiento (CAR) Chile',
+    country: 'Chile',
+    website: 'https://www.mindep.cl/',
+    email: 'car@mindep.cl',
+    contactMethod: 'email',
+    note: 'National high-performance centre — sport physiology incl. threshold testing.',
+    priority: false,
+  },
+
+  // ─── LABS — SOUTH AFRICA ───────────────────────────────────────────────────
+  {
+    id: 'uct-sport-science',
+    category: 'lab',
+    name: 'University of Cape Town — High Performance Centre',
+    country: 'South Africa',
+    website: 'http://www.scienceofsport.com/',
+    email: 'info@sportscience.uct.ac.za',
+    contactMethod: 'email',
+    note: 'World-renowned sport-science group (Tim Noakes / Ross Tucker); lactate + VO2 testing.',
+    priority: false,
+  },
+  {
+    id: 'sports-science-institute-sa',
+    category: 'lab',
+    name: 'Sports Science Institute of South Africa',
+    country: 'South Africa',
+    website: 'https://www.ssisa.com/',
+    email: 'info@ssisa.com',
+    contactMethod: 'email',
+    note: 'Private elite-sport facility in Cape Town; endurance testing.',
+    priority: false,
+  },
+
+  // ─── LABS — MEXICO ─────────────────────────────────────────────────────────
+  {
+    id: 'cnar-mexico',
+    category: 'lab',
+    name: 'CNAR — Centro Nacional de Desarrollo de Talentos Deportivos',
+    country: 'Mexico',
+    website: 'https://www.gob.mx/conade',
+    email: 'contacto.conade@conade.gob.mx',
+    contactMethod: 'email',
+    note: 'National sports development centre; physiology testing for endurance athletes.',
+    priority: false,
+  },
+
+  // ─── LABS — POLAND ─────────────────────────────────────────────────────────
+  {
+    id: 'awf-warsaw',
+    category: 'lab',
+    name: 'AWF Warsaw — Centre for Sport Science Research',
+    country: 'Poland',
+    website: 'https://awf.edu.pl/en',
+    email: 'rektorat@awf.edu.pl',
+    contactMethod: 'email',
+    note: 'Top Polish sport-science academy; lactate / threshold studies.',
+    priority: false,
+  },
+  {
+    id: 'instytut-sportu-pl',
+    category: 'lab',
+    name: 'Instytut Sportu — Polish Institute of Sport',
+    country: 'Poland',
+    website: 'https://insp.pl/',
+    email: 'sekretariat@insp.pl',
+    contactMethod: 'email',
+    note: 'National sports research institute; supports the Polish Olympic team.',
+    priority: false,
+  },
+
+  // ─── LABS — CZECH REPUBLIC ─────────────────────────────────────────────────
+  {
+    id: 'fsps-uk-prague',
+    category: 'lab',
+    name: 'FTVS UK — Charles University Faculty of Sport',
+    country: 'Czech Republic',
+    website: 'https://www.ftvs.cuni.cz/',
+    email: 'studijni@ftvs.cuni.cz',
+    contactMethod: 'email',
+    note: 'Largest CZ sport-science faculty; lactate threshold + spiroergometry testing.',
+    priority: false,
+  },
+  {
+    id: 'fsps-muni-brno',
+    category: 'lab',
+    name: 'FSpS Masaryk University Brno — Sport Sciences',
+    country: 'Czech Republic',
+    website: 'https://www.fsps.muni.cz/en',
+    email: 'info@fsps.muni.cz',
+    contactMethod: 'email',
+    note: 'Sport-physiology lab; LT & VO2max protocols for athletes and research.',
+    priority: false,
+  },
+
+  // ─── LABS — SLOVAKIA ───────────────────────────────────────────────────────
+  {
+    id: 'sportcenter-banska-bystrica',
+    category: 'lab',
+    name: 'Národné športové centrum — Slovak National Sports Centre',
+    country: 'Slovakia',
+    website: 'https://www.sportcenter.sk/',
+    email: 'info@sportcenter.sk',
+    contactMethod: 'email',
+    note: 'National sports centre; physiology testing & threshold protocols.',
+    priority: false,
+  },
+
+  // ─── LABS — HUNGARY ────────────────────────────────────────────────────────
+  {
+    id: 'tf-hungary',
+    category: 'lab',
+    name: 'Hungarian University of Sports Science (TF)',
+    country: 'Hungary',
+    website: 'https://tf.hu/en',
+    email: 'rektori.hivatal@tf.hu',
+    contactMethod: 'email',
+    note: 'Hungarian flagship sport-science university; LT / VO2 testing.',
+    priority: false,
+  },
+
+  // ─── LABS — FINLAND ────────────────────────────────────────────────────────
+  {
+    id: 'kihu-finland',
+    category: 'lab',
+    name: 'KIHU — Research Institute for Olympic Sports',
+    country: 'Finland',
+    website: 'https://www.kihu.fi/en/',
+    email: 'kihu@kihu.fi',
+    contactMethod: 'email',
+    note: 'Finnish national olympic research institute; lactate threshold and endurance physiology.',
+    priority: false,
+  },
+  {
+    id: 'jyvaskyla-sport-science',
+    category: 'lab',
+    name: 'University of Jyväskylä — Sport & Health Sciences',
+    country: 'Finland',
+    website: 'https://www.jyu.fi/sport',
+    email: 'sport.health@jyu.fi',
+    contactMethod: 'email',
+    note: 'Top-ranked European sport-science department; threshold-testing research.',
+    priority: false,
+  },
+
+  // ─── LABS — DENMARK ────────────────────────────────────────────────────────
+  {
+    id: 'tha-elite-sport-denmark',
+    category: 'lab',
+    name: 'Team Danmark — Anti-Doping & Sport Performance Lab',
+    country: 'Denmark',
+    website: 'https://www.teamdanmark.dk/',
+    email: 'teamdanmark@teamdanmark.dk',
+    contactMethod: 'email',
+    note: 'Elite-sport organisation supporting Danish Olympic athletes; physiology testing.',
+    priority: false,
+  },
+  {
+    id: 'cfas-copenhagen',
+    category: 'lab',
+    name: 'University of Copenhagen — Center for Healthy Aging & Sports',
+    country: 'Denmark',
+    website: 'https://nexs.ku.dk/english/',
+    email: 'nexs@nexs.ku.dk',
+    contactMethod: 'email',
+    note: 'Section of Integrative Physiology; sport-physiology testing.',
+    priority: false,
+  },
+
+  // ─── COACHES — INTERNATIONAL (global triathlon / cycling) ──────────────────
+  {
+    id: 'tridot-coaching-global',
+    category: 'coach',
+    name: 'TriDot Triathlon Training',
+    country: 'USA',
+    website: 'https://www.tridot.com/',
+    email: 'support@tridot.com',
+    contactMethod: 'email',
+    note: 'Global online tri-coaching network with athletes worldwide; data-driven training.',
+    priority: false,
+  },
+  {
+    id: 'endure-iq-global',
+    category: 'coach',
+    name: 'EndureIQ — Coaching & Education',
+    country: 'Australia',
+    website: 'https://www.endureiq.com/',
+    email: 'info@endureiq.com',
+    contactMethod: 'email',
+    note: 'Endurance coaching + science education; global client base across run/bike/tri.',
+    priority: false,
+  },
+  {
+    id: 'inscyd-global',
+    category: 'lab',
+    name: 'INSCYD — Performance Modelling',
+    country: 'Switzerland',
+    website: 'https://inscyd.com/',
+    email: 'info@inscyd.com',
+    contactMethod: 'email',
+    note: 'Leading metabolic-profiling platform; partners with labs globally — adjacent tool, useful contact.',
+    priority: true,
+  },
 ];
 
 /** Contacts that have a direct email address */
