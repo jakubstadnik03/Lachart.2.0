@@ -61,12 +61,26 @@ const testSchema = new mongoose.Schema({
         glucose: Number,
         vo2: Number,
         RPE: Number,
+        // Per-row stage duration in seconds OR distance in meters. The form
+        // lets the user toggle the "Dur"/"Dist" column header — distance is
+        // common for swim and run interval tests (100/200/400 m). Either,
+        // both, or neither may be set; the curve calculator falls back
+        // gracefully when a field is missing.
+        duration: { type: Number, default: null },
+        distanceMeters: { type: Number, default: null },
         intervalType: {
             type: String,
             enum: ['work', 'recovery'],
             default: 'work',
         },
     }],
+    // Whether the per-row "Dur" column captures duration (MM:SS) or distance
+    // (meters). UI preference, persisted so the test reopens in the same mode.
+    stageMeasureMode: {
+        type: String,
+        enum: ['duration', 'distance'],
+        default: 'duration',
+    },
     // Protocol metadata — pre/post values and stage configuration. Saved on
     // the test so future cross-test comparisons and improved LT analysis
     // (Modified Dmax / Individual Anaerobic Threshold) can use them.
@@ -77,6 +91,7 @@ const testSchema = new mongoose.Schema({
     recoveryHR3min:      { type: Number, default: null },
     recoveryLactate3min: { type: Number, default: null },
     stageDurationSec:    { type: Number, default: null },
+    stageDistance:       { type: Number, default: null },
     restBetweenStagesSec:{ type: Number, default: null },
     // User-edited zone values linked to this specific test (Set Zones modal)
     zoneOverrides: {

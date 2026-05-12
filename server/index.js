@@ -202,6 +202,8 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const protocolTemplateRoutes = require('./routes/protocolTemplateRoutes');
 const workoutPlannerRoutes  = require('./routes/workoutPlannerRoutes');
 const fieldLactateRoutes    = require('./routes/fieldLactateRoutes');
+const cpTestRoutes          = require('./routes/cpTestRoutes');
+const vlamaxTestRoutes      = require('./routes/vlamaxTestRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
@@ -210,6 +212,8 @@ const { bootstrapStravaWebhook } = require('./services/stravaWebhookBootstrap');
 
 // Routes
 app.use("/test", testRoutes);
+app.use("/api/cp-test", cpTestRoutes);
+app.use("/api/vlamax-test", vlamaxTestRoutes);
 app.use("/user", userListRoute);
 app.use("/training", trainingRoute);
 app.use("/feedback", feedbackRoute);

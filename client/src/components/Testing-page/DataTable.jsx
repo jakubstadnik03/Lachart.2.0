@@ -1296,7 +1296,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
 
   // Vylepšená funkce pro nalezení LTP bodů
-  const findLactateThresholds = (results, baseLactate, sport = 'bike') => {
+  const findLactateThresholds = (results, baseLactate, sport = 'bike', protocolMeta = {}) => {
     if (!results || results.length < 3) {
       return { ltp1: null, ltp2: null, ltp1Point: null, ltp2Point: null };
     }
@@ -1352,10 +1352,26 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       console.groupEnd();
     }
 
-    // Primárně pro bike s ≥5 body: segmentovaná regrese + ensemble (isotonic, 2 zlomy, baseline + D-max)
+    // Primárně pro bike s ≥5 body: segmentovaná regrese + ensemble
+    // (isotonic, 2 zlomy, baseline LT1, classic + Modified D-max, OBLA, log-log,
+    // Dickhuth IAT). Median consensus, stage-duration corrected, individualized
+    // by resting/max lactate when available.
     if (sport === 'bike' && sortedResults.length >= 5) {
       const points = sortedResults.map((r) => ({ power: Number(r.power), lactate: Number(r.lactate) }));
-      const segResult = computeLactateThresholds(points, { smooth: false, bootstrap: false });
+      // protocolMeta is plumbed in from the public calculateThresholds wrapper
+      // — it carries baseLactate, maxLactate (post-test peak), and the test's
+      // stageDurationSec. Each one improves a different part of the ensemble
+      // when present; missing fields fall back to the old behaviour.
+      const baseLa = Number(protocolMeta?.baseLactate);
+      const maxLa = Number(protocolMeta?.maxLactate);
+      const stageSec = Number(protocolMeta?.stageDurationSec);
+      const segResult = computeLactateThresholds(points, {
+        smooth: false,
+        bootstrap: false,
+        baseLactate: Number.isFinite(baseLa) ? baseLa : null,
+        maxLactate: Number.isFinite(maxLa) ? maxLa : null,
+        stageDurationSec: Number.isFinite(stageSec) ? stageSec : null,
+      });
       const segLT1 = segResult.LT1;
       const segLT2 = segResult.LT2;
       if (segLT1 != null && segLT2 != null && segLT2 > segLT1 && segLT1 > 0 && segLT2 > 0) {
@@ -1576,6 +1592,39 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
+    // For run/swim: run the same ensemble used for bike, with the X axis
+    // negated internally (handled by `isPace: true`). Results are positive
+    // pace seconds. We seed the polynomial path with these LT candidates
+    // when they pass sanity checks — much more accurate than the polynomial
+    // alone, especially when the test didn't reach 4 mmol/L.
+    let paceEnsembleLT1 = null;
+    let paceEnsembleLT2 = null;
+    if (isPaceSport && sortedResults.length >= 5) {
+      const pacePoints = sortedResults
+        .map((r) => ({ power: Number(r.power), lactate: Number(r.lactate) }))
+        .filter((p) => Number.isFinite(p.power) && p.power > 0 && Number.isFinite(p.lactate) && p.lactate > 0);
+      if (pacePoints.length >= 5) {
+        const baseLa = Number(protocolMeta?.baseLactate);
+        const maxLa = Number(protocolMeta?.maxLactate);
+        const stageSec = Number(protocolMeta?.stageDurationSec);
+        const ens = computeLactateThresholds(pacePoints, {
+          isPace: true,
+          smooth: false,
+          bootstrap: false,
+          baseLactate: Number.isFinite(baseLa) ? baseLa : null,
+          maxLactate: Number.isFinite(maxLa) ? maxLa : null,
+          stageDurationSec: Number.isFinite(stageSec) ? stageSec : null,
+        });
+        // For pace: LT1 (slower) > LT2 (faster) in seconds. Sanity-check the
+        // gap (≥ 10 sec for run/km, ≥ 5 sec for swim/100m) and order.
+        const minGapSec = sport === 'swim' ? 5 : 10;
+        if (ens.LT1 != null && ens.LT2 != null && ens.LT1 - ens.LT2 >= minGapSec && ens.LT1 > 0 && ens.LT2 > 0) {
+          paceEnsembleLT1 = ens.LT1;
+          paceEnsembleLT2 = ens.LT2;
+        }
+      }
+    }
+
     // Sekundárně: LTP1 a LTP2 z polynomického fitu (kde křivka začne růst / maximum sklonu)
     const polyFit = buildPolynomialFit(sortedResults, baseLactate, sport);
     if (polyFit) {
@@ -1763,13 +1812,51 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         const ltp1Reasonable = ltp1Lactate >= MIN_LTP1_LACTATE && ltp1Lactate <= 5 && ltp1Power > 0;
         const ltp2Reasonable = ltp2Lactate >= 1.0 && ltp2Lactate <= adaptiveLtp2Cap && ltp2Power > 0;
         if (validOrder && ltp1Reasonable && ltp2Reasonable) {
+          // Pace ensemble blend: when run/swim has a valid ensemble result,
+          // average it with the polynomial-derived value. The polynomial path
+          // is good at capturing curve shape; the ensemble brings in D-max,
+          // Modified D-max, log-log and OBLA. Their median is more robust
+          // than either alone. Only blend when both numbers are nearby (within
+          // 25 % of LT1's value, in seconds) — large disagreement means one
+          // of them is wrong; in that case keep the polynomial result.
+          if (isPaceSport && paceEnsembleLT1 != null && paceEnsembleLT2 != null) {
+            const tol1 = Math.max(15, Math.abs(ltp1Power) * 0.12);
+            const tol2 = Math.max(10, Math.abs(ltp2Power) * 0.12);
+            if (Math.abs(paceEnsembleLT1 - ltp1Power) <= tol1) {
+              ltp1Power = (ltp1Power + paceEnsembleLT1) / 2;
+            }
+            if (Math.abs(paceEnsembleLT2 - ltp2Power) <= tol2) {
+              ltp2Power = (ltp2Power + paceEnsembleLT2) / 2;
+            }
+            // Recompute lactate at the blended powers so downstream zones use
+            // the right La value.
+            const interpAtPace = (pVal) => {
+              for (let i = 0; i < sortedResults.length - 1; i++) {
+                const a = Number(sortedResults[i].power);
+                const b = Number(sortedResults[i + 1].power);
+                if (pVal >= Math.min(a, b) && pVal <= Math.max(a, b) && a !== b) {
+                  const la = Number(sortedResults[i].lactate);
+                  const lb = Number(sortedResults[i + 1].lactate);
+                  return la + (lb - la) * (pVal - a) / (b - a);
+                }
+              }
+              return null;
+            };
+            const newLt1La = interpAtPace(ltp1Power);
+            const newLt2La = interpAtPace(ltp2Power);
+            if (newLt1La != null && Number.isFinite(newLt1La)) ltp1Lactate = newLt1La;
+            if (newLt2La != null && Number.isFinite(newLt2La)) ltp2Lactate = newLt2La;
+          }
+
           if (isThresholdDebugEnabled()) {
-            console.groupCollapsed('[LaChart] findLactateThresholds — výstup (polynomický fit)');
+            console.groupCollapsed('[LaChart] findLactateThresholds — výstup (polynomický fit + ensemble blend)');
             console.log({
               path: 'polynomial_derivative',
               isPaceSport,
               adaptiveLtp2Cap,
-              final: { ltp1_W: ltp1Power, lt1_La_mmol: ltp1Lactate, ltp2_W: ltp2Power, lt2_La_mmol: ltp2Lactate },
+              paceEnsembleLT1,
+              paceEnsembleLT2,
+              final: { ltp1: ltp1Power, lt1_La_mmol: ltp1Lactate, ltp2: ltp2Power, lt2_La_mmol: ltp2Lactate },
             });
             console.log('Detail výpočtu z polynomu viz skupina [findLTPFromPolynomial] výše.');
             console.groupEnd();
@@ -2796,8 +2883,17 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       thresholds.lactates['IAT'] = iatThreshold.lactate;
     }
   
-    // Najít LTP body pomocí D-max metody (PŘED interpolací, aby měly prioritu)
-    const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport);
+    // Najít LTP body pomocí D-max metody (PŘED interpolací, aby měly prioritu).
+    // Forward the test's protocol metadata so the ensemble inside
+    // findLactateThresholds → computeLactateThresholds can individualize LT1,
+    // use the post-test peak as D-max's upper anchor, and apply stage-duration
+    // correction when stages are < 4 min.
+    const protocolMeta = {
+      baseLactate: Number(mockData?.baseLactate ?? mockData?.baseLa) || null,
+      maxLactate: Number(mockData?.maxLactate ?? mockData?.recoveryLactate3min) || null,
+      stageDurationSec: Number(mockData?.stageDurationSec) || null,
+    };
+    const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport, protocolMeta);
 
     // Definice cílových laktátů. Stejná sanity check jako uvnitř
     // findLactateThresholds: baseLactate se nesmí dostat nad nejmenší naměřenou
@@ -3800,9 +3896,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
     const handleMouseLeave = (e) => {
       if (isLocked) return;
-      // Nekrýt pokud kurzor přešel na samotný tooltip
+      // Don't hide if the cursor moved onto the tooltip itself.
+      // e.relatedTarget can be null (leaving the window) or non-Node
+      // (synthetic / SVG cases) — Node.contains() throws on non-Node args.
       const related = e.relatedTarget;
-      if (tooltipNodeRef.current?.contains(related)) return;
+      if (related instanceof Node && tooltipNodeRef.current?.contains(related)) return;
       setActiveTooltip(null);
     };
 

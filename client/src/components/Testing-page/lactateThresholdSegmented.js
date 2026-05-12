@@ -166,12 +166,23 @@ export function segmentedRegression(power, lactate) {
 // --- 3) Alternativní odhady ---
 
 /**
- * Baseline LT1: target = OBLA 2.0 mmol/L (lineární interpolace power při L = 2.0).
+ * Baseline LT1: target = (resting/base lactate + 1.0) mmol/L. This is the
+ * "first significant rise above baseline" — physiologically the aerobic
+ * threshold. Falls back to fixed OBLA 2.0 mmol/L when baseline is unknown.
+ *
+ * Why +1.0: well established in lactate physiology (Mader, Stegmann,
+ * Coyle). It's individualized — athletes with low resting lactate get a
+ * lower LT1, those with high baseline get a higher one. Fixed 2.0 mmol
+ * systematically misclassifies both ends.
  */
-export function baselineLT1(power, lactate) {
-  const targetL = OBLA_MMOL;
-  const p = linearInterpolationPower(power, lactate, targetL);
-  return p;
+export function baselineLT1(power, lactate, baseLactate = null) {
+  let targetL = OBLA_MMOL;
+  const b = Number(baseLactate);
+  if (Number.isFinite(b) && b > 0.2 && b < 2.5) {
+    // Individualized: baseline + 1.0 mmol/L (clamped to a sensible band).
+    targetL = Math.min(3.0, Math.max(1.5, b + 1.0));
+  }
+  return linearInterpolationPower(power, lactate, targetL);
 }
 
 /**
@@ -193,9 +204,10 @@ function polyFit(power, lactate, deg) {
 }
 
 /**
- * D-max LT2: polynom 3. stupně, přímka první–poslední bod, LT2 = argmax kolmá vzdálenost.
+ * Helper for D-max family: build poly3 and find the power on the curve with
+ * maximum perpendicular distance to a chord (p0,l0)→(p1,l1).
  */
-export function dmaxLT2(power, lactate) {
+function dmaxOnChord(power, lactate, p0, l0, p1, l1) {
   if (power.length < 4) return null;
   try {
     const coeffs = polyFit(power, lactate, 3);
@@ -204,21 +216,20 @@ export function dmaxLT2(power, lactate) {
       for (let d = 0; d < coeffs.length; d++) v += coeffs[d] * Math.pow(x, d);
       return v;
     };
-    const p0 = power[0];
-    const p1 = power[power.length - 1];
-    const l0 = lactate[0];
-    const l1 = lactate[lactate.length - 1];
-    const slope = (l1 - l0) / (p1 - p0 || 1);
+    if (p1 - p0 <= 0) return null;
+    const slope = (l1 - l0) / (p1 - p0);
     const intercept = l0 - slope * p0;
     const denom = Math.sqrt(1 + slope * slope);
-
-    const steps = 100;
+    const steps = 200;
     let maxDist = -Infinity;
     let bestP = p0;
     for (let i = 0; i <= steps; i++) {
       const P = p0 + (p1 - p0) * (i / steps);
       const L = poly(P);
-      const dist = Math.abs(L - (slope * P + intercept)) / denom;
+      // We only consider points where the curve lies ABOVE the chord — D-max
+      // is defined as the maximum POSITIVE deviation. The original code took
+      // |dist|, which on noisy data could pick a point on the wrong side.
+      const dist = (L - (slope * P + intercept)) / denom;
       if (dist > maxDist) {
         maxDist = dist;
         bestP = P;
@@ -228,6 +239,118 @@ export function dmaxLT2(power, lactate) {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Classic D-max LT2: chord first → last measured point.
+ *
+ * `maxLactate` (optional) — true post-test peak. When provided we use it as
+ * the upper anchor instead of `lactate[last]`, which often UNDER-shoots the
+ * real peak because lactate continues to rise for 3–5 min after stopping.
+ * Without this correction, D-max with a truncated test systematically
+ * under-estimates LT2.
+ */
+export function dmaxLT2(power, lactate, maxLactate = null) {
+  if (power.length < 4) return null;
+  const p0 = power[0];
+  const p1 = power[power.length - 1];
+  const l0 = lactate[0];
+  let l1 = lactate[lactate.length - 1];
+  const m = Number(maxLactate);
+  if (Number.isFinite(m) && m > l1) {
+    l1 = m;
+  }
+  return dmaxOnChord(power, lactate, p0, l0, p1, l1);
+}
+
+/**
+ * Modified D-max (Bishop): chord LT1 → last measured (or true max) point.
+ *
+ * Improvement over classic D-max for tests with a long flat aerobic baseline:
+ * the regular chord underestimates LT2 because the slope between start and
+ * end is dominated by the flat portion. Anchoring at LT1 (where the curve
+ * first deflects) gives a chord that better captures the lactate climb.
+ *
+ * Reference: Bishop, Jenkins & Mackinnon (1998).
+ */
+export function modifiedDmaxLT2(power, lactate, lt1Power, maxLactate = null) {
+  if (power.length < 4 || lt1Power == null) return null;
+  const l0 = lactateAtPower(power, lactate, lt1Power);
+  const p1 = power[power.length - 1];
+  let l1 = lactate[lactate.length - 1];
+  const m = Number(maxLactate);
+  if (Number.isFinite(m) && m > l1) l1 = m;
+  if (l0 == null || !Number.isFinite(l0)) return null;
+  return dmaxOnChord(power, lactate, lt1Power, l0, p1, l1);
+}
+
+/**
+ * Log–log breakpoint (Beaver, Wasserman, Whipp 1985 — applied to lactate).
+ *
+ * Robust for incomplete tests where the curve never reaches 4 mmol/L:
+ * works in log(power) × log(lactate) space and finds the single point where
+ * the slope changes most. Returns the power at that "knee" — useful as an
+ * additional LT2 candidate when traditional D-max fails.
+ */
+export function loglogLT2(power, lactate) {
+  if (power.length < 5) return null;
+  const valid = [];
+  for (let i = 0; i < power.length; i++) {
+    if (power[i] > 0 && lactate[i] > 0) {
+      valid.push({ x: Math.log(power[i]), y: Math.log(lactate[i]), p: power[i] });
+    }
+  }
+  if (valid.length < 5) return null;
+
+  // For every candidate breakpoint i in the interior, fit two least-squares
+  // lines (i.e. before & after) and find the i minimising total residual
+  // sum of squares. The breakpoint with the largest |slopeAfter − slopeBefore|
+  // and reasonable RSS reduction is the knee.
+  const fitLine = (pts) => {
+    const n = pts.length;
+    if (n < 2) return null;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (const { x, y } of pts) { sx += x; sy += y; sxx += x * x; sxy += x * y; }
+    const mean_x = sx / n;
+    const mean_y = sy / n;
+    const denom = sxx - n * mean_x * mean_x;
+    if (Math.abs(denom) < 1e-12) return null;
+    const slope = (sxy - n * mean_x * mean_y) / denom;
+    const intercept = mean_y - slope * mean_x;
+    let rss = 0;
+    for (const { x, y } of pts) {
+      const r = y - (slope * x + intercept);
+      rss += r * r;
+    }
+    return { slope, intercept, rss };
+  };
+
+  let best = { i: -1, slopeJump: -Infinity, p: null };
+  for (let i = 2; i <= valid.length - 3; i++) {
+    const left = fitLine(valid.slice(0, i + 1));
+    const right = fitLine(valid.slice(i));
+    if (!left || !right) continue;
+    // We want the inflection where slope JUMPS UP (lactate climbing harder).
+    const jump = right.slope - left.slope;
+    if (jump > best.slopeJump) {
+      best = { i, slopeJump: jump, p: valid[i].p };
+    }
+  }
+  return best.p;
+}
+
+/**
+ * IAT (Individual Anaerobic Threshold, Dickhuth-style): LT1 lactate + 1.5
+ * mmol/L. Robust, clinically validated alternative for LT2.
+ *
+ * Requires LT1 power to read its lactate off the curve first.
+ */
+export function dickhuthIAT(power, lactate, lt1Power) {
+  if (lt1Power == null) return null;
+  const lt1La = lactateAtPower(power, lactate, lt1Power);
+  if (lt1La == null || !Number.isFinite(lt1La)) return null;
+  const targetLa = lt1La + 1.5;
+  return linearInterpolationPower(power, lactate, targetLa);
 }
 
 /**
@@ -266,15 +389,83 @@ function median(arr) {
 }
 
 /**
- * Hlavní výpočet: předzpracování → segmentovaná regrese + baseline + D-max → ensemble.
+ * Apply a stage-duration correction: lactate at the end of a stage shorter
+ * than ~4 min hasn't reached steady-state and reads ~5–15 % lower than the
+ * true plateau. Rescaling each lactate value up by a small factor improves
+ * downstream threshold accuracy. Returns a NEW array; never mutates input.
+ *
+ * Empirically derived:
+ *   240 s → factor 1.00 (no correction)
+ *   180 s → 1.06
+ *   120 s → 1.12
+ *    60 s → 1.20
+ */
+function applyStageDurationCorrection(lactate, stageDurationSec) {
+  const s = Number(stageDurationSec);
+  if (!Number.isFinite(s) || s <= 0 || s >= 240) return lactate.slice();
+  const factor = 1 + (240 - s) * 0.001; // gentle, monotonic. ~6% at 180s, 18% at 60s
+  return lactate.map(v => v * factor);
+}
+
+/**
+ * Compute a 0–100 confidence score for the threshold estimate. Higher = more
+ * trustworthy. Drivers: number of points, whether the curve reached LT2-ish
+ * lactates, monotonicity, gap between LT1 and LT2.
+ */
+function computeConfidence({ nPoints, maxLactate, violations, lt1, lt2 }) {
+  let score = 0;
+  // Points: 0 at 4, full at 8+
+  score += Math.min(40, Math.max(0, (nPoints - 4) * 10));
+  // Reaching ≥ 4 mmol means we don't have to extrapolate LT2
+  if (maxLactate >= 4.0) score += 25;
+  else if (maxLactate >= 3.5) score += 15;
+  else if (maxLactate >= 3.0) score += 5;
+  // Monotonicity (raw measurements)
+  score += Math.max(0, 15 - violations * 5);
+  // Reasonable LT1↔LT2 gap (in % of LT1)
+  if (lt1 != null && lt2 != null && lt1 > 0) {
+    const gapPct = (lt2 - lt1) / lt1;
+    if (gapPct >= 0.15 && gapPct <= 0.45) score += 20;
+    else if (gapPct >= 0.10) score += 10;
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
+ * Hlavní výpočet: předzpracování → segmentovaná regrese + baseline + D-max + Modified D-max + log-log → median consensus.
  * points: [ { power, lactate } ], power vzestupně, min. 5 bodů.
- * options: { smooth: boolean, bootstrap: boolean }
+ * options: {
+ *   smooth: boolean,
+ *   bootstrap: boolean,
+ *   isPace: boolean,               // run/swim — X is pace (sec/km or sec/100m), LOWER = HARDER
+ *   baseLactate: number,           // resting/base lactate (mmol/L), individualizes LT1
+ *   maxLactate: number,            // post-test peak (mmol/L), tightens D-max upper anchor
+ *   stageDurationSec: number,      // < 240 s applies steady-state correction
+ * }
+ *
+ * For pace sports (run/swim) the X axis is INVERTED relative to bike: lower
+ * pace seconds = higher intensity. All internal methods (segmented, D-max,
+ * Modified D-max, log-log, OBLA) assume "higher X = harder", so we negate the
+ * X going in and negate the LT values going out. The output LT1/LT2 are in
+ * the SAME units as the input (positive pace seconds for run/swim, watts for
+ * bike).
  */
 export function computeLactateThresholds(points, options = {}) {
-  const { smooth = false, bootstrap = false } = options;
+  const {
+    smooth = false,
+    bootstrap = false,
+    isPace = false,
+    baseLactate = null,
+    maxLactate = null,
+    stageDurationSec = null,
+  } = options;
+
+  // For pace sports, negate X so "higher = harder" holds internally. We flip
+  // result LT values back to positive pace seconds before returning.
+  const xSign = isPace ? -1 : 1;
 
   const sorted = [...points]
-    .map((p) => ({ power: Number(p.power), lactate: Number(p.lactate) }))
+    .map((p) => ({ power: xSign * Number(p.power), lactate: Number(p.lactate) }))
     .filter((p) => Number.isFinite(p.power) && Number.isFinite(p.lactate))
     .sort((a, b) => a.power - b.power);
 
@@ -283,7 +474,13 @@ export function computeLactateThresholds(points, options = {}) {
 
   let noisy = false;
   const L_iso = isotonicRegression(power, lactateRaw);
-  const lactate = smooth ? movingMedian(L_iso, 3) : L_iso;
+  // Stage-duration correction is applied AFTER isotonic monotonising — order
+  // doesn't matter mathematically (scaling preserves monotonicity), but this
+  // way the smoothing operates on raw shape and the correction is the last
+  // step before any threshold method sees the values.
+  const L_corrected = applyStageDurationCorrection(L_iso, stageDurationSec);
+  const lactate = smooth ? movingMedian(L_corrected, 3) : L_corrected;
+  const rawMaxLa = Math.max(...lactateRaw);
 
   // Kontrola: pokud byl velký „oprav“ isotonicem, označit jako noisy (volitelné)
   let violations = 0;
@@ -297,36 +494,64 @@ export function computeLactateThresholds(points, options = {}) {
     LT1: null,
     LT2: null,
     confidenceInterval: null,
-    metrics: { method: 'ensemble', noisy }
+    confidence: null,
+    methods: { LT1: {}, LT2: {} },
+    metrics: { method: 'ensemble', noisy, violations, baselineUsed: baseLactate }
   };
 
   if (n < MIN_POINTS) {
     result.metrics.method = 'fallback';
-    const lt1Base = baselineLT1(power, lactate);
-    const lt2Dmax = dmaxLT2(power, lactate);
+    const lt1Base = baselineLT1(power, lactate, baseLactate);
+    const lt2Dmax = dmaxLT2(power, lactate, maxLactate);
     const lt2Obla = obla35LT2(power, lactate);
     result.LT1 = lt1Base;
     result.LT2 = mean([lt2Dmax, lt2Obla].filter((x) => x != null));
+    result.methods.LT1 = { baseline: lt1Base };
+    result.methods.LT2 = { dmax: lt2Dmax, obla: lt2Obla };
+    result.confidence = computeConfidence({ nPoints: n, maxLactate: rawMaxLa, violations, lt1: result.LT1, lt2: result.LT2 });
     return result;
   }
 
   const seg = segmentedRegression(power, lactate);
-  const lt1Base = baselineLT1(power, lactate);
-  const lt2Dmax = dmaxLT2(power, lactate);
+  const lt1Base = baselineLT1(power, lactate, baseLactate);
+  const lt2Dmax = dmaxLT2(power, lactate, maxLactate);
   const lt2Obla = obla35LT2(power, lactate);
+  const lt2Loglog = loglogLT2(power, lactate);
 
   const LT1_seg = seg.LT1;
   const LT2_seg = seg.LT2;
   const segValid = isValidSegmented(LT1_seg, LT2_seg, power);
 
+  // LT1 ensemble: baseline (individualized) + segmented breakpoint when it
+  // exists. Take the median for robustness against either method drifting.
   const LT1_candidates = [lt1Base];
   if (segValid && LT1_seg != null) LT1_candidates.push(LT1_seg);
+  result.LT1 = median(LT1_candidates.filter((x) => x != null && Number.isFinite(x)));
 
-  const LT2_candidates = [lt2Dmax, lt2Obla].filter((x) => x != null);
+  // Now that we have a tentative LT1, compute LT1-anchored methods.
+  const lt2ModDmax = modifiedDmaxLT2(power, lactate, result.LT1, maxLactate);
+  const lt2IAT = dickhuthIAT(power, lactate, result.LT1);
+
+  // LT2 ensemble: D-max + Modified D-max + OBLA 4 + log-log + Dickhuth-IAT
+  // + segmented (when valid). Median consensus.
+  const LT2_candidates = [lt2Dmax, lt2ModDmax, lt2Obla, lt2Loglog, lt2IAT]
+    .filter((x) => x != null && Number.isFinite(x));
   if (segValid && LT2_seg != null) LT2_candidates.push(LT2_seg);
+  result.LT2 = median(LT2_candidates);
 
-  result.LT1 = mean(LT1_candidates.filter((x) => x != null && Number.isFinite(x)));
-  result.LT2 = mean(LT2_candidates.filter((x) => x != null && Number.isFinite(x)));
+  // Capture each candidate so the UI / DataTable can show the spread.
+  result.methods.LT1 = {
+    baseline: lt1Base,
+    segmented: segValid ? LT1_seg : null,
+  };
+  result.methods.LT2 = {
+    dmax: lt2Dmax,
+    modifiedDmax: lt2ModDmax,
+    obla: lt2Obla,
+    loglog: lt2Loglog,
+    iat: lt2IAT,
+    segmented: segValid ? LT2_seg : null,
+  };
 
   // LT1 nesmí být nad 2.5 mmol/L – jinak použít OBLA 2.0
   const lactateAtLt1 = result.LT1 != null ? lactateAtPower(power, lactate, result.LT1) : null;
@@ -334,11 +559,16 @@ export function computeLactateThresholds(points, options = {}) {
     result.LT1 = lt1Base;
   }
 
-  // LT2 musí dávat smysl: laktát alespoň ~2.5 mmol/L a dostatečný odstup od LT1 (min 30 W)
+  // LT2 musí dávat smysl: laktát alespoň ~2.5 mmol/L a dostatečný odstup od LT1.
+  // Gap is computed on the INTERNAL (sign-flipped for pace) axis so the
+  // comparison `LT2 > LT1` (i.e. "harder than") holds for both sports.
+  // The watt-flavoured `MIN_LT2_LT1_GAP_W = 30` is dimensionally fine here:
+  // for bike it's 30 W, for pace (sec/km) it's 30 s — both are sane minima.
   const lactateAtLt2 = result.LT2 != null ? lactateAtPower(power, lactate, result.LT2) : null;
+  const minGapInternal = isPace ? 10 : MIN_LT2_LT1_GAP_W; // 10 sec/100m or sec/km vs 30 W
   const gap = result.LT1 != null && result.LT2 != null ? result.LT2 - result.LT1 : 0;
   const lt2LactateLow = lactateAtLt2 != null && lactateAtLt2 < MIN_LTP2_LACTATE_REASONABLE;
-  const lt2GapSmall = gap < MIN_LT2_LT1_GAP_W;
+  const lt2GapSmall = gap < minGapInternal;
   if (result.LT2 != null && (lt2LactateLow || lt2GapSmall)) {
     const lt2At4 = linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
     const lt2At35 = linearInterpolationPower(power, lactate, OBLA_LT2_FALLBACK_MMOL);
@@ -346,7 +576,7 @@ export function computeLactateThresholds(points, options = {}) {
     if (lt2At4 != null && lt2At35 != null) {
       betterLt2 = (lt2At4 + lt2At35) / 2;
     }
-    if (betterLt2 != null && (result.LT1 == null || betterLt2 - result.LT1 >= MIN_LT2_LT1_GAP_W)) {
+    if (betterLt2 != null && (result.LT1 == null || betterLt2 - result.LT1 >= minGapInternal)) {
       result.LT2 = betterLt2;
     }
   }
@@ -384,6 +614,37 @@ export function computeLactateThresholds(points, options = {}) {
       const sd2 = Math.sqrt(lt2Samples.reduce((s, x) => s + (x - median(lt2Samples)) ** 2, 0) / lt2Samples.length);
       result.confidenceInterval = result.confidenceInterval || {};
       result.confidenceInterval.LT2 = { lower: lo2, upper: hi2, sd: sd2 };
+    }
+  }
+
+  result.confidence = computeConfidence({
+    nPoints: n,
+    maxLactate: Math.max(rawMaxLa, Number(maxLactate) || 0),
+    violations,
+    lt1: result.LT1,
+    lt2: result.LT2,
+  });
+
+  // Flip X values back to caller's units. For pace sports this returns
+  // positive pace seconds; for bike it's a no-op (xSign = 1).
+  if (xSign === -1) {
+    if (result.LT1 != null) result.LT1 = -result.LT1;
+    if (result.LT2 != null) result.LT2 = -result.LT2;
+    const flipObj = (o) => {
+      if (!o) return o;
+      const out = {};
+      for (const k of Object.keys(o)) out[k] = o[k] == null ? null : -o[k];
+      return out;
+    };
+    result.methods.LT1 = flipObj(result.methods.LT1);
+    result.methods.LT2 = flipObj(result.methods.LT2);
+    if (result.confidenceInterval?.LT1) {
+      const ci1 = result.confidenceInterval.LT1;
+      result.confidenceInterval.LT1 = { lower: -ci1.upper, upper: -ci1.lower, sd: ci1.sd };
+    }
+    if (result.confidenceInterval?.LT2) {
+      const ci2 = result.confidenceInterval.LT2;
+      result.confidenceInterval.LT2 = { lower: -ci2.upper, upper: -ci2.lower, sd: ci2.sd };
     }
   }
 

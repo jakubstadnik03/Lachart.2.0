@@ -7,6 +7,8 @@ import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
+import CPTestPanel from "../components/Testing-page/CPTestPanel";
+import VLamaxPanel from "../components/Testing-page/VLamaxPanel";
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isCapacitorNative } from '../utils/isNativeApp';
@@ -1309,11 +1311,15 @@ const TestingPage = () => {
         {/* Main toolbar */}
         <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5">
 
-          {/* Tab pills */}
+          {/* Tab pills — Tests / History / CP. Lactate tests + their history
+              live in the first two; the third surfaces Critical Power tests,
+              which give a non-invasive cross-check on LT2 (trainer feature). */}
           <div className="flex items-center bg-gray-100 rounded-xl p-1 gap-0.5 shrink-0">
             {[
               { id: 'tests', label: 'Tests' },
               { id: 'history', label: 'History' },
+              { id: 'cp', label: 'CP' },
+              { id: 'vlamax', label: 'VLamax' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1519,6 +1525,50 @@ const TestingPage = () => {
                     </div>
                   )}
                 </>
+              )}
+            </motion.div>
+          )}
+
+          {/* ── CP tab ────────────────────────────────────────── */}
+          {activeTab === 'cp' && (
+            <motion.div
+              key="tab-cp"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+            >
+              {selectedSport === 'all' ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                  Pick a specific sport above (Bike / Run / Swim) to manage Critical Power tests.
+                </div>
+              ) : (
+                <CPTestPanel
+                  athleteId={selectedAthleteId || user?._id}
+                  sport={selectedSport}
+                />
+              )}
+            </motion.div>
+          )}
+
+          {/* ── VLamax tab ────────────────────────────────────── */}
+          {activeTab === 'vlamax' && (
+            <motion.div
+              key="tab-vlamax"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+            >
+              {selectedSport === 'all' ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                  Pick a specific sport above to manage VLamax (sprint) tests.
+                </div>
+              ) : (
+                <VLamaxPanel
+                  athleteId={selectedAthleteId || user?._id}
+                  sport={selectedSport}
+                />
               )}
             </motion.div>
           )}

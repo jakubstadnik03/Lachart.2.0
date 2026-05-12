@@ -1203,6 +1203,38 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Calculate training zones for visualization
   const zones = calculateZonesFromTest(mockDataWithOverrides);
   
+  // Detect "short" stage cutoffs in BOTH duration (sec) and distance (m).
+  // Sources, in priority order:
+  //   1. Test-level `stageDurationSec` / `stageDistance` from the Protocol section
+  //   2. Median of explicit per-row `duration` / `distanceMeters` values
+  // Cutoff = 60 % of the reference. Rows shorter than cutoff are excluded from
+  // the curve fit / LT1 / LT2 — same behaviour as recovery rows.
+  //
+  // CRITICAL fallback: if neither test-level setting nor per-row values are
+  // present, both cutoffs stay at 0 and the row is ALWAYS kept. So tests
+  // saved before this feature, or tests where the user simply didn't fill
+  // in duration/distance, are not penalised in any way.
+  // Only trust the median as a fallback reference when we have ≥3 explicit
+  // values — fewer than that and a single short outlier (e.g. only the
+  // truncated last interval has duration set) would erroneously become the
+  // reference, with the cutoff sitting just below it and excluding nothing.
+  const medianOf = (arr, minCount = 3) => {
+    const vals = arr.filter(v => Number.isFinite(v) && v > 0);
+    if (vals.length < minCount) return 0;
+    const s = [...vals].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  };
+  const testStageSec  = Number(mockData?.stageDurationSec);
+  const testStageDist = Number(mockData?.stageDistance);
+  const refDuration   = Number.isFinite(testStageSec) && testStageSec > 0
+    ? testStageSec
+    : medianOf(results.map(r => Number(r?.duration)));
+  const refDistance   = Number.isFinite(testStageDist) && testStageDist > 0
+    ? testStageDist
+    : medianOf(results.map(r => Number(r?.distanceMeters)));
+  const shortStageCutoffSec  = refDuration > 0 ? refDuration * 0.6 : 0;
+  const shortStageCutoffDist = refDistance > 0 ? refDistance * 0.6 : 0;
+
   // First, filter out only truly invalid results (empty, missing, zero values)
   // Keep all valid numeric values for display, even if they might be filtered later for calculations.
   // Rows the user marked as `intervalType === 'recovery'` are post-test samples
@@ -1212,6 +1244,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const allResultsForDisplay = results.filter(r => {
     if (!r) return false;
     if (r.intervalType === 'recovery') return false;
+    // Stages markedly shorter than the protocol's typical stage haven't
+    // reached the same steady-state lactate — exclude. We check duration
+    // AND distance independently because a swim might log only distance.
+    // When the row's value is not set OR no reference exists, this is a
+    // no-op (the row is kept).
+    const rowDur = Number(r.duration);
+    if (Number.isFinite(rowDur) && rowDur > 0 && shortStageCutoffSec > 0 && rowDur < shortStageCutoffSec) {
+      return false;
+    }
+    const rowDist = Number(r.distanceMeters);
+    if (Number.isFinite(rowDist) && rowDist > 0 && shortStageCutoffDist > 0 && rowDist < shortStageCutoffDist) {
+      return false;
+    }
     const powerStr = r.power?.toString().trim();
     const lactateStr = r.lactate?.toString().trim();
     if (!powerStr || powerStr === '' || powerStr === '0' ||

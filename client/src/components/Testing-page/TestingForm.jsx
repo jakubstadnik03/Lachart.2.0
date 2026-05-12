@@ -252,6 +252,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     recoveryHR3min: testData?.recoveryHR3min ?? '',
     recoveryLactate3min: testData?.recoveryLactate3min ?? '',
     stageDurationSec: testData?.stageDurationSec ?? '',
+    stageDistance: testData?.stageDistance ?? '',
     restBetweenStagesSec: testData?.restBetweenStagesSec ?? '',
   });
 
@@ -592,12 +593,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const resultsSignature = JSON.stringify(
         (testData.results || []).map(row => ({
           interval: row.interval,
+          duration: row.duration,
+          distanceMeters: row.distanceMeters,
           power: row.power,
           heartRate: row.heartRate,
           lactate: row.lactate,
           glucose: row.glucose,
           vo2: row.vo2,
-          RPE: row.RPE
+          RPE: row.RPE,
+          intervalType: row.intervalType,
         }))
       );
 
@@ -633,8 +637,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           }
           }
           
+          // Duration is stored as seconds in the DB; render as MM:SS in the
+          // form. Empty string means "use the test-level stageDurationSec".
+          let durationStr = '';
+          if (row.duration !== undefined && row.duration !== null && row.duration !== '') {
+            const n = Number(row.duration);
+            if (Number.isFinite(n) && n > 0) {
+              const m = Math.floor(n / 60);
+              const s = Math.round(n % 60);
+              durationStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            } else if (typeof row.duration === 'string') {
+              durationStr = row.duration;
+            }
+          }
           return {
             interval: row.interval || 1,
+            duration: durationStr,
+            distanceMeters: row.distanceMeters !== undefined && row.distanceMeters !== null && row.distanceMeters !== ''
+              ? String(row.distanceMeters) : '',
             power,
             heartRate: row.heartRate ? String(row.heartRate) : '',
             lactate: row.lactate ? String(row.lactate) : '',
@@ -651,6 +671,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       } else {
         setRows([{
           interval: 1,
+          duration: '',
+          distanceMeters: '',
           power: '',
           heartRate: '',
           lactate: '',
@@ -769,7 +791,21 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
             return parseFloat(value.replace(',', '.'));
           };
-          
+
+          // Per-row stage duration: accept MM:SS string from the input, or
+          // already-numeric seconds. Empty means "use the test-level default".
+          let durationSec = null;
+          if (row.duration !== undefined && row.duration !== null && String(row.duration).trim() !== '') {
+            const s = String(row.duration).trim();
+            const mmss = s.match(/^(\d+):(\d{1,2})$/);
+            if (mmss) {
+              durationSec = Number(mmss[1]) * 60 + Number(mmss[2]);
+            } else {
+              const n = Number(s.replace(',', '.'));
+              if (Number.isFinite(n) && n > 0) durationSec = Math.round(n);
+            }
+          }
+
           return {
             interval: index + 1,
             power: powerInSeconds,
@@ -777,7 +813,16 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             lactate: convertToNumber(row.lactate),
             glucose: convertToNumber(row.glucose),
             vo2: convertToNumber(row.vo2),
-            RPE: convertToNumber(row.RPE)
+            RPE: convertToNumber(row.RPE),
+            // Preserve recovery flag + per-row stage duration / distance so
+            // the curve calculator can exclude recovery samples and short
+            // stages. Both fields are optional — if neither is set the row is
+            // treated as "default-length" and never penalized.
+            intervalType: row.intervalType === 'recovery' ? 'recovery' : 'work',
+            ...(durationSec != null ? { duration: durationSec } : {}),
+            ...(row.distanceMeters !== undefined && row.distanceMeters !== null && String(row.distanceMeters).trim() !== ''
+              ? { distanceMeters: convertToNumber(row.distanceMeters) }
+              : {}),
           };
         })
         .filter(row => {
@@ -953,6 +998,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const handleAddRow = () => {
     const newRow = {
       interval: rows.length + 1,
+      duration: '',
+      distanceMeters: '',
       power: '',
       heartRate: '',
       lactate: '',
@@ -984,6 +1031,22 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     steps: 8,
     stageDurationSec: 180,
   });
+
+  // Whether the Dur column captures stage *duration* (MM:SS) or *distance*
+  // (meters). Swim tests are often distance-based (100m, 200m, 400m), so we
+  // default to distance for swim. Pulled from testData.stageMeasureMode so
+  // the choice is remembered across re-opens.
+  const [stageMeasureMode, setStageMeasureMode] = useState(() => {
+    if (testData?.stageMeasureMode === 'distance' || testData?.stageMeasureMode === 'duration') {
+      return testData.stageMeasureMode;
+    }
+    return (testData?.sport === 'swim' || formData?.sport === 'swim') ? 'distance' : 'duration';
+  });
+  const isDistanceMode = stageMeasureMode === 'distance';
+  const stageColumnLabel = isDistanceMode ? 'Dist' : 'Dur';
+  const stageColumnTooltip = isDistanceMode
+    ? 'Distance of this stage in meters. Leave blank to use the test-level default. Shorter stages are excluded from the curve so they don\'t pull the regression.'
+    : 'Duration of this stage (MM:SS). Leave blank to use the test-level stage duration. Shorter stages are excluded from the curve so they don\'t pull the regression.';
 
   const formatPaceSeconds = (totalSec) => {
     const s = Math.max(0, Math.round(Number(totalSec) || 0));
@@ -1020,10 +1083,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       addNotification('Fill in start, increment and step count first.', 'warning');
       return;
     }
+    const stageSec = Number(stepWizard.stageDurationSec) || 0;
+    const defaultDur = stageSec > 0 ? formatPaceSeconds(stageSec) : '';
     const generated = Array.from({ length: stepsN }, (_, i) => {
       const v = startN + incN * i;
       return {
         interval: i + 1,
+        // Pre-fill duration so users see the protocol the wizard set up. Last
+        // row can be edited to a shorter value if the test was truncated.
+        duration: defaultDur,
         power: isPace ? formatPaceSeconds(v) : String(Math.round(v)),
         heartRate: '',
         lactate: '',
@@ -1667,6 +1735,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               />
             </div>
             <div className="min-w-0">
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Stage distance</label>
+              <input
+                type="number"
+                min={25}
+                max={5000}
+                step={25}
+                value={formData.stageDistance ?? ''}
+                onChange={(e) => handleFormDataChange('stageDistance', e.target.value)}
+                className="w-full p-1 border rounded-lg text-sm"
+                placeholder="meters"
+              />
+            </div>
+            <div className="min-w-0">
               <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Rest between</label>
               <input
                 type="number"
@@ -1687,13 +1768,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Data Table */}
       <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {(() => {
-            // Calculate columns: Int + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
+            // Calculate columns: Int + Dur + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly
-            // Header structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
-            // Row structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
-            
+            // Header structure: Int | Dur | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+            // Row structure:    Int | Dur | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+
             // Count flexible columns (all except Int and Del which are fixed)
             let flexibleColCount = 0;
+            flexibleColCount += 1; // Duration (MM:SS) — last interval may be shorter
             flexibleColCount += 1; // Power/Pace
             flexibleColCount += 1; // HR
             flexibleColCount += 1; // La
@@ -1721,16 +1803,87 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 <div className="w-full min-w-0 max-w-full flex-shrink-0 overflow-x-hidden touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
                   <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0" style={{ gridTemplateColumns }}>
                     <div className="text-center min-w-0 truncate">Int.</div>
-                    <div className="text-center min-w-0 truncate">
-                      {formData.sport === 'bike' ? 'Power' :
-                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'Pace' :
-                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? 'Speed' : 'Power'}
-                    </div>
+                    {(isNewTest || isEditMode) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = isDistanceMode ? 'duration' : 'distance';
+                          setStageMeasureMode(next);
+                          // Persist on the test so it's remembered on reopen.
+                          onTestDataChange({ ...testData, ...formData, stageMeasureMode: next, results: rows });
+                        }}
+                        className="mx-auto px-1 py-0.5 rounded-md text-[10px] font-bold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors flex items-center gap-0.5"
+                        title={`${stageColumnTooltip}\n\nClick to switch to ${isDistanceMode ? 'duration (MM:SS)' : 'distance (meters)'}.`}
+                      >
+                        {stageColumnLabel}
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M7 10l5-5 5 5M7 14l5 5 5-5" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <div className="text-center min-w-0 truncate" title={stageColumnTooltip}>{stageColumnLabel}</div>
+                    )}
+                    {/* Power / Pace / Speed — clickable toggle for run/swim
+                        between pace (MM:SS/km or /100m) and speed (km/h or
+                        mph). Bike is always "Power" — no toggle. */}
+                    {(() => {
+                      const isPaceSport = formData.sport === 'run' || formData.sport === 'swim';
+                      const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+                      const label = formData.sport === 'bike'
+                        ? 'Power'
+                        : inputMode === 'speed' ? 'Speed' : 'Pace';
+                      const togglable = isPaceSport && (isNewTest || isEditMode);
+                      if (!togglable) {
+                        return <div className="text-center min-w-0 truncate">{label}</div>;
+                      }
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = inputMode === 'pace' ? 'speed' : 'pace';
+                            setInputMode(next);
+                            onTestDataChange({ ...testData, ...formData, inputMode: next, results: rows });
+                          }}
+                          className="mx-auto px-1 py-0.5 rounded-md text-[10px] font-bold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors flex items-center gap-0.5"
+                          title={`Currently showing ${label} (${inputMode === 'speed' ? speedUnit : 'MM:SS'}). Click to switch to ${inputMode === 'pace' ? `speed (${speedUnit})` : 'pace (MM:SS)'}.`}
+                        >
+                          {label}
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 10l5-5 5 5M7 14l5 5 5-5" />
+                          </svg>
+                        </button>
+                      );
+                    })()}
                     <div className="text-center min-w-0 truncate">HR</div>
                     <div className="text-center min-w-0 truncate">La</div>
                     {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 truncate">Glu</div>}
                     {(hasVO2Data || showVO2) && <div className="text-center min-w-0 truncate">VO₂</div>}
-                    {(hasRPEData || true) && <div className="text-center min-w-0 truncate">RPE</div>}
+                    {/* RPE / Borg toggle — RPE is 1–10, Borg is 6–20. Persisted
+                        on the test via testData.rpeScale so reopening keeps
+                        the chosen scale. */}
+                    {(hasRPEData || true) && (
+                      (isNewTest || isEditMode) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = rpeScale === 'rpe' ? 'borg' : 'rpe';
+                            setRpeScale(next);
+                            onTestDataChange({ ...testData, ...formData, rpeScale: next, results: rows });
+                          }}
+                          className="mx-auto px-1 py-0.5 rounded-md text-[10px] font-bold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors flex items-center gap-0.5"
+                          title={`Currently using ${rpeScale === 'borg' ? 'Borg (6–20)' : 'RPE (1–10)'} scale. Click to switch.`}
+                        >
+                          {rpeScale === 'borg' ? 'Borg' : 'RPE'}
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 10l5-5 5 5M7 14l5 5 5-5" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <div className="text-center min-w-0 truncate">
+                          {rpeScale === 'borg' ? 'Borg' : 'RPE'}
+                        </div>
+                      )
+                    )}
                     {(isNewTest || isEditMode) && <div className="text-center min-w-0 truncate">Del</div>}
                   </div>
                 </div>
@@ -1762,6 +1915,23 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                           {isRecovery ? 'R' : index + 1}
                         </div>
                       )}
+                      {/* Per-row stage duration (MM:SS) OR distance (meters)
+                          depending on the column toggle in the header.
+                          Placeholder falls back to the test-level default; if
+                          neither is set the placeholder is just the format
+                          hint, and the row is treated as "unspecified" by the
+                          curve calc (no penalty applied). */}
+                      {isDistanceMode
+                        ? renderInput(index, 'distanceMeters', row.distanceMeters,
+                            formData.stageDurationSec || formData.stageDistance
+                              ? String(formData.stageDistance || '')
+                              : 'm'
+                          )
+                        : renderInput(index, 'duration', row.duration,
+                            formData.stageDurationSec
+                              ? formatPaceSeconds(formData.stageDurationSec)
+                              : 'MM:SS'
+                          )}
                       {renderInput(index, 'power', row.power,
                         formData.sport === 'bike' ? 'W' :
                         (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'MM:SS' :

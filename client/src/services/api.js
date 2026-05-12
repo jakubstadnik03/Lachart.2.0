@@ -346,6 +346,32 @@ export const getTestingsByAthleteId = async (athleteId) => {
   }
 };
 
+// ── Critical Power (CP) tests ───────────────────────────────────────────────
+// Trainer-facing comparison tool — sustained max-effort durations vs power
+// give CP/W'. Stored alongside lactate tests; the UI lets coaches compare
+// CP against LT2 from the same athlete's most recent lactate test.
+export const getCPTestsByAthleteId = async (athleteId) => {
+  const { data } = await api.get(`/api/cp-test/athlete/${athleteId}`);
+  return data;
+};
+export const getCPTest    = (id)               => api.get(`/api/cp-test/${id}`).then(r => r.data);
+export const addCPTest    = (test)             => api.post('/api/cp-test', test).then(r => r.data);
+export const updateCPTest = (id, test)         => api.put(`/api/cp-test/${id}`, test).then(r => r.data);
+export const deleteCPTest = (id)               => api.delete(`/api/cp-test/${id}`).then(r => r.data);
+export const getCPStravaBestEfforts = (athleteId, sport, durations, days = 180) =>
+  api.get(`/api/cp-test/strava-best-efforts/${athleteId}`, {
+    params: { sport, durations: durations.join(','), days },
+  }).then(r => r.data);
+
+// ── VLamax (sprint test for maximum lactate production rate) ────────────────
+export const getVLamaxTestsByAthleteId = async (athleteId) => {
+  const { data } = await api.get(`/api/vlamax-test/athlete/${athleteId}`);
+  return data;
+};
+export const addVLamaxTest    = (test)     => api.post('/api/vlamax-test', test).then(r => r.data);
+export const updateVLamaxTest = (id, test) => api.put(`/api/vlamax-test/${id}`, test).then(r => r.data);
+export const deleteVLamaxTest = (id)       => api.delete(`/api/vlamax-test/${id}`).then(r => r.data);
+
 // Interceptor pro zpracování chyb a tracking
 api.interceptors.response.use(
   (response) => {
