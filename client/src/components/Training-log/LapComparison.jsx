@@ -139,7 +139,7 @@ function fmtLapDistance(m) {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 2)} km`;
 }
 
-function LapBars({ laps, sport, metric, color }) {
+function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
   const [hover, setHover] = useState(null); // { idx, x, y }
   const wrapperRef = useRef(null);
 
@@ -156,11 +156,13 @@ function LapBars({ laps, sport, metric, color }) {
   const totalDur  = items.reduce((s, x) => s + (x.dur  || 0), 0);
   const useDist   = totalDist > 0;
 
-  // For pace, lower=better → tallest bar = lowest value. Invert.
+  // Use the global (cross-session) scale when provided so bars across cards
+  // share a y-axis and a slow lap visibly looks slow next to a fast one.
+  // Fall back to per-card min/max for standalone use.
   const vals = items.map(x => x.val).filter(v => v != null && v > 0);
   if (vals.length === 0) return null;
-  const minV = Math.min(...vals);
-  const maxV = Math.max(...vals);
+  const minV = scaleMin != null ? scaleMin : Math.min(...vals);
+  const maxV = scaleMax != null ? scaleMax : Math.max(...vals);
   const span = Math.max(maxV - minV, 1);
   const isPaceLike = metric === 'pace';
 
@@ -667,9 +669,24 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
 
                 {/* Per-session lap bars — full session info + clickable to
                     open the activity. Matches the Dashboard Training History
-                    bar style (140px tall, proportional widths, lactate amber). */}
-                <div className="mb-4 space-y-3">
-                  {series.map((s) => {
+                    bar style (140px tall, proportional widths, lactate amber).
+                    Y-axis scale is shared across all selected sessions so
+                    differences between same-workout repeats are visible. */}
+                <div className="mb-4 space-y-3">{(() => {
+                  // Pre-compute shared min/max across every selected session.
+                  const allVals = [];
+                  series.forEach((s) => {
+                    const id = getSessionId(s.session);
+                    const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
+                    const laps = filterWork ? filterWorkLaps(raw) : raw;
+                    laps.forEach(l => {
+                      const v = getLapValue(l, metric, s.session.sport || sport);
+                      if (v != null && v > 0) allVals.push(v);
+                    });
+                  });
+                  const sharedMin = allVals.length ? Math.min(...allVals) : null;
+                  const sharedMax = allVals.length ? Math.max(...allVals) : null;
+                  return series.map((s) => {
                     const id = getSessionId(s.session);
                     const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
                     const laps = filterWork ? filterWorkLaps(raw) : raw;
@@ -719,12 +736,12 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
 
                         {/* Bars */}
                         <div onClick={(e) => e.stopPropagation()}>
-                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} />
+                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} scaleMin={sharedMin} scaleMax={sharedMax} />
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  });
+                })()}</div>
 
                 <div className="w-full overflow-x-auto">
                   <div style={{ minWidth: Math.max(300, chartData.length * 52), height: 220 }}>
