@@ -1098,7 +1098,7 @@ export default function DashboardPage() {
         }
       }
     }
-  }, [selectedSport, recentTrainings, selectedTitle]);
+  }, [selectedSport, recentTrainings, selectedTitle, trainings]);
 
   // Reset initialization flag whenever the viewed athlete changes so the banner
   // doesn't flash while the new athlete's data is still being fetched.
