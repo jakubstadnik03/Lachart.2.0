@@ -370,22 +370,76 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
         const data = await getFitTraining(session._id);
         laps = Array.isArray(data?.laps) ? data.laps : [];
       } else if (Array.isArray(session.results) && session.results.length > 0) {
-        // Manual training — convert results to lap shape
-        laps = session.results.map(r => ({
-          elapsed_time: (() => {
-            if (r.durationSeconds > 0) return r.durationSeconds;
-            if (typeof r.duration === 'number') return r.duration;
-            if (typeof r.duration === 'string') {
-              const p = r.duration.split(':');
-              if (p.length === 2) return +p[0] * 60 + +p[1];
-              if (p.length === 3) return +p[0] * 3600 + +p[1] * 60 + +p[2];
+        // Manual training — convert each result to the lap shape that
+        // getLapValue() expects. The tricky part is that for run/swim the
+        // `power` field stores pace seconds (sec/km or sec/100m), and
+        // `duration` may store *distance* (km or m) when durationType is
+        // 'distance'. Normalize to: distance in meters, elapsed_time in
+        // seconds, average_speed in m/s, average_watts only for bike.
+        const sportStr = String(session.sport || '').toLowerCase();
+        const isSwim   = sportStr.includes('swim');
+        const isRun    = sportStr.includes('run') || sportStr.includes('walk') || sportStr.includes('hike');
+        const isBike   = sportStr.includes('ride') || sportStr.includes('cycle') || sportStr.includes('bike');
+        const parseMaybeTime = (v) => {
+          if (v == null || v === '') return 0;
+          if (typeof v === 'number') return v;
+          if (typeof v === 'string') {
+            const s = v.trim();
+            if (s.includes(':')) {
+              const p = s.split(':').map(Number);
+              if (p.length === 2) return p[0] * 60 + (p[1] || 0);
+              if (p.length === 3) return p[0] * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
             }
-            return 0;
-          })(),
-          distance: Number(r.distanceMeters || r.distance || 0),
-          average_heartrate: Number(r.heartRate || 0),
-          average_watts: Number(r.power || 0),
-        }));
+            const n = Number(s);
+            return isNaN(n) ? 0 : n;
+          }
+          return 0;
+        };
+        const parseDistMeters = (v) => {
+          if (v == null || v === '') return 0;
+          if (typeof v === 'number') return v >= 50 && Number.isInteger(v) ? v : v * 1000;
+          if (typeof v === 'string') {
+            const s = v.trim().toLowerCase();
+            const km = s.match(/^([\d.]+)\s*km$/); if (km) return parseFloat(km[1]) * 1000;
+            const m  = s.match(/^([\d.]+)\s*m$/);  if (m)  return parseFloat(m[1]);
+            const n = parseFloat(s);
+            if (isNaN(n)) return 0;
+            return n >= 50 && Number.isInteger(n) ? n : n * 1000;
+          }
+          return 0;
+        };
+
+        laps = session.results.map(r => {
+          // Distance in meters
+          let distM = Number(r.distanceMeters || 0);
+          if (!distM && r.durationType === 'distance') distM = parseDistMeters(r.duration);
+          if (!distM && r.distance) distM = parseDistMeters(r.distance);
+
+          // Pace in seconds (per km for run, per 100m for swim) lives in `power`
+          const paceSec = (isRun || isSwim) ? parseMaybeTime(r.power) : 0;
+
+          // Elapsed time
+          let elapsed = Number(r.durationSeconds || 0);
+          if (!elapsed && r.durationType !== 'distance') elapsed = parseMaybeTime(r.duration);
+          if (!elapsed && paceSec > 0 && distM > 0) {
+            elapsed = isSwim ? paceSec * (distM / 100) : paceSec * (distM / 1000);
+          }
+
+          // average_speed (m/s) — let getLapValue fall through to it
+          let avgSpeed = 0;
+          if (paceSec > 0) avgSpeed = isSwim ? (100 / paceSec) : (1000 / paceSec);
+          else if (elapsed > 0 && distM > 0) avgSpeed = distM / elapsed;
+
+          return {
+            elapsed_time: elapsed,
+            distance: distM,
+            average_heartrate: Number(r.heartRate || 0),
+            average_watts: isBike ? Number(r.power || 0) : 0,
+            average_speed: avgSpeed,
+            lactate: r.lactate != null ? Number(r.lactate) : null,
+            lapNumber: r.interval,
+          };
+        });
       }
       setLapsCache(prev => ({ ...prev, [id]: laps }));
     } catch {
