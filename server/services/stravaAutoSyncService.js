@@ -79,10 +79,17 @@ async function syncStravaForUser(user) {
       return { imported: 0, updated: 0, error: 'Invalid Strava token' };
     }
     
-    // Use lastSyncDate if available, otherwise sync last 7 days
+    // Use lastSyncDate if available, otherwise sync last 7 days.
+    // IMPORTANT: subtract a 48h overlap window so we re-check the recent
+    // past on every sync. Without overlap, any activity that arrives at
+    // Strava after our last sync timestamp (delayed upload from a bike
+    // computer, failed webhook + retry, clock skew) falls into a dead zone
+    // and is never imported. The dedup unique index on (userId, stravaId)
+    // makes the overlap free of side effects.
     let since = null;
     if (user.strava?.lastSyncDate) {
-      since = user.strava.lastSyncDate;
+      const overlapMs = 48 * 60 * 60 * 1000; // 48 hours
+      since = new Date(new Date(user.strava.lastSyncDate).getTime() - overlapMs);
     } else {
       // First time sync - only get last 7 days to avoid long sync
       const sevenDaysAgo = new Date();
@@ -97,16 +104,22 @@ async function syncStravaForUser(user) {
     // For first-time syncs we allow more pages to back-fill history.
     const isFirstSync = !user.strava?.lastSyncDate;
     const maxPages = isFirstSync ? 10 : 3;
-    
+
     const params = { per_page };
     if (since) {
       params.after = new Date(since).getTime() / 1000;
     }
-    
+
     const delayBetweenRequests = 2000; // 2 seconds between requests
-    
+
+    // Track whether we drained the window cleanly. We only advance
+    // lastSyncDate on a clean run — a 429/network error must NOT advance
+    // it, otherwise the missed page's activities are permanently lost.
+    let cleanRun = true;
+    let newestStartDate = null;
+
     console.log(`[StravaAutoSync] Starting sync for user ${user._id}, since: ${since}`);
-    
+
     while (page <= maxPages) {
       try {
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
@@ -152,8 +165,16 @@ async function syncStravaForUser(user) {
               imported += 1;
               importedActivityIds.push(a.id);
             } else if (resUp.modifiedCount > 0) updated += 1;
+
+            // Track the newest start_date we saw so lastSyncDate can be
+            // advanced to it (not to wall-clock now()).
+            const startMs = doc.startDate?.getTime?.();
+            if (startMs && (!newestStartDate || startMs > newestStartDate)) {
+              newestStartDate = startMs;
+            }
           } catch (dbErr) {
             console.error(`[StravaAutoSync] Error saving activity ${a.id}:`, dbErr.message);
+            cleanRun = false;
           }
         }
         
@@ -168,6 +189,7 @@ async function syncStravaForUser(user) {
       } catch (pageErr) {
         if (pageErr.response?.status === 429) {
           console.log('[StravaAutoSync] Rate limit hit during sync, stopping');
+          cleanRun = false;
           break;
         }
         if (pageErr.response?.status === 401) {
@@ -190,14 +212,36 @@ async function syncStravaForUser(user) {
         }
         // For other errors, log and continue (don't crash)
         console.error(`[StravaAutoSync] Error fetching page ${page} for user ${user._id}:`, pageErr.message);
+        cleanRun = false;
         break; // Stop sync on other errors
       }
     }
-    
-    // Always update lastSyncDate so next run doesn't re-fetch the same window
-    await User.findByIdAndUpdate(user._id, {
-      'strava.lastSyncDate': new Date()
-    });
+
+    // Only advance lastSyncDate when:
+    //   (a) the loop finished without a rate-limit / network error, AND
+    //   (b) we have a real anchor (newest activity's start_date OR, if
+    //       there was nothing new, the previous lastSyncDate stays put
+    //       except we lift the floor to "now - 48h overlap" to avoid
+    //       re-scanning the same week forever).
+    // This stops the historical bug where a transient error bumped
+    // lastSyncDate=now() and silently swallowed the activities in the
+    // failed page.
+    if (cleanRun) {
+      let newAnchor;
+      if (newestStartDate) {
+        newAnchor = new Date(newestStartDate);
+      } else {
+        // No new activities — just bump to now() so we don't keep
+        // re-fetching the same window every tick. Safe because cleanRun
+        // means we already saw every page.
+        newAnchor = new Date();
+      }
+      await User.findByIdAndUpdate(user._id, {
+        'strava.lastSyncDate': newAnchor
+      });
+    } else {
+      console.log(`[StravaAutoSync] Skipping lastSyncDate bump for user ${user._id} (partial run)`);
+    }
     
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
 

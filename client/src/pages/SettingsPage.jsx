@@ -821,7 +821,16 @@ const SettingsPage = () => {
     if (isSyncingStrava) return;
     try {
       setIsSyncingStrava(true);
-      const res = await syncStravaActivities(user?.strava?.lastSyncDate || null);
+      // Use a 7-day overlap window so the manual sync always re-checks recent
+      // activities. Sending the raw lastSyncDate caused a chicken-and-egg bug:
+      // auto-sync bumps lastSyncDate=now(), then manual sync asked Strava for
+      // activities "after now" and got nothing — so a missed ride could never
+      // be recovered by hitting "Sync Now". Overlap also catches rides that
+      // were uploaded with delay (e.g. saved offline on the bike computer).
+      const overlapMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+      const lastSync = user?.strava?.lastSyncDate ? new Date(user.strava.lastSyncDate).getTime() : null;
+      const sinceParam = lastSync ? new Date(lastSync - overlapMs) : null;
+      const res = await syncStravaActivities(sinceParam);
       if (res?.status === 'in_progress') {
         addNotification('Strava sync is already running in background. Please wait a moment.', 'info');
         return;
