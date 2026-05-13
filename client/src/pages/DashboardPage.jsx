@@ -283,18 +283,32 @@ export default function DashboardPage() {
 
   // Subset for "Training History" / TrainingGraph — only the user-curated
   // Training-collection records (manual entries + Strava/FIT activities the
-  // user explicitly exported via Add Lactate). Raw Strava/FIT imports are
-  // hidden so the title dropdown matches the Training page comparison views.
+  // user explicitly exported via Add Lactate). Filter is intentionally
+  // identical to TrainingPage's filteredTrainings so both pages show the
+  // same dropdown.
+  //
+  // Important: apply the filter to the FULL `trainings` array (not
+  // recentTrainings, which is capped at 40 raw-imports-included). Then sort
+  // by date and cap. Otherwise a flood of recent Strava imports could
+  // squeeze older exported records out of the 40-item window before the
+  // filter even ran.
   const exportedTrainings = React.useMemo(() => {
-    return recentTrainings.filter(t => {
-      if (!t) return false;
-      const idStr = String(t.id || '');
-      if (t.source === 'strava' || t.source === 'fit') return false;
-      if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
-      if (t.stravaId && !t._id) return false; // unconverted Strava import
-      return !!t._id || !t.source;
-    });
-  }, [recentTrainings]);
+    if (!trainings || trainings.length === 0) return [];
+    return [...trainings]
+      .filter(t => {
+        if (!t) return false;
+        if (t.source === 'strava' || t.source === 'fit') return false;
+        const idStr = String(t.id || '');
+        if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+        return !!t._id || !t.source;
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.date || a.startDate || a.timestamp || 0);
+        const dateB = new Date(b.date || b.startDate || b.timestamp || 0);
+        return dateB - dateA;
+      })
+      .slice(0, MAX_DASHBOARD_TRAININGS);
+  }, [trainings]);
 
   // Load athlete trainings with localStorage caching (shared with TrainingPage).
   // Also sets regularTrainings state so loadCalendarData can be called without
