@@ -50,23 +50,46 @@ export default function TrainingPage() {
   // Listen for activity title renames (from CalendarView / ActivityFullModal)
   // and patch local trainings so charts/lists re-render without refetch.
   useEffect(() => {
+    // Patch any cached training payloads (10-min TTL) so changes survive
+    // a page reload, not just the current in-memory state.
+    const cachePatch = (matcher, patcher) => {
+      try {
+        Object.keys(localStorage).forEach(key => {
+          if (!key.startsWith('athleteTrainings_v3_')) return;
+          const raw = localStorage.getItem(key);
+          if (!raw) return;
+          try {
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) return;
+            let changed = false;
+            const next = arr.map(t => { if (matcher(t)) { changed = true; return patcher(t); } return t; });
+            if (changed) localStorage.setItem(key, JSON.stringify(next));
+          } catch { /* ignore */ }
+        });
+      } catch { /* ignore */ }
+    };
+    const buildMatcher = (id) => {
+      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
+      return (t) => String(t._id) === rawId || String(t.id) === rawId
+                 || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
+                 || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
+    };
+
     const onTitleUpdated = (e) => {
       const { id, title } = e?.detail || {};
       if (!id || !title) return;
-      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
-      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
-                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
-                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
-      setTrainings(prev => prev.map(t => matches(t) ? { ...t, title, titleManual: title } : t));
+      const matches = buildMatcher(id);
+      const patch = (t) => ({ ...t, title, titleManual: title });
+      setTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
+      cachePatch(matches, patch);
     };
     const onCategoryUpdated = (e) => {
       const { id, category } = e?.detail || {};
       if (!id) return;
-      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
-      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
-                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
-                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
-      setTrainings(prev => prev.map(t => matches(t) ? { ...t, category: category || null } : t));
+      const matches = buildMatcher(id);
+      const patch = (t) => ({ ...t, category: category || null });
+      setTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
+      cachePatch(matches, patch);
     };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
