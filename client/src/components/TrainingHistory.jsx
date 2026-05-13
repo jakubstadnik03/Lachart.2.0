@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthProvider';
 import { resolveDistanceUnitSystem, paceUnit } from '../utils/unitsConverter';
 import { motion } from 'framer-motion';
 import { Line } from 'react-chartjs-2';
-import { getTrainingsByTitle, getTrainingTitles, deleteTraining, updateTraining } from '../services/api';
+import { getTrainingsByTitle, getTrainingTitles, deleteTraining, updateTraining, getTrainingsWithLactate, getStravaActivityDetail } from '../services/api';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import TrainingForm from './TrainingForm';
@@ -64,16 +64,34 @@ const TrainingHistory = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { addNotification } = useNotification();
 
-  // Format duration based on durationType
+  // Format duration based on durationType — when distance, decide m vs km
+  // from the magnitude so a swim lap stored as `200` shows as "200 m" instead
+  // of `03:20` (the old time-only formatter).
   const formatDuration = (duration, durationType) => {
-    if (!duration) return '00:00';
-    
-    // If duration is already a string (like "1 km"), return it as is
+    if (duration == null || duration === '') return '00:00';
+
     if (typeof duration === 'string') {
-      return duration;
+      // Already a formatted string with units (e.g. "200 m", "1.2 km") — pass through
+      if (/[a-z]/i.test(duration)) return duration;
+      // Numeric string — parse and fall through
+      const n = parseFloat(duration);
+      if (isNaN(n)) return duration;
+      duration = n;
     }
-    
-    // If duration is a number, format it as time
+
+    if (durationType === 'distance') {
+      // Heuristic: integers ≥ 50 are meters, smaller decimals are km. A typical
+      // swim lap (50 / 100 / 200 / 400) is stored as a plain integer in meters.
+      const n = Number(duration);
+      if (!isFinite(n) || n <= 0) return '0 m';
+      const isMeters = n >= 50 && Number.isInteger(n);
+      const meters = isMeters ? n : n * 1000;
+      if (meters < 1000) return `${Math.round(meters)} m`;
+      const km = meters / 1000;
+      return `${km % 1 === 0 ? km : km.toFixed(2)} km`;
+    }
+
+    // Time fallback
     const minutes = Math.floor(duration / 60);
     const remainingSeconds = Math.floor(duration % 60);
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
@@ -92,21 +110,124 @@ const TrainingHistory = () => {
       try {
         setLoading(true);
         setError(null);
-        
-        // Use the API function directly
+
         const decodedTitle = decodeURIComponent(title);
-        console.log('Fetching trainings with title:', decodedTitle);
-        
-        const data = await getTrainingsByTitle(decodedTitle);
-        console.log('API response:', data);
-        
-        if (Array.isArray(data) && data.length > 0) {
-          setTrainings(data);
-          // Set the sport from the first training
-          setSelectedSport(data[0].sport);
+
+        // Fetch in parallel: regular trainings by title + FIT exports with
+        // lactate + Strava activities (for the "Lactate" sentinel + title-matched).
+        const [regular, fitLactate, stravaActs] = await Promise.all([
+          getTrainingsByTitle(decodedTitle).catch(() => []),
+          getTrainingsWithLactate().catch(() => []),
+          api.get('/api/integrations/activities').then(r => r.data).catch(() => []),
+        ]);
+
+        const norm = (arr) => Array.isArray(arr) ? arr : (Array.isArray(arr?.trainings) ? arr.trainings : (Array.isArray(arr?.activities) ? arr.activities : []));
+
+        // Adapt FIT trainings → same shape as regular trainings (results / sport / title).
+        const fitToTraining = (t) => {
+          const laps = Array.isArray(t.laps) ? t.laps : [];
+          const sportRaw = String(t.sport || '').toLowerCase();
+          const sport = sportRaw.includes('run') ? 'run'
+                      : sportRaw.includes('swim') ? 'swim'
+                      : sportRaw.includes('cycl') || sportRaw.includes('bike') || sportRaw.includes('ride') ? 'bike'
+                      : sportRaw;
+          const isPace = sport === 'run' || sport === 'swim';
+          return {
+            _id: `fit-${t._id}`,
+            title: t.title || t.titleManual || t.titleAuto || t.originalFileName || decodedTitle,
+            sport,
+            type: 'fit',
+            date: t.date || t.timestamp || t.uploadDate || null,
+            lactate: t.lactate,
+            results: laps.map((lap, i) => {
+              const speedMps = lap.avgSpeed ?? lap.average_speed ?? 0;
+              let power = null;
+              if (isPace && speedMps > 0) {
+                power = sport === 'swim' ? Math.round(100 / speedMps) : Math.round(1000 / speedMps);
+              } else {
+                power = lap.avgPower ?? lap.average_watts ?? null;
+              }
+              return {
+                _id: `${t._id}-lap-${i}`,
+                interval: i + 1,
+                power,
+                heartRate: lap.avgHeartRate ?? lap.average_heartrate ?? null,
+                duration: lap.totalDistance ?? lap.distance ?? lap.totalElapsedTime ?? lap.totalTimerTime ?? 0,
+                durationType: (lap.totalDistance ?? lap.distance) ? 'distance' : 'time',
+                lactate: lap.lactate ?? null,
+                RPE: null,
+              };
+            }),
+          };
+        };
+
+        // Adapt Strava activity → training shape. Lazy-fetch laps only for those
+        // matching the title (otherwise list would explode in size).
+        const stravaToTraining = async (a) => {
+          const sportRaw = String(a.sport || a.sport_type || a.type || '').toLowerCase();
+          const sport = sportRaw.includes('run') ? 'run'
+                      : sportRaw.includes('swim') ? 'swim'
+                      : sportRaw.includes('cycl') || sportRaw.includes('bike') || sportRaw.includes('ride') ? 'bike'
+                      : sportRaw;
+          const isPace = sport === 'run' || sport === 'swim';
+          let laps = [];
+          try {
+            const detail = await getStravaActivityDetail(a.stravaId || a.id);
+            laps = Array.isArray(detail?.laps) ? detail.laps : [];
+          } catch { /* ignore */ }
+          return {
+            _id: `strava-${a.stravaId || a.id}`,
+            title: a.title || a.titleManual || a.name || decodedTitle,
+            sport,
+            type: 'strava',
+            date: a.date || a.startDate || null,
+            lactate: a.lactate,
+            results: laps.map((lap, i) => {
+              const speedMps = lap.average_speed ?? 0;
+              let power = null;
+              if (isPace && speedMps > 0) {
+                power = sport === 'swim' ? Math.round(100 / speedMps) : Math.round(1000 / speedMps);
+              } else {
+                power = lap.average_watts ?? null;
+              }
+              return {
+                _id: `${a.stravaId || a.id}-lap-${i}`,
+                interval: i + 1,
+                power,
+                heartRate: lap.average_heartrate ?? null,
+                duration: lap.distance ?? lap.elapsed_time ?? lap.moving_time ?? 0,
+                durationType: lap.distance ? 'distance' : 'time',
+                lactate: lap.lactate ?? null,
+                RPE: null,
+              };
+            }),
+          };
+        };
+
+        const titleMatches = (t) => String(t.title || t.titleManual || t.name || '').trim() === decodedTitle.trim();
+
+        const fitMatched = norm(fitLactate)
+          .filter(t => titleMatches(t) || hasLactate(t))
+          .map(fitToTraining);
+
+        const stravaMatched = norm(stravaActs).filter(a => titleMatches(a) || (a.lactate != null && Number(a.lactate) > 0));
+        const stravaTrainings = await Promise.all(stravaMatched.map(stravaToTraining));
+
+        // Merge & dedupe by _id, sort newest first.
+        const all = [...norm(regular), ...fitMatched, ...stravaTrainings];
+        const seen = new Set();
+        const merged = all.filter(t => {
+          const key = String(t._id || t.id || '');
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+        if (merged.length > 0) {
+          setTrainings(merged);
+          setSelectedSport(merged[0].sport);
         } else {
-          console.error('API returned non-array data or empty array:', data);
-          setError('Invalid data format received from server');
+          setError('No trainings found for this title');
         }
       } catch (error) {
         console.error('Error fetching trainings:', error);
@@ -114,6 +235,14 @@ const TrainingHistory = () => {
       } finally {
         setLoading(false);
       }
+    };
+
+    const hasLactate = (t) => {
+      if (!t) return false;
+      if (t.lactate != null && Number(t.lactate) > 0) return true;
+      if (Array.isArray(t.results) && t.results.some(r => r?.lactate != null)) return true;
+      if (Array.isArray(t.laps) && t.laps.some(l => l?.lactate != null)) return true;
+      return false;
     };
 
     const fetchAllTrainingTitles = async () => {

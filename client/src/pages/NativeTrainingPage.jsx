@@ -20,7 +20,8 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
-import { addTraining, updateTraining, getStravaActivityDetail } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement } from '../services/api';
+import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -1196,6 +1197,14 @@ export default function NativeTrainingPage({
 }) {
   const navigate = useNavigate();
   const [selectedSport, setSelectedSport] = useState('all');
+  const [showRecordLactate, setShowRecordLactate] = useState(false);
+
+  const handleRecordLactate = async (data) => {
+    await createFieldLactateMeasurement({
+      ...data,
+      athleteId: athleteId || undefined,
+    });
+  };
   const [selectedMetric, setSelectedMetric] = useState('power');
   const [selectedTitle, setSelectedTitle] = useState(null); // workout title to compare
   const [highlightSessionId, setHighlightSessionId] = useState(null);
@@ -1519,6 +1528,21 @@ export default function NativeTrainingPage({
             </div>
           </div>
           <button
+            onClick={() => setShowRecordLactate(true)}
+            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
+            onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+            onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+            onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+            onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+            style={{ ...styles.headerBtn, background: '#f5f3ff', color: '#7c3aed', width: 'auto', borderRadius: 18, padding: '0 12px', gap: 6, fontSize: 12, fontWeight: 700 }}
+            title="Record a new lactate measurement"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+            </svg>
+            <span>Record</span>
+          </button>
+          <button
             onClick={() => navigate('/training?full=1')}
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
             onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
@@ -1533,6 +1557,17 @@ export default function NativeTrainingPage({
             </svg>
           </button>
         </div>
+
+        {/* Record Lactate modal */}
+        {showRecordLactate && ReactDOM.createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
+            <RecordLactateModal
+              onClose={() => setShowRecordLactate(false)}
+              onSave={async (data) => { await handleRecordLactate(data); setShowRecordLactate(false); }}
+            />
+          </div>,
+          document.getElementById('app-modal-root') || document.body
+        )}
 
         <div style={styles.body}>
           {/* Sport filter — fixed: All / Swim / Bike / Run */}
