@@ -1380,15 +1380,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (newTitle && newTitle !== title) {
         try {
           const id = String(merged.id || merged._id || '');
-          if (id.startsWith('strava-')) {
+          // Detect source from multiple signals — bare numeric Strava ids
+          // (no "strava-" prefix) used to fall through to updateTraining and
+          // 500'd because they aren't valid Mongo ObjectIds.
+          const isStrava = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
+          const isFit    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStrava && !merged._id);
+          if (isStrava) {
+            const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
             const { updateStravaActivity } = await import('../../services/api.js');
-            await updateStravaActivity(id.replace('strava-', ''), { title: newTitle });
-          } else if (id.startsWith('fit-')) {
+            await updateStravaActivity(stravaId, { title: newTitle });
+          } else if (isFit) {
+            const fitId = String(merged._id || id.replace(/^fit-/, ''));
             const { updateFitTraining } = await import('../../services/api.js');
-            await updateFitTraining(id.replace('fit-', ''), { titleManual: newTitle });
-          } else if (id) {
+            await updateFitTraining(fitId, { titleManual: newTitle });
+          } else if (merged._id) {
             const { updateTraining } = await import('../../services/api.js');
-            await updateTraining(id.replace('regular-', ''), { title: newTitle });
+            await updateTraining(String(merged._id), { title: newTitle });
           }
           setDetail(prev => ({ ...(prev || {}), titleManual: newTitle, title: newTitle }));
           setCompletedForm(p => ({ ...p, title: newTitle }));
@@ -1431,15 +1438,33 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const value = nextCategory || null;
       // Optimistic local update so the badge re-renders right away.
       setDetail(prev => ({ ...(prev || {}), category: value }));
-      if (id.startsWith('strava-')) {
+
+      // Detect the source from multiple signals — the id alone can be a bare
+      // numeric Strava id (e.g. "18440432318") without the "strava-" prefix,
+      // which previously fell through to updateTraining() and 500'd because
+      // Mongo couldn't ObjectId-cast it.
+      const isStrava = !!merged.stravaId
+        || merged.source === 'strava'
+        || merged.type === 'strava'
+        || id.startsWith('strava-');
+      const isFit = merged.source === 'fit'
+        || merged.type === 'fit'
+        || id.startsWith('fit-')
+        || (!!merged.timestamp && !isStrava && !merged._id);
+
+      if (isStrava) {
+        const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
         const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(id.replace('strava-', ''), { category: value });
-      } else if (id.startsWith('fit-')) {
+        await updateStravaActivity(stravaId, { category: value });
+      } else if (isFit) {
+        const fitId = String(merged._id || id.replace(/^fit-/, ''));
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(id.replace('fit-', ''), { category: value });
-      } else if (id) {
+        await updateFitTraining(fitId, { category: value });
+      } else if (merged._id) {
         const { updateTraining } = await import('../../services/api.js');
-        await updateTraining(id.replace('regular-', ''), { category: value });
+        await updateTraining(String(merged._id), { category: value });
+      } else {
+        return; // nothing to update
       }
       // Let TrainingPage / DashboardPage / FitAnalysisPage refresh their lists
       // so the category badge shows up in calendar cells, dropdowns, etc.
@@ -1460,15 +1485,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (completedForm.rpe !== '') extraFields.rpe = Number(completedForm.rpe) || 0;
       if (completedForm.lactate !== '') extraFields.lactate = Number(completedForm.lactate) || 0;
       const basePayload = { title: completedForm.title, description: completedForm.description };
-      if (id.startsWith('strava-')) {
+      const isStravaC = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
+      const isFitC    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStravaC && !merged._id);
+      if (isStravaC) {
+        const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
         const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(id.replace('strava-', ''), basePayload);
-      } else if (id.startsWith('fit-')) {
+        await updateStravaActivity(stravaId, basePayload);
+      } else if (isFitC) {
+        const fitId = String(merged._id || id.replace(/^fit-/, ''));
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(id.replace('fit-', ''), basePayload);
-      } else if (id.startsWith('regular-') || id) {
+        await updateFitTraining(fitId, basePayload);
+      } else if (merged._id) {
         const { updateTraining } = await import('../../services/api.js');
-        await updateTraining(id.replace('regular-', ''), { ...basePayload, ...extraFields });
+        await updateTraining(String(merged._id), { ...basePayload, ...extraFields });
       }
       setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description, ...extraFields }));
       try {
