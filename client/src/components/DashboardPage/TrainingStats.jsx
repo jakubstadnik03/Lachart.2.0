@@ -631,8 +631,6 @@ export function TrainingStats({
     if (s) acc[s] = (acc[s] || 0) + 1;
     return acc;
   }, {});
-  const hasRunTrainings  = (sportCounts.run  || 0) > 0;
-  const hasSwimTrainings = (sportCounts.swim || 0) > 0;
   const normSelectedSport = normalizeSport(currentSelectedSport);
   // Use the dominant sport of the filtered set; fall back to the dropdown.
   const dominantSport = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || normSelectedSport;
