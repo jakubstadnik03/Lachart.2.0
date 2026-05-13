@@ -4,7 +4,8 @@ import {
   Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChartBarIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail, getFitTraining } from '../../services/api';
 import { SearchableSelect } from '../SearchableSelect';
 import { useCategories } from '../../context/CategoryContext';
@@ -176,7 +177,7 @@ function LapBars({ laps, sport, metric, color }) {
 
   return (
     <div className="relative">
-      <div ref={wrapperRef} className="flex items-end gap-[2px] w-full" style={{ height: 64 }}
+      <div ref={wrapperRef} className="flex items-end gap-[2px] w-full" style={{ height: 140 }}
         onMouseLeave={() => setHover(null)}>
         {items.map((x, idx) => {
           const share = totalForShares > 0
@@ -189,6 +190,7 @@ function LapBars({ laps, sport, metric, color }) {
           const rank = rankByIdx.get(idx) ?? idx;
           const palette = x.lactate != null ? LACTATE_PALETTE : VIOLET_PALETTE;
           const bg = palette[Math.min(rank, palette.length - 1)] || color;
+          const isHovered = hover && hover.idx === idx;
           return (
             <div
               key={idx}
@@ -201,11 +203,12 @@ function LapBars({ laps, sport, metric, color }) {
               }}
             >
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-opacity"
+                className="absolute bottom-0 left-0 right-0 rounded-t-md transition-opacity"
                 style={{
                   height: `${Math.max(h * 100, 4)}%`,
                   backgroundColor: bg,
-                  opacity: hover && hover.idx === idx ? 1 : 0.78,
+                  opacity: isHovered ? 1 : 0.85,
+                  boxShadow: isHovered ? `0 0 0 1.5px ${bg}, 0 4px 12px ${bg}55` : undefined,
                 }}
               />
             </div>
@@ -249,6 +252,28 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
     [rawTrainings]
   );
   const { categories } = useCategories();
+  const navigate = useNavigate();
+
+  // Open the full activity modal (training-calendar route resolves to
+  // ActivityFullModal for any id prefix — strava-, fit-, regular-, training-).
+  const navigateToSession = useCallback((session) => {
+    if (!session) return;
+    const sid = String(session.id || session._id || '');
+    let target;
+    if (session.type === 'strava' || session.source === 'strava' || session.stravaId) {
+      target = `strava-${session.stravaId || session.id || sid.replace(/^strava-/, '')}`;
+    } else if (session.type === 'fit' || session.source === 'fit') {
+      target = `fit-${session._id || sid.replace(/^fit-/, '')}`;
+    } else if (sid.startsWith('strava-') || sid.startsWith('fit-') || sid.startsWith('regular-') || sid.startsWith('training-')) {
+      target = sid;
+    } else if (session._id) {
+      target = `regular-${session._id}`;
+    } else {
+      return;
+    }
+    navigate(`/training-calendar/${encodeURIComponent(target)}`);
+  }, [navigate]);
+
   const [localTitle, setLocalTitle]       = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedIds, setSelectedIds]   = useState([]);
@@ -586,25 +611,62 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                   {isAnyLoading && <span className="text-[11px] text-gray-400 animate-pulse">Loading…</span>}
                 </div>
 
-                {/* Per-session lap bars — width = lap duration/distance share,
-                    height = metric value, color = lactate amber if measured */}
-                <div className="mb-4 space-y-2">
+                {/* Per-session lap bars — full session info + clickable to
+                    open the activity. Matches the Dashboard Training History
+                    bar style (140px tall, proportional widths, lactate amber). */}
+                <div className="mb-4 space-y-3">
                   {series.map((s) => {
                     const id = getSessionId(s.session);
                     const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
                     const laps = filterWork ? filterWorkLaps(raw) : raw;
                     if (laps.length === 0) return null;
+
+                    // Aggregate session totals from the laps shown.
+                    const totalDist = laps.reduce((sum, l) => sum + Number(l.distance || l.totalDistance || 0), 0);
+                    const totalDur  = laps.reduce((sum, l) => sum + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
+                    const hrVals    = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0)).filter(v => v > 0);
+                    const avgHr     = hrVals.length ? Math.round(hrVals.reduce((a, b) => a + b, 0) / hrVals.length) : null;
+                    const laVals    = laps.map(l => (l.lactate != null ? Number(l.lactate) : null)).filter(v => v != null);
+                    const avgLa     = laVals.length ? (laVals.reduce((a, b) => a + b, 0) / laVals.length).toFixed(1) : null;
+                    const valVals   = laps.map(l => getLapValue(l, metric, s.session.sport || sport)).filter(v => v != null && v > 0);
+                    const avgVal    = valVals.length ? valVals.reduce((a, b) => a + b, 0) / valVals.length : null;
+
+                    const distLabel = totalDist > 0 ? (totalDist >= 1000 ? `${(totalDist/1000).toFixed(1)} km` : `${Math.round(totalDist)} m`) : null;
+                    const durLabel  = totalDur > 0 ? fmtLapDuration(totalDur) : null;
+
                     return (
-                      <div key={s.key} className="rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2">
-                        <div className="flex items-center justify-between mb-1.5">
+                      <div
+                        key={s.key}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigateToSession(s.session)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToSession(s.session); } }}
+                        className="rounded-xl border border-gray-100 bg-white px-4 py-3 cursor-pointer hover:border-gray-200 hover:shadow-sm transition-all group"
+                      >
+                        {/* Header row: date + sport + open button */}
+                        <div className="flex items-center justify-between mb-2 gap-3">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                            <span className="text-[11px] font-bold text-gray-700 truncate">{s.label}</span>
-                            <span className="text-[10px] text-gray-400">{laps.length} laps</span>
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                            <span className="text-[13px] font-bold text-gray-900">{s.label}</span>
+                            {s.session.sport && <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">{String(s.session.sport).toLowerCase()}</span>}
+                            <span className="text-[10px] text-gray-400">· {laps.length} {laps.length === 1 ? 'lap' : 'laps'}</span>
                           </div>
-                          <span className="text-[10px] text-gray-400">{metric === 'pace' ? 'Pace' : metric === 'hr' ? 'Heart rate' : 'Power'}</span>
+                          <ArrowTopRightOnSquareIcon className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0" />
                         </div>
-                        <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} />
+
+                        {/* Totals row */}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[11px]">
+                          {distLabel && <div><span className="text-gray-400">Distance </span><span className="font-bold text-gray-700">{distLabel}</span></div>}
+                          {durLabel  && <div><span className="text-gray-400">Time </span><span className="font-bold text-gray-700">{durLabel}</span></div>}
+                          {avgVal != null && <div><span className="text-gray-400">{metric === 'pace' ? 'Avg pace ' : metric === 'hr' ? 'Avg HR ' : 'Avg power '}</span><span className="font-bold text-gray-700">{fmtMetricLabel(avgVal, metric, s.session.sport || sport)}</span></div>}
+                          {avgHr != null && metric !== 'hr' && <div><span className="text-gray-400">Avg HR </span><span className="font-bold text-gray-700">{avgHr} bpm</span></div>}
+                          {avgLa != null && <div><span className="text-gray-400">Avg lactate </span><span className="font-bold" style={{ color: '#d97706' }}>{avgLa} mmol/L</span></div>}
+                        </div>
+
+                        {/* Bars */}
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} />
+                        </div>
                       </div>
                     );
                   })}
