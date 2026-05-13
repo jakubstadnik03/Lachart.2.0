@@ -430,17 +430,32 @@ export function TrainingStats({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  /* auto-select latest training (by date) when sport/trainings change */
+  /* auto-select latest training (by date) only when there is no valid pick
+     yet. Don't clobber a user's explicit choice just because it's a sport
+     other than the current sport filter — that was making the dropdown
+     snap back the moment they picked a swim title while filtering by run. */
   useEffect(() => {
     if (!trainingsList.length) return;
     const rel = currentSelectedSport === "all" ? trainingsList : trainingsList.filter(t => t.sport === currentSelectedSport);
     if (!rel.length) return;
-    if (!currentSelectedTitle || !rel.some(t => t.title === currentSelectedTitle)) {
-      const latest = [...rel].sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0))[0];
-      setCurrentSelectedTitle(latest.title);
-      // Strava activities use `id`, FIT/regular use `_id` — fall back to either
-      if (setSelectedTrainingId) setSelectedTrainingId(latest._id || latest.id);
-    }
+
+    // Special sentinel options (lactate-only, category filter) are never
+    // a real title — leave them as-is.
+    const isSentinel = typeof currentSelectedTitle === 'string'
+      && (currentSelectedTitle === LACTATE_OPTION
+          || currentSelectedTitle.startsWith(CATEGORY_OPTION_PREFIX));
+    if (isSentinel) return;
+
+    // Keep the user's pick if it exists ANYWHERE in trainingsList — not just
+    // in the sport-filtered slice.
+    const titleExistsAnywhere = currentSelectedTitle
+      && trainingsList.some(t => t.title === currentSelectedTitle);
+    if (titleExistsAnywhere) return;
+
+    // Otherwise fall back to the newest training in the current sport slice.
+    const latest = [...rel].sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0))[0];
+    setCurrentSelectedTitle(latest.title);
+    if (setSelectedTrainingId) setSelectedTrainingId(latest._id || latest.id);
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
   // Sentinel option that surfaces every lactate-tagged training regardless
