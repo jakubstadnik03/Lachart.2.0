@@ -45,8 +45,16 @@ const TrainingHistory = () => {
   const [selectedSport, setSelectedSport] = useState(null);
 
   // Derived from selectedSport — must be top-level so labels are correct even with 1 training
-  const isPaceSport = selectedSport === 'run' || selectedSport === 'swim';
-  const activePaceUnit = selectedSport === 'swim' ? swimPaceUnit : runPaceUnit;
+  const normSport = (() => {
+    const s = String(selectedSport || '').toLowerCase();
+    if (!s) return '';
+    if (s.includes('run')) return 'run';
+    if (s.includes('swim')) return 'swim';
+    if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
+    return s;
+  })();
+  const isPaceSport = normSport === 'run' || normSport === 'swim';
+  const activePaceUnit = normSport === 'swim' ? swimPaceUnit : runPaceUnit;
   const powerOrPaceLabel = isPaceSport ? `Pace (${activePaceUnit})` : 'Power (W)';
   const [trainingToEdit, setTrainingToEdit] = useState(null);
   const [trainingToDelete, setTrainingToDelete] = useState(null);
@@ -151,7 +159,15 @@ const TrainingHistory = () => {
     );
     
     // Calculate values based on sport type
-    const isPaceSport = selectedSport === 'run' || selectedSport === 'swim';
+    const normSport = (() => {
+    const s = String(selectedSport || '').toLowerCase();
+    if (!s) return '';
+    if (s.includes('run')) return 'run';
+    if (s.includes('swim')) return 'swim';
+    if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
+    return s;
+  })();
+  const isPaceSport = normSport === 'run' || normSport === 'swim';
     
     // Calculate average power/pace for each training
     const powerData = sortedTrainings.map(t => {
@@ -756,7 +772,7 @@ const TrainingHistory = () => {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {training.sport === 'run' || training.sport === 'swim' ? 'Pace' : 'Power'}
+                        {(() => { const s = String(training.sport||'').toLowerCase(); return s.includes('run') || s.includes('swim') ? 'Pace' : 'Power'; })()}
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HR</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">La</th>
@@ -771,9 +787,7 @@ const TrainingHistory = () => {
                           {formatDuration(result.duration, result.durationType)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          {training.sport === 'run' || training.sport === 'swim' 
-                            ? secondsToPace(result.power) 
-                            : result.power || '-'}
+                          {(() => { const s = String(training.sport||'').toLowerCase(); return s.includes('run') || s.includes('swim') ? secondsToPace(result.power) : (result.power || '-'); })()}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.heartRate || '-'}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.lactate || '-'}</td>

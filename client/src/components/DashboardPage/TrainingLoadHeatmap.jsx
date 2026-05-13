@@ -122,8 +122,12 @@ export default function TrainingLoadHeatmap({ calendarData = [], trainings = [] 
     const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1; // Mon=0
     const endOfGrid = new Date(today);
     endOfGrid.setHours(12, 0, 0, 0);
+    // Start the grid on the Monday WEEKS-1 weeks ago, so row 0 = Monday and the
+    // current week sits in the rightmost column. The previous formula shifted
+    // the grid by an extra (7 - dayOfWeek - 1) days, so the row labelled "Su"
+    // actually held the next Monday's activities.
     const startOfGrid = new Date(endOfGrid);
-    startOfGrid.setDate(endOfGrid.getDate() - (WEEKS * 7 - 1) - dayOfWeek);
+    startOfGrid.setDate(endOfGrid.getDate() - dayOfWeek - (WEEKS - 1) * 7);
 
     const weeks = [];
     const cursor = new Date(startOfGrid);

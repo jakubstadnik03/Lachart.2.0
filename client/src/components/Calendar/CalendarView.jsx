@@ -1227,6 +1227,33 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       setPlannedWorkout(saved);
       setEditingPlanned(false);
       if (onPlannedSaved) onPlannedSaved(saved);
+
+      // Propagate the title change to the underlying activity (Strava / FIT / regular)
+      // so it shows up in TrainingStats, FitAnalysis, calendar lists, etc.
+      const newTitle = (planForm.title || '').trim();
+      if (newTitle && newTitle !== title) {
+        try {
+          const id = String(merged.id || merged._id || '');
+          if (id.startsWith('strava-')) {
+            const { updateStravaActivity } = await import('../../services/api.js');
+            await updateStravaActivity(id.replace('strava-', ''), { title: newTitle });
+          } else if (id.startsWith('fit-')) {
+            const { updateFitTraining } = await import('../../services/api.js');
+            await updateFitTraining(id.replace('fit-', ''), { titleManual: newTitle });
+          } else if (id) {
+            const { updateTraining } = await import('../../services/api.js');
+            await updateTraining(id.replace('regular-', ''), { title: newTitle });
+          }
+          setDetail(prev => ({ ...(prev || {}), titleManual: newTitle, title: newTitle }));
+          setCompletedForm(p => ({ ...p, title: newTitle }));
+          try {
+            const evtId = String(merged.id || merged._id || '');
+            window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: evtId, title: newTitle } }));
+          } catch { /* ignore */ }
+        } catch (titleErr) {
+          console.error('Failed to propagate planned title to activity', titleErr);
+        }
+      }
     } catch (err) {
       console.error('Failed to save planned workout', err);
     } finally {
@@ -1271,6 +1298,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         await updateTraining(id.replace('regular-', ''), { ...basePayload, ...extraFields });
       }
       setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description, ...extraFields }));
+      try {
+        window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id, title: completedForm.title } }));
+      } catch { /* ignore */ }
     } catch (err) {
       console.error('Failed to save completed metadata', err);
     } finally {

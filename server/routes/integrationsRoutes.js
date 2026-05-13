@@ -2169,7 +2169,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       .sort({ startDate: -1 })
         .limit(activityLimit)
       .select(
-        'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower'
+        'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate laps.lactate'
       )
         .lean(),
       GarminActivity.find({
@@ -2178,7 +2178,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       })
         .sort({ startDate: -1 })
         .limit(activityLimit)
-        .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
+        .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate laps.lactate')
         .lean(),
       AppleHealthActivity.find({
         userId: targetUserId,
