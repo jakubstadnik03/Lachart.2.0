@@ -98,7 +98,8 @@ export default function TrainingPage() {
   const loadTrainings = useCallback(async (targetId) => {
     // Keep key in sync with DashboardPage so navigating between pages hits
     // the same localStorage entry and avoids a redundant network round-trip.
-    const cacheKey = `athleteTrainings_v2_${targetId}`;
+    // v3 — titleManual now wins over .title/.name in the merged mapping.
+    const cacheKey = `athleteTrainings_v3_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -165,7 +166,7 @@ export default function TrainingPage() {
         ...(fitResponse.data || []).map(t => ({
           ...t,
           category: t.category || null,
-          title: t.title || t.titleManual || t.titleAuto || t.originalFileName || null,
+          title: t.titleManual || t.title || t.titleAuto || t.originalFileName || null,
           date: t.date || t.timestamp || null,
           sport: (() => {
             const s = String(t.sport || '').toLowerCase();
@@ -181,7 +182,7 @@ export default function TrainingPage() {
           ...a,
           category: a.category || null,
           date: a.date || a.startDate || a.timestamp || null,
-          title: a.title || a.name || a.titleManual || null,
+          title: a.titleManual || a.name || a.title || null,
         }))
       ];
       
