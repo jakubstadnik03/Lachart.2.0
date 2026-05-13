@@ -125,8 +125,10 @@ function LapTooltip({ active, payload, label, series, metric, sport }) {
 
 // ─── Per-session lap bar chart ────────────────────────────────────────────────
 
-const VIOLET_COLOR  = "#8b5cf6"; // single violet — same hue across all non-lactate bars
-const LACTATE_COLOR = "#f59e0b"; // amber — used only for laps that have lactate measured
+// Same palette as TrainingStats — rank-shaded violet for plain laps,
+// rank-shaded amber for laps that have a measured lactate value.
+const VIOLET_PALETTE  = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
+const LACTATE_PALETTE = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
 
 function fmtLapDuration(sec) {
   if (!sec || sec <= 0) return '—';
@@ -176,6 +178,13 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
   const span = Math.max(maxV - minV, 1);
   const isPaceLike = metric === 'pace';
 
+  // Per-session rank: darkest shade goes to the "best" lap (highest power/HR,
+  // lowest pace), lightest to the weakest. Mirrors TrainingStats' VerticalBar.
+  const ranked = [...items]
+    .filter(x => x.val != null && x.val > 0)
+    .sort((a, b) => isPaceLike ? a.val - b.val : b.val - a.val);
+  const rankByIdx = new Map(ranked.map((x, r) => [x.i, r]));
+
   const totalForShares = useDist ? totalDist : (useDur ? totalDur : 0);
   const equalShare = 100 / Math.max(items.length, 1);
 
@@ -219,7 +228,10 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
             const h = x.val != null && x.val > 0
               ? (isPaceLike ? ((maxV - x.val) / span) : ((x.val - minV) / span)) * 0.85 + 0.15
               : 0;
-            const bg = x.lactate != null ? LACTATE_COLOR : VIOLET_COLOR;
+            const rank = rankByIdx.get(idx) ?? idx;
+            const hasLactate = x.lactate != null && x.lactate > 0;
+            const palette = hasLactate ? LACTATE_PALETTE : VIOLET_PALETTE;
+            const bg = palette[Math.min(rank, palette.length - 1)];
             const isHovered = hover && hover.idx === idx;
             return (
               <div
