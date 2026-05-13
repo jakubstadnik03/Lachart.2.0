@@ -1093,6 +1093,10 @@ export const updateFitTraining = async (trainingId, { title, description, catego
       category,
       selectedLapIndices
     });
+    // Drop every cached payload that could echo the old value (FIT list,
+    // integrations activities, monthly aggregates, etc.) — otherwise a quick
+    // reload re-serves the pre-update snapshot.
+    invalidateTrainingCaches();
     return response.data;
   } catch (error) {
     console.error('Error updating training:', error);
@@ -1338,6 +1342,10 @@ export const updateStravaActivity = async (stravaId, { title, description, categ
       description,
       category
     });
+    // The integrations/activities list is heavily cached (120s TTL +
+    // localStorage). Without this, the page reloads after a category edit
+    // re-serve the stale entry and the user thinks the save failed.
+    invalidateTrainingCaches();
     return response.data;
   } catch (error) {
     console.error('Error updating Strava activity:', error);
