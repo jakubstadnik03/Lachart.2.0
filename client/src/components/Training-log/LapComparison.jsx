@@ -287,12 +287,18 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
     trainings.forEach(t => {
       if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
     });
-    const opts = [{ value: 'all', label: `All categories (${trainings.length})` }];
-    categories.forEach(c => {
-      const n = counts.get(c.id) || 0;
-      if (n > 0) opts.push({ value: c.id, label: `${c.label} (${n})` });
-    });
-    return opts;
+    // Always list every defined category so the dropdown matches the global
+    // category palette (LT1 / LT2 / Tempo / VO2max / Hills / Zone 2 / Endurance),
+    // even when the user hasn't tagged anything in some of them yet.
+    return [
+      { value: 'all', label: 'All categories', count: trainings.length },
+      ...categories.map(c => ({
+        value: c.id,
+        label: c.label,
+        color: c.color,
+        count: counts.get(c.id) || 0,
+      })),
+    ];
   }, [trainings, categories]);
 
   // Title options derived from the category-filtered set
