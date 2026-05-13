@@ -109,14 +109,15 @@ const METRICS = [
   { id: 'RPE', label: 'RPE' },
 ];
 
-// Only show trainings the user has explicitly flagged as intervals — either
-// renamed the title (titleManual) or assigned a category. Auto-named
-// imports stay out.
+// Parent passes the curated Training-collection set. Accept anything that
+// has a title and at least one result so the available titles match the
+// dashboard Training History.
 function isAnnotatedExport(t) {
   if (!t) return false;
-  const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
-  const hasCategory    = !!(t.category && String(t.category).trim());
-  return hasManualTitle || hasCategory;
+  const hasTitle = !!((t.titleManual || t.title) && String(t.titleManual || t.title).trim());
+  const hasResults = Array.isArray(t.results) && t.results.length > 0;
+  const hasLaps    = Array.isArray(t.laps)    && t.laps.length    > 0;
+  return hasTitle && (hasResults || hasLaps);
 }
 
 const TrainingComparison = ({ trainings: rawTrainings }) => {

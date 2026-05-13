@@ -231,15 +231,16 @@ function LapBars({ laps, sport, metric, color }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-// Only show trainings the user has explicitly flagged as intervals — either
-// renamed the title (titleManual) or assigned a category. This matches the
-// user's spec literally and keeps auto-named Strava imports ("15km Recovery
-// Run", "Morning Ride") out of the dropdown.
+// Parent already passes the curated Training-collection set (exports +
+// regular records with explicit titles). Accept everything that has a
+// title and at least one result/lap so the dropdown matches the dashboard
+// Training History.
 function isAnnotatedExport(t) {
   if (!t) return false;
-  const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
-  const hasCategory    = !!(t.category && String(t.category).trim());
-  return hasManualTitle || hasCategory;
+  const hasTitle = !!((t.titleManual || t.title) && String(t.titleManual || t.title).trim());
+  const hasResults = Array.isArray(t.results) && t.results.length > 0;
+  const hasLaps    = Array.isArray(t.laps)    && t.laps.length    > 0;
+  return hasTitle && (hasResults || hasLaps);
 }
 
 export default function LapComparison({ trainings: rawTrainings, selectedTitle: externalTitle, setSelectedTitle: setExternalTitle }) {
