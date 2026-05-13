@@ -150,7 +150,10 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const val  = getLapValue(lap, metric, sport);
-    const lactate = lap.lactate != null ? Number(lap.lactate) : null;
+    // Treat 0 / 0.0 / missing as "no lactate measured" so a zero placeholder
+    // doesn't tint the bar amber or pollute the session average.
+    const rawLa = lap.lactate != null ? Number(lap.lactate) : null;
+    const lactate = rawLa != null && rawLa > 0 ? rawLa : null;
     return { i, dur, dist, val, lactate };
   }), [laps, metric, sport]);
 
@@ -752,7 +755,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                     const totalDur  = laps.reduce((sum, l) => sum + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
                     const hrVals    = laps.map(l => Number(l.average_heartrate || l.averageHeartRate || l.avgHR || 0)).filter(v => v > 0);
                     const avgHr     = hrVals.length ? Math.round(hrVals.reduce((a, b) => a + b, 0) / hrVals.length) : null;
-                    const laVals    = laps.map(l => (l.lactate != null ? Number(l.lactate) : null)).filter(v => v != null);
+                    const laVals    = laps.map(l => (l.lactate != null ? Number(l.lactate) : null)).filter(v => v != null && v > 0);
                     const avgLa     = laVals.length ? (laVals.reduce((a, b) => a + b, 0) / laVals.length).toFixed(1) : null;
                     const valVals   = laps.map(l => getLapValue(l, metric, s.session.sport || sport)).filter(v => v != null && v > 0);
                     const avgVal    = valVals.length ? valVals.reduce((a, b) => a + b, 0) / valVals.length : null;
