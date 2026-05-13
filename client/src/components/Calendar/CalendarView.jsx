@@ -3275,6 +3275,7 @@ export default function CalendarView({
 
   // Auto-rename activities when they get paired with a planned workout
   const autoRenamedRef = useRef(new Set()); // track activity IDs already renamed this session
+  const autoCategorizedRef = useRef(new Set()); // and which ones we've also tagged
   useEffect(() => {
     if (!plannedWorkouts.length || !filteredActivities.length) return;
     plannedByDay.forEach((pws, dateKey) => {
@@ -3283,32 +3284,59 @@ export default function CalendarView({
       const { pwToAct } = pairPlannedWithActivities(pws, acts);
       pwToAct.forEach((act, pwId) => {
         const pw = pws.find(p => String(p._id) === pwId);
-        if (!pw?.title) return;
+        if (!pw) return;
         const actId = String(act.id || act._id || '');
-        if (!actId || autoRenamedRef.current.has(actId)) return;
-        // Only rename if the activity has no custom title set yet
-        if (act.titleManual) return;
-        autoRenamedRef.current.add(actId);
-        const newTitle = pw.title;
-        // Fire-and-forget API rename
+        if (!actId) return;
+
+        // ── 1. Title auto-rename (existing behaviour) ──
+        const needsTitle = !!pw.title && !act.titleManual && !autoRenamedRef.current.has(actId);
+        // ── 2. Category propagation (new) — copy planned category to the
+        //      paired activity once, only when the activity has no category
+        //      set yet. The flag is per-session so a manual unset isn't
+        //      auto-re-applied.
+        const needsCategory = !!pw.category && !act.category && !autoCategorizedRef.current.has(actId);
+
+        if (!needsTitle && !needsCategory) return;
+        if (needsTitle) autoRenamedRef.current.add(actId);
+        if (needsCategory) autoCategorizedRef.current.add(actId);
+        const newTitle = needsTitle ? pw.title : undefined;
+        const newCategory = needsCategory ? pw.category : undefined;
+        // Fire-and-forget API patch
         (async () => {
           try {
             if (act.type === 'strava' || act.stravaId) {
               const { updateStravaActivity } = await import('../../services/api.js');
               const rawId = String(act.stravaId || act.id || '').replace(/^strava-/, '');
-              await updateStravaActivity(rawId, { title: newTitle });
+              const payload = {};
+              if (newTitle != null) payload.title = newTitle;
+              if (newCategory != null) payload.category = newCategory;
+              await updateStravaActivity(rawId, payload);
             } else if (act.type === 'fit' || act._id) {
               const { updateFitTraining } = await import('../../services/api.js');
               const rawId = String(act._id || act.id || '').replace(/^fit-/, '');
-              await updateFitTraining(rawId, { titleManual: newTitle });
+              const payload = {};
+              if (newTitle != null) payload.titleManual = newTitle;
+              if (newCategory != null) payload.category = newCategory;
+              await updateFitTraining(rawId, payload);
             }
-            // Notify parent so the title updates in UI
+            // Notify the in-memory list + emit the standard events so every
+            // dashboard / list re-renders with the new fields without a refetch.
             if (onActivityUpdate) {
-              onActivityUpdate({ ...act, titleManual: newTitle, title: newTitle });
+              onActivityUpdate({
+                ...act,
+                ...(newTitle != null ? { titleManual: newTitle, title: newTitle } : {}),
+                ...(newCategory != null ? { category: newCategory } : {}),
+              });
             }
+            try {
+              const evtId = String(act.id || act._id || '');
+              if (newTitle != null) window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: evtId, title: newTitle } }));
+              if (newCategory != null) window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id: evtId, category: newCategory } }));
+            } catch { /* ignore */ }
           } catch {
-            // Non-critical — silently ignore rename errors
-            autoRenamedRef.current.delete(actId);
+            // Non-critical — silently ignore errors but allow retry next render
+            if (needsTitle) autoRenamedRef.current.delete(actId);
+            if (needsCategory) autoCategorizedRef.current.delete(actId);
           }
         })();
       });
