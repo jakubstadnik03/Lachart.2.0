@@ -132,8 +132,12 @@ const LACTATE_PALETTE = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd
 
 function fmtLapDuration(sec) {
   if (!sec || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  // Hours dropped when zero so short laps stay readable.
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 function fmtLapDistance(m) {
@@ -525,6 +529,21 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
     setMetric(isBike ? 'power' : isSwim ? 'pace' : 'pace');
   }, [sport]);
 
+  // Shared lap data per selected session — memoized so the table, the
+  // per-session cards, the line chart and the cross-session range all reuse
+  // the same arrays without rebuilding them on every render. Important when
+  // the user selects "All" with 10+ sessions.
+  const lapsByKey = useMemo(() => {
+    const map = new Map();
+    selectedSessions.forEach((sess, idx) => {
+      const id = getSessionId(sess);
+      const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
+      const laps = filterWork ? filterWorkLaps(raw) : raw;
+      map.set(`s${idx}`, laps);
+    });
+    return map;
+  }, [selectedSessions, lapsCache, filterWork]);
+
   // Chart series + data
   const { series, chartData } = useMemo(() => {
     if (selectedSessions.length === 0) return { series: [], chartData: [] };
@@ -845,31 +864,100 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                   </div>
                 </div>
 
-                {/* Per-session lap table — collapsible on mobile */}
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full text-[11px]">
-                    <thead>
-                      <tr className="text-gray-400 text-left border-b border-gray-100">
-                        <th className="py-1.5 pr-3 font-semibold">Lap</th>
-                        {series.map(s => (
-                          <th key={s.key} className="py-1.5 px-2 font-semibold text-right" style={{ color: s.color }}>{s.label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {chartData.map(row => (
-                        <tr key={row.lap} className="hover:bg-gray-50 transition-colors">
-                          <td className="py-1.5 pr-3 font-semibold text-gray-600">L{row.lap}</td>
-                          {series.map(s => (
-                            <td key={s.key} className="py-1.5 px-2 text-right font-medium text-gray-800">
-                              {row[s.key] != null ? fmtMetricLabel(row[s.key], metric, sport) : <span className="text-gray-300">—</span>}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {/* Per-session lap table — columns sorted newest→oldest, each
+                    cell shows the primary metric + dist/time + HR + lactate,
+                    with a progress arrow comparing to the prior (older) column. */}
+                {(() => {
+                  // Newest sessions first.
+                  const orderedSeries = [...series].sort((a, b) => getSessionDate(b.session) - getSessionDate(a.session));
+                  // Reuse the memoized per-session laps map (see lapsByKey above).
+                  const lapsBySeries = lapsByKey;
+                  const maxLaps = Math.max(...orderedSeries.map(s => lapsBySeries.get(s.key)?.length || 0), 0);
+                  const isPaceLike = metric === 'pace';
+                  // Δ value formatting against the previous (older) session.
+                  const fmtDelta = (cur, prev) => {
+                    if (cur == null || prev == null || !Number.isFinite(cur) || !Number.isFinite(prev)) return null;
+                    const diff = cur - prev;
+                    if (Math.abs(diff) < 0.5) return { sign: '=', cls: 'text-gray-400', text: '0' };
+                    const improved = isPaceLike ? diff < 0 : diff > 0; // pace lower = faster
+                    const arrow = improved ? '▲' : '▼';
+                    const cls = improved ? 'text-emerald-500' : 'text-red-400';
+                    let text;
+                    if (metric === 'pace') {
+                      const s = Math.abs(Math.round(diff));
+                      text = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+                    } else {
+                      text = `${Math.abs(Math.round(diff))}`;
+                    }
+                    return { sign: arrow, cls, text };
+                  };
+
+                  return (
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-gray-400 text-left border-b border-gray-100">
+                            <th className="py-1.5 pr-3 font-semibold sticky left-0 bg-white z-10">Lap</th>
+                            {orderedSeries.map(s => (
+                              <th key={s.key} className="py-1.5 px-2 font-semibold text-right whitespace-nowrap" style={{ color: s.color }}>
+                                {s.label}
+                                <div className="text-[9px] font-medium text-gray-400">
+                                  {(lapsBySeries.get(s.key) || []).length} laps
+                                </div>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {Array.from({ length: maxLaps }, (_, i) => {
+                            const lapIdx = i;
+                            return (
+                              <tr key={lapIdx} className="hover:bg-gray-50 transition-colors align-top">
+                                <td className="py-1.5 pr-3 font-semibold text-gray-600 sticky left-0 bg-white z-10">L{lapIdx + 1}</td>
+                                {orderedSeries.map((s, sIdx) => {
+                                  const lap = lapsBySeries.get(s.key)?.[lapIdx];
+                                  if (!lap) {
+                                    return <td key={s.key} className="py-1.5 px-2 text-right text-gray-300">—</td>;
+                                  }
+                                  const val   = getLapValue(lap, metric, s.session.sport || sport);
+                                  const dur   = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+                                  const dist  = Number(lap.distance || lap.totalDistance || 0);
+                                  const hr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                                  const la    = lap.lactate != null && Number(lap.lactate) > 0 ? Number(lap.lactate) : null;
+                                  // Compare to the next OLDER session (orderedSeries is newest→oldest, so next index).
+                                  const prevSeries = orderedSeries[sIdx + 1];
+                                  const prevLap = prevSeries ? lapsBySeries.get(prevSeries.key)?.[lapIdx] : null;
+                                  const prevVal = prevLap ? getLapValue(prevLap, metric, prevSeries.session.sport || sport) : null;
+                                  const delta = fmtDelta(val, prevVal);
+                                  return (
+                                    <td key={s.key} className="py-1.5 px-2 text-right whitespace-nowrap">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <span className="font-semibold text-gray-800 tabular-nums">
+                                          {val != null ? fmtMetricLabel(val, metric, s.session.sport || sport) : <span className="text-gray-300">—</span>}
+                                        </span>
+                                        {delta && delta.sign !== '=' && (
+                                          <span className={`text-[9px] font-bold tabular-nums ${delta.cls}`} title="vs. previous session">
+                                            {delta.sign}{delta.text}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[9px] text-gray-400 tabular-nums flex items-center justify-end gap-1.5 mt-0.5">
+                                        {dist > 0 && <span>{fmtLapDistance(dist)}</span>}
+                                        {dur > 0 && <span>· {fmtLapDuration(dur)}</span>}
+                                        {hr > 0 && <span>· {Math.round(hr)} bpm</span>}
+                                        {la != null && <span className="font-bold" style={{ color: '#d97706' }}>· {la.toFixed(1)} mmol</span>}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
