@@ -359,27 +359,40 @@ const TrainingGraph = ({
     if (training && setSelectedTitle) setSelectedTitle(training.title);
   };
 
-  // Sync selection when trainings or sport changes
+  // Sync selection when trainings or sport changes.
+  // Priority: selectedTitle drives selectedTraining (so a user title change
+  // in any sibling component — e.g. LapComparison — picks a fresh training
+  // for that title instead of being overwritten back to the stale id).
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
     setLoading(false);
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     if (sportTrainings.length === 0) { if (setSelectedTitle) setSelectedTitle(null); if (setSelectedTraining) setSelectedTraining(null); return; }
-    // Chart needs `.results` (intervals) to render — used below when
-    // *defaulting*. We DON'T strip a user's explicit pick that lacks results;
-    // if the resolved training matches sport, we keep it.
     const hasResults = (t) => Array.isArray(t?.results) && t.results.length > 0;
+
+    // Happy path: current selection is still consistent (title + training).
+    if (selectedTraining && selectedTitle) {
+      const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
+      if (currentTraining && currentTraining.title === selectedTitle && matchesSport(currentTraining, currentSelectedSport)) {
+        return;
+      }
+    }
+
+    // Title changed (or no title yet) — find a training matching it.
+    if (selectedTitle) {
+      const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
+      const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
+      if (pick) { if (setSelectedTraining) setSelectedTraining((pick._id || pick.id)); return; }
+    }
+
+    // No title (or title has no matches) — keep the current training if it
+    // still matches sport, else pick the newest one with results.
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
       if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
         if (setSelectedTitle && currentTraining.title !== selectedTitle) setSelectedTitle(currentTraining.title);
         return;
       }
-    }
-    if (selectedTitle) {
-      const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
-      const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
-      if (pick) { if (setSelectedTraining) setSelectedTraining((pick._id || pick.id)); return; }
     }
     const sortedTrainings = [...sportTrainings].sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
     const newest = sortedTrainings.find(hasResults) ?? sortedTrainings[0];

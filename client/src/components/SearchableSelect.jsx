@@ -106,13 +106,15 @@ export function SearchableSelect({ value, options, onChange, placeholder = "Sele
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
-            className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+            className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 ${
               o.value === value
                 ? 'font-semibold text-primary bg-primary/5'
                 : 'text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {o.label}
+            {o.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: o.color }} />}
+            <span className="truncate">{o.label}</span>
+            {o.count != null && <span className="ml-auto text-[10px] text-gray-400">{o.count}</span>}
           </button>
         ))}
       </div>
@@ -128,6 +130,7 @@ export function SearchableSelect({ value, options, onChange, placeholder = "Sele
         onClick={() => { setOpen(o => !o); setQuery(''); }}
         className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 max-w-[200px] transition-colors"
       >
+        {selected?.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />}
         <span className="truncate">{selected?.label || placeholder}</span>
         <svg className="w-3 h-3 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
