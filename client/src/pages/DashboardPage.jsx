@@ -281,6 +281,21 @@ export default function DashboardPage() {
       .slice(0, MAX_DASHBOARD_TRAININGS);
   }, [trainings]);
 
+  // Subset for "Training History" / TrainingGraph — only the user-curated
+  // Training-collection records (manual entries + Strava/FIT activities the
+  // user explicitly exported via Add Lactate). Raw Strava/FIT imports are
+  // hidden so the title dropdown matches the Training page comparison views.
+  const exportedTrainings = React.useMemo(() => {
+    return recentTrainings.filter(t => {
+      if (!t) return false;
+      const idStr = String(t.id || '');
+      if (t.source === 'strava' || t.source === 'fit') return false;
+      if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+      if (t.stravaId && !t._id) return false; // unconverted Strava import
+      return !!t._id || !t.source;
+    });
+  }, [recentTrainings]);
+
   // Load athlete trainings with localStorage caching (shared with TrainingPage).
   // Also sets regularTrainings state so loadCalendarData can be called without
   // a separate /user/athlete/:id/trainings round-trip.
@@ -1565,8 +1580,8 @@ export default function DashboardPage() {
           transition={{ delay: 0.5 }}
           className="lg:col-span-3 md:col-span-2"
         >
-          <TrainingStats 
-            trainings={recentTrainings}
+          <TrainingStats
+            trainings={exportedTrainings}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
             selectedTitle={selectedTitle}
@@ -1585,7 +1600,7 @@ export default function DashboardPage() {
         >
           {isPremium ? (
             <TrainingGraph
-              trainingList={recentTrainings}
+              trainingList={exportedTrainings}
               selectedSport={selectedSport}
               setSelectedSport={setSelectedSport}
               selectedTitle={selectedTitle}
