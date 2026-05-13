@@ -906,10 +906,15 @@ export default function DashboardPage() {
       try {
         const result = await autoSyncStravaActivities();
         sessionStorage.setItem(syncKey, now.toString());
-        if (result.imported > 0 || result.updated > 0) {
+        // Only surface a toast when ACTUAL new activities arrived. Bumping
+        // on updated>0 with imported===0 produced the noisy
+        // "Strava: 0 new activities imported" banner on every dashboard load,
+        // because re-fetching the same window almost always updates the most
+        // recent ride's stats without importing anything new.
+        if (result.imported > 0) {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           maybeNotifyStravaActivitiesImported(result.imported, user?.notifications, result.latestActivityId);
-          addNotification(`Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
+          addNotification(`Strava: ${result.imported} new ${result.imported === 1 ? 'activity' : 'activities'} imported`, 'success');
           // Reload all data after sync — loadTrainings sets regularTrainings state internally,
           // so one call replaces the old loadRegularTrainings + loadTrainings pair.
           const trainingsResult = await loadTrainings(user._id);
@@ -934,6 +939,12 @@ export default function DashboardPage() {
               );
             }
           }
+        } else if (result.updated > 0) {
+          // Silent refresh — Strava updated an existing ride (e.g. lap names,
+          // power averages re-processed). No toast, but reload data so the
+          // user sees the latest numbers on next render.
+          const trainingsResult = await loadTrainings(user._id);
+          loadCalendarData(user._id, trainingsResult?.regularTrainings);
         }
       } catch (error) {
         // 429 errors are already handled in autoSyncStravaActivities
