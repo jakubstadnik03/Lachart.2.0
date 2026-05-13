@@ -612,6 +612,17 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         <div className="flex items-center gap-1.5 min-w-0">
           <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-[11px] font-bold truncate flex-1">{title}</span>
+          {a.category && catBadgeStyle && catLabel && (
+            <span
+              className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md border flex-shrink-0 leading-none"
+              style={isSelected
+                ? { backgroundColor: 'rgba(255,255,255,.18)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }
+                : catBadgeStyle(a.category)}
+              title={catLabel(a.category)}
+            >
+              {catLabel(a.category)}
+            </span>
+          )}
         </div>
         {/* Single stats row: duration · distance · pace/power · HR */}
         {(durStr || distStr || paceStr || (isBike && power > 0) || hr > 0) && (
@@ -4037,9 +4048,10 @@ export default function CalendarView({
                                           {actHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(actHr)}</span></>}
                                         </div>
                                         {act.category && (
-                                          <div className="text-[8px] px-1.5 py-0.5 rounded flex-shrink-0 font-semibold border"
-                                            style={catBadgeStyle(act.category)}>
-                                            {catLabel(act.category).substring(0, 8)}
+                                          <div className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
+                                            style={catBadgeStyle(act.category)}
+                                            title={catLabel(act.category)}>
+                                            {catLabel(act.category)}
                                           </div>
                                         )}
                                       </div>
@@ -4640,10 +4652,13 @@ export default function CalendarView({
                                 )}
                                 {a.category && (
                                   <div
-                                    className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 font-semibold border"
-                                    style={catBadgeStyle(a.category)}
+                                    className="text-[8.5px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
+                                    style={isSelected
+                                      ? { backgroundColor: 'rgba(255,255,255,.18)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }
+                                      : catBadgeStyle(a.category)}
+                                    title={catLabel(a.category)}
                                   >
-                                    {catLabel(a.category).substring(0, 4)}
+                                    {catLabel(a.category)}
                                   </div>
                                 )}
                               </div>
