@@ -1492,10 +1492,24 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       try {
         window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id, category: value } }));
       } catch { /* ignore */ }
+
+      // Mirror the category to the linked planned workout so the plan card
+      // and the activity stay in sync. Only sync when the plan's existing
+      // category differs to avoid a needless PUT on every save.
+      if (plannedWorkout?._id && plannedWorkout.category !== value) {
+        try {
+          const { updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
+          const saved = await updatePlannedWorkout(plannedWorkout._id, { category: value }, athleteId);
+          setPlannedWorkout(saved);
+          if (onPlannedSaved) onPlannedSaved(saved);
+        } catch (planErr) {
+          console.error('Failed to mirror category to planned workout', planErr);
+        }
+      }
     } catch (err) {
       console.error('Failed to save category', err);
     }
-  }, [merged]);
+  }, [merged, plannedWorkout, athleteId, onPlannedSaved]);
 
   const handleSaveCompleted = async () => {
     setSavingCompleted(true);
@@ -1524,6 +1538,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       try {
         window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id, title: completedForm.title } }));
       } catch { /* ignore */ }
+
+      // Mirror the title to the linked planned workout so the plan card on
+      // the calendar matches the renamed activity.
+      const completedTitle = (completedForm.title || '').trim();
+      if (plannedWorkout?._id && completedTitle && completedTitle !== plannedWorkout.title) {
+        try {
+          const { updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
+          const saved = await updatePlannedWorkout(plannedWorkout._id, { title: completedTitle }, athleteId);
+          setPlannedWorkout(saved);
+          if (onPlannedSaved) onPlannedSaved(saved);
+        } catch (planErr) {
+          console.error('Failed to mirror title to planned workout', planErr);
+        }
+      }
     } catch (err) {
       console.error('Failed to save completed metadata', err);
     } finally {
