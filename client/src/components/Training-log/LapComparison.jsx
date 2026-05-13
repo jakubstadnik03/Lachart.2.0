@@ -231,8 +231,9 @@ function LapBars({ laps, sport, metric, color }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-// Match the filter from TrainingComparison: only annotated Strava/FIT/Garmin
-// exports (user-renamed title OR category) are treated as intervals.
+// Match the Dashboard's Training History dropdown — keep regular (manually
+// authored) trainings and any user-annotated export (renamed title or
+// category). Untouched auto-imports are skipped.
 function isAnnotatedExport(t) {
   if (!t) return false;
   const idStr = String(t.id || t._id || '');
@@ -241,9 +242,12 @@ function isAnnotatedExport(t) {
     || t.type === 'strava'   || t.type === 'fit'   || t.type === 'garmin'   || t.type === 'apple'
     || idStr.startsWith('strava-') || idStr.startsWith('fit-') || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
     || !!t.timestamp;
-  if (!isExport) return false;
+
   const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
   const hasCategory    = !!(t.category && String(t.category).trim());
+  const hasResults     = Array.isArray(t.results) && t.results.length > 0;
+
+  if (!isExport) return !!(t.title || hasResults);
   return hasManualTitle || hasCategory;
 }
 
