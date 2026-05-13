@@ -651,10 +651,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const CHART_H   = 160;
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
-  const ZOOM_GAP  = 3;
-  const PAUSE_W   = 8;    // rest/pause dots in zoomed mode
-  const MAX_BAR_PX = 60; // largest bar width in zoomed mode
-  const MIN_ZOOM_BAR = 16; // floor width for any non-pause bar
+  const ZOOM_GAP  = 4;
+  const PAUSE_W   = 10;    // rest/pause dots in zoomed mode
+  const MAX_BAR_PX = 110;  // largest bar width in zoomed mode
+  const MIN_ZOOM_BAR = 38; // floor width for any non-pause bar
 
   // Allow zoom for any session with 3+ laps. With flex-grow bars stretch to
   // fill the viewport (no left-cluster), and the zoom adds the gap + selection
@@ -875,8 +875,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             style={{
               position: 'relative',
               height: CHART_H + X_LABEL_H,
+              // In zoom mode the inner canvas must be wider than the viewport
+              // (=== zoomTotalW) so the user can actually scroll between
+              // intervals. Outside zoom mode it just fills 100% of the parent.
               minWidth: isZoomed ? zoomTotalW : '100%',
-              width: '100%',
+              width: isZoomed ? zoomTotalW : '100%',
+              transition: 'width 0.25s ease, min-width 0.25s ease',
             }}
           >
             {/* Elevation outline */}
@@ -930,9 +934,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // when bars genuinely don't fit (totalZoomW > container width).
               // The earlier fixed-width zoom packed everything into the left
               // half on wide screens — the chart looked half-empty.
+              // In zoom mode each bar is a fixed width (so the inner canvas
+              // is wider than the viewport → horizontal scroll appears).
+              // Outside zoom mode bars still use proportional flex-grow.
               const itemStyle = isZoomed
-                ? { flex: `${ent.weight} 1 ${zoomW}px`, minWidth: zoomW, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' }
-                : { flex: `${ent.weight} 0 2px`,        minWidth: 2,     height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
+                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease' }
+                : { flex: `${ent.weight} 0 2px`,  minWidth: 2,             height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
 
               return (
                 <div
