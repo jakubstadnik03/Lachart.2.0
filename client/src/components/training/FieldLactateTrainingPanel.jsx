@@ -75,7 +75,7 @@ function ConfidenceBadge({ score }) {
       🧪 Likely test
     </span>
   );
-  if (score >= 4) return (
+  if (score >= 5) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
       <BoltIcon className="w-3 h-3" /> Intervals?
     </span>
@@ -202,8 +202,8 @@ export default function FieldLactateTrainingPanel({
           </div>
         </div>
 
-        {/* Body — scrollable, ~4 items visible */}
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: '18rem' }}>
+        {/* Body — scrollable, ~5 items visible */}
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: '22.5rem' }}>
 
           {/* ── Pending measurements ── */}
           {(measLoading || measurements.length > 0) && (
