@@ -65,12 +65,6 @@
 	<string>LaChart accesses Photos only if you pick "Photo Library" when attaching a workout file or profile picture. Nothing is read automatically.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LaChart doesn't record audio. iOS may request microphone permission only when you choose "Take Photo or Video" from a file picker.</string>
-	<!-- App Tracking Transparency. LaChart does not track users for
-	     advertising or share data with third-party data brokers. This
-	     description is required by Apple if the app links the
-	     AppTrackingTransparency framework, which we do via Capacitor. -->
-	<key>NSUserTrackingUsageDescription</key>
-	<string>LaChart does not track you across apps or websites owned by other companies. We only use your data to power your own training analytics inside LaChart.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
