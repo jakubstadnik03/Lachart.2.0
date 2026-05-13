@@ -242,6 +242,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const [repeatOpen, setRepeatOpen] = React.useState(false);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
   const menuBtnRef = React.useRef(null);
+  const { getCategory, getCategoryStyle: getCatStyle } = useCategories();
 
   React.useEffect(() => {
     if (!menuOpen) return;
@@ -356,9 +357,18 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
             )}
           </div>
-          {/* Duration + stats row */}
-          {(duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
+          {/* Category + duration + stats row */}
+          {(pw.category || duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
             <div className="flex items-center gap-1.5 text-[10px] mt-0.5 flex-wrap">
+              {pw.category && getCategory(pw.category) && (
+                <span
+                  className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
+                  style={getCatStyle(pw.category)}
+                  title={getCategory(pw.category)?.label}
+                >
+                  {getCategory(pw.category)?.label}
+                </span>
+              )}
               {duration > 0 && (
                 <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{fmtPlanDuration(duration)}</span>
               )}
@@ -3245,10 +3255,15 @@ export default function CalendarView({
     return map;
   }, [filteredActivities]);
 
-  // Map planned workouts by local date string
+  // Map planned workouts by local date string. Honours the same category
+  // filter as activities — picking a category hides every planned workout
+  // that isn't tagged with it.
   const plannedByDay = useMemo(() => {
     const map = new Map();
-    plannedWorkouts.forEach(pw => {
+    const filteredPlans = categoryFilter && categoryFilter !== 'all'
+      ? plannedWorkouts.filter(pw => pw.category === categoryFilter)
+      : plannedWorkouts;
+    filteredPlans.forEach(pw => {
       if (!pw.date) return;
       // date is stored as YYYY-MM-DD string — use as-is (no timezone conversion needed)
       const key = String(pw.date).slice(0, 10);
@@ -3256,7 +3271,7 @@ export default function CalendarView({
       map.get(key).push(pw);
     });
     return map;
-  }, [plannedWorkouts]);
+  }, [plannedWorkouts, categoryFilter]);
 
   // Auto-rename activities when they get paired with a planned workout
   const autoRenamedRef = useRef(new Set()); // track activity IDs already renamed this session
