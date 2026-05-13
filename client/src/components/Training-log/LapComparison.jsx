@@ -152,9 +152,19 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
     return { i, dur, dist, val, lactate };
   }), [laps, metric, sport]);
 
-  const totalDist = items.reduce((s, x) => s + (x.dist || 0), 0);
-  const totalDur  = items.reduce((s, x) => s + (x.dur  || 0), 0);
-  const useDist   = totalDist > 0;
+  // Width fallback chain:
+  //   1. every lap has distance > 0 → proportional by distance
+  //   2. otherwise, every lap has duration > 0 → proportional by duration
+  //   3. anything missing → equal widths
+  // The previous "any lap has distance" check made zero-distance laps
+  // collapse to the 0.5% minimum, which looked broken on bike sessions
+  // where some laps are stops / pauses.
+  const allHaveDist = items.length > 0 && items.every(x => x.dist > 0);
+  const allHaveDur  = items.length > 0 && items.every(x => x.dur  > 0);
+  const useDist   = allHaveDist;
+  const useDur    = !allHaveDist && allHaveDur;
+  const totalDist = useDist ? items.reduce((s, x) => s + x.dist, 0) : 0;
+  const totalDur  = useDur  ? items.reduce((s, x) => s + x.dur,  0) : 0;
 
   // Use the global (cross-session) scale when provided so bars across cards
   // share a y-axis and a slow lap visibly looks slow next to a fast one.
@@ -174,7 +184,7 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
     .sort((a, b) => isPaceLike ? a.val - b.val : b.val - a.val);
   const rankByIdx = new Map(ranked.map((x, r) => [x.i, r]));
 
-  const totalForShares = useDist ? totalDist : totalDur;
+  const totalForShares = useDist ? totalDist : (useDur ? totalDur : 0);
   const equalShare = 100 / Math.max(items.length, 1);
 
   return (
@@ -182,10 +192,11 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
       <div ref={wrapperRef} className="flex items-end gap-[2px] w-full" style={{ height: 140 }}
         onMouseLeave={() => setHover(null)}>
         {items.map((x, idx) => {
+          const raw = useDist ? x.dist : (useDur ? x.dur : 0);
           const share = totalForShares > 0
-            ? ((useDist ? x.dist : x.dur) / totalForShares) * 100
+            ? (raw / totalForShares) * 100
             : equalShare;
-          const widthPct = Math.max(share, 0.5);
+          const widthPct = Math.max(share, equalShare * 0.5);
           const h = x.val != null && x.val > 0
             ? (isPaceLike ? ((maxV - x.val) / span) : ((x.val - minV) / span)) * 0.85 + 0.15
             : 0;
