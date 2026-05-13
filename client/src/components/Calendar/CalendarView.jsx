@@ -981,6 +981,141 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 }
 
 // ─── Activity Full Modal ──────────────────────────────────────────────────────
+// Standalone Category picker — drops into both the desktop and mobile modal.
+function CategoryPicker({ value, onChange }) {
+  const { categories, getCategoryStyle } = useCategories();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const current = categories.find(c => c.id === value);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors hover:bg-gray-50"
+        style={current ? { ...getCategoryStyle(current.id), borderStyle: 'solid' } : { borderColor: '#e5e7eb', color: '#9ca3af', borderStyle: 'dashed' }}
+      >
+        {current ? (
+          <>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: current.color }} />
+            {current.label}
+          </>
+        ) : (
+          <>
+            <span className="w-2 h-2 rounded-full border border-gray-300" />
+            Set category
+          </>
+        )}
+        <svg className="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 right-0 w-44 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => { onChange(null); setOpen(false); }}
+            className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <span className="w-2 h-2 rounded-full border border-gray-300" />
+            <span>No category</span>
+          </button>
+          <div className="border-t border-gray-100" />
+          {categories.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => { onChange(c.id); setOpen(false); }}
+              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+              <span>{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small dropdown filter for the calendar toolbar — choose a category and
+// hide every activity that isn't tagged with it (or leave "All" to keep them).
+function CalendarCategoryFilter({ value, onChange, activities }) {
+  const { categories, getCategoryStyle } = useCategories();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const counts = useMemo(() => {
+    const m = new Map();
+    (activities || []).forEach(a => { if (a.category) m.set(a.category, (m.get(a.category) || 0) + 1); });
+    return m;
+  }, [activities]);
+
+  const active = value && value !== 'all' ? categories.find(c => c.id === value) : null;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-xs font-semibold border transition-all bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+        style={active ? { ...getCategoryStyle(active.id), borderStyle: 'solid' } : {}}
+      >
+        {active ? (
+          <>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active.color }} />
+            <span>{active.label}</span>
+          </>
+        ) : (
+          <span>Categories</span>
+        )}
+        <svg className="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 z-50 w-48 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => { onChange('all'); setOpen(false); }}
+            className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${value === 'all' ? 'bg-gray-50 font-bold text-gray-900' : 'text-gray-600'}`}
+          >
+            <span>All categories</span>
+            <span className="ml-auto text-[10px] text-gray-400">{activities?.length || 0}</span>
+          </button>
+          <div className="border-t border-gray-100" />
+          {categories.map(c => {
+            const n = counts.get(c.id) || 0;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { onChange(c.id); setOpen(false); }}
+                disabled={n === 0}
+                className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 ${n === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'} ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+                <span>{c.label}</span>
+                <span className="ml-auto text-[10px] text-gray-400">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
   const a = activity;
   const color = sportColor(a.sport);
@@ -1289,6 +1424,33 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     });
   }, [title, notes, dist, dur, calories, rpe, sessionLactate]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Persist a category change immediately (no submit button — quick tag).
+  const handleCategoryChange = useCallback(async (nextCategory) => {
+    try {
+      const id = String(merged.id || merged._id || '');
+      const value = nextCategory || null;
+      // Optimistic local update so the badge re-renders right away.
+      setDetail(prev => ({ ...(prev || {}), category: value }));
+      if (id.startsWith('strava-')) {
+        const { updateStravaActivity } = await import('../../services/api.js');
+        await updateStravaActivity(id.replace('strava-', ''), { category: value });
+      } else if (id.startsWith('fit-')) {
+        const { updateFitTraining } = await import('../../services/api.js');
+        await updateFitTraining(id.replace('fit-', ''), { category: value });
+      } else if (id) {
+        const { updateTraining } = await import('../../services/api.js');
+        await updateTraining(id.replace('regular-', ''), { category: value });
+      }
+      // Let TrainingPage / DashboardPage / FitAnalysisPage refresh their lists
+      // so the category badge shows up in calendar cells, dropdowns, etc.
+      try {
+        window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id, category: value } }));
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Failed to save category', err);
+    }
+  }, [merged]);
+
   const handleSaveCompleted = async () => {
     setSavingCompleted(true);
     try {
@@ -1399,6 +1561,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   <span className="text-sm font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
                 </div>
               )}
+              <div className="col-span-2 flex items-center gap-2 px-1">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
+                <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
+              </div>
             </div>
 
             {/* Route Map */}
@@ -1826,13 +1992,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{value}</span>
               </div>
             ))}
-            {/* Compliance badge */}
-            {complianceRow && (
-              <div className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
-                <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
-              </div>
-            )}
+            {/* Category picker + Compliance badge */}
+            <div className="ml-auto flex items-center gap-2">
+              <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
+              {complianceRow && (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+                  <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── Description + notes ── */}
@@ -2661,6 +2830,7 @@ export default function CalendarView({
   };
 
   const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
+  const [categoryFilter, setCategoryFilter] = useState(() => localStorage.getItem('calendarView_categoryFilter') || 'all');
   const [expandedDays, setExpandedDays] = useState(new Set());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
@@ -2778,6 +2948,10 @@ export default function CalendarView({
     };
     loadUserProfile();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('calendarView_categoryFilter', categoryFilter || 'all');
+  }, [categoryFilter]);
 
   // Save sportFilter to localStorage when it changes
   useEffect(() => {
@@ -3002,9 +3176,13 @@ export default function CalendarView({
   };
 
   const filteredActivities = useMemo(() => {
-    if (sportFilter === 'all') return activities;
-    return activities.filter(a => sportToBucket(a.sport) === sportFilter);
-  }, [activities, sportFilter]);
+    let list = activities;
+    if (sportFilter !== 'all') list = list.filter(a => sportToBucket(a.sport) === sportFilter);
+    if (categoryFilter && categoryFilter !== 'all') {
+      list = list.filter(a => a.category === categoryFilter);
+    }
+    return list;
+  }, [activities, sportFilter, categoryFilter]);
 
   const activitiesByDay = useMemo(() => {
     const map = new Map();
@@ -3420,6 +3598,8 @@ export default function CalendarView({
           }
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Category filter */}
+          <CalendarCategoryFilter value={categoryFilter} onChange={setCategoryFilter} activities={activities} />
           {/* Sport filter pills */}
           <div className="flex items-center gap-1">
             {uniqueSportBuckets.map(bucket => {
