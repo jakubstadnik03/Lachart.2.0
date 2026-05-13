@@ -471,6 +471,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const [repeatOpen, setRepeatOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef(null);
+  const { getCategory, getCategoryStyle: getCatStyle } = useCategories();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -604,9 +605,18 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
             {pw.title || 'Planned workout'}
           </span>
         </div>
-        {/* Stats row — duration · distance */}
-        {(displayDurStr || displayDistStr) && (
-          <div className="flex items-center gap-2 text-[10px]" style={{ color: '#6b7280' }}>
+        {/* Category + stats row */}
+        {(pw.category || displayDurStr || displayDistStr) && (
+          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#6b7280' }}>
+            {pw.category && getCategory(pw.category) && (
+              <span
+                className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
+                style={getCatStyle(pw.category)}
+                title={getCategory(pw.category)?.label}
+              >
+                {getCategory(pw.category)?.label}
+              </span>
+            )}
             {displayDurStr && <span className="tabular-nums">{displayDurStr}</span>}
             {displayDurStr && displayDistStr && <span style={{ color: '#d1d5db' }}>·</span>}
             {displayDistStr && <span className="tabular-nums">{displayDistStr}</span>}
@@ -664,12 +674,20 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
         <span className={`font-bold truncate flex-1 ${compact ? 'text-[10px]' : 'text-[11px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}>
           {title}
         </span>
-        {act.category && !compact && (
-          <span className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle?.(act.category)}>
-            {catLabel?.(act.category)?.substring(0, 4)}
-          </span>
-        )}
       </div>
+      {act.category && catBadgeStyle && catLabel && (
+        <div className="flex">
+          <span
+            className={`uppercase tracking-wide font-bold border rounded-md leading-tight flex-shrink-0 ${compact ? 'text-[8px] px-1 py-[1px]' : 'text-[9px] px-1.5 py-[1px]'}`}
+            style={isSelected
+              ? { backgroundColor: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.4)' }
+              : catBadgeStyle(act.category)}
+            title={catLabel(act.category)}
+          >
+            {catLabel(act.category)}
+          </span>
+        </div>
+      )}
       {!compact && (durStr || distStr) && (
         <div className="flex items-center gap-2 flex-wrap">
           {durStr && <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{durStr}</span>}
