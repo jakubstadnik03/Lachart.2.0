@@ -581,10 +581,23 @@ export function TrainingStats({
 
   const handleTitleChange = (title) => {
     setCurrentSelectedTitle(title);
-    const newest = trainingsList
-      .filter(t => (currentSelectedSport === "all" || t.sport === currentSelectedSport) && t.title === title)
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (newest.length && setSelectedTrainingId) setSelectedTrainingId(newest[0]._id);
+    // Sentinel options (Lactate-only / category) don't map to a single
+    // training id — let downstream components pick their own. Just propagate
+    // the new value and bail.
+    if (title === LACTATE_OPTION || (typeof title === 'string' && title.startsWith(CATEGORY_OPTION_PREFIX))) {
+      return;
+    }
+    // Match the title across the full set (regardless of sport filter) and
+    // fall back to .id when .  _id is absent (Strava activities). Otherwise
+    // the parent's selectedTraining would land on `undefined` and a sibling
+    // sync effect could pick a default that doesn't match the new title.
+    const matches = trainingsList
+      .filter(t => t.title === title)
+      .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
+    if (matches.length && setSelectedTrainingId) {
+      const pick = matches[0];
+      setSelectedTrainingId(pick._id || pick.id || pick.stravaId || null);
+    }
   };
 
   const visibleTrainings = useMemo(

@@ -1081,13 +1081,13 @@ export default function DashboardPage() {
         ? recentTrainings
         : recentTrainings.filter(t => t.sport === selectedSport);
 
-      // Preserve the user's pick even if it belongs to a sport other than the
-      // current sport filter. Checking against `sportTrainings` clobbered the
-      // selection right after the user clicked a swim title with the run
-      // filter active. Validity is checked against the full recentTrainings
-      // list — Training History / Graph render fine even when the title is
-      // outside the active sport filter.
-      const titleExists = !!selectedTitle && recentTrainings.some(t => t.title === selectedTitle);
+      // Preserve the user's pick across both sport and "raw vs exported"
+      // boundaries. recentTrainings is capped at 40 and includes raw
+      // Strava/FIT imports, so a Training-collection record the user just
+      // picked from the dropdown (which is built from exportedTrainings —
+      // a different 40-slice) may legitimately be absent here. Validate
+      // against the full \`trainings\` array instead.
+      const titleExists = !!selectedTitle && (trainings || []).some(t => t.title === selectedTitle);
       if (!titleExists) {
         const latest = [...sportTrainings].sort((a, b) =>
           new Date(b.date || b.startDate || b.timestamp || 0) - new Date(a.date || a.startDate || a.timestamp || 0)
