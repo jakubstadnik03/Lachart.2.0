@@ -337,7 +337,7 @@ function intervalPaceSec(item, sport) {
 // Bars with a recorded lactate value are highlighted in warm tones.
 // X-axis labels show every Nth session date.
 
-function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap }) {
+function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, onLapEditLactate }) {
   const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
   // For run/swim: ALWAYS use pace, regardless of metric tab (it's the natural unit).
   // For bike: use the chosen metric.
@@ -465,6 +465,13 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap })
         clearSelection();
         onSessionTap && onSessionTap(s);
       }}
+      onEditLactate={onLapEditLactate ? () => {
+        if (!selected) return;
+        const sessionMeta = selected.session;
+        const lapIdx = selected.lapIdx;
+        clearSelection();
+        onLapEditLactate(sessionMeta, lapIdx);
+      } : undefined}
       onClear={clearSelection}
       formatValue={fmtTooltipValue}
     />
@@ -635,7 +642,7 @@ function Metric({ label, value, color }) {
 // Replaces the floating popup so the chart stays unobscured. Always reserves
 // vertical space; shows a hint when nothing is selected.
 
-function SelectedLapInfo({ selected, onOpen, onClear, formatValue }) {
+function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue }) {
   const empty = !selected;
   return (
     <div
@@ -727,6 +734,30 @@ function SelectedLapInfo({ selected, onOpen, onClear, formatValue }) {
               )}
             </div>
           </div>
+          {/* Lactate quick-edit — opens the TrainingForm for this session so
+              the user can add/edit the lactate value for this specific lap
+              without going through the preview modal. */}
+          {onEditLactate && (
+            <button
+              onClick={onEditLactate}
+              aria-label="Edit lactate"
+              title="Edit lactate"
+              style={{
+                flexShrink: 0,
+                padding: '5px 8px', borderRadius: 8,
+                background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E',
+                fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 3h6v4l4 8a3 3 0 0 1-2.7 4H7.7A3 3 0 0 1 5 15l4-8V3z" />
+                <line x1="9" y1="3" x2="15" y2="3" />
+              </svg>
+              {selected.lactate != null ? 'Edit' : '+ Lac'}
+            </button>
+          )}
           {/* Open + close */}
           <button
             onClick={onOpen}
@@ -1739,6 +1770,7 @@ export default function NativeTrainingPage({
                           sport={currentSport}
                           highlightId={safeHighlight}
                           onSessionTap={(s) => openActivity(s)}
+                          onLapEditLactate={(s) => openTrainingForm(s)}
                         />
                       : <MultiLineChart
                           sessions={visibleSessions}
