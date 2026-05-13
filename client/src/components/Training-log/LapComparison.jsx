@@ -84,11 +84,20 @@ function fmtMetricLabel(val, metric, sport) {
 }
 
 /**
- * Detect "work" laps by duration clustering — skips warmup / cooldown.
- * Returns filtered array of laps (NOT indexed).
+ * Detect "work" laps. Prefers the explicit `intervalType` ('warmup' |
+ * 'work' | 'recovery' | 'cooldown') the user set in TrainingForm; falls
+ * back to duration-clustering when no laps are tagged.
  */
 function filterWorkLaps(laps) {
   if (!laps || laps.length <= 2) return laps || [];
+  // Honour explicit user-set classification first.
+  const hasTypes = laps.some(l => l && l.intervalType);
+  if (hasTypes) {
+    const work = laps.filter(l => l && l.intervalType === 'work');
+    if (work.length > 0) return work;
+    // If somehow nothing is tagged 'work', fall through to heuristic so we
+    // don't return an empty chart.
+  }
   const durs = laps.map(l => Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0)).filter(d => d > 0);
   if (durs.length < 2) return laps;
   const sorted = [...durs].sort((a, b) => a - b);
@@ -491,6 +500,9 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
             average_speed: avgSpeed,
             lactate: r.lactate != null ? Number(r.lactate) : null,
             lapNumber: r.interval,
+            // Carry the manual warmup/work/recovery/cooldown classification
+            // through so filterWorkLaps can honour it.
+            intervalType: r.intervalType || (r.isRecovery ? 'recovery' : undefined),
           };
         });
       }

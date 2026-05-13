@@ -40,7 +40,9 @@ function parseResultDurationSec(result) {
  * Returns [{result, originalIdx}] so callers always show the original interval number.
  *
  * Priority:
- *  1. If ≥ half the results have an explicit `intervalType`, filter by 'work'.
+ *  1. If ANY result has an explicit `intervalType`, treat the user's tags as
+ *     authoritative — only intervals tagged 'work' (or untagged when at least
+ *     one of warmup/recovery/cooldown is set) count toward averages.
  *  2. Fall back to distance clustering (best for swim/run repeats).
  *  3. Fall back to duration clustering (best for timed bike intervals).
  *  4. If nothing helps, return everything.
@@ -48,12 +50,19 @@ function parseResultDurationSec(result) {
 function detectWorkIntervals(results) {
   if (!results || results.length <= 2) return results.map((r, i) => ({ result: r, originalIdx: i }));
 
-  // ── 1. Explicit intervalType (set by TrainingForm auto-detect or manually) ──
-  const withType = results.filter(r => r.intervalType);
-  if (withType.length >= Math.ceil(results.length * 0.5)) {
-    const workOnly = results
-      .map((r, i) => ({ result: r, originalIdx: i }))
-      .filter(({ result: r }) => r.intervalType === 'work');
+  // ── 1. Explicit intervalType (set by TrainingForm — manual or auto-detect) ──
+  const tagged = results.some(r => r && r.intervalType);
+  if (tagged) {
+    const indexed = results.map((r, i) => ({ result: r, originalIdx: i }));
+    // Anything explicitly marked warmup / recovery / cooldown is excluded.
+    // Untagged entries are kept when they look like work (i.e. there ARE
+    // non-work tags somewhere) — gives users a way to flag boundaries
+    // without re-tagging every work interval.
+    const workOnly = indexed.filter(({ result: r }) => {
+      const t = r.intervalType;
+      if (t === 'warmup' || t === 'recovery' || t === 'cooldown') return false;
+      return true; // 'work' or untagged
+    });
     if (workOnly.length >= 1) return workOnly;
   }
 

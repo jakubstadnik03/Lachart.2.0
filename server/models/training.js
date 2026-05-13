@@ -22,7 +22,15 @@ const resultSchema = new mongoose.Schema({
     /** UI / export: recovery lap (e.g. Strava field-lactate sync); unchecked in TrainingForm */
     isRecovery: { type: Boolean, default: false },
     /** Include in export / lactate entry focus; false = recovery lap deselected */
-    isSelected: { type: Boolean, default: true }
+    isSelected: { type: Boolean, default: true },
+    /** User-classified interval purpose. 'work' counts toward averages /
+        comparisons; warmup, recovery, cooldown are excluded. Persisted from
+        TrainingForm where the user can override the auto-detect choice. */
+    intervalType: {
+        type: String,
+        enum: ['warmup', 'work', 'recovery', 'cooldown'],
+        default: undefined,
+    }
 });
 
 const specificsSchema = new mongoose.Schema({
