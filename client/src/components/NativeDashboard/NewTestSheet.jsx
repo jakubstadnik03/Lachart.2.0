@@ -4,6 +4,7 @@
 // `onCreated(test)` so the parent can refresh its list.
 
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import NewTestingComponent from '../Testing-page/NewTestingComponent';
 import { addTest } from '../../services/api';
 
@@ -79,14 +80,20 @@ export default function NewTestSheet({
     }
   };
 
-  return (
-    <>
+  // Portal into #app-modal-root so the sheet sits above the native tab bar
+  // (otherwise zIndex 101 lost the stacking-context battle with the layout's
+  // bottom nav and the user couldn't see the bottom of the form).
+  const modalRoot = (typeof document !== 'undefined' && document.getElementById('app-modal-root')) || (typeof document !== 'undefined' ? document.body : null);
+  if (!modalRoot) return null;
+
+  const content = (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
       <style>{SHEET_KEYFRAMES}</style>
       {/* Scrim */}
       <div
         onClick={onClose}
         style={{
-          position: 'fixed', inset: 0, zIndex: 100,
+          position: 'absolute', inset: 0,
           background: 'rgba(10,14,26,.45)',
           backdropFilter: 'blur(2px)',
           WebkitBackdropFilter: 'blur(2px)',
@@ -97,7 +104,7 @@ export default function NewTestSheet({
       {/* Sheet — nearly full-screen so the form has room */}
       <div
         style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 101,
+          position: 'absolute', left: 0, right: 0, bottom: 0,
           top: 'env(safe-area-inset-top, 0px)',
           background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(238,240,244,.99))',
           backdropFilter: 'blur(28px) saturate(170%)',
@@ -207,6 +214,8 @@ export default function NewTestSheet({
           />
         </div>
       </div>
-    </>
+    </div>
   );
+
+  return ReactDOM.createPortal(content, modalRoot);
 }

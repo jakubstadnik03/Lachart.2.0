@@ -3332,13 +3332,20 @@ function AppleHealthCard({ isMobile }) {
       else if (result?.skipped === 'unavailable') setMsg('HealthKit not available on this device (iPad without Health, or simulator).');
       else if (result?.skipped === 'query-failed') setMsg(`HealthKit query failed: ${result.error || 'unknown'}.`);
       else if (result?.skipped === 'upload-failed') setMsg(`Server upload failed: ${result.error || 'unknown'}.`);
-      else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}.`);
+      else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}${result.error ? ` (${result.error})` : ''}.`);
       else setMsg('No new workouts found in the last 30 days.');
     } catch (e) {
       setMsg(`Sync failed: ${e?.message || 'unknown error'}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleReset = async () => {
+    const { resetHealthKitSyncState } = await import('../services/healthKitSync');
+    resetHealthKitSyncState();
+    setLast(null);
+    setMsg('Local sync state cleared. Tap "Sync now" to reconnect — iOS will re-prompt for permission. To fully revoke, also open iOS Settings → Health → Data Access & Devices → LaChart.');
   };
 
   const lastStr = last ? last.toLocaleString() : 'never';
@@ -3362,15 +3369,26 @@ function AppleHealthCard({ isMobile }) {
         Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone, etc).
         Syncs automatically once a day when you open the app.
       </p>
-      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col' : ''}`}>
-        <button
-          type="button"
-          onClick={handleSync}
-          disabled={busy}
-          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
-        >
-          {busy ? 'Syncing…' : 'Sync now'}
-        </button>
+      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col items-stretch' : ''}`}>
+        <div className={`flex items-center gap-2 ${isMobile ? 'w-full' : ''}`}>
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={busy}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+          >
+            {busy ? 'Syncing…' : 'Sync now'}
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={busy}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-white text-gray-700 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+            title="Clear local sync state and re-request HealthKit permission"
+          >
+            Reset / Disconnect
+          </button>
+        </div>
         <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
           Last sync: {lastStr}
         </span>
