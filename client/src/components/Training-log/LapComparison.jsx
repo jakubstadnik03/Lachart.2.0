@@ -125,8 +125,8 @@ function LapTooltip({ active, payload, label, series, metric, sport }) {
 
 // ─── Per-session lap bar chart ────────────────────────────────────────────────
 
-const VIOLET_PALETTE  = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
-const LACTATE_PALETTE = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
+const VIOLET_COLOR  = "#8b5cf6"; // single violet — same hue across all non-lactate bars
+const LACTATE_COLOR = "#f59e0b"; // amber — used only for laps that have lactate measured
 
 function fmtLapDuration(sec) {
   if (!sec || sec <= 0) return '—';
@@ -176,57 +176,75 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
   const span = Math.max(maxV - minV, 1);
   const isPaceLike = metric === 'pace';
 
-  // Rank values for color shade (highest val = darkest for power/HR;
-  // lowest val = darkest for pace, since lower pace = faster).
-  const ranked = [...items]
-    .map(x => ({ ...x }))
-    .filter(x => x.val != null && x.val > 0)
-    .sort((a, b) => isPaceLike ? a.val - b.val : b.val - a.val);
-  const rankByIdx = new Map(ranked.map((x, r) => [x.i, r]));
-
   const totalForShares = useDist ? totalDist : (useDur ? totalDur : 0);
   const equalShare = 100 / Math.max(items.length, 1);
 
+  // Y-axis ticks (5 evenly spaced labels between min and max).
+  const yTicks = Array.from({ length: 5 }, (_, i) => minV + ((maxV - minV) * (4 - i)) / 4);
+  const fmtTick = (v) => {
+    if (!Number.isFinite(v) || v <= 0) return '';
+    if (metric === 'pace') return fmtPaceLabel(v, sport).replace(/\s.*$/, '');
+    if (metric === 'hr')   return `${Math.round(v)}`;
+    return `${Math.round(v)}`;
+  };
+  const unitLabel = metric === 'pace'
+    ? (String(sport || '').toLowerCase().includes('swim') ? '/100m' : '/km')
+    : (metric === 'hr' ? 'bpm' : 'W');
+  const Y_AXIS_W = 42;
+  const CHART_H = 140;
+
   return (
     <div className="relative">
-      <div ref={wrapperRef} className="flex items-end gap-[2px] w-full" style={{ height: 140 }}
-        onMouseLeave={() => setHover(null)}>
-        {items.map((x, idx) => {
-          const raw = useDist ? x.dist : (useDur ? x.dur : 0);
-          const share = totalForShares > 0
-            ? (raw / totalForShares) * 100
-            : equalShare;
-          const widthPct = Math.max(share, equalShare * 0.5);
-          const h = x.val != null && x.val > 0
-            ? (isPaceLike ? ((maxV - x.val) / span) : ((x.val - minV) / span)) * 0.85 + 0.15
-            : 0;
-          const rank = rankByIdx.get(idx) ?? idx;
-          const palette = x.lactate != null ? LACTATE_PALETTE : VIOLET_PALETTE;
-          const bg = palette[Math.min(rank, palette.length - 1)] || color;
-          const isHovered = hover && hover.idx === idx;
-          return (
-            <div
-              key={idx}
-              className="relative h-full cursor-pointer"
-              style={{ flexBasis: `${widthPct}%`, flexGrow: 0, flexShrink: 1, minWidth: 3 }}
-              onMouseEnter={(e) => {
-                const rect = wrapperRef.current?.getBoundingClientRect();
-                const bx = e.currentTarget.getBoundingClientRect();
-                setHover({ idx, x: bx.left - (rect?.left || 0) + bx.width / 2, y: bx.top - (rect?.top || 0) });
-              }}
-            >
+      <div className="flex" style={{ height: CHART_H }}>
+        {/* Y-axis labels */}
+        <div className="relative shrink-0 select-none" style={{ width: Y_AXIS_W, height: CHART_H }}>
+          {yTicks.map((v, i) => (
+            <span key={i}
+              className="absolute right-1 text-[9px] text-gray-400 tabular-nums leading-none"
+              style={{ top: `${(i / 4) * 100}%`, transform: 'translateY(-50%)' }}>
+              {fmtTick(v)}
+            </span>
+          ))}
+          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none">{unitLabel}</span>
+        </div>
+        {/* Bars */}
+        <div ref={wrapperRef} className="flex items-end gap-[2px] flex-1 min-w-0 border-l border-gray-100"
+          onMouseLeave={() => setHover(null)}>
+          {items.map((x, idx) => {
+            const raw = useDist ? x.dist : (useDur ? x.dur : 0);
+            const share = totalForShares > 0
+              ? (raw / totalForShares) * 100
+              : equalShare;
+            const widthPct = Math.max(share, equalShare * 0.5);
+            const h = x.val != null && x.val > 0
+              ? (isPaceLike ? ((maxV - x.val) / span) : ((x.val - minV) / span)) * 0.85 + 0.15
+              : 0;
+            const bg = x.lactate != null ? LACTATE_COLOR : VIOLET_COLOR;
+            const isHovered = hover && hover.idx === idx;
+            return (
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-t-md transition-opacity"
-                style={{
-                  height: `${Math.max(h * 100, 4)}%`,
-                  backgroundColor: bg,
-                  opacity: isHovered ? 1 : 0.85,
-                  boxShadow: isHovered ? `0 0 0 1.5px ${bg}, 0 4px 12px ${bg}55` : undefined,
+                key={idx}
+                className="relative h-full cursor-pointer"
+                style={{ flexBasis: `${widthPct}%`, flexGrow: 0, flexShrink: 1, minWidth: 3 }}
+                onMouseEnter={(e) => {
+                  const rect = wrapperRef.current?.getBoundingClientRect();
+                  const bx = e.currentTarget.getBoundingClientRect();
+                  setHover({ idx, x: bx.left - (rect?.left || 0) + bx.width / 2, y: bx.top - (rect?.top || 0) });
                 }}
-              />
-            </div>
-          );
-        })}
+              >
+                <div
+                  className="absolute bottom-0 left-0 right-0 rounded-t-md transition-opacity"
+                  style={{
+                    height: `${Math.max(h * 100, 4)}%`,
+                    backgroundColor: bg,
+                    opacity: isHovered ? 1 : 0.85,
+                    boxShadow: isHovered ? `0 0 0 1.5px ${bg}, 0 4px 12px ${bg}55` : undefined,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
       {hover && (() => {
         const x = items[hover.idx];
@@ -295,6 +313,9 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   const [filterWork, setFilterWork]     = useState(true);
   const [collapsed, setCollapsed]       = useState(false);
   const loadingRef = useRef(new Set());
+  // Filled by the per-card bar block; the line chart below reads it so both
+  // share the same y-axis bounds (max across every session of the title).
+  const sharedRangeRef = useRef({ min: null, max: null });
 
   // Use external title if provided (keeps in sync with TrainingGraph selector)
   const selectedTitle = externalTitle !== undefined && externalTitle !== null ? externalTitle : localTitle;
@@ -684,19 +705,30 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                     Y-axis scale is shared across all selected sessions so
                     differences between same-workout repeats are visible. */}
                 <div className="mb-4 space-y-3">{(() => {
-                  // Pre-compute shared min/max across every selected session.
+                  // Compute shared min/max across EVERY session of the title
+                  // (not just the selected ones) so the y-axis stays stable
+                  // when the user toggles sessions on/off. Add a few percent
+                  // headroom so the tallest bar never touches the top edge.
                   const allVals = [];
-                  series.forEach((s) => {
-                    const id = getSessionId(s.session);
+                  sessions.forEach((sess) => {
+                    const id = getSessionId(sess);
                     const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
                     const laps = filterWork ? filterWorkLaps(raw) : raw;
                     laps.forEach(l => {
-                      const v = getLapValue(l, metric, s.session.sport || sport);
+                      const v = getLapValue(l, metric, sess.sport || sport);
                       if (v != null && v > 0) allVals.push(v);
                     });
                   });
-                  const sharedMin = allVals.length ? Math.min(...allVals) : null;
-                  const sharedMax = allVals.length ? Math.max(...allVals) : null;
+                  let sharedMin = allVals.length ? Math.min(...allVals) : null;
+                  let sharedMax = allVals.length ? Math.max(...allVals) : null;
+                  if (sharedMin != null && sharedMax != null) {
+                    const pad = Math.max((sharedMax - sharedMin) * 0.08, sharedMax * 0.03, 1);
+                    sharedMin = Math.max(0, sharedMin - pad * 0.4);
+                    sharedMax = sharedMax + pad;
+                  }
+                  // Stash on the parent component scope via a closure-friendly
+                  // ref so the line chart below can use the same bounds.
+                  sharedRangeRef.current = { min: sharedMin, max: sharedMax };
                   return series.map((s) => {
                     const id = getSessionId(s.session);
                     const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
@@ -771,6 +803,11 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                           axisLine={false} tickLine={false}
                           width={metric === 'pace' ? 52 : 36}
                           reversed={metric === 'pace'} // lower pace = faster = better → show at top
+                          domain={[
+                            sharedRangeRef.current.min != null ? sharedRangeRef.current.min : 'auto',
+                            sharedRangeRef.current.max != null ? sharedRangeRef.current.max : 'auto',
+                          ]}
+                          allowDataOverflow={false}
                         />
                         <Tooltip
                           content={<LapTooltip series={series} metric={metric} sport={sport} />}
