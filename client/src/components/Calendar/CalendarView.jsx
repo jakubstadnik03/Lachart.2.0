@@ -2657,6 +2657,9 @@ export default function CalendarView({
   // Mobile-specific state
   const [mobileTab, setMobileTab] = useState('calendar');
   const [showMiniCal, setShowMiniCal] = useState(true);
+  // In Charts mode the mini-cal is collapsed by default so the chart gets full
+  // viewport height; user can pull it open to jump to a date.
+  const [showMiniCalCharts, setShowMiniCalCharts] = useState(false);
   const [chartType, setChartType] = useState('volume');
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => getLocalDateString(new Date()));
   const dayListRef = useRef(null);
@@ -2785,30 +2788,60 @@ export default function CalendarView({
   }, [draggedPw != null]); // eslint-disable-line
 
   // Tapping the active Calendar tab in the native bottom bar fires
-  // `nl-tab-reclicked`. Reset the view to today and scroll the page so the
-  // current day is visible — mirrors the "tap-the-tab-again to go home"
-  // pattern on iOS/Android.
+  // `nl-tab-reclicked`. Reset the view to today and scroll to the today card
+  // — mirrors the "tap-the-tab-again to go home" pattern on iOS/Android.
   useEffect(() => {
     const onReclick = (e) => {
       if (e?.detail?.key !== 'calendar') return;
       const today = new Date();
+      const todayKey = getLocalDateString(today);
       setAnchorDate(today);
-      // Find the scrollable parent and scroll to top so the calendar (which
-      // is now showing today's week/month) is fully visible.
-      requestAnimationFrame(() => {
-        let node = fullscreenScrollRef.current?.parentElement || document.body;
-        while (node && node !== document.body) {
-          const cs = window.getComputedStyle(node);
-          if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') break;
-          node = node.parentElement;
+      setMobileTab('calendar');
+      setSelectedMobileDay(todayKey);
+      // Wait for the calendar tab + month to render, then scroll the today
+      // card into view (just below the sticky header).
+      isAutoScrollingRef.current = true;
+      const tryScroll = (attempt = 0) => {
+        const el = dayRefs.current[todayKey];
+        if (el) {
+          scrollToEl(el);
+          setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+          return;
         }
-        if (node && node !== document.body) node.scrollTo({ top: 0, behavior: 'smooth' });
-        else window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
+        if (attempt < 10) setTimeout(() => tryScroll(attempt + 1), 50);
+        else isAutoScrollingRef.current = false;
+      };
+      requestAnimationFrame(() => tryScroll());
     };
     window.addEventListener('nl-tab-reclicked', onReclick);
     return () => window.removeEventListener('nl-tab-reclicked', onReclick);
-  }, []);
+  }, [scrollToEl]);
+
+  // Auto-scroll to today on first mobile-calendar render so the user lands on
+  // the current day even on initial app open / tab switch. Only fires once
+  // per Calendar tab visit.
+  const didInitialScrollToTodayRef = useRef(false);
+  useEffect(() => {
+    if (!isMobile || mobileTab !== 'calendar') {
+      didInitialScrollToTodayRef.current = false;
+      return;
+    }
+    if (didInitialScrollToTodayRef.current) return;
+    const todayKey = getLocalDateString(new Date());
+    isAutoScrollingRef.current = true;
+    const tryScroll = (attempt = 0) => {
+      const el = dayRefs.current[todayKey];
+      if (el) {
+        scrollToEl(el);
+        didInitialScrollToTodayRef.current = true;
+        setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+        return;
+      }
+      if (attempt < 15) setTimeout(() => tryScroll(attempt + 1), 60);
+      else isAutoScrollingRef.current = false;
+    };
+    requestAnimationFrame(() => tryScroll());
+  }, [isMobile, mobileTab, anchorDate, scrollToEl]);
 
   // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
   // Also detect month change and notify parent
@@ -3549,31 +3582,113 @@ export default function CalendarView({
               )}
             </>)}
 
-            {mobileTab === 'charts' && (
-              <div className="pb-2">
-                {/* ── Period nav ── */}
-                <div className="flex items-center justify-between px-3 mb-2">
-                  <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
-                    <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
-                  </button>
-                  <div className="flex flex-col items-center gap-1.5">
-                    <span className="text-sm font-bold text-gray-900">
-                      {view === 'week'
-                        ? `${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
-                        : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-                    </span>
-                    <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-                      {[['month', 'Month'], ['week', 'Week']].map(([v, lbl]) => (
-                        <button key={v} onClick={() => setView(v)}
-                          className={`px-3 py-0.5 text-xs font-semibold rounded-md transition-all touch-manipulation ${view === v ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >{lbl}</button>
-                      ))}
-                    </div>
-                  </div>
+            {mobileTab === 'charts' && (<>
+              {/* ── Month nav + mini-cal toggle (matches Calendar tab) ── */}
+              <div className="flex items-center justify-between px-3 mb-1">
+                <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+                </button>
+                <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                  {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                </button>
+                <div className="flex items-center gap-1">
                   <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
                     <ChevronRightIcon className="w-5 h-5 text-gray-600" />
                   </button>
+                  <button
+                    onClick={() => setShowMiniCalCharts(v => !v)}
+                    className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation transition-transform"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    title={showMiniCalCharts ? 'Hide calendar' : 'Show calendar'}
+                  >
+                    <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showMiniCalCharts ? '' : 'rotate-180'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Mini month grid (collapsed by default in Charts) ── */}
+              {showMiniCalCharts && (
+                <div className="px-3 pb-2">
+                  <div className="grid grid-cols-7 mb-0.5">
+                    {['M','T','W','T','F','S','S'].map((d, i) => (
+                      <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {days.map(dayDate => {
+                      const key = getLocalDateString(dayDate);
+                      const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
+                      const isToday = isSameDay(dayDate, new Date());
+                      const acts = activitiesByDay.get(key) || [];
+                      const planned = plannedByDay.get(key) || [];
+                      const dots = [...new Set(acts.map(a => {
+                        const s = (a.sport || '').toLowerCase();
+                        if (s.includes('run') || s.includes('walk')) return 'run';
+                        if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+                        if (s.includes('swim')) return 'swim';
+                        return 'other';
+                      }))].slice(0, 3);
+                      const hasPlanOnly = planned.length > 0 && acts.length === 0;
+                      const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+                      const isSunday = dayDate.getDay() === 0;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            // Tapping a day in Charts mode jumps back to the
+                            // Calendar view and scrolls to that day.
+                            setAnchorDate(dayDate);
+                            setSelectedMobileDay(key);
+                            setMobileTab('calendar');
+                            setShowMiniCal(true);
+                            isAutoScrollingRef.current = true;
+                            setTimeout(() => {
+                              const el = dayRefs.current[key];
+                              if (el) scrollToEl(el);
+                              setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+                            }, 80);
+                          }}
+                          className="flex flex-col items-center py-0.5 touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >
+                          <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
+                            isToday ? 'bg-primary text-white' :
+                            isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                          }`}>
+                            {dayDate.getDate()}
+                          </span>
+                          <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
+                            {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
+                            {dots.map((sport, si) => (
+                              <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
+                            ))}
+                            {isSunday && isCurrentMonth && (
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Sub-controls: week/month view + chart type ── */}
+              <div className="pb-2">
+                <div className="flex items-center justify-center px-3 mb-2">
+                  <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                    {[['month', 'Month'], ['week', 'Week']].map(([v, lbl]) => (
+                      <button key={v} onClick={() => setView(v)}
+                        className={`px-3 py-0.5 text-xs font-semibold rounded-md transition-all touch-manipulation ${view === v ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >{lbl}</button>
+                    ))}
+                  </div>
+                  {view === 'week' && (
+                    <span className="ml-2 text-[11px] font-medium text-gray-500">
+                      {`${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
+                    </span>
+                  )}
                 </div>
                 {/* Chart type switcher */}
                 {!mobileChartsContent && (
@@ -3589,7 +3704,7 @@ export default function CalendarView({
                   </div>
                 )}
               </div>
-            )}
+            </>)}
           </div>
 
           {/* ── Calendar tab: day list (page scrolls) ── */}
