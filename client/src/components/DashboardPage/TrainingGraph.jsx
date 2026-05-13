@@ -360,17 +360,23 @@ const TrainingGraph = ({
   };
 
   // Sync selection when trainings or sport changes.
-  // Priority: selectedTitle drives selectedTraining (so a user title change
-  // in any sibling component — e.g. LapComparison — picks a fresh training
-  // for that title instead of being overwritten back to the stale id).
+  // Important: selectedTitle is shared with sibling components that may have
+  // a wider trainings set (e.g. LapComparison sees Strava exports we don't).
+  // If a user sets a title that isn't in our list, leave the shared state
+  // alone — otherwise we'd overwrite their pick and the dropdown would
+  // appear "stuck".
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
     setLoading(false);
     const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
-    if (sportTrainings.length === 0) { if (setSelectedTitle) setSelectedTitle(null); if (setSelectedTraining) setSelectedTraining(null); return; }
+    if (sportTrainings.length === 0) {
+      // Don't reset selectedTitle — a sibling may still have a valid match.
+      if (setSelectedTraining) setSelectedTraining(null);
+      return;
+    }
     const hasResults = (t) => Array.isArray(t?.results) && t.results.length > 0;
 
-    // Happy path: current selection is still consistent (title + training).
+    // Happy path: current pair is consistent.
     if (selectedTraining && selectedTitle) {
       const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
       if (currentTraining && currentTraining.title === selectedTitle && matchesSport(currentTraining, currentSelectedSport)) {
@@ -378,15 +384,28 @@ const TrainingGraph = ({
       }
     }
 
-    // Title changed (or no title yet) — find a training matching it.
+    // Title set — look it up in our list.
     if (selectedTitle) {
       const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
-      const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
-      if (pick) { if (setSelectedTraining) setSelectedTraining((pick._id || pick.id)); return; }
+      if (trainingsWithTitle.length > 0) {
+        const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
+        const pickId = pick._id || pick.id;
+        if (!selectedTraining || !trainingsWithTitle.some(t => matchesId(t, selectedTraining))) {
+          if (setSelectedTraining) setSelectedTraining(pickId);
+        }
+        return;
+      }
+      // Title not in our narrower list — DO NOT clobber it. A sibling owns it.
+      // Just drop our local selectedTraining so the chart goes blank instead
+      // of showing the wrong training.
+      if (selectedTraining) {
+        const stillMatches = trainingList.find(t => matchesId(t, selectedTraining));
+        if (!stillMatches && setSelectedTraining) setSelectedTraining(null);
+      }
+      return;
     }
 
-    // No title (or title has no matches) — keep the current training if it
-    // still matches sport, else pick the newest one with results.
+    // No title yet — pick newest with results.
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
       if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
