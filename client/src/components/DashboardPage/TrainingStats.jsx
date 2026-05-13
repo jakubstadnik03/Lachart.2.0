@@ -16,13 +16,19 @@ const INTERVAL_TYPE_BAR = {
   cooldown: { normal: '#38bdf8', hovered: '#0ea5e9' },
 };
 
-/** Return only work intervals (or all if no types set). */
+/** Return only work intervals (or all if no types set).
+ *  Treats explicit warmup / recovery / cooldown as non-work; untagged
+ *  entries are kept when at least one tag exists so partially-annotated
+ *  sessions still produce a sane average. */
 function workOnly(results) {
   if (!results || results.length === 0) return [];
-  const hasTypes = results.some(r => r.intervalType);
+  const hasTypes = results.some(r => r && r.intervalType);
   if (!hasTypes) return results;
-  const work = results.filter(r => r.intervalType === 'work');
-  return work.length > 0 ? work : results;
+  const filtered = results.filter(r => {
+    const t = r && r.intervalType;
+    return t !== 'warmup' && t !== 'recovery' && t !== 'cooldown';
+  });
+  return filtered.length > 0 ? filtered : results;
 }
 
 const GRAPH_H = 200;
