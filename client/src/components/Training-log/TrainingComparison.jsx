@@ -109,29 +109,13 @@ const METRICS = [
   { id: 'RPE', label: 'RPE' },
 ];
 
-// Match the Dashboard's Training History dropdown — any training the user
-// has explicitly authored or annotated counts:
-//   • Regular trainings (manually created — title is always user-chosen).
-//   • FIT / Strava / Garmin / Apple exports where the user has either
-//     renamed the title (titleManual) or assigned a category.
-// Untouched auto-imports are filtered out so the dropdown isn't drowned
-// in "Morning Ride / Afternoon Run" entries.
+// Only show trainings the user has explicitly flagged as intervals — either
+// renamed the title (titleManual) or assigned a category. Auto-named
+// imports stay out.
 function isAnnotatedExport(t) {
   if (!t) return false;
-  const idStr = String(t.id || t._id || '');
-  const isExport = !!t.stravaId
-    || t.source === 'strava' || t.source === 'fit' || t.source === 'garmin' || t.source === 'apple'
-    || t.type === 'strava'   || t.type === 'fit'   || t.type === 'garmin'   || t.type === 'apple'
-    || idStr.startsWith('strava-') || idStr.startsWith('fit-') || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
-    || !!t.timestamp;
-
   const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
   const hasCategory    = !!(t.category && String(t.category).trim());
-  const hasResults     = Array.isArray(t.results) && t.results.length > 0;
-
-  // Regular trainings: always include (user authored the title).
-  if (!isExport) return !!(t.title || hasResults);
-  // Exports: require explicit annotation.
   return hasManualTitle || hasCategory;
 }
 

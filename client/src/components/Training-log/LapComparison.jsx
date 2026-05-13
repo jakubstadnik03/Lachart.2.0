@@ -231,23 +231,14 @@ function LapBars({ laps, sport, metric, color }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-// Match the Dashboard's Training History dropdown — keep regular (manually
-// authored) trainings and any user-annotated export (renamed title or
-// category). Untouched auto-imports are skipped.
+// Only show trainings the user has explicitly flagged as intervals — either
+// renamed the title (titleManual) or assigned a category. This matches the
+// user's spec literally and keeps auto-named Strava imports ("15km Recovery
+// Run", "Morning Ride") out of the dropdown.
 function isAnnotatedExport(t) {
   if (!t) return false;
-  const idStr = String(t.id || t._id || '');
-  const isExport = !!t.stravaId
-    || t.source === 'strava' || t.source === 'fit' || t.source === 'garmin' || t.source === 'apple'
-    || t.type === 'strava'   || t.type === 'fit'   || t.type === 'garmin'   || t.type === 'apple'
-    || idStr.startsWith('strava-') || idStr.startsWith('fit-') || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
-    || !!t.timestamp;
-
   const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
   const hasCategory    = !!(t.category && String(t.category).trim());
-  const hasResults     = Array.isArray(t.results) && t.results.length > 0;
-
-  if (!isExport) return !!(t.title || hasResults);
   return hasManualTitle || hasCategory;
 }
 
