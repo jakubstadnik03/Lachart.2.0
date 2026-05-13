@@ -122,7 +122,27 @@ function LapTooltip({ active, payload, label, series, metric, sport }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function LapComparison({ trainings, selectedTitle: externalTitle, setSelectedTitle: setExternalTitle }) {
+// Match the filter from TrainingComparison: only annotated Strava/FIT/Garmin
+// exports (user-renamed title OR category) are treated as intervals.
+function isAnnotatedExport(t) {
+  if (!t) return false;
+  const idStr = String(t.id || t._id || '');
+  const isExport = !!t.stravaId
+    || t.source === 'strava' || t.source === 'fit' || t.source === 'garmin' || t.source === 'apple'
+    || t.type === 'strava'   || t.type === 'fit'   || t.type === 'garmin'   || t.type === 'apple'
+    || idStr.startsWith('strava-') || idStr.startsWith('fit-') || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
+    || !!t.timestamp;
+  if (!isExport) return false;
+  const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
+  const hasCategory    = !!(t.category && String(t.category).trim());
+  return hasManualTitle || hasCategory;
+}
+
+export default function LapComparison({ trainings: rawTrainings, selectedTitle: externalTitle, setSelectedTitle: setExternalTitle }) {
+  const trainings = useMemo(
+    () => (Array.isArray(rawTrainings) ? rawTrainings.filter(isAnnotatedExport) : []),
+    [rawTrainings]
+  );
   const [localTitle, setLocalTitle]     = useState('');
   const [selectedIds, setSelectedIds]   = useState([]);
   const [lapsCache, setLapsCache]       = useState({}); // id -> laps[] | 'loading' | 'error'

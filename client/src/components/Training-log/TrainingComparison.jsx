@@ -109,10 +109,34 @@ const METRICS = [
   { id: 'RPE', label: 'RPE' },
 ];
 
-const TrainingComparison = ({ trainings }) => {
+// Only Strava/FIT/Garmin/Apple exports that the user has explicitly
+// annotated (renamed the title OR assigned a category) are treated as
+// intervals worth comparing. Raw imports are noise here.
+function isAnnotatedExport(t) {
+  if (!t) return false;
+  const idStr = String(t.id || t._id || '');
+  const isExport = !!t.stravaId
+    || t.source === 'strava' || t.source === 'fit' || t.source === 'garmin' || t.source === 'apple'
+    || t.type === 'strava'   || t.type === 'fit'   || t.type === 'garmin'   || t.type === 'apple'
+    || idStr.startsWith('strava-') || idStr.startsWith('fit-') || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
+    || !!t.timestamp; // FIT trainings carry timestamp from the file
+  if (!isExport) return false;
+  const hasManualTitle = !!(t.titleManual && String(t.titleManual).trim());
+  const hasCategory    = !!(t.category && String(t.category).trim());
+  return hasManualTitle || hasCategory;
+}
+
+const TrainingComparison = ({ trainings: rawTrainings }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
+
+  // Filter early so every derived list (categories / titles / chart / …)
+  // sees only the annotated exports.
+  const trainings = useMemo(
+    () => (Array.isArray(rawTrainings) ? rawTrainings.filter(isAnnotatedExport) : []),
+    [rawTrainings]
+  );
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('trainingComparison_tab') || 'compare');
   const stripUnits = (text) => {
     if (!text || typeof text !== 'string') return text;
