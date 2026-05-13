@@ -1070,11 +1070,14 @@ export default function DashboardPage() {
         ? recentTrainings
         : recentTrainings.filter(t => t.sport === selectedSport);
 
-      if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
-        // Default to the most recent training (by date) — recentTrainings is
-        // already sorted desc, but be explicit so the graph/history widgets
-        // always land on the user's latest workout. Strava entries have `id`
-        // not `_id`, so fall back to either.
+      // Preserve the user's pick even if it belongs to a sport other than the
+      // current sport filter. Checking against `sportTrainings` clobbered the
+      // selection right after the user clicked a swim title with the run
+      // filter active. Validity is checked against the full recentTrainings
+      // list — Training History / Graph render fine even when the title is
+      // outside the active sport filter.
+      const titleExists = !!selectedTitle && recentTrainings.some(t => t.title === selectedTitle);
+      if (!titleExists) {
         const latest = [...sportTrainings].sort((a, b) =>
           new Date(b.date || b.startDate || b.timestamp || 0) - new Date(a.date || a.startDate || a.timestamp || 0)
         )[0];
