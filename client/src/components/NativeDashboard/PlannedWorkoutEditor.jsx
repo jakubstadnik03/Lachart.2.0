@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { updatePlannedWorkout, deletePlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
+import { useCategories } from '../../context/CategoryContext';
 
 // Local keyframes — sheet slides up, scrim fades in
 const SHEET_KEYFRAMES = `
@@ -50,6 +51,9 @@ export default function PlannedWorkoutEditor({
   const [durM, setDurM]         = useState('');
   const [targetTss, setTargetTss] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
+  const [catOpen, setCatOpen]   = useState(false);
+  const { categories, getCategory, getCategoryStyle } = useCategories();
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError]       = useState(null);
@@ -66,6 +70,7 @@ export default function PlannedWorkoutEditor({
     setDurM(m);
     setTargetTss(plannedWorkout.targetTss != null ? String(plannedWorkout.targetTss) : '');
     setDescription(plannedWorkout.description || plannedWorkout.notes || '');
+    setCategory(plannedWorkout.category || '');
     setError(null);
     setConfirmDelete(false);
   }, [plannedWorkout]);
@@ -95,8 +100,49 @@ export default function PlannedWorkoutEditor({
         plannedDuration: hmToSecs(durH, durM),   // seconds
         targetTss: targetTss !== '' ? Number(targetTss) : null,
         description: description.trim(),
+        category: category || null,
       };
       const updated = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
+
+      // If the plan is paired with a real activity, mirror the title and
+      // category onto it too — the calendar pairs the two and the user
+      // expects them to stay in sync. Best-effort, doesn't block the save.
+      if (linkedActivity && (linkedActivity.id || linkedActivity._id)) {
+        try {
+          const actId = String(linkedActivity.id || linkedActivity._id || '');
+          const isStrava = !!linkedActivity.stravaId
+            || linkedActivity.source === 'strava' || linkedActivity.type === 'strava'
+            || actId.startsWith('strava-');
+          const isFit = linkedActivity.source === 'fit'
+            || linkedActivity.type === 'fit'
+            || actId.startsWith('fit-');
+          const titleDiffers = payload.title && payload.title !== (linkedActivity.titleManual || linkedActivity.title || linkedActivity.name);
+          const catDiffers = payload.category !== (linkedActivity.category || null);
+          if (titleDiffers || catDiffers) {
+            const actPayload = {};
+            if (titleDiffers) {
+              if (isStrava) actPayload.title = payload.title; else actPayload.titleManual = payload.title;
+            }
+            if (catDiffers) actPayload.category = payload.category;
+            if (isStrava) {
+              const { updateStravaActivity } = await import('../../services/api');
+              const rawId = String(linkedActivity.stravaId || actId.replace(/^strava-/, ''));
+              await updateStravaActivity(rawId, actPayload);
+            } else if (isFit || linkedActivity._id) {
+              const { updateFitTraining } = await import('../../services/api');
+              const rawId = String(linkedActivity._id || actId.replace(/^fit-/, ''));
+              await updateFitTraining(rawId, actPayload);
+            }
+            try {
+              if (titleDiffers) window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: actId, title: payload.title } }));
+              if (catDiffers)   window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id: actId, category: payload.category } }));
+            } catch { /* ignore */ }
+          }
+        } catch (mirrorErr) {
+          console.warn('Failed to mirror plan edits to linked activity', mirrorErr);
+        }
+      }
+
       onSaved && onSaved(updated);
       onClose && onClose();
     } catch (e) {
@@ -335,6 +381,73 @@ export default function PlannedWorkoutEditor({
               />
             </Field>
           </div>
+
+          {/* Category */}
+          <Field label="Category">
+            <div style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setCatOpen(v => !v)}
+                style={{
+                  ...input,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  cursor: 'pointer', textAlign: 'left',
+                  ...(category ? (() => { const s = getCategoryStyle(category); return { backgroundColor: s.backgroundColor, color: s.color, borderColor: s.borderColor }; })() : {}),
+                }}
+              >
+                {category ? (
+                  <>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: getCategory(category)?.color, flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700 }}>{getCategory(category)?.label || category}</span>
+                  </>
+                ) : (
+                  <span style={{ color: '#9aa0b8' }}>No category</span>
+                )}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" style={{ marginLeft: 'auto', opacity: 0.6 }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {catOpen && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 5,
+                  background: '#fff', borderRadius: 10, border: '1px solid rgba(118,126,181,.2)',
+                  boxShadow: '0 10px 24px -8px rgba(10,14,26,.18)', overflow: 'hidden',
+                  maxHeight: 240, overflowY: 'auto',
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => { setCategory(''); setCatOpen(false); }}
+                    style={{
+                      width: '100%', padding: '10px 12px', textAlign: 'left',
+                      background: !category ? 'rgba(118,126,181,.08)' : 'transparent',
+                      border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+                      display: 'flex', alignItems: 'center', gap: 8, color: '#5E6590',
+                    }}
+                  >
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1px solid #d1d5db', flexShrink: 0 }} />
+                    <span>No category</span>
+                  </button>
+                  {categories.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { setCategory(c.id); setCatOpen(false); }}
+                      style={{
+                        width: '100%', padding: '10px 12px', textAlign: 'left',
+                        background: category === c.id ? 'rgba(118,126,181,.08)' : 'transparent',
+                        border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        fontWeight: category === c.id ? 700 : 500,
+                      }}
+                    >
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: c.color, flexShrink: 0 }} />
+                      <span style={{ color: c.color }}>{c.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Field>
 
           {/* Description */}
           <Field label="Notes">
