@@ -656,11 +656,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const MAX_BAR_PX = 60; // largest bar width in zoomed mode
   const MIN_ZOOM_BAR = 16; // floor width for any non-pause bar
 
-  // Don't use fixed-width zoom when there are few laps — bars would cluster on the left.
-  // Instead keep proportional flex bars and just highlight the selection visually.
+  // Allow zoom for any session with 3+ laps. With flex-grow bars stretch to
+  // fill the viewport (no left-cluster), and the zoom adds the gap + selection
+  // emphasis the user actually expects when they tap a bar.
+  // (Single very-long lap dominating the chart still skips zoom — it'd just
+  //  push everything else off-screen.)
   const totalDur = laps.reduce((s, l) => s + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
   const maxDur   = Math.max(...laps.map(l => Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0)), 1);
-  const skipZoom = laps.length <= 8 || (totalDur > 0 && maxDur / totalDur > 0.40);
+  const skipZoom = laps.length < 3 || (totalDur > 0 && maxDur / totalDur > 0.70);
   const isZoomed = selectedLap != null && !skipZoom;
   const centerLapRef = useRef(null);
   const isProgrammaticScroll = useRef(false);
@@ -895,6 +898,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 width: '100%',
                 position: 'relative',
                 zIndex: 2,
+                transition: 'gap 0.25s ease',
               }}
             >
             {entries.map((ent, i) => {
@@ -927,8 +931,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // The earlier fixed-width zoom packed everything into the left
               // half on wide screens — the chart looked half-empty.
               const itemStyle = isZoomed
-                ? { flex: `${ent.weight} 1 ${zoomW}px`, minWidth: zoomW, height: CHART_H + X_LABEL_H }
-                : { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H };
+                ? { flex: `${ent.weight} 1 ${zoomW}px`, minWidth: zoomW, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' }
+                : { flex: `${ent.weight} 0 2px`,        minWidth: 2,     height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
 
               return (
                 <div
@@ -1573,10 +1577,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 chartScrollRef={lapChartScrollRef}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
-                  // Only scroll the table when the user explicitly TAPS a bar.
-                  // 'auto' instead of 'smooth' avoids fighting an in-progress
-                  // finger scroll on the laps table.
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                  // Smooth scroll the selected lap row into view. (Scroll-spy
+                  // from chart-drag updates selectedLap silently without
+                  // calling onSelectLap, so this only fires on real taps.)
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
                 // Horizontal scroll on the zoomed chart only updates the
                 // highlighted lap — it no longer jumps the table. Auto-
@@ -1905,7 +1909,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 chartScrollRef={lapChartScrollRef}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
                 // Horizontal chart scroll only highlights — does NOT pull the
                 // laps table. Auto-scrolling the table while the user is
