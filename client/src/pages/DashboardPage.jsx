@@ -272,7 +272,8 @@ export default function DashboardPage() {
   // Also sets regularTrainings state so loadCalendarData can be called without
   // a separate /user/athlete/:id/trainings round-trip.
   const loadTrainings = useCallback(async (targetId) => {
-    const cacheKey = `athleteTrainings_v2_${targetId}`;
+    // v3 — titleManual now wins over .title/.name in the merged mapping.
+    const cacheKey = `athleteTrainings_v3_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -326,8 +327,11 @@ export default function DashboardPage() {
         ...normalizeApiList(fitResponse?.data).map(t => ({
           ...t,
           category: t.category || null,
-          // FIT trainings use titleManual; TrainingGraph/History reads .title
-          title: t.title || t.titleManual || t.titleAuto || t.originalFileName || null,
+          // User-renamed title (titleManual) wins so the renames done via the
+          // Planned dialog actually show up everywhere (TrainingHistory,
+          // TrainingStats, TrainingGraph, etc.). Falls back through auto
+          // titles → original filename.
+          title: t.titleManual || t.title || t.titleAuto || t.originalFileName || null,
           // FIT trainings use timestamp as their date anchor
           date: t.date || t.timestamp || null,
           // Normalize sport from FIT values to short form
@@ -344,8 +348,10 @@ export default function DashboardPage() {
           category: a.category || null,
           // Strava uses startDate; all rendering/sorting code reads .date
           date: a.date || a.startDate || a.timestamp || null,
-          // Strava uses name; TrainingGraph/History reads .title
-          title: a.title || a.name || a.titleManual || null,
+          // titleManual (user rename) takes precedence over the original
+          // Strava name — otherwise the rename done from CalendarView never
+          // shows up in TrainingHistory / TrainingStats / TrainingGraph.
+          title: a.titleManual || a.name || a.title || null,
         }))
       ];
 
