@@ -3327,14 +3327,23 @@ function AppleHealthCard({ isMobile }) {
       const result = await syncHealthKit({ force: true });
       setLast(lastSyncedAt());
       if (result?.imported > 0) setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
-      else if (result?.skipped === 'denied') setMsg('Permission denied in Apple Health settings.');
-      else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}.`);
+      else if (result?.skipped === 'denied') setMsg('Permission denied. Open iOS Settings → Health → Data Access & Devices → LaChart to grant access.');
+      else if (result?.skipped === 'unavailable') setMsg('Apple Health is not available on this device.');
+      else if (result?.skipped === 'plugin-missing') setMsg('Apple Health plugin is unavailable in this build.');
+      else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}${result.error ? ` (${result.error})` : ''}.`);
       else setMsg('No new workouts found.');
     } catch (e) {
       setMsg(`Sync failed: ${e?.message || 'unknown error'}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleReset = async () => {
+    const { resetHealthKitSyncState } = await import('../services/healthKitSync');
+    resetHealthKitSyncState();
+    setLast(null);
+    setMsg('Local sync state cleared. Tap "Sync now" to reconnect — iOS will re-prompt for permission. To fully revoke, also open iOS Settings → Health → Data Access & Devices → LaChart.');
   };
 
   const lastStr = last ? last.toLocaleString() : 'never';
@@ -3358,15 +3367,26 @@ function AppleHealthCard({ isMobile }) {
         Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone, etc).
         Syncs automatically once a day when you open the app.
       </p>
-      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col' : ''}`}>
-        <button
-          type="button"
-          onClick={handleSync}
-          disabled={busy}
-          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
-        >
-          {busy ? 'Syncing…' : 'Sync now'}
-        </button>
+      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col items-stretch' : ''}`}>
+        <div className={`flex items-center gap-2 ${isMobile ? 'w-full' : ''}`}>
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={busy}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+          >
+            {busy ? 'Syncing…' : 'Sync now'}
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={busy}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-white text-gray-700 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+            title="Clear local sync state and re-request HealthKit permission"
+          >
+            Reset / Disconnect
+          </button>
+        </div>
         <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
           Last sync: {lastStr}
         </span>

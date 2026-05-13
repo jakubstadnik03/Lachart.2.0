@@ -16,6 +16,26 @@ const PERMS_KEY    = 'healthkit_perms_asked'; // '1' once we've asked
 const THROTTLE_MS  = 24 * 60 * 60 * 1000;     // 24h
 const LOOKBACK_DAYS = 30;
 const MAX_WORKOUTS  = 200;                    // safety cap per sync
+const PLUGIN_TIMEOUT_MS = 30 * 1000;          // bail if HealthKit hangs
+
+/** Promise.race wrapper that rejects when the underlying plugin call hangs. */
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+/** Wipe local sync metadata so the next sync acts like a fresh connection. */
+export function resetHealthKitSyncState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PERMS_KEY);
+  } catch { /* ignore */ }
+}
 
 // Lazy-loaded to keep the web bundle clean.
 let _plugin = null;
@@ -112,24 +132,30 @@ export async function syncHealthKit({ force = false } = {}) {
   if (!plugin) return { skipped: 'plugin-missing' };
 
   // Bail early if data isn't available (iPad without Health, simulator, etc.)
-  try { await plugin.isAvailable(); }
-  catch { return { skipped: 'unavailable' }; }
+  try { await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable'); }
+  catch (e) { return { skipped: 'unavailable', error: e?.message }; }
 
   if (!force && !isStale()) return { skipped: 'throttled', lastSync: lastSyncedAt() };
 
-  if (!(await ensurePermission(plugin))) return { skipped: 'denied' };
+  try {
+    if (!(await withTimeout(ensurePermission(plugin), PLUGIN_TIMEOUT_MS, 'requestAuthorization'))) {
+      return { skipped: 'denied' };
+    }
+  } catch (e) {
+    return { skipped: 'denied', error: e?.message };
+  }
 
   const endDate = new Date();
   const startDate = new Date(endDate.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
   let workouts = [];
   try {
-    const res = await plugin.queryHKitSampleType({
+    const res = await withTimeout(plugin.queryHKitSampleType({
       sampleName: 'workoutType',
       startDate: startDate.toISOString(),
       endDate:   endDate.toISOString(),
       limit:     MAX_WORKOUTS,
-    });
+    }), PLUGIN_TIMEOUT_MS, 'queryHKitSampleType');
     workouts = Array.isArray(res?.resultData) ? res.resultData : [];
   } catch (e) {
     console.warn('[healthkit] query failed:', e?.message || e);
