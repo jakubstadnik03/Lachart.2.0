@@ -6,6 +6,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 import { getStravaActivityDetail, getFitTraining } from '../../services/api';
+import { SearchableSelect } from '../SearchableSelect';
+import { useCategories } from '../../context/CategoryContext';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -120,6 +122,113 @@ function LapTooltip({ active, payload, label, series, metric, sport }) {
   );
 }
 
+// ─── Per-session lap bar chart ────────────────────────────────────────────────
+
+const VIOLET_PALETTE  = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
+const LACTATE_PALETTE = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
+
+function fmtLapDuration(sec) {
+  if (!sec || sec <= 0) return '—';
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function fmtLapDistance(m) {
+  if (!m || m <= 0) return null;
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 2)} km`;
+}
+
+function LapBars({ laps, sport, metric, color }) {
+  const [hover, setHover] = useState(null); // { idx, x, y }
+  const wrapperRef = useRef(null);
+
+  // Compute lap durations/distances + metric values
+  const items = useMemo(() => laps.map((lap, i) => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
+    const val  = getLapValue(lap, metric, sport);
+    const lactate = lap.lactate != null ? Number(lap.lactate) : null;
+    return { i, dur, dist, val, lactate };
+  }), [laps, metric, sport]);
+
+  const totalDist = items.reduce((s, x) => s + (x.dist || 0), 0);
+  const totalDur  = items.reduce((s, x) => s + (x.dur  || 0), 0);
+  const useDist   = totalDist > 0;
+
+  // For pace, lower=better → tallest bar = lowest value. Invert.
+  const vals = items.map(x => x.val).filter(v => v != null && v > 0);
+  if (vals.length === 0) return null;
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const span = Math.max(maxV - minV, 1);
+  const isPaceLike = metric === 'pace';
+
+  // Rank values for color shade (highest val = darkest for power/HR;
+  // lowest val = darkest for pace, since lower pace = faster).
+  const ranked = [...items]
+    .map(x => ({ ...x }))
+    .filter(x => x.val != null && x.val > 0)
+    .sort((a, b) => isPaceLike ? a.val - b.val : b.val - a.val);
+  const rankByIdx = new Map(ranked.map((x, r) => [x.i, r]));
+
+  const totalForShares = useDist ? totalDist : totalDur;
+  const equalShare = 100 / Math.max(items.length, 1);
+
+  return (
+    <div className="relative">
+      <div ref={wrapperRef} className="flex items-end gap-[2px] w-full" style={{ height: 64 }}
+        onMouseLeave={() => setHover(null)}>
+        {items.map((x, idx) => {
+          const share = totalForShares > 0
+            ? ((useDist ? x.dist : x.dur) / totalForShares) * 100
+            : equalShare;
+          const widthPct = Math.max(share, 0.5);
+          const h = x.val != null && x.val > 0
+            ? (isPaceLike ? ((maxV - x.val) / span) : ((x.val - minV) / span)) * 0.85 + 0.15
+            : 0;
+          const rank = rankByIdx.get(idx) ?? idx;
+          const palette = x.lactate != null ? LACTATE_PALETTE : VIOLET_PALETTE;
+          const bg = palette[Math.min(rank, palette.length - 1)] || color;
+          return (
+            <div
+              key={idx}
+              className="relative h-full cursor-pointer"
+              style={{ flexBasis: `${widthPct}%`, flexGrow: 0, flexShrink: 1, minWidth: 3 }}
+              onMouseEnter={(e) => {
+                const rect = wrapperRef.current?.getBoundingClientRect();
+                const bx = e.currentTarget.getBoundingClientRect();
+                setHover({ idx, x: bx.left - (rect?.left || 0) + bx.width / 2, y: bx.top - (rect?.top || 0) });
+              }}
+            >
+              <div
+                className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-opacity"
+                style={{
+                  height: `${Math.max(h * 100, 4)}%`,
+                  backgroundColor: bg,
+                  opacity: hover && hover.idx === idx ? 1 : 0.78,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {hover && (() => {
+        const x = items[hover.idx];
+        return (
+          <div className="absolute pointer-events-none z-20 px-2 py-1.5 rounded-lg shadow-lg bg-white border border-gray-200 text-[10px] leading-tight"
+            style={{ left: hover.x, top: Math.max(hover.y - 10, 0), transform: 'translate(-50%, -100%)', minWidth: 110 }}>
+            <div className="font-bold text-gray-800 mb-0.5">Lap #{x.i + 1}</div>
+            {x.dist > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Distance</span><span className="font-semibold text-gray-700">{fmtLapDistance(x.dist)}</span></div>}
+            {x.dur > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Time</span><span className="font-semibold text-gray-700">{fmtLapDuration(x.dur)}</span></div>}
+            {x.val != null && <div className="flex justify-between gap-2"><span className="text-gray-400">{metric === 'pace' ? 'Pace' : metric === 'hr' ? 'HR' : 'Power'}</span><span className="font-semibold text-gray-700">{fmtMetricLabel(x.val, metric, sport)}</span></div>}
+            {x.lactate != null && <div className="flex justify-between gap-2"><span className="text-gray-400">Lactate</span><span className="font-bold" style={{ color: '#d97706' }}>{x.lactate.toFixed(1)} mmol/L</span></div>}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 // Match the filter from TrainingComparison: only annotated Strava/FIT/Garmin
@@ -143,7 +252,9 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
     () => (Array.isArray(rawTrainings) ? rawTrainings.filter(isAnnotatedExport) : []),
     [rawTrainings]
   );
-  const [localTitle, setLocalTitle]     = useState('');
+  const { categories } = useCategories();
+  const [localTitle, setLocalTitle]       = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedIds, setSelectedIds]   = useState([]);
   const [lapsCache, setLapsCache]       = useState({}); // id -> laps[] | 'loading' | 'error'
   const [metric, setMetric]             = useState('pace');
@@ -152,27 +263,60 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   const loadingRef = useRef(new Set());
 
   // Use external title if provided (keeps in sync with TrainingGraph selector)
-  const selectedTitle = externalTitle !== undefined ? externalTitle : localTitle;
+  const selectedTitle = externalTitle !== undefined && externalTitle !== null ? externalTitle : localTitle;
   const setSelectedTitle = useCallback((v) => {
-    if (setExternalTitle) setExternalTitle(v);
-    setLocalTitle(v);
+    const next = v ?? '';
+    if (setExternalTitle) setExternalTitle(next);
+    setLocalTitle(next);
     setSelectedIds([]); // reset selection on title change
   }, [setExternalTitle]);
 
-  // All unique titles
-  const titles = useMemo(() => {
-    const s = new Set();
-    (trainings || []).forEach(t => { if (t.title) s.add(t.title); });
-    return Array.from(s).sort();
-  }, [trainings]);
+  // Trainings narrowed by category
+  const categoryFiltered = useMemo(() => {
+    if (selectedCategory === 'all') return trainings;
+    return trainings.filter(t => t.category === selectedCategory);
+  }, [trainings, selectedCategory]);
+
+  // Available categories (only those with at least one annotated export)
+  const categoryOptions = useMemo(() => {
+    const counts = new Map();
+    trainings.forEach(t => {
+      if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
+    });
+    const opts = [{ value: 'all', label: `All categories (${trainings.length})` }];
+    categories.forEach(c => {
+      const n = counts.get(c.id) || 0;
+      if (n > 0) opts.push({ value: c.id, label: `${c.label} (${n})` });
+    });
+    return opts;
+  }, [trainings, categories]);
+
+  // Title options derived from the category-filtered set
+  const titleOptions = useMemo(() => {
+    const set = new Map();
+    categoryFiltered.forEach(t => {
+      const title = t.titleManual || t.title;
+      if (title) set.set(title, (set.get(title) || 0) + 1);
+    });
+    return Array.from(set.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([title, count]) => ({ value: title, label: `${title} (${count})` }));
+  }, [categoryFiltered]);
+
+  // Reset title if it no longer exists after category narrows the set
+  useEffect(() => {
+    if (selectedTitle && !titleOptions.some(o => o.value === selectedTitle)) {
+      setSelectedTitle('');
+    }
+  }, [titleOptions, selectedTitle, setSelectedTitle]);
 
   // Sessions matching selectedTitle, sorted oldest→newest
   const sessions = useMemo(() => {
     if (!selectedTitle || selectedTitle === 'all') return [];
-    return (trainings || [])
-      .filter(t => t.title === selectedTitle)
+    return categoryFiltered
+      .filter(t => (t.titleManual || t.title) === selectedTitle)
       .sort((a, b) => getSessionDate(a) - getSessionDate(b));
-  }, [trainings, selectedTitle]);
+  }, [categoryFiltered, selectedTitle]);
 
   // Auto-select the two most recent sessions when title changes
   useEffect(() => {
@@ -335,21 +479,24 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
         <motion.div key="body" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}>
           <div className="p-4 space-y-4">
 
-            {/* Title selector */}
+            {/* Filters — same SearchableSelect design as TrainingStats */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-gray-500 shrink-0">Title:</span>
-              <select
+              <span className="text-xs font-semibold text-gray-500 shrink-0">Category:</span>
+              <SearchableSelect
+                value={selectedCategory}
+                options={categoryOptions}
+                onChange={(v) => { setSelectedCategory(v || 'all'); }}
+                placeholder="All categories"
+              />
+              <span className="text-xs font-semibold text-gray-500 shrink-0 ml-1">Title:</span>
+              <SearchableSelect
                 value={selectedTitle || ''}
-                onChange={e => setSelectedTitle(e.target.value)}
-                className="flex-1 min-w-[140px] max-w-[260px] text-xs rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">— choose title —</option>
-                {titles.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+                options={titleOptions}
+                onChange={(v) => setSelectedTitle(v)}
+                placeholder={titleOptions.length ? '— choose title —' : 'No annotated titles'}
+              />
               {/* Mobile metric selector */}
-              <div className="flex sm:hidden gap-1">
+              <div className="flex sm:hidden gap-1 ml-auto">
                 {METRICS.map(m => (
                   <button key={m.id} onClick={() => setMetric(m.id)}
                     className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-all ${metric === m.id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200'}`}>
@@ -435,6 +582,30 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                     </span>
                   ))}
                   {isAnyLoading && <span className="text-[11px] text-gray-400 animate-pulse">Loading…</span>}
+                </div>
+
+                {/* Per-session lap bars — width = lap duration/distance share,
+                    height = metric value, color = lactate amber if measured */}
+                <div className="mb-4 space-y-2">
+                  {series.map((s) => {
+                    const id = getSessionId(s.session);
+                    const raw = Array.isArray(lapsCache[id]) ? lapsCache[id] : [];
+                    const laps = filterWork ? filterWorkLaps(raw) : raw;
+                    if (laps.length === 0) return null;
+                    return (
+                      <div key={s.key} className="rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                            <span className="text-[11px] font-bold text-gray-700 truncate">{s.label}</span>
+                            <span className="text-[10px] text-gray-400">{laps.length} laps</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400">{metric === 'pace' ? 'Pace' : metric === 'hr' ? 'Heart rate' : 'Power'}</span>
+                        </div>
+                        <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} />
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="w-full overflow-x-auto">
