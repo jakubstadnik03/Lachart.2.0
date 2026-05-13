@@ -1465,6 +1465,21 @@ const FitAnalysisPage = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [highlightMetric, setHighlightMetric] = useState(null);
   const [radarWatts, setRadarWatts] = useState(null);
+
+  // Listen for activity title renames so charts/lists update without refetch.
+  useEffect(() => {
+    const onTitleUpdated = (e) => {
+      const { id, title } = e?.detail || {};
+      if (!id || !title) return;
+      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
+      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
+                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
+                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, title, titleManual: title } : t));
+    };
+    window.addEventListener('activityTitleUpdated', onTitleUpdated);
+    return () => window.removeEventListener('activityTitleUpdated', onTitleUpdated);
+  }, []);
   
   // Detect mobile
   useEffect(() => {

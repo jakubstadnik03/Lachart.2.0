@@ -46,6 +46,22 @@ export default function TrainingPage() {
   useEffect(() => {
     localStorage.setItem('trainingStats_selectedSport', selectedSport);
   }, [selectedSport]);
+
+  // Listen for activity title renames (from CalendarView / ActivityFullModal)
+  // and patch local trainings so charts/lists re-render without refetch.
+  useEffect(() => {
+    const onTitleUpdated = (e) => {
+      const { id, title } = e?.detail || {};
+      if (!id || !title) return;
+      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
+      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
+                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
+                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, title, titleManual: title } : t));
+    };
+    window.addEventListener('activityTitleUpdated', onTitleUpdated);
+    return () => window.removeEventListener('activityTitleUpdated', onTitleUpdated);
+  }, []);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [error, setError] = useState(null);

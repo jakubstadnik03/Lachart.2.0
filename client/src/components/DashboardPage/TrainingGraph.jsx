@@ -200,13 +200,25 @@ const TrainingGraph = ({
 
   const normalizeSport = useCallback((sport) => {
     const value = String(sport || '').toLowerCase();
-    if (value === 'bike') return 'cycling';
-    if (value === 'run') return 'running';
-    if (value === 'swim') return 'swimming';
+    if (!value) return '';
+    if (value.includes('run') || value.includes('běh') || value.includes('beh')) return 'running';
+    if (value.includes('swim') || value.includes('plav')) return 'swimming';
+    if (value.includes('ride') || value.includes('bike') || value.includes('cycl') || value.includes('kolo')) return 'cycling';
     return value;
   }, []);
 
-  const trainingSport = useCallback((training) => normalizeSport(training?.sport), [normalizeSport]);
+  // Resolve a training's sport with fallbacks (sport → sport_type → type → title)
+  const resolveTrainingSport = useCallback((t) => {
+    if (!t) return '';
+    const candidates = [t.sport, t.sport_type, t.activityType, t.type, t.title, t.titleManual, t.name];
+    for (const c of candidates) {
+      const n = normalizeSport(c);
+      if (n === 'running' || n === 'swimming' || n === 'cycling') return n;
+    }
+    return '';
+  }, [normalizeSport]);
+
+  const trainingSport = useCallback((training) => resolveTrainingSport(training), [resolveTrainingSport]);
   const matchesSport = useCallback(
     (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
     [trainingSport, normalizeSport]
@@ -546,7 +558,9 @@ const TrainingGraph = ({
     </div>
   );
 
-  const sportForScale = currentSelectedSport === 'all' && selectedTrainingData ? selectedTrainingData.sport : currentSelectedSport;
+  // Trust the actual training's sport so a run with the bike-sport dropdown
+  // still scales as pace.
+  const sportForScale = resolveTrainingSport(selectedTrainingData) || currentSelectedSport;
   const isRunScale  = normalizeSport(sportForScale) === 'running'  || sportForScale === 'run';
   const isSwimScale = normalizeSport(sportForScale) === 'swimming' || sportForScale === 'swim';
   const isPaceScale = isRunScale || isSwimScale;
@@ -721,7 +735,7 @@ const TrainingGraph = ({
               ...r,
               duration: r.moving_time ?? r.totalTimerTime ?? r.duration ?? r.durationSeconds
             }))}
-            sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
+            sport={resolveTrainingSport(selectedTrainingData) || normalizeSport(currentSelectedSport !== 'all' ? currentSelectedSport : '')}
             unitSystem={unitSystem}
           />
         )}

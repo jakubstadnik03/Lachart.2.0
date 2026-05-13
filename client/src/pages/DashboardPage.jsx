@@ -123,6 +123,23 @@ export default function DashboardPage() {
     setSelectedSport((prev) => (prev === nextSport ? prev : nextSport));
   }, [dashboardSportStorageKey]);
   
+  // Listen for activity title renames (from CalendarView modal) and patch
+  // the local trainings array so TrainingStats / TrainingGraph re-render with
+  // the new title without a full refetch.
+  useEffect(() => {
+    const onTitleUpdated = (e) => {
+      const { id, title } = e?.detail || {};
+      if (!id || !title) return;
+      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
+      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
+                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
+                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, title, titleManual: title } : t));
+    };
+    window.addEventListener('activityTitleUpdated', onTitleUpdated);
+    return () => window.removeEventListener('activityTitleUpdated', onTitleUpdated);
+  }, []);
+
   // Persist selectedSport per athlete
   useEffect(() => {
     if (!dashboardSportStorageKey) return;

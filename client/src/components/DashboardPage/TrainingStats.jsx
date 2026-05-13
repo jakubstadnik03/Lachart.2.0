@@ -5,6 +5,9 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
 import { SearchableSelect } from "../SearchableSelect";
 import { getStravaActivityDetail } from "../../services/api";
+import { useCategories } from "../../context/CategoryContext";
+
+const CATEGORY_OPTION_PREFIX = '__category__:';
 
 /** Matches LapsBarChart / TrainingItem palette exactly. */
 const INTERVAL_TYPE_BAR = {
@@ -55,6 +58,27 @@ function parseDistMeters(d) {
   if (!isNaN(n)) return n > 100 && n % 1 === 0 && !s.includes(".") ? n : n * 1000;
   return 0;
 }
+/** Normalize sport string → 'run' | 'bike' | 'swim' | original lowercase | '' */
+function normalizeSport(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (!s) return '';
+  if (s.includes('run') || s.includes('běh') || s.includes('beh')) return 'run';
+  if (s.includes('swim') || s.includes('plav')) return 'swim';
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl') || s.includes('kolo')) return 'bike';
+  return s;
+}
+
+/** Resolve a training's sport with fallbacks (sport → type → activityType → title). */
+function resolveTrainingSport(t) {
+  if (!t) return '';
+  const candidates = [t.sport, t.sport_type, t.activityType, t.type, t.title, t.titleManual, t.name];
+  for (const c of candidates) {
+    const n = normalizeSport(c);
+    if (n === 'run' || n === 'swim' || n === 'bike') return n;
+  }
+  return '';
+}
+
 function parseDurationSecs(r) {
   if (!r || typeof r !== "object") return 0;
   for (const k of ["moving_time","totalTimerTime","total_timer_time","totalElapsedTime","total_elapsed_time","elapsed_time","duration"]) {
@@ -285,9 +309,10 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
   const results    = trainingResults ?? trainingResultsOf(training);
   const prevRes    = previousResults ?? trainingResultsOf(previousTraining);
 
-  const isRun  = (sport || "").toLowerCase() === "run";
-  const isSwim = (sport || "").toLowerCase() === "swim";
-  const isBike = ["bike","ride","cycle","cycling"].some(s => (sport || "").toLowerCase().includes(s));
+  const normSport = normalizeSport(sport);
+  const isRun  = normSport === "run";
+  const isSwim = normSport === "swim";
+  const isBike = normSport === "bike";
 
   /* Use only work intervals for averages (falls back to all if no types set) */
   const workResults  = workOnly(results);
@@ -361,6 +386,7 @@ export function TrainingStats({
 }) {
   const navigate   = useNavigate();
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
+  const { categories } = useCategories();
 
   const trainingsList = useMemo(
     () => (Array.isArray(trainings) ? trainings : []),
@@ -436,25 +462,41 @@ export function TrainingStats({
 
   const trainingOptions = useMemo(() => {
     const sportFiltered = trainingsList.filter(t =>
-      currentSelectedSport === "all" || t.sport === currentSelectedSport
+      currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport)
     );
     const titles = [...new Set(sportFiltered.map(t => t.title).filter(Boolean))];
     const lactateCount = sportFiltered.filter(hasLactateValue).length;
     const opts = titles.map(t => ({ value: t, label: t }));
+
+    // Build category options for categories that have at least one training
+    const catCounts = new Map();
+    sportFiltered.forEach(t => {
+      if (t.category) catCounts.set(t.category, (catCounts.get(t.category) || 0) + 1);
+    });
+    const catOpts = categories
+      .filter(c => (catCounts.get(c.id) || 0) > 0)
+      .map(c => ({
+        value: `${CATEGORY_OPTION_PREFIX}${c.id}`,
+        label: `${c.label} (${catCounts.get(c.id)})`,
+      }));
+
     if (lactateCount > 0) {
-      opts.unshift({
-        value: LACTATE_OPTION,
-        label: `Lactate trainings (${lactateCount})`,
-      });
+      opts.unshift({ value: LACTATE_OPTION, label: `Lactate trainings (${lactateCount})` });
     }
-    return opts;
-  }, [trainingsList, currentSelectedSport, hasLactateValue]);
+    return [...catOpts, ...opts];
+  }, [trainingsList, currentSelectedSport, hasLactateValue, categories]);
 
   const filteredTrainings = useMemo(() => {
-    const sportOk = (t) => currentSelectedSport === "all" || t.sport === currentSelectedSport;
+    const sportOk = (t) => currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport);
+    const isCatOpt = typeof currentSelectedTitle === 'string' && currentSelectedTitle.startsWith(CATEGORY_OPTION_PREFIX);
     const list = currentSelectedTitle === LACTATE_OPTION
       ? trainingsList.filter(t => sportOk(t) && hasLactateValue(t))
-      : trainingsList.filter(t => sportOk(t) && t.title === currentSelectedTitle);
+      : isCatOpt
+        ? (() => {
+            const catId = currentSelectedTitle.slice(CATEGORY_OPTION_PREFIX.length);
+            return trainingsList.filter(t => sportOk(t) && t.category === catId);
+          })()
+        : trainingsList.filter(t => sportOk(t) && t.title === currentSelectedTitle);
     return list.sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, hasLactateValue]);
 
@@ -552,11 +594,22 @@ export function TrainingStats({
   const canProgL = progressIndex > 0;
   const canProgR = progressIndex + 2 < filteredTrainings.length;
 
-  /* scale values */
-  const hasRunTrainings  = filteredTrainings.some(t => t.sport === "run");
-  const hasSwimTrainings = filteredTrainings.some(t => t.sport === "swim");
-  const isRun  = currentSelectedSport === "run"  || (currentSelectedSport === "all" && hasRunTrainings);
-  const isSwim = currentSelectedSport === "swim" || (currentSelectedSport === "all" && !hasRunTrainings && hasSwimTrainings);
+  /* scale values — decide pace vs power from the *filtered* trainings.
+     The sport dropdown may say "bike" while the title filter pulls a run
+     (e.g. selectedSport='bike' but selectedTitle='Ranní běh'), so trust the
+     actual sport of the trainings being charted. */
+  const sportCounts = filteredTrainings.reduce((acc, t) => {
+    const s = resolveTrainingSport(t);
+    if (s) acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
+  const hasRunTrainings  = (sportCounts.run  || 0) > 0;
+  const hasSwimTrainings = (sportCounts.swim || 0) > 0;
+  const normSelectedSport = normalizeSport(currentSelectedSport);
+  // Use the dominant sport of the filtered set; fall back to the dropdown.
+  const dominantSport = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || normSelectedSport;
+  const isRun  = dominantSport === "run";
+  const isSwim = dominantSport === "swim";
   const isPaceSport = isRun || isSwim;
 
   const formatPaceVal = (s) => {
@@ -771,7 +824,7 @@ export function TrainingStats({
                           index={rIdx}
                           isHovered={hoveredBar?.tIdx === tIdx && hoveredBar?.rIdx === rIdx}
                           onHover={h => setHoveredBar(h ? { tIdx, rIdx } : null)}
-                          sport={currentSelectedSport === "all" ? (training.sport || "bike") : currentSelectedSport}
+                          sport={resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike"}
                           user={user}
                           widthPercent={intervalWidths[rIdx]}
                         />
@@ -821,7 +874,7 @@ export function TrainingStats({
                 trainingResults={getResults(t)}
                 previousTraining={filteredTrainings[progressIndex + i + 1] ?? null}
                 previousResults={getResults(filteredTrainings[progressIndex + i + 1] ?? null)}
-                sport={currentSelectedSport === "all" ? (t.sport || "bike") : currentSelectedSport}
+                sport={resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || "bike"}
                 onTrainingClick={handleTrainingClick}
                 user={user}
               />
