@@ -795,7 +795,7 @@ export default function TrainingPage() {
               <p className="text-sm text-gray-400">Loading comparison…</p>
             </div>
           }>
-            <TrainingComparison trainings={trainings} />
+            <TrainingComparison trainings={filteredTrainings} />
           </Suspense>
         </motion.div>
 
@@ -812,7 +812,7 @@ export default function TrainingPage() {
             </div>
           }>
             <LapComparison
-              trainings={trainings}
+              trainings={filteredTrainings}
               selectedTitle={selectedTitle}
               setSelectedTitle={setSelectedTitle}
             />
