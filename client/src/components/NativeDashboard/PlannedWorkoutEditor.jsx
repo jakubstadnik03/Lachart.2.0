@@ -2,6 +2,7 @@
 // Opens when the user taps a planned (or paired) workout row on NativeDashboardPage.
 
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { updatePlannedWorkout, deletePlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
 
@@ -120,14 +121,20 @@ export default function PlannedWorkoutEditor({
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  return (
-    <>
+  // Portal the whole thing into #app-modal-root (z-index 99999 in
+  // NativeLayout) so the sheet sits on top of the bottom tab bar instead of
+  // hiding behind it.
+  const modalRoot = (typeof document !== 'undefined' && document.getElementById('app-modal-root')) || (typeof document !== 'undefined' ? document.body : null);
+  if (!modalRoot) return null;
+
+  const content = (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
       <style>{SHEET_KEYFRAMES}</style>
       {/* Scrim */}
       <div
         onClick={onClose}
         style={{
-          position: 'fixed', inset: 0, zIndex: 100,
+          position: 'absolute', inset: 0,
           background: 'rgba(10,14,26,.45)',
           backdropFilter: 'blur(2px)',
           WebkitBackdropFilter: 'blur(2px)',
@@ -138,14 +145,14 @@ export default function PlannedWorkoutEditor({
       {/* Bottom sheet */}
       <div
         style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 101,
+          position: 'absolute', left: 0, right: 0, bottom: 0,
           background: 'linear-gradient(180deg, rgba(255,255,255,.95), rgba(238,240,244,.98))',
           backdropFilter: 'blur(28px) saturate(170%)',
           WebkitBackdropFilter: 'blur(28px) saturate(170%)',
           borderTopLeftRadius: 22, borderTopRightRadius: 22,
           boxShadow: '0 -10px 32px -8px rgba(10,14,26,.18)',
           paddingBottom: 'env(safe-area-inset-bottom)',
-          maxHeight: '88vh',
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 12px)',
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           animation: 'ndSheetIn .32s cubic-bezier(.22,1,.36,1) both',
@@ -399,8 +406,10 @@ export default function PlannedWorkoutEditor({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
+
+  return ReactDOM.createPortal(content, modalRoot);
 }
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
