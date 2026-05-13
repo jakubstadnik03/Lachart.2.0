@@ -59,8 +59,21 @@ export default function TrainingPage() {
                        || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
       setTrainings(prev => prev.map(t => matches(t) ? { ...t, title, titleManual: title } : t));
     };
+    const onCategoryUpdated = (e) => {
+      const { id, category } = e?.detail || {};
+      if (!id) return;
+      const rawId = String(id).replace(/^(strava-|fit-|regular-|training-)/, '');
+      const matches = (t) => String(t._id) === rawId || String(t.id) === rawId
+                       || String(t.stravaId) === rawId || `strava-${t.stravaId}` === String(id)
+                       || `fit-${t._id}` === String(id) || `regular-${t._id}` === String(id);
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, category: category || null } : t));
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
-    return () => window.removeEventListener('activityTitleUpdated', onTitleUpdated);
+    window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
+    return () => {
+      window.removeEventListener('activityTitleUpdated', onTitleUpdated);
+      window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
+    };
   }, []);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
