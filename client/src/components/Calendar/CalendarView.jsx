@@ -4650,24 +4650,27 @@ export default function CalendarView({
                                 {tssVal > 0 && (
                                   <span className={`flex-shrink-0 text-[9px] font-bold ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tssVal)}</span>
                                 )}
-                                {a.category && (
-                                  <div
-                                    className="text-[8.5px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
-                                    style={isSelected
-                                      ? { backgroundColor: 'rgba(255,255,255,.18)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }
-                                      : catBadgeStyle(a.category)}
-                                    title={catLabel(a.category)}
-                                  >
-                                    {catLabel(a.category)}
-                                  </div>
-                                )}
                               </div>
-                              {/* Duration + distance second line */}
-                              {(durStr || distStr) && (
-                                <div className={`flex items-center gap-1.5 text-[9px] ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>
-                                  {durStr && <span>{durStr}</span>}
-                                  {durStr && distStr && <span>·</span>}
-                                  {distStr && <span>{distStr}</span>}
+                              {/* Category + duration + distance row — category gets its
+                                  own breathing room here so it's readable in narrow month cells. */}
+                              {(a.category || durStr || distStr) && (
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {a.category && (
+                                    <span
+                                      className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md flex-shrink-0 font-bold border leading-tight"
+                                      style={isSelected
+                                        ? { backgroundColor: 'rgba(255,255,255,.20)', color: '#fff', borderColor: 'rgba(255,255,255,.4)' }
+                                        : catBadgeStyle(a.category)}
+                                      title={catLabel(a.category)}
+                                    >
+                                      {catLabel(a.category)}
+                                    </span>
+                                  )}
+                                  {(durStr || distStr) && (
+                                    <span className={`text-[9px] truncate ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>
+                                      {durStr}{durStr && distStr ? ' · ' : ''}{distStr}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </button>
