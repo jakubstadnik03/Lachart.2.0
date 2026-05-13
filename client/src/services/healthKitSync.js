@@ -72,7 +72,10 @@ function workoutToPayload(w) {
     startDate: w.startDate,
     endDate: w.endDate,
     durationSeconds: Math.round(Number(w.duration) || 0),
-    distanceMeters: Math.round(Number(w.totalDistance) || 0) * 1000, // plugin reports km — convert
+    // @perfood/capacitor-healthkit reports distance in METERS already.
+    // Earlier code multiplied by 1000 thinking it was km — that inflated
+    // distances 1000× and made imported workouts unrecognisable.
+    distanceMeters: Math.round(Number(w.totalDistance) || 0),
     calories: Number(w.totalEnergyBurned) || null,
     sourceName: w.source || w.sourceBundleId || 'Apple Health',
   };

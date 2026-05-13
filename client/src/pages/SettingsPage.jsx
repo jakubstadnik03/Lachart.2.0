@@ -3327,9 +3327,13 @@ function AppleHealthCard({ isMobile }) {
       const result = await syncHealthKit({ force: true });
       setLast(lastSyncedAt());
       if (result?.imported > 0) setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
-      else if (result?.skipped === 'denied') setMsg('Permission denied in Apple Health settings.');
+      else if (result?.skipped === 'denied') setMsg('Permission denied. Open iPhone Settings → Privacy → Health → LaChart and allow read access.');
+      else if (result?.skipped === 'plugin-missing') setMsg('HealthKit plugin not installed in this build. Rebuild the app after running pod install.');
+      else if (result?.skipped === 'unavailable') setMsg('HealthKit not available on this device (iPad without Health, or simulator).');
+      else if (result?.skipped === 'query-failed') setMsg(`HealthKit query failed: ${result.error || 'unknown'}.`);
+      else if (result?.skipped === 'upload-failed') setMsg(`Server upload failed: ${result.error || 'unknown'}.`);
       else if (result?.skipped) setMsg(`Sync unavailable: ${result.skipped}.`);
-      else setMsg('No new workouts found.');
+      else setMsg('No new workouts found in the last 30 days.');
     } catch (e) {
       setMsg(`Sync failed: ${e?.message || 'unknown error'}`);
     } finally {
