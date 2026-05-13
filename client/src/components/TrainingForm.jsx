@@ -1102,15 +1102,12 @@ const TrainingForm = ({
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl flex flex-col relative shadow-xl overflow-hidden"
       style={{
-        // On native: push the whole form up by the tab bar (56px) + home
-        // indicator so the sticky Save/Cancel footer is always above the
-        // bottom tab bar — regardless of which page opens the form. On web
-        // there's no tab bar; just keep the existing safe-area logic.
-        marginBottom: isCapacitorNative()
-          ? 'calc(56px + env(safe-area-inset-bottom, 0px))'
-          : undefined,
+        // The form sheet now extends to the bottom of the screen on native
+        // (covers the tab bar — modal portal sits above it via z-index). Only
+        // pad the inside of the sticky Save/Cancel footer with the home-
+        // indicator safe area; see footer styling.
         maxHeight: isCapacitorNative()
-          ? 'calc(100dvh - env(safe-area-inset-top, 0px) - 56px - env(safe-area-inset-bottom, 0px) - 12px)'
+          ? 'calc(100dvh - env(safe-area-inset-top, 0px) - 12px)'
           : 'calc(95vh - env(safe-area-inset-top, 0px))',
       }}
     >
@@ -1757,7 +1754,15 @@ const TrainingForm = ({
       {/* ── Sticky footer ── */}
       <div
         className="shrink-0 bg-white border-t border-gray-100 px-4 flex gap-3"
-        style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
+        style={{
+          paddingTop: '0.75rem',
+          // Footer now sits at the very bottom of the screen on native (sheet
+          // covers the tab bar). Add safe-area inset so the Save/Cancel buttons
+          // clear the iOS home indicator.
+          paddingBottom: isCapacitorNative()
+            ? 'calc(0.75rem + env(safe-area-inset-bottom, 0px))'
+            : '0.75rem',
+        }}
       >
         <button
           type="button"
