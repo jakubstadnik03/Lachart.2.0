@@ -1030,8 +1030,17 @@ export default function NativeDashboardPage({
           a plain conditional portal mounts deterministically. */}
       {lactateModal.isOpen && lactateModal.initialData && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          style={{ zIndex: 99999 }}
+          className="bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            // app-modal-root sets pointerEvents:none on its root so taps fall
+            // through when no modal is open. Re-enable for our overlay,
+            // otherwise the NativeLayout scroller behind eats every touch
+            // and the form is unscrollable.
+            pointerEvents: 'auto',
+          }}
         >
           <div className="w-full sm:max-w-2xl">
             <TrainingForm
