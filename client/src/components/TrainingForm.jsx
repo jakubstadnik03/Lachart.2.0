@@ -1488,6 +1488,7 @@ const TrainingForm = ({
                 selectedLapNumber={selectedChartLap}
                 onSelect={handleChartSelect}
                 sport={formData.sport}
+                disableZoom
               />
             </div>
           )}
