@@ -55,29 +55,31 @@ const s = StyleSheet.create({
   footerName:  { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.primary },
 
   // Body
-  body: { paddingHorizontal: 32, paddingTop: 20 },
+  body: { paddingHorizontal: 32, paddingTop: 8 },
 
-  // Cover
-  coverBand: { backgroundColor: C.primary, paddingHorizontal: 32, paddingVertical: 30 },
-  coverTop:  { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 },
-  coverLogo: { width: 36, height: 36 },
-  coverBrandName: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: C.white, letterSpacing: 0.5 },
-  coverBrandSub:  { fontSize: 9, color: 'rgba(255,255,255,0.65)', letterSpacing: 1 },
-  coverTitle: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: C.white, marginBottom: 4 },
-  coverSub:   { fontSize: 10, color: '#C7CBE8', letterSpacing: 0.5 },
-  coverMeta:  { flexDirection: 'row', gap: 16, marginTop: 22, flexWrap: 'wrap' },
-  coverPill:  { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 6 },
-  coverPillLabel: { fontSize: 6.5, color: 'rgba(255,255,255,0.7)', marginBottom: 2, letterSpacing: 0.8 },
-  coverPillValue: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.white },
+  // Cover (compact, single-row layout: logo+brand left, title+date right)
+  coverBand: { backgroundColor: C.primary, paddingHorizontal: 28, paddingVertical: 16 },
+  coverTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  coverBrandWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  coverLogo: { width: 36, height: 36, objectFit: 'contain' },
+  coverBrandName: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: C.white, letterSpacing: 0.4 },
+  coverBrandSub:  { fontSize: 7.5, color: 'rgba(255,255,255,0.65)', letterSpacing: 1 },
+  coverTitleWrap: { alignItems: 'flex-end', flexShrink: 1, maxWidth: '60%' },
+  coverTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.white, textAlign: 'right' },
+  coverSub:   { fontSize: 9, color: '#C7CBE8', letterSpacing: 0.5, marginTop: 2, textAlign: 'right' },
+  coverMeta:  { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  coverPill:  { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 16,
+    paddingHorizontal: 12, paddingVertical: 5 },
+  coverPillLabel: { fontSize: 6, color: 'rgba(255,255,255,0.7)', marginBottom: 1, letterSpacing: 0.7 },
+  coverPillValue: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.white },
 
-  // Athlete card
-  athleteCard: { flexDirection: 'row', marginTop: 22, marginBottom: 0, gap: 12 },
-  infoCard:    { flex: 1, borderWidth: 1, borderColor: C.midGray, borderRadius: 8, padding: 14 },
-  cardLabel:   { fontSize: 7.5, color: C.gray, letterSpacing: 0.8, marginBottom: 6, textTransform: 'uppercase' },
-  cardRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  cardKey:     { fontSize: 8.5, color: C.gray },
-  cardVal:     { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark },
+  // Athlete card (tighter — pulled closer to header)
+  athleteCard: { flexDirection: 'row', marginTop: 12, marginBottom: 0, gap: 10 },
+  infoCard:    { flex: 1, borderWidth: 1, borderColor: C.midGray, borderRadius: 8, padding: 10 },
+  cardLabel:   { fontSize: 7, color: C.gray, letterSpacing: 0.7, marginBottom: 4, textTransform: 'uppercase' },
+  cardRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
+  cardKey:     { fontSize: 8, color: C.gray },
+  cardVal:     { fontSize: 8, fontFamily: 'Helvetica-Bold', color: C.dark },
 
   // Section headers
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 20 },
@@ -556,19 +558,21 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
       <Page size="A4" style={s.page}>
         {/* No Header on page 1 — cover band already shows logo + title */}
 
-        {/* Cover band */}
+        {/* Cover band — single compact row: brand left, title right */}
         <View style={s.coverBand}>
-          {/* Brand row */}
-          <View style={s.coverTop}>
-            <Image src={LOGO_URL} style={s.coverLogo} />
-            <View>
-              <Text style={s.coverBrandName}>LaChart</Text>
-              <Text style={s.coverBrandSub}>LACTATE ANALYSIS PLATFORM</Text>
+          <View style={s.coverTopRow}>
+            <View style={s.coverBrandWrap}>
+              <Image src={LOGO_URL} style={s.coverLogo} />
+              <View>
+                <Text style={s.coverBrandName}>LaChart</Text>
+                <Text style={s.coverBrandSub}>LACTATE ANALYSIS PLATFORM</Text>
+              </View>
+            </View>
+            <View style={s.coverTitleWrap}>
+              <Text style={s.coverTitle}>{test.title || 'Lactate Test Report'}</Text>
+              <Text style={s.coverSub}>{sportLabel(sport)} · {testDate}</Text>
             </View>
           </View>
-
-          <Text style={s.coverTitle}>{test.title || 'Lactate Test Report'}</Text>
-          <Text style={s.coverSub}>{sportLabel(sport)} · {testDate}</Text>
 
           <View style={s.coverMeta}>
             {[
@@ -703,13 +707,13 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
         <Header title={`${sportLabel(sport)} · Lactate Report`} date={testDate} />
 
         <View style={s.body}>
-          {/* Key threshold highlight cards */}
+          {/* Key threshold highlight cards — now include lactate value */}
           <SectionHeader title="Key Thresholds" />
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             {[
-              { label: 'LT1 · Aerobic Threshold',   val: fmtIntensity(lt1,  sport, inputMode), hr: lt1Hr, color: C.primary   },
-              { label: 'LT2 · Anaerobic Threshold',  val: fmtIntensity(lt2,  sport, inputMode), hr: lt2Hr, color: C.red       },
-              { label: 'OBLA 3.0',                   val: fmtIntensity(obla, sport, inputMode), hr: thresholds?.heartRates?.['OBLA 3.0'], color: C.secondary },
+              { label: 'LT1 · Aerobic Threshold',  val: fmtIntensity(lt1,  sport, inputMode), hr: lt1Hr, la: thresholds?.lactates?.['LTP1'],     color: C.primary   },
+              { label: 'LT2 · Anaerobic Threshold', val: fmtIntensity(lt2,  sport, inputMode), hr: lt2Hr, la: thresholds?.lactates?.['LTP2'],     color: C.red       },
+              { label: 'OBLA 3.0',                  val: fmtIntensity(obla, sport, inputMode), hr: thresholds?.heartRates?.['OBLA 3.0'], la: thresholds?.lactates?.['OBLA 3.0'] ?? 3.0, color: C.secondary },
             ].map(item => (
               <View key={item.label} style={{ flex: 1, borderRadius: 8, borderWidth: 1.5,
                 borderColor: item.color, padding: 12, alignItems: 'center' }}>
@@ -718,6 +722,11 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 <Text style={{ fontSize: 18, fontFamily: 'Helvetica-Bold', color: item.color,
                   marginBottom: 4 }}>{item.val}</Text>
                 {item.hr && <Text style={{ fontSize: 8, color: C.gray }}>{Math.round(item.hr)} bpm</Text>}
+                {Number.isFinite(Number(item.la)) && (
+                  <Text style={{ fontSize: 8, color: C.gray, marginTop: 1 }}>
+                    {Number(item.la).toFixed(2)} mmol/L
+                  </Text>
+                )}
               </View>
             ))}
           </View>
