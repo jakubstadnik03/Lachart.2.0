@@ -66,13 +66,27 @@ export default function NotificationBell() {
       setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
     }
     setOpen(false);
-    if (n.resourceId && n.resourceType === 'training') {
-      navigate(`/training-calendar/training-${n.resourceId}`);
-    } else if (n.resourceId) {
-      navigate(`/training-calendar/${n.resourceId}`);
-    } else {
+    // Route by resourceType so the calendar route resolver opens the right
+    // modal: strava-<id> → ActivityFullModal for Strava, fit-<id> for FIT,
+    // training-<id> for Training collection records. The bare id form is
+    // kept as a final fallback in case older notifications still arrive
+    // without an explicit type.
+    if (!n.resourceId) {
       navigate('/training-calendar');
+      return;
     }
+    const rt = String(n.resourceType || '').toLowerCase();
+    let target;
+    if (rt === 'strava' || rt === 'strava_import') {
+      target = `strava-${n.resourceId}`;
+    } else if (rt === 'fit') {
+      target = `fit-${n.resourceId}`;
+    } else if (rt === 'training') {
+      target = `training-${n.resourceId}`;
+    } else {
+      target = String(n.resourceId);
+    }
+    navigate(`/training-calendar/${encodeURIComponent(target)}`);
   };
 
   const handleDelete = async (e, id) => {

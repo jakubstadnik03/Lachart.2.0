@@ -616,17 +616,19 @@ function invalidateStravaActivityCache(userId, stravaId) {
   if (userId && stravaId) stravaActivityCache.delete(`${userId}:${stravaId}`);
 }
 
-function notifyStravaImportedPush(userId, imported) {
+function notifyStravaImportedPush(userId, imported, latestStravaId = null) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
 
   // Expo push (mobile)
   const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-  notifyUserStravaActivitiesImported(userId, n).catch((e) =>
+  notifyUserStravaActivitiesImported(userId, n, latestStravaId).catch((e) =>
     console.error('[Strava sync push]', e.message || e)
   );
 
-  // In-app notification (bell in header)
+  // In-app notification (bell in header). Carry the latest Strava activity id
+  // so a tap can deep-link into the activity modal — otherwise the
+  // notification was an inert "1 new activity imported" with no target.
   const { sendNotification } = require('../utils/notificationHelper');
   const body = n === 1
     ? '1 new activity imported from Strava.'
@@ -636,6 +638,7 @@ function notifyStravaImportedPush(userId, imported) {
     title: 'Strava sync',
     body,
     resourceType: 'strava',
+    ...(latestStravaId ? { resourceId: String(latestStravaId) } : {}),
   }).catch((e) => console.error('[Strava sync notification]', e.message || e));
 }
 
@@ -716,7 +719,7 @@ router.post('/strava/webhook', async (req, res) => {
       // activity on its next tick (the webhook already handled it).
       await User.findByIdAndUpdate(user._id, { 'strava.lastSyncDate': new Date() });
       if (aspect_type === 'create' && isNew) {
-        notifyStravaImportedPush(user._id, 1);
+        notifyStravaImportedPush(user._id, 1, object_id);
       }
       console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
     } else if (aspect_type === 'delete') {
