@@ -1356,9 +1356,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return `${h}:${String(m).padStart(2, '0')}`;
   };
 
-  // Smart distance parser: "10" → "10 km", "500m" → "0.5 km"
+  // Smart distance parser: "10", "10 km", "4,5", "4.5 km" → km value.
+  // "500m" → 0.5 km. Comma decimal handled (Czech / European keyboards).
   const parseDistanceToKm = (raw) => {
-    const s = String(raw).trim().toLowerCase();
+    const s = String(raw).trim().toLowerCase().replace(',', '.');
     if (!s) return null;
     if (s.endsWith('km')) return parseFloat(s);
     if (s.endsWith('m')) return parseFloat(s) / 1000;
@@ -1368,10 +1369,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return n > 500 ? n / 1000 : n;
   };
 
+  // Server PlannedWorkout.plannedDistance is documented as metres, but old
+  // builds wrote km here, so we normalise on the way out: anything < 100 is
+  // almost certainly the legacy km value, anything ≥ 100 is real metres.
+  const planDistanceMetresToKm = (raw) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n >= 100 ? n / 1000 : n;
+  };
+
   const initDurMins = initialPlannedWorkout?.plannedDuration
     ? Math.round(initialPlannedWorkout.plannedDuration / 60) : null;
-  const initDistKm = initialPlannedWorkout?.plannedDistance
-    ? Number(initialPlannedWorkout.plannedDistance) : null;
+  // Convert stored value to km for the form (handles legacy km storage too).
+  const initDistKm = planDistanceMetresToKm(initialPlannedWorkout?.plannedDistance);
 
   const [planForm, setPlanForm] = useState({
     title: initialPlannedWorkout?.title || '',
@@ -1439,7 +1449,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Planned workout data
   const plannedDur  = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
   const plannedTss  = plannedWorkout ? Number(plannedWorkout.targetTss || 0) : 0;
-  const plannedDist = plannedWorkout ? Number(plannedWorkout.plannedDistance || 0) : 0;
+  // Treat plannedDistance as metres, but heal legacy km-stored values
+  // (< 100 means it's km from the old buggy build).
+  const plannedDist = plannedWorkout
+    ? (() => { const n = Number(plannedWorkout.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })()
+    : 0;
   // Skip duration-ratio compliance for implausibly long plans (legacy bad data
   // where '30:00' was parsed as 30 hours). The merged-card pairing covers the
   // 'completed' signal already, so we don't want a false 'Missed' here.
@@ -1460,7 +1474,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         sport: sportForPlan,
         date: dateForPlan,
         plannedDuration: durMins ? durMins * 60 : dur,
-        ...(planForm.distanceKm > 0 && { plannedDistance: planForm.distanceKm }),
+        // Server schema is metres — convert from the form's km value.
+        ...(planForm.distanceKm > 0 && { plannedDistance: Math.round(planForm.distanceKm * 1000) }),
         targetTss: planForm.targetTss ? Number(planForm.targetTss) : (tss || undefined),
       };
       let saved;
@@ -2479,7 +2494,9 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
   // Planned vs completed — computed early so POPUP_W/H can depend on hasPlanned
   const plannedDur = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
-  const plannedDist = plannedWorkout ? (Number(plannedWorkout.plannedDistance || 0)) : 0;
+  const plannedDist = plannedWorkout
+    ? (() => { const n = Number(plannedWorkout.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })()
+    : 0;
   const plannedTss  = plannedWorkout ? (Number(plannedWorkout.targetTss || 0)) : 0;
   const hasPlanned = !!plannedWorkout && (plannedDur > 0 || plannedTss > 0);
 

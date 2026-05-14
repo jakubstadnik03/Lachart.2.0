@@ -7,7 +7,7 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, updateStravaLactateValues } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -422,12 +422,57 @@ export default function TrainingPage() {
         setStravaLactateSubmitting(true);
         setStravaLactateFormError(null);
         const targetId = selectedAthleteId || user._id;
-        const trainingData = { ...formData, athleteId: targetId, coachId: user._id };
+
+        // Normalise lactate strings → Number; drop empties so mongoose
+        // doesn't store NaN / cast junk into the Number field.
+        const cleanedResults = Array.isArray(formData.results)
+          ? formData.results.map((r) => {
+              const out = { ...r };
+              if (out.lactate === '' || out.lactate == null) {
+                delete out.lactate;
+              } else {
+                const num = parseFloat(out.lactate);
+                if (Number.isFinite(num)) out.lactate = num;
+                else delete out.lactate;
+              }
+              return out;
+            })
+          : formData.results;
+
+        const trainingData = {
+          ...formData,
+          results: cleanedResults,
+          athleteId: targetId,
+          coachId: user._id,
+        };
         if (formData._id) {
           await updateTraining(formData._id, trainingData);
         } else {
           await addTraining(trainingData);
         }
+
+        // Push lactate into the linked StravaActivity.laps so the calendar
+        // view (which renders Strava laps directly) shows them everywhere.
+        const stravaId = formData?.sourceStravaActivityId;
+        if (stravaId && Array.isArray(cleanedResults)) {
+          const lactateValues = cleanedResults
+            .map((r) => {
+              const lapIdx = Number.isInteger(r?.sourceLapIndex)
+                ? r.sourceLapIndex
+                : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
+              if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
+              return { lapIndex: lapIdx, lactate: r.lactate };
+            })
+            .filter(Boolean);
+          if (lactateValues.length > 0) {
+            try {
+              await updateStravaLactateValues(stravaId, lactateValues);
+            } catch (syncErr) {
+              console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
+            }
+          }
+        }
+
         await loadTrainings(targetId);
         setFieldLactatePanelKey((k) => k + 1);
         closeStravaLactateModal();
