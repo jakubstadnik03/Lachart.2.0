@@ -1007,20 +1007,34 @@ function CategoryPicker({ value, onChange }) {
   const { categories, getCategoryStyle } = useCategories();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  // `click` (not mousedown) so we run AFTER the option button's onClick has
+  // already fired — otherwise on iOS the synthesised mousedown was closing
+  // the panel before the tap registered on a child button, and the picked
+  // category never made it through.
   useEffect(() => {
     if (!open) return;
     const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
   }, [open]);
 
   const current = categories.find(c => c.id === value);
+
+  // One handler for both mouse and touch so iOS never has to wait for the
+  // synthesised click. stopPropagation prevents the outside-click listener
+  // above from running before our state updates land.
+  const pick = (e, nextValue) => {
+    e?.stopPropagation?.();
+    e?.preventDefault?.();
+    onChange(nextValue);
+    setOpen(false);
+  };
 
   return (
     <div ref={wrapRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors hover:bg-gray-50"
         style={current ? { ...getCategoryStyle(current.id), borderStyle: 'solid' } : { borderColor: '#e5e7eb', color: '#9ca3af', borderStyle: 'dashed' }}
       >
@@ -1038,11 +1052,14 @@ function CategoryPicker({ value, onChange }) {
         <svg className="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 right-0 w-44 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="absolute z-50 mt-1 right-0 w-44 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
+             onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            onClick={() => { onChange(null); setOpen(false); }}
-            className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50 flex items-center gap-2"
+            onClick={(e) => pick(e, null)}
+            onTouchEnd={(e) => pick(e, null)}
+            className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50 flex items-center gap-2 touch-manipulation"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             <span className="w-2 h-2 rounded-full border border-gray-300" />
             <span>No category</span>
@@ -1052,8 +1069,10 @@ function CategoryPicker({ value, onChange }) {
             <button
               key={c.id}
               type="button"
-              onClick={() => { onChange(c.id); setOpen(false); }}
-              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+              onClick={(e) => pick(e, c.id)}
+              onTouchEnd={(e) => pick(e, c.id)}
+              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 touch-manipulation ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
               <span>{c.label}</span>
