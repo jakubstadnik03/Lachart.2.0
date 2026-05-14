@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import ReactDOM from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
@@ -1021,19 +1022,16 @@ export default function NativeDashboardPage({
         </div>
       )}
 
-      {/* TrainingForm modal — plain conditional render, no portal, no
-          AnimatePresence. This is the same pattern FitAnalysisPage uses on
-          the Calendar tab, which works reliably. Earlier the modal was
-          portaled into app-modal-root inside AnimatePresence; that combo had
-          a render race where the new modal occasionally never mounted after
-          ActivityFullModal closed. */}
-      {lactateModal.isOpen && lactateModal.initialData && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+      {/* TrainingForm modal — portaled into #app-modal-root so it sits
+          above NativeLayout's bottom tab bar (NativeLayout creates its own
+          stacking context, so a fixed-position node rendered inside the
+          dashboard ends up *behind* the tab bar). The earlier race with
+          AnimatePresence has been avoided by dropping AnimatePresence —
+          a plain conditional portal mounts deterministically. */}
+      {lactateModal.isOpen && lactateModal.initialData && ReactDOM.createPortal(
+        <div
           className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          style={{ zIndex: 99998 }}
+          style={{ zIndex: 99999 }}
         >
           <div className="w-full sm:max-w-2xl">
             <TrainingForm
@@ -1046,7 +1044,8 @@ export default function NativeDashboardPage({
               initialSelectedLap={lactateModal.initialData?._initialSelectedLap ?? null}
             />
           </div>
-        </motion.div>
+        </div>,
+        document.getElementById('app-modal-root') || document.body
       )}
     </>
   );
