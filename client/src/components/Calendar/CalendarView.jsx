@@ -688,6 +688,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const isZoomed = selectedLap != null && !skipZoom;
   const centerLapRef = useRef(null);
   const isProgrammaticScroll = useRef(false);
+  // Refs for throttled scroll-sync (declared here so they sit before the
+  // conditional early return below — React's rules of hooks)
+  const scrollRafRef = useRef(null);
+  const scrollSettleTimeoutRef = useRef(null);
 
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -851,22 +855,36 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // Total zoom width
   const zoomTotalW = entries.reduce((s, e) => s + getZoomW(e) + ZOOM_GAP, 0);
 
-  // Scroll-sync: fire onScrollCenter with the lap index under the chart viewport center
+  // Scroll-sync: fire onScrollCenter with the lap index under the chart viewport
+  // center. Throttled to one rAF tick so dragging the chart on iOS doesn't
+  // trigger 60 setSelectedLap calls per second (each re-renders LapChart and
+  // the surrounding modal — jank city). Also debounce a "scroll settled"
+  // commit so the highlighted lap matches what the finger actually stopped on.
   const handleChartScroll = (e) => {
     if (!onScrollCenter || !isZoomed || isProgrammaticScroll.current) return;
     const el = e.currentTarget;
-    const centerX = el.scrollLeft + el.clientWidth / 2;
-    let cumX = 0;
-    let found = entries.length - 1;
-    for (let i = 0; i < entries.length; i++) {
-      const w = getZoomW(entries[i]) + ZOOM_GAP;
-      if (cumX + w / 2 >= centerX) { found = i; break; }
-      cumX += w;
-    }
-    if (found !== centerLapRef.current) {
-      centerLapRef.current = found;
-      onScrollCenter(found);
-    }
+    if (scrollRafRef.current != null) return; // a rAF tick is already queued
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const centerX = el.scrollLeft + el.clientWidth / 2;
+      let cumX = 0;
+      let found = entries.length - 1;
+      for (let i = 0; i < entries.length; i++) {
+        const w = getZoomW(entries[i]) + ZOOM_GAP;
+        if (cumX + w / 2 >= centerX) { found = i; break; }
+        cumX += w;
+      }
+      if (found !== centerLapRef.current) {
+        centerLapRef.current = found;
+        // Debounce the parent setState — only commit once the user pauses,
+        // so the chart's parent doesn't keep re-rendering mid-scroll.
+        if (scrollSettleTimeoutRef.current) clearTimeout(scrollSettleTimeoutRef.current);
+        scrollSettleTimeoutRef.current = setTimeout(() => {
+          scrollSettleTimeoutRef.current = null;
+          onScrollCenter(found);
+        }, 80);
+      }
+    });
   };
 
   return (
@@ -925,6 +943,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             touchAction: 'pan-x',
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorX: 'contain',
+            // Hint the compositor to keep the scroller on its own layer —
+            // makes momentum scroll on iOS noticeably smoother when there
+            // are 30+ bars in zoom mode.
+            willChange: 'scroll-position',
+            transform: 'translateZ(0)',
           }}
           onScroll={handleChartScroll}
         >
