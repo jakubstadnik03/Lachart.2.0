@@ -241,14 +241,16 @@ function sessionShade(idx, total) {
   return `rgb(${r},${g},${b})`;
 }
 
-// Lactate value → highlight color (warm shades for emphasis)
+// Lactate value → highlight color. Refined rose/coral gradient that harmonises
+// with the purple session-shade palette (the earlier yellow→brown ramp clashed
+// against the lavender bars).
 function lactateColor(lac) {
   if (lac == null) return null;
   const v = Number(lac);
-  if (v < 2)   return '#fbbf24'; // yellow — easy
-  if (v < 4)   return '#f59e0b'; // amber  — threshold-ish
-  if (v < 6)   return '#ea580c'; // orange — hard
-  return '#b45309';              // brown  — very hard
+  if (v < 2)   return '#fcd34d'; // amber-300  — soft yellow (easy)
+  if (v < 4)   return '#fb923c'; // orange-400 — threshold
+  if (v < 6)   return '#f43f5e'; // rose-500   — hard
+  return '#be123c';              // rose-700   — very hard
 }
 
 // Get lactate from an interval / lap
@@ -338,7 +340,7 @@ function intervalPaceSec(item, sport) {
 // Bars with a recorded lactate value are highlighted in warm tones.
 // X-axis labels show every Nth session date.
 
-function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, onLapEditLactate }) {
+function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false }) {
   const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
   // For run/swim: ALWAYS use pace, regardless of metric tab (it's the natural unit).
   // For bike: use the chosen metric.
@@ -357,7 +359,15 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
   // strip can show distance, time, HR, lactate, RPE alongside the active metric.
   const data = useMemo(() => {
     return sessions.map((s, i) => {
-      const intervals = getIntervals(s);
+      let intervals = getIntervals(s);
+      if (hideWarmCool) {
+        // Drop warmup/cooldown intervals from the comparison chart. We compare
+        // the meat of the workout, not the bookends.
+        intervals = intervals.filter(iv => {
+          const t = String(iv?.intervalType || '').toLowerCase();
+          return t !== 'warmup' && t !== 'cooldown';
+        });
+      }
       const laps = intervals.map((iv, idx) => {
         let v = null;
         if (isPace) v = intervalPaceSec(iv, sport);
@@ -387,7 +397,7 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
         meta: s,
       };
     }).filter(s => s.laps.length > 0);
-  }, [sessions, metric, isPace, sport]);
+  }, [sessions, metric, isPace, sport, hideWarmCool]);
 
   if (data.length === 0) {
     return (
@@ -573,26 +583,49 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
                   });
                 };
 
+                // Selected bar: keep the bar clean (no harsh black outline)
+                // and instead drop a small caret + value label above it. The
+                // caret + label sit on TOP of the bar so the user can see
+                // exactly which bar is active without occluding the colour.
+                const caretX = x + lapW / 2;
                 return (
-                  <rect
-                    key={li}
-                    x={x}
-                    y={barTop}
-                    width={lapW}
-                    height={Math.max(1.5, h)}
-                    rx={Math.min(2, lapW / 2)}
-                    fill={fill}
-                    stroke={isSelectedBar ? '#0A0E1A' : 'none'}
-                    strokeWidth={isSelectedBar ? 1.5 : 0}
-                    onClick={handleBarTap}
-                    style={{
-                      transformOrigin: `${x + lapW / 2}px ${baselineY}px`,
-                      animation: `ndBarGrow .55s ${100 + si * 50 + li * 25}ms cubic-bezier(.22,1,.36,1) both`,
-                      cursor: 'pointer',
-                      filter: selected && !isSelectedBar ? 'opacity(0.55)' : 'none',
-                      transition: 'filter .2s ease',
-                    }}
-                  />
+                  <g key={li}>
+                    <rect
+                      x={x}
+                      y={barTop}
+                      width={lapW}
+                      height={Math.max(1.5, h)}
+                      rx={Math.min(2, lapW / 2)}
+                      fill={fill}
+                      onClick={handleBarTap}
+                      style={{
+                        transformOrigin: `${x + lapW / 2}px ${baselineY}px`,
+                        animation: `ndBarGrow .55s ${100 + si * 50 + li * 25}ms cubic-bezier(.22,1,.36,1) both`,
+                        cursor: 'pointer',
+                        filter: selected && !isSelectedBar ? 'opacity(0.45)' : 'none',
+                        transition: 'filter .2s ease',
+                      }}
+                    />
+                    {isSelectedBar && (
+                      <g pointerEvents="none">
+                        {/* Bottom underline pip — same colour as the bar so it
+                            reads as part of it, not a foreign black border. */}
+                        <rect
+                          x={x}
+                          y={baselineY + 1.5}
+                          width={lapW}
+                          height={2.5}
+                          rx={1.25}
+                          fill={fill}
+                        />
+                        {/* Caret hovering just above the bar */}
+                        <path
+                          d={`M ${caretX - 3} ${Math.max(barTop - 6, padTop)} L ${caretX + 3} ${Math.max(barTop - 6, padTop)} L ${caretX} ${Math.max(barTop - 2, padTop + 4)} Z`}
+                          fill={fill}
+                        />
+                      </g>
+                    )}
+                  </g>
                 );
               })}
 
@@ -971,7 +1004,7 @@ function BarGroupChart({ sessions, metric, highlightId, onBarTap }) {
 // ─── multi-line SVG chart ─────────────────────────────────────────────────────
 // Each session is a colored polyline; X = interval index (1..n), Y = metric.
 
-function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
+function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCool = false }) {
   const W = 320, H = 170, padX = 26, padY = 18;
 
   // Selection state — same pattern as SessionBarChart: tapped point shows
@@ -988,7 +1021,13 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
   const series = useMemo(() => {
     return sessions.map((s, i) => {
       const sportKey = normSport(s.sport);
-      const intervals = getIntervals(s);
+      let intervals = getIntervals(s);
+      if (hideWarmCool) {
+        intervals = intervals.filter(iv => {
+          const t = String(iv?.intervalType || '').toLowerCase();
+          return t !== 'warmup' && t !== 'cooldown';
+        });
+      }
       const points = intervals.map((iv, idx) => {
         const v = getIntervalMetric(iv, metric);
         if (v == null) return null;
@@ -1015,7 +1054,7 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap }) {
         meta: s,
       };
     }).filter(s => s.points.length >= 1);
-  }, [sessions, metric]);
+  }, [sessions, metric, hideWarmCool]);
 
   // Domain
   const allXs = series.flatMap(s => s.points.map(p => p.x));
@@ -1209,6 +1248,11 @@ export default function NativeTrainingPage({
   const [selectedTitle, setSelectedTitle] = useState(null); // workout title to compare
   const [highlightSessionId, setHighlightSessionId] = useState(null);
   const [chartType, setChartType] = useState('bars'); // 'bars' | 'line'
+  // Training-history filters
+  const [hideWarmCool, setHideWarmCool] = useState(false); // hide warmup + cooldown bars
+  const [dateFrom, setDateFrom] = useState('');            // 'YYYY-MM-DD' (empty = no min)
+  const [dateTo, setDateTo]     = useState('');            // 'YYYY-MM-DD' (empty = no max)
+  const [showFilters, setShowFilters] = useState(false);   // toggles the filter row
   // Pagination for the session list under the chart
   const SESSION_PAGE_SIZE = 2;
   const [sessionPage, setSessionPage] = useState(0);
@@ -1231,14 +1275,22 @@ export default function NativeTrainingPage({
     setHiddenSessionIds(new Set());
   }, [selectedTitle]);
 
-  // ── Filtered list (sport + sort) ──────────────────────────────────────────
+  // ── Filtered list (sport + date range + sort) ────────────────────────────
   const filtered = useMemo(() => {
     let list = trainings.slice().sort((a, b) => getDate(b) - getDate(a));
     if (selectedSport !== 'all') {
       list = list.filter(t => normSport(t.sport) === selectedSport);
     }
+    if (dateFrom) {
+      const from = new Date(dateFrom + 'T00:00:00').getTime();
+      if (Number.isFinite(from)) list = list.filter(t => getDate(t).getTime() >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + 'T23:59:59').getTime();
+      if (Number.isFinite(to)) list = list.filter(t => getDate(t).getTime() <= to);
+    }
     return list;
-  }, [trainings, selectedSport]);
+  }, [trainings, selectedSport, dateFrom, dateTo]);
 
   // ── Pagination state (declared early — used by the slicing logic below) ───
   const PAGE_SIZE = 4;
@@ -1689,6 +1741,26 @@ export default function NativeTrainingPage({
                     Training history
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters(v => !v)}
+                      aria-label="Filters"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 22, height: 22, borderRadius: 6,
+                        border: 'none',
+                        background: (showFilters || hideWarmCool || dateFrom || dateTo)
+                          ? 'rgba(94,101,144,.18)' : 'transparent',
+                        color: (showFilters || hideWarmCool || dateFrom || dateTo)
+                          ? '#5E6590' : '#9CA3AF',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 5h18M6 12h12M10 19h4" />
+                      </svg>
+                    </button>
                     <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                       {titleIdx + 1}/{totalTitles}
                     </span>
@@ -1730,6 +1802,85 @@ export default function NativeTrainingPage({
                     ))}
                   </select>
                 </div>
+
+                {/* Filter row — date range + hide warmup/cooldown toggle */}
+                {showFilters && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: 8,
+                    padding: '8px 10px', marginBottom: 8,
+                    background: 'rgba(118,126,181,.07)',
+                    border: '1px solid rgba(118,126,181,.14)',
+                    borderRadius: 10,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', minWidth: 32 }}>From</label>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        max={dateTo || undefined}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        style={{
+                          flex: 1, minWidth: 110,
+                          fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                          padding: '4px 8px', borderRadius: 6,
+                          border: '1px solid rgba(118,126,181,.25)',
+                          background: '#fff', color: '#0A0E1A',
+                        }}
+                      />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', minWidth: 22 }}>To</label>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        min={dateFrom || undefined}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        style={{
+                          flex: 1, minWidth: 110,
+                          fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                          padding: '4px 8px', borderRadius: 6,
+                          border: '1px solid rgba(118,126,181,.25)',
+                          background: '#fff', color: '#0A0E1A',
+                        }}
+                      />
+                      {(dateFrom || dateTo) && (
+                        <button
+                          type="button"
+                          onClick={() => { setDateFrom(''); setDateTo(''); }}
+                          style={{
+                            border: 'none', background: 'transparent',
+                            color: '#5E6590', fontSize: 10, fontWeight: 700,
+                            cursor: 'pointer', padding: '4px 6px',
+                          }}
+                        >Clear</button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHideWarmCool(v => !v)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        alignSelf: 'flex-start',
+                        border: 'none', background: 'transparent',
+                        color: '#0A0E1A', fontSize: 11, fontWeight: 600,
+                        cursor: 'pointer', padding: 0,
+                      }}
+                    >
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 16, height: 16, borderRadius: 4,
+                        border: `1.5px solid ${hideWarmCool ? '#5E6590' : 'rgba(118,126,181,.4)'}`,
+                        background: hideWarmCool ? '#5E6590' : 'transparent',
+                        transition: 'background .15s ease, border-color .15s ease',
+                      }}>
+                        {hideWarmCool && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 12l5 5 9-11" />
+                          </svg>
+                        )}
+                      </span>
+                      Hide warm-up &amp; cool-down
+                    </button>
+                  </div>
+                )}
 
                 {/* Metric toggle + chart-type toggle */}
                 <div style={{
@@ -1846,6 +1997,7 @@ export default function NativeTrainingPage({
                           metric={selectedMetric}
                           sport={currentSport}
                           highlightId={safeHighlight}
+                          hideWarmCool={hideWarmCool}
                           onSessionTap={(s) => openActivity(s)}
                           onLapEditLactate={(s) => openTrainingForm(s)}
                         />
@@ -1853,6 +2005,7 @@ export default function NativeTrainingPage({
                           sessions={visibleSessions}
                           metric={selectedMetric}
                           highlightId={safeHighlight}
+                          hideWarmCool={hideWarmCool}
                           onPointTap={(s) => openActivity(s)}
                         />;
                   })()}
