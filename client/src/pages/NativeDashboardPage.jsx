@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
 import WeekStrip         from '../components/NativeDashboard/WeekStrip';
