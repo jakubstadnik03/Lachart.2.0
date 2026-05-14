@@ -20,7 +20,7 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement } from '../services/api';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
@@ -241,6 +241,21 @@ function sessionShade(idx, total) {
   return `rgb(${r},${g},${b})`;
 }
 
+// True when a lap should be treated as warm-up or cool-down for the
+// "Hide warm-up & cool-down" comparison-chart toggle. We trust an explicit
+// intervalType / isRecovery flag, and fall back to a position heuristic for
+// raw Strava laps (which have no intervalType): the first and last lap of a
+// session with ≥ 3 laps are almost always warm-up / cool-down for the
+// repeated-workout use case the comparison chart is built around.
+function isWarmupOrCooldown(iv, idx, total) {
+  const t = String(iv?.intervalType || '').toLowerCase();
+  if (t === 'warmup' || t === 'cooldown') return true;
+  if (iv?.isRecovery === true) return true;
+  // Heuristic fallback for laps without intervalType.
+  if (total >= 3 && (idx === 0 || idx === total - 1)) return true;
+  return false;
+}
+
 // Bar colour mirrors the LapsBarChart palette inside TrainingForm so the two
 // charts read as the same kind of visualisation:
 //   warmup  → amber
@@ -366,12 +381,10 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
     return sessions.map((s, i) => {
       let intervals = getIntervals(s);
       if (hideWarmCool) {
-        // Drop warmup/cooldown intervals from the comparison chart. We compare
-        // the meat of the workout, not the bookends.
-        intervals = intervals.filter(iv => {
-          const t = String(iv?.intervalType || '').toLowerCase();
-          return t !== 'warmup' && t !== 'cooldown';
-        });
+        // Drop warm-up + cool-down (and recovery) intervals from the
+        // comparison chart so we only compare the meat of the workout.
+        const total = intervals.length;
+        intervals = intervals.filter((iv, i) => !isWarmupOrCooldown(iv, i, total));
       }
       const laps = intervals.map((iv, idx) => {
         let v = null;
@@ -1035,10 +1048,8 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCoo
       const sportKey = normSport(s.sport);
       let intervals = getIntervals(s);
       if (hideWarmCool) {
-        intervals = intervals.filter(iv => {
-          const t = String(iv?.intervalType || '').toLowerCase();
-          return t !== 'warmup' && t !== 'cooldown';
-        });
+        const total = intervals.length;
+        intervals = intervals.filter((iv, i) => !isWarmupOrCooldown(iv, i, total));
       }
       const points = intervals.map((iv, idx) => {
         const v = getIntervalMetric(iv, metric);
@@ -1250,11 +1261,36 @@ export default function NativeTrainingPage({
   const [selectedSport, setSelectedSport] = useState('all');
   const [showRecordLactate, setShowRecordLactate] = useState(false);
 
+  // ── Field lactate measurements (Record button) ─────────────────────────────
+  // Loaded once on mount and refreshed after each Record. Drives both the
+  // "fresh measurement" hero card at the top of the page and the lactate
+  // log table near the bottom.
+  const [fieldLactates, setFieldLactates] = useState([]);
+  const loadFieldLactates = useCallback(async () => {
+    try {
+      const r = await getFieldLactateMeasurements(athleteId || null, null);
+      const list = Array.isArray(r) ? r : (Array.isArray(r?.data) ? r.data : []);
+      setFieldLactates(list);
+    } catch (e) {
+      // Silent: list just stays empty.
+    }
+  }, [athleteId]);
+  useEffect(() => { loadFieldLactates(); }, [loadFieldLactates]);
+
   const handleRecordLactate = async (data) => {
     await createFieldLactateMeasurement({
       ...data,
       athleteId: athleteId || undefined,
     });
+    loadFieldLactates();
+  };
+  const handleDeleteFieldLactate = async (id) => {
+    try {
+      await deleteFieldLactateMeasurement(id);
+      setFieldLactates(prev => prev.filter(m => String(m._id) !== String(id)));
+    } catch (e) {
+      console.warn('[field-lactate] delete failed:', e?.message);
+    }
   };
   const [selectedMetric, setSelectedMetric] = useState('power');
   const [selectedTitle, setSelectedTitle] = useState(null); // workout title to compare
@@ -1676,6 +1712,53 @@ export default function NativeTrainingPage({
         )}
 
         <div style={styles.body}>
+          {/* ─── Fresh field-lactate hero (<24h old) ──────────────────────── */}
+          {(() => {
+            if (!fieldLactates.length) return null;
+            const fresh = fieldLactates
+              .map(m => ({ ...m, _ts: new Date(m.recordedAt || m.createdAt || 0).getTime() }))
+              .sort((a, b) => b._ts - a._ts)
+              .filter(m => (Date.now() - m._ts) < 24 * 60 * 60 * 1000);
+            if (!fresh.length) return null;
+            const m = fresh[0];
+            const minsAgo = Math.max(0, Math.round((Date.now() - m._ts) / 60000));
+            const ago = minsAgo < 1 ? 'just now'
+                      : minsAgo < 60 ? `${minsAgo} min ago`
+                      : `${Math.round(minsAgo / 60)} h ago`;
+            const val = Number(m.value || 0);
+            const valStr = Number.isFinite(val) ? val.toFixed(1) : '—';
+            return (
+              <div style={{ ...cardEntry(0), ...snap }}>
+                <GlassCard style={{ padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', border: '1px solid rgba(124,58,237,.25)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px -2px rgba(124,58,237,.3)' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7c3aed', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        Just measured
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: 22, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                          {valStr}
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#7c3aed' }}>mmol/L</span>
+                        <span style={{ fontSize: 10.5, color: '#6B7280', marginLeft: 'auto' }}>{ago}</span>
+                      </div>
+                      {m.notes && (
+                        <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.notes}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </GlassCard>
+              </div>
+            );
+          })()}
+
           {/* Sport filter — fixed: All / Swim / Bike / Run */}
           {(
             <div style={{ ...cardEntry(1), ...snap }}>
@@ -2325,6 +2408,87 @@ export default function NativeTrainingPage({
               </GlassCard>
             </div>
           )}
+
+          {/* ─── Lactate log — all field-lactate measurements ──────────── */}
+          {fieldLactates.length > 0 && (() => {
+            const log = fieldLactates
+              .map(m => ({ ...m, _ts: new Date(m.recordedAt || m.createdAt || 0).getTime() }))
+              .sort((a, b) => b._ts - a._ts);
+            const fmtDate = (ts) => {
+              const d = new Date(ts);
+              const today = new Date();
+              const sameDay = d.toDateString() === today.toDateString();
+              const dayPart = sameDay
+                ? 'Today'
+                : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+              const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              return `${dayPart} · ${timePart}`;
+            };
+            return (
+              <div style={{ ...cardEntry(5), ...snap }}>
+                <GlassCard>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                    </svg>
+                    <SectionTitle>Lactate log</SectionTitle>
+                    <span style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      ({log.length})
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {log.slice(0, 12).map((m) => {
+                      const val = Number(m.value || 0);
+                      const valStr = Number.isFinite(val) ? val.toFixed(1) : '—';
+                      const assigned = m.status === 'assigned' && m.assignment?.trainingTitle;
+                      return (
+                        <div key={m._id} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 10px', borderRadius: 10,
+                          background: 'rgba(255,255,255,.55)',
+                          border: '1px solid rgba(118,126,181,.12)',
+                        }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            minWidth: 48, padding: '4px 6px', borderRadius: 8,
+                            background: lapBarColor({ intervalType: null, lactate: val, sessionShade: '#a78bfa' }) + '22',
+                            color: '#5b21b6',
+                            fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                          }}>
+                            {valStr}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#0A0E1A' }}>
+                              {fmtDate(m._ts)}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {assigned
+                                ? `→ ${m.assignment.trainingTitle}${m.assignment.lapNumber ? ` · Lap ${m.assignment.lapNumber}` : ''}`
+                                : (m.notes || 'Unassigned')}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFieldLactate(m._id)}
+                            aria-label="Delete measurement"
+                            style={{
+                              border: 'none', background: 'transparent',
+                              padding: 6, color: '#9CA3AF', cursor: 'pointer',
+                              borderRadius: 6,
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M6 6l12 12M6 18L18 6" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </GlassCard>
+              </div>
+            );
+          })()}
 
           <div style={{ height: 16 }} />
         </div>
