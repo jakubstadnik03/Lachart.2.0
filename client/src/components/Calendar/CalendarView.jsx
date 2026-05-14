@@ -943,6 +943,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             touchAction: 'pan-x',
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorX: 'contain',
+            // Snap each bar to centre when scrolling settles, so dragging
+            // never leaves the chart parked between bars. Only meaningful
+            // in zoom mode (where the inner canvas is wider than the
+            // viewport); the proportional mode has nothing to scroll.
+            scrollSnapType: isZoomed ? 'x mandatory' : 'none',
+            scrollPaddingLeft: '50%',
+            scrollPaddingRight: '50%',
             // Hint the compositor to keep the scroller on its own layer —
             // makes momentum scroll on iOS noticeably smoother when there
             // are 30+ bars in zoom mode.
@@ -1018,7 +1025,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // is wider than the viewport → horizontal scroll appears).
               // Outside zoom mode bars still use proportional flex-grow.
               const itemStyle = isZoomed
-                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease' }
+                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease', scrollSnapAlign: 'center', scrollSnapStop: 'always' }
                 : { flex: `${ent.weight} 0 2px`,  minWidth: 2,             height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
 
               return (
