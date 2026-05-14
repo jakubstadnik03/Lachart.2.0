@@ -2844,13 +2844,48 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       });
     }
   
+    // ── Non-monotonic input filter ──────────────────────────────────────────
+    // Real step-test protocols have strictly increasing intensity. If the
+    // user enters a power/pace value in the second half of the test that's
+    // LOWER than any earlier stage, it's almost always a typo (e.g. 196
+    // typed instead of 296). That single bad value, when sorted into the
+    // middle of the curve by power, rips the polynomial fit apart and
+    // produces nonsense thresholds. Drop those rows before the sort.
+    //
+    // Recovery rows (intervalType === 'recovery') are by design lower
+    // intensity and must NOT trigger this — they're already excluded from
+    // validResults upstream, but we double-check here for robustness.
+    if (validResults.length >= 3) {
+      const isPaceSport = sport === 'run' || sport === 'swim';
+      const hardness = (r) => {
+        if (r?.intervalType === 'recovery') return null;
+        const p = Number(r?.power);
+        if (!Number.isFinite(p)) return null;
+        return isPaceSport ? -p : p; // "harder = higher"
+      };
+      const half = Math.floor(validResults.length / 2);
+      let maxHardness = -Infinity;
+      const cleaned = [];
+      for (let i = 0; i < validResults.length; i++) {
+        const h = hardness(validResults[i]);
+        if (h == null) { cleaned.push(validResults[i]); continue; }
+        if (h < maxHardness && i >= half) {
+          console.warn(`[calculateThresholds] Dropping non-monotonic stage at index ${i}: power=${validResults[i]?.power} (lower than earlier max). Likely user typo.`);
+          continue; // drop the anomalous row
+        }
+        if (h > maxHardness) maxHardness = h;
+        cleaned.push(validResults[i]);
+      }
+      validResults = cleaned;
+    }
+
     if (validResults.length < 3) {
       return {
         heartRates: {},
         lactates: {}
       };
     }
-  
+
     // Pro běh a plavání necháme hodnoty v sekundách (nebudeme je převádět)
     const sortedResults = [...validResults].sort((a, b) => {
       if (sport === 'run' || sport === 'swim') {

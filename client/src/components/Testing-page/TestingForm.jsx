@@ -1159,16 +1159,61 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return;
   };
 
+  // Detect rows whose POWER (or pace) is non-monotonic compared to the
+  // earlier rows. Real tests are step protocols — intensity strictly
+  // increases each stage. If row N is lower than the max seen in rows
+  // 0..N-1 *and* we're in the second half of the test, that's almost
+  // certainly a user typo (e.g. "196" typed instead of "296") which
+  // would otherwise rip the polynomial fit apart.
+  //
+  // Returns a Set<index> of bad rows. Skips recovery rows (those are
+  // expected to be lower-power on purpose).
+  const anomalousPowerRowIndices = React.useMemo(() => {
+    const bad = new Set();
+    if (!Array.isArray(rows) || rows.length < 3) return bad;
+    const isPace = formData.sport === 'run' || formData.sport === 'swim';
+    const parseRowPower = (r) => {
+      if (r?.intervalType === 'recovery') return null;
+      const raw = r?.power;
+      if (raw == null || raw === '') return null;
+      const str = String(raw).trim().replace(',', '.');
+      // For pace inputs we may get "MM:SS" — convert to seconds to compare.
+      if (isPace && str.includes(':')) {
+        const [m, s] = str.split(':').map(Number);
+        if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
+        return null;
+      }
+      const n = Number(str);
+      return Number.isFinite(n) ? n : null;
+    };
+    // For bike higher power = harder; for pace lower seconds = harder.
+    // We normalise so "harder" is always a HIGHER number.
+    const hardnessScore = (p) => (p == null ? null : (isPace ? -p : p));
+    let maxHardness = -Infinity;
+    const half = Math.floor(rows.length / 2);
+    for (let i = 0; i < rows.length; i++) {
+      const h = hardnessScore(parseRowPower(rows[i]));
+      if (h == null) continue;
+      if (h < maxHardness && i >= half) {
+        bad.add(i);
+      } else if (h > maxHardness) {
+        maxHardness = h;
+      }
+    }
+    return bad;
+  }, [rows, formData.sport]);
+
   // Update the input field in the table
   const renderInput = (index, field, value, placeholder) => {
     const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === `${field}_${index}`;
+    const isAnomalous = field === 'power' && anomalousPowerRowIndices.has(index);
     let displayValue = value;
-    
+
     // NO AUTOMATIC CONVERSIONS - let user type anything
     // Only show the raw value as stored in state
     return (
       <div className="min-w-0 overflow-hidden relative">
-      <input 
+      <input
           ref={el => inputRefs.current[`${field}_${index}`] = el}
         type="text"
           value={displayValue === undefined || displayValue === null ? '' : String(displayValue)}
@@ -1181,9 +1226,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
           }}
           disabled={!isNewTest && !isEditMode}
+          title={isAnomalous ? 'This value is lower than an earlier stage — likely a typo (e.g. 196 typed instead of 296). It will be excluded from the lactate curve.' : undefined}
           className={`w-full min-w-0 max-w-full box-border p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
-          } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''}`}
+          } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''} ${
+            isAnomalous ? 'border-red-500 bg-red-50 text-red-700 font-semibold ring-1 ring-red-300' : ''
+          }`}
           placeholder={placeholder}
         />
       </div>
