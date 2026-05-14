@@ -10,7 +10,7 @@ import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
-import { getStravaActivityDetail, addTraining, updateTraining } from '../services/api';
+import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -706,12 +706,58 @@ export default function NativeDashboardPage({
       setLactateSubmitting(true);
       setLactateError(null);
       const targetId = athleteId || user?._id || user?.id;
-      const payload = { ...formData, athleteId: targetId, coachId: user?._id || user?.id };
+
+      // Normalise lactate strings → Number (mongoose can't always coerce ""
+      // cleanly, and downstream code expects numeric lactate values).
+      const cleanedResults = Array.isArray(formData.results)
+        ? formData.results.map((r) => {
+            const out = { ...r };
+            if (out.lactate === '' || out.lactate == null) {
+              delete out.lactate;
+            } else {
+              const num = parseFloat(out.lactate);
+              if (Number.isFinite(num)) out.lactate = num;
+              else delete out.lactate;
+            }
+            return out;
+          })
+        : formData.results;
+
+      const payload = {
+        ...formData,
+        results: cleanedResults,
+        athleteId: targetId,
+        coachId: user?._id || user?.id,
+      };
       if (formData._id) {
         await updateTraining(formData._id, payload);
       } else {
         await addTraining(payload);
       }
+
+      // If this Training is linked to a Strava activity, push lactate values
+      // back into the StravaActivity.laps so the calendar view (which renders
+      // Strava laps, not Training results) displays them on PC and mobile.
+      const stravaId = formData?.sourceStravaActivityId;
+      if (stravaId && Array.isArray(cleanedResults)) {
+        const lactateValues = cleanedResults
+          .map((r) => {
+            const lapIdx = Number.isInteger(r?.sourceLapIndex)
+              ? r.sourceLapIndex
+              : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
+            if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
+            return { lapIndex: lapIdx, lactate: r.lactate };
+          })
+          .filter(Boolean);
+        if (lactateValues.length > 0) {
+          try {
+            await updateStravaLactateValues(stravaId, lactateValues);
+          } catch (syncErr) {
+            console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
+          }
+        }
+      }
+
       closeLactateModal();
     } catch (err) {
       setLactateError(

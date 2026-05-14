@@ -20,7 +20,7 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues } from '../services/api';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
@@ -1403,11 +1403,53 @@ export default function NativeTrainingPage({
   const closeTrainingForm = () => setTrainingFormActivity(null);
   const handleTrainingFormSubmit = async (formData) => {
     const targetAthleteId = athleteId || user?._id || user?.id;
+
+    // Normalise lactate strings → Number so mongoose stores them cleanly and
+    // downstream code (LapChart, calendar lap table) can compare numerically.
+    const cleanedResults = Array.isArray(formData.results)
+      ? formData.results.map((r) => {
+          const out = { ...r };
+          if (out.lactate === '' || out.lactate == null) {
+            delete out.lactate;
+          } else {
+            const num = parseFloat(out.lactate);
+            if (Number.isFinite(num)) out.lactate = num;
+            else delete out.lactate;
+          }
+          return out;
+        })
+      : formData.results;
+
+    const cleanedFormData = { ...formData, results: cleanedResults };
+
     if (formData?._id) {
-      await updateTraining(formData._id, formData);
+      await updateTraining(formData._id, cleanedFormData);
     } else {
-      await addTraining({ ...formData, athleteId: targetAthleteId });
+      await addTraining({ ...cleanedFormData, athleteId: targetAthleteId });
     }
+
+    // Mirror lactate into the linked StravaActivity laps so the calendar
+    // (which renders Strava laps, not Training results) shows them on PC.
+    const stravaId = formData?.sourceStravaActivityId;
+    if (stravaId && Array.isArray(cleanedResults)) {
+      const lactateValues = cleanedResults
+        .map((r) => {
+          const lapIdx = Number.isInteger(r?.sourceLapIndex)
+            ? r.sourceLapIndex
+            : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
+          if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
+          return { lapIndex: lapIdx, lactate: r.lactate };
+        })
+        .filter(Boolean);
+      if (lactateValues.length > 0) {
+        try {
+          await updateStravaLactateValues(stravaId, lactateValues);
+        } catch (syncErr) {
+          console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
+        }
+      }
+    }
+
     closeTrainingForm();
     onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'training-updated' });
   };
