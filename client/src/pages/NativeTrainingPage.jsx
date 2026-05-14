@@ -241,16 +241,21 @@ function sessionShade(idx, total) {
   return `rgb(${r},${g},${b})`;
 }
 
-// Lactate value → highlight color. Refined rose/coral gradient that harmonises
-// with the purple session-shade palette (the earlier yellow→brown ramp clashed
-// against the lavender bars).
-function lactateColor(lac) {
-  if (lac == null) return null;
-  const v = Number(lac);
-  if (v < 2)   return '#fcd34d'; // amber-300  — soft yellow (easy)
-  if (v < 4)   return '#fb923c'; // orange-400 — threshold
-  if (v < 6)   return '#f43f5e'; // rose-500   — hard
-  return '#be123c';              // rose-700   — very hard
+// Bar colour mirrors the LapsBarChart palette inside TrainingForm so the two
+// charts read as the same kind of visualisation:
+//   warmup  → amber
+//   cooldown → sky
+//   recovery → gray
+//   work / unknown + lactate → violet
+//   work / unknown (no lactate) → fall back to per-session purple shade
+function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false }) {
+  const t = String(intervalType || '').toLowerCase();
+  if (t === 'warmup')   return isSelected ? '#d97706' : '#fbbf24';
+  if (t === 'cooldown') return isSelected ? '#0284c7' : '#38bdf8';
+  if (t === 'recovery') return isSelected ? '#6b7280' : '#d1d5db';
+  // work or untyped
+  if (lactate != null)  return isSelected ? '#7c3aed' : '#a78bfa';
+  return shade;
 }
 
 // Get lactate from an interval / lap
@@ -385,6 +390,7 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
           idx,
           value: v,
           lactate: intervalLactate(iv),
+          intervalType: iv?.intervalType || null,
           durationSec: durSec,
           hr, dist, pace, power, rpe,
         };
@@ -549,13 +555,19 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
                 const barTop = Math.min(top, baselineY);
                 const h = Math.abs(baselineY - top);
 
-                // Lactate-marked bar uses lactate color, otherwise session shade
-                const lacCol = lactateColor(l.lactate);
-                const fill = lacCol || s.color;
-
                 const isSelectedBar = selected
                   && selected.sessionId === s.id
                   && selected.lapIdx === li + 1;
+
+                // Match the LapsBarChart palette in TrainingForm: warm-up
+                // amber, cool-down sky, recovery gray, lactate-marked violet,
+                // otherwise per-session purple shade.
+                const fill = lapBarColor({
+                  intervalType: l.intervalType,
+                  lactate: l.lactate,
+                  sessionShade: s.color,
+                  isSelected: isSelectedBar,
+                });
 
                 // Tap a bar → select (or deselect on second tap of same bar)
                 const handleBarTap = (e) => {
