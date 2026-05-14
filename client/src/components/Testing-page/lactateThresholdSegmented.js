@@ -14,6 +14,14 @@ const OBLA_MMOL = 2.0; // LT1 baseline: target OBLA 2.0 mmol/L
 const LT1_MAX_LACTATE_MMOL = 2.5; // pokud by laktát v LT1 byl > 2.5, použít OBLA 2.0
 const OBLA_LT2_MMOL = 4.0; // LT2: OBLA 4.0 mmol/L
 const OBLA_LT2_FALLBACK_MMOL = 3.5; // fallback když křivka nedosáhne 4.0
+/** Horní pojistka pro LT2: laktát > 5.0 mmol je už nad VO2max, ne LT2.
+ * Když medián ensemble dá takový výsledek, vrátíme se k Modified D-max,
+ * případně OBLA 4.0 — ty jsou robustnější u testů s "explozí" na konci. */
+const LT2_MAX_LACTATE_MMOL = 5.0;
+/** Když poslední dva body překročí tuto hodnotu, log-log a Dickhuth IAT
+ * začnou táhnout LT2 do explozivního konce. V takovém případě je z mediánu
+ * vyloučíme a spolehneme se na Modified D-max + OBLA 4 + classic D-max. */
+const EXPLOSIVE_FINISH_THRESHOLD = 5.0;
 const BOOTSTRAP_ITERATIONS = 200;
 
 // --- 1) Předzpracování ---
@@ -87,6 +95,57 @@ function linearInterpolationPower(power, lactate, targetLactate) {
   }
   if (targetLactate <= lactate[0]) return power[0];
   if (targetLactate >= lactate[lactate.length - 1]) return power[power.length - 1];
+  return null;
+}
+
+/**
+ * Detekuje uživatelské překlepy v inputu: hodnota výkonu/tempa která je
+ * v původním pořadí nemonotónní (např. zadal 281W a pak 196W jako další stage).
+ * Po seřazení podle power se takový bod vloží doprostřed křivky a naprosto
+ * rozhodí isotonic regression i polynom fit — celý LT odhad pak letí.
+ *
+ * Vrací { hasAnomaly, anomalyIndex, anomalyPower } na ORIGINÁLNÍM (nesetřízeném)
+ * inputu. Anomálie = bod jehož power je menší než maximální dosud viděný.
+ *
+ * Pro pace sporty (kde xSign = -1 už otočí směr) testujeme proti negovaným
+ * hodnotám stejnou logikou.
+ */
+function detectNonMonotonicInput(rawPoints) {
+  if (!Array.isArray(rawPoints) || rawPoints.length < 3) {
+    return { hasAnomaly: false };
+  }
+  let maxSoFar = -Infinity;
+  for (let i = 0; i < rawPoints.length; i++) {
+    const p = Number(rawPoints[i]?.power);
+    if (!Number.isFinite(p)) continue;
+    // Drop in the SECOND half of the test is suspicious (warmup descent is OK).
+    if (p < maxSoFar && i > Math.floor(rawPoints.length / 2)) {
+      return { hasAnomaly: true, anomalyIndex: i, anomalyPower: p, expectedMin: maxSoFar };
+    }
+    if (p > maxSoFar) maxSoFar = p;
+  }
+  return { hasAnomaly: false };
+}
+
+/** Laktát v daném výkonu P z RAW (neopravených) bodů — pro zobrazení v UI.
+ * Vrací číslo které sedí s tím co uživatel zadal, ne se smoothovanou křivkou.
+ */
+export function lactateAtPowerRaw(rawPowers, rawLactates, P) {
+  if (!Array.isArray(rawPowers) || rawPowers.length === 0) return null;
+  // Combine + sort by power so interpolation works regardless of input order.
+  const pairs = rawPowers
+    .map((p, i) => ({ p: Number(p), l: Number(rawLactates[i]) }))
+    .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+    .sort((a, b) => a.p - b.p);
+  for (let i = 0; i < pairs.length - 1; i++) {
+    const a = pairs[i];
+    const b = pairs[i + 1];
+    if (P >= a.p && P <= b.p && b.p !== a.p) {
+      return a.l + (b.l - a.l) * (P - a.p) / (b.p - a.p);
+    }
+  }
+  if (P <= pairs[0].p) return pairs[0].l;
+  if (P >= pairs[pairs.length - 1].p) return pairs[pairs.length - 1].l;
   return null;
 }
 
@@ -464,7 +523,19 @@ export function computeLactateThresholds(points, options = {}) {
   // result LT values back to positive pace seconds before returning.
   const xSign = isPace ? -1 : 1;
 
-  const sorted = [...points]
+  // Detect user typos: a power value in the second half of the input that's
+  // LOWER than the max seen so far is almost certainly a typo (e.g. 196 typed
+  // instead of 296). Without this guard, the bad point gets sorted into the
+  // middle of the curve and destroys both isotonic regression and the
+  // polynomial fit — algorithm reports LT2 in a region where lactate is
+  // actually below baseline.
+  const anomaly = detectNonMonotonicInput(points);
+  let filteredPoints = points;
+  if (anomaly.hasAnomaly) {
+    filteredPoints = points.filter((_, i) => i !== anomaly.anomalyIndex);
+  }
+
+  const sorted = [...filteredPoints]
     .map((p) => ({ power: xSign * Number(p.power), lactate: Number(p.lactate) }))
     .filter((p) => Number.isFinite(p.power) && Number.isFinite(p.lactate))
     .sort((a, b) => a.power - b.power);
@@ -496,7 +567,15 @@ export function computeLactateThresholds(points, options = {}) {
     confidenceInterval: null,
     confidence: null,
     methods: { LT1: {}, LT2: {} },
-    metrics: { method: 'ensemble', noisy, violations, baselineUsed: baseLactate }
+    metrics: {
+      method: 'ensemble',
+      noisy,
+      violations,
+      baselineUsed: baseLactate,
+      anomalyDetected: anomaly.hasAnomaly,
+      anomalyPower: anomaly.hasAnomaly ? anomaly.anomalyPower : null,
+      anomalyExpectedMin: anomaly.hasAnomaly ? anomaly.expectedMin : null,
+    }
   };
 
   if (n < MIN_POINTS) {
@@ -524,8 +603,32 @@ export function computeLactateThresholds(points, options = {}) {
 
   // LT1 ensemble: baseline (individualized) + segmented breakpoint when it
   // exists. Take the median for robustness against either method drifting.
+  //
+  // Extra guard for noisy low-end data (Nina-case): segmented regression
+  // sometimes finds a "knee" in the warm-up noise where lactate hasn't
+  // really risen yet. Reject the segmented candidate when:
+  //   • the lactate at the proposed segmented LT1 is BELOW baseLactate +0.3 mmol
+  //     (i.e. still in resting noise band — not a real aerobic threshold), OR
+  //   • it disagrees with baseline by >25% AND the test is flagged noisy.
+  // In either case, fall back to baseline alone — it's individualized to the
+  // athlete's resting lactate and far more stable on jagged warm-up data.
   const LT1_candidates = [lt1Base];
-  if (segValid && LT1_seg != null) LT1_candidates.push(LT1_seg);
+  let segmentedLT1Rejected = false;
+  if (segValid && LT1_seg != null) {
+    const laAtSeg = lactateAtPower(power, lactate, LT1_seg);
+    const restingFloor = Number.isFinite(Number(baseLactate))
+      ? Number(baseLactate) + 0.3
+      : 1.3;
+    const tooLow = laAtSeg != null && laAtSeg < restingFloor;
+    const baseAndSegDisagree =
+      lt1Base != null &&
+      Math.abs(LT1_seg - lt1Base) / Math.abs(lt1Base || 1) > 0.25;
+    if (tooLow || (noisy && baseAndSegDisagree)) {
+      segmentedLT1Rejected = true;
+    } else {
+      LT1_candidates.push(LT1_seg);
+    }
+  }
   result.LT1 = median(LT1_candidates.filter((x) => x != null && Number.isFinite(x)));
 
   // Now that we have a tentative LT1, compute LT1-anchored methods.
@@ -534,10 +637,28 @@ export function computeLactateThresholds(points, options = {}) {
 
   // LT2 ensemble: D-max + Modified D-max + OBLA 4 + log-log + Dickhuth-IAT
   // + segmented (when valid). Median consensus.
-  const LT2_candidates = [lt2Dmax, lt2ModDmax, lt2Obla, lt2Loglog, lt2IAT]
-    .filter((x) => x != null && Number.isFinite(x));
+  //
+  // Explosive-finish guard (Florin-case): when the last two stages exceed
+  // ~5 mmol/L, the test went well past LT2. Log-log latches onto the steepest
+  // section (which IS the explosion, not LT2), and Dickhuth-IAT (LT1+1.5)
+  // is dragged along by any LT1 error. Both then pull the median rightward
+  // into VO2max territory. Drop them in that scenario and trust the chord
+  // methods (D-max, Modified D-max) + fixed OBLA 4.
+  const lastLactate = lactateRaw[lactateRaw.length - 1];
+  const secondLast = lactateRaw[lactateRaw.length - 2];
+  const explosiveFinish =
+    Number.isFinite(lastLactate) &&
+    Number.isFinite(secondLast) &&
+    lastLactate > EXPLOSIVE_FINISH_THRESHOLD &&
+    secondLast > EXPLOSIVE_FINISH_THRESHOLD;
+
+  const LT2_candidates = explosiveFinish
+    ? [lt2Dmax, lt2ModDmax, lt2Obla].filter((x) => x != null && Number.isFinite(x))
+    : [lt2Dmax, lt2ModDmax, lt2Obla, lt2Loglog, lt2IAT].filter((x) => x != null && Number.isFinite(x));
   if (segValid && LT2_seg != null) LT2_candidates.push(LT2_seg);
   result.LT2 = median(LT2_candidates);
+  result.metrics.explosiveFinish = explosiveFinish;
+  result.metrics.segmentedLT1Rejected = segmentedLT1Rejected;
 
   // Capture each candidate so the UI / DataTable can show the spread.
   result.methods.LT1 = {
@@ -567,9 +688,35 @@ export function computeLactateThresholds(points, options = {}) {
   const lactateAtLt2 = result.LT2 != null ? lactateAtPower(power, lactate, result.LT2) : null;
   const minGapInternal = isPace ? 10 : MIN_LT2_LT1_GAP_W; // 10 sec/100m or sec/km vs 30 W
   const gap = result.LT1 != null && result.LT2 != null ? result.LT2 - result.LT1 : 0;
-  const lt2LactateLow = lactateAtLt2 != null && lactateAtLt2 < MIN_LTP2_LACTATE_REASONABLE;
   const lt2GapSmall = gap < minGapInternal;
-  if (result.LT2 != null && (lt2LactateLow || lt2GapSmall)) {
+
+  // Upper safety guard (Florin-case): if lactate@LT2 > 5.0 mmol, that's not
+  // LT2 — it's VO2max zone. Fall back to Modified D-max alone (if available
+  // and physiologically sane), else to OBLA 4.0. Modified D-max is preferred
+  // because it's anchored at LT1 and doesn't overshoot like log-log/IAT.
+  const lt2LactateHigh = lactateAtLt2 != null && lactateAtLt2 > LT2_MAX_LACTATE_MMOL;
+  if (lt2LactateHigh && result.LT2 != null) {
+    let replacement = null;
+    if (lt2ModDmax != null && Number.isFinite(lt2ModDmax)) {
+      const laAtModDmax = lactateAtPower(power, lactate, lt2ModDmax);
+      if (laAtModDmax != null && laAtModDmax <= LT2_MAX_LACTATE_MMOL) {
+        replacement = lt2ModDmax;
+      }
+    }
+    if (replacement == null) {
+      replacement = linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
+    }
+    if (replacement != null && (result.LT1 == null || replacement - result.LT1 >= minGapInternal)) {
+      result.LT2 = replacement;
+      result.metrics.lt2UpperGuardApplied = true;
+    }
+  }
+
+  // Re-read lactate at (possibly replaced) LT2 for the lower-bound check below.
+  const lactateAtLt2_final = result.LT2 != null ? lactateAtPower(power, lactate, result.LT2) : null;
+  const lt2LactateLowFinal = lactateAtLt2_final != null && lactateAtLt2_final < MIN_LTP2_LACTATE_REASONABLE;
+
+  if (result.LT2 != null && (lt2LactateLowFinal || lt2GapSmall)) {
     const lt2At4 = linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
     const lt2At35 = linearInterpolationPower(power, lactate, OBLA_LT2_FALLBACK_MMOL);
     let betterLt2 = lt2At4 ?? lt2At35;
@@ -624,6 +771,19 @@ export function computeLactateThresholds(points, options = {}) {
     lt1: result.LT1,
     lt2: result.LT2,
   });
+
+  // Report lactate AT the chosen LT1/LT2 from the RAW (user-entered) data.
+  // The displayed value in the UI must match what the user can see by eye on
+  // the chart, not the smoothed/isotonic curve — otherwise the table says
+  // "LT2 = 208W, La = 2.2" while the data clearly shows 0.9 at that power.
+  // These are reported on the INTERNAL (sign-flipped for pace) axis; the
+  // UI doesn't need to flip them back because lactate is sport-agnostic.
+  if (result.LT1 != null) {
+    result.lactateAtLT1Raw = lactateAtPowerRaw(power, lactateRaw, result.LT1);
+  }
+  if (result.LT2 != null) {
+    result.lactateAtLT2Raw = lactateAtPowerRaw(power, lactateRaw, result.LT2);
+  }
 
   // Flip X values back to caller's units. For pace sports this returns
   // positive pace seconds; for bike it's a no-op (xSign = 1).

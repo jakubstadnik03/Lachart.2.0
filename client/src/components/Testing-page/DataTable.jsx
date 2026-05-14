@@ -3702,6 +3702,52 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
+    // ── Displayed-lactate override ──────────────────────────────────────────
+    // The lactate values stored in thresholds.lactates['LTP1'/'LTP2'] currently
+    // come from the polynomial fit (polyFn). On real tests this routinely
+    // disagrees with what the user sees on the chart — e.g. Schäftlarn bike
+    // showed "LT2 = 208 W → La 2.20" while raw data at 202/221 W is 0.8/0.9.
+    // The polynomial smooths neighbouring points UP, but for REPORTING the
+    // user expects the same number they'd read off the dots.
+    //
+    // We therefore re-derive the displayed La from a raw linear interpolation
+    // between the two adjacent measured points, ONLY when the polynomial
+    // value disagrees with raw by >0.6 mmol/L. Small disagreements (where the
+    // poly is slightly above/below the noisy raw) are left alone — the poly
+    // is then closer to the "true" steady-state lactate.
+    try {
+      const rawLactateAtPower = (P) => {
+        if (!Number.isFinite(P)) return null;
+        const pairs = (sortedResults || [])
+          .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+          .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+          .sort((a, b) => a.p - b.p);
+        if (pairs.length === 0) return null;
+        for (let i = 0; i < pairs.length - 1; i++) {
+          const a = pairs[i];
+          const b = pairs[i + 1];
+          if (P >= a.p && P <= b.p && b.p !== a.p) {
+            return a.l + (b.l - a.l) * (P - a.p) / (b.p - a.p);
+          }
+        }
+        if (P <= pairs[0].p) return pairs[0].l;
+        if (P >= pairs[pairs.length - 1].p) return pairs[pairs.length - 1].l;
+        return null;
+      };
+      ['LTP1', 'LTP2'].forEach((key) => {
+        const xVal = Number(thresholds[key]);
+        const polyLa = Number(thresholds.lactates?.[key]);
+        if (!Number.isFinite(xVal)) return;
+        const rawLa = rawLactateAtPower(xVal);
+        if (!Number.isFinite(rawLa)) return;
+        if (!Number.isFinite(polyLa) || Math.abs(polyLa - rawLa) > 0.6) {
+          thresholds.lactates[key] = rawLa;
+        }
+      });
+    } catch (_) {
+      // Non-fatal: keep polynomial values if the raw override blew up.
+    }
+
     if (isThresholdDebugEnabled()) {
       console.groupCollapsed('[LaChart] calculateThresholds — finální LTP1/LTP2 (po všech guardách)');
       const r4 = (x) => (x == null || !Number.isFinite(Number(x)) ? x : Number(Number(x).toFixed(4)));
