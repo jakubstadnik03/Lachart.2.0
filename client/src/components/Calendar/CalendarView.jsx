@@ -731,8 +731,42 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 
   const isInverted = isRun || isSwim; // lower pace value = faster = taller bar
 
-  const maxVal   = Math.max(...nonZero);
-  const minVal   = Math.min(...nonZero);
+  // ── Build the y-axis range from "real" laps only ──
+  // Short rests / standing pauses inflate the slowest pace into nonsense
+  // (e.g. a 28-metre walking transition = 48:19 /km) and squeeze every real
+  // running lap into the top sliver of the chart so the bars all look the
+  // same height. Drop laps that are too short OR clearly tagged as
+  // warmup/recovery/cooldown when picking min/max; bars for those laps
+  // still render — they just clamp to the chart's edge instead of dictating
+  // the scale.
+  const scaleEntries = entries.filter((e, i) => {
+    if (e.isPause || !e.value || e.value <= 0) return false;
+    const lap = laps[i];
+    const lapType = lap?.intervalType;
+    if (lapType && lapType !== 'work') return false;
+    // Pace-based heuristic: drop laps shorter than ~30 s or under 100 m for
+    // run/swim. For bike (power), short laps are usually fine — keep them.
+    if (isRun || isSwim) {
+      if ((e.dur || 0) < 30) return false;
+      if ((e.dist || 0) < 100) return false;
+    }
+    return true;
+  }).map(e => e.value);
+
+  // Median-absolute-deviation outlier clamp on top of the above, in case
+  // the heuristic above still lets a rogue lap through.
+  let scaleValues = scaleEntries.length > 0 ? scaleEntries : nonZero;
+  if (scaleValues.length >= 3) {
+    const sorted = [...scaleValues].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    // Pace sec/km: anything more than 3× the median is almost certainly a stop.
+    const bound = isInverted ? median * 3 : median * 3;
+    const filtered = scaleValues.filter(v => v <= bound && v >= median / 3);
+    if (filtered.length >= 2) scaleValues = filtered;
+  }
+
+  const maxVal   = Math.max(...scaleValues);
+  const minVal   = Math.min(...scaleValues);
   const pad      = (maxVal - minVal) * 0.15 || maxVal * 0.1;
   const chartMin = Math.max(0, minVal - pad);
   const chartMax = maxVal + pad;
@@ -743,7 +777,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const h = isInverted
       ? ((chartMax - val) / range) * CHART_H
       : ((val - chartMin) / range) * CHART_H;
-    return Math.max(3, h);
+    // Clamp both ends — outlier laps outside [minVal, maxVal] would otherwise
+    // produce negative heights or overflow the chart.
+    return Math.max(3, Math.min(CHART_H, h));
   };
 
   // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power
