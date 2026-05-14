@@ -3737,6 +3737,94 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
+    // ── LT2 upper-bound guard against polynomial overshoot ─────────────────
+    // The cap chain above (MAX_LTP2_LACTATE, adaptiveLtp2Cap) checks the
+    // POLYNOMIAL lactate at LT2. On tests with a flat aerobic baseline and a
+    // sharp explosive finish (4.2 → 6.3 mmol in the last 10 sec/km), the
+    // polynomial smooths the curve so much that poly@LT2 fits under the 4.2
+    // cap even though RAW lactate at that pace is well above 5 mmol —
+    // physiologically already VO2max territory, not LT2. Detect this by
+    // checking the RAW interpolated lactate at the chosen LT2 and rewind to
+    // OBLA 4.0 (or the slowest pace whose raw lactate ≤ 4.0) when it exceeds
+    // 5.0 mmol.
+    try {
+      const rawLactateAtPowerForGuard = (P) => {
+        if (!Number.isFinite(P)) return null;
+        const pairs = (sortedResults || [])
+          .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+          .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+          .sort((a, b) => a.p - b.p);
+        if (pairs.length === 0) return null;
+        for (let i = 0; i < pairs.length - 1; i++) {
+          const a = pairs[i];
+          const b = pairs[i + 1];
+          if (P >= a.p && P <= b.p && b.p !== a.p) {
+            return a.l + (b.l - a.l) * (P - a.p) / (b.p - a.p);
+          }
+        }
+        if (P <= pairs[0].p) return pairs[0].l;
+        if (P >= pairs[pairs.length - 1].p) return pairs[pairs.length - 1].l;
+        return null;
+      };
+      const findPowerAtRawLactate = (targetLa) => {
+        const pairs = (sortedResults || [])
+          .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+          .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+          .sort((a, b) => a.p - b.p);
+        for (let i = 0; i < pairs.length - 1; i++) {
+          const a = pairs[i];
+          const b = pairs[i + 1];
+          if ((targetLa >= a.l && targetLa <= b.l) || (targetLa >= b.l && targetLa <= a.l)) {
+            if (b.l === a.l) return (a.p + b.p) / 2;
+            return a.p + (b.p - a.p) * (targetLa - a.l) / (b.l - a.l);
+          }
+        }
+        return null;
+      };
+      const LT2_RAW_CAP = 5.0;
+      const LT2_RAW_TARGET = 4.0;
+      const lt2X = Number(thresholds['LTP2']);
+      if (Number.isFinite(lt2X)) {
+        const rawLa = rawLactateAtPowerForGuard(lt2X);
+        if (Number.isFinite(rawLa) && rawLa > LT2_RAW_CAP) {
+          const replacementPower = findPowerAtRawLactate(LT2_RAW_TARGET);
+          if (Number.isFinite(replacementPower)) {
+            // Honour the LT1 gap constraint so we don't collapse onto LT1.
+            const lt1X = Number(thresholds['LTP1']);
+            const isPaceSport = sport === 'run' || sport === 'swim';
+            const minGap = isPaceSport ? 10 : MIN_LT2_LT1_GAP_W;
+            const gapOk = !Number.isFinite(lt1X) ||
+              (isPaceSport ? (lt1X - replacementPower) >= minGap
+                           : (replacementPower - lt1X) >= minGap);
+            if (gapOk) {
+              console.warn(`[calculateThresholds] LT2 upper-guard: raw lactate at LT2 (${lt2X}) was ${rawLa.toFixed(2)} mmol — replacing with OBLA 4.0 at ${replacementPower}.`);
+              thresholds['LTP2'] = replacementPower;
+              thresholds.lactates['LTP2'] = LT2_RAW_TARGET;
+              // Re-interpolate HR for the new LT2 power.
+              for (let i = 0; i < sortedResults.length - 1; i++) {
+                const a = sortedResults[i];
+                const b = sortedResults[i + 1];
+                const pa = Number(a.power);
+                const pb = Number(b.power);
+                const lo = Math.min(pa, pb);
+                const hi = Math.max(pa, pb);
+                if (replacementPower >= lo && replacementPower <= hi && pa !== pb) {
+                  const hrA = a.heartRate != null ? Number(a.heartRate) : null;
+                  const hrB = b.heartRate != null ? Number(b.heartRate) : null;
+                  if (hrA != null && hrB != null) {
+                    thresholds.heartRates['LTP2'] = hrA + (hrB - hrA) * (replacementPower - pa) / (pb - pa);
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Non-fatal: leave LT2 as-is if the guard blew up.
+    }
+
     // ── Displayed-lactate override ──────────────────────────────────────────
     // The lactate values stored in thresholds.lactates['LTP1'/'LTP2'] currently
     // come from the polynomial fit (polyFn). On real tests this routinely
