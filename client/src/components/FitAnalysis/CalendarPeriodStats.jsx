@@ -348,6 +348,25 @@ export default function CalendarPeriodStats({
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showZoneDetails, setShowZoneDetails] = useState(false);
+
+  // Mobile only: enable vertical scroll-snap on the surrounding scroller so
+  // each chart section settles into view instead of stopping mid-card. Uses
+  // 'proximity' (not mandatory) so short scrolls still feel natural.
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!isMobile) return;
+    let el = rootRef.current?.parentElement;
+    while (el) {
+      const cs = getComputedStyle(el);
+      if (/(auto|scroll)/.test(cs.overflowY)) break;
+      el = el.parentElement;
+    }
+    if (!el) return;
+    const prev = el.style.scrollSnapType;
+    el.style.scrollSnapType = 'y proximity';
+    return () => { el.style.scrollSnapType = prev; };
+  }, [isMobile, activeTab]);
+
   const [compareMode, setCompareMode] = useState(() => periodView);
   const [compareRefDate, setCompareRefDate] = useState(() =>
     period?.periodStart ? new Date(period.periodStart) : new Date()
@@ -1323,24 +1342,6 @@ export default function CalendarPeriodStats({
     { id: 'activities', label: 'Activities' },
     { id: 'compare', label: 'vs Last Year' },
   ];
-
-  // Mobile only: enable vertical scroll-snap on the surrounding scroller so
-  // each chart section settles into view instead of stopping mid-card. Uses
-  // 'proximity' (not mandatory) so short scrolls still feel natural.
-  const rootRef = useRef(null);
-  useEffect(() => {
-    if (!isMobile) return;
-    let el = rootRef.current?.parentElement;
-    while (el) {
-      const cs = getComputedStyle(el);
-      if (/(auto|scroll)/.test(cs.overflowY)) break;
-      el = el.parentElement;
-    }
-    if (!el) return;
-    const prev = el.style.scrollSnapType;
-    el.style.scrollSnapType = 'y proximity';
-    return () => { el.style.scrollSnapType = prev; };
-  }, [isMobile, activeTab]);
 
   return (
     <div ref={rootRef} className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
