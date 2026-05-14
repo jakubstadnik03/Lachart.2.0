@@ -482,7 +482,7 @@ const SectionHeader = ({ title }) => (
 );
 
 // ── Main Document ───────────────────────────────────────────────────────────────
-export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
+export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
   if (!test) return null;
 
   const sport       = test.sport || 'bike';
@@ -524,8 +524,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   // Check if HR data exists in results
   const hasHrData = results.filter(r => Number.isFinite(Number(r.heartRate)) && Number(r.heartRate) > 50).length >= 2;
 
-  // Build automatic analysis paragraph
-  const analysisText = (() => {
+  // Build automatic analysis paragraph (used unless caller provides a
+  // hand-written customAnalysis override). When `customAnalysis` is set
+  // it fully replaces the generated text — coaches often want to add
+  // sport-specific or athlete-specific commentary that the generator
+  // can't infer from numbers alone.
+  const analysisText = (typeof customAnalysis === 'string' && customAnalysis.trim().length > 0)
+    ? customAnalysis.trim()
+    : (() => {
     const lt2Str   = lt2   ? fmtIntensity(lt2,   sport, inputMode) : null;
     const lt1Str   = lt1   ? fmtIntensity(lt1,   sport, inputMode) : null;
     const lt2HrStr = lt2Hr ? `${Math.round(lt2Hr)} bpm` : null;
@@ -881,7 +887,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 }
 
 // ── Download helper ─────────────────────────────────────────────────────────────
-export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
+export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
   const doc = (
     <LactateReportPdf
       test={test}
@@ -893,14 +899,15 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       prevTest2={prevTest2}
       prevThresholds2={prevThresholds2}
       customNote={customNote}
+      customAnalysis={customAnalysis}
       creatorEmail={creatorEmail}
     />
   );
   return pdf(doc).toBlob();
 }
 
-export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail }) {
-  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, creatorEmail });
+export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
+  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail });
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
   const fileName = `lachart-report-${date}.pdf`;
 

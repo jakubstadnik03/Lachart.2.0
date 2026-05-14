@@ -796,6 +796,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   }, [showPdfPreview]);
   const [pdfCustomNote, setPdfCustomNote]     = useState('');
+  // When set, replaces the auto-generated Analysis paragraph in the PDF.
+  // Lets coaches rewrite the boilerplate sentence with their own commentary.
+  const [pdfCustomAnalysis, setPdfCustomAnalysis] = useState('');
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [prevTestData, setPrevTestData] = useState(null);
@@ -1104,6 +1107,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       prevTest2:       compTest2,
       prevThresholds2: compTest2 ? calculateThresholds(compTest2) : null,
       customNote:      note,
+      customAnalysis:  pdfCustomAnalysis,
       creatorEmail:    user?.email || null,
     };
   };
@@ -3538,10 +3542,23 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               <div className="flex-shrink-0 md:w-72 md:order-2 md:border-l border-t md:border-t-0 border-gray-100 flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[38dvh] md:max-h-none" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-                  {/* Custom note */}
+                  {/* Custom analysis (overrides the auto-generated paragraph) */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Analysis (override)</label>
+                    <p className="text-xs text-gray-400 mb-2">Leave blank for auto-generated text. Filled text replaces the Analysis paragraph in the PDF.</p>
+                    <textarea
+                      value={pdfCustomAnalysis}
+                      onChange={(e) => setPdfCustomAnalysis(e.target.value)}
+                      rows={5}
+                      placeholder="Write your own analysis to replace the default text…"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+
+                  {/* Custom note (appended after analysis) */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Coach / Athlete Notes</label>
-                    <p className="text-xs text-gray-400 mb-2">Appears in the Analysis section of the PDF.</p>
+                    <p className="text-xs text-gray-400 mb-2">Appended after the Analysis paragraph.</p>
                     <textarea
                       value={pdfCustomNote}
                       onChange={(e) => setPdfCustomNote(e.target.value)}
