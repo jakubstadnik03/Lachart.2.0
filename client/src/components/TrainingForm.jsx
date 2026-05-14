@@ -1614,20 +1614,56 @@ const TrainingForm = ({
                         <span className={`text-[11px] font-medium shrink-0 ${tc.text}`}>
                           {tc.label} {index + 1}
                         </span>
-                        {/* Duration */}
+                        {/* Duration — same smart parser as the full Work card;
+                            a number that looks like a distance (km/m suffix,
+                            decimal, or > 60 colonless) routes into
+                            distanceMeters and switches durationType to
+                            'distance'. */}
                         <div className="flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
                           <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">dur</span>
                           <input
-                            type="text" inputMode="numeric" placeholder="MM:SS"
-                            value={interval.duration || ''}
+                            type="text" inputMode="decimal" placeholder="MM:SS"
+                            value={interval.durationType === 'distance' && interval.distanceMeters
+                              ? (interval.distanceMeters >= 1000
+                                  ? `${(interval.distanceMeters/1000)}km`
+                                  : `${interval.distanceMeters}m`)
+                              : (interval.duration || '')}
                             onChange={(e) => {
                               const r=[...formData.results];
-                              let v=e.target.value.replace(/[^\d:]/g,'');
-                              if(v.length>0&&!v.includes(':')&&v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
-                              r[index].duration=v; r[index].durationType='time';
+                              const raw = e.target.value;
+                              const cleaned = raw.replace(/[^\d:.,kmKM ]/g, '');
+                              const lower = cleaned.toLowerCase();
+                              const hasUnit = /km|\bm\b|m$/.test(lower);
+                              const hasDecimal = /[.,]/.test(cleaned);
+                              const justDigits = /^\d+$/.test(cleaned);
+                              const tooBigForTime = justDigits && Number(cleaned) > 60;
+                              if (hasUnit || hasDecimal || tooBigForTime) {
+                                const numStr = lower.replace(',', '.').replace(/[^0-9.]/g, '');
+                                const num = parseFloat(numStr);
+                                if (Number.isFinite(num) && num > 0) {
+                                  let meters;
+                                  if (/km/.test(lower))            meters = num * 1000;
+                                  else if (/\bm\b|m$/.test(lower)) meters = num;
+                                  else if (num < 50)               meters = num * 1000;
+                                  else                              meters = num;
+                                  if (formData.sport !== 'swim' && meters >= 200) {
+                                    const km = meters / 1000;
+                                    if (Math.abs(km - Math.round(km)) <= 0.02) meters = Math.round(km) * 1000;
+                                  }
+                                  r[index].distanceMeters = Math.round(meters);
+                                  r[index].durationType = 'distance';
+                                  r[index].duration = String(Math.round(meters));
+                                  setFormData(p=>({...p,results:r}));
+                                  return;
+                                }
+                              }
+                              let v = cleaned.replace(/[^\d:]/g,'');
+                              if (v.length>0 && !v.includes(':') && v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
+                              r[index].duration=v;
+                              r[index].durationType='time';
                               setFormData(p=>({...p,results:r}));
                             }}
-                            className="w-12 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
+                            className="w-16 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
                           />
                         </div>
                         {/* HR */}
