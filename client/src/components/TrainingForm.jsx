@@ -1706,19 +1706,55 @@ const TrainingForm = ({
                               onChange={(e) => { const r=[...formData.results]; r[index].RPE=e.target.value; setFormData(p=>({...p,results:r})); }}
                               className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
-                          {/* Duration */}
+                          {/* Duration — auto-detects when user accidentally types a
+                              distance ("3km", "3.03", "997") and routes it into
+                              distanceMeters instead. */}
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>Duration</label>
-                            <input type="text" inputMode="numeric" placeholder="MM:SS"
-                              // Hide the raw value when the lap is stored as distance —
-                              // the "duration" string then actually holds the distance
-                              // and showing "997" in the Duration field is misleading.
+                            <input type="text" inputMode="decimal" placeholder="MM:SS"
                               value={interval.durationType === 'distance' ? '' : (interval.duration || '')}
                               onChange={(e) => {
                                 const r=[...formData.results];
-                                let v=e.target.value.replace(/[^\d:]/g,'');
-                                if(v.length>0&&!v.includes(':')&&v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
-                                r[index].duration=v; r[index].durationType='time';
+                                const raw = e.target.value;
+                                // Allow digits, colon, dot, comma, k, m — strip the rest.
+                                const cleaned = raw.replace(/[^\d:.,kmKM ]/g, '');
+                                const lower = cleaned.toLowerCase();
+                                // Detect distance-looking input: km/m suffix, decimal
+                                // separator, or a colonless number that can't sit in MM:SS
+                                // (MM ≤ 60). 997 / 1005 / 3.03 / "1km" all match.
+                                const hasUnit = /km|\bm\b|m$/.test(lower);
+                                const hasDecimal = /[.,]/.test(cleaned);
+                                const justDigits = /^\d+$/.test(cleaned);
+                                const tooBigForTime = justDigits && Number(cleaned) > 60;
+                                if (hasUnit || hasDecimal || tooBigForTime) {
+                                  // Parse like the Distance field does.
+                                  const numStr = lower.replace(',', '.').replace(/[^0-9.]/g, '');
+                                  const num = parseFloat(numStr);
+                                  if (Number.isFinite(num) && num > 0) {
+                                    let meters;
+                                    if (/km/.test(lower))            meters = num * 1000;
+                                    else if (/\bm\b|m$/.test(lower)) meters = num;
+                                    else if (num < 50)               meters = num * 1000;
+                                    else                              meters = num;
+                                    // Snap to whole km within 2 %.
+                                    if (formData.sport !== 'swim' && meters >= 200) {
+                                      const km = meters / 1000;
+                                      if (Math.abs(km - Math.round(km)) <= 0.02) meters = Math.round(km) * 1000;
+                                    }
+                                    r[index].distanceMeters = Math.round(meters);
+                                    r[index].durationType = 'distance';
+                                    r[index].duration = String(Math.round(meters));
+                                    setFormData(p=>({...p,results:r}));
+                                    return;
+                                  }
+                                }
+                                // Time path — keep digits + colon, auto-insert colon
+                                // after 2 digits so the user can type "0345" and get
+                                // "03:45".
+                                let v = cleaned.replace(/[^\d:]/g,'');
+                                if (v.length>0 && !v.includes(':') && v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
+                                r[index].duration=v;
+                                r[index].durationType='time';
                                 setFormData(p=>({...p,results:r}));
                               }}
                               className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
