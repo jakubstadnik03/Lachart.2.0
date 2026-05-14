@@ -1709,7 +1709,11 @@ const TrainingForm = ({
                           {/* Duration */}
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>Duration</label>
-                            <input type="text" inputMode="numeric" placeholder="MM:SS" value={interval.duration}
+                            <input type="text" inputMode="numeric" placeholder="MM:SS"
+                              // Hide the raw value when the lap is stored as distance —
+                              // the "duration" string then actually holds the distance
+                              // and showing "997" in the Duration field is misleading.
+                              value={interval.durationType === 'distance' ? '' : (interval.duration || '')}
                               onChange={(e) => {
                                 const r=[...formData.results];
                                 let v=e.target.value.replace(/[^\d:]/g,'');
@@ -1719,15 +1723,79 @@ const TrainingForm = ({
                               }}
                               className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
-                          {/* Distance */}
+                          {/* Distance — accepts "3", "3km", "3.03", "3,03", "997", "1005"… */}
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>{formData.sport === "swim" ? "Dist m" : "Dist"}</label>
-                            <input type="text" inputMode="numeric" placeholder={formData.sport === "swim" ? "e.g. 400" : "e.g. 1km"}
-                              value={interval.distanceMeters ? String(interval.distanceMeters) : ""}
+                            <input type="text" inputMode="decimal" placeholder={formData.sport === "swim" ? "e.g. 400" : "e.g. 1km"}
+                              // Display priority: explicit distanceMeters → duration when
+                              // durationType is 'distance' (legacy storage). Always shown
+                              // as the human-friendly form ("1 km", "997 m", "3 km").
+                              value={(() => {
+                                const meters = Number(interval.distanceMeters) > 0
+                                  ? Number(interval.distanceMeters)
+                                  : (interval.durationType === 'distance' && interval.duration
+                                      ? (() => {
+                                          const n = parseFloat(String(interval.duration).replace(',', '.'));
+                                          if (!Number.isFinite(n) || n <= 0) return 0;
+                                          // < 50 with decimals → km, else metres
+                                          return (n < 50) ? Math.round(n * 1000) : Math.round(n);
+                                        })()
+                                      : 0);
+                                if (!meters) return '';
+                                // Snap to nearest km / 100 m so 997 reads as "1 km" and
+                                // 3030 reads as "3 km".
+                                if (formData.sport !== 'swim' && meters >= 200) {
+                                  const km = meters / 1000;
+                                  const roundedKm = Math.round(km * 100) / 100;
+                                  // Within 2% of a whole km → display as round km
+                                  if (Math.abs(km - Math.round(km)) <= 0.02) {
+                                    return `${Math.round(km)} km`;
+                                  }
+                                  return `${roundedKm} km`;
+                                }
+                                return `${meters} m`;
+                              })()}
                               onChange={(e) => {
                                 const r=[...formData.results];
-                                const v=e.target.value.replace(/[^\d.km\s]/g,'');
-                                r[index].distanceMeters=v?parseFloat(v)||undefined:undefined;
+                                const raw = e.target.value.trim();
+                                if (!raw) {
+                                  r[index].distanceMeters = undefined;
+                                  // Also clear the legacy distance-in-duration storage.
+                                  if (r[index].durationType === 'distance') r[index].duration = '';
+                                  setFormData(p=>({...p,results:r}));
+                                  return;
+                                }
+                                // Detect explicit unit; otherwise infer from magnitude.
+                                const s = raw.toLowerCase().replace(',', '.');
+                                const num = parseFloat(s);
+                                if (!Number.isFinite(num) || num <= 0) {
+                                  setFormData(p=>({...p,results:r}));
+                                  return;
+                                }
+                                let meters;
+                                if (/km\b/.test(s)) {
+                                  meters = num * 1000;
+                                } else if (/\bm\b/.test(s) || /[\d.]+m$/.test(s)) {
+                                  meters = num;
+                                } else if (num < 50) {
+                                  // No unit, small decimal — almost always km (e.g. 3, 3.03, 5).
+                                  meters = num * 1000;
+                                } else {
+                                  // No unit, big integer — metres (e.g. 400, 991, 1005).
+                                  meters = num;
+                                }
+                                // Snap to nearest whole km when within 2 % so 991 → 1000, 3030 → 3000.
+                                if (formData.sport !== 'swim' && meters >= 200) {
+                                  const km = meters / 1000;
+                                  if (Math.abs(km - Math.round(km)) <= 0.02) meters = Math.round(km) * 1000;
+                                }
+                                r[index].distanceMeters = Math.round(meters);
+                                // Keep `duration` consistent — if the lap was stored as
+                                // distance-mode, mirror the new value so old code paths
+                                // that still read it don't fall behind.
+                                if (r[index].durationType === 'distance') {
+                                  r[index].duration = String(Math.round(meters));
+                                }
                                 setFormData(p=>({...p,results:r}));
                               }}
                               className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
