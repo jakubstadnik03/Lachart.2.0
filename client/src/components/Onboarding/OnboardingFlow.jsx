@@ -1056,13 +1056,19 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
 
   const content = (
     <div
-      className={`fixed inset-0 flex flex-col bg-white transition-opacity duration-300 ${exiting ? 'opacity-0' : 'opacity-100'}`}
+      className={`fixed inset-0 transition-opacity duration-300 sm:bg-black/50 sm:backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-6 ${exiting ? 'opacity-0' : 'opacity-100'}`}
       style={{ zIndex: 99999 }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Progress bar */}
-      <div className="flex-shrink-0" style={{ paddingTop: 'max(44px, env(safe-area-inset-top, 44px))' }}>
+    <div
+      className="bg-white flex flex-col w-full h-full sm:w-[560px] sm:max-w-[92vw] sm:h-auto sm:max-h-[88vh] sm:rounded-2xl sm:shadow-2xl sm:border sm:border-gray-100 sm:overflow-hidden relative"
+    >
+      {/* Progress bar — full safe-area top on mobile, just a small inset
+          on desktop where we're inside a modal card. */}
+      <div
+        className="flex-shrink-0 pt-[max(44px,env(safe-area-inset-top,44px))] sm:!pt-4"
+      >
         <div className="flex gap-1 px-5 pb-3">
           {Array.from({ length: globalTotal }).map((_, i) => (
             <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-gray-100">
@@ -1139,6 +1145,7 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 
