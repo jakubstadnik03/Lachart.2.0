@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { getFormFitnessData } from '../../services/api';
@@ -1324,8 +1324,26 @@ export default function CalendarPeriodStats({
     { id: 'compare', label: 'vs Last Year' },
   ];
 
+  // Mobile only: enable vertical scroll-snap on the surrounding scroller so
+  // each chart section settles into view instead of stopping mid-card. Uses
+  // 'proximity' (not mandatory) so short scrolls still feel natural.
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!isMobile) return;
+    let el = rootRef.current?.parentElement;
+    while (el) {
+      const cs = getComputedStyle(el);
+      if (/(auto|scroll)/.test(cs.overflowY)) break;
+      el = el.parentElement;
+    }
+    if (!el) return;
+    const prev = el.style.scrollSnapType;
+    el.style.scrollSnapType = 'y proximity';
+    return () => { el.style.scrollSnapType = prev; };
+  }, [isMobile, activeTab]);
+
   return (
-    <div className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
+    <div ref={rootRef} className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -1538,7 +1556,7 @@ export default function CalendarPeriodStats({
             )}
 
             {/* Sport split + Intensity distribution side by side */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
               {/* Sport split */}
               {aggregates.totalSec > 0 && (
                 <div className="bg-gray-50 rounded-xl p-4">
@@ -1610,7 +1628,7 @@ export default function CalendarPeriodStats({
 
             {/* Daily load stacked bar */}
             {aggregates.dayKeys.length > 0 && Chart && dailyStackedOption && (
-              <div>
+              <div style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Daily training load (h)
                 </div>
@@ -1624,7 +1642,7 @@ export default function CalendarPeriodStats({
 
             {/* Load trend — last 12 weeks */}
             {Chart && weeklyTrendOption && weeklyTrend.length >= 2 && (
-              <div>
+              <div style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Load trend (last 12 weeks)
                 </div>
