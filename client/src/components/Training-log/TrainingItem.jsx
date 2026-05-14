@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail } from '../../services/api';
+import { useCategories } from '../../context/CategoryContext';
 
 const INTERVALS_PER_PAGE = 10;
 
@@ -583,6 +584,7 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
 
 /* ─── TrainingItem ──────────────────────────────────────────────────────────── */
 const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = null }) => {
+  const { getCategory } = useCategories();
   const navigate = useNavigate();
   const [intervalPage, setIntervalPage] = useState(0);
   // Full detail loaded on expand (for Strava activities that don't include laps in list)
@@ -643,7 +645,10 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
 
   const hasLactate = lactateVals.length > 0;
   const accentColor = sportColor(sport);
-  const catColor    = category ? categoryColor(category) : accentColor;
+  // Prefer the live colour from CategoryContext (so renames / colour edits
+  // in Settings propagate here) — fall back to the legacy hardcoded map for
+  // tags that don't exist in the user's category list.
+  const catColor    = category ? (getCategory(category)?.color || categoryColor(category)) : accentColor;
 
   // ── Activity-level summary stats (Strava / FIT top-level fields) ──────────
   // Strava stores camelCase at activity level: averageHeartRate, averagePower, averageSpeed,
@@ -703,7 +708,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             <div className="flex flex-wrap gap-1 mt-1">
               {category && (
                 <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide text-white" style={{ backgroundColor: catColor }}>
-                  {categoryLabel(category)}
+                  {(getCategory(category)?.label) || categoryLabel(category)}
                 </span>
               )}
               {hasLactate && (

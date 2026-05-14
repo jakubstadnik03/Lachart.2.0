@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { getFormFitnessData } from '../../services/api';
+import { useCategories } from '../../context/CategoryContext';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
@@ -182,8 +183,17 @@ function isoWeekKey(date) {
   return `${d.getFullYear()}-${String(weekNum).padStart(2, '0')}`;
 }
 
-function categoryLabel(category) {
-  const labels = {
+// Fallback labels used only when the component has no access to the
+// CategoryContext (legacy callers). When wrapped in a component that has
+// useCategories(), the dynamic label is read from there — so renames from
+// Settings → Categories propagate here automatically.
+function categoryLabel(category, getCategory = null) {
+  if (!category) return 'Uncategorized';
+  if (getCategory) {
+    const cat = getCategory(category);
+    if (cat?.label) return cat.label;
+  }
+  const fallback = {
     endurance: 'Endurance',
     tempo: 'Tempo',
     threshold: 'Threshold',
@@ -191,7 +201,7 @@ function categoryLabel(category) {
     anaerobic: 'Anaerobic',
     recovery: 'Recovery',
   };
-  return labels[category] || (category ? String(category) : 'Uncategorized');
+  return fallback[category] || String(category);
 }
 
 function categoryChipClass(category) {
@@ -305,6 +315,7 @@ export default function CalendarPeriodStats({
   onSelectActivity = null,
   athleteId = null,
 }) {
+  const { getCategory } = useCategories();
   // Server-side authoritative CTL/ATL/TSB series. Same data the native
   // dashboard and the Form/Fitness card use, so the numbers on the Calendar
   // Charts tab match what the user sees on the Dashboard. Falls back to a
@@ -1872,7 +1883,7 @@ export default function CalendarPeriodStats({
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-xl border ${categoryChipClass(displayCat)}`}
                     >
-                      {categoryLabel(displayCat)}
+                      {categoryLabel(displayCat, getCategory)}
                     </span>
                     <span className="text-xs text-gray-400">
                       {acts.length} {acts.length === 1 ? 'activity' : 'activities'}
