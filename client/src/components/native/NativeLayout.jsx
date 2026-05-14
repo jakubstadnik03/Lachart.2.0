@@ -685,13 +685,14 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
     }
     setShowNotifs(false);
-    if (n.resourceId && n.resourceType === 'training') {
-      navigate(`/training-calendar/training-${n.resourceId}`);
-    } else if (n.resourceId) {
-      navigate(`/training-calendar/${n.resourceId}`);
-    } else {
-      navigate('/training-calendar');
-    }
+    if (!n.resourceId) { navigate('/training-calendar'); return; }
+    const rt = String(n.resourceType || '').toLowerCase();
+    let target;
+    if (rt === 'strava' || rt === 'strava_import') target = `strava-${n.resourceId}`;
+    else if (rt === 'fit') target = `fit-${n.resourceId}`;
+    else if (rt === 'training') target = `training-${n.resourceId}`;
+    else target = String(n.resourceId);
+    navigate(`/training-calendar/${encodeURIComponent(target)}`);
   };
 
   const handleNotifDelete = async (id) => {
