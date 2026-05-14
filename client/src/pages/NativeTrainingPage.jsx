@@ -9,7 +9,7 @@
 // Tapping any activity opens the same ActivityFullModal CalendarView uses
 // (Summary / Laps / Edit · stats · map · chart · Lactate button).
 
-import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
