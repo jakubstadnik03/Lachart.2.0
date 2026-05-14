@@ -693,13 +693,55 @@ export default function NativeDashboardPage({
     }
   }, [athleteId, user, lapsToResults]);
 
-  // ── Manual Strava sync (refresh icon in greeting row) ───────────────────
+  // ── Pull-to-refresh: swipe down at scrollTop=0 to trigger Strava sync ────
   const [syncingStrava, setSyncingStrava] = useState(false);
   const handleManualSync = useCallback(async () => {
     if (syncingStrava || !onRequestStravaSync) return;
     setSyncingStrava(true);
     try { await onRequestStravaSync(); } finally { setSyncingStrava(false); }
   }, [syncingStrava, onRequestStravaSync]);
+
+  const [pullDist, setPullDist] = useState(0);
+  const pullStateRef = useRef({ startY: 0, pulling: false });
+  const PULL_THRESHOLD = 70;
+
+  useEffect(() => {
+    if (!stravaConnected || !onRequestStravaSync) return;
+    const scroller = pageRef.current?.parentElement;
+    if (!scroller) return;
+
+    const onStart = (e) => {
+      if (scroller.scrollTop > 0) { pullStateRef.current.pulling = false; return; }
+      pullStateRef.current = { startY: e.touches[0].clientY, pulling: true };
+    };
+    const onMove = (e) => {
+      if (!pullStateRef.current.pulling) return;
+      if (scroller.scrollTop > 0) { pullStateRef.current.pulling = false; setPullDist(0); return; }
+      const dy = e.touches[0].clientY - pullStateRef.current.startY;
+      if (dy <= 0) { setPullDist(0); return; }
+      // Damped distance so the indicator eases in rather than tracking 1:1.
+      setPullDist(Math.min(dy * 0.5, PULL_THRESHOLD * 1.6));
+    };
+    const onEnd = () => {
+      if (!pullStateRef.current.pulling) return;
+      pullStateRef.current.pulling = false;
+      if (pullDist >= PULL_THRESHOLD && !syncingStrava) {
+        handleManualSync();
+      }
+      setPullDist(0);
+    };
+
+    scroller.addEventListener('touchstart', onStart, { passive: true });
+    scroller.addEventListener('touchmove', onMove, { passive: true });
+    scroller.addEventListener('touchend', onEnd, { passive: true });
+    scroller.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      scroller.removeEventListener('touchstart', onStart);
+      scroller.removeEventListener('touchmove', onMove);
+      scroller.removeEventListener('touchend', onEnd);
+      scroller.removeEventListener('touchcancel', onEnd);
+    };
+  }, [stravaConnected, onRequestStravaSync, pullDist, syncingStrava, handleManualSync]);
 
   const handleLactateSubmit = useCallback(async (formData) => {
     try {
@@ -777,6 +819,37 @@ export default function NativeDashboardPage({
       <style>{SLIDE_IN_STYLE + NATIVE_DASHBOARD_KEYFRAMES}</style>
 
       <div ref={pageRef} style={styles.page}>
+        {/* ── Pull-to-refresh indicator — shows while user drags down or syncing ── */}
+        {(pullDist > 0 || syncingStrava) && (
+          <div style={{
+            position: 'absolute', top: 8, left: 0, right: 0,
+            display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+            zIndex: 5,
+            opacity: syncingStrava ? 1 : Math.min(pullDist / PULL_THRESHOLD, 1),
+            transform: `translateY(${syncingStrava ? 0 : Math.min(pullDist * 0.4, 18)}px)`,
+            transition: syncingStrava ? 'opacity .2s' : 'none',
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 14,
+              background: 'rgba(255,255,255,.85)',
+              backdropFilter: 'blur(10px) saturate(170%)',
+              WebkitBackdropFilter: 'blur(10px) saturate(170%)',
+              border: '1px solid rgba(255,255,255,.7)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: '#5E6590',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                   style={syncingStrava
+                     ? { animation: 'ndSpin 0.9s linear infinite' }
+                     : { transform: `rotate(${Math.min(pullDist / PULL_THRESHOLD, 1) * 360}deg)`, transition: 'transform .05s' }}>
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <path d="M21 4v5h-5" />
+              </svg>
+            </div>
+          </div>
+        )}
+
         {/* ── Greeting — title slides in, wave-icon animates on cycle ── */}
         <div style={{ ...styles.greetingRow, ...cardEntry(0), ...snapStyle }}>
           <div style={styles.greetingText}>
@@ -795,37 +868,9 @@ export default function NativeDashboardPage({
                 <path d="M14 13V4.5a1.5 1.5 0 1 1 3 0V13" />
               </svg>
             </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={styles.dateText}>
-              {today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </div>
-            {stravaConnected && onRequestStravaSync && (
-              <button
-                type="button"
-                onClick={handleManualSync}
-                disabled={syncingStrava}
-                aria-label="Sync Strava"
-                title="Sync Strava activities"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 16, border: '1px solid rgba(255,255,255,.7)',
-                  background: 'rgba(255,255,255,.65)',
-                  backdropFilter: 'blur(10px) saturate(170%)',
-                  WebkitBackdropFilter: 'blur(10px) saturate(170%)',
-                  color: '#5E6590',
-                  opacity: syncingStrava ? 0.6 : 1,
-                  cursor: syncingStrava ? 'wait' : 'pointer',
-                  padding: 0,
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                  style={syncingStrava ? { animation: 'ndSpin 0.9s linear infinite' } : undefined}>
-                  <path d="M21 12a9 9 0 1 1-3-6.7" />
-                  <path d="M21 4v5h-5" />
-                </svg>
-              </button>
-            )}
+            <span style={styles.dateText}>
+              {' · '}{today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </span>
           </div>
         </div>
 
@@ -1021,6 +1066,7 @@ const cardStyle = {
 
 const styles = {
   page: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     minHeight: '100%',
@@ -1036,7 +1082,7 @@ const styles = {
     letterSpacing: '-0.02em', lineHeight: 1.25,
   },
   dateText: {
-    fontSize: 12, fontWeight: 600, color: '#6B7280', marginTop: 2,
+    fontSize: 13, fontWeight: 600, color: '#6B7280', letterSpacing: '-0.01em',
   },
   body: {
     flex: 1,
