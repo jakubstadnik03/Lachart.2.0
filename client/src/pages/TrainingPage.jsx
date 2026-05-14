@@ -652,55 +652,107 @@ export default function TrainingPage() {
           {/* Category filter */}
           <div className="relative" ref={categoryDropdownRef}>
             {(() => {
-              const activeCat = selectedCategory !== 'all' ? categories.find(c => c.id === selectedCategory) : null;
+              const activeCat = selectedCategory !== 'all' && selectedCategory !== 'uncategorized'
+                ? categories.find(c => c.id === selectedCategory)
+                : null;
               const activeStyle = activeCat ? getCategoryStyle(activeCat.id) : null;
+              const isUncat = selectedCategory === 'uncategorized';
               return (
                 <button
                   onClick={() => setCategoryDropdownOpen(v => !v)}
-                  className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
                   style={activeCat
                     ? { backgroundColor: activeStyle.backgroundColor, borderColor: activeStyle.borderColor, color: activeStyle.color }
-                    : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#4b5563' }
+                    : isUncat
+                      ? { backgroundColor: '#f9fafb', borderColor: '#d1d5db', color: '#6b7280' }
+                      : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#4b5563' }
                   }
                 >
-                  {activeCat ? activeCat.label : 'Categories'}
+                  {activeCat && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activeCat.color }} />}
+                  {activeCat ? activeCat.label : isUncat ? 'Uncategorized' : 'Categories'}
                   <ChevronDownIcon className={`w-3 h-3 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
               );
             })()}
-            {categoryDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setCategoryDropdownOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[160px]">
-                  <button
-                    onClick={() => { setSelectedCategory('all'); setCategoryDropdownOpen(false); }}
-                    className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    All categories
-                    {selectedCategory === 'all' && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
-                  </button>
-                  <div className="h-px bg-gray-100 mx-2 my-1" />
-                  {categories.map(cat => {
-                    const isActive = selectedCategory === cat.id;
-                    const s = getCategoryStyle(cat.id);
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => { setSelectedCategory(isActive ? 'all' : cat.id); setCategoryDropdownOpen(false); }}
-                        className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                        style={{ color: s.color }}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                          {cat.label}
-                        </span>
-                        {isActive && <CheckIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cat.color }} />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+            {categoryDropdownOpen && (() => {
+              // Count trainings per category over the sport-filtered set so the
+              // dropdown surfaces what's actually available — empty categories
+              // sit at the bottom (disabled) instead of looking selectable.
+              const sportScoped = (trainings || []).filter(t => {
+                if (!t) return false;
+                if (t.source === 'strava' || t.source === 'fit') return false;
+                const idStr = String(t.id || '');
+                if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+                if (!t._id && t.source) return false;
+                return selectedSport === 'all' || t.sport === selectedSport;
+              });
+              const counts = new Map();
+              let uncatCount = 0;
+              sportScoped.forEach(t => {
+                if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
+                else uncatCount += 1;
+              });
+
+              return (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setCategoryDropdownOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[200px] max-h-[60vh] overflow-y-auto">
+                    <button
+                      onClick={() => { setSelectedCategory('all'); setCategoryDropdownOpen(false); }}
+                      className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <span>All categories</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-[10px] font-medium text-gray-400 tabular-nums">{sportScoped.length}</span>
+                        {selectedCategory === 'all' && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                      </span>
+                    </button>
+                    <div className="h-px bg-gray-100 mx-2 my-1" />
+                    {categories.map(cat => {
+                      const isActive = selectedCategory === cat.id;
+                      const n = counts.get(cat.id) || 0;
+                      const s = getCategoryStyle(cat.id);
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => { setSelectedCategory(isActive ? 'all' : cat.id); setCategoryDropdownOpen(false); }}
+                          disabled={n === 0 && !isActive}
+                          className={`w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold transition-colors ${n === 0 && !isActive ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          style={{ color: s.color }}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                            {cat.label}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-[10px] font-medium text-gray-400 tabular-nums">{n}</span>
+                            {isActive && <CheckIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cat.color }} />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {uncatCount > 0 && (
+                      <>
+                        <div className="h-px bg-gray-100 mx-2 my-1" />
+                        <button
+                          onClick={() => { setSelectedCategory(selectedCategory === 'uncategorized' ? 'all' : 'uncategorized'); setCategoryDropdownOpen(false); }}
+                          className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-500 hover:bg-gray-50 transition-colors"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full border border-gray-300 flex-shrink-0" />
+                            Uncategorized
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-[10px] font-medium text-gray-400 tabular-nums">{uncatCount}</span>
+                            {selectedCategory === 'uncategorized' && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                          </span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {/* Add Lactate — icon + label on sm+, icon-only on mobile */}
