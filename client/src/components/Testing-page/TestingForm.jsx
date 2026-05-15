@@ -2198,7 +2198,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </div>
             {(() => {
               const isPaceSport = formData.sport === 'run' || formData.sport === 'swim';
-              const isSwim = formData.sport === 'swim';
               const isSpeed = isPaceSport && wizardInputMode === 'speed';
               const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
               return (
