@@ -260,12 +260,21 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     // Priority: user profile units > testData unitSystem > default 'metric'
     setUnitSystem(resolveDistanceUnitSystem(user, testData?.unitSystem || 'metric'));
     
+    // Testing-form input mode resolution order:
+    //   1. Whatever the test was saved with (explicit override per test).
+    //   2. The user's global Preferences → Running Pace Display
+    //      ('minpkm' → 'pace' | 'kmh' → 'speed').
+    //   3. Default 'pace'.
     if (testData?.inputMode) {
-        setInputMode(testData.inputMode);
-      }
-    
+      setInputMode(testData.inputMode);
+    } else if (user?.trainingPreferences?.paceDisplay) {
+      setInputMode(user.trainingPreferences.paceDisplay === 'kmh' ? 'speed' : 'pace');
+    }
+
     if (testData?.rpeScale) {
       setRpeScale(testData.rpeScale);
+    } else if (user?.trainingPreferences?.rpeScale) {
+      setRpeScale(user.trainingPreferences.rpeScale);
     } else {
       setRpeScale('rpe'); // Default to RPE if not set
     }

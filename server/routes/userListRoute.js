@@ -719,6 +719,26 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         }
         if (req.body.units) updateData.units = req.body.units;
         if (req.body.notifications) updateData.notifications = req.body.notifications;
+        // Training preferences (RPE scale, pace display, zones method, custom
+        // zones). Merge against the existing document so partial updates
+        // don't wipe other fields, since SettingsPage sends one prop at a
+        // time (e.g. just paceDisplay) and we don't want to reset the rest.
+        if (req.body.trainingPreferences && typeof req.body.trainingPreferences === 'object') {
+            const existingTp = existingUser?.trainingPreferences
+                ? (typeof existingUser.trainingPreferences.toObject === 'function'
+                    ? existingUser.trainingPreferences.toObject()
+                    : { ...existingUser.trainingPreferences })
+                : {};
+            updateData.trainingPreferences = {
+                ...existingTp,
+                ...req.body.trainingPreferences,
+                // Preserve the customZones sub-object across partial updates.
+                customZones: {
+                    ...(existingTp.customZones || {}),
+                    ...(req.body.trainingPreferences.customZones || {}),
+                },
+            };
+        }
         if (req.body.onboarding && typeof req.body.onboarding === 'object') {
             const existing = await userDao.findById(userId);
             const current = existing?.onboarding
@@ -771,6 +791,12 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             powerZones: updatedUser.powerZones, // Include power zones
             heartRateZones: updatedUser.heartRateZones, // Include heart rate zones
             units: updatedUser.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
+            trainingPreferences: updatedUser.trainingPreferences || {
+                rpeScale: 'rpe',
+                paceDisplay: 'minpkm',
+                zonesMethod: 'lactate',
+                customZones: { enabled: false },
+            },
             notifications: updatedUser.notifications || {
                 emailNotifications: true,
                 trainingReminders: true,
@@ -1153,6 +1179,12 @@ router.get("/profile", verifyToken, async (req, res) => {
             powerZones: user.powerZones, // Include power zones
             heartRateZones: user.heartRateZones, // Include heart rate zones
             units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
+            trainingPreferences: user.trainingPreferences || {
+              rpeScale: 'rpe',
+              paceDisplay: 'minpkm',
+              zonesMethod: 'lactate',
+              customZones: { enabled: false },
+            },
             notifications: user.notifications || {
               emailNotifications: true,
               trainingReminders: true,
