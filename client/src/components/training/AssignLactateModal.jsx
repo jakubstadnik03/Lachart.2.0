@@ -23,7 +23,7 @@ function SportIcon({ sport }) {
   return <span>🏋️</span>;
 }
 
-export default function AssignLactateModal({ measurement, onClose, onAssigned, athleteId = null }) {
+export default function AssignLactateModal({ measurement, onClose, onAssigned, onOpenInForm = null, athleteId = null }) {
   // Step 1: pick activity. Step 2: pick lap.
   const [step, setStep] = useState('pick-activity'); // 'pick-activity' | 'pick-lap'
   const [activities, setActivities] = useState([]);
@@ -153,21 +153,38 @@ export default function AssignLactateModal({ measurement, onClose, onAssigned, a
                 <p className="text-xs text-gray-400 text-center py-8">No activities found</p>
               )}
               {!loading && filtered.map(a => (
-                <button key={String(a._id)} onClick={() => handleSelectActivity(a)}
-                  className="w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-violet-50 transition-colors">
-                  <div className="flex items-start gap-2">
-                    <span className="text-base flex-shrink-0 mt-0.5"><SportIcon sport={a.sport} /></span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-gray-900 truncate">{a.name}</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">
-                        {fmtDate(a.startDate)}
-                        {a.lapCount ? ` · ${a.lapCount} laps` : ''}
-                        {a.movingTime ? ` · ${Math.round(a.movingTime / 60)}min` : ''}
+                <div key={String(a._id)} className="flex items-stretch border-b border-gray-50 hover:bg-violet-50/40 transition-colors">
+                  <button
+                    onClick={() => handleSelectActivity(a)}
+                    className="flex-1 min-w-0 text-left px-4 py-3"
+                    title="Browse this activity's laps and pick one"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="text-base flex-shrink-0 mt-0.5"><SportIcon sport={a.sport} /></span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">{a.name}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          {fmtDate(a.startDate)}
+                          {a.lapCount ? ` · ${a.lapCount} laps` : ''}
+                          {a.movingTime ? ` · ${Math.round(a.movingTime / 60)}min` : ''}
+                        </div>
                       </div>
+                      <span className="text-violet-400 text-lg flex-shrink-0">›</span>
                     </div>
-                    <span className="text-violet-400 text-lg flex-shrink-0">›</span>
-                  </div>
-                </button>
+                  </button>
+                  {onOpenInForm && (
+                    <button
+                      onClick={() => onOpenInForm(a)}
+                      title="Open with the lap chart so you can tag the right lap directly"
+                      className="px-3 border-l border-gray-100 inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:bg-violet-100 transition-colors"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 20h18" /><path d="M5 16l4-6 4 4 6-9" />
+                      </svg>
+                      Chart
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </div>
