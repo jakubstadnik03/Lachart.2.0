@@ -823,51 +823,53 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
   return (
     <motion.div id="training-comparison" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-      {/* ── Header ── */}
+      {/* ── Header — single row on lg+, wraps on smaller screens ── */}
       <div className="px-4 pt-4 pb-3 md:px-6 md:pt-5">
-        <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-3">Training Comparison</h2>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h2 className="text-lg md:text-xl font-bold text-gray-900 shrink-0">Training Comparison</h2>
 
-        {/* Filters row */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          {/* Category */}
-          <SearchableSelect
-            value={selectedCategory}
-            onChange={(val) => {
-              setSelectedCategory(val);
-              localStorage.setItem('trainingComparison_category', val);
-              setSelectedTitle('all');
-              localStorage.setItem('trainingComparison_title', 'all');
-            }}
-            options={categories.map(cat => ({
-              value: cat,
-              label: cat === 'all' ? 'All categories' : cat.charAt(0).toUpperCase() + cat.slice(1),
-            }))}
-            placeholder="All categories"
-          />
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2">
+            {/* Category */}
+            <SearchableSelect
+              value={selectedCategory}
+              onChange={(val) => {
+                setSelectedCategory(val);
+                localStorage.setItem('trainingComparison_category', val);
+                setSelectedTitle('all');
+                localStorage.setItem('trainingComparison_title', 'all');
+              }}
+              options={categories.map(cat => ({
+                value: cat,
+                label: cat === 'all' ? 'All categories' : cat.charAt(0).toUpperCase() + cat.slice(1),
+              }))}
+              placeholder="All categories"
+            />
 
-          {/* Title */}
-          <SearchableSelect
-            value={selectedTitle}
-            onChange={(val) => {
-              setSelectedTitle(val);
-              localStorage.setItem('trainingComparison_title', val);
-            }}
-            options={titles.map(title => ({
-              value: title,
-              label: title === 'all' ? 'All titles' : title,
-            }))}
-            placeholder="All titles"
-          />
-        </div>
+            {/* Title */}
+            <SearchableSelect
+              value={selectedTitle}
+              onChange={(val) => {
+                setSelectedTitle(val);
+                localStorage.setItem('trainingComparison_title', val);
+              }}
+              options={titles.map(title => ({
+                value: title,
+                label: title === 'all' ? 'All titles' : title,
+              }))}
+              placeholder="All titles"
+            />
+          </div>
 
-        {/* Metric pills */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {METRICS.map(m => (
-            <button key={m.id} onClick={() => { setSelectedMetric(m.id); localStorage.setItem('trainingComparison_metric', m.id); }}
-              className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${selectedMetric === m.id ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary/40 hover:text-primary'}`}>
-              {m.label}
-            </button>
-          ))}
+          {/* Metric pills — push right on lg+ */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none lg:ml-auto">
+            {METRICS.map(m => (
+              <button key={m.id} onClick={() => { setSelectedMetric(m.id); localStorage.setItem('trainingComparison_metric', m.id); }}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${selectedMetric === m.id ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary/40 hover:text-primary'}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
