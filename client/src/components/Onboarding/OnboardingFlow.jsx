@@ -8,6 +8,7 @@ import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
+import { isCapacitorNative } from '../../utils/isNativeApp';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
@@ -389,7 +390,10 @@ function UnitsStep({ user, onSave, saving }) {
 /** Step 3 — Strava */
 function StravaStep({ user, onSkip, onConnect }) {
   const [loading, setLoading] = useState(false);
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [healthMsg, setHealthMsg] = useState(null);
   const alreadyConnected = !!user?.strava?.athleteId;
+  const isNative = isCapacitorNative();
 
   const handleConnect = async () => {
     setLoading(true);
@@ -401,6 +405,29 @@ function StravaStep({ user, onSkip, onConnect }) {
     }
   };
 
+  // Apple Health (iOS native only) — requests HealthKit permission and runs
+  // the same 30-day workout sync the Settings card uses. Surfacing this
+  // here also satisfies App Store guideline 2.5.1: HealthKit functionality
+  // is clearly identified in the app's main onboarding UI, not just buried
+  // in a Settings sub-screen.
+  const handleConnectAppleHealth = async () => {
+    setHealthBusy(true);
+    setHealthMsg(null);
+    try {
+      const { syncHealthKit } = await import('../../services/healthKitSync');
+      const result = await syncHealthKit({ force: true });
+      if (result?.imported != null) setHealthMsg(`Imported ${result.imported} workout(s) from Apple Health.`);
+      else if (result?.skipped === 'unavailable') setHealthMsg('Apple Health is not available on this device.');
+      else if (result?.skipped === 'plugin-missing') setHealthMsg('Apple Health is unavailable in this build.');
+      else if (result?.skipped === 'denied') setHealthMsg('Permission denied. You can grant access later in Settings → Health.');
+      else setHealthMsg('Synced with Apple Health.');
+    } catch (e) {
+      setHealthMsg(e?.message || 'Apple Health sync failed.');
+    } finally {
+      setHealthBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="text-center mb-2">
@@ -408,6 +435,34 @@ function StravaStep({ user, onSkip, onConnect }) {
         <h3 className="text-lg font-bold text-gray-900">Connect Your Training Data</h3>
         <p className="text-sm text-gray-500 mt-1">Sync your activities automatically</p>
       </div>
+
+      {/* Apple Health — iOS native only. Clearly labels HealthKit usage. */}
+      {isNative && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-pink-50 border border-pink-100">
+            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#EF4444">
+                <path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900">Apple Health</p>
+              <p className="text-xs text-gray-600 mt-0.5">Import the last 30 days of workouts from Apple Health (Apple Watch, iPhone). LaChart reads workout type, heart-rate, distance and duration — nothing is written back to Health.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleConnectAppleHealth}
+            disabled={healthBusy}
+            className="w-full py-3 px-4 rounded-2xl bg-rose-500 text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-rose-600 active:scale-[0.98] transition-all disabled:opacity-60"
+          >
+            {healthBusy ? 'Connecting to Apple Health…' : 'Connect Apple Health'}
+          </button>
+          {healthMsg && (
+            <p className="text-xs text-gray-600 leading-relaxed">{healthMsg}</p>
+          )}
+        </div>
+      )}
 
       {alreadyConnected ? (
         <div className="flex items-center gap-3 p-4 rounded-2xl bg-green-50 border border-green-200">

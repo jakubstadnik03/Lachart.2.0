@@ -45,6 +45,11 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
   const plan = PLAN_DETAILS[requiredPlan] || PLAN_DETAILS.pro;
 
   if (!isOpen) return null;
+  // App Store guideline 3.1.1: native iOS builds may not reference external
+  // payment flows or paid digital subscriptions outside of In-App Purchase.
+  // All features are currently free for every user (see premiumAccess.js),
+  // so we simply suppress the upgrade UI on iOS and never gate anything.
+  if (isCapacitorNative()) return null;
 
   const handleUpgrade = () => {
     onClose();

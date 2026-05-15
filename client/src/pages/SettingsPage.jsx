@@ -166,11 +166,13 @@ const SettingsPage = () => {
   const [subActionLoading, setSubActionLoading] = useState(false);
   const [subError, setSubError] = useState(null);
 
+  // App Store guideline 3.1.1: native iOS builds must not surface external
+  // subscription / payment flows. Subscription management stays on the web.
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
     { id: 'training', name: 'Preferences', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
-    { id: 'subscription', name: 'Subscription', icon: CreditCard },
+    ...(isCapacitorNative() ? [] : [{ id: 'subscription', name: 'Subscription', icon: CreditCard }]),
     { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },
