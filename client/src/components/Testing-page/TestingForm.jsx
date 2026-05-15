@@ -353,6 +353,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
+  // Per-user preference: hide the Dur/Dist stage column when the user
+  // doesn't need it. Stored locally so it survives reloads.
+  const [showStageCol, setShowStageCol] = useState(() => {
+    try { return localStorage.getItem('testingForm_showStageCol') !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('testingForm_showStageCol', showStageCol ? '1' : '0'); } catch {}
+  }, [showStageCol]);
   const [showFormSettings, setShowFormSettings] = useState(false);
   const formSettingsRef = useRef(null);
   const rowsScrollRef = useRef(null);
@@ -1335,33 +1343,39 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 </div>
               )}
 
-              {(!hasGlucoseData || !hasVO2Data) && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Show columns</label>
-                  <div className="bg-gray-100 rounded-lg p-1 inline-flex flex-wrap gap-0 shadow-sm">
-                    {!hasGlucoseData && (
-                      <button
-                        type="button"
-                        onClick={() => setShowGlucose(!showGlucose)}
-                        disabled={!isNewTest && !isEditMode}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                      >
-                        Glucose
-                      </button>
-                    )}
-                    {!hasVO2Data && (
-                      <button
-                        type="button"
-                        onClick={() => setShowVO2(!showVO2)}
-                        disabled={!isNewTest && !isEditMode}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                      >
-                        VO₂
-                      </button>
-                    )}
-                  </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Show columns</label>
+                <div className="bg-gray-100 rounded-lg p-1 inline-flex flex-wrap gap-0 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setShowStageCol(v => !v)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showStageCol ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    title="Show or hide the Dur / Dist column on the intervals table"
+                  >
+                    {isDistanceMode ? 'Dist' : 'Dur'}
+                  </button>
+                  {!hasGlucoseData && (
+                    <button
+                      type="button"
+                      onClick={() => setShowGlucose(!showGlucose)}
+                      disabled={!isNewTest && !isEditMode}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    >
+                      Glucose
+                    </button>
+                  )}
+                  {!hasVO2Data && (
+                    <button
+                      type="button"
+                      onClick={() => setShowVO2(!showVO2)}
+                      disabled={!isNewTest && !isEditMode}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    >
+                      VO₂
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">RPE scale</label>
@@ -1823,7 +1837,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
             // Count flexible columns (all except Int and Del which are fixed)
             let flexibleColCount = 0;
-            flexibleColCount += 1; // Duration (MM:SS) — last interval may be shorter
+            if (showStageCol) flexibleColCount += 1; // Duration / Distance — togglable in settings
             flexibleColCount += 1; // Power/Pace
             flexibleColCount += 1; // HR
             flexibleColCount += 1; // La
@@ -1851,7 +1865,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 <div className="w-full min-w-0 max-w-full flex-shrink-0 overflow-x-hidden touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
                   <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0" style={{ gridTemplateColumns }}>
                     <div className="text-center min-w-0 truncate">Int.</div>
-                    {(isNewTest || isEditMode) ? (
+                    {showStageCol && ((isNewTest || isEditMode) ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -1870,7 +1884,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       </button>
                     ) : (
                       <div className="text-center min-w-0 truncate" title={stageColumnTooltip}>{stageColumnLabel}</div>
-                    )}
+                    ))}
                     {/* Power / Pace / Speed — clickable toggle for run/swim
                         between pace (MM:SS/km or /100m) and speed (km/h or
                         mph). Bike is always "Power" — no toggle. */}
@@ -1965,11 +1979,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       )}
                       {/* Per-row stage duration (MM:SS) OR distance (meters)
                           depending on the column toggle in the header.
-                          Placeholder falls back to the test-level default; if
-                          neither is set the placeholder is just the format
-                          hint, and the row is treated as "unspecified" by the
-                          curve calc (no penalty applied). */}
-                      {isDistanceMode
+                          Hidden entirely when the user has switched the
+                          stage column off in settings. */}
+                      {showStageCol && (isDistanceMode
                         ? renderInput(index, 'distanceMeters', row.distanceMeters,
                             formData.stageDurationSec || formData.stageDistance
                               ? String(formData.stageDistance || '')
@@ -1979,7 +1991,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                             formData.stageDurationSec
                               ? formatPaceSeconds(formData.stageDurationSec)
                               : 'MM:SS'
-                          )}
+                          ))}
                       {renderInput(index, 'power', row.power,
                         formData.sport === 'bike' ? 'W' :
                         (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'MM:SS' :
@@ -2030,74 +2042,75 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           })()}
         </div>
 
-        {/* Action buttons only when editing — view mode gives full height to the measurements table */}
+        {/* Action buttons only when editing — wrap onto multiple rows on
+            narrow viewports so they never overflow the form card. */}
         {(isNewTest || isEditMode) && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button
-                data-tour="tour-add-interval"
-                type="button"
-                disabled={!isPremium && !isNewTest}
-                onClick={() => {
-                  if (!isPremium && !isNewTest) return;
-                  logClick('Add Interval Button');
-                  handleAddRow();
-                }}
-                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  logClick('Open Step Wizard');
-                  // Default the wizard with sensible per-sport seeds.
-                  const isPace = formData.sport === 'run' || formData.sport === 'swim';
-                  setStepWizard({
-                    start: isPace ? (formData.sport === 'swim' ? '02:00' : '06:00') : '100',
-                    increment: isPace ? '-10' : '25',
-                    steps: 6,
-                    stageDurationSec: 180,
-                  });
-                  setStepWizardOpen(true);
-                }}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-colors"
-                title="Generate a step-test ladder of intervals"
-              >
-                <Settings2 size={14} /> Step wizard
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 mt-2 flex-shrink-0">
+            <button
+              data-tour="tour-add-interval"
+              type="button"
+              disabled={!isPremium && !isNewTest}
+              onClick={() => {
+                if (!isPremium && !isNewTest) return;
+                logClick('Add Interval Button');
+                handleAddRow();
+              }}
+              className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors whitespace-nowrap ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                logClick('Open Step Wizard');
+                // Default the wizard with sensible per-sport seeds.
+                const isPace = formData.sport === 'run' || formData.sport === 'swim';
+                setStepWizard({
+                  start: isPace ? (formData.sport === 'swim' ? '02:00' : '06:00') : '100',
+                  increment: isPace ? '-10' : '25',
+                  steps: 6,
+                  stageDurationSec: 180,
+                });
+                setStepWizardOpen(true);
+              }}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-colors whitespace-nowrap"
+              title="Generate a step-test ladder of intervals"
+            >
+              <Settings2 size={14} /> Step wizard
+            </button>
 
-            <div className="flex gap-2 w-full sm:w-auto">
-              {!isNewTest && !demoMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    logClick('Delete Test Button', { testId: testData._id });
-                    handleDeleteTest();
-                  }}
-                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  <Trash size={14} /> Delete Test
-                </button>
-              )}
+            {/* Spacer pushes Delete + Save to the right on wide rows but
+                disappears (height 0) when the row wraps. */}
+            <div className="grow" />
 
-              {!demoMode && (
-                <button
-                  type="button"
-                  data-tour="tour-save-test"
-                  disabled={isSaving}
-                  onClick={() => {
-                    logClick('Save Button', { isNewTest });
-                    void handleSaveChanges();
-                  }}
-                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none"
-                >
-                  <Save size={14} />{' '}
-                  {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
-                </button>
-              )}
-            </div>
+            {!isNewTest && !demoMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  logClick('Delete Test Button', { testId: testData._id });
+                  handleDeleteTest();
+                }}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors whitespace-nowrap"
+              >
+                <Trash size={14} /> Delete Test
+              </button>
+            )}
+
+            {!demoMode && (
+              <button
+                type="button"
+                data-tour="tour-save-test"
+                disabled={isSaving}
+                onClick={() => {
+                  logClick('Save Button', { isNewTest });
+                  void handleSaveChanges();
+                }}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none whitespace-nowrap"
+              >
+                <Save size={14} />{' '}
+                {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
+              </button>
+            )}
           </div>
         )}
 
