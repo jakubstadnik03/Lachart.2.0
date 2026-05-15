@@ -132,11 +132,20 @@ export async function syncHealthKit({ force = false } = {}) {
   if (!isCapacitorNative()) return { skipped: 'web' };
 
   const plugin = await getPlugin();
-  if (!plugin) return { skipped: 'plugin-missing' };
+  if (!plugin) {
+    console.warn('[healthkit] plugin missing');
+    return { skipped: 'plugin-missing' };
+  }
+  console.log('[healthkit] starting sync (force=' + force + ')');
 
   // Bail early if data isn't available (iPad without Health, simulator, etc.)
-  try { await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable'); }
-  catch (e) { return { skipped: 'unavailable', error: e?.message }; }
+  try {
+    await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable');
+    console.log('[healthkit] isAvailable: ok');
+  } catch (e) {
+    console.warn('[healthkit] isAvailable failed:', e?.message);
+    return { skipped: 'unavailable', error: e?.message };
+  }
 
   if (!force && !isStale()) return { skipped: 'throttled', lastSync: lastSyncedAt() };
 
@@ -144,7 +153,9 @@ export async function syncHealthKit({ force = false } = {}) {
     if (!(await withTimeout(ensurePermission(plugin), PLUGIN_TIMEOUT_MS, 'requestAuthorization'))) {
       return { skipped: 'denied' };
     }
+    console.log('[healthkit] permission requested (note: iOS does not report what the user granted)');
   } catch (e) {
+    console.warn('[healthkit] requestAuthorization failed:', e?.message);
     return { skipped: 'denied', error: e?.message };
   }
 
@@ -160,6 +171,7 @@ export async function syncHealthKit({ force = false } = {}) {
       limit:     MAX_WORKOUTS,
     }), PLUGIN_TIMEOUT_MS, 'queryHKitSampleType');
     workouts = Array.isArray(res?.resultData) ? res.resultData : [];
+    console.log('[healthkit] queried ' + workouts.length + ' workouts in last ' + LOOKBACK_DAYS + ' days');
   } catch (e) {
     console.warn('[healthkit] query failed:', e?.message || e);
     return { skipped: 'query-failed', error: e?.message || String(e) };
@@ -168,14 +180,18 @@ export async function syncHealthKit({ force = false } = {}) {
   if (workouts.length === 0) {
     // Mark as synced so we don't keep querying — try again after the throttle.
     try { localStorage.setItem(STORAGE_KEY, new Date().toISOString()); } catch {}
-    return { imported: 0, total: 0 };
+    // Empty result almost always means iOS silently denied permission. Surface
+    // a distinct skip reason so the UI can prompt the user to check Settings.
+    return { imported: 0, total: 0, skipped: 'empty-or-denied' };
   }
 
   const payload = { workouts: workouts.map(workoutToPayload).filter(w => w.id && w.startDate) };
+  console.log('[healthkit] uploading ' + payload.workouts.length + ' workouts to server');
 
   try {
     const { data } = await api.post('/api/integrations/apple-health/sync', payload);
     try { localStorage.setItem(STORAGE_KEY, new Date().toISOString()); } catch {}
+    console.log('[healthkit] server imported ' + (data?.imported ?? 0) + ' of ' + (data?.total ?? payload.workouts.length));
     return { imported: data?.imported ?? 0, total: data?.total ?? payload.workouts.length };
   } catch (e) {
     console.warn('[healthkit] upload failed:', e?.response?.data || e?.message || e);

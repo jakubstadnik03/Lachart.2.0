@@ -416,10 +416,16 @@ function StravaStep({ user, onSkip, onConnect }) {
     try {
       const { syncHealthKit } = await import('../../services/healthKitSync');
       const result = await syncHealthKit({ force: true });
-      if (result?.imported != null) setHealthMsg(`Imported ${result.imported} workout(s) from Apple Health.`);
+      // imported > 0 wins. imported === 0 with empty-or-denied means iOS
+      // silently denied — direct the user to grant access manually.
+      if (result?.imported > 0) setHealthMsg(`Imported ${result.imported} workout(s) from Apple Health.`);
+      else if (result?.skipped === 'empty-or-denied') setHealthMsg('Got 0 workouts. If you have workouts in Apple Health, open iPhone Settings → Health → Data Access → LaChart and turn ON every category, then tap Connect again.');
       else if (result?.skipped === 'unavailable') setHealthMsg('Apple Health is not available on this device.');
       else if (result?.skipped === 'plugin-missing') setHealthMsg('Apple Health is unavailable in this build.');
       else if (result?.skipped === 'denied') setHealthMsg('Permission denied. You can grant access later in Settings → Health.');
+      else if (result?.skipped === 'query-failed') setHealthMsg(`HealthKit query failed: ${result.error || 'unknown'}.`);
+      else if (result?.skipped === 'upload-failed') setHealthMsg(`Server upload failed: ${result.error || 'unknown'}.`);
+      else if (result?.imported === 0) setHealthMsg('No new workouts in the last 30 days.');
       else setHealthMsg('Synced with Apple Health.');
     } catch (e) {
       setHealthMsg(e?.message || 'Apple Health sync failed.');
