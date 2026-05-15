@@ -217,6 +217,55 @@ const STYLE = `
   .lc-nav-link.active { color: ${LC.primaryDark}; }
   .lc-nav-link.active::after { transform: scaleX(1); }
 
+  /* Scroll progress bar — pinned under the nav, fills as you scroll. */
+  .lc-progress {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 3px; z-index: 101;
+    background: linear-gradient(90deg, ${LC.primary}, ${LC.secondary}, ${LC.accent});
+    transform-origin: left center;
+    transform: scaleX(var(--lc-progress, 0));
+    transition: transform .15s linear;
+  }
+
+  /* Page entrance — fade the whole page in from 0.96 scale on mount. */
+  @keyframes lc-page-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+  .lc-page-in { animation: lc-page-in .6s cubic-bezier(.2,.7,.2,1) both; }
+
+  /* Audience cards — extra hover: image grows + slight tilt */
+  .lc-aud-card .lc-aud-photo { transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+  .lc-aud-card:hover .lc-aud-photo { transform: scale(1.08) rotate(-2deg); }
+
+  /* Feature cards — icon bumps on hover */
+  .lc-feat-card .lc-feat-icon { transition: transform .3s cubic-bezier(.2,.7,.2,1), background .2s; }
+  .lc-feat-card:hover .lc-feat-icon { transform: scale(1.1) rotate(-4deg); background: ${LC.primary}22; }
+
+  /* Filter chips — soft pop animation when filter changes */
+  @keyframes lc-chip-pop { 0% { transform: scale(.96); } 60% { transform: scale(1.04); } 100% { transform: none; } }
+  .lc-feat-card { animation: lc-chip-pop .3s cubic-bezier(.2,.7,.2,1) both; }
+
+  /* Methodology eq-line — slides up softly on hover */
+  .lc-meth-card .lc-eq { transition: transform .25s cubic-bezier(.2,.7,.2,1), background .25s; }
+  .lc-meth-card:hover .lc-eq { transform: translateY(-2px); background: ${LC.primary}28; }
+
+  /* Integration dot pulse */
+  .lc-int-dot { box-shadow: 0 0 0 0 rgba(118,126,181,.5); animation: lc-int-pulse 2.4s ease-out infinite; }
+  @keyframes lc-int-pulse { 0% { box-shadow: 0 0 0 0 rgba(118,126,181,.45); } 70% { box-shadow: 0 0 0 12px rgba(118,126,181,0); } 100% { box-shadow: 0 0 0 0 rgba(118,126,181,0); } }
+
+  /* Testimonial — quote-mark fades / slides on hover */
+  .lc-voice-card { position: relative; }
+  .lc-voice-card::before {
+    content: '"'; position: absolute;
+    top: 6px; right: 18px;
+    font-size: 64px; line-height: 1;
+    color: ${LC.primary}; opacity: 0.08;
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  .lc-voice-card:hover::before { opacity: 0.22; transform: translateY(-4px); }
+
+  /* Hero badge hover — subtle tilt + lift on top of the float keyframe */
+  .lc-hero-badge { transition: filter .25s ease; }
+  .lc-hero-badge:hover { filter: brightness(1.05) saturate(1.1); }
+
   /* What's-new timeline — vertical guide + date dot */
   .lc-timeline { position: relative; padding-left: 28px; }
   .lc-timeline::before {
@@ -262,6 +311,19 @@ export default function About() {
   // Roles tab
   const [role, setRole] = useState('athlete');
 
+  // Scroll-progress bar — drives the gradient bar pinned under the nav.
+  useEffect(() => {
+    const root = document.documentElement;
+    const onScroll = () => {
+      const max = (document.documentElement.scrollHeight - window.innerHeight) || 1;
+      const p = Math.min(1, Math.max(0, window.scrollY / max));
+      root.style.setProperty('--lc-progress', String(p));
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   // Scroll-spy — highlight the nav link whose section is currently in view.
   const [activeSection, setActiveSection] = useState('hero');
   useEffect(() => {
@@ -301,7 +363,8 @@ export default function About() {
 
       <style>{STYLE}</style>
 
-      <div className="lc-page">
+      <div className="lc-page lc-page-in">
+        <div className="lc-progress" aria-hidden />
         {/* ── 1. Top banner ────────────────────────────────────────────── */}
         <div style={{
           background: `linear-gradient(90deg, ${LC.primary}, ${LC.secondary})`,
@@ -404,13 +467,13 @@ export default function About() {
                   <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve calculator — LaChart" style={{ display: 'block', width: '100%', height: 'auto' }} />
                 </BrowserFrame>
                 {/* Floating badges */}
-                <FloatingBadge cls="lc-float" style={{ top: -14, left: -22 }} icon={
+                <FloatingBadge cls="lc-float lc-hero-badge" style={{ top: -14, left: -22 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                 } label="LT2 Threshold" value="340 W" tint={LC.accent} />
-                <FloatingBadge cls="lc-float d2" style={{ bottom: -16, right: -18 }} icon={
+                <FloatingBadge cls="lc-float lc-hero-badge d2" style={{ bottom: -16, right: -18 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>
                 } label="Zone 2 Power" value="187–255 W" tint={LC.primary} />
-                <FloatingBadge cls="lc-float d3" style={{ top: '40%', right: -34 }} icon={
+                <FloatingBadge cls="lc-float lc-hero-badge d3" style={{ top: '40%', right: -34 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v7l-5 9a4 4 0 0 0 4 6h6a4 4 0 0 0 4-6l-5-9V2" /><path d="M8 2h8" /></svg>
                 } label="La baseline" value="1.2 mmol/L" tint={LC.secondary} />
               </div>
@@ -455,8 +518,8 @@ export default function About() {
                 { img: 'cyclist-avatar.webp', title: 'Cyclists', body: 'Test with power, calculate zones, sync from Strava, and analyze TSS and training load.' },
                 { img: 'triathlete.jpg', title: 'Triathletes', body: 'Test with pace, track improvements across the same workouts over time, and compare historical tests.' },
               ].map((a, i) => (
-                <div key={a.title} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ padding: 22, borderRadius: 20 }}>
-                  <img src={`/about-design/${a.img}`} alt="" loading="lazy" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 4px 12px -4px rgba(15,23,41,.15)', marginBottom: 14 }} />
+                <div key={a.title} ref={pushRef} className={`lc-reveal d${i+1} lc-card lc-aud-card`} style={{ padding: 22, borderRadius: 20, overflow: 'hidden' }}>
+                  <img src={`/about-design/${a.img}`} alt="" loading="lazy" className="lc-aud-photo" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 4px 12px -4px rgba(15,23,41,.15)', marginBottom: 14, display: 'block' }} />
                   <h3 style={{ fontSize: 20, fontWeight: 800, color: LC.ink, margin: '0 0 6px' }}>{a.title}</h3>
                   <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{a.body}</p>
                 </div>
@@ -491,8 +554,8 @@ export default function About() {
             </div>
             <div ref={pushRef} className="lc-reveal d2 lc-feat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {FEATURES.filter(f => featCat === 'All' || f.cat === featCat).map((f) => (
-                <article key={f.title} className="lc-card" style={{ padding: 22 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LC.primary, marginBottom: 12 }}>
+                <article key={f.title + featCat} className="lc-card lc-feat-card" style={{ padding: 22 }}>
+                  <div className="lc-feat-icon" style={{ width: 40, height: 40, borderRadius: 12, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LC.primary, marginBottom: 12 }}>
                     {f.icon}
                   </div>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{f.cat}</span>
@@ -556,12 +619,12 @@ export default function About() {
             </div>
             <div className="lc-meth-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
               {METHODS.map((m, i) => (
-                <article key={m.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`}>
+                <article key={m.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card lc-meth-card`}>
                   {m.tag && <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 800, color: LC.green, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 8px', borderRadius: 9999, background: LC.green + '18', marginBottom: 10 }}>{m.tag}</span>}
                   <h4 style={{ fontSize: 22, fontWeight: 800, color: LC.ink, margin: '0 0 4px' }} dangerouslySetInnerHTML={{ __html: m.name }} />
                   <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '0 0 12px' }}>{m.sub}</p>
                   <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: '0 0 12px' }}>{m.body}</p>
-                  <div style={{ padding: '8px 12px', borderRadius: 8, background: LC.primaryTint, fontSize: 12, fontWeight: 600, color: LC.primaryDark, fontFamily: 'monospace' }}>{m.eq}</div>
+                  <div className="lc-eq" style={{ padding: '8px 12px', borderRadius: 8, background: LC.primaryTint, fontSize: 12, fontWeight: 600, color: LC.primaryDark, fontFamily: 'monospace' }}>{m.eq}</div>
                 </article>
               ))}
             </div>
@@ -587,7 +650,7 @@ export default function About() {
                 { dot: '#10B981', name: 'Manual entry', body: 'Log any workout in 30 seconds — even ones without a head unit.' },
               ].map((it, i) => (
                 <div key={it.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                  <span style={{ width: 16, height: 16, borderRadius: '50%', background: it.dot, flexShrink: 0, marginTop: 4 }} />
+                  <span className="lc-int-dot" style={{ width: 16, height: 16, borderRadius: '50%', background: it.dot, flexShrink: 0, marginTop: 4 }} />
                   <div>
                     <h5 style={{ fontSize: 15, fontWeight: 700, color: LC.ink, margin: '0 0 6px' }}>{it.name}</h5>
                     <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{it.body}</p>
@@ -610,7 +673,7 @@ export default function About() {
             </div>
             <div className="lc-voices-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
               {VOICES.map((v, i) => (
-                <figure key={v.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ margin: 0, padding: 22 }}>
+                <figure key={v.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card lc-voice-card`} style={{ margin: 0, padding: 22 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
                     <img src={`/about-design/${v.img}`} alt="" loading="lazy" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
                     <div style={{ color: '#F59E0B', fontSize: 14, letterSpacing: 2 }}>★★★★★</div>
