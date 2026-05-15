@@ -87,6 +87,7 @@ export default function FieldLactateTrainingPanel({
   integrationAthleteId,
   user,
   onAddLactate,
+  onOpenMeasurementInForm = null,
   loadingActivityId = null,
 }) {
   const [loading, setLoading] = useState(true);
@@ -365,6 +366,13 @@ export default function FieldLactateTrainingPanel({
             athleteId={integrationAthleteId || null}
             onClose={() => setAssignTarget(null)}
             onAssigned={() => { loadMeasurements(); load(); }}
+            onOpenInForm={onOpenMeasurementInForm ? (activity) => {
+              // Close the assign sheet and let the parent open
+              // TrainingForm with this activity prefilled and the
+              // measurement value stashed for post-save assignment.
+              setAssignTarget(null);
+              onOpenMeasurementInForm(assignTarget, activity);
+            } : null}
           />
         </div>,
         document.getElementById('app-modal-root') || document.body

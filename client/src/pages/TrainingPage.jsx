@@ -6,7 +6,7 @@ import TrainingForm from '../components/TrainingForm';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, updateStravaLactateValues } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, updateStravaLactateValues, assignFieldLactateMeasurement } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -127,6 +127,10 @@ export default function TrainingPage() {
   const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
   const [quickLactateOpen, setQuickLactateOpen] = useState(false);
   const [showRecordLactate, setShowRecordLactate] = useState(false);
+  // Set when the user picks "Chart" inside AssignLactateModal — the
+  // pending FieldLactateMeasurement is stashed so handleStravaLactateFormSubmit
+  // can reassign it to whichever lap the user filled in.
+  const [pendingFieldLactate, setPendingFieldLactate] = useState(null);
 
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
@@ -310,6 +314,10 @@ export default function TrainingPage() {
       isOpen: false,
       initialData: null,
     });
+    // Drop any pending field-lactate context — user closed the form
+    // without finishing the Chart-flow assign. They can re-pick the
+    // measurement from the Pending list later.
+    setPendingFieldLactate(null);
   }, []);
 
   const handleFieldAddLactate = useCallback(
@@ -416,6 +424,19 @@ export default function TrainingPage() {
     [integrationAthleteId]
   );
 
+  // Bridge from FieldLactateTrainingPanel → AssignLactateModal → "Chart"
+  // pill. Reuses handleFieldAddLactate to load the activity detail and
+  // open the same TrainingForm modal already used elsewhere, plus
+  // stashes the pending measurement so the form's submit handler can
+  // call assignFieldLactateMeasurement against the matched lap.
+  const handleOpenMeasurementInForm = useCallback(
+    (measurement, activity) => {
+      setPendingFieldLactate(measurement);
+      handleFieldAddLactate(activity);
+    },
+    [handleFieldAddLactate]
+  );
+
   const handleStravaLactateFormSubmit = useCallback(
     async (formData) => {
       try {
@@ -473,6 +494,37 @@ export default function TrainingPage() {
           }
         }
 
+        // "Chart" flow: a FieldLactateMeasurement was stashed when the
+        // user opened this modal from AssignLactateModal → "Chart". Find
+        // the lap they just typed the value into (±0.05 mmol/L) and mark
+        // the measurement assigned so the pending list updates.
+        if (pendingFieldLactate && Array.isArray(cleanedResults)) {
+          const target = Number(pendingFieldLactate.value);
+          let bestIdx = -1, bestDiff = Infinity;
+          cleanedResults.forEach((r, i) => {
+            const v = Number(r?.lactate);
+            if (!Number.isFinite(v)) return;
+            const diff = Math.abs(v - target);
+            if (diff <= 0.05 && diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+          });
+          if (bestIdx >= 0) {
+            try {
+              const payload = {
+                lapIndex: bestIdx,
+                lapNumber: bestIdx + 1,
+                trainingTitle: formData.title || 'Training',
+                trainingDate: formData.date || null,
+              };
+              if (stravaId) payload.stravaActivityId = String(stravaId);
+              else if (formData._id) payload.trainingId = formData._id;
+              await assignFieldLactateMeasurement(pendingFieldLactate._id, payload);
+            } catch (e) {
+              console.warn('[field-lactate] post-form assign failed:', e?.message);
+            }
+          }
+          setPendingFieldLactate(null);
+        }
+
         await loadTrainings(targetId);
         setFieldLactatePanelKey((k) => k + 1);
         closeStravaLactateModal();
@@ -487,7 +539,7 @@ export default function TrainingPage() {
         setStravaLactateSubmitting(false);
       }
     },
-    [selectedAthleteId, user, loadTrainings, closeStravaLactateModal]
+    [selectedAthleteId, user, loadTrainings, closeStravaLactateModal, pendingFieldLactate]
   );
 
   const showFieldLactatePanel = ['coach', 'athlete', 'tester', 'testing'].includes(
@@ -859,6 +911,7 @@ export default function TrainingPage() {
                 integrationAthleteId={integrationAthleteId}
                 user={user}
                 onAddLactate={handleFieldAddLactate}
+                onOpenMeasurementInForm={handleOpenMeasurementInForm}
                 loadingActivityId={lactateActivityLoadingId}
               />
             </motion.div>
@@ -1018,6 +1071,25 @@ export default function TrainingPage() {
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="w-full sm:max-w-2xl"
             >
+              {pendingFieldLactate && (
+                <div style={{
+                  margin: '0 0 -2px',
+                  padding: '10px 14px',
+                  background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)',
+                  borderTopLeftRadius: 14, borderTopRightRadius: 14,
+                  border: '1px solid rgba(124,58,237,.25)',
+                  borderBottom: 'none',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  fontSize: 12, color: '#5b21b6',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                  </svg>
+                  <span style={{ flex: 1 }}>
+                    Adding <b>{Number(pendingFieldLactate.value).toFixed(1)} mmol/L</b> — type it into the Lactate cell of the right lap below.
+                  </span>
+                </div>
+              )}
               <TrainingForm
                 key={stravaLactateModal.initialData.sourceStravaActivityId || 'strava-lac'}
                 onClose={() => {
