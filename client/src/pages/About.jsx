@@ -1,1766 +1,871 @@
-import React, { useEffect, useState, useRef, Suspense } from 'react';
-import { Navigate } from 'react-router-dom';
-import { trackEvent } from '../utils/analytics';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+// LaChart marketing / About landing page.
+//
+// Structure lifted from the high-fidelity design handoff
+// (design_handoff_lachart_about_page) — tokens in :root via index.css,
+// Hind Vadodara loaded globally, all sections rendered in React with
+// IntersectionObserver-driven reveals and prefers-reduced-motion
+// honoured by .lc-reveal in index.css.
+//
+// Sections (top → bottom):
+//   1.  Top utility banner (free demo CTA)
+//   2.  Sticky nav
+//   3.  Hero — blobs + grid background, gradient h1, floating badges
+//   4.  Social-proof strip
+//   5.  Audiences (Coaches · Athletes · Cyclists · Triathletes)
+//   6.  Features grid w/ filter chips
+//   7-13. Seven feature deep-dives in BrowserFrame
+//   14. Methodology — 4 threshold methods
+//   15. Integrations (Strava / FIT / Manual)
+//   16. Testimonials
+//   17. What's new (changelog)
+//   18. Roles tabs (Athlete / Coach / Tester)
+//   19. App download (App Store + Play badges)
+//   20. Pricing — Free / Pro / Coach (kept verbatim from prior About so
+//       any IAP-sensitive copy stays unchanged for the web)
+//   21. FAQ accordion (reuses prior faqItems data)
+//   22. CTA card
+//   23. Footer
+import React, { useEffect, useRef, useState, Suspense } from 'react';
+import { Navigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import ContactUs from '../components/ContactUs';
-import { isCapacitorNative } from '../utils/isNativeApp';
+import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../context/AuthProvider';
-import {
-  AcademicCapIcon,
-  TrophyIcon,
-  BoltIcon,
-  ArrowPathRoundedSquareIcon,
-  BeakerIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import { trackEvent } from '../utils/analytics';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
-// ─── FAQ Accordion ────────────────────────────────────────────────────────────
-const FAQItem = ({ icon, question, answer }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const iconPaths = {
-    question: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    check: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-    user: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
-    flag: "M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9",
-    chart: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-  };
-  return (
-    <motion.div className="group border border-gray-200 rounded-2xl bg-white hover:border-primary/40 hover:shadow-md transition-all duration-300 overflow-hidden" initial={false}>
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left focus:outline-none min-h-[56px] touch-manipulation">
-        <div className="flex items-start gap-4 flex-1 min-w-0">
-          <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={iconPaths[icon]} />
-            </svg>
-          </div>
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 leading-snug">{question}</h3>
-        </div>
-        <motion.div animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.3 }} className="flex-shrink-0">
-          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </motion.div>
-      </button>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: 'easeInOut' }} className="overflow-hidden">
-            <div className="px-4 sm:px-5 pb-4 sm:pb-5 pl-4 sm:pl-16">
-              <p className="text-gray-600 leading-relaxed text-sm sm:text-base">{answer}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
+/* ─── design-handoff palette mapped to short JS constants ─────────────── */
+const LC = {
+  primary:      '#767EB5',
+  primaryDark:  '#5E6590',
+  primaryLight: '#B8BDDB',
+  primaryTint:  '#EEF0F8',
+  secondary:    '#599FD0',
+  tertiary:     '#7BC2EB',
+  accent:       '#7C3AED',
+  ink:          '#0F1729',
+  text:         '#1F2738',
+  muted:        '#6B7280',
+  border:       'rgba(180,190,210,.30)',
+  green:        '#10B981',
 };
 
-// ─── Lazy Image ───────────────────────────────────────────────────────────────
-const LazyImage = ({ src, alt, className, webpSrcSet, srcSet, sizes }) => {
-  const [isLoading, setIsLoading] = React.useState(true);
-  return (
-    <div className={`relative ${className}`}>
-      {isLoading && <div className="absolute inset-0 bg-gray-100 animate-pulse rounded-xl" />}
-      <picture>
-        {webpSrcSet && <source type="image/webp" srcSet={webpSrcSet} sizes={sizes} />}
-        <img
-          src={src}
-          srcSet={srcSet}
-          sizes={sizes}
-          alt={alt}
-          className={`${className} transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
-          onLoad={() => setIsLoading(false)}
-          loading="lazy"
-        />
-      </picture>
-    </div>
-  );
-};
+/* ─── Reveal — single IntersectionObserver hook ───────────────────────── */
+function useReveal(refs) {
+  const reduce = useReducedMotion();
+  useEffect(() => {
+    if (reduce) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('lc-in'); }),
+      { threshold: 0.15, rootMargin: '0px 0px -10% 0px' }
+    );
+    refs.forEach((el) => { if (el) io.observe(el); });
+    return () => io.disconnect();
+  }, [refs, reduce]);
+}
 
-// ─── Static data ──────────────────────────────────────────────────────────────
-const updates = [
-  { title: 'Professional PDF reports from lactate tests', date: 'Mar 2026', summary: 'Generate branded PDF reports with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graph, and training recommendations.', link: '/lactate-curve-calculator' },
-  { title: 'Bulk Strava interval detection released', date: 'Nov 2025', summary: 'Detect every power fluctuation, auto-create Strava laps, and analyze LT blocks instantly.', link: '/fit-analysis' },
-  { title: 'Responsive lactate calculator revamp', date: 'Oct 2025', summary: 'TestingWithoutLogin now loads faster, scales on mobile, and preserves manual adjustments.', link: '/lactate-curve-calculator' },
-];
+/* ─── Eyebrow pill (with pulsing dot) ─────────────────────────────────── */
+const Eyebrow = ({ children }) => (
+  <span
+    className="lc-eb"
+    style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      fontSize: 11, fontWeight: 700, color: LC.primaryDark,
+      letterSpacing: '0.14em', textTransform: 'uppercase',
+      padding: '6px 12px', borderRadius: 9999,
+      background: LC.primaryTint, border: '1px solid rgba(118,126,181,.20)',
+    }}
+  >
+    <i className="lc-pulse" style={{ width: 6, height: 6, borderRadius: '50%', background: LC.primary, display: 'inline-block' }} />
+    {children}
+  </span>
+);
 
-const seoUseCases = [
-  { title: 'Free Lactate Curve Calculator', description: 'Upload or enter test steps, visualize lactate vs. power/pace, and export PDF reports. Supports cycling, running, swimming, and triathlon.', link: '/lactate-curve-calculator', anchor: 'free-lactate-curve-calculator' },
-  { title: 'Generate PDF from Lactate Test', description: 'Download a professional PDF report with your lactate curve, heart rate overlay, training zones, thresholds, stage results, previous test comparison, and personalized recommendations.', link: '/lactate-curve-calculator', anchor: 'generate-pdf-lactate-test' },
-  { title: 'Coach & Athlete Management Software', description: 'Plan workouts, review FIT trainings, sync Strava, and manage lactate history for every athlete inside one secure coach workspace.', link: '/dashboard', anchor: 'coach-athlete-management' },
-  { title: 'Training Calendar with Strava & FIT Sync', description: 'Compare planned vs. completed sessions, detect intervals automatically, and keep all sports in a single interactive calendar.', link: '/training-calendar', anchor: 'training-calendar' },
-];
-
-const faqItems = [
-  { icon: 'question', question: 'What is lactate threshold and why is it important?', answer: "Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately." },
-  { icon: 'check', question: 'How accurate is the free lactate threshold calculator?', answer: 'LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training.' },
-  { icon: 'user', question: 'Do I need to register to use the lactate calculator?', answer: 'No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features.' },
-  { icon: 'flag', question: 'What sports is LaChart suitable for?', answer: 'LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort.' },
-  { icon: 'chart', question: 'How does LaChart compare to expensive lab testing?', answer: 'While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.' },
-  { icon: 'flag', question: 'Can I generate a PDF report from my lactate test?', answer: 'Yes, with a Pro or Coach plan. After completing a lactate test, you can download a professional PDF report that includes your lactate curve with heart rate overlay, all calculated thresholds (LTP1, LTP2, OBLA, IAT), five training zones with power/pace and HR ranges, stage-by-stage results, a comparison graph with your previous test, and personalized training recommendations. Pro and Coach plans include a 30-day free trial.' },
-];
-
-// (tutorialSteps removed — replaced by VideoTutorialsSection)
-
-// ─── Feature icons ─────────────────────────────────────────────────────────────
-const FeatureIcon = ({ type }) => {
-  const icons = {
-    curve: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-    zones: "M13 10V3L4 14h7v7l9-11h-7z",
-    history: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
-    lactate: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z",
-    progress: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
-    strava: "M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12",
-    fit: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12",
-    category: "M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z",
-    coach: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",
-    calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-    tss: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-    pdf: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-    calculator: "M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z",
-  };
-  return (
-    <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={icons[type] || icons.curve} />
-    </svg>
-  );
-};
-
-// ─── Browser Frame ────────────────────────────────────────────────────────────
-const BrowserFrame = ({ children, label }) => (
-  <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-xl">
-    <div className="flex items-center gap-1.5 px-4 py-2.5 bg-white border-b border-gray-200">
-      <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-      <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-      <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-      {label && <span className="ml-3 text-xs text-gray-900">{label}</span>}
+/* ─── Browser-style frame for product screenshots ─────────────────────── */
+const BrowserFrame = ({ label, children }) => (
+  <div style={{
+    borderRadius: 20, overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,.7)',
+    boxShadow: '0 30px 60px -20px rgba(15,23,41,.25)',
+    background: '#fff',
+  }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6,
+      padding: '10px 14px',
+      background: '#F8FAFD', borderBottom: '1px solid rgba(180,190,210,.18)',
+    }}>
+      <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#FF6058' }} />
+      <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#FFBD2E' }} />
+      <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28C840' }} />
+      {label && (
+        <span style={{ marginLeft: 10, fontSize: 11, fontWeight: 600, color: LC.muted, fontVariantNumeric: 'tabular-nums' }}>
+          {label}
+        </span>
+      )}
     </div>
     {children}
   </div>
 );
 
-// ─── Video Tutorial Section data ──────────────────────────────────────────────
-const TutorialIcon = ({ id }) => {
-  const icons = {
-    'add-testing': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v11.5a3.5 3.5 0 007 0V3M9 3h6M9 3H7M15 3h2M5 20h14" />
-      </svg>
-    ),
-    'compare-previous-test': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l4-8 4 5 3-3 4 6" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l4-5 4 4 3-4 4 5" strokeOpacity="0.4" />
-      </svg>
-    ),
-    'training-page': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h7" />
-      </svg>
-    ),
-    'training-calendar': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18" />
-      </svg>
-    ),
-    'dashboard-page': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13l4-4 4 4 4-6 4 3" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 20h18" />
-      </svg>
-    ),
-    'coach-add-athlete': (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-        <circle cx="9" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-      </svg>
-    ),
-  };
-  return icons[id] ?? null;
-};
+/* ─── Page-level keyframes (scoped, injected once) ────────────────────── */
+const STYLE = `
+  .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
+  .lc-reveal.left  { transform: translateX(-40px); }
+  .lc-reveal.right { transform: translateX(40px); }
+  .lc-reveal.scale { transform: scale(.94); }
+  .lc-reveal:not(.left):not(.right):not(.scale) { transform: translateY(30px); }
+  .lc-reveal.lc-in { opacity: 1; transform: none; }
+  .lc-reveal.d1 { transition-delay: .08s; }
+  .lc-reveal.d2 { transition-delay: .16s; }
+  .lc-reveal.d3 { transition-delay: .24s; }
+  .lc-reveal.d4 { transition-delay: .32s; }
+  .lc-reveal.d5 { transition-delay: .40s; }
+  @keyframes lc-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .lc-pulse { animation: lc-pulse 2s ease-in-out infinite; }
+  @keyframes lc-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  .lc-float { animation: lc-float 6s ease-in-out infinite; }
+  .lc-float.d2 { animation-delay: -2s; }
+  .lc-float.d3 { animation-delay: -4s; }
+  .lc-huge { font-size: clamp(36px, 6vw, 72px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; color: ${LC.ink}; }
+  .lc-huge em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary} 50%, ${LC.accent}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; position: relative; }
+  .lc-huge em::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 4px; background: ${LC.primary}; opacity: 0.18; border-radius: 2px; }
+  .lc-big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: ${LC.ink}; }
+  .lc-big em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .lc-lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: ${LC.muted}; max-width: 580px; }
+  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; }
+  .lc-page section { scroll-margin-top: 70px; }
+  .lc-sectpad { padding: 96px 24px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 640px) { .lc-sectpad { padding: 64px 16px; } }
+  .lc-btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 12px; background: ${LC.primaryDark}; color: #fff; text-decoration: none; font-size: 14px; font-weight: 700; box-shadow: 0 8px 22px -6px rgba(118,126,181,.55); transition: transform .2s, box-shadow .2s, background .2s; }
+  .lc-btn-primary:hover { transform: translateY(-1px); background: ${LC.primary}; }
+  .lc-btn-ghost { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 12px; background: transparent; color: ${LC.primaryDark}; text-decoration: none; font-size: 14px; font-weight: 700; border: 1px solid ${LC.border}; }
+  .lc-btn-ghost:hover { background: ${LC.primaryTint}; }
+  .lc-card { border-radius: 18px; background: #fff; border: 1px solid ${LC.border}; padding: 22px; transition: transform .25s, box-shadow .25s, border-color .25s; }
+  .lc-card:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -14px rgba(15,23,41,.15); border-color: rgba(118,126,181,.4); }
+`;
 
-const videoTutorials = [
-  {
-    id: 'add-testing',
-    label: '1. Add a Lactate Test',
-    title: 'How to enter a lactate test',
-    description: 'Create a new test, select your sport, enter each stage — power/pace, heart rate and lactate — and save. The curve generates instantly.',
-    steps: [
-      'Go to Testing → New Test',
-      'Select sport: bike, run, or swim',
-      'Enter base lactate + each stage value',
-      'Hit Save — curve generates instantly',
+export default function About() {
+  const { isAuthenticated } = useAuth();
+  // Capacitor: skip the public landing entirely, dump straight into the app.
+  if (isCapacitorNative() && isAuthenticated) return <Navigate to="/dashboard" replace />;
+
+  const revealRefs = useRef([]);
+  const pushRef = (el) => { if (el && !revealRefs.current.includes(el)) revealRefs.current.push(el); };
+  useReveal(revealRefs.current);
+
+  // Nav-shadow on scroll
+  const [navScrolled, setNavScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setNavScrolled(window.scrollY > 8);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Feature filter
+  const [featCat, setFeatCat] = useState('All');
+  // Roles tab
+  const [role, setRole] = useState('athlete');
+
+  const track = (label) => trackEvent?.('AboutPage', 'cta_click', label);
+
+  return (
+    <>
+      <Helmet>
+        <title>Lactate Testing App, Lactate Threshold Calculator & PDF Reports | LaChart</title>
+        <meta name="description" content="LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2 thresholds, build training zones, and download professional PDF reports." />
+        <meta name="theme-color" content="#767EB5" />
+        <meta property="og:title" content="LaChart — Lactate Testing App & Threshold Calculator" />
+        <meta property="og:description" content="Generate lactate curves, calculate LT1/LT2, build training zones, and export professional PDF reports." />
+      </Helmet>
+
+      <style>{STYLE}</style>
+
+      <div className="lc-page">
+        {/* ── 1. Top banner ────────────────────────────────────────────── */}
+        <div style={{
+          background: `linear-gradient(90deg, ${LC.primary}, ${LC.secondary})`,
+          color: '#fff', padding: '10px 16px', textAlign: 'center', fontSize: 13.5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap',
+        }}>
+          <span>Try calculating lactate thresholds for free — <b>no sign-up needed</b></span>
+          <Link to="/lactate-curve-calculator" onClick={() => track('banner_try_demo')} style={{
+            padding: '5px 14px', borderRadius: 8, background: '#fff', color: LC.primaryDark,
+            textDecoration: 'none', fontSize: 12.5, fontWeight: 700,
+          }}>Try demo</Link>
+        </div>
+
+        {/* ── 2. Sticky nav ────────────────────────────────────────────── */}
+        <nav style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          background: 'rgba(255,255,255,.95)',
+          backdropFilter: 'blur(20px) saturate(170%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(170%)',
+          borderBottom: '1px solid rgba(180,190,210,.18)',
+          boxShadow: navScrolled ? '0 4px 18px -8px rgba(15,23,41,.12)' : 'none',
+          transition: 'box-shadow .25s',
+        }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontWeight: 700, color: LC.primaryDark, fontSize: 18, textDecoration: 'none' }}>
+              <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 32, width: 'auto' }} />
+              <span>LaChart</span>
+            </Link>
+            <div className="lc-nav-links" style={{ display: 'flex', gap: 6 }}>
+              {[['#features','Features'], ['#solutions','For whom'], ['#methodology','Science'], ['#voices','Voices'], ['#pricing','Pricing'], ['#faq','FAQ']].map(([href, label]) => (
+                <a key={href} href={href} style={{ color: LC.muted, textDecoration: 'none', fontSize: 14, fontWeight: 500, padding: '8px 12px', borderRadius: 8 }}>{label}</a>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <Link to="/login" style={{ color: LC.muted, textDecoration: 'none', fontSize: 14, fontWeight: 500, padding: '8px 12px' }} className="lc-nav-ghost">Sign in</Link>
+              <Link to="/signup" onClick={() => track('nav_start_free')} style={{
+                padding: '10px 18px', borderRadius: 10, background: LC.primaryDark, color: '#fff',
+                textDecoration: 'none', fontSize: 14, fontWeight: 700,
+                boxShadow: '0 4px 12px -4px rgba(118,126,181,.5)',
+              }}>Start free</Link>
+            </div>
+          </div>
+          <style>{`@media (max-width: 880px) { .lc-nav-links, .lc-nav-ghost { display: none !important; } }`}</style>
+        </nav>
+
+        {/* ── 3. Hero ──────────────────────────────────────────────────── */}
+        <section id="hero" style={{ position: 'relative', overflow: 'hidden' }}>
+          {/* Background blobs */}
+          <div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
+            <div style={{ position: 'absolute', top: -100, right: -50, width: 380, height: 380, borderRadius: '50%', background: `radial-gradient(circle, ${LC.tertiary}40 0%, transparent 70%)`, filter: 'blur(40px)' }} />
+            <div style={{ position: 'absolute', top: 200, left: -80, width: 320, height: 320, borderRadius: '50%', background: `radial-gradient(circle, ${LC.primary}40 0%, transparent 70%)`, filter: 'blur(40px)' }} />
+            <div style={{ position: 'absolute', bottom: 100, right: 200, width: 280, height: 280, borderRadius: '50%', background: `radial-gradient(circle, ${LC.accent}30 0%, transparent 70%)`, filter: 'blur(40px)' }} />
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.035, backgroundImage: 'linear-gradient(0deg, transparent 79px, rgba(15,23,41,.5) 80px), linear-gradient(90deg, transparent 79px, rgba(15,23,41,.5) 80px)', backgroundSize: '80px 80px' }} />
+          </div>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '80px 24px', position: 'relative', zIndex: 1 }}>
+            <div className="lc-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
+              {/* Left column */}
+              <div ref={pushRef} className="lc-reveal">
+                <Eyebrow>Lactate testing · Made simple</Eyebrow>
+                <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>
+                  Train smarter<br />with <em>lactate data</em>
+                </h1>
+                <p className="lc-lead" style={{ margin: '0 0 24px' }}>
+                  LaChart generates lactate curves, calculates LT1 &amp; LT2, builds training zones, and tracks performance — one platform for athletes and coaches.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+                  {[['LT1 / LT2', LC.primary], ['Zones', LC.secondary], ['PDF Report', LC.accent], ['Progress', LC.green]].map(([label, color]) => (
+                    <span key={label} style={{
+                      padding: '5px 12px', borderRadius: 9999,
+                      background: color + '22', color: color + 'EE',
+                      fontSize: 12, fontWeight: 700,
+                      border: '1px solid ' + color + '44',
+                    }}>{label}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <Link to="/signup" onClick={() => track('hero_start_free')} className="lc-btn-primary">
+                    Start free
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
+                  </Link>
+                  <Link to="/lactate-curve-calculator" onClick={() => track('hero_try_calc')} className="lc-btn-ghost">See the curve</Link>
+                </div>
+              </div>
+
+              {/* Right column — product screenshot + floating badges */}
+              <div ref={pushRef} className="lc-reveal right" style={{ position: 'relative' }}>
+                <BrowserFrame label="lachart.net — Lactate Curve">
+                  <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve calculator — LaChart" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                </BrowserFrame>
+                {/* Floating badges */}
+                <FloatingBadge cls="lc-float" style={{ top: -14, left: -22 }} icon={
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                } label="LT2 Threshold" value="340 W" tint={LC.accent} />
+                <FloatingBadge cls="lc-float d2" style={{ bottom: -16, right: -18 }} icon={
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>
+                } label="Zone 2 Power" value="187–255 W" tint={LC.primary} />
+                <FloatingBadge cls="lc-float d3" style={{ top: '40%', right: -34 }} icon={
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v7l-5 9a4 4 0 0 0 4 6h6a4 4 0 0 0 4-6l-5-9V2" /><path d="M8 2h8" /></svg>
+                } label="La baseline" value="1.2 mmol/L" tint={LC.secondary} />
+              </div>
+            </div>
+          </div>
+          <style>{`@media (max-width: 960px) { .lc-hero-grid { grid-template-columns: 1fr !important; gap: 40px !important; } }`}</style>
+        </section>
+
+        {/* ── 4. Social proof strip ────────────────────────────────────── */}
+        <div style={{
+          padding: '18px 24px', background: 'rgba(255,255,255,.6)',
+          borderTop: '1px solid ' + LC.border, borderBottom: '1px solid ' + LC.border,
+        }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 20, color: LC.muted, fontSize: 12.5, fontWeight: 600 }}>
+            {[
+              'Cycling · Running · Triathlon · Swimming',
+              'LT1, LT2, OBLA, IAT, D-max, Log-log',
+              'Strava & FIT file sync',
+              'PDF reports in seconds',
+              'Coach & athlete workspace',
+            ].map(t => (
+              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── 5. Audiences ─────────────────────────────────────────────── */}
+        <section id="solutions">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 50px' }}>
+              <Eyebrow>For whom</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Built for every athlete <em>and every coach</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>From the first home test to a full coaching workspace — LaChart fits the way you train.</p>
+            </div>
+            <div className="lc-aud-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18 }}>
+              {[
+                { img: 'coach-avatar.webp', title: 'Coaches', body: 'Manage multiple athletes, view historical lactate tests, track training calendars, and monitor lactate values from workouts.' },
+                { img: 'runner-avatar.jpeg', title: 'Athletes', body: 'Generate lactate curves, calculate training zones, track progress over time, and record lactate to intervals.' },
+                { img: 'cyclist-avatar.webp', title: 'Cyclists', body: 'Test with power, calculate zones, sync from Strava, and analyze TSS and training load.' },
+                { img: 'triathlete.jpg', title: 'Triathletes', body: 'Test with pace, track improvements across the same workouts over time, and compare historical tests.' },
+              ].map((a, i) => (
+                <div key={a.title} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ padding: 22, borderRadius: 20 }}>
+                  <img src={`/about-design/${a.img}`} alt="" loading="lazy" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 4px 12px -4px rgba(15,23,41,.15)', marginBottom: 14 }} />
+                  <h3 style={{ fontSize: 20, fontWeight: 800, color: LC.ink, margin: '0 0 6px' }}>{a.title}</h3>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{a.body}</p>
+                </div>
+              ))}
+            </div>
+            <style>{`
+              @media (max-width: 900px) { .lc-aud-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+              @media (max-width: 540px) { .lc-aud-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 6. Features grid w/ filter chips ─────────────────────────── */}
+        <section id="features">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
+              <Eyebrow>Platform features</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>The complete <em>training ecosystem</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>Everything for lactate-based performance — testing, analysis, tracking, and coaching in one place.</p>
+            </div>
+            <div ref={pushRef} className="lc-reveal d1" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 30 }}>
+              {['All','Testing','Analysis','Training','Progress','Integration','Tools'].map(cat => (
+                <button key={cat} onClick={() => setFeatCat(cat)} style={{
+                  padding: '7px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
+                  background: featCat === cat ? LC.primaryDark : '#fff',
+                  color: featCat === cat ? '#fff' : LC.muted,
+                  fontSize: 13, fontWeight: 700,
+                  border: featCat === cat ? 'none' : '1px solid ' + LC.border,
+                  transition: 'all .2s',
+                }}>{cat}</button>
+              ))}
+            </div>
+            <div ref={pushRef} className="lc-reveal d2 lc-feat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              {FEATURES.filter(f => featCat === 'All' || f.cat === featCat).map((f) => (
+                <article key={f.title} className="lc-card" style={{ padding: 22 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LC.primary, marginBottom: 12 }}>
+                    {f.icon}
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{f.cat}</span>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, color: LC.ink, margin: '6px 0 8px' }}>{f.title}</h4>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{f.body}</p>
+                </article>
+              ))}
+            </div>
+            <style>{`
+              @media (max-width: 900px) { .lc-feat-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+              @media (max-width: 540px) { .lc-feat-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 7-13. Seven deep-dive sections ───────────────────────────── */}
+        {DEEPDIVES.map((d, i) => (
+          <section key={d.title}>
+            <div className="lc-sectpad">
+              <div className={'lc-deepdive'} style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60,
+                alignItems: 'center',
+                direction: i % 2 === 1 ? 'rtl' : 'ltr',
+              }}>
+                <div ref={pushRef} className={`lc-reveal ${i % 2 === 1 ? 'right' : 'left'}`} style={{ direction: 'ltr' }}>
+                  <Eyebrow>{d.eb}</Eyebrow>
+                  <h2 className="lc-big" style={{ margin: '18px 0 16px' }} dangerouslySetInnerHTML={{ __html: d.title }} />
+                  <p className="lc-lead" style={{ margin: '0 0 20px' }}>{d.lead}</p>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {d.bullets.map(b => (
+                      <li key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, color: LC.text }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 3 }}><path d="M5 13l4 4L19 7" /></svg>
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                  {d.tags && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>
+                      {d.tags.map(t => <span key={t} style={{ padding: '4px 10px', borderRadius: 9999, background: LC.primaryTint, color: LC.primaryDark, fontSize: 11.5, fontWeight: 700 }}>{t}</span>)}
+                    </div>
+                  )}
+                </div>
+                <div ref={pushRef} className={`lc-reveal ${i % 2 === 1 ? 'left' : 'right'}`} style={{ direction: 'ltr' }}>
+                  <BrowserFrame label={d.url}>
+                    <img src={`/about-design/${d.img}`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                  </BrowserFrame>
+                </div>
+              </div>
+              <style>{`@media (max-width: 960px) { .lc-deepdive { grid-template-columns: 1fr !important; gap: 30px !important; direction: ltr !important; } }`}</style>
+            </div>
+          </section>
+        ))}
+
+        {/* ── 14. Methodology ──────────────────────────────────────────── */}
+        <section id="methodology">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
+              <Eyebrow>The science</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Four threshold methods. <em>You pick the one your sport uses</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart calculates LT1 and LT2 with the four most-cited methods in exercise science — use them side by side or stick to your federation's standard.</p>
+            </div>
+            <div className="lc-meth-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+              {METHODS.map((m, i) => (
+                <article key={m.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`}>
+                  {m.tag && <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 800, color: LC.green, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 8px', borderRadius: 9999, background: LC.green + '18', marginBottom: 10 }}>{m.tag}</span>}
+                  <h4 style={{ fontSize: 22, fontWeight: 800, color: LC.ink, margin: '0 0 4px' }} dangerouslySetInnerHTML={{ __html: m.name }} />
+                  <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '0 0 12px' }}>{m.sub}</p>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: '0 0 12px' }}>{m.body}</p>
+                  <div style={{ padding: '8px 12px', borderRadius: 8, background: LC.primaryTint, fontSize: 12, fontWeight: 600, color: LC.primaryDark, fontFamily: 'monospace' }}>{m.eq}</div>
+                </article>
+              ))}
+            </div>
+            <style>{`
+              @media (max-width: 900px) { .lc-meth-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+              @media (max-width: 540px) { .lc-meth-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 15. Integrations ─────────────────────────────────────────── */}
+        <section id="connect">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 40px' }}>
+              <Eyebrow>Integrations</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Sync, link <em>and connect</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>Connect Strava. Upload FIT files. Manual entry for trainer sessions. Every workout flows into one platform.</p>
+            </div>
+            <div className="lc-int-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              {[
+                { dot: '#FF6B4A', name: 'Strava', body: 'Auto-sync activities, full interval detection, power graphs and HR zones.' },
+                { dot: '#3B82F6', name: 'FIT files', body: 'Garmin, Wahoo, Polar, Suunto, Apple Watch — every device supported.' },
+                { dot: '#10B981', name: 'Manual entry', body: 'Log any workout in 30 seconds — even ones without a head unit.' },
+              ].map((it, i) => (
+                <div key={it.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: '50%', background: it.dot, flexShrink: 0, marginTop: 4 }} />
+                  <div>
+                    <h5 style={{ fontSize: 15, fontWeight: 700, color: LC.ink, margin: '0 0 6px' }}>{it.name}</h5>
+                    <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{it.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <style>{`
+              @media (max-width: 900px) { .lc-int-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 16. Testimonials ─────────────────────────────────────────── */}
+        <section id="voices">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 40px' }}>
+              <Eyebrow>Used by</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Athletes and coaches <em>across three sports</em></h2>
+            </div>
+            <div className="lc-voices-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
+              {VOICES.map((v, i) => (
+                <figure key={v.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ margin: 0, padding: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+                    <img src={`/about-design/${v.img}`} alt="" loading="lazy" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
+                    <div style={{ color: '#F59E0B', fontSize: 14, letterSpacing: 2 }}>★★★★★</div>
+                  </div>
+                  <blockquote style={{ margin: '0 0 12px', fontStyle: 'italic', color: LC.text, fontSize: 14, lineHeight: 1.55 }}>"{v.quote}"</blockquote>
+                  <figcaption style={{ fontSize: 12.5 }}>
+                    <strong style={{ color: LC.ink, fontWeight: 700 }}>{v.name}</strong>
+                    <span style={{ color: LC.muted, marginLeft: 6 }}>· {v.role}</span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+            <style>{`
+              @media (max-width: 900px) { .lc-voices-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 17. What's new ───────────────────────────────────────────── */}
+        <section>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 680, marginBottom: 30 }}>
+              <Eyebrow>What's new</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 0' }}>Latest <em>shipping notes</em></h2>
+            </div>
+            <div style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                { date: 'May 2026',  title: 'iOS app — public TestFlight', body: 'Native iOS shell with pull-to-refresh, push notifications, Apple Health import and on-device lactate recording.' },
+                { date: 'Mar 2026',  title: 'Professional PDF reports from lactate tests', body: 'Generate branded PDFs with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graphs and training recommendations.' },
+                { date: 'Nov 2025',  title: 'Bulk Strava interval detection', body: 'Detect every power fluctuation, auto-create Strava laps, and analyze threshold blocks instantly.' },
+                { date: 'Oct 2025',  title: 'Responsive lactate calculator revamp', body: 'The free testing-without-login flow loads faster, scales on mobile, and preserves manual adjustments.' },
+              ].map((u, i) => (
+                <article key={u.title} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ padding: 18 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{u.date}</span>
+                  <h4 style={{ fontSize: 16, fontWeight: 700, color: LC.ink, margin: '6px 0 6px' }}>{u.title}</h4>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{u.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── 18. Roles tab ────────────────────────────────────────────── */}
+        <section id="roles">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
+              <Eyebrow>Three workspaces · one app</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>A view <em>built for your role</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart adapts to how you use it — train yourself, coach a team, or run lactate tests for clients. Same data, three completely different shells.</p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 30, flexWrap: 'wrap' }}>
+              {ROLES.map(r => (
+                <button key={r.id} onClick={() => setRole(r.id)} style={{
+                  padding: '10px 22px', borderRadius: 9999,
+                  border: role === r.id ? 'none' : '1px solid ' + LC.border,
+                  background: role === r.id ? LC.primaryDark : '#fff',
+                  color: role === r.id ? '#fff' : LC.muted,
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  transition: 'all .2s',
+                }}>
+                  {r.icon}
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {ROLES.filter(r => r.id === role).map(r => (
+              <div key={r.id} className="lc-role-panel" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
+                <div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 9999, background: '#fff', border: '1px solid ' + LC.border, fontSize: 12, fontWeight: 700, color: LC.primaryDark, marginBottom: 14 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{r.icon}</span>
+                    For {r.label.toLowerCase()}
+                  </span>
+                  <h3 className="lc-big" style={{ fontSize: '28px !important', margin: '8px 0 14px' }} dangerouslySetInnerHTML={{ __html: r.heading }} />
+                  <p className="lc-lead" style={{ margin: '0 0 18px' }}>{r.lead}</p>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {r.features.map(f => (
+                      <li key={f.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: LC.text }}>
+                        <span style={{ width: 22, height: 22, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                        </span>
+                        <span><b style={{ color: LC.ink }}>{f.title}</b> — {f.body}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/signup" onClick={() => track(`role_${r.id}_start`)} className="lc-btn-primary">
+                    Start as {r.label.toLowerCase()}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
+                  </Link>
+                </div>
+                <BrowserFrame label={`lachart.net — ${r.screenLabel}`}>
+                  <img src={`/about-design/${r.img}`} alt={r.label} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                </BrowserFrame>
+              </div>
+            ))}
+            <style>{`@media (max-width: 960px) { .lc-role-panel { grid-template-columns: 1fr !important; gap: 30px !important; } }`}</style>
+          </div>
+        </section>
+
+        {/* ── 19. App download badges ──────────────────────────────────── */}
+        <section id="download">
+          <div className="lc-sectpad" style={{ paddingTop: 0 }}>
+            <div ref={pushRef} className="lc-reveal lc-card" style={{ background: 'linear-gradient(135deg, #fff, ' + LC.primaryTint + ')', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 32, textAlign: 'center', borderRadius: 20 }}>
+              <Eyebrow>Get the app</Eyebrow>
+              <h3 className="lc-big" style={{ margin: 0 }}>Take your training <em>with you</em></h3>
+              <p className="lc-lead" style={{ margin: 0 }}>Native iOS app with Apple Health sync, pull-to-refresh and push notifications. Android coming soon.</p>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 6 }}>
+                <a href="https://apps.apple.com/app/lachart" onClick={() => track('app_store_badge')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 12, background: '#000', color: '#fff', textDecoration: 'none' }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/></svg>
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
+                    <span style={{ fontSize: 10, opacity: 0.75 }}>Download on the</span>
+                    <span style={{ fontSize: 18, fontWeight: 700 }}>App Store</span>
+                  </span>
+                </a>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 12, background: '#fff', color: LC.muted, textDecoration: 'none', border: '1px solid ' + LC.border, opacity: 0.7 }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.07l9.21-9.21 3.05 3.05-9.13 5.27-3.13-1.11zm9.91-10l9.36-5.4c.43-.25.85-.25.85.59l.05 12.06c0 .85-.42.85-.85.59l-9.36-5.4 4.31-2.44-4.36-2.44v2.44zM3.18.93l9.13 5.27-3.05 3.05L3.18 23.07v-22.14zm9.91 10l-3.05 3.05L7 11l3.05-2.95 3.04 2.88z"/></svg>
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
+                    <span style={{ fontSize: 10, opacity: 0.75 }}>Coming to</span>
+                    <span style={{ fontSize: 18, fontWeight: 700 }}>Google Play</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 20. Pricing — kept from prior About ──────────────────────── */}
+        <section id="pricing" style={{ background: '#fff', borderTop: '1px solid ' + LC.border }}>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
+              <Eyebrow>Pricing</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Currently completely <em>free</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart is in <b style={{ color: LC.text }}>early access</b> — every feature is free while we build and improve. Paid plans are planned for the future.</p>
+            </div>
+            <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 24, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" /></svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>Free during demo & early access</p>
+                <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>All features — lactate testing, FIT analysis, Strava sync, coaching tools — are fully available at no cost. When paid plans launch, existing users will get a generous discount.</p>
+              </div>
+              <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Sign up free →</Link>
+            </div>
+            <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18, opacity: 0.85 }}>
+              <PriceCard name="Free" price="$0" features={['Up to 5 lactate tests / month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar']} ctaLabel="Get started free" ctaTo="/signup" track={track} />
+              <PriceCard name="Pro" price="$9.99" badge="Coming soon" highlighted features={['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support']} ctaLabel="Access free now" ctaTo="/signup" track={track} />
+              <PriceCard name="Coach" price="$19.99" badge="Coming soon" features={['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export']} ctaLabel="Access free now" ctaTo="/signup" track={track} />
+            </div>
+            <style>{`@media (max-width: 900px) { .lc-price-grid { grid-template-columns: 1fr !important; } }`}</style>
+          </div>
+        </section>
+
+        {/* ── 21. FAQ ──────────────────────────────────────────────────── */}
+        <section id="faq">
+          <div className="lc-sectpad" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 60 }}>
+            <div ref={pushRef} className="lc-reveal left">
+              <Eyebrow>FAQ</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Common <em>questions</em></h2>
+              <p className="lc-lead" style={{ margin: 0 }}>Everything you need to know about lactate testing and LaChart. Can't find it? <a href="mailto:support@lachart.net" style={{ color: LC.primaryDark, fontWeight: 600 }}>Email us</a>.</p>
+            </div>
+            <div ref={pushRef} className="lc-reveal right" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {FAQ.map(item => (
+                <details key={item.q} style={{ background: '#fff', border: '1px solid ' + LC.border, borderRadius: 14, padding: '14px 18px', cursor: 'pointer' }}>
+                  <summary style={{ listStyle: 'none', fontSize: 15, fontWeight: 700, color: LC.ink, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    {item.q}
+                    <span style={{ width: 24, height: 24, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16, fontWeight: 800 }}>+</span>
+                  </summary>
+                  <p style={{ fontSize: 14, color: LC.muted, lineHeight: 1.6, margin: '12px 0 0' }}>{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+          <style>{`@media (max-width: 900px) { #faq .lc-sectpad { grid-template-columns: 1fr !important; gap: 30px !important; } }`}</style>
+        </section>
+
+        {/* ── 22. CTA ──────────────────────────────────────────────────── */}
+        <section id="cta">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal scale" style={{
+              padding: '60px 32px', borderRadius: 24, textAlign: 'center',
+              background: `linear-gradient(135deg, ${LC.primary}, ${LC.secondary})`,
+              color: '#fff',
+            }}>
+              <h2 className="lc-big" style={{ color: '#fff', margin: '0 0 14px' }}>Start your first lactate test today</h2>
+              <p style={{ fontSize: 17, opacity: 0.92, maxWidth: 580, margin: '0 auto 22px' }}>No credit card. No downloads. Just enter your test values and see your curve in seconds.</p>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <Link to="/signup" onClick={() => track('cta_start_free')} style={{ padding: '14px 28px', borderRadius: 12, background: '#fff', color: LC.primaryDark, textDecoration: 'none', fontSize: 15, fontWeight: 700, boxShadow: '0 8px 24px -6px rgba(0,0,0,.25)' }}>
+                  Start free
+                </Link>
+                <Link to="/lactate-curve-calculator" onClick={() => track('cta_try_calc')} style={{ padding: '14px 28px', borderRadius: 12, background: 'rgba(255,255,255,.12)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 700, border: '1px solid rgba(255,255,255,.3)' }}>
+                  Try the calculator
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── About gallery (preserved from prior page) ────────────────── */}
+        <Suspense fallback={null}>
+          <AboutGallerySection />
+        </Suspense>
+
+        {/* ── 23. Footer ───────────────────────────────────────────────── */}
+        <footer style={{ background: '#fff', borderTop: '1px solid ' + LC.border, padding: '40px 24px 24px', marginTop: 40 }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 30 }} className="lc-footer-grid">
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 28 }} />
+                <span style={{ fontSize: 16, fontWeight: 700, color: LC.primaryDark }}>LaChart</span>
+              </div>
+              <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.6, maxWidth: 320 }}>Lactate testing for endurance athletes and coaches. Calculate thresholds, build zones, generate PDF reports.</p>
+            </div>
+            {[
+              { h: 'Product', l: [['Features','#features'], ['Pricing','#pricing'], ['Calculator','/lactate-curve-calculator'], ['Tutorials','/how-to-use']] },
+              { h: 'Company', l: [['About','#hero'], ['Blog','/blog'], ['Contact','/contact']] },
+              { h: 'Legal',   l: [['Privacy','/privacy'], ['Terms','/terms']] },
+            ].map(col => (
+              <div key={col.h}>
+                <h6 style={{ fontSize: 11.5, fontWeight: 800, color: LC.primaryDark, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 12px' }}>{col.h}</h6>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {col.l.map(([label, href]) => (
+                    <li key={label}>
+                      {href.startsWith('/') ? <Link to={href} style={{ fontSize: 13.5, color: LC.muted, textDecoration: 'none' }}>{label}</Link>
+                                            : <a href={href} style={{ fontSize: 13.5, color: LC.muted, textDecoration: 'none' }}>{label}</a>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div style={{ maxWidth: 1280, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid ' + LC.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <span style={{ fontSize: 12, color: LC.muted }}>© {new Date().getFullYear()} LaChart. All rights reserved.</span>
+            <span style={{ fontSize: 12, color: LC.muted }}>Made for athletes who measure.</span>
+          </div>
+          <style>{`@media (max-width: 720px) { .lc-footer-grid { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 480px) { .lc-footer-grid { grid-template-columns: 1fr !important; } }`}</style>
+        </footer>
+      </div>
+    </>
+  );
+}
+
+/* ─── Floating-badge subcomponent ────────────────────────────────────── */
+function FloatingBadge({ icon, label, value, tint, style, cls }) {
+  return (
+    <div className={cls} style={{
+      position: 'absolute',
+      background: '#fff',
+      borderRadius: 14, padding: '10px 14px',
+      display: 'flex', alignItems: 'center', gap: 10,
+      boxShadow: '0 12px 28px -8px rgba(15,23,41,.25)',
+      ...style,
+    }}>
+      <span style={{ width: 32, height: 32, borderRadius: 10, background: tint + '22', color: tint, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        {icon}
+      </span>
+      <div>
+        <div style={{ fontSize: 10, color: LC.muted, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: LC.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Pricing card subcomponent ──────────────────────────────────────── */
+function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo, track }) {
+  return (
+    <div className="lc-card" style={{
+      padding: 24, position: 'relative', display: 'flex', flexDirection: 'column', gap: 14,
+      borderColor: highlighted ? LC.primary + '88' : undefined,
+      borderWidth: highlighted ? 2 : 1,
+    }}>
+      {badge && <span style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', padding: '3px 12px', borderRadius: 9999, background: '#9CA3AF', color: '#fff', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{badge}</span>}
+      <div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: badge ? LC.muted : LC.ink, margin: 0 }}>{name}</h3>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 8 }}>
+          <span style={{ fontSize: 36, fontWeight: 800, color: badge ? LC.muted : LC.ink, textDecoration: badge ? 'line-through' : 'none' }}>{price}</span>
+          <span style={{ fontSize: 14, color: LC.muted }}>/ month</span>
+        </div>
+        {badge && <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '6px 0 0' }}>Free during early access</p>}
+      </div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+        {features.map(f => (
+          <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, color: LC.muted }}>
+            <span style={{ color: LC.primary, fontWeight: 700, flexShrink: 0 }}>✓</span> {f}
+          </li>
+        ))}
+      </ul>
+      <Link to={ctaTo} onClick={() => track?.(`pricing_${name.toLowerCase()}`)} className="lc-btn-primary" style={{ justifyContent: 'center', background: highlighted ? LC.primary : '#F3F4F6', color: highlighted ? '#fff' : LC.text, boxShadow: highlighted ? undefined : 'none' }}>{ctaLabel}</Link>
+    </div>
+  );
+}
+
+/* ─── Data tables ─────────────────────────────────────────────────────── */
+const FeatIcon = ({ d }) => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>);
+
+const FEATURES = [
+  { cat: 'Testing',     title: 'Lactate Curve Generation',  body: 'Enter test values and auto-generate your curve. Calculates LT1, LT2, LTP1, LTP2, IAT, log-log, OBLA (2.0–3.5) and baseline.', icon: <FeatIcon d="M3 20h18M5 16l3-6 4 4 5-9" /> },
+  { cat: 'Testing',     title: 'Training Zone Calculation', body: 'Auto-calculate 5 training zones with precise power / pace ranges. Customised for cycling, running, swimming.', icon: <FeatIcon d="M13 10V3L4 14h7v7l9-11h-7z" /> },
+  { cat: 'Analysis',    title: 'Historical Test Comparison',body: 'Store every test and compare curves over time. Overlay multiple tests to see how thresholds shift and improve.', icon: <FeatIcon d="M12 7v5l3 2" /> },
+  { cat: 'Training',    title: 'Lactate Recording to Intervals', body: 'Tag any interval with a blood lactate sample. Each sample feeds back into your curve and your zones.', icon: <FeatIcon d="M12 3s7 8 7 13a7 7 0 1 1-14 0c0-5 7-13 7-13z" /> },
+  { cat: 'Progress',    title: 'Training Progress Tracking', body: 'Compare the same workout type over time. Track how your pace / power improves at the same lactate level.', icon: <FeatIcon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /> },
+  { cat: 'Integration', title: 'Strava & FIT File Sync',     body: 'Sync workouts from Strava or upload FIT files from Garmin, Wahoo, Polar. Full interval detection.', icon: <FeatIcon d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 15.9 6M16 16a4 4 0 1 0 0-8M12 22V10M15 13l-3-3-3 3" /> },
+  { cat: 'Training',    title: 'Training Categorization',    body: 'Auto-categorize sessions by intensity: threshold, VO₂max, endurance, tempo or recovery.', icon: <FeatIcon d="M7 7h.01M3 7v5a2 2 0 0 0 .6 1.4l7 7a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8l-7-7A2 2 0 0 0 12 3H7a4 4 0 0 0-4 4z" /> },
+  { cat: 'Training',    title: 'Coach & Athlete Management', body: 'Plan, log and review every athlete from one dashboard. Status dots, athlete switcher, bulk actions.', icon: <FeatIcon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /> },
+  { cat: 'Training',    title: 'Training Calendar',          body: 'Interactive calendar — all workouts from Strava, FIT and manual entries. View load across your timeline.', icon: <FeatIcon d="M3 10h18M8 3v4M16 3v4" /> },
+  { cat: 'Analysis',    title: 'TSS & Performance Analytics',body: 'Calculate Training Stress Score per workout. Analyze CTL / ATL / TSB to plan peaks and rest.', icon: <FeatIcon d="M9 19v-6H5v6M14 19v-9h-4M21 19V5h-3v14" /> },
+  { cat: 'Tools',       title: 'Free Lactate Calculator',    body: 'No registration required. Instantly generate a lactate curve with all threshold calculations and PDF export.', icon: <FeatIcon d="M8 7h8M8 11h2M12 11h2M16 11h.01M8 15h2M12 15h2M16 15h.01M8 19h8" /> },
+  { cat: 'Tools',       title: 'PDF Report Generation',      body: 'Branded PDF — lactate curve, HR overlay, color-coded zones, stage table and personalised recommendations.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M9 13h6M9 17h6" /> },
+];
+
+const DEEPDIVES = [
+  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: 'lactate-testing.png', url: 'lachart.net — Lactate Curve · Power vs Lactate' },
+  { eb: 'Zones',         title: 'Train <em>inside your zones</em>, not someone else\'s', lead: 'Your zones are derived from your last lactate test — power, pace and heart rate side by side. Update the test, zones update everywhere.', bullets: ['5-zone or Seiler 3-zone models', 'Power, pace and HR per sport', 'Auto-updates when a new test is recorded'], img: 'zones-generator.png', url: 'lachart.net — Training Zones' },
+  { eb: 'Progress tracking', title: 'Historical <em>test comparison</em>', lead: 'Overlay multiple lactate tests to visualize your progression. Watch your LT1 and LT2 move to higher intensities as your fitness improves.', bullets: ['Compare multiple test curves on one chart', 'Track zone shifts over training seasons', 'Visualize threshold improvements', 'Export comparison PDF reports'], img: 'lactate-testing-page.png', url: 'lachart.net — Lactate Testing' },
+  { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: 'dashboard-home.png', url: 'lachart.net — Dashboard' },
+  { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: 'training-log-page.png', url: 'lachart.net — Training' },
+  { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: 'training-calendar.png', url: 'lachart.net — Calendar' },
+  { eb: 'PDF reports',    title: 'Professional <em>test reports</em> in seconds', lead: 'Branded PDF with your lactate curve, HR overlay, color-coded zones, threshold table, previous-test comparison and training recommendations.', bullets: ['Curve + HR overlay on a single page', 'All thresholds (LTP1, LTP2, OBLA, IAT)', 'Stage-by-stage results table', 'Personalised training recommendations'], img: 'lachart-test-pdf.png', url: 'test_lisa_2026-04-12.pdf' },
+];
+
+const METHODS = [
+  { tag: 'Most used', name: 'OBLA',       sub: 'Onset of Blood Lactate Accumulation', body: 'Fixed at 4.0 mmol/L. The power output at which your blood lactate first reaches 4 mmol/L on a graded test.', eq: 'LT₂ = pace @ 4.0 mmol/L' },
+  { name: 'D<sub>max</sub>',               sub: 'Geometric inflection',                body: 'The point where your curve bends most sharply from the line connecting baseline lactate to peak. Independent of fixed values.', eq: 'LT₂ = max perpendicular distance' },
+  { name: 'IAT',                            sub: 'Individual Anaerobic Threshold',     body: 'Takes your individual baseline lactate and adds 1.5 mmol/L. More accurate for highly trained athletes with low resting values.', eq: 'LT₂ = baseline + 1.5 mmol/L' },
+  { name: 'Log-log',                        sub: 'First-rise inflection',              body: 'Plots log(lactate) vs log(intensity). The first clear break in slope marks LT1 — the aerobic threshold.', eq: 'LT₁ = first slope change' },
+];
+
+const VOICES = [
+  { img: 'cyclist-avatar.webp', name: 'Tomáš H.',  role: 'Cat 1 cyclist · Praha',     quote: "The first lactate app that doesn't feel like Excel. I do my own home tests every 4 weeks and the curve drops into my training within seconds." },
+  { img: 'coach-avatar.webp',   name: 'Markus B.', role: 'Triathlon coach · Innsbruck', quote: 'I coach 14 triathletes. The athlete switcher and the "ready for lactate" filter saved me two hours a week. Status dots are pure gold.' },
+  { img: 'runner-avatar.jpeg',  name: 'Eva K.',    role: 'Sub-elite marathoner · Brno', quote: 'I switched from spreadsheets after my first test. Seeing LT1 and LT2 land on the same chart — with the previous test underneath — is a game changer for steady-state work.' },
+];
+
+const ROLES = [
+  { id: 'athlete',
+    label: 'Athlete',
+    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>,
+    heading: 'Train yourself. <em>Tap your numbers.</em>',
+    lead: 'A calm dashboard built around today. Form and fitness at a glance, threshold trend over months, every interval ready for a lactate sample. Mobile-first.',
+    features: [
+      { title: 'Form ring · TSB', body: 'fresh, optimal, productive, overreaching, in plain English.' },
+      { title: "Today's training", body: 'above the fold — open, do, log lactate, done.' },
+      { title: 'Tap any interval', body: 'to log a blood sample — your curve learns.' },
+      { title: 'Threshold trend', body: 'over weeks — LT1 and LT2 moving right.' },
+      { title: 'Native iOS app', body: 'bottom tabs, swipe between sports, Apple Health sync.' },
     ],
-    videoSrc: '/videos/add-testing.mp4',
-    screenshot: '/screenshots/lactate-testing-page.png',
-    screenshotAlt: 'Lactate test entry form',
-    tag: 'Getting started',
+    img: 'dashboard-home.png',
+    screenLabel: 'Dashboard',
   },
-  {
-    id: 'compare-previous-test',
-    label: '2. Compare Tests',
-    title: 'Compare previous tests',
-    description: 'Overlay multiple lactate tests on one chart to see how your fitness is evolving. Watch your curve shift right as you get fitter.',
-    steps: [
-      'Open a test result',
-      'Select previous tests to overlay',
-      'See how your curve shifted right',
-      'Export a comparison PDF report',
+  { id: 'coach',
+    label: 'Coach',
+    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="11" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M14 19c0-2.5 2-4 4-4s4 1.5 4 4"/></svg>,
+    heading: 'Coach a team. <em>Without spreadsheets.</em>',
+    lead: 'Switch between athletes in one tap. Status dots show who needs attention. Plan workouts, review lactate, generate PDFs — all in one workspace.',
+    features: [
+      { title: 'Athlete switcher', body: 'jump between every athlete from one bar.' },
+      { title: 'Status dots', body: 'green / amber / red so you see who needs help today.' },
+      { title: '"Ready for lactate" filter', body: 'surfaces threshold sessions that should be measured.' },
+      { title: 'Plan + log + analyse', body: 'in one calendar — no second tool needed.' },
+      { title: 'Bulk PDF export', body: 'monthly summary across every athlete in one click.' },
     ],
-    videoSrc: '/videos/compare-previous-test.mp4',
-    screenshot: '/screenshots/lactate-curve-view.png',
-    screenshotAlt: 'Comparing lactate curves',
-    tag: 'Analysis',
+    img: 'training-calendar.png',
+    screenLabel: 'Coach calendar',
   },
-  {
-    id: 'training-page',
-    label: '3. Training Log',
-    title: 'Training log & workouts',
-    description: 'Browse your full training history, analyse individual sessions with power and heart rate graphs, and track intervals automatically.',
-    steps: [
-      'Go to Training',
-      'Click any session to open it',
-      'Review power / HR / pace graph',
-      'Check auto-detected intervals',
+  { id: 'tester',
+    label: 'Lactate tester',
+    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v7l-5 9a4 4 0 0 0 4 6h6a4 4 0 0 0 4-6l-5-9V2"/><path d="M8 2h8"/></svg>,
+    heading: 'Run lab-quality tests. <em>Without the lab software.</em>',
+    lead: 'Enter stage values, see the curve build live, hand the athlete a branded PDF before they leave. Step-test wizard, OBLA / IAT / D-max in parallel, comparison vs previous test.',
+    features: [
+      { title: 'Step-test wizard', body: 'generates the stage ladder from start + increment.' },
+      { title: 'Live curve preview', body: 'every sample you enter updates the chart instantly.' },
+      { title: 'Branded PDF', body: 'with curve, HR overlay, zones and stage table.' },
+      { title: 'Compare with previous test', body: 'overlay on the same chart.' },
+      { title: 'Free public calculator', body: 'no sign-in needed — embed in your website.' },
     ],
-    videoSrc: '/videos/training-page.mp4',
-    screenshot: '/screenshots/training-log-page.png',
-    screenshotAlt: 'Training log page',
-    tag: 'Training',
-  },
-  {
-    id: 'training-calendar',
-    label: '4. Training Calendar',
-    title: 'Training calendar',
-    description: 'See your whole training week at a glance, plan future sessions and track daily load across the month.',
-    steps: [
-      'Go to Training Calendar',
-      'Browse past & future sessions',
-      'Click a day to see session details',
-      'Monitor weekly training load',
-    ],
-    videoSrc: '/videos/training-calendar.mp4',
-    screenshot: '/screenshots/training-page.png',
-    screenshotAlt: 'Training calendar',
-    tag: 'Training',
-  },
-  {
-    id: 'dashboard-page',
-    label: '5. Dashboard',
-    title: 'Reading your fitness dashboard',
-    description: 'Understand CTL, ATL and TSB — your fitness, fatigue and form — and use the chart to time your best performances.',
-    steps: [
-      'View CTL / ATL / TSB chart',
-      'Hover to see daily values',
-      'Connect Strava for auto-updates',
-      'Plan races around peak form',
-    ],
-    videoSrc: '/videos/dashboard-page.mp4',
-    screenshot: '/screenshots/dashboard-home.png',
-    screenshotAlt: 'LaChart dashboard',
-    tag: 'Analytics',
-  },
-  {
-    id: 'coach-add-athlete',
-    label: '6. Coach — Add Athlete',
-    title: 'Add an athlete as a coach',
-    description: 'Invite athletes to your coaching workspace, assign them a plan and monitor their training and lactate tests from one dashboard.',
-    steps: [
-      'Go to Athletes → Add Athlete',
-      'Enter athlete email and send invite',
-      'Athlete accepts and joins your workspace',
-      'Monitor their tests and training log',
-    ],
-    videoSrc: '/videos/coach-add-athlete.mp4',
-    screenshot: '/screenshots/dashboard-home.png',
-    screenshotAlt: 'Coach athlete management',
-    tag: 'Coaching',
+    img: 'lactate-testing.png',
+    screenLabel: 'Test analysis',
   },
 ];
 
-// ─── Video / Screenshot player ────────────────────────────────────────────────
-const TutorialPlayer = ({ tutorial }) => {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [showControls, setShowControls] = useState(true);
-  const videoRef = useRef(null);
-  const progressRef = useRef(null);
-  const hideTimer = useRef(null);
-
-  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-
-  const togglePlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) { v.play(); setPlaying(true); } else { v.pause(); setPlaying(false); }
-  };
-
-  const onTimeUpdate = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    setCurrentTime(v.currentTime);
-    setProgress(v.duration ? (v.currentTime / v.duration) * 100 : 0);
-  };
-
-  const onEnded = () => { setPlaying(false); setProgress(0); if (videoRef.current) videoRef.current.currentTime = 0; };
-
-  const seek = (e) => {
-    const bar = progressRef.current;
-    const v = videoRef.current;
-    if (!bar || !v) return;
-    const rect = bar.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    v.currentTime = pct * v.duration;
-  };
-
-  const nudgeControls = () => {
-    setShowControls(true);
-    clearTimeout(hideTimer.current);
-    if (playing) hideTimer.current = setTimeout(() => setShowControls(false), 2500);
-  };
-
-  if (tutorial.videoSrc) {
-    return (
-      <BrowserFrame label={`lachart.net — ${tutorial.title}`}>
-        <div
-          className="relative bg-black select-none"
-          style={{ aspectRatio: '16/9' }}
-          onMouseMove={nudgeControls}
-          onMouseLeave={() => { if (playing) setShowControls(false); }}
-        >
-          {/* Video */}
-          <video
-            ref={videoRef}
-            src={tutorial.videoSrc}
-            className="w-full h-full object-cover cursor-pointer"
-            playsInline
-            onClick={togglePlay}
-            onTimeUpdate={onTimeUpdate}
-            onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
-            onEnded={onEnded}
-          />
-
-          {/* Big play overlay when paused */}
-          {!playing && (
-            <div
-              className="absolute inset-0 flex items-center justify-center bg-black/25 cursor-pointer"
-              onClick={togglePlay}
-            >
-              <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-xl">
-                <svg className="w-7 h-7 text-primary ml-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-            </div>
-          )}
-
-          {/* Controls bar */}
-          <div
-            className={`absolute bottom-0 left-0 right-0 px-3 pb-2 pt-6 transition-opacity duration-200 ${showControls || !playing ? 'opacity-100' : 'opacity-0'}`}
-            style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.7))' }}
-          >
-            {/* Progress bar */}
-            <div
-              ref={progressRef}
-              className="w-full h-2 sm:h-1.5 bg-white/30 rounded-full cursor-pointer mb-2 group touch-manipulation"
-              onClick={seek}
-            >
-              <div
-                className="h-full bg-primary rounded-full relative"
-                style={{ width: `${progress}%` }}
-              >
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </div>
-
-            {/* Play + time */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={togglePlay}
-                aria-label={playing ? 'Pause tutorial video' : 'Play tutorial video'}
-                className="text-white hover:text-primary transition-colors"
-              >
-                {playing ? (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-              <span className="text-white text-xs tabular-nums">
-                {fmt(currentTime)} / {fmt(duration)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </BrowserFrame>
-    );
-  }
-
-  return (
-    <BrowserFrame label={`lachart.net — ${tutorial.title}`}>
-      <div className="relative">
-        <LazyImage src={tutorial.screenshot} alt={tutorial.screenshotAlt} className="w-full object-cover" />
-      </div>
-    </BrowserFrame>
-  );
-};
-
-// ─── Video Tutorials Section ──────────────────────────────────────────────────
-const VideoTutorialsSection = () => {
-  const [activeId, setActiveId] = useState('lactate-test');
-  const active = videoTutorials.find(t => t.id === activeId) || videoTutorials[0];
-
-  return (
-    <section id="how-to-use" className="py-10 lg:py-16 bg-white border-t border-gray-100 scroll-mt-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Video Tutorials</p>
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
-            Learn LaChart step by step
-          </h2>
-          <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto">
-            Short walkthroughs for every key workflow — from your first lactate test to reading the dashboard.
-          </p>
-        </div>
-
-        {/* Tab strip */}
-        <div className="flex flex-wrap justify-center gap-2 mb-10">
-          {videoTutorials.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setActiveId(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm font-medium transition-all touch-manipulation min-h-[44px] ${
-                activeId === t.id
-                  ? 'border-primary-dark bg-primary-dark text-white shadow-sm'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 bg-white'
-              }`}
-            >
-              <TutorialIcon id={t.id} />
-              <span>{t.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Main content */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={active.id}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.3 }}
-            className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start"
-          >
-            {/* Video / Screenshot — wider */}
-            <div className="lg:col-span-3">
-              <TutorialPlayer tutorial={active} />
-            </div>
-
-            {/* Description + steps */}
-            <div className="lg:col-span-2 flex flex-col gap-5">
-              <div>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/25 border border-primary/50 text-sm font-semibold text-gray-900 mb-3">
-                  {active.tag}
-                </span>
-                <h3 className="text-2xl font-extrabold text-gray-900 mb-2">{active.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{active.description}</p>
-              </div>
-
-              {/* Steps */}
-              <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Steps in this tutorial</p>
-                <ol className="space-y-3">
-                  {active.steps.map((step, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                        {i + 1}
-                      </span>
-                      <span className="text-sm text-gray-700">{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-
-              {/* CTAs */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <a
-                  href="/lactate-curve-calculator"
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary-dark text-white text-sm font-semibold hover:bg-primary transition-colors shadow-sm"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                  Try it live
-                </a>
-                <a
-                  href="/signup"
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
-                >
-                  Create free account
-                </a>
-              </div>
-
-              {/* Navigation arrows */}
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  onClick={() => {
-                    const idx = videoTutorials.findIndex(t => t.id === activeId);
-                    if (idx > 0) setActiveId(videoTutorials[idx - 1].id);
-                  }}
-                  disabled={videoTutorials.findIndex(t => t.id === activeId) === 0}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                  Previous
-                </button>
-                <span className="text-xs text-gray-600">
-                  {videoTutorials.findIndex(t => t.id === activeId) + 1} / {videoTutorials.length}
-                </span>
-                <button
-                  onClick={() => {
-                    const idx = videoTutorials.findIndex(t => t.id === activeId);
-                    if (idx < videoTutorials.length - 1) setActiveId(videoTutorials[idx + 1].id);
-                  }}
-                  disabled={videoTutorials.findIndex(t => t.id === activeId) === videoTutorials.length - 1}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </AnimatePresence>
-
-      </div>
-    </section>
-  );
-};
-
-// ─── Main Component ────────────────────────────────────────────────────────────
-const About = () => {
-  const { isAuthenticated } = useAuth();
-  const [showCookieBar, setShowCookieBar] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
-  const [isMobileViewport, setIsMobileViewport] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
-  );
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !localStorage.getItem('cookiesAccepted')) {
-      setTimeout(() => setShowCookieBar(true), 1500);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobileViewport(window.innerWidth < 1024);
-    window.addEventListener('resize', handleResize, { passive: true });
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    let rafId = null;
-    const handleScroll = () => {
-      if (rafId != null) return;
-      rafId = window.requestAnimationFrame(() => {
-        const nextScrolled = window.scrollY > 120;
-        setIsScrolled(prev => (prev === nextScrolled ? prev : nextScrolled));
-        rafId = null;
-      });
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => {
-      if (rafId != null) window.cancelAnimationFrame(rafId);
-      window.removeEventListener('scroll', handleScroll);
-    };
-  }, []);
-
-  const scrollToSection = (id) => {
-    const el = document.getElementById(id);
-    if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.pageYOffset - 80, behavior: 'smooth' });
-    setIsMobileMenuOpen(false);
-  };
-
-  const handleAcceptCookies = () => { localStorage.setItem('cookiesAccepted', '1'); setShowCookieBar(false); };
-
-  const categoryMap = { 'Core Feature': 'Testing', 'Analysis': 'Analysis', 'Training': 'Testing', 'Progress': 'Analytics', 'Integration': 'Integration', 'Organization': 'Management', 'Coaching': 'Management', 'Planning': 'Planning', 'Analytics': 'Analytics', 'Tools': 'Tools' };
-
-  const features = [
-    { title: 'Lactate Curve Generation', description: 'Enter test values and automatically generate your lactate curve. Calculate LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA (2.0–3.5), and baseline adjustments.', icon: 'curve', category: 'Core Feature' },
-    { title: 'Training Zone Calculation', description: 'Auto-calculate 5 training zones with precise power/pace ranges and percentages. Customized for cycling, running, and swimming.', icon: 'zones', category: 'Core Feature' },
-    { title: 'Historical Test Comparison', description: 'Store all lactate tests and compare curves over time. Track how your zones shift and improve by overlaying multiple test curves.', icon: 'history', category: 'Analysis' },
-    { title: 'Lactate Recording to Intervals', description: 'Record lactate values directly to training intervals. Categorize workouts by intensity and build a comprehensive database.', icon: 'lactate', category: 'Training' },
-    { title: 'Training Progress Tracking', description: 'Compare the same workout type over time. Track how your pace/power improves at the same lactate level across months.', icon: 'progress', category: 'Progress' },
-    { title: 'Strava & FIT File Sync', description: 'Sync workouts from Strava automatically or upload FIT files from Garmin, Wahoo, and any device. Full interval detection, power/pace graphs, heart rate zones, and TSS analysis.', icon: 'strava', category: 'Integration' },
-    { title: 'Training Categorization', description: 'Auto-categorize workouts by intensity. Classify sessions as Threshold, VO2max, Endurance, Tempo, or Recovery.', icon: 'category', category: 'Organization' },
-    { title: 'Coach & Athlete Management', description: 'Manage multiple athletes, view historical lactate tests, track training calendars, and monitor lactate values from workouts.', icon: 'coach', category: 'Coaching' },
-    { title: 'Training Calendar', description: 'Interactive calendar showing all workouts from Strava, FIT files, and manual entries. View training load across your timeline.', icon: 'calendar', category: 'Planning' },
-    { title: 'TSS & Performance Analytics', description: 'Calculate Training Stress Score per workout. Analyze load, intensity distribution, and performance trends.', icon: 'tss', category: 'Analytics' },
-    { title: 'Free Lactate Calculator', description: 'No registration required. Instantly generate a lactate curve with all threshold calculations and export to PDF.', icon: 'calculator', category: 'Tools' },
-    { title: 'PDF Report Generation', description: 'Professional PDF reports with lactate curve, HR overlay, thresholds, color-coded zones, stage results, and recommendations.', icon: 'pdf', category: 'Tools' },
-  ];
-
-  const filteredFeatures = selectedCategory === 'All' ? features : features.filter(f => categoryMap[f.category] === selectedCategory);
-
-  const audiences = [
-    { title: 'Coaches',     description: 'Manage multiple athletes, view historical lactate tests, track training calendars, and monitor lactate values from workouts.', Icon: AcademicCapIcon,           color: 'text-violet-600',  bg: 'bg-violet-50'  },
-    { title: 'Athletes',    description: 'Generate lactate curves, calculate training zones, track progress over time, and record lactate to intervals.',               Icon: TrophyIcon,               color: 'text-amber-600',   bg: 'bg-amber-50'   },
-    { title: 'Cyclists',    description: 'Test with power, calculate zones, sync from Strava, and analyze TSS and training load.',                                     Icon: BoltIcon,                 color: 'text-primary',     bg: 'bg-primary/8'  },
-    { title: 'Triathletes', description: 'Test with pace, track improvements in same workouts over time, and compare historical tests.',                               Icon: ArrowPathRoundedSquareIcon, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  ];
-
-  const faqStructuredData = {
-    '@context': 'https://schema.org', '@type': 'FAQPage',
-    mainEntity: faqItems.map(item => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
-  };
-  const softwareApplicationStructuredData = {
-    '@context': 'https://schema.org',
-    '@type': 'SoftwareApplication',
-    name: 'LaChart',
-    applicationCategory: 'HealthApplication',
-    operatingSystem: 'Web',
-    url: 'https://lachart.net/about',
-    description: 'LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2, create training zones, and export PDF reports.',
-    offers: {
-      '@type': 'Offer',
-      price: '0',
-      priceCurrency: 'USD'
-    },
-    featureList: [
-      'Lactate curve analysis',
-      'LT1 and LT2 threshold calculation',
-      'Training zone generation',
-      'PDF lactate test reports',
-      'Coach and athlete management'
-    ]
-  };
-  const deferredSectionStyle = { contentVisibility: 'auto', containIntrinsicSize: '1px 900px' };
-  const disableScrollAnimations = prefersReducedMotion || isMobileViewport;
-  const revealProps = (initial, whileInView, transition, viewport = { once: true }) => (
-    disableScrollAnimations
-      ? { initial: false, animate: whileInView, transition: { duration: 0.2 } }
-      : { initial, whileInView, transition, viewport }
-  );
-
-  // About is a marketing/web page – redirect away on native iOS/Android
-  // Authenticated users go to dashboard; unauthenticated users go to the login page
-  if (isCapacitorNative()) return <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />;
-
-  return (
-    <main className="min-h-screen bg-white">
-      <Helmet>
-        <title>Lactate Testing App, Lactate Threshold Calculator & PDF Reports | LaChart</title>
-        <link rel="canonical" href="https://lachart.net/about" />
-        <meta name="description" content="LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2 thresholds, build training zones, and download professional PDF reports." />
-        <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-        <meta name="theme-color" content="#767EB5" />
-        <meta property="og:title" content="Lactate Testing App & Lactate Threshold Calculator | LaChart" />
-        <meta property="og:description" content="Analyze lactate tests, calculate LT1/LT2, generate training zones, and export PDF reports in one lactate testing app." />
-        <meta property="og:image" content="https://lachart.net/images/lachart1.png" />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://lachart.net/about" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Lactate Testing App & Lactate Threshold Calculator | LaChart" />
-        <meta name="twitter:description" content="Science-based lactate testing app for coaches and athletes with LT1/LT2, zones, and PDF reporting." />
-        <link
-          rel="preload"
-          as="image"
-          href="/images/lactate_curve_calculator_lachart-960.webp"
-          imageSrcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
-          imageSizes="(min-width: 1024px) 42rem, 100vw"
-        />
-        <script type="application/ld+json">{JSON.stringify(faqStructuredData)}</script>
-        <script type="application/ld+json">{JSON.stringify(softwareApplicationStructuredData)}</script>
-      </Helmet>
-
-      {/* ── Top Navbar ─────────────────────────────────────────────────────── */}
-      <nav className="w-full bg-white border-b border-gray-100 py-2 sm:py-4 px-4 sm:px-6 flex items-center justify-between z-20 relative">
-        <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-          <picture>
-            
-            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 sm:h-9 w-auto" />
-          </picture>
-          <span className="text-lg sm:text-xl font-bold text-primary-dark tracking-tight">LaChart</span>
-        </a>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <a href="/login" className="hidden sm:inline-flex text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm min-h-[44px] px-3 items-center touch-manipulation">Login</a>
-          <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary-dark text-white font-semibold rounded-lg hover:bg-primary active:opacity-90 transition-colors text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
-        </div>
-      </nav>
-
-      {/* ── Demo Banner ────────────────────────────────────────────────────── */}
-      <div className="w-full bg-gradient-to-r from-primary to-secondary py-2.5 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3">
-          <span className="text-white text-sm font-medium text-center">Try calculating lactate thresholds for free — no sign up needed</span>
-          <a href="/lactate-curve-calculator" className="inline-block px-5 py-1.5 rounded-lg bg-white text-primary-dark font-bold text-sm shadow hover:bg-gray-50 transition-all whitespace-nowrap">Try Demo</a>
-        </div>
-      </div>
-
-      {/* ── Sticky Nav ─────────────────────────────────────────────────────── */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 transition-all duration-300 ${isScrolled ? 'translate-y-0 shadow-md' : '-translate-y-full'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2">
-            <picture>
-              
-              <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-auto" />
-            </picture>
-            <span className="text-lg font-bold text-primary-dark">LaChart</span>
-          </a>
-          <div className="hidden lg:flex items-center gap-1">
-            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','Tutorials'],['pricing','Pricing'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary transition-colors touch-manipulation flex items-center gap-1">
-                {id === 'how-to-use' && (
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5v-11z"/>
-                  </svg>
-                )}
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="hidden lg:flex items-center gap-3">
-            <a href="/login" className="text-gray-600 hover:text-gray-900 font-medium text-sm min-h-[44px] inline-flex items-center px-2">Login</a>
-            <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary-dark text-white font-semibold rounded-lg hover:bg-primary text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
-          </div>
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={isMobileMenuOpen}
-            aria-controls="about-mobile-menu"
-            className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 touch-manipulation"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {isMobileMenuOpen ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /> : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />}
-            </svg>
-          </button>
-        </div>
-        {isMobileMenuOpen && (
-          <div id="about-mobile-menu" className="lg:hidden border-t border-gray-100 px-4 py-2 flex flex-col gap-0.5 bg-white">
-            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','Tutorials'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-3 text-sm text-gray-600 hover:text-primary active:bg-gray-50 rounded-lg touch-manipulation flex items-center gap-2">
-                {id === 'how-to-use' && (
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5v-11z"/>
-                  </svg>
-                )}
-                {label}
-              </button>
-            ))}
-            <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
-              <a href="/login" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm text-gray-600 touch-manipulation">Login</a>
-              <a href="/signup" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm bg-primary-dark text-white rounded-lg font-semibold touch-manipulation">Get Started</a>
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {/* ── HERO ───────────────────────────────────────────────────────────── */}
-      <section id="hero" className="relative overflow-hidden bg-white">
-
-        {/* ── Background: gradient mesh + chart grid ── */}
-        <div className="absolute inset-0 pointer-events-none">
-          {/* Soft colour blobs */}
-          <div className="absolute top-[-10%] left-[-5%] w-[min(60vw,600px)] h-[min(60vw,600px)] bg-primary/10 rounded-full blur-[100px]" />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[min(50vw,500px)] h-[min(50vw,500px)] bg-secondary/10 rounded-full blur-[90px]" />
-          <div className="absolute top-[30%] right-[20%] w-[300px] h-[300px] bg-purple-300/8 rounded-full blur-[80px]" />
-
-          {/* Chart-style grid lines — very subtle, references lactate graph aesthetic */}
-          <svg className="absolute inset-0 w-full h-full opacity-[0.035]" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="chart-grid" width="80" height="60" patternUnits="userSpaceOnUse">
-                <path d="M 80 0 L 0 0 0 60" fill="none" stroke="#767EB5" strokeWidth="1"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#chart-grid)" />
-          </svg>
-
-          {/* Diagonal accent line — like a curve on a chart */}
-          <svg className="absolute inset-0 w-full h-full opacity-[0.06]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <path d="M 0 80 Q 30 70 60 40 T 100 10" fill="none" stroke="#767EB5" strokeWidth="2" strokeDasharray="8 6"/>
-          </svg>
-        </div>
-
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center py-10 lg:py-16">
-
-            {/* ── Left: text ── */}
-            <div className="flex flex-col justify-center">
-              {/* Badge */}
-              <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/8 text-primary-dark text-xs sm:text-sm font-semibold mb-7 self-start">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                Science-based lactate analysis
-              </motion.div>
-
-              {/* Headline */}
-              <motion.h1 initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-extrabold text-gray-900 leading-[1.06] tracking-tight mb-6">
-                Train smarter<br />
-                with{' '}
-                <span className="relative inline-block">
-                  <span className="bg-gradient-to-r from-primary via-secondary to-purple-500 bg-clip-text text-transparent">lactate data</span>
-                  {/* Underline squiggle */}
-                  <svg className="absolute -bottom-1 left-0 w-full" height="6" viewBox="0 0 200 6" preserveAspectRatio="none">
-                    <path d="M0 5 Q25 0 50 5 Q75 10 100 5 Q125 0 150 5 Q175 10 200 5" fill="none" stroke="url(#squiggle-grad)" strokeWidth="2.5" strokeLinecap="round"/>
-                    <defs><linearGradient id="squiggle-grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#767EB5"/><stop offset="100%" stopColor="#599FD0"/></linearGradient></defs>
-                  </svg>
-                </span>
-              </motion.h1>
-
-              <motion.p initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                className="text-base sm:text-lg text-gray-500 max-w-lg mb-8 leading-relaxed">
-                LaChart is a lactate testing app where you can generate lactate curves, calculate LT1 &amp; LT2, build training zones, and track performance — all in one platform for athletes and coaches.
-              </motion.p>
-
-              {/* CTAs */}
-              <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                className="flex flex-col sm:flex-row gap-3 mb-10">
-                <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'hero_signup' })}
-                  className="inline-flex items-center justify-center gap-2 bg-primary-dark text-white font-bold px-7 py-3.5 rounded-xl shadow-lg shadow-primary/30 hover:bg-primary transition-all hover:-translate-y-0.5 text-sm sm:text-base">
-                  Start for Free
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </a>
-                <a href="/lactate-curve-calculator" onClick={() => trackEvent('cta_click', { label: 'hero_demo' })}
-                  className="inline-flex items-center justify-center gap-2 border border-gray-200 text-gray-700 font-semibold px-7 py-3.5 rounded-xl hover:border-primary/40 hover:bg-gray-50 transition-all text-sm sm:text-base">
-                  Try Demo — No Sign Up
-                </a>
-              </motion.div>
-
-              {/* Stat pills */}
-              <motion.div initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-                className="flex flex-wrap gap-3">
-                {[
-                  {
-                    label: 'Free to start',
-                    color: 'text-emerald-700',
-                    bg: 'bg-emerald-50 border-emerald-200',
-                    icon: (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                    ),
-                  },
-                  {
-                    label: 'LT1 · LT2 · OBLA',
-                    color: 'text-primary-dark',
-                    bg: 'bg-primary/8 border-primary/20',
-                    icon: (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                    ),
-                  },
-                  {
-                    label: 'PDF reports',
-                    color: 'text-rose-700',
-                    bg: 'bg-rose-50 border-rose-200',
-                    icon: (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    ),
-                  },
-                  {
-                    label: 'Strava sync',
-                    color: 'text-orange-700',
-                    bg: 'bg-orange-50 border-orange-200',
-                    icon: (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    ),
-                  },
-                ].map(item => (
-                  <span key={item.label} className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold ${item.bg} ${item.color}`}>
-                    {item.icon}
-                    {item.label}
-                  </span>
-                ))}
-              </motion.div>
-            </div>
-
-            {/* ── Right: hero image with floating badges ── */}
-            <motion.div initial={false} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.35 }}
-              className="relative flex items-center justify-center lg:py-12">
-
-              {/* Glow behind image */}
-              <div className="absolute inset-8 bg-gradient-to-br from-primary/20 via-secondary/15 to-purple-300/10 rounded-3xl blur-3xl" />
-
-              {/* Main image */}
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/60 w-full max-w-lg lg:max-w-none aspect-[1536/1024]">
-                <picture>
-                  <source
-                    type="image/webp"
-                    srcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-768.webp 768w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
-                    sizes="(min-width: 1024px) 42rem, 100vw"
-                  />
-                  <img
-                    src="/images/lactate_curve_calculator_lachart.jpg"
-                    alt="Lactate curve calculator — LaChart"
-                    className="w-full object-cover"
-                    srcSet="/images/lactate_curve_calculator_lachart.jpg 1536w"
-                    sizes="(min-width: 1024px) 42rem, 100vw"
-                    decoding="async"
-                  />
-                </picture>
-              </div>
-
-              {/* Floating metric badge — top left */}
-              <motion.div
-                initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.6 }}
-                className="absolute -top-3 left-2 sm:-top-4 sm:-left-4 bg-white rounded-2xl shadow-xl border border-gray-100 px-4 py-3 flex items-center gap-3"
-              >
-                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">LT2 Threshold</p>
-                  <p className="text-sm font-extrabold text-gray-900">340 W</p>
-                </div>
-              </motion.div>
-
-              {/* Floating metric badge — bottom right */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.75 }}
-                className="absolute -bottom-3 right-2 sm:-bottom-4 sm:-right-4 bg-white rounded-2xl shadow-xl border border-gray-100 px-4 py-3 flex items-center gap-3"
-              >
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">Zone 2 Power</p>
-                  <p className="text-sm font-extrabold text-gray-900">187–255 W</p>
-                </div>
-              </motion.div>
-
-              {/* Floating metric badge — mid right */}
-              <motion.div
-                initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, delay: 0.9 }}
-                className="absolute top-1/2 -translate-y-1/2 -right-3 sm:-right-6 bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 hidden sm:flex items-center gap-2.5"
-              >
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                  <BeakerIcon className="w-4 h-4 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">La baseline</p>
-                  <p className="text-sm font-extrabold text-gray-900">1.2 mmol/L</p>
-                </div>
-              </motion.div>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Bottom fade */}
-        <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white to-transparent pointer-events-none" />
-      </section>
-
-      {/* ── Social proof strip ─────────────────────────────────────────────── */}
-      <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="border-y border-gray-100 bg-gray-50 py-4" style={deferredSectionStyle}>
-        <div className="max-w-5xl mx-auto px-4 flex flex-wrap justify-center gap-x-10 gap-y-2 text-sm text-gray-500">
-          {['Cycling · Running · Triathlon · Swimming', 'LT1, LT2, OBLA, IAT, D-max, Log-log', 'Strava & FIT file sync', 'PDF reports in seconds', 'Coach & athlete workspace'].map(item => (
-            <span key={item} className="flex items-center gap-2">
-              <svg className="w-3.5 h-3.5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-              {item}
-            </span>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* ── Features Grid ──────────────────────────────────────────────────── */}
-      <section id="features" className="py-10 lg:py-16 bg-white scroll-mt-20" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Platform Features</p>
-            <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">The complete training ecosystem</h2>
-            <p className="text-gray-500 text-lg max-w-2xl mx-auto">Everything for lactate-based performance — testing, analysis, tracking, and coaching in one place.</p>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-2 mb-10">
-            {['All', 'Analysis', 'Management', 'Planning', 'Integration', 'Tools', 'Testing', 'Analytics'].map(cat => (
-              <button key={cat} onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${selectedCategory === cat ? 'border-primary-dark bg-primary-dark text-white shadow-sm' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900'}`}>
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredFeatures.map((feature, i) => (
-              <motion.div key={feature.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.05 }}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 hover:border-primary/40 hover:shadow-lg transition-all duration-300">
-                <div className="w-10 h-10 rounded-xl bg-primary/8 border border-primary/15 flex items-center justify-center mb-4 group-hover:bg-primary/12 transition-colors">
-                  <FeatureIcon type={feature.icon} />
-                </div>
-                <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-2">{feature.category}</p>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{feature.description}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 1 — Lactate Curve (text left, image right) ─────────────────────── */}
-      <section className="py-10 lg:py-20 bg-white border-t border-gray-100" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Core Feature</p>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Lactate Curve Generation</h3>
-              <p className="text-gray-500 text-lg leading-relaxed mb-6">Enter your test values — power, heart rate, lactate, or pace — and instantly generate your lactate curve. Calculate all critical thresholds in one clear, interactive graph.</p>
-              <div className="flex flex-wrap gap-2">
-                {['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'].map(tag => (
-                  <span key={tag} className="px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-primary text-sm font-medium">{tag}</span>
-                ))}
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <BrowserFrame label="Lactate Curve — Power vs Lactate">
-                <LazyImage
-                  src="/images/lactate_testing.png"
-                  webpSrcSet="/images/lactate_testing-640.webp 640w, /images/lactate_testing-960.webp 960w, /images/lactate_testing-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="Lactate curve with thresholds"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── 2 — Connect (image left, text right) ───────────────────────────── */}
-      <section id="connect" className="py-10 lg:py-20 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <BrowserFrame>
-                <LazyImage
-                  src="/images/lachart_training.png"
-                  webpSrcSet="/images/lachart_training-640.webp 640w, /images/lachart_training-960.webp 960w, /images/lachart_training-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="LaChart training sync"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Integrations</p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Sync, Link, and Connect</h2>
-              <p className="text-gray-500 text-lg mb-8 leading-relaxed">Connect Strava. Upload FIT files or sync automatically. Import all your training data including power, heart rate, cadence, and speed. Analyze TSS, training load, and performance metrics — all in one platform.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[['Strava', 'Auto-sync activities'], ['FIT Files', 'Garmin, Wahoo, etc.'], ['Manual Entry', 'Log any workout']].map(([name, sub]) => (
-                  <div key={name} className="flex items-start gap-3 bg-white border border-gray-200 rounded-xl p-4 hover:border-primary/30 hover:shadow-sm transition-all">
-                    <div className="w-2 h-2 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-gray-900 font-semibold text-sm">{name}</p>
-                      <p className="text-gray-600 text-xs mt-0.5">{sub}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Feature deep-dives ─────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-white border-t border-gray-100" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-28">
-
-          {/* 3 — Historical Test (text left, image right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-secondary font-semibold tracking-widest text-xs uppercase mb-3">Progress Tracking</p>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Historical Test Comparison</h3>
-              <p className="text-gray-500 text-lg leading-relaxed mb-6">Overlay multiple lactate tests to visualize your progression. Watch your LT1 and LT2 move to higher intensities as your fitness improves.</p>
-              <div className="space-y-3">
-                {['Compare multiple test curves on one chart', 'Track zone shifts over training seasons', 'Visualize threshold improvements', 'Export comparison PDF reports'].map(f => (
-                  <div key={f} className="flex items-center gap-3">
-                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3 h-3 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                    </div>
-                    <span className="text-gray-700 text-sm">{f}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <picture>
-                <source
-                  type="image/webp"
-                  srcSet="/images/lactate_curve-640.webp 640w, /images/lactate_curve-768.webp 768w, /images/lactate_curve-960.webp 960w, /images/lactate_curve-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 665px, 100vw"
-                />
-                <img
-                  src="/images/lactate_curve.jpg"
-                  alt="Runners training with lactate curve comparison"
-                  className="w-full rounded-2xl shadow-2xl object-cover"
-                  srcSet="/images/lactate_curve.jpg 1536w"
-                  sizes="(min-width: 1024px) 665px, 100vw"
-                />
-              </picture>
-            </motion.div>
-          </div>
-
-          {/* 4 — Training Zones (image left, text right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <picture>
-                <source
-                  type="image/webp"
-                  srcSet="/images/zones-generator-640.webp 640w, /images/zones-generator-768.webp 768w, /images/zones-generator-960.webp 960w, /images/zones-generator-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 665px, 100vw"
-                />
-                <img
-                  src="/images/zones-generator.png"
-                  alt="Runners in mountains with training zones table"
-                  className="w-full rounded-2xl shadow-2xl object-cover"
-                  srcSet="/images/zones-generator.png 1536w"
-                  sizes="(min-width: 1024px) 665px, 100vw"
-                />
-              </picture>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Training Zones</p>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">5 Personalized Zones from Your Data</h3>
-              <p className="text-gray-500 text-lg leading-relaxed mb-6">After your lactate test, LaChart automatically generates five training zones with precise power/pace and heart rate ranges — customized for cycling, running, and swimming.</p>
-              <div className="space-y-2.5">
-                {[['Zone 1–2', 'Recovery & endurance base', '#4BA87D'], ['Zone 3', 'Tempo / aerobic development', '#767EB5'], ['Zone 4', 'Lactate threshold', '#E8A838'], ['Zone 5', 'VO2max & above', '#E05347']].map(([zone, desc, color]) => (
-                  <div key={zone} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-gray-900 font-semibold text-sm w-16 flex-shrink-0">{zone}</span>
-                    <span className="text-gray-500 text-sm">{desc}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-
-          {/* 5 — Progress (text left, image right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-secondary font-semibold tracking-widest text-xs uppercase mb-3">Analysis</p>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Lactate Recording & Progress Tracking</h3>
-              <p className="text-gray-500 text-lg leading-relaxed mb-6">Record lactate values to intervals and compare the same workout type at the same lactate level to see your progress across months.</p>
-              <div className="space-y-3">
-                {['Record lactate to intervals', 'Categorize by intensity type', 'Compare same workouts over time', 'Track pace/power improvements'].map(f => (
-                  <div key={f} className="flex items-center gap-3">
-                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3 h-3 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                    </div>
-                    <span className="text-gray-700 text-sm">{f}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <BrowserFrame label="Training Analytics">
-                <LazyImage
-                  src="/images/lachart5.jpeg"
-                  webpSrcSet="/images/lachart5-640.webp 640w, /images/lachart5-960.webp 960w, /images/lachart5-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="Lactate recording"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Solutions ──────────────────────────────────────────────────────── */}
-      <section id="solutions" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="mb-12">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Solutions</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight max-w-2xl">Everything for lactate testing, coaching &amp; planning</h2>
-          </motion.div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {seoUseCases.map((useCase, i) => (
-              <motion.article key={useCase.title} id={useCase.anchor}
-                initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.4, delay: i * 0.1 }}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 hover:border-primary/40 hover:shadow-md transition-all duration-300">
-                <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary transition-colors">{useCase.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-5">{useCase.description}</p>
-                <a href={useCase.link} onClick={() => trackEvent('cta_click', { label: `about_use_case_${useCase.anchor}` })}
-                  className="inline-flex items-center gap-1.5 text-primary font-semibold text-sm">
-                  Explore <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </a>
-              </motion.article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── PDF Reports ────────────────────────────────────────────────────── */}
-      <section id="lactate-testing-pdf" className="py-10 lg:py-16 bg-white border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">PDF Reports</p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Turn any lactate test into a professional PDF in seconds</h2>
-              <p className="text-gray-500 text-lg leading-relaxed mb-8">LaChart generates branded PDF reports with everything a sports scientist or coach needs — no Excel, no manual charting.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                {[
-                  { title: "What's included", items: ['Lactate curve + HR overlay', 'All thresholds (LT1, LT2, OBLA, IAT)', '5 training zones', 'Stage-by-stage table', 'Previous test comparison'] },
-                  { title: "Who it's for", items: ['Sports medicine labs', 'Endurance coaches', 'Self-coached athletes', 'Teams & clinics'] },
-                  { title: 'Why LaChart', items: ['No Excel templates', 'Beautiful PDF layout', 'Cycling, running, swim', 'Secure cloud storage'] },
-                ].map(col => (
-                  <div key={col.title} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">{col.title}</p>
-                    <ul className="space-y-1.5">
-                      {col.items.map(item => <li key={item} className="text-gray-600 text-xs flex items-start gap-1.5"><span className="text-primary mt-0.5">•</span>{item}</li>)}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-3 items-center">
-                <a href="/lactate-curve-calculator" onClick={() => trackEvent('cta_click', { label: 'about_pdf_cta' })}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-lg shadow-primary/20">
-                  Generate free lactate PDF
-                </a>
-                <p className="text-xs text-gray-600">No card required · Export in seconds</p>
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="flex justify-center">
-              <img
-                src="/images/lactate-pdf-report.jpg"
-                alt="LaChart lactate test PDF report with lactate curve, heart rate overlay and training zones"
-                className="w-full max-w-2xl rounded-2xl shadow-2xl"
-              />
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Lactate Guide ──────────────────────────────────────────────────── */}
-      <section id="guide" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }} className="order-2 lg:order-1 flex justify-center">
-              <img
-                src="/images/lactate-threshold-testing.jpg"
-                alt="Lactate threshold testing — cyclist on indoor trainer with coach taking blood sample"
-                className="w-full max-w-2xl rounded-2xl shadow-2xl"
-              />
-            </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="order-1 lg:order-2">
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Learn</p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Master Lactate Threshold Training</h2>
-              <p className="text-gray-500 text-lg leading-relaxed mb-8">Discover the science behind lactate, understand what lactate threshold means, and learn how to improve your performance through proper training methods.</p>
-              <div className="space-y-5 mb-8">
-                {[['Complete Theory', 'Learn what lactate is, how it affects your body, and why the threshold matters for endurance performance.'], ['Testing Protocols', 'Understand different methods to measure lactate threshold, from lab tests to field estimations.'], ['Training Strategies', 'Discover proven methods to increase your lactate threshold and improve endurance performance.']].map(([title, desc]) => (
-                  <div key={title} className="flex gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                    </div>
-                    <div>
-                      <h3 className="text-gray-900 font-semibold mb-1">{title}</h3>
-                      <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <a href="/lactate-guide" onClick={() => trackEvent('cta_click', { label: 'about_guide_section' })}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-sm">
-                Read the Complete Guide
-              </a>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Real App Screenshots ───────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100" style={deferredSectionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-14">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Real App · Live screenshots</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight mb-4">See what LaChart looks like inside</h2>
-            <p className="text-gray-500 text-base max-w-xl mx-auto">These screenshots are taken directly from a real LaChart account — no mockups.</p>
-          </motion.div>
-
-          {/* Two featured screenshots side by side */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Dashboard */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
-              <BrowserFrame label="lachart.net/dashboard — Form & Fitness">
-                <LazyImage
-                  src="/screenshots/dashboard-home.png"
-                  webpSrcSet="/screenshots/dashboard-home-640.webp 640w, /screenshots/dashboard-home-960.webp 960w, /screenshots/dashboard-home-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="LaChart dashboard with Form and Fitness chart"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-              <div className="mt-3 px-1">
-                <p className="text-sm font-semibold text-gray-800">Dashboard · Form &amp; Fitness</p>
-                <p className="text-xs text-gray-500 mt-0.5">CTL, ATL, and TSB at a glance. Track your fitness, fatigue and form trends.</p>
-              </div>
-            </motion.div>
-
-            {/* Testing page */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }}>
-              <BrowserFrame label="lachart.net/testing — Lactate Testing">
-                <LazyImage
-                  src="/screenshots/lactate-testing-page.png"
-                  webpSrcSet="/screenshots/lactate-testing-page-640.webp 640w, /screenshots/lactate-testing-page-960.webp 960w, /screenshots/lactate-testing-page-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="LaChart lactate testing page with LT recommendations and trends"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-              <div className="mt-3 px-1">
-                <p className="text-sm font-semibold text-gray-800">Lactate Testing · AI Recommendations</p>
-                <p className="text-xs text-gray-500 mt-0.5">Smart protocol suggestions based on your previous test, plus LT1/LT2 trend over time.</p>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Two smaller screenshots */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.2 }}>
-              <BrowserFrame label="Training Log">
-                <LazyImage
-                  src="/screenshots/training-log-page.png"
-                  webpSrcSet="/screenshots/training-log-page-640.webp 640w, /screenshots/training-log-page-960.webp 960w, /screenshots/training-log-page-1280.webp 1280w"
-                  sizes="(min-width: 640px) 50vw, 100vw"
-                  alt="LaChart training log"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-              <div className="mt-3 px-1">
-                <p className="text-sm font-semibold text-gray-800">Training Log · Interval Analysis</p>
-                <p className="text-xs text-gray-500 mt-0.5">Every interval with power, HR and lactate in one clean log.</p>
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}>
-              <BrowserFrame label="Training Calendar">
-                <LazyImage
-                  src="/screenshots/training-page.png"
-                  webpSrcSet="/screenshots/training-page-640.webp 640w, /screenshots/training-page-960.webp 960w, /screenshots/training-page-1280.webp 1280w"
-                  sizes="(min-width: 640px) 50vw, 100vw"
-                  alt="LaChart training calendar"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-              <div className="mt-3 px-1">
-                <p className="text-sm font-semibold text-gray-800">Training Calendar · Monthly View</p>
-                <p className="text-xs text-gray-500 mt-0.5">Plan and review sessions across weeks and months with Strava sync.</p>
-              </div>
-            </motion.div>
-          </div>
-
-          <div className="text-center">
-            <a href="/signup" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-sm text-sm">
-              Try it yourself – sign up free
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <Suspense fallback={<section className="py-20 bg-white border-t border-gray-100" aria-hidden="true" style={deferredSectionStyle} />}>
-        <AboutGallerySection BrowserFrame={BrowserFrame} LazyImage={LazyImage} />
-      </Suspense>
-
-      {/* ── For Athletes & Coaches ─────────────────────────────────────────── */}
-      <section id="coaching" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">For Everyone</p>
-            <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">Built for athletes and coaches</h2>
-            <p className="text-gray-500 text-lg max-w-2xl mx-auto">Whether you're self-coached or managing a team, LaChart scales to your needs.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {audiences.map((a, i) => (
-              <motion.div key={a.title} {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 })}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 text-center hover:border-primary/40 hover:shadow-md transition-all">
-                <div className={`w-14 h-14 rounded-2xl ${a.bg} flex items-center justify-center mx-auto mb-4`}>
-                  <a.Icon className={`w-7 h-7 ${a.color}`} />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{a.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{a.description}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials ───────────────────────────────────────────────────── */}
-      <section id="testimonials" className="py-10 lg:py-16 bg-white border-t border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Testimonials</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Trusted by endurance athletes</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              { quote: "When I started training for my first ultramarathon and half Ironman, I had no idea how to train. LaChart makes every workout simple. It's synced to my devices, and all I have to do is press start!", author: "Chiara", role: "Runner, Cyclist, Triathlete" },
-              { quote: "I can rely on this software to gauge how tired I am, how much training load I'm getting, and even track lactate in relation to my scheduled training sessions.", author: "Sterling", role: "Cyclist" },
-              { quote: "I hired a coach who dialed in my training, and at the age of 52, I had my strongest, most successful season yet.", author: "Marc", role: "Cyclist" },
-              { quote: "It's worth every penny, and it gives me a huge competitive advantage. Makes you want to keep it as a secret weapon.", author: "Maciej", role: "Triathlete" },
-            ].map((t, i) => (
-              <motion.div key={i} {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 })}
-                className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col shadow-sm">
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, j) => <svg key={j} className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
-                </div>
-                <p className="text-gray-600 text-sm leading-relaxed flex-1 mb-5">"{t.quote}"</p>
-                <div className="border-t border-gray-100 pt-4">
-                  <p className="text-gray-900 font-semibold text-sm">{t.author}</p>
-                  <p className="text-gray-600 text-xs">{t.role}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Why LaChart ────────────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 overflow-x-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-start min-w-0">
-            <motion.div {...revealProps({ opacity: 0, x: -40 }, { opacity: 1, x: 0 }, { duration: 0.6 }, { once: true, margin: '-60px' })} className="min-w-0">
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Why LaChart</p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-8 tracking-tight">Everything in one platform</h2>
-              <div className="space-y-4">
-                {['Generate lactate curves from test data (power, heart rate, lactate, pace)', 'Calculate all critical thresholds: LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA (2.0–3.5)', 'Automatically determine 5 training zones with precise power/pace ranges', 'Compare historical tests and track zone shifts over time', 'Record lactate values to training intervals and categorize workouts', 'Compare same workout types over time to track progress', 'Sync with Strava — analyze TSS and training load automatically', 'Coach management: track multiple athletes from one dashboard', 'Generate professional PDF reports with lactate curve, HR overlay, and zones'].map(item => (
-                  <div key={item} className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-3 h-3 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                    </div>
-                    <span className="text-gray-700 text-sm leading-relaxed">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-            <motion.div {...revealProps({ opacity: 0, x: 40 }, { opacity: 1, x: 0 }, { duration: 0.6, delay: 0.1 }, { once: true, margin: '-60px' })} className="flex justify-center min-w-0">
-              <img
-                src="/images/why-lachart.jpg"
-                alt="Why LaChart — everything in one platform"
-                className="w-full max-w-2xl rounded-2xl shadow-2xl"
-              />
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Coach workspace ────────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-white border-t border-gray-100 overflow-x-hidden">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Collaboration</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Coach &amp; athlete workspace</h2>
-          </motion.div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-w-0">
-            <motion.div {...revealProps({ opacity: 0, x: -30 }, { opacity: 1, x: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm min-w-0">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                </div>
-                <h3 className="text-gray-900 font-bold text-lg">Coach workspace</h3>
-              </div>
-              {[['1', 'Create athlete profiles', 'Add each athlete once. Assign roles and share credentials securely.'], ['2', 'Upload trainings & tests', 'Import FIT/Strava sessions or log manual workouts. Attach lactate tests and save notes.'], ['3', 'Monitor calendars and intervals', 'Switch athletes via the dashboard. Detect intervals automatically and compare planned vs. completed.']].map(([num, title, desc]) => (
-                <div key={num} className="flex gap-4 mb-5 last:mb-0">
-                  <span className="w-7 h-7 rounded-full bg-primary text-white text-sm font-bold flex items-center justify-center flex-shrink-0">{num}</span>
-                  <div>
-                    <p className="text-gray-900 font-semibold text-sm mb-1">{title}</p>
-                    <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-                  </div>
-                </div>
-              ))}
-            </motion.div>
-            <motion.div {...revealProps({ opacity: 0, x: 30 }, { opacity: 1, x: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm min-w-0">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 rounded-lg bg-secondary/8 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                </div>
-                <h3 className="text-gray-900 font-bold text-lg">Athlete workspace</h3>
-              </div>
-              {[['A', 'Log in and connect Strava', 'Authenticate, sync devices, or type workouts manually so each training flows into the shared calendar.'], ['B', 'Record tests on site or remotely', 'Use the lactate form to input steps and intensity. Results instantly populate coach dashboards.'], ['C', 'Collaborate in real time', 'Coaches adjust training load, athletes confirm sessions. Everyone sees the same analytics and reports.']].map(([id, title, desc]) => (
-                <div key={id} className="flex gap-4 mb-5 last:mb-0">
-                  <span className="w-7 h-7 rounded-full bg-secondary text-white text-sm font-bold flex items-center justify-center flex-shrink-0">{id}</span>
-                  <div>
-                    <p className="text-gray-900 font-semibold text-sm mb-1">{title}</p>
-                    <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-                  </div>
-                </div>
-              ))}
-              <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-4">
-                <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Access control</p>
-                <p className="text-gray-600 text-sm">Athletes only see their own data. Coaches switch between athletes, admins manage the entire organization.</p>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Latest Updates ─────────────────────────────────────────────────── */}
-      <section className="py-20 bg-gray-50 border-t border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div {...revealProps({ opacity: 0, y: 24 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-10">
-            <div>
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-2">Changelog</p>
-              <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">What's new in LaChart</h2>
-            </div>
-            <a href="/changelog" className="text-primary font-semibold hover:text-primary-dark flex items-center gap-1 text-sm">View full changelog <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></a>
-          </motion.div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {updates.map((item, i) => (
-              <motion.div key={item.title} {...revealProps({ opacity: 0, y: 24 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 }, { once: true, margin: '-40px' })} className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col hover:border-primary/40 hover:shadow-md transition-all">
-                <p className="text-xs text-primary uppercase tracking-wider font-semibold mb-2">{item.date}</p>
-                <h3 className="text-lg font-bold text-gray-900 mb-3">{item.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-5 flex-1">{item.summary}</p>
-                <a href={item.link} className="inline-flex items-center gap-1.5 text-primary font-semibold text-sm">
-                  Read update: {item.title} <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </a>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Video Tutorials ────────────────────────────────────────────────── */}
-      <VideoTutorialsSection />
-
-      {/* ── Try Demo ───────────────────────────────────────────────────────── */}
-      <section className="py-20 bg-gray-50 border-t border-gray-100">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5 p-8 sm:p-12 flex flex-col md:flex-row items-center gap-10">
-            <div className="flex-1">
-              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Free Demo</p>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">Try the Lactate Test Demo</h2>
-              <p className="text-gray-600 leading-relaxed mb-2">Fill in your own test data and the app instantly generates a lactate curve with <strong>LT1</strong>, <strong>LT2</strong>, OBLA, IAT, log-log, and training zones.</p>
-              <p className="text-gray-600 text-sm mb-6">No login required. Your data won't be saved.</p>
-              <a href="/lactate-curve-calculator" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-bold hover:bg-primary transition-colors shadow-lg shadow-primary/20">
-                Try the Demo Now <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-              </a>
-            </div>
-            <div className="flex-1 w-full">
-              <BrowserFrame>
-                <LazyImage
-                  src="/images/lachart-test.png"
-                  webpSrcSet="/images/lachart-test-640.webp 640w, /images/lachart-test-960.webp 960w, /images/lachart-test-1280.webp 1280w"
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  alt="Lactate Test Demo"
-                  className="w-full object-cover"
-                />
-              </BrowserFrame>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-
-      {/* ── Pricing ────────────────────────────────────────────────────────── */}
-      <section id="pricing" className="py-14 lg:py-20 bg-white border-t border-gray-100 scroll-mt-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Pricing</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Currently completely free</h2>
-            <p className="text-gray-500 max-w-xl mx-auto">
-              LaChart is in <span className="font-semibold text-gray-700">early access</span> — everything is free while we build and improve. Paid plans are planned for the future.
-            </p>
-          </motion.div>
-
-          {/* Early access banner */}
-          <motion.div {...revealProps({ opacity: 0, y: 16 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.05 }, { once: true, margin: '-40px' })}
-            className="mb-8 rounded-2xl bg-gradient-to-r from-primary/10 via-purple-50 to-primary/5 border border-primary/20 p-5 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-              <SparklesIcon className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <p className="font-bold text-gray-900 text-base">Free during demo &amp; early access</p>
-              <p className="text-sm text-gray-600 mt-0.5">All features — lactate testing, FIT analysis, Strava sync, coaching tools — are fully available at no cost. When paid plans launch, existing users will get a generous discount.</p>
-            </div>
-            <a href="/signup" className="shrink-0 px-5 py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap">
-              Sign up free →
-            </a>
-          </motion.div>
-
-          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-70">
-            {/* Free */}
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
-              <div>
-                <h3 className="font-bold text-gray-900 text-lg">Free</h3>
-                <div className="mt-2 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900">$0</span>
-                  <span className="text-gray-400 text-sm mb-1">/ month</span>
-                </div>
-              </div>
-              <ul className="space-y-2 flex-1">
-                {['Up to 5 lactate tests/month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar'].map(f => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
-                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <a href="/signup" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
-                Get started free
-              </a>
-            </div>
-
-            {/* Pro */}
-            <div className="relative rounded-2xl border-2 border-gray-200 bg-white p-6 flex flex-col gap-4">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-gray-400 text-white rounded-full whitespace-nowrap">Coming soon</span>
-              <div>
-                <h3 className="font-bold text-gray-500 text-lg">Pro</h3>
-                <div className="mt-2 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$9.99</span>
-                  <span className="text-gray-300 text-sm mb-1">/ month</span>
-                </div>
-                <p className="text-xs text-primary font-medium mt-1">Free during early access</p>
-              </div>
-              <ul className="space-y-2 flex-1">
-                {['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support'].map(f => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-400">
-                    <span className="text-primary/60 mt-0.5 shrink-0">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <a href="/signup" className="block text-center py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm">
-                Access free now
-              </a>
-            </div>
-
-            {/* Coach */}
-            <div className="relative rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-gray-400 text-white rounded-full whitespace-nowrap">Coming soon</span>
-              <div>
-                <h3 className="font-bold text-gray-500 text-lg">Coach</h3>
-                <div className="mt-2 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$19.99</span>
-                  <span className="text-gray-300 text-sm mb-1">/ month</span>
-                </div>
-                <p className="text-xs text-primary font-medium mt-1">Free during early access</p>
-              </div>
-              <ul className="space-y-2 flex-1">
-                {['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export'].map(f => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-400">
-                    <span className="text-primary/60 mt-0.5 shrink-0">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <a href="/signup" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-500 font-semibold text-sm hover:bg-gray-50 transition-colors">
-                Access free now
-              </a>
-            </div>
-          </motion.div>
-
-          <motion.p {...revealProps({ opacity: 0 }, { opacity: 1 }, { duration: 0.4, delay: 0.3 }, { once: true })}
-            className="text-center text-xs text-gray-400 mt-6">
-            Paid plans are planned for later. Early users will be notified and offered a discount before anything changes.
-          </motion.p>
-        </div>
-      </section>
-
-      {/* ── FAQ ────────────────────────────────────────────────────────────── */}
-      <section id="faq" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
-            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">FAQ</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Frequently Asked Questions</h2>
-            <p className="text-gray-500">Everything you need to know about lactate threshold testing and LaChart</p>
-          </motion.div>
-          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="space-y-3">
-            {faqItems.map(item => <FAQItem key={item.question} {...item} />)}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Contact ────────────────────────────────────────────────────────── */}
-      <section id="contact" className="bg-white border-t border-gray-100 scroll-mt-20">
-        <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5 })}>
-          <ContactUs />
-        </motion.div>
-      </section>
-
-      {/* ── Final CTA ──────────────────────────────────────────────────────── */}
-      <section className="py-32 bg-gradient-to-br from-primary via-primary to-purple-600 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
-        <div className="relative max-w-4xl mx-auto px-4 text-center">
-          <motion.h2 {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6 })}
-            className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight">
-            Ready to go all in?
-          </motion.h2>
-          <motion.p {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6, delay: 0.1 })}
-            className="text-xl text-purple-100 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Supercharge your training data and cut through the noise with LaChart. Bring it all under one roof.
-          </motion.p>
-          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6, delay: 0.2 })}
-            className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'footer_get_started' })}
-              className="inline-flex items-center justify-center gap-2 px-10 py-4 rounded-xl bg-white text-primary font-bold text-lg hover:bg-gray-50 transition-all hover:-translate-y-0.5 shadow-xl">
-              Sign Up Free
-            </a>
-            <a href="/login" onClick={() => trackEvent('cta_click', { label: 'footer_sign_in' })}
-              className="inline-flex items-center justify-center px-10 py-4 rounded-xl border-2 border-white text-white font-bold text-lg hover:bg-white hover:text-primary transition-all">
-              Sign In
-            </a>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-gray-100 bg-white py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
-            <div className="md:col-span-2">
-              <a href="/" className="flex items-center gap-2 mb-4">
-                <img src="/images/LaChart.png" alt="LaChart" className="h-9 w-auto" />
-                <span className="text-xl font-bold text-primary-dark">LaChart</span>
-              </a>
-              <p className="text-gray-500 text-sm leading-relaxed max-w-xs">Advanced lactate testing and training analysis for endurance athletes and coaches.</p>
-            </div>
-            <div>
-              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-4">Product</h3>
-              <div className="space-y-2">
-                {[['Features', '#features'], ['How to Use', '#how-to-use'], ['Lactate Guide', '/lactate-guide'], ['Documentation', '/documentation'], ['Changelog', '/changelog']].map(([label, href]) => (
-                  <a key={label} href={href} className="block text-sm text-gray-500 hover:text-primary transition-colors">{label}</a>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-4">Tools</h3>
-              <div className="space-y-2">
-                {[['Lactate Calculator', '/lactate-curve-calculator'], ['FTP Calculator', '/ftp-calculator'], ['TSS Calculator', '/tss-calculator'], ['Zone 2 Calculator', '/zone2-calculator'], ['Training Zones', '/training-zones-calculator']].map(([label, href]) => (
-                  <a key={label} href={href} className="block text-sm text-gray-500 hover:text-primary transition-colors">{label}</a>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-gray-100 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-gray-600">© {new Date().getFullYear()} LaChart. All rights reserved.</p>
-            <div className="flex items-center gap-4">
-              <a href="/privacy" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Privacy Policy</a>
-              <a href="/terms" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Terms of Service</a>
-              <a href="/support" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Support</a>
-            </div>
-          </div>
-        </div>
-      </footer>
-
-      {/* ── Cookie bar ─────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showCookieBar && (
-          <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
-            className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5">
-            <p className="text-sm text-gray-600 mb-4">We use cookies to improve your experience. By continuing, you agree to our <a href="/privacy" className="text-gray-800 underline font-semibold hover:text-primary-dark">Privacy Policy</a>.</p>
-            <div className="flex gap-2">
-              <button onClick={handleAcceptCookies} className="flex-1 py-2 bg-primary-dark text-white font-semibold text-sm rounded-lg hover:bg-primary transition-colors">Accept</button>
-              <button onClick={() => setShowCookieBar(false)} className="flex-1 py-2 border border-gray-200 text-gray-600 font-semibold text-sm rounded-lg hover:border-gray-300 transition-colors">Decline</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </main>
-  );
-};
-
-export default About;
+const FAQ = [
+  { q: 'What is lactate threshold and why does it matter?', a: "Lactate threshold is the intensity at which lactate accumulates in your blood faster than it's cleared. It's the single most useful number for endurance training because it sets your tempo / threshold / steady-state ceiling — and it shifts as you train. LaChart finds it from a graded test in 60 seconds." },
+  { q: 'How accurate is the calculator vs a lab?', a: 'LaChart uses the same OBLA / Dmax / IAT / Log-log methods sport-science labs use. Accuracy depends on your sampling protocol — same protocol in and you get lab-comparable thresholds.' },
+  { q: 'Do I need to register to use the calculator?', a: 'No. The free calculator runs without an account. A free account adds saving, history, comparison and PDF export.' },
+  { q: 'Which sports does LaChart cover?', a: 'Cycling, running, swimming and triathlon. Power-based for bike, pace-based for run / swim, HR overlay on every chart.' },
+  { q: 'Can I generate a PDF report from my lactate test?', a: 'Yes. After a test you can download a branded PDF with the lactate curve, HR overlay, all thresholds (LTP1, LTP2, OBLA, IAT), the five training zones, stage-by-stage results, a comparison with your previous test and personalised training recommendations.' },
+  { q: 'Is my data exportable?', a: "Yes. Every account can export training history (CSV) and individual tests (PDF). We don't lock your data in." },
+];
