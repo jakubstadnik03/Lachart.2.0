@@ -573,9 +573,8 @@ export default function About() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
                   </Link>
                 </div>
-                <BrowserFrame label={`lachart.net — ${r.screenLabel}`}>
-                  <img src={`/about-design/${r.img}`} alt={r.label} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
-                </BrowserFrame>
+                <RoleCompGrid role={r.id} />
+
               </div>
             ))}
             <style>{`@media (max-width: 960px) { .lc-role-panel { grid-template-columns: 1fr !important; gap: 30px !important; } }`}</style>
@@ -738,6 +737,342 @@ function LazyImg({ src, alt, className, webpSrcSet, sizes }) {
 }
 
 /* ─── Floating-badge subcomponent ────────────────────────────────────── */
+/* ─── RoleCompGrid — illustrative product-collage fragments per role.
+   Lifted from the handoff's .comp-grid / .gc cards. Each fragment is
+   pure SVG / CSS — no real components — so it renders fast and avoids
+   coupling marketing to live app code. */
+function RoleCompGrid({ role }) {
+  if (role === 'athlete') return <AthleteCompGrid />;
+  if (role === 'coach')   return <CoachCompGrid />;
+  return <TesterCompGrid />;
+}
+
+/* shared faux-card style */
+const gcStyle = {
+  background: '#fff',
+  border: '1px solid ' + LC.border,
+  borderRadius: 18,
+  padding: 16,
+  position: 'relative',
+};
+const gcDark = {
+  ...gcStyle,
+  background: 'linear-gradient(160deg, #1F2738, #0F1729)',
+  color: '#fff',
+  border: '1px solid rgba(255,255,255,.08)',
+};
+const lblC = { fontSize: 10, fontWeight: 800, color: LC.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10, display: 'block' };
+const numF = { fontVariantNumeric: 'tabular-nums' };
+
+function AthleteCompGrid() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+      {/* Form ring */}
+      <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
+        <span style={lblC}>Form · Today</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <svg width="100" height="100" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="44" fill="none" stroke="rgba(180,190,210,.30)" strokeWidth="9"/>
+            <circle cx="55" cy="55" r="44" fill="none" stroke="#22C55E" strokeWidth="9" strokeDasharray="200 290" strokeLinecap="round" transform="rotate(-90 55 55)"/>
+            <text x="55" y="60" textAnchor="middle" fontFamily="Hind Vadodara" fontSize="22" fontWeight="800" fill={LC.ink}>+25</text>
+            <text x="55" y="76" textAnchor="middle" fontFamily="Hind Vadodara" fontSize="9" fontWeight="700" fill={LC.muted} letterSpacing="1.5">TSB</text>
+          </svg>
+          <div>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, background: 'rgba(34,197,94,.14)', color: '#047857', border: '1px solid rgba(16,185,129,.3)', fontSize: 10.5, fontWeight: 700 }}>
+              <i style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />Fresh
+            </span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
+              <div><div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fitness</div><div style={{ fontSize: 18, fontWeight: 800, color: LC.ink, ...numF }}>59</div></div>
+              <div><div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fatigue</div><div style={{ fontSize: 18, fontWeight: 800, color: LC.ink, ...numF }}>31</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {/* LT pair */}
+      <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
+        <span style={lblC}>Thresholds · Bike</span>
+        <LtPair />
+      </section>
+      {/* Daily TSS bars */}
+      <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ ...lblC, margin: 0 }}>Daily TSS · this week</span>
+          <span style={{ fontSize: 10.5, color: LC.muted, fontWeight: 600 }}>27.4 — 3.5</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, alignItems: 'end', height: 88 }}>
+          {[['M',78,97],['T',92,109],['W',82,101],['T',85,103],['F',74,93],['S',10,14],['S',4,null]].map(([d, h, v], i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                <div style={{ width: 18, height: `${h}%`, background: h < 20 ? LC.border : LC.primary, borderRadius: 3 }} />
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 700, color: LC.muted }}>{d}</span>
+              <span style={{ fontSize: 9, color: LC.muted, ...numF }}>{v ?? '·'}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* LT2 stat */}
+      <section style={{ ...gcStyle, gridColumn: 'span 4' }}>
+        <span style={lblC}>LT2 trend</span>
+        <div style={{ fontSize: 32, fontWeight: 800, color: LC.ink, ...numF }}>418<small style={{ fontSize: 14, color: LC.muted, marginLeft: 4 }}>W</small></div>
+        <div style={{ fontSize: 11, color: LC.muted, marginBottom: 8 }}><b style={{ color: LC.green }}>+ 12 W</b> over 8 tests</div>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {[0,0,1,1,1,1,1,1].map((on, i) => (
+            <span key={i} style={{ flex: 1, height: 8, borderRadius: 2, background: on ? LC.primary : LC.border }} />
+          ))}
+        </div>
+      </section>
+      {/* Weekly KPIs */}
+      <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
+        <span style={lblC}>Weekly summary</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[['Time','16h 42m'],['TSS','517'],['Distance','369 km'],['Sessions','13']].map(([l,v]) => (
+            <div key={l} style={{ padding: '8px 10px', borderRadius: 10, background: '#F8FAFD', border: '1px solid ' + LC.border }}>
+              <div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: LC.ink, ...numF }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* iOS tabs (dark) */}
+      <section style={{ ...gcDark, gridColumn: 'span 4' }}>
+        <span style={{ ...lblC, color: 'rgba(255,255,255,.5)' }}>iOS</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: 'rgba(255,255,255,.06)', borderRadius: 14, padding: 8, border: '1px solid rgba(255,255,255,.08)', marginTop: 6 }}>
+          {[{ on: true, label: 'Home', d: 'M3 11l9-8 9 8M5 10v10h14V10' },
+            { label: 'Test', d: 'M4 4h16v16H4zM4 12h16M12 4v16' },
+            { label: 'Cal', d: 'M3 7h18v14H3zM3 11h18M8 3v4M16 3v4' },
+            { label: 'Train', d: 'M13 2L4 14h7l-1 8 9-12h-7l1-8z' }].map((t, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 0', color: t.on ? '#A5B4FC' : 'rgba(255,255,255,.5)' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={t.d} /></svg>
+              <span style={{ fontSize: 9, fontWeight: 700 }}>{t.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CoachCompGrid() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+      {/* Athletes header */}
+      <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
+        <span style={lblC}>Athletes · header</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div>
+            <h3 style={{ fontSize: 20, margin: 0, color: LC.ink, fontWeight: 800, letterSpacing: '-0.02em' }}>Athletes</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 11.5, color: LC.muted }}>3 athletes in your team</p>
+          </div>
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 11, background: `linear-gradient(160deg, ${LC.accent}, #6D4FBE)`, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', boxShadow: '0 6px 14px -6px rgba(140,103,217,.55)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="4"/><path d="M3 21c0-4 3-7 6-7s6 3 6 7M17 7v6M14 10h6"/></svg>
+            Add
+          </button>
+        </div>
+      </section>
+      {/* Athlete switcher */}
+      <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ ...lblC, margin: 0 }}>Coach · switcher</span>
+          <span style={{ fontSize: 10.5, color: LC.muted, fontWeight: 600 }}>Manage →</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[
+            { name: 'Jan',   grad: 'linear-gradient(135deg,#7C3AED,#3B82F6)' },
+            { name: 'Filip', grad: 'linear-gradient(135deg,#92400E,#1F2738)', dot: 'fresh', on: true },
+            { name: 'Lea',   grad: 'linear-gradient(135deg,#FCD34D,#3B82F6)', dot: 'stale' },
+            { name: 'Jakub', grad: 'linear-gradient(135deg,#22C55E,#3B82F6)', dot: 'fresh' },
+          ].map((a, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: a.on ? 1 : 0.85 }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: a.grad, border: a.on ? `2px solid ${LC.accent}` : '2px solid transparent' }} />
+                {a.dot && <span style={{ position: 'absolute', bottom: 0, right: 0, width: 8, height: 8, borderRadius: '50%', background: a.dot === 'fresh' ? '#22C55E' : '#F59E0B', border: '1.5px solid #fff' }} />}
+              </div>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.text }}>{a.name}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* Athlete card */}
+      <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
+        <span style={lblC}>Athlete card</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg,#92400E,#1F2738)', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: LC.ink }}>Filip Stádník</div>
+            <div style={{ fontSize: 11.5, color: LC.muted, marginTop: 1 }}>fstadnik01@gmail.com</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+              <span style={{ padding: '2px 8px', borderRadius: 9999, background: 'rgba(140,103,217,.12)', color: LC.accent, fontSize: 10.5, fontWeight: 700 }}>triathlon</span>
+              <span style={{ fontSize: 11, color: LC.muted }}>183 cm · 73 kg</span>
+            </div>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: LC.accent, fontWeight: 700 }}>
+            Profile
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </div>
+      </section>
+      {/* Ready for lactate */}
+      <section style={{ ...gcStyle, gridColumn: 'span 4' }}>
+        <span style={lblC}>Ready for lactate</span>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(140,103,217,.06)', borderRadius: 12 }}>
+          <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: LC.accent }} />
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(140,103,217,.16)', color: LC.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 4 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="17" r="3.5"/><circle cx="18" cy="17" r="3.5"/><path d="M6 17l4-8h5l3 8M10 9l-1-3h3"/></svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: LC.ink }}>Bike Threshold · Filip</div>
+            <div style={{ fontSize: 10.5, color: LC.muted }}>Today · 2h 30m · 23 laps</div>
+          </div>
+        </div>
+      </section>
+      {/* Weekly KPIs */}
+      <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
+        <span style={lblC}>Filip · this week</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[['Time','12h 18m'],['TSS','432'],['Sessions','9'],['Lactate','5×']].map(([l,v]) => (
+            <div key={l} style={{ padding: '8px 10px', borderRadius: 10, background: '#F8FAFD', border: '1px solid ' + LC.border }}>
+              <div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: LC.ink, ...numF }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* Form ring stale */}
+      <section style={{ ...gcStyle, gridColumn: 'span 4' }}>
+        <span style={lblC}>Filip · form</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <svg width="64" height="64" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="44" fill="none" stroke="rgba(180,190,210,.30)" strokeWidth="9"/>
+            <circle cx="55" cy="55" r="44" fill="none" stroke="#F59E0B" strokeWidth="9" strokeDasharray="60 290" strokeLinecap="round" transform="rotate(-90 55 55)"/>
+            <text x="55" y="62" textAnchor="middle" fontFamily="Hind Vadodara" fontSize="20" fontWeight="800" fill={LC.ink}>–8</text>
+          </svg>
+          <div>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, background: 'rgba(254,202,202,.35)', color: '#B84238', border: '1px solid rgba(239,68,68,.30)', fontSize: 10.5, fontWeight: 700 }}>
+              <i style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B' }} />Stale
+            </span>
+            <div style={{ fontSize: 10.5, color: LC.muted, marginTop: 4, lineHeight: 1.4 }}>High load over 3 weeks — suggest recovery</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TesterCompGrid() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+      {/* PDF hero */}
+      <section style={{ ...gcStyle, gridColumn: 'span 12' }}>
+        <span style={lblC}>PDF report · ready to export</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'linear-gradient(135deg, #fff, ' + LC.primaryTint + ')', border: '1px solid ' + LC.border }}>
+          <div style={{ width: 56, height: 70, borderRadius: 8, background: '#fff', border: '1px solid ' + LC.border, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: LC.secondary }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+            <span style={{ fontSize: 8, fontWeight: 800, marginTop: 4, letterSpacing: '0.1em' }}>PDF</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h5 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: LC.ink }}>test_filip_2026-04-12.pdf</h5>
+            <p style={{ fontSize: 11.5, color: LC.muted, margin: '4px 0 0', lineHeight: 1.4 }}>Lactate curve · HR overlay · 5 zones · 4 thresholds · stage table · recommendations</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              {['9 stages','LT1 374 W','LT2 418 W','2 pages'].map(t => (
+                <span key={t} style={{ fontSize: 9.5, fontWeight: 700, color: LC.primaryDark, padding: '2px 8px', borderRadius: 9999, background: 'rgba(118,126,181,.12)' }}>{t}</span>
+              ))}
+            </div>
+          </div>
+          <button style={{ padding: '9px 14px', borderRadius: 11, background: LC.primaryDark, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, boxShadow: '0 6px 14px -4px rgba(118,126,181,.55)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v14M5 12l7 7 7-7"/></svg>
+            Export
+          </button>
+        </div>
+      </section>
+      {/* Lactate curve SVG */}
+      <section style={{ ...gcStyle, gridColumn: 'span 7' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: LC.ink, letterSpacing: '-0.01em' }}>Last lactate test</h3>
+            <div style={{ fontSize: 10.5, color: LC.muted, marginTop: 2 }}>Mar 9 · 9 stages · 230→470 W</div>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 9999, background: 'rgba(239,68,68,.10)', color: '#B84238', fontSize: 10.5, fontWeight: 700 }}>
+            <i style={{ width: 5, height: 5, borderRadius: '50%', background: '#EF4444' }} />LT2 418 W
+          </span>
+        </div>
+        <svg viewBox="0 0 420 160" preserveAspectRatio="none" style={{ width: '100%', height: 130 }}>
+          <defs>
+            <linearGradient id="lc-fill-about" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={LC.primaryDark} stopOpacity="0.20"/>
+              <stop offset="100%" stopColor={LC.primaryDark} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <line x1="14" y1="142" x2="406" y2="142" stroke="rgba(15,23,41,.10)" strokeWidth="1"/>
+          <line x1="245" y1="20" x2="245" y2="142" stroke="#10B981" strokeWidth="1.8" strokeDasharray="4 4"/>
+          <line x1="310" y1="20" x2="310" y2="142" stroke="#EF4444" strokeWidth="1.8" strokeDasharray="4 4"/>
+          <path d="M 14 130 C 50 128 80 126 110 124 C 140 122 170 116 200 106 C 230 96 260 76 290 56 C 320 36 350 24 406 14 L 406 142 L 14 142 Z" fill="url(#lc-fill-about)"/>
+          <path d="M 14 130 C 50 128 80 126 110 124 C 140 122 170 116 200 106 C 230 96 260 76 290 56 C 320 36 350 24 406 14" fill="none" stroke={LC.primaryDark} strokeWidth="2.6" strokeLinecap="round"/>
+          <g fill="#fff" stroke={LC.primaryDark} strokeWidth="2">
+            <circle cx="22" cy="130" r="4"/><circle cx="62" cy="128" r="4"/><circle cx="106" cy="124" r="4"/><circle cx="155" cy="119" r="4"/><circle cx="200" cy="106" r="4"/><circle cx="245" cy="92" r="4"/><circle cx="280" cy="74" r="4"/><circle cx="320" cy="50" r="4"/><circle cx="370" cy="26" r="4"/><circle cx="402" cy="14" r="4"/>
+          </g>
+          <text x="245" y="14" textAnchor="middle" fontFamily="Hind Vadodara" fontSize="9" fontWeight="800" fill="#047857">LT1</text>
+          <text x="310" y="14" textAnchor="middle" fontFamily="Hind Vadodara" fontSize="9" fontWeight="800" fill="#B84238">LT2</text>
+        </svg>
+      </section>
+      {/* Zones table */}
+      <section style={{ ...gcStyle, gridColumn: 'span 5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ ...lblC, margin: 0 }}>Zones · Power · HR</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {[
+            { z: 'Z1', col: '#3B82F6', pwr: '175–315 W', hr: '71–127' },
+            { z: 'Z2', col: '#10B981', pwr: '315–350 W', hr: '127–141' },
+            { z: 'Z3', col: '#F59E0B', pwr: '350–392 W', hr: '141–150' },
+            { z: 'Z4', col: '#F97316', pwr: '396–429 W', hr: '152–164' },
+            { z: 'Z5', col: '#EF4444', pwr: '433–536 W', hr: '166–205' },
+          ].map(r => (
+            <div key={r.z} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 8, alignItems: 'center', padding: '4px 0', borderBottom: '1px dashed ' + LC.border, fontSize: 11 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: r.col, fontWeight: 800 }}>
+                <i style={{ width: 6, height: 6, borderRadius: '50%', background: r.col }} />{r.z}
+              </span>
+              <span style={{ fontWeight: 700, color: LC.ink, ...numF }}>{r.pwr}</span>
+              <span style={{ color: LC.muted, ...numF }}>{r.hr}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* LT pair */}
+      <section style={{ ...gcStyle, gridColumn: 'span 12' }}>
+        <span style={lblC}>Thresholds</span>
+        <LtPair />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+          {[['Base La','1.2 mmol'],['Peak La','8.0 mmol']].map(([l,v]) => (
+            <div key={l} style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,.55)', border: '1px solid ' + LC.border, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, color: LC.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: LC.ink, ...numF }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* Shared LT1 / LT2 pair card */
+function LtPair() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div style={{ padding: 12, borderRadius: 12, background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.25)' }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#047857', letterSpacing: '0.08em', textTransform: 'uppercase' }}>LT1</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: LC.ink, ...numF }}>374<small style={{ fontSize: 11, color: LC.muted, marginLeft: 3 }}>W</small></div>
+        <div style={{ fontSize: 10.5, color: LC.muted }}><b style={{ color: LC.text }}>2.7</b> mmol · <b style={{ color: LC.text }}>146</b> bpm</div>
+      </div>
+      <div style={{ padding: 12, borderRadius: 12, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.25)' }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#B84238', letterSpacing: '0.08em', textTransform: 'uppercase' }}>LT2</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: LC.ink, ...numF }}>418<small style={{ fontSize: 11, color: LC.muted, marginLeft: 3 }}>W</small></div>
+        <div style={{ fontSize: 10.5, color: LC.muted }}><b style={{ color: LC.text }}>4.2</b> mmol · <b style={{ color: LC.text }}>160</b> bpm</div>
+      </div>
+    </div>
+  );
+}
+
 function FloatingBadge({ icon, label, value, tint, style, cls }) {
   return (
     <div className={cls} style={{
