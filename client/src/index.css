@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── About / marketing design tokens (lifted from design handoff) ──
+   Available globally so any component can reuse them via CSS variables. */
+:root {
+  /* Brand */
+  --lachart-primary:       #767EB5;
+  --lachart-primary-dark:  #5E6590;
+  --lachart-primary-light: #B8BDDB;
+  --lachart-primary-tint:  #EEF0F8;
+  --lachart-secondary:     #599FD0;
+  --lachart-tertiary:      #7BC2EB;
+  --lachart-accent:        #7C3AED;
+  --lachart-coral:         #FF6B4A;
+  /* Text */
+  --lachart-ink:    #0F1729;
+  --lachart-text:   #1F2738;
+  --lachart-muted:  #6B7280;
+  --lachart-soft:   #F3F4F6;
+  --lachart-border: rgba(180,190,210,.30);
+  /* Status */
+  --lachart-green:  #10B981;
+  --lachart-red:    #EF4444;
+  --lachart-yellow: #F59E0B;
+}
+
+/* Hind Vadodara — used by the About / landing page. Self-hosted via Google
+   Fonts CDN with preconnect declared in index.html. */
+@import url('https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700;800&display=swap');
+
+.font-hind { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; }
+
+/* Reduced-motion accessibility — drop transforms / floats / pulses on the
+   About page when the user prefers reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .lc-reveal, .lc-reveal * { transition: none !important; transform: none !important; opacity: 1 !important; }
+  .lc-float, .lc-pulse { animation: none !important; }
+}
 
 html {
     height: 100%;
