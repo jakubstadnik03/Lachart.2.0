@@ -18,7 +18,7 @@
 //   15. Integrations (Strava / FIT / Manual)
 //   16. Testimonials
 //   17. What's new (changelog)
-//   18. Roles tabs (Athlete / Coach / Tester)
+//   5b. Workspaces tabs (Athlete / Coach / Tester) — moved up
 //   19. App download (App Store + Play badges)
 //   20. Pricing — Free / Pro / Coach (kept verbatim from prior About so
 //       any IAP-sensitive copy stays unchanged for the web)
@@ -327,7 +327,7 @@ export default function About() {
   // Scroll-spy — highlight the nav link whose section is currently in view.
   const [activeSection, setActiveSection] = useState('hero');
   useEffect(() => {
-    const ids = ['hero', 'features', 'solutions', 'methodology', 'connect', 'voices', 'roles', 'pricing', 'faq'];
+    const ids = ['hero', 'solutions', 'workspaces', 'features', 'methodology', 'connect', 'voices', 'pricing', 'faq'];
     const sections = ids
       .map(id => document.getElementById(id))
       .filter(Boolean);
@@ -395,9 +395,9 @@ export default function About() {
             </Link>
             <div className="lc-nav-links" style={{ display: 'flex', gap: 4 }}>
               {[
-                ['features',    'Features'],
                 ['solutions',   'For whom'],
-                ['roles',       'Roles'],
+                ['workspaces',  'Workspaces'],
+                ['features',    'Features'],
                 ['methodology', 'Science'],
                 ['connect',     'Connect'],
                 ['voices',      'Voices'],
@@ -529,6 +529,62 @@ export default function About() {
               @media (max-width: 900px) { .lc-aud-grid { grid-template-columns: repeat(2, 1fr) !important; } }
               @media (max-width: 540px) { .lc-aud-grid { grid-template-columns: 1fr !important; } }
             `}</style>
+          </div>
+        </section>
+
+        {/* ── 5b. Workspaces (was section 18) — moved up so visitors see the role split before scrolling past Audiences. */}
+        <section id="workspaces">
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
+              <Eyebrow>Three workspaces · one app</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>A view <em>built for your role</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart adapts to how you use it — train yourself, coach a team, or run lactate tests for clients. Same data, three completely different shells.</p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 30, flexWrap: 'wrap' }}>
+              {ROLES.map(r => (
+                <button key={r.id} onClick={() => setRole(r.id)} style={{
+                  padding: '10px 22px', borderRadius: 9999,
+                  border: role === r.id ? 'none' : '1px solid ' + LC.border,
+                  background: role === r.id ? LC.primaryDark : '#fff',
+                  color: role === r.id ? '#fff' : LC.muted,
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  transition: 'all .2s',
+                }}>
+                  {r.icon}
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {ROLES.filter(r => r.id === role).map(r => (
+              <div key={r.id} className="lc-role-panel" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
+                <div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 9999, background: '#fff', border: '1px solid ' + LC.border, fontSize: 12, fontWeight: 700, color: LC.primaryDark, marginBottom: 14 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{r.icon}</span>
+                    For {r.label.toLowerCase()}
+                  </span>
+                  <h3 className="lc-big" style={{ fontSize: '28px !important', margin: '8px 0 14px' }} dangerouslySetInnerHTML={{ __html: r.heading }} />
+                  <p className="lc-lead" style={{ margin: '0 0 18px' }}>{r.lead}</p>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {r.features.map(f => (
+                      <li key={f.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: LC.text }}>
+                        <span style={{ width: 22, height: 22, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                        </span>
+                        <span><b style={{ color: LC.ink }}>{f.title}</b> — {f.body}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/signup" onClick={() => track(`role_${r.id}_start`)} className="lc-btn-primary">
+                    Start as {r.label.toLowerCase()}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
+                  </Link>
+                </div>
+                <RoleCompGrid role={r.id} />
+
+              </div>
+            ))}
+            <style>{`@media (max-width: 960px) { .lc-role-panel { grid-template-columns: 1fr !important; gap: 30px !important; } }`}</style>
           </div>
         </section>
 
@@ -727,62 +783,6 @@ export default function About() {
                 </article>
               ))}
             </div>
-          </div>
-        </section>
-
-        {/* ── 18. Roles tab ────────────────────────────────────────────── */}
-        <section id="roles">
-          <div className="lc-sectpad">
-            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
-              <Eyebrow>Three workspaces · one app</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>A view <em>built for your role</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart adapts to how you use it — train yourself, coach a team, or run lactate tests for clients. Same data, three completely different shells.</p>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 30, flexWrap: 'wrap' }}>
-              {ROLES.map(r => (
-                <button key={r.id} onClick={() => setRole(r.id)} style={{
-                  padding: '10px 22px', borderRadius: 9999,
-                  border: role === r.id ? 'none' : '1px solid ' + LC.border,
-                  background: role === r.id ? LC.primaryDark : '#fff',
-                  color: role === r.id ? '#fff' : LC.muted,
-                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                  transition: 'all .2s',
-                }}>
-                  {r.icon}
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            {ROLES.filter(r => r.id === role).map(r => (
-              <div key={r.id} className="lc-role-panel" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
-                <div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 9999, background: '#fff', border: '1px solid ' + LC.border, fontSize: 12, fontWeight: 700, color: LC.primaryDark, marginBottom: 14 }}>
-                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{r.icon}</span>
-                    For {r.label.toLowerCase()}
-                  </span>
-                  <h3 className="lc-big" style={{ fontSize: '28px !important', margin: '8px 0 14px' }} dangerouslySetInnerHTML={{ __html: r.heading }} />
-                  <p className="lc-lead" style={{ margin: '0 0 18px' }}>{r.lead}</p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {r.features.map(f => (
-                      <li key={f.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: LC.text }}>
-                        <span style={{ width: 22, height: 22, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                        </span>
-                        <span><b style={{ color: LC.ink }}>{f.title}</b> — {f.body}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link to="/signup" onClick={() => track(`role_${r.id}_start`)} className="lc-btn-primary">
-                    Start as {r.label.toLowerCase()}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
-                  </Link>
-                </div>
-                <RoleCompGrid role={r.id} />
-
-              </div>
-            ))}
-            <style>{`@media (max-width: 960px) { .lc-role-panel { grid-template-columns: 1fr !important; gap: 30px !important; } }`}</style>
           </div>
         </section>
 
