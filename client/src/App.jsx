@@ -37,6 +37,7 @@ const TrainingHistory = lazy(() => import('./components/TrainingHistory'));
 const AcceptCoachInvitation = lazy(() => import('./pages/AcceptCoachInvitation'));
 const TestingWithoutLogin = lazy(() => import('./pages/TestingWithoutLogin'));
 const About = lazy(() => import('./pages/About'));
+const Tutorials = lazy(() => import('./pages/Tutorials'));
 const Documentation = lazy(() => import('./pages/Documentation'));
 const LactateGuide = lazy(() => import('./pages/LactateGuide'));
 const BlogIndex = lazy(() => import('./pages/blog/BlogIndex'));
@@ -222,6 +223,8 @@ function AppRoutes() {
         {/* Veřejné routy */}
         <Route path="/" element={isCapacitorNative() ? <LoginPage /> : <About />} />
         <Route path="/about" element={<About />} />
+        <Route path="/how-to-use" element={<Tutorials />} />
+        <Route path="/tutorials" element={<Tutorials />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/login" element={<LoginPage />} />
