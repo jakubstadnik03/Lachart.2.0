@@ -994,7 +994,10 @@ export default function DashboardPage() {
       return { imported: 0, updated: 0, error: 'Strava not connected' };
     }
     try {
-      const result = await autoSyncStravaActivities();
+      // Pull-to-refresh / button-tap → force=true bypasses the server's
+      // 60-second cooldown so the user always sees fresh data, even right
+      // after a webhook event.
+      const result = await autoSyncStravaActivities({ force: true });
       if (result?.error) {
         addNotification(`Strava sync: ${result.error}`, 'error');
         return result;

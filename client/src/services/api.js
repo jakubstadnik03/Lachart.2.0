@@ -1152,14 +1152,16 @@ export const syncStravaActivities = async (since=null) => {
 let stravaAutoSyncInFlight = false;
 let garminAutoSyncInFlight = false;
 
-export const autoSyncStravaActivities = async () => {
+export const autoSyncStravaActivities = async ({ force = false } = {}) => {
   // Prevent multiple simultaneous syncs
   if (stravaAutoSyncInFlight) {
     console.log('Strava auto-sync already in progress, skipping...');
     return { imported: 0, updated: 0 };
   }
 
-  // Check for 429 errors in recent attempts (prevent rapid retries)
+  // Check for 429 errors in recent attempts (prevent rapid retries).
+  // User-initiated `force` syncs still respect the 429 wall — Strava itself
+  // is rate-limiting us so we can't talk to it anyway.
   const last429Key = 'strava_auto_sync_last_429';
   const last429 = localStorage.getItem(last429Key);
   const now = Date.now();
@@ -1170,7 +1172,7 @@ export const autoSyncStravaActivities = async () => {
 
   stravaAutoSyncInFlight = true;
   try {
-    const { data } = await api.post('/api/integrations/strava/auto-sync', {}, {
+    const { data } = await api.post('/api/integrations/strava/auto-sync', { force: !!force }, {
       timeout: 120000 // 2 minutes timeout for auto-sync
     });
     // Clear 429 flag on success
