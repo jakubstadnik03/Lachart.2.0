@@ -4118,6 +4118,11 @@ const FitAnalysisPage = () => {
             (selectedStrava ? `strava-${selectedStrava.id || selectedStrava.stravaId}` : null) ||
             (localStorage.getItem('fitAnalysis_selectedStravaId') ? `strava-${localStorage.getItem('fitAnalysis_selectedStravaId')}` : null)
           }
+          // When the page is opened via a deep-link path (notification tap,
+          // shared URL) auto-open the matching ActivityFullModal so the user
+          // sees the same modal as when they tap a training in the calendar
+          // — instead of just highlighting the row in the side panel.
+          autoOpenSelectedActivity={!!activityId}
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={handleCalendarActivitySelect}
           onAddLactate={handleCalendarAddLactate}

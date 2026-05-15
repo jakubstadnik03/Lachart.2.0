@@ -2923,6 +2923,10 @@ export default function CalendarView({
   activities = [],
   onSelectActivity,
   selectedActivityId,
+  /** When true, the first time `selectedActivityId` matches an activity
+   *  open ActivityFullModal automatically — used by deep-links from
+   *  push notifications so tap opens the same modal as a calendar tap. */
+  autoOpenSelectedActivity = false,
   initialAnchorDate,
   user = null,
   onMonthChange = null,
@@ -3305,6 +3309,11 @@ export default function CalendarView({
     }
   }, [effectiveSelectedId, activities]);
 
+  // Track of which selected id has already triggered the auto-open below.
+  // Lives up here (above plannedByDay declaration) because the effect
+  // itself needs to sit after plannedByDay is defined.
+  const autoOpenedIdRef = useRef(null);
+
   function sportToBucket(sport) {
     const s = String(sport || '').toLowerCase();
     if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
@@ -3402,6 +3411,27 @@ export default function CalendarView({
     });
     return map;
   }, [plannedWorkouts, categoryFilter]);
+
+  // Deep-link mode: when called via push-notification deep-link the parent
+  // sets `autoOpenSelectedActivity` so we open ActivityFullModal the moment
+  // the activity is found in the loaded list. Only fires once per selected
+  // id so navigating elsewhere afterwards doesn't reopen the modal.
+  useEffect(() => {
+    if (!autoOpenSelectedActivity) return;
+    if (!effectiveSelectedId || activities.length === 0) return;
+    if (autoOpenedIdRef.current === effectiveSelectedId) return;
+    const match = activities.find(a => {
+      const id = a.id || a._id;
+      return String(id) === String(effectiveSelectedId);
+    });
+    if (!match) return;
+    const actDate = match.date || match.timestamp || match.startDate || match.start_time;
+    const dayKey  = actDate ? getLocalDateString(new Date(actDate)) : null;
+    const dayPws  = dayKey ? (plannedByDay.get(dayKey) || []) : [];
+    const matchPw = dayPws.find(pw => sportMatches(pw.sport, match.sport || match.type || '')) || null;
+    setActivityModal({ activity: match, plannedWorkout: matchPw });
+    autoOpenedIdRef.current = effectiveSelectedId;
+  }, [autoOpenSelectedActivity, effectiveSelectedId, activities, plannedByDay]);
 
   // Auto-rename activities when they get paired with a planned workout
   const autoRenamedRef = useRef(new Set()); // track activity IDs already renamed this session
