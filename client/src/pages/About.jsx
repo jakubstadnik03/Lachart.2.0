@@ -683,7 +683,7 @@ export default function About() {
 
         {/* ── About gallery (preserved from prior page) ────────────────── */}
         <Suspense fallback={null}>
-          <AboutGallerySection />
+          <AboutGallerySection BrowserFrame={BrowserFrame} LazyImage={LazyImg} />
         </Suspense>
 
         {/* ── 23. Footer ───────────────────────────────────────────────── */}
@@ -722,6 +722,18 @@ export default function About() {
         </footer>
       </div>
     </>
+  );
+}
+
+/* ─── LazyImg — minimal <picture>/<img> fallback so the legacy
+   AboutGallerySection (which expects a LazyImage prop) keeps working
+   without pulling in the old large component definition. */
+function LazyImg({ src, alt, className, webpSrcSet, sizes }) {
+  return (
+    <picture>
+      {webpSrcSet && <source type="image/webp" srcSet={webpSrcSet} sizes={sizes} />}
+      <img src={src} alt={alt} className={className} loading="lazy" />
+    </picture>
   );
 }
 
