@@ -98,6 +98,7 @@ export default function TrainingPage() {
     };
   }, []);
   const [selectedTitle, setSelectedTitle] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
