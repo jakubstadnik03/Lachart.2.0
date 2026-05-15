@@ -423,6 +423,12 @@ export function TrainingStats({
   const [visibleTrainingIndex, setVisibleTrainingIndex] = useState(0);
   const [isSettingsOpen,      setIsSettingsOpen]      = useState(false);
   const [displayCount,        setDisplayCount]        = useState(() => window.innerWidth < 768 ? 3 : 6);
+  const [hideWarmCool,        setHideWarmCool]        = useState(() => {
+    try { return localStorage.getItem('trainingStats_hideWarmCool') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('trainingStats_hideWarmCool', hideWarmCool ? '1' : '0'); } catch {}
+  }, [hideWarmCool]);
   const [progressIndex,       setProgressIndex]       = useState(0);
 
   const settingsRef  = useRef(null);
@@ -571,17 +577,37 @@ export function TrainingStats({
     return () => { cancelled = true; };
   }, [filteredTrainings, stravaLapsCache, stravaLapToResult, integrationAthleteId]);
 
-  // Enrich a training's results with fetched Strava laps when needed
+  // Enrich a training's results with fetched Strava laps when needed.
+  // When "Hide warm-up & cool-down" is on, drop explicit warmup/recovery/
+  // cooldown intervals AND apply a first/last-lap heuristic for raw Strava
+  // laps (which have no intervalType field), so the bar chart focuses on
+  // the work portion of the session.
+  const filterWarmCool = useCallback((arr) => {
+    if (!hideWarmCool || !Array.isArray(arr) || arr.length === 0) return arr;
+    const total = arr.length;
+    const filtered = arr.filter((r, i) => {
+      const t = String(r?.intervalType || '').toLowerCase();
+      if (t === 'warmup' || t === 'cooldown' || t === 'recovery') return false;
+      if (r?.isRecovery === true) return false;
+      // Heuristic for laps lacking intervalType: drop first + last of 3+-lap sessions.
+      const anyTyped = arr.some(x => x && x.intervalType);
+      if (!anyTyped && total >= 3 && (i === 0 || i === total - 1)) return false;
+      return true;
+    });
+    // Don't return an empty array — keep originals so the chart doesn't blank.
+    return filtered.length > 0 ? filtered : arr;
+  }, [hideWarmCool]);
+
   const getResults = useCallback((t) => {
-    if (Array.isArray(t?.results) && t.results.length > 0) return t.results;
+    if (Array.isArray(t?.results) && t.results.length > 0) return filterWarmCool(t.results);
     const isStrava = t?.source === 'strava' || t?.type === 'strava' || !!t?.stravaId
                      || String(t?.id || '').startsWith('strava-');
     if (isStrava) {
       const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
-      if (rawId && stravaLapsCache[rawId]) return stravaLapsCache[rawId];
+      if (rawId && stravaLapsCache[rawId]) return filterWarmCool(stravaLapsCache[rawId]);
     }
     return [];
-  }, [stravaLapsCache]);
+  }, [stravaLapsCache, filterWarmCool]);
 
   useEffect(() => { setProgressIndex(0); }, [filteredTrainings.length, currentSelectedTitle]);
 
@@ -757,6 +783,17 @@ export function TrainingStats({
                     {[1,3,6,9,12].map(n => <option key={n} value={n}>{n} training{n!==1?"s":""}</option>)}
                   </select>
                 </div>
+                <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={hideWarmCool}
+                    onChange={(e) => setHideWarmCool(e.target.checked)}
+                    className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-violet-500 focus:ring-violet-400"
+                  />
+                  <span className="text-[11px] text-gray-700 leading-tight">
+                    Hide warm-up &amp; cool-down
+                  </span>
+                </label>
               </div>
             )}
           </div>
