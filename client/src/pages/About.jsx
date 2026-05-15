@@ -147,9 +147,10 @@ const STYLE = `
 
 export default function About() {
   const { isAuthenticated } = useAuth();
-  // Capacitor: skip the public landing entirely, dump straight into the app.
-  if (isCapacitorNative() && isAuthenticated) return <Navigate to="/dashboard" replace />;
 
+  // ── Hooks (must run on every render — keep above any early return so
+  //    react-hooks/rules-of-hooks passes for the Capacitor short-circuit
+  //    below).
   const revealRefs = useRef([]);
   const pushRef = (el) => { if (el && !revealRefs.current.includes(el)) revealRefs.current.push(el); };
   useReveal(revealRefs.current);
@@ -168,6 +169,9 @@ export default function About() {
   const [role, setRole] = useState('athlete');
 
   const track = (label) => trackEvent?.('AboutPage', 'cta_click', label);
+
+  // Capacitor: skip the public landing entirely, dump straight into the app.
+  if (isCapacitorNative() && isAuthenticated) return <Navigate to="/dashboard" replace />;
 
   return (
     <>
@@ -348,7 +352,7 @@ export default function About() {
             <div ref={pushRef} className="lc-reveal d1" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 30 }}>
               {['All','Testing','Analysis','Training','Progress','Integration','Tools'].map(cat => (
                 <button key={cat} onClick={() => setFeatCat(cat)} style={{
-                  padding: '7px 16px', borderRadius: 9999, border: 'none', cursor: 'pointer',
+                  padding: '7px 16px', borderRadius: 9999, cursor: 'pointer',
                   background: featCat === cat ? LC.primaryDark : '#fff',
                   color: featCat === cat ? '#fff' : LC.muted,
                   fontSize: 13, fontWeight: 700,
