@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom';
 import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
-import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
@@ -845,7 +844,7 @@ export default function TrainingPage() {
       {/* ── 5-COLUMN DASHBOARD GRID ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
 
-        {/* Row 1: Field Lactate (2 cols) + TrainingGraph (3 cols) */}
+        {/* Row 1: Field Lactate (2 cols) + Training Stats (3 cols) */}
         {showFieldLactatePanel && user ? (
           <>
             <motion.div
@@ -869,51 +868,43 @@ export default function TrainingPage() {
               transition={{ delay: 0.2 }}
               className="lg:col-span-3 md:col-span-2 min-w-0 flex flex-col"
             >
-              <TrainingGraph
-                trainingList={filteredTrainings}
+              <TrainingStats
+                trainings={filteredTrainings}
                 selectedSport={selectedSport}
-                selectedTitle={selectedTitle}
-                setSelectedTitle={setSelectedTitle}
-                selectedTraining={selectedTraining}
-                setSelectedTraining={setSelectedTraining}
+                onSportChange={setSelectedSport}
+                isFullWidth={true}
+                user={user}
                 integrationAthleteId={integrationAthleteId}
               />
             </motion.div>
           </>
         ) : (
-          /* No lactate panel — TrainingGraph full row */
+          /* No lactate panel — Training Stats full row */
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
             className="lg:col-span-5 md:col-span-2 min-w-0"
           >
-            <TrainingGraph
-              trainingList={filteredTrainings}
+            <TrainingStats
+              trainings={filteredTrainings}
               selectedSport={selectedSport}
-              selectedTitle={selectedTitle}
-              setSelectedTitle={setSelectedTitle}
-              selectedTraining={selectedTraining}
-              setSelectedTraining={setSelectedTraining}
+              onSportChange={setSelectedSport}
+              isFullWidth={true}
+              user={user}
+              integrationAthleteId={integrationAthleteId}
             />
           </motion.div>
         )}
 
-        {/* Row 2: Training Stats — full width */}
+        {/* Row 2: Training Table — full width (TrainingGraph removed) */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
           className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <TrainingStats
-            trainings={filteredTrainings}
-            selectedSport={selectedSport}
-            onSportChange={setSelectedSport}
-            isFullWidth={true}
-            user={user}
-            integrationAthleteId={integrationAthleteId}
-          />
+          <UserTrainingsTable trainings={filteredTrainings} />
         </motion.div>
 
         {/* Row 3: Training Comparison — full width */}
@@ -950,16 +941,6 @@ export default function TrainingPage() {
               setSelectedTitle={setSelectedTitle}
             />
           </Suspense>
-        </motion.div>
-
-        {/* Row 5: Training Table — full width */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="lg:col-span-5 md:col-span-2 min-w-0"
-        >
-          <UserTrainingsTable trainings={filteredTrainings} />
         </motion.div>
 
       </div>
