@@ -10,6 +10,10 @@ import {
 } from '../components/NativeDashboard/animations';
 import { getTestingsByAthleteId } from '../services/api';
 import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculator';
+// Reuse the same threshold algorithm DataTable / LactateCurveCalculator use on
+// desktop so LT1/LT2 shown on mobile cards stay in sync with the values on
+// the actual test page.
+import { calculateThresholds as desktopCalculateThresholds } from '../components/Testing-page/DataTable';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 
@@ -87,12 +91,42 @@ function extractThresholds(test) {
     }))
     .filter(p => Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y) && p.y > 0);
 
-  if (pts.length >= 3) {
+  // Use the exact same algorithm DataTable / LactateCurveCalculator use on
+  // desktop (D-max / IAT-style refinement with sport-specific guards) so
+  // the LT1/LT2 numbers shown on the mobile test card match the values
+  // visible on the test's actual page. Override values from
+  // test.thresholdOverrides still win — same as desktop.
+  try {
+    const desktopThr = desktopCalculateThresholds(test);
+    if (desktopThr) {
+      const dLt1 = Number(desktopThr.LTP1);
+      const dLt2 = Number(desktopThr.LTP2);
+      const dLt1La = Number(desktopThr.lactates?.LTP1);
+      const dLt2La = Number(desktopThr.lactates?.LTP2);
+      const dLt1Hr = Number(desktopThr.heartRates?.LTP1);
+      const dLt2Hr = Number(desktopThr.heartRates?.LTP2);
+      if (lt1 == null && Number.isFinite(dLt1) && dLt1 > 0) lt1 = dLt1;
+      if (lt2 == null && Number.isFinite(dLt2) && dLt2 > 0) lt2 = dLt2;
+      if (lt1Lac == null && Number.isFinite(dLt1La) && dLt1La > 0) lt1Lac = dLt1La;
+      if (lt2Lac == null && Number.isFinite(dLt2La) && dLt2La > 0) lt2Lac = dLt2La;
+      if (lt1Hr  == null && Number.isFinite(dLt1Hr) && dLt1Hr > 0) lt1Hr  = Math.round(dLt1Hr);
+      if (lt2Hr  == null && Number.isFinite(dLt2Hr) && dLt2Hr > 0) lt2Hr  = Math.round(dLt2Hr);
+    }
+  } catch (e) {
+    // Desktop helper throws on degenerate tests — silently fall through to
+    // the simple interpolation below so the card still shows something
+    // instead of '—'.
+  }
+
+  // Fallback for very small / malformed tests where the desktop algorithm
+  // returned nothing: simple linear interpolation at base + 1.5 (LT1) and
+  // max(4.0, base + 3.0) (LT2). Keeps behaviour identical to the prior
+  // mobile implementation for those edge cases.
+  if ((lt1 == null || lt2 == null) && pts.length >= 3) {
     pts.sort((a, b) => isPace ? b.x - a.x : a.x - b.x);
     const base = Number(test.baseLactate) || pts[0]?.y || 1.0;
     const lt1T = base + 1.5;
     const lt2T = Math.max(4.0, base + 3.0);
-    // Interpolates power AND heart rate at the target lactate
     const interp = (target) => {
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1];
