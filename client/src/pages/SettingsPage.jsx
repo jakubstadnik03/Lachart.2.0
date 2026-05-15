@@ -3331,6 +3331,7 @@ function AppleHealthCard({ isMobile }) {
       setLast(lastSyncedAt());
       if (result?.imported > 0) setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
       else if (result?.skipped === 'denied') setMsg('Permission denied. Open iPhone Settings → Privacy → Health → LaChart and allow read access.');
+      else if (result?.skipped === 'empty-or-denied') setMsg('Got 0 workouts back from Apple Health. If you have workouts in the Health app, iOS may have silently denied access — open iPhone Settings → Health → Data Access & Devices → LaChart and turn ON every category (Workouts, Heart Rate, Distance, Active Energy), then tap "Reset / Disconnect" here and "Sync now" again.');
       else if (result?.skipped === 'plugin-missing') setMsg('HealthKit plugin not installed in this build. Rebuild the app after running pod install.');
       else if (result?.skipped === 'unavailable') setMsg('HealthKit not available on this device (iPad without Health, or simulator).');
       else if (result?.skipped === 'query-failed') setMsg(`HealthKit query failed: ${result.error || 'unknown'}.`);
