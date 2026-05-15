@@ -1121,10 +1121,11 @@ const SettingsPage = () => {
           console.error('Error reloading user profile:', e);
         }
         
-        // If enabling, trigger immediate sync
+        // If enabling, trigger immediate sync. User just flipped the toggle
+        // → force = true so the server's cooldown doesn't swallow the call.
         if (enabled) {
           try {
-            const syncRes = await autoSyncStravaActivities();
+            const syncRes = await autoSyncStravaActivities({ force: true });
             if (syncRes.imported > 0 || syncRes.updated > 0) {
               addNotification(`Auto-sync: ${syncRes.imported || 0} imported, ${syncRes.updated || 0} updated`, 'success');
             }
