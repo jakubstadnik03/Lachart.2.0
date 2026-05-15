@@ -1299,6 +1299,10 @@ export default function NativeTrainingPage({
   const openAssignSheet = (measurement) => setAssignSheet({ open: true, measurement });
   const closeAssignSheet = () => setAssignSheet({ open: false, measurement: null });
   const [assignBusy, setAssignBusy] = useState(false);
+  // Set when the user picks "Open in chart" on the assignment sheet — the
+  // measurement is held aside so handleTrainingFormSubmit can reassign it
+  // to whichever lap the user filled in.
+  const [pendingFieldLactate, setPendingFieldLactate] = useState(null);
   // Cache Strava lap fetches between renders / re-opens of the sheet — the
   // assignment list shows compact summaries, the laps are pulled lazily once.
   const [stravaLapsCache, setStravaLapsCache] = useState({});
@@ -1537,7 +1541,13 @@ export default function NativeTrainingPage({
 
     setTrainingFormActivity(clean);
   };
-  const closeTrainingForm = () => setTrainingFormActivity(null);
+  const closeTrainingForm = () => {
+    setTrainingFormActivity(null);
+    // Drop any pending field-lactate context — user cancelled without
+    // assigning, so the measurement stays in the log for them to
+    // re-pick later from the hero / log.
+    setPendingFieldLactate(null);
+  };
   const handleTrainingFormSubmit = async (formData) => {
     const targetAthleteId = athleteId || user?._id || user?.id;
 
@@ -1585,6 +1595,44 @@ export default function NativeTrainingPage({
           console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
         }
       }
+    }
+
+    // If the user came in here via "Just measured → Chart" the pending
+    // FieldLactateMeasurement is still 'pending'. Find which lap the user
+    // just put the value on and mark the measurement assigned so the
+    // hero card / log row update to "→ Training · Lap N" and the
+    // measurement disappears from the hero (no longer < 24h fresh-unassigned).
+    if (pendingFieldLactate && Array.isArray(cleanedResults)) {
+      const target = Number(pendingFieldLactate.value);
+      // Closest match within ±0.05 mmol/L tolerance (parseFloat rounding).
+      let bestIdx = -1, bestDiff = Infinity;
+      cleanedResults.forEach((r, i) => {
+        const v = Number(r?.lactate);
+        if (!Number.isFinite(v)) return;
+        const diff = Math.abs(v - target);
+        if (diff <= 0.05 && diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+      });
+      if (bestIdx >= 0) {
+        try {
+          const isStrava = formData.type === 'strava' || !!formData.sourceStravaActivityId;
+          const payload = {
+            lapIndex: bestIdx,
+            lapNumber: bestIdx + 1,
+            trainingTitle: formData.title || 'Training',
+            trainingDate: formData.date || null,
+          };
+          if (isStrava && formData.sourceStravaActivityId) {
+            payload.stravaActivityId = String(formData.sourceStravaActivityId);
+          } else if (formData._id) {
+            payload.trainingId = formData._id;
+          }
+          await assignFieldLactateMeasurement(pendingFieldLactate._id, payload);
+          loadFieldLactates();
+        } catch (e) {
+          console.warn('[field-lactate] post-form assign failed:', e?.message);
+        }
+      }
+      setPendingFieldLactate(null);
     }
 
     closeTrainingForm();
@@ -1767,6 +1815,13 @@ export default function NativeTrainingPage({
             busy={assignBusy}
             onClose={closeAssignSheet}
             onAssign={(args) => handleAssignField({ measurement: assignSheet.measurement, ...args })}
+            onOpenInForm={(t) => {
+              // Stash the measurement so TrainingForm save can mark it
+              // assigned to whichever lap the user tagged.
+              setPendingFieldLactate(assignSheet.measurement);
+              closeAssignSheet();
+              openTrainingForm(t);
+            }}
           />,
           document.getElementById('app-modal-root') || document.body
         )}
@@ -2633,6 +2688,25 @@ export default function NativeTrainingPage({
             onClick={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: 640 }}
           >
+            {pendingFieldLactate && (
+              <div style={{
+                margin: '0 0 -2px',
+                padding: '10px 14px',
+                background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)',
+                borderTopLeftRadius: 14, borderTopRightRadius: 14,
+                border: '1px solid rgba(124,58,237,.25)',
+                borderBottom: 'none',
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 12, color: '#5b21b6',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                </svg>
+                <span style={{ flex: 1 }}>
+                  Adding <b>{Number(pendingFieldLactate.value).toFixed(1)} mmol/L</b> — type it into the Lactate cell of the right lap below.
+                </span>
+              </div>
+            )}
             <Suspense fallback={null}>
               <TrainingForm
                 onClose={closeTrainingForm}
@@ -3245,7 +3319,7 @@ const styles = {
    any row in the Lactate log. Step 1 — pick a training (recent sessions with
    laps). Step 2 — pick a lap inside that training. The chosen lap is the
    target the server writes the measurement's value into. */
-function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, onClose, onAssign }) {
+function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, onClose, onAssign, onOpenInForm }) {
   const [pickedTraining, setPickedTraining] = useState(null);
   const [pickedLaps, setPickedLaps] = useState([]);
   const [lapsLoading, setLapsLoading] = useState(false);
@@ -3423,34 +3497,68 @@ function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, o
                     const tint = SPORT_TINT[sport] || SPORT_TINT.other;
                     const title = t.title || t.name || t.titleManual || 'Untitled';
                     return (
-                      <button
+                      <div
                         key={t._id || t.id || String(d.getTime())}
-                        type="button"
-                        onClick={() => handlePickTraining(t)}
                         style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '10px 12px', borderRadius: 12,
+                          display: 'flex', alignItems: 'stretch', gap: 6,
+                          borderRadius: 12,
                           border: '1px solid rgba(118,126,181,.14)',
                           background: 'rgba(255,255,255,.7)',
-                          cursor: 'pointer', textAlign: 'left',
-                          WebkitTapHighlightColor: 'transparent',
+                          overflow: 'hidden',
                         }}
                       >
-                        <span style={{
-                          width: 6, height: 36, borderRadius: 3, background: tint, flexShrink: 0,
-                        }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {title}
+                        <button
+                          type="button"
+                          onClick={() => handlePickTraining(t)}
+                          style={{
+                            flex: 1, minWidth: 0,
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '10px 8px 10px 12px',
+                            border: 'none', background: 'transparent',
+                            cursor: 'pointer', textAlign: 'left',
+                            WebkitTapHighlightColor: 'transparent',
+                          }}
+                          title="Browse this training's laps and pick one"
+                        >
+                          <span style={{
+                            width: 6, height: 36, borderRadius: 3, background: tint, flexShrink: 0,
+                          }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {title}
+                            </div>
+                            <div style={{ fontSize: 10.5, color: '#6B7280' }}>
+                              {dStr} · {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 10.5, color: '#6B7280' }}>
-                            {dStr} · {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                          </div>
-                        </div>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                      </button>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 18 15 12 9 6" />
+                          </svg>
+                        </button>
+                        {onOpenInForm && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenInForm(t)}
+                            title="Open with the lap chart so you can tag the right lap directly"
+                            style={{
+                              padding: '0 12px',
+                              border: 'none',
+                              borderLeft: '1px solid rgba(118,126,181,.14)',
+                              background: 'rgba(124,58,237,.06)',
+                              color: '#7c3aed',
+                              cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              fontSize: 10.5, fontWeight: 700,
+                              WebkitTapHighlightColor: 'transparent',
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 20h18" /><path d="M5 16l4-6 4 4 6-9" />
+                            </svg>
+                            Chart
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
