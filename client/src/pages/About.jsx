@@ -110,39 +110,133 @@ const BrowserFrame = ({ label, children }) => (
 
 /* ─── Page-level keyframes (scoped, injected once) ────────────────────── */
 const STYLE = `
-  .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
-  .lc-reveal.left  { transform: translateX(-40px); }
-  .lc-reveal.right { transform: translateX(40px); }
+  /* About uses smooth-scroll for anchor nav — scoped to .lc-page so the
+     rest of the app keeps its instant scroll. */
+  .lc-page { scroll-behavior: smooth; }
+  html:has(.lc-page) { scroll-behavior: smooth; }
+
+  /* Reveal: y-translate / x-translate / scale variants, generous stagger. */
+  .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform 1s cubic-bezier(.2,.7,.2,1); will-change: transform, opacity; }
+  .lc-reveal.left  { transform: translate3d(-44px, 0, 0); }
+  .lc-reveal.right { transform: translate3d(44px, 0, 0); }
   .lc-reveal.scale { transform: scale(.94); }
-  .lc-reveal:not(.left):not(.right):not(.scale) { transform: translateY(30px); }
+  .lc-reveal:not(.left):not(.right):not(.scale) { transform: translate3d(0, 36px, 0); }
   .lc-reveal.lc-in { opacity: 1; transform: none; }
   .lc-reveal.d1 { transition-delay: .08s; }
   .lc-reveal.d2 { transition-delay: .16s; }
   .lc-reveal.d3 { transition-delay: .24s; }
   .lc-reveal.d4 { transition-delay: .32s; }
   .lc-reveal.d5 { transition-delay: .40s; }
+  .lc-reveal.d6 { transition-delay: .48s; }
+
+  /* Pulse dot on eyebrows + floating badges */
   @keyframes lc-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   .lc-pulse { animation: lc-pulse 2s ease-in-out infinite; }
   @keyframes lc-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
   .lc-float { animation: lc-float 6s ease-in-out infinite; }
   .lc-float.d2 { animation-delay: -2s; }
   .lc-float.d3 { animation-delay: -4s; }
+
+  /* Subtle gradient shimmer on hero <em> — kept very low-key so it doesn't
+     distract on long reads. */
+  @keyframes lc-gradient-shift {
+    0%   { background-position:   0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position:   0% 50%; }
+  }
+
   .lc-huge { font-size: clamp(36px, 6vw, 72px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; color: ${LC.ink}; }
-  .lc-huge em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary} 50%, ${LC.accent}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; position: relative; }
+  .lc-huge em {
+    font-style: normal;
+    background: linear-gradient(135deg, ${LC.primary} 0%, ${LC.secondary} 35%, ${LC.accent} 70%, ${LC.primary} 100%);
+    background-size: 200% 200%;
+    animation: lc-gradient-shift 8s ease infinite;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    position: relative;
+  }
   .lc-huge em::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 4px; background: ${LC.primary}; opacity: 0.18; border-radius: 2px; }
   .lc-big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: ${LC.ink}; }
   .lc-big em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
   .lc-lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: ${LC.muted}; max-width: 580px; }
   .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; }
-  .lc-page section { scroll-margin-top: 70px; }
+  .lc-page section { scroll-margin-top: 80px; }
   .lc-sectpad { padding: 96px 24px; max-width: 1280px; margin: 0 auto; }
   @media (max-width: 640px) { .lc-sectpad { padding: 64px 16px; } }
-  .lc-btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 12px; background: ${LC.primaryDark}; color: #fff; text-decoration: none; font-size: 14px; font-weight: 700; box-shadow: 0 8px 22px -6px rgba(118,126,181,.55); transition: transform .2s, box-shadow .2s, background .2s; }
-  .lc-btn-primary:hover { transform: translateY(-1px); background: ${LC.primary}; }
-  .lc-btn-ghost { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 12px; background: transparent; color: ${LC.primaryDark}; text-decoration: none; font-size: 14px; font-weight: 700; border: 1px solid ${LC.border}; }
-  .lc-btn-ghost:hover { background: ${LC.primaryTint}; }
-  .lc-card { border-radius: 18px; background: #fff; border: 1px solid ${LC.border}; padding: 22px; transition: transform .25s, box-shadow .25s, border-color .25s; }
-  .lc-card:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -14px rgba(15,23,41,.15); border-color: rgba(118,126,181,.4); }
+
+  /* CTAs — buttery hover with elevation lift + brightness bump */
+  .lc-btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 12px;
+    background: ${LC.primaryDark}; color: #fff;
+    text-decoration: none; font-size: 14px; font-weight: 700;
+    box-shadow: 0 8px 22px -6px rgba(118,126,181,.55);
+    transition: transform .25s cubic-bezier(.2,.7,.2,1),
+                box-shadow .25s cubic-bezier(.2,.7,.2,1),
+                background .25s ease, filter .25s ease;
+  }
+  .lc-btn-primary:hover { transform: translateY(-2px); background: ${LC.primary}; box-shadow: 0 14px 28px -8px rgba(118,126,181,.65); filter: brightness(1.04); }
+  .lc-btn-primary:active { transform: translateY(0); transition-duration: .12s; }
+  .lc-btn-ghost {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 18px; border-radius: 12px;
+    background: transparent; color: ${LC.primaryDark};
+    text-decoration: none; font-size: 14px; font-weight: 700;
+    border: 1px solid ${LC.border};
+    transition: background .2s, border-color .2s, transform .2s;
+  }
+  .lc-btn-ghost:hover { background: ${LC.primaryTint}; border-color: ${LC.primary}; transform: translateY(-1px); }
+
+  /* Cards — universal hover lift */
+  .lc-card {
+    border-radius: 18px; background: #fff;
+    border: 1px solid ${LC.border}; padding: 22px;
+    transition: transform .3s cubic-bezier(.2,.7,.2,1),
+                box-shadow .3s cubic-bezier(.2,.7,.2,1),
+                border-color .25s ease;
+  }
+  .lc-card:hover { transform: translateY(-4px); box-shadow: 0 22px 44px -18px rgba(15,23,41,.18); border-color: rgba(118,126,181,.5); }
+
+  /* Nav links — underline on hover, scroll-spy active state */
+  .lc-nav-link {
+    position: relative; color: ${LC.muted}; text-decoration: none;
+    font-size: 14px; font-weight: 500;
+    padding: 8px 12px; border-radius: 8px;
+    transition: color .2s, background .2s;
+  }
+  .lc-nav-link::after {
+    content: ''; position: absolute;
+    left: 12px; right: 12px; bottom: 4px;
+    height: 2px; border-radius: 2px;
+    background: ${LC.primary};
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform .25s cubic-bezier(.2,.7,.2,1);
+  }
+  .lc-nav-link:hover { color: ${LC.primary}; background: ${LC.primaryTint}; }
+  .lc-nav-link.active { color: ${LC.primaryDark}; }
+  .lc-nav-link.active::after { transform: scaleX(1); }
+
+  /* What's-new timeline — vertical guide + date dot */
+  .lc-timeline { position: relative; padding-left: 28px; }
+  .lc-timeline::before {
+    content: ''; position: absolute;
+    left: 10px; top: 6px; bottom: 6px; width: 2px;
+    background: linear-gradient(180deg, ${LC.primary}88, ${LC.primary}11);
+    border-radius: 2px;
+  }
+  .lc-timeline-item { position: relative; padding: 16px 18px; }
+  .lc-timeline-item::before {
+    content: ''; position: absolute;
+    left: -23px; top: 22px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid ${LC.primary};
+    box-shadow: 0 0 0 4px rgba(118,126,181,.10);
+    transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+  }
+  .lc-timeline-item:hover::before { transform: scale(1.15); background: ${LC.primary}; box-shadow: 0 0 0 6px rgba(118,126,181,.18); }
 `;
 
 export default function About() {
@@ -167,6 +261,28 @@ export default function About() {
   const [featCat, setFeatCat] = useState('All');
   // Roles tab
   const [role, setRole] = useState('athlete');
+
+  // Scroll-spy — highlight the nav link whose section is currently in view.
+  const [activeSection, setActiveSection] = useState('hero');
+  useEffect(() => {
+    const ids = ['hero', 'features', 'solutions', 'methodology', 'connect', 'voices', 'roles', 'pricing', 'faq'];
+    const sections = ids
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+    if (!sections.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry closest to the top of the viewport.
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveSection(visible[0].target.id);
+      },
+      { rootMargin: '-30% 0px -60% 0px', threshold: 0 }
+    );
+    sections.forEach(s => io.observe(s));
+    return () => io.disconnect();
+  }, []);
 
   const track = (label) => trackEvent?.('AboutPage', 'cta_click', label);
 
@@ -214,9 +330,21 @@ export default function About() {
               <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 32, width: 'auto' }} />
               <span>LaChart</span>
             </Link>
-            <div className="lc-nav-links" style={{ display: 'flex', gap: 6 }}>
-              {[['#features','Features'], ['#solutions','For whom'], ['#methodology','Science'], ['#voices','Voices'], ['#pricing','Pricing'], ['#faq','FAQ']].map(([href, label]) => (
-                <a key={href} href={href} style={{ color: LC.muted, textDecoration: 'none', fontSize: 14, fontWeight: 500, padding: '8px 12px', borderRadius: 8 }}>{label}</a>
+            <div className="lc-nav-links" style={{ display: 'flex', gap: 4 }}>
+              {[
+                ['features',    'Features'],
+                ['solutions',   'For whom'],
+                ['roles',       'Roles'],
+                ['methodology', 'Science'],
+                ['connect',     'Connect'],
+                ['voices',      'Voices'],
+                ['/how-to-use', 'Tutorials'],
+                ['pricing',     'Pricing'],
+                ['faq',         'FAQ'],
+              ].map(([id, label]) => (
+                id.startsWith('/')
+                  ? <Link key={id} to={id} className="lc-nav-link">{label}</Link>
+                  : <a key={id} href={`#${id}`} className={`lc-nav-link${activeSection === id ? ' active' : ''}`}>{label}</a>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -501,24 +629,38 @@ export default function About() {
           </div>
         </section>
 
-        {/* ── 17. What's new ───────────────────────────────────────────── */}
+        {/* ── 17. What's new — timeline ─────────────────────────────────── */}
         <section>
           <div className="lc-sectpad">
-            <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 680, marginBottom: 30 }}>
+            <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 680, marginBottom: 36 }}>
               <Eyebrow>What's new</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 0' }}>Latest <em>shipping notes</em></h2>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Latest <em>shipping notes</em></h2>
+              <p className="lc-lead" style={{ margin: 0 }}>The most-recent additions to LaChart. Quarterly releases, plus one-off updates whenever something useful is ready.</p>
             </div>
-            <div style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="lc-timeline" style={{ maxWidth: 720 }}>
               {[
-                { date: 'May 2026',  title: 'iOS app — public TestFlight', body: 'Native iOS shell with pull-to-refresh, push notifications, Apple Health import and on-device lactate recording.' },
-                { date: 'Mar 2026',  title: 'Professional PDF reports from lactate tests', body: 'Generate branded PDFs with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graphs and training recommendations.' },
-                { date: 'Nov 2025',  title: 'Bulk Strava interval detection', body: 'Detect every power fluctuation, auto-create Strava laps, and analyze threshold blocks instantly.' },
-                { date: 'Oct 2025',  title: 'Responsive lactate calculator revamp', body: 'The free testing-without-login flow loads faster, scales on mobile, and preserves manual adjustments.' },
+                { date: 'May 2026',  title: 'iOS app — public TestFlight',                title2: 'Mobile',     body: 'Native iOS shell with pull-to-refresh, push notifications, Apple Health import and on-device lactate recording.', cta: 'Open mobile app', href: '/download' },
+                { date: 'Mar 2026',  title: 'Professional PDF reports from lactate tests', title2: 'Reports',    body: 'Generate branded PDFs with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graphs and training recommendations.', cta: 'Try the calculator →', href: '/lactate-curve-calculator' },
+                { date: 'Nov 2025',  title: 'Bulk Strava interval detection',              title2: 'Integration',body: 'Detect every power fluctuation, auto-create Strava laps, and analyze threshold blocks instantly. Works on a whole month of activities at once.', cta: 'See FIT analysis →', href: '/training-calendar' },
+                { date: 'Oct 2025',  title: 'Responsive lactate calculator revamp',        title2: 'Tools',      body: 'The free testing-without-login flow loads faster, scales on mobile, and preserves manual adjustments.', cta: 'Open calculator →', href: '/lactate-curve-calculator' },
               ].map((u, i) => (
-                <article key={u.title} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ padding: 18 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{u.date}</span>
-                  <h4 style={{ fontSize: 16, fontWeight: 700, color: LC.ink, margin: '6px 0 6px' }}>{u.title}</h4>
-                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{u.body}</p>
+                <article
+                  key={u.title}
+                  ref={pushRef}
+                  className={`lc-reveal d${i+1} lc-timeline-item`}
+                  style={{ background: 'rgba(255,255,255,.55)', border: '1px solid ' + LC.border, borderRadius: 14, marginBottom: 14 }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: LC.primaryDark, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '3px 10px', borderRadius: 9999, background: LC.primaryTint }}>{u.date}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>· {u.title2}</span>
+                  </div>
+                  <h4 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '0 0 8px', letterSpacing: '-0.01em' }}>{u.title}</h4>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.6, margin: '0 0 10px' }}>{u.body}</p>
+                  {u.cta && (
+                    u.href.startsWith('/')
+                      ? <Link to={u.href} onClick={() => track(`whatsnew_${i}`)} style={{ fontSize: 12.5, fontWeight: 700, color: LC.primary, textDecoration: 'none' }}>{u.cta}</Link>
+                      : <a href={u.href} style={{ fontSize: 12.5, fontWeight: 700, color: LC.primary, textDecoration: 'none' }}>{u.cta}</a>
+                  )}
                 </article>
               ))}
             </div>
