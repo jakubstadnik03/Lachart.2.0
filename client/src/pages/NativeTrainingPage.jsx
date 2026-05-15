@@ -20,7 +20,7 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
@@ -1292,6 +1292,43 @@ export default function NativeTrainingPage({
       console.warn('[field-lactate] delete failed:', e?.message);
     }
   };
+
+  // Tap "Just measured" / a Lactate-log row → open the assignment sheet:
+  // pick training, pick lap, server writes the value into that lap.
+  const [assignSheet, setAssignSheet] = useState({ open: false, measurement: null });
+  const openAssignSheet = (measurement) => setAssignSheet({ open: true, measurement });
+  const closeAssignSheet = () => setAssignSheet({ open: false, measurement: null });
+  const [assignBusy, setAssignBusy] = useState(false);
+  // Cache Strava lap fetches between renders / re-opens of the sheet — the
+  // assignment list shows compact summaries, the laps are pulled lazily once.
+  const [stravaLapsCache, setStravaLapsCache] = useState({});
+
+  const handleAssignField = async ({ measurement, training, lapIndex }) => {
+    if (!measurement || !training) return;
+    setAssignBusy(true);
+    try {
+      const stravaIdRaw = String(training.stravaId || training.id || '').replace(/^strava-/i, '');
+      const isStrava = training.type === 'strava' || !!training.stravaId
+                       || String(training.id || '').toLowerCase().startsWith('strava-');
+      const payload = {
+        lapIndex,
+        lapNumber: lapIndex + 1,
+        trainingTitle: training.title || training.name || training.titleManual || 'Training',
+        trainingDate: getDate(training)?.toISOString?.() || training.date || null,
+      };
+      if (isStrava && stravaIdRaw) payload.stravaActivityId = stravaIdRaw;
+      else if (training._id) payload.trainingId = training._id;
+      else return;
+      await assignFieldLactateMeasurement(measurement._id, payload);
+      await loadFieldLactates();
+      closeAssignSheet();
+      onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'lactate-assigned' });
+    } catch (e) {
+      console.warn('[field-lactate] assign failed:', e?.message);
+    } finally {
+      setAssignBusy(false);
+    }
+  };
   const [selectedMetric, setSelectedMetric] = useState('power');
   const [selectedTitle, setSelectedTitle] = useState(null); // workout title to compare
   const [highlightSessionId, setHighlightSessionId] = useState(null);
@@ -1711,6 +1748,29 @@ export default function NativeTrainingPage({
           document.getElementById('app-modal-root') || document.body
         )}
 
+        {/* Lactate-assignment sheet — pick training, then lap, then assign. */}
+        {assignSheet.open && assignSheet.measurement && ReactDOM.createPortal(
+          <LactateAssignmentSheet
+            measurement={assignSheet.measurement}
+            trainings={trainings}
+            stravaLapsCache={stravaLapsCache}
+            getStravaLaps={async (stravaId) => {
+              const key = String(stravaId);
+              if (stravaLapsCache[key]) return stravaLapsCache[key];
+              try {
+                const data = await getStravaActivityDetail(stravaId, athleteId || null);
+                const laps = Array.isArray(data?.laps) ? data.laps : [];
+                setStravaLapsCache(prev => ({ ...prev, [key]: laps }));
+                return laps;
+              } catch { return []; }
+            }}
+            busy={assignBusy}
+            onClose={closeAssignSheet}
+            onAssign={(args) => handleAssignField({ measurement: assignSheet.measurement, ...args })}
+          />,
+          document.getElementById('app-modal-root') || document.body
+        )}
+
         <div style={styles.body}>
           {/* ─── Fresh field-lactate hero (<24h old) ──────────────────────── */}
           {(() => {
@@ -1727,34 +1787,54 @@ export default function NativeTrainingPage({
                       : `${Math.round(minsAgo / 60)} h ago`;
             const val = Number(m.value || 0);
             const valStr = Number.isFinite(val) ? val.toFixed(1) : '—';
+            const isAssigned = m.status === 'assigned' && m.assignment?.trainingTitle;
             return (
               <div style={{ ...cardEntry(0), ...snap }}>
-                <GlassCard style={{ padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', border: '1px solid rgba(124,58,237,.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px -2px rgba(124,58,237,.3)' }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                <button
+                  type="button"
+                  onClick={() => openAssignSheet(m)}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.985)'; }}
+                  onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
+                  onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
+                  onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.985)'; }}
+                  onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+                  style={{
+                    border: 'none', background: 'transparent', padding: 0,
+                    width: '100%', textAlign: 'left', cursor: 'pointer',
+                    transition: 'transform .12s ease',
+                    WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                  }}
+                >
+                  <GlassCard style={{ padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', border: '1px solid rgba(124,58,237,.25)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px -2px rgba(124,58,237,.3)' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
+                        </svg>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7c3aed', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                          Just measured
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                          <span style={{ fontSize: 22, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                            {valStr}
+                          </span>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#7c3aed' }}>mmol/L</span>
+                          <span style={{ fontSize: 10.5, color: '#6B7280', marginLeft: 'auto' }}>{ago}</span>
+                        </div>
+                        <div style={{ fontSize: 10.5, color: isAssigned ? '#5b21b6' : '#6B7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isAssigned ? 600 : 400 }}>
+                          {isAssigned
+                            ? `→ ${m.assignment.trainingTitle}${m.assignment.lapNumber ? ` · Lap ${m.assignment.lapNumber}` : ''}  ·  tap to reassign`
+                            : (m.notes ? `${m.notes}  ·  tap to assign to a training lap` : 'Tap to assign to a training lap')}
+                        </div>
+                      </div>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="9 18 15 12 9 6" />
                       </svg>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7c3aed', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                        Just measured
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                        <span style={{ fontSize: 22, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-                          {valStr}
-                        </span>
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#7c3aed' }}>mmol/L</span>
-                        <span style={{ fontSize: 10.5, color: '#6B7280', marginLeft: 'auto' }}>{ago}</span>
-                      </div>
-                      {m.notes && (
-                        <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {m.notes}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </GlassCard>
+                  </GlassCard>
+                </button>
               </div>
             );
           })()}
@@ -2457,16 +2537,25 @@ export default function NativeTrainingPage({
                           }}>
                             {valStr}
                           </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => openAssignSheet(m)}
+                            style={{
+                              flex: 1, minWidth: 0, textAlign: 'left',
+                              border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+                              WebkitTapHighlightColor: 'transparent',
+                            }}
+                            aria-label={assigned ? 'Reassign measurement' : 'Assign to training lap'}
+                          >
                             <div style={{ fontSize: 11, fontWeight: 700, color: '#0A0E1A' }}>
                               {fmtDate(m._ts)}
                             </div>
-                            <div style={{ fontSize: 10, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: 10, color: assigned ? '#5b21b6' : '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: assigned ? 600 : 400 }}>
                               {assigned
                                 ? `→ ${m.assignment.trainingTitle}${m.assignment.lapNumber ? ` · Lap ${m.assignment.lapNumber}` : ''}`
-                                : (m.notes || 'Unassigned')}
+                                : (m.notes ? `${m.notes} · tap to assign` : 'Tap to assign')}
                             </div>
-                          </div>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteFieldLactate(m._id)}
@@ -3150,3 +3239,282 @@ const styles = {
     display: 'flex', flexDirection: 'column', gap: 10,
   },
 };
+
+/* ─── Lactate Assignment Sheet ──────────────────────────────────────────────
+   Bottom-sheet picker shown when the user taps the "Just measured" hero or
+   any row in the Lactate log. Step 1 — pick a training (recent sessions with
+   laps). Step 2 — pick a lap inside that training. The chosen lap is the
+   target the server writes the measurement's value into. */
+function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, onClose, onAssign }) {
+  const [pickedTraining, setPickedTraining] = useState(null);
+  const [pickedLaps, setPickedLaps] = useState([]);
+  const [lapsLoading, setLapsLoading] = useState(false);
+  const [search, setSearch] = useState('');
+
+  // Trainings with usable laps (results OR cached strava laps), sorted newest
+  // first and capped so the list stays short on mobile.
+  const candidates = useMemo(() => {
+    const arr = Array.isArray(trainings) ? trainings : [];
+    return arr
+      .filter(t => {
+        const hasResults = Array.isArray(t.results) && t.results.length > 0;
+        const isStrava = t.type === 'strava' || !!t.stravaId
+                         || String(t.id || '').toLowerCase().startsWith('strava-');
+        const hasLaps = Array.isArray(t.laps) && t.laps.length > 0;
+        return hasResults || hasLaps || isStrava;
+      })
+      .slice()
+      .sort((a, b) => {
+        const ad = new Date(a.date || a.timestamp || a.startDate || 0).getTime();
+        const bd = new Date(b.date || b.timestamp || b.startDate || 0).getTime();
+        return bd - ad;
+      })
+      .filter(t => {
+        if (!search.trim()) return true;
+        const hay = `${t.title || ''} ${t.name || ''} ${t.titleManual || ''}`.toLowerCase();
+        return hay.includes(search.trim().toLowerCase());
+      })
+      .slice(0, 30);
+  }, [trainings, search]);
+
+  const handlePickTraining = async (t) => {
+    setPickedTraining(t);
+    const direct = Array.isArray(t.results) && t.results.length > 0
+      ? t.results
+      : Array.isArray(t.laps) && t.laps.length > 0 ? t.laps : null;
+    if (direct) { setPickedLaps(direct); return; }
+    // Strava activity without cached laps — fetch lazily.
+    const stravaIdRaw = String(t.stravaId || t.id || '').replace(/^strava-/i, '');
+    if (!stravaIdRaw) { setPickedLaps([]); return; }
+    setLapsLoading(true);
+    try {
+      const laps = await getStravaLaps(stravaIdRaw);
+      setPickedLaps(Array.isArray(laps) ? laps : []);
+    } finally {
+      setLapsLoading(false);
+    }
+  };
+
+  const fmtLapMeta = (lap, idx) => {
+    const dur = Number(lap.duration ?? lap.durationSeconds
+                       ?? lap.moving_time ?? lap.elapsed_time ?? 0);
+    const dist = Number(lap.distance ?? lap.distanceMeters ?? lap.totalDistance ?? 0);
+    const parts = [];
+    if (dur > 0) {
+      const m = Math.floor(dur / 60), s = Math.round(dur % 60);
+      parts.push(`${m}:${String(s).padStart(2, '0')}`);
+    }
+    if (dist > 0) parts.push(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`);
+    const t = String(lap.intervalType || '').toLowerCase();
+    if (t && t !== 'work') parts.push(t);
+    return parts.join(' · ') || `Lap ${idx + 1}`;
+  };
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'auto' }}>
+      {/* Scrim */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute', inset: 0,
+          background: 'rgba(10,14,26,.45)',
+          backdropFilter: 'blur(2px)',
+          WebkitBackdropFilter: 'blur(2px)',
+          animation: 'ndFadeIn .2s ease both',
+        }}
+      />
+      {/* Sheet */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(238,240,244,.98))',
+        backdropFilter: 'blur(20px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        boxShadow: '0 -10px 32px -8px rgba(10,14,26,.18)',
+        maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 24px)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        display: 'flex', flexDirection: 'column',
+        animation: 'ndFadeIn .25s ease both',
+      }}>
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 0' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(118,126,181,.35)' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '8px 16px 6px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {pickedTraining ? (
+            <button
+              type="button"
+              onClick={() => { setPickedTraining(null); setPickedLaps([]); }}
+              style={{
+                border: 'none', background: 'rgba(118,126,181,.12)',
+                width: 28, height: 28, borderRadius: 14,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                color: '#5E6590', cursor: 'pointer', flexShrink: 0,
+              }}
+              aria-label="Back to training picker"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          ) : null}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7c3aed', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              {pickedTraining ? 'Pick a lap' : 'Assign lactate'}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#0A0E1A', display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span>{Number(measurement?.value || 0).toFixed(1)}</span>
+              <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700 }}>mmol/L</span>
+              {pickedTraining && (
+                <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 500, marginLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  → {pickedTraining.title || pickedTraining.name || 'Training'}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: 'none', background: 'rgba(118,126,181,.12)',
+              width: 28, height: 28, borderRadius: 14,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: '#5E6590', cursor: 'pointer', flexShrink: 0,
+            }}
+            aria-label="Close"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 6l12 12M6 18L18 6" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Step 1 — training picker */}
+        {!pickedTraining && (
+          <>
+            <div style={{ padding: '4px 16px 8px' }}>
+              <input
+                type="search"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search trainings…"
+                style={{
+                  width: '100%', padding: '8px 10px',
+                  fontFamily: 'inherit', fontSize: 13,
+                  border: '1px solid rgba(118,126,181,.25)',
+                  borderRadius: 10, background: '#fff', color: '#0A0E1A',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, padding: '0 12px 12px', WebkitOverflowScrolling: 'touch' }}>
+              {candidates.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
+                  No trainings with laps were found.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {candidates.map((t) => {
+                    const d = new Date(t.date || t.timestamp || t.startDate || 0);
+                    const dStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
+                    const sport = normSport(t.sport);
+                    const tint = SPORT_TINT[sport] || SPORT_TINT.other;
+                    const title = t.title || t.name || t.titleManual || 'Untitled';
+                    return (
+                      <button
+                        key={t._id || t.id || String(d.getTime())}
+                        type="button"
+                        onClick={() => handlePickTraining(t)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '10px 12px', borderRadius: 12,
+                          border: '1px solid rgba(118,126,181,.14)',
+                          background: 'rgba(255,255,255,.7)',
+                          cursor: 'pointer', textAlign: 'left',
+                          WebkitTapHighlightColor: 'transparent',
+                        }}
+                      >
+                        <span style={{
+                          width: 6, height: 36, borderRadius: 3, background: tint, flexShrink: 0,
+                        }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {title}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: '#6B7280' }}>
+                            {dStr} · {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                          </div>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Step 2 — lap picker */}
+        {pickedTraining && (
+          <div style={{ overflowY: 'auto', flex: 1, padding: '4px 12px 12px', WebkitOverflowScrolling: 'touch' }}>
+            {lapsLoading ? (
+              <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>Loading laps…</div>
+            ) : pickedLaps.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
+                No laps available on this training.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pickedLaps.map((lap, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onAssign({ training: pickedTraining, lapIndex: idx })}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', borderRadius: 12,
+                      border: '1px solid rgba(118,126,181,.14)',
+                      background: 'rgba(255,255,255,.7)',
+                      cursor: busy ? 'wait' : 'pointer', textAlign: 'left',
+                      opacity: busy ? 0.6 : 1,
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    <span style={{
+                      width: 28, height: 28, borderRadius: 14,
+                      background: 'rgba(124,58,237,.12)',
+                      color: '#7c3aed', fontWeight: 800, fontSize: 12,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {idx + 1}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0A0E1A' }}>
+                        Lap {idx + 1}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {fmtLapMeta(lap, idx)}
+                      </div>
+                    </div>
+                    {Number(lap?.lactate) > 0 && (
+                      <span style={{ fontSize: 10, color: '#7c3aed', fontWeight: 700 }}>
+                        was {Number(lap.lactate).toFixed(1)}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
