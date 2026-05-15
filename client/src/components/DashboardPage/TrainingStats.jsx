@@ -105,7 +105,7 @@ function parseDurationSecs(r) {
 }
 
 /* ── Bar tooltip ───────────────────────────────────────────────────────────── */
-function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user }) {
+function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user, intervalType = null }) {
   const [pos, setPos] = useState({ top: 0, left: 0, barCenterX: 0 });
   const tooltipRef = useRef(null);
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
@@ -195,11 +195,29 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
           transform: "translateX(-50%)",
         }} />
 
-        {/* Header */}
-        <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100">
+        {/* Header — interval number + (when set) the work/warmup/cooldown/recovery tag */}
+        <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100 flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold text-gray-700 tracking-wide">
             Interval #{index + 1}
           </span>
+          {intervalType && (() => {
+            const META = {
+              warmup:   { label: 'Warm-up',  bg: '#fef3c7', fg: '#92400e' },
+              work:     { label: 'Work',     bg: '#ede9fe', fg: '#6d28d9' },
+              recovery: { label: 'Recovery', bg: '#f3f4f6', fg: '#4b5563' },
+              cooldown: { label: 'Cool-down',bg: '#e0f2fe', fg: '#0369a1' },
+            };
+            const m = META[String(intervalType).toLowerCase()];
+            if (!m) return null;
+            return (
+              <span
+                className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: m.bg, color: m.fg }}
+              >
+                {m.label}
+              </span>
+            );
+          })()}
         </div>
 
         {/* Rows */}
@@ -277,6 +295,7 @@ function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, he
         barHeight={Math.max(height, 3)}
         visible={isHovered}
         index={index}
+        intervalType={intervalType}
         power={power}
         heartRate={heartRate}
         lactate={lactate}
