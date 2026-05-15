@@ -1,6 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { calculateZonesFromTest } from '../Testing-page/zoneCalculator';
+// Reuse the exact threshold algorithm DataTable / LactateCurveCalculator use
+// on desktop so the LT1/LT2 stat above matches the zone table below it (the
+// zone table already routes through resolveLtAnchorsFromTest → calculateThresholds).
+import { calculateThresholds as desktopCalculateThresholds } from '../Testing-page/DataTable';
 
 // ─── zone metadata (shared with NativeTestingPage) ────────────────────────────
 const ZONE_DEFS = [
@@ -72,7 +76,33 @@ function extractThresholds(test) {
     }))
     .filter(p => Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y) && p.y > 0);
 
-  if (pts.length >= 3) {
+  // Primary path: desktop calculateThresholds (D-max + IAT + sport-specific
+  // guards + polynomial snap). Matches what the test page itself shows and
+  // what calculateZonesFromTest uses below for the Z1–Z5 strip.
+  try {
+    const thr = desktopCalculateThresholds(test);
+    if (thr) {
+      const dLt1   = Number(thr.LTP1);
+      const dLt2   = Number(thr.LTP2);
+      const dLt1La = Number(thr.lactates?.LTP1);
+      const dLt2La = Number(thr.lactates?.LTP2);
+      const dLt1Hr = Number(thr.heartRates?.LTP1);
+      const dLt2Hr = Number(thr.heartRates?.LTP2);
+      if (ltp1Power   == null && Number.isFinite(dLt1)   && dLt1   > 0) ltp1Power   = dLt1;
+      if (ltp2Power   == null && Number.isFinite(dLt2)   && dLt2   > 0) ltp2Power   = dLt2;
+      if (ltp1Lactate == null && Number.isFinite(dLt1La) && dLt1La > 0) ltp1Lactate = dLt1La;
+      if (ltp2Lactate == null && Number.isFinite(dLt2La) && dLt2La > 0) ltp2Lactate = dLt2La;
+      if (ltp1Hr      == null && Number.isFinite(dLt1Hr) && dLt1Hr > 0) ltp1Hr      = Math.round(dLt1Hr);
+      if (ltp2Hr      == null && Number.isFinite(dLt2Hr) && dLt2Hr > 0) ltp2Hr      = Math.round(dLt2Hr);
+    }
+  } catch {
+    // Degenerate test — fall through to the old simple interpolation below
+    // so the card still shows something.
+  }
+
+  // Fallback: simple linear interpolation at base + 1.5 / max(4.0, base + 3.0)
+  // when the desktop helper returned nothing for this test.
+  if ((ltp1Power == null || ltp2Power == null) && pts.length >= 3) {
     pts.sort((a, b) => isPace ? b.x - a.x : a.x - b.x);
     const base = Number(test.baseLactate) || pts[0]?.y || 1.0;
     const lt1Target = base + 1.5;
