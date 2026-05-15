@@ -162,7 +162,48 @@ const INTERVAL_TYPE_COLOR = {
 };
 const intervalTypeMeta = (itype) => INTERVAL_TYPE_COLOR[itype] ?? null;
 
-/* ─── SVG Skyline chart ─────────────────────────────────────────────────────── */
+/* ─── parse helpers for lap geometry (duration / distance) ─────────────────── */
+const parseLapDurationSec = (r) => {
+  // Prefer explicit seconds first; fall back to MM:SS / HH:MM:SS strings.
+  const direct = Number(r?.durationSeconds);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const raw = r?.duration ?? r?.moving_time ?? r?.elapsed_time;
+  if (raw == null) return 0;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  const s = String(raw).trim();
+  if (!s) return 0;
+  // "HH:MM:SS" / "MM:SS" — both interpreted as time.
+  if (s.includes(':')) {
+    const parts = s.split(':').map(p => Number(p));
+    if (parts.every(Number.isFinite)) {
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+    }
+    return 0;
+  }
+  // Plain numeric string → seconds, unless durationType is 'distance' (skip
+  // because then this number is metres / km, not time).
+  if (r?.durationType === 'distance') return 0;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+const parseLapDistanceMeters = (r) => {
+  // distanceMeters is canonical; fall back to .distance (which on Training
+  // results may be km, on Strava laps is metres). When durationType === 'distance'
+  // the `duration` field IS the distance — interpret it likewise.
+  const dm = Number(r?.distanceMeters);
+  if (Number.isFinite(dm) && dm > 0) return dm;
+  const d = Number(r?.distance);
+  if (Number.isFinite(d) && d > 0) return d > 100 ? d : d * 1000;
+  if (r?.durationType === 'distance') {
+    const raw = Number(r?.duration);
+    if (Number.isFinite(raw) && raw > 0) return raw > 100 ? raw : raw * 1000;
+  }
+  return 0;
+};
+
+/* ─── SVG Skyline chart — bar widths proportional to duration / distance ──── */
 function SkylineChart({ results, sport, width = 180, height = 52 }) {
   if (!results || results.length === 0) {
     return <div style={{ width, height }} className="bg-gray-50 rounded flex items-center justify-center text-[10px] text-gray-300">—</div>;
@@ -172,11 +213,42 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
   const maxVal = Math.max(...vals, 0.001);
 
   const BAR_AREA_H = height - 16; // reserve top 16px for lactate labels
-  // Shrink gap + bar width proportionally so all bars fit within `width`
+
+  // Width weight per lap: distance when at least one lap has it (better for
+  // run/swim where pace varies more than duration), else duration. Falls
+  // back to 1 for laps with neither, so they still appear as a thin sliver.
+  const distances = results.map(parseLapDistanceMeters);
+  const totalDist = distances.reduce((a, b) => a + b, 0);
+  const useDist = totalDist > 0;
+  const weights = useDist
+    ? distances.map(d => (d > 0 ? d : 1))
+    : results.map(r => Math.max(parseLapDurationSec(r), 1));
+  const totalWeight = weights.reduce((a, b) => a + b, 0) || results.length;
+
   const gap = results.length <= 8 ? 2 : results.length <= 15 ? 1.5 : results.length <= 25 ? 1 : 0.5;
-  const barW = Math.max(2, (width - gap * (results.length - 1)) / results.length);
-  const totalW = results.length * barW + (results.length - 1) * gap;
-  const offsetX = Math.max(0, (width - totalW) / 2);
+  const totalGapW = gap * Math.max(0, results.length - 1);
+  const usableW = Math.max(1, width - totalGapW);
+  const MIN_BAR_W = 2;
+
+  // First pass: target widths from weight share, clamped to MIN_BAR_W.
+  const rawWidths = weights.map(w => (w / totalWeight) * usableW);
+  const widths = rawWidths.map(w => Math.max(MIN_BAR_W, w));
+  // Redistribute overflow by trimming from the largest bars.
+  let overflow = widths.reduce((a, b) => a + b, 0) - usableW;
+  if (overflow > 0.5) {
+    const order = widths
+      .map((w, i) => ({ i, w }))
+      .sort((a, b) => b.w - a.w);
+    let idx = 0;
+    while (overflow > 0.5 && idx < order.length * 4) {
+      const slot = order[idx % order.length];
+      if (widths[slot.i] - 0.5 > MIN_BAR_W) {
+        widths[slot.i] -= 0.5;
+        overflow -= 0.5;
+      }
+      idx++;
+    }
+  }
 
   return (
     <svg width={width} height={height} style={{ overflow: 'visible' }}>
@@ -184,7 +256,8 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
         const val = vals[i];
         const pct = maxVal > 0 ? val / maxVal : 0;
         const barH = Math.max(3, pct * BAR_AREA_H);
-        const x = offsetX + i * (barW + gap);
+        const x = widths.slice(0, i).reduce((a, b) => a + b, 0) + i * gap;
+        const barW = widths[i];
         const y = BAR_AREA_H - barH + 12; // +12 to shift below label area
         const typeMeta = intervalTypeMeta(r.intervalType);
         const { fill } = typeMeta ? { fill: typeMeta.fill } : zoneColor(pct);
@@ -194,8 +267,8 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
           <g key={i}>
             {/* Bar */}
             <rect x={x} y={y} width={barW} height={barH} fill={fill} rx={2} opacity={0.88} />
-            {/* Lactate badge */}
-            {lac != null && (
+            {/* Lactate badge — only if the bar is wide enough to host the dot */}
+            {lac != null && barW >= 6 && (
               <>
                 <circle cx={x + barW / 2} cy={y - 6} r={7} fill="#fff" stroke={fill} strokeWidth={1.5} />
                 <text
