@@ -18,8 +18,13 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
+    // Password is only required when the user signs up the classic way.
+    // OAuth / Sign-in-with-Apple users have no password — without the
+    // appleId exemption Apple Sign-In account creation failed with a
+    // validation error, which surfaced to the user as "an error message"
+    // (App Store review 2.1(a)).
     required: function() {
-      return !this.googleId && !this.facebookId;
+      return !this.googleId && !this.facebookId && !this.appleId;
     }
   },
   role: {

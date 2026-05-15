@@ -143,7 +143,13 @@ function AppRoutes() {
   const navigate = useNavigate();
 
   React.useEffect(() => {
-    const goSettings = () => navigate('/settings?tab=subscription');
+    // App Store 3.1.1: on iOS native we don't surface the subscription tab,
+    // so swallow the premium-required event there instead of navigating
+    // to a page that no longer exists.
+    const goSettings = () => {
+      if (isCapacitorNative()) return;
+      navigate('/settings?tab=subscription');
+    };
     window.addEventListener('app:premium-required', goSettings);
     return () => window.removeEventListener('app:premium-required', goSettings);
   }, [navigate]);
