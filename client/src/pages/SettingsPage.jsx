@@ -3343,6 +3343,10 @@ function AppleHealthCard({ isMobile }) {
   // True once we've successfully imported workouts at least once — drives
   // the Connect vs Disconnect button switch.
   const [connected, setConnected] = React.useState(false);
+  // Collapsible "Health Data Transparency" panel — closed by default to
+  // keep the card compact, expanded when the user wants to inspect what
+  // we're reading and why (Apple's privacy guidelines encourage this).
+  const [showTransparency, setShowTransparency] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3424,44 +3428,126 @@ function AppleHealthCard({ isMobile }) {
     if (!ok) setMsg('Could not open iOS Settings. Open it manually → Health → Data Access & Devices → LaChart.');
   };
 
-  const lastStr = last ? last.toLocaleString() : 'never';
-  const btnBase = isMobile ? 'px-2.5 py-1.5 text-[10px] rounded-md' : 'px-3 py-2 text-sm rounded';
+  // "Less than a minute ago" / "5 minutes ago" / "3 hours ago" — relative
+  // time reads better than a raw timestamp for a frequently-updated value.
+  const relativeLast = (d) => {
+    if (!d) return 'never';
+    const ms = Date.now() - d.getTime();
+    if (ms < 60 * 1000) return 'less than a minute ago';
+    const m = Math.floor(ms / 60000);
+    if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`;
+    const days = Math.floor(h / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  };
+  const lastRel = relativeLast(last);
+
+  // Friendly labels for the "Data types: …" footer, matching what the iOS
+  // Health permission sheet shows. Order chosen for readability.
+  const DATA_TYPE_LABELS = [
+    'workouts', 'exercise time', 'steps', 'flights climbed', 'distance',
+    'active calories', 'heart rate', 'resting heart rate', 'respiratory rate',
+    'SpO₂', 'body fat', 'weight',
+  ];
+  const previewTypes = DATA_TYPE_LABELS.slice(0, 3).join(', ');
+  const extraTypes = DATA_TYPE_LABELS.length - 3;
+
+  const btnFull = isMobile
+    ? 'w-full px-3 py-2 text-xs rounded-lg font-medium'
+    : 'w-full px-4 py-2.5 text-sm rounded-lg font-medium';
 
   return (
-    <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
-      <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
-        <div className="flex items-center gap-2">
-          {/* Apple Health badge — white heart on a pink→red gradient,
-              matching the iOS Health app icon (per Apple's marketing assets). */}
+    <div className={`bg-white ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-gray-200 ${isMobile ? 'p-3' : 'p-6'} shadow-sm`}>
+      {/* Header row — badge + title + connection status pill */}
+      <div className={`flex items-start justify-between gap-3 ${isMobile ? 'mb-3' : 'mb-4'}`}>
+        <div className="flex items-center gap-3 min-w-0">
           <div
-            className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} rounded-[22%] shadow-sm`}
+            className={`flex items-center justify-center shrink-0 ${isMobile ? 'w-9 h-9' : 'w-11 h-11'} rounded-[22%] shadow-sm`}
             style={{ background: 'linear-gradient(135deg, #FF6B7A 0%, #FB1B4F 55%, #E2003D 100%)' }}
           >
-            <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-3.5 h-3.5' : 'w-[18px] h-[18px]'}`} fill="#FFFFFF">
+            <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'}`} fill="#FFFFFF">
               <path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" />
             </svg>
           </div>
-          <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Apple Health</h4>
+          <div className="min-w-0">
+            <h4 className={`${isMobile ? 'text-sm' : 'text-lg'} font-semibold leading-tight`}>Apple Health</h4>
+            <p className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-gray-500 leading-snug`}>
+              Imports workouts, heart rate, distance, and recovery metrics from your iPhone / Apple Watch.
+            </p>
+          </div>
         </div>
-        <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${connected ? 'text-green-600' : 'text-gray-500'}`}>
+        <span className={`shrink-0 ${isMobile ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-full font-medium ${connected ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-100 text-gray-600'}`}>
           {connected ? 'Connected' : 'Not connected'}
         </span>
       </div>
-      <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-        Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone). Read-only — LaChart never writes to Health.
+
+      {/* Collapsible "Health Data Transparency" panel — disclosure to users
+          about exactly what's read / written / purpose. Mirrors what's also
+          listed in our App Store privacy declarations. */}
+      <button
+        type="button"
+        onClick={() => setShowTransparency(v => !v)}
+        className={`w-full flex items-center justify-between gap-2 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-sm'} bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-left transition-colors`}
+      >
+        <span className="inline-flex items-center gap-2 font-medium text-gray-800">
+          <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-gray-500`} fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l8 4v5c0 4.5-3.4 8.6-8 9-4.6-.4-8-4.5-8-9V7l8-4z" />
+          </svg>
+          Health Data Transparency
+        </span>
+        <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-gray-400 transition-transform ${showTransparency ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {showTransparency && (
+        <div className={`mt-2 ${isMobile ? 'px-3 py-3 text-[11px]' : 'px-4 py-4 text-xs'} bg-white border border-gray-200 rounded-xl space-y-2 text-gray-700 leading-relaxed`}>
+          <p>
+            On iPhone, this feature uses Apple HealthKit to import selected health data into LaChart.
+          </p>
+          <p>
+            <span className="font-semibold">Reads:</span> exercise sessions, workout power, steps, active calories, distance, heart rate, resting heart rate, HRV (RMSSD), respiratory rate, SpO₂, VO₂ max trends, body fat, and weight.
+          </p>
+          <p>
+            <span className="font-semibold">Writes:</span> none. LaChart never writes back to Apple Health.
+          </p>
+          <p>
+            <span className="font-semibold">Purpose:</span> workout import, training-load and recovery analysis, fitness/body-composition trends, coaching insights, charts, and personalised training recommendations.
+          </p>
+          <p>
+            <span className="font-semibold">Manage access:</span> Apple Health &gt; Sharing &gt; Apps &amp; Services &gt; LaChart.
+          </p>
+        </div>
+      )}
+
+      {/* Last sync line */}
+      <p className={`${isMobile ? 'text-[11px] mt-3' : 'text-sm mt-4'} text-gray-600`}>
+        Last synced <span className="font-medium text-gray-800">{lastRel}</span>
       </p>
 
       {/* Primary action row — Connect / Sync now switches based on state. */}
-      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col items-stretch' : 'flex-wrap'}`}>
+      <div className={`flex flex-col gap-2 ${isMobile ? 'mt-2' : 'mt-3'}`}>
         {!connected ? (
           <button
             type="button"
             onClick={handleSync}
             disabled={busy}
-            className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium inline-flex items-center justify-center gap-1.5`}
+            className={`${btnFull} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-sm`}
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
-            {busy ? 'Connecting…' : 'Connect Apple Health'}
+            {busy ? (
+              <>
+                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="4" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                </svg>
+                Connecting…
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
+                Enable
+              </>
+            )}
           </button>
         ) : (
           <>
@@ -3469,47 +3555,67 @@ function AppleHealthCard({ isMobile }) {
               type="button"
               onClick={handleSync}
               disabled={busy}
-              className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+              className={`${btnFull} bg-white text-gray-800 border border-gray-200 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2`}
             >
-              {busy ? 'Syncing…' : 'Sync now'}
+              {busy ? (
+                <>
+                  <svg className="animate-spin w-4 h-4 text-rose-500" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="4" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                  </svg>
+                  Syncing…
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6M20 20v-6h-6M4 10a8 8 0 0114-4.9M20 14a8 8 0 01-14 4.9" />
+                  </svg>
+                  Sync now
+                </>
+              )}
             </button>
             <button
               type="button"
               onClick={handleDisconnect}
               disabled={busy}
-              className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+              className={`${btnFull} bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2`}
             >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+              </svg>
               Disconnect
             </button>
           </>
         )}
       </div>
 
-      {/* Secondary deep-links — always available so the user can fix
-          permission state regardless of connection state. */}
-      <div className={`flex items-center gap-2 mt-2 ${isMobile ? 'flex-col items-stretch' : 'flex-wrap'}`}>
+      {/* Secondary deep-links — always visible. The user must use these to
+          flip individual category permissions back on if iOS denied them. */}
+      <div className={`grid grid-cols-2 gap-2 ${isMobile ? 'mt-2' : 'mt-3'}`}>
         <button
           type="button"
           onClick={handleOpenHealthApp}
-          className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
+          className={`${isMobile ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
         >
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="#FB1B4F"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
-          Open Health app
+          Open Health
         </button>
         <button
           type="button"
           onClick={handleOpenAppSettings}
-          className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium`}
+          className={`${isMobile ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium`}
         >
-          Open Health permissions
+          Permissions
         </button>
       </div>
 
-      <span className={`block ${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 mt-2`}>
-        Last sync: {lastStr}
-      </span>
+      {/* Data-types footer — quick at-a-glance list of what we're requesting */}
+      <p className={`${isMobile ? 'text-[10px] mt-3' : 'text-xs mt-4'} text-gray-500`}>
+        Data types: {previewTypes}{extraTypes > 0 ? ` +${extraTypes} more` : ''}
+      </p>
+
       {msg && (
-        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700 bg-gray-50 border border-gray-100 rounded-md px-2.5 py-2 leading-relaxed`}>
+        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed`}>
           {msg}
         </div>
       )}
