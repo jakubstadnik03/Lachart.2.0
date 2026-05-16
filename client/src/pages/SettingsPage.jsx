@@ -3330,6 +3330,14 @@ function AppleHealthCard({ isMobile }) {
   const handleSync = async () => {
     setBusy(true);
     setMsg(null);
+    // Hard watchdog — if anything in the HealthKit pipeline hangs (dynamic
+    // import stuck, plugin not responding, user dismissed the permission
+    // sheet by swiping it away), make sure the button doesn't stay stuck
+    // on "Connecting…" forever.
+    const watchdog = setTimeout(() => {
+      setBusy(false);
+      setMsg('HealthKit did not respond within 40 s. If you tapped "Don\'t Allow" or dismissed the iOS permission sheet, open iPhone Settings → Health → Data Access & Devices → LaChart and enable Workouts / Heart Rate / Distance / Active Energy.');
+    }, 40000);
     try {
       const { syncHealthKit, lastSyncedAt } = await import('../services/healthKitSync');
       const result = await syncHealthKit({ force: true });
@@ -3350,6 +3358,7 @@ function AppleHealthCard({ isMobile }) {
     } catch (e) {
       setMsg(`Sync failed: ${e?.message || 'unknown error'}`);
     } finally {
+      clearTimeout(watchdog);
       setBusy(false);
     }
   };
@@ -3389,9 +3398,14 @@ function AppleHealthCard({ isMobile }) {
     <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
       <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
         <div className="flex items-center gap-2">
-          <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-pink-50 rounded-lg`}>
-            <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} fill="#EF4444">
-              <path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" />
+          {/* Apple Health badge — white heart on a pink→red gradient,
+              matching the iOS Health app icon (per Apple's marketing assets). */}
+          <div
+            className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} rounded-[22%] shadow-sm`}
+            style={{ background: 'linear-gradient(135deg, #FF6B7A 0%, #FB1B4F 55%, #E2003D 100%)' }}
+          >
+            <svg viewBox="0 0 24 24" className={`${isMobile ? 'w-3.5 h-3.5' : 'w-[18px] h-[18px]'}`} fill="#FFFFFF">
+              <path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" />
             </svg>
           </div>
           <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Apple Health</h4>
@@ -3413,7 +3427,7 @@ function AppleHealthCard({ isMobile }) {
             disabled={busy}
             className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium inline-flex items-center justify-center gap-1.5`}
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor"><path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" /></svg>
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
             {busy ? 'Connecting…' : 'Connect Apple Health'}
           </button>
         ) : (
@@ -3446,7 +3460,7 @@ function AppleHealthCard({ isMobile }) {
           onClick={handleOpenHealthApp}
           className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
         >
-          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="#EF4444"><path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" /></svg>
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="#FB1B4F"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
           Open Health app
         </button>
         <button
