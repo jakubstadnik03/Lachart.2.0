@@ -107,6 +107,29 @@ const SettingsPage = () => {
   const [garminLoginForm, setGarminLoginForm] = useState({ username: '', password: '' });
   const [isConnectingGarminCreds, setIsConnectingGarminCreds] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
+  // Strava 429 wall — when set, Sync Now is disabled and we render a live
+  // countdown. Persisted to localStorage so the wall survives page reloads.
+  const [stravaRetryUntil, setStravaRetryUntil] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem('strava_manual_retry_until') || '0', 10);
+      return v > Date.now() ? v : 0;
+    } catch { return 0; }
+  });
+  // 1-Hz ticker for the countdown — only mounted while a wall is active.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!stravaRetryUntil) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [stravaRetryUntil]);
+  const stravaSecondsLeft = stravaRetryUntil ? Math.max(0, Math.ceil((stravaRetryUntil - now) / 1000)) : 0;
+  // Auto-clear when the wall expires.
+  useEffect(() => {
+    if (stravaRetryUntil && stravaSecondsLeft === 0) {
+      try { localStorage.removeItem('strava_manual_retry_until'); } catch {}
+      setStravaRetryUntil(0);
+    }
+  }, [stravaRetryUntil, stravaSecondsLeft]);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
   const [corosConnected] = useState(false);
@@ -866,6 +889,12 @@ const SettingsPage = () => {
           maybeNotifyStravaActivitiesImported(imp, user?.notifications);
         }
         const retryAfter = Number(e?.response?.data?.retryAfter || 0);
+        // Persist the wall so a page reload doesn't let the user click again.
+        if (retryAfter > 0) {
+          const until = Date.now() + retryAfter * 1000;
+          setStravaRetryUntil(until);
+          try { localStorage.setItem('strava_manual_retry_until', String(until)); } catch {}
+        }
         const minutes = retryAfter > 0 ? Math.max(1, Math.ceil(retryAfter / 60)) : null;
         addNotification(
           minutes
@@ -2798,10 +2827,15 @@ const SettingsPage = () => {
                     </button>
                     <button
                       onClick={handleSyncStrava}
-                      disabled={isSyncingStrava}
+                      disabled={isSyncingStrava || stravaSecondsLeft > 0}
                       className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      title={stravaSecondsLeft > 0 ? `Strava rate limit — retry in ${Math.ceil(stravaSecondsLeft / 60)} min` : undefined}
                     >
-                      {isSyncingStrava ? 'Syncing...' : 'Sync Now'}
+                      {isSyncingStrava
+                        ? 'Syncing...'
+                        : stravaSecondsLeft > 0
+                          ? `Retry in ${Math.floor(stravaSecondsLeft / 60)}:${String(stravaSecondsLeft % 60).padStart(2, '0')}`
+                          : 'Sync Now'}
                     </button>
                     <button
                       onClick={async () => {
