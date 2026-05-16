@@ -150,14 +150,34 @@ function workoutToPayload(w) {
 }
 
 /**
- * Ensure HealthKit read permission. iOS does not let us know whether the user
- * granted access — we just ask once and proceed; queries will return empty if
- * the user denied. Caches "asked" in localStorage so re-prompts are rare.
+ * Ensure HealthKit read permission.
+ *
+ * IMPORTANT: @perfood/capacitor-healthkit's requestAuthorization() does NOT
+ * accept the enum strings ('workoutType', 'distanceWalkingRunning' etc.) for
+ * its read array. Its native iOS getTypes() only recognises a small set of
+ * friendly aliases — strings outside that set are silently dropped, so the
+ * permission sheet doesn't include those data types at all. That was the
+ * "we asked for workouts but iOS shows zero workouts" bug.
+ *
+ * Aliases supported by requestAuthorization (verified against the plugin's
+ * Swift source):
+ *   'activity'   → HKWorkoutType.workoutType()  ← needed for workout reads
+ *   'calories'   → active + basal energy burned
+ *   'distance'   → walking/running + cycling
+ *   'heartRate'  → heart rate
+ *   'steps' | 'stairs' | 'duration' | 'weight' | … (see plugin README)
+ *
+ * Queries (queryHKitSampleType) take the SampleNames enum strings instead
+ * ('workoutType', 'heartRate', etc.) — that's a separate code path.
+ *
+ * iOS does not report what the user granted, so we just ask and proceed;
+ * a denied permission produces an empty query result, which the caller
+ * surfaces as skipped:'empty-or-denied'.
  */
 async function ensurePermission(plugin) {
   try {
     await plugin.requestAuthorization({
-      read: ['workoutType', 'distanceWalkingRunning', 'distanceCycling', 'heartRate', 'activeEnergyBurned'],
+      read: ['activity', 'distance', 'heartRate', 'calories'],
       write: [],
       all: [],
     });
