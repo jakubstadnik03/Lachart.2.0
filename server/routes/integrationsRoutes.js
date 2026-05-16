@@ -3910,5 +3910,28 @@ router.get('/apple-health/status', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/integrations/apple-health
+ * Wipes every AppleHealthActivity record for this user. Used by the
+ * "Disconnect" button in Settings — combined with the client clearing
+ * its local sync-state, this returns the integration to its initial
+ * "not connected" condition on the server side.
+ *
+ * iOS itself does not allow apps to revoke their own HealthKit
+ * authorization — the user must do that in iOS Settings → Health →
+ * Data Access & Devices → LaChart. The UI surfaces a button that
+ * deep-links there.
+ */
+router.delete('/apple-health', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await AppleHealthActivity.deleteMany({ userId });
+    res.json({ deleted: result?.deletedCount ?? 0 });
+  } catch (err) {
+    console.error('[apple-health] disconnect error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;
