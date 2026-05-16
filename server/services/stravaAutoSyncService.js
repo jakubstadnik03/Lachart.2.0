@@ -57,20 +57,24 @@ async function getValidStravaToken(user) {
  * @param {Object} user - User document with strava credentials
  * @returns {Promise<{imported: number, updated: number, error?: string}>}
  */
-async function syncStravaForUser(user) {
+async function syncStravaForUser(user, opts = {}) {
+  const { force = false } = opts;
   let imported = 0;
   // Track stravaId of newly-imported activities so the push notification can
   // deep-link to the most recent one (great for the "tap → add lactate" flow).
   const importedActivityIds = [];
   let updated = 0;
-  
+
   try {
     if (!user || !user.strava?.accessToken) {
       return { imported: 0, updated: 0, error: 'Strava not connected' };
     }
 
-    // Check if auto-sync is enabled
-    if (!user.strava?.autoSync) {
+    // Background syncs (scheduler / app-open) respect the per-user autoSync
+    // toggle. User-initiated "Sync now" sets force=true and pulls regardless —
+    // otherwise users who turned auto-sync off would silently get nothing back
+    // when they tapped the manual refresh button.
+    if (!force && !user.strava?.autoSync) {
       return { imported: 0, updated: 0, message: 'Auto-sync is disabled' };
     }
     
@@ -103,7 +107,10 @@ async function syncStravaForUser(user) {
     // pages at most — real-world athletes rarely upload 200+ activities in one go.
     // For first-time syncs we allow more pages to back-fill history.
     const isFirstSync = !user.strava?.lastSyncDate;
-    const maxPages = isFirstSync ? 10 : 3;
+    // Manual "Sync now" pulls more aggressively — the user is waiting, and the
+    // 48h overlap window can still contain >300 activities for active athletes
+    // (multi-sport, indoor + outdoor). Background ticks stay conservative.
+    const maxPages = isFirstSync ? 10 : (force ? 10 : 3);
 
     const params = { per_page };
     if (since) {

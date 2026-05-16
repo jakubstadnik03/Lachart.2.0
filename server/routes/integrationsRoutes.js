@@ -1011,9 +1011,11 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
       }
     }
 
-    // Use the service function
+    // Use the service function. Thread `force` through so the service skips
+    // its own autoSync-disabled bail-out — a manual "Sync now" must always
+    // pull, even for users who keep background auto-sync turned off.
     const { syncStravaForUser } = require('../services/stravaAutoSyncService');
-    const result = await syncStravaForUser(user);
+    const result = await syncStravaForUser(user, { force: isForced });
     
     // Never use HTTP 401 here — the app treats 401 as "JWT invalid" and logs the user out.
     // Strava token / refresh failures are upstream auth issues; return 200 + error body (same as catch below).
