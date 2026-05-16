@@ -669,9 +669,16 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
       style={{ borderLeftColor: color, borderLeftWidth: 3, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       title={title}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
-        <SportIcon sport={act.sport} className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
-        <span className={`font-bold truncate flex-1 ${compact ? 'text-[10px]' : 'text-[11px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}>
+      <div className="flex items-start gap-1.5 min-w-0">
+        <SportIcon sport={act.sport} className={`mt-0.5 flex-shrink-0 ${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
+        {/* Two-line clamp: lets longer titles like "Bike Endurance" or
+            "Afternoon Swim" wrap onto a second line instead of truncating
+            to "Bike Endura…". `min-w-0` on the parent + `break-words` here
+            ensure wrap actually triggers in narrow flex children. */}
+        <span
+          className={`font-bold flex-1 min-w-0 break-words leading-tight ${compact ? 'text-[10px]' : 'text-[11px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
+          style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
+        >
           {title}
         </span>
       </div>
@@ -1264,9 +1271,16 @@ const WeeklyCalendar = ({
   }, [trainingDetail]);
 
   const handleActivityClick = async (activity) => {
-    // Open the shared ActivityFullModal (planned + completed) instead of
-    // loading the dashboard's inline detail view. Find a matching planned
-    // workout for that day+sport to populate the PLANNED side of the modal.
+    // Delegate fully to the parent when it supplies onSelectActivity. The
+    // dashboard's own ActivityFullModal opening here clashed with the
+    // weekly-summary aside (mismatched heights, mis-aligned grid) — the
+    // parent can route the click however it wants (navigate to the
+    // training calendar, etc.) without breaking this layout.
+    if (onSelectActivity) {
+      onSelectActivity(activity);
+      return;
+    }
+    // Fallback: only open the internal modal when no parent handler exists.
     const actDateRaw = activity?.date || activity?.timestamp || activity?.startDate || activity?.start_time;
     const dayKey = actDateRaw ? getLocalDateString(new Date(actDateRaw)) : null;
     const matchPw = dayKey
@@ -1280,7 +1294,6 @@ const WeeklyCalendar = ({
 
     if (isMobile) {
       // On mobile just open the modal — no inline detail panel
-      if (onSelectActivity) onSelectActivity(activity);
       return;
     }
 
