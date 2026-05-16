@@ -300,6 +300,9 @@ const userSchema = new mongoose.Schema({
     monthlyReportLastSent:   { type: Date, default: null },
     testReminderLastSent:    { type: Date, default: null },
     reengagementLastSent:    { type: Date, default: null },
+    /** One-off product-update campaigns. Each key is the campaign code so
+     *  re-running the same campaign is idempotent across server restarts. */
+    whatsNewMay2026Sent:     { type: Date, default: null },
     milestones: {
       firstTestSent:              { type: Boolean, default: false },
       fiveTestsSent:              { type: Boolean, default: false },
