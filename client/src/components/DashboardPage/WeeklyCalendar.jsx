@@ -1590,7 +1590,7 @@ const WeeklyCalendar = ({
                     </div>
                   );
                 })}
-                {weekSummaryAside(true)}
+                {!activityModal && weekSummaryAside(true)}
                 </div>
               </div>
             </div>
@@ -1668,6 +1668,14 @@ const WeeklyCalendar = ({
               );
 
               if (idx === 6) {
+                // Hide the weekly summary aside when an activity has been
+                // tapped — the modal overlay + an "always-on" summary card
+                // next to a possibly-tiny Sunday card produced a visually
+                // broken row (summary much taller than the day, with the
+                // expanded training pulling layout further out of alignment).
+                if (activityModal) {
+                  return <div key="sun-only-row">{dayCard}</div>;
+                }
                 return (
                   <div key="sun-summary-row" className="flex flex-row gap-2 w-full min-w-0 items-stretch">
                     <div className="min-w-0 flex-1">{dayCard}</div>
@@ -2378,7 +2386,9 @@ const WeeklyCalendar = ({
                 </div>
               );
             })}
-            <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
+            {!activityModal && (
+              <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
+            )}
           </div>
         )
       )}
