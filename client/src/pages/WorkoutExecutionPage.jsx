@@ -29,6 +29,8 @@ import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
 import StepBarChart from '../components/WorkoutExecution/StepBarChart';
+import MetricTile from '../components/WorkoutExecution/MetricTile';
+import PreStartHero from '../components/WorkoutExecution/PreStartHero';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
@@ -197,6 +199,14 @@ export default function WorkoutExecutionPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [ergMode, setErgMode] = useState(false);
+  // Tracks whether the user ever pressed Start. `isRunning` flips to false
+  // every time they pause; this flag stays true so we know to show the
+  // "active" UI (metrics grid, live chart, etc.) instead of the pre-start
+  // hero card.
+  const [hasStarted, setHasStarted] = useState(false);
+  useEffect(() => {
+    if (isRunning) setHasStarted(true);
+  }, [isRunning]);
 
   const timerRef = useRef(null);
   const ergSentRef = useRef(null); // last sent power target (to avoid redundant writes)
@@ -662,7 +672,9 @@ export default function WorkoutExecutionPage() {
           Replaces the old uniform-colour mini-map. Bar HEIGHT communicates
           interval intensity (target watts), bar WIDTH communicates duration
           — so the user instantly sees the workout shape (warm-up ramp,
-          sprint blocks, cool-down) and where they are in it. */}
+          sprint blocks, cool-down) and where they are in it.
+          Hidden on the finished screen — the summary chart below covers that. */}
+      {!isFinished && (
       <div className="px-3 sm:px-4 pt-1.5 pb-2">
         <StepBarChart
           steps={expandedSteps}
@@ -679,6 +691,7 @@ export default function WorkoutExecutionPage() {
           height={isNative ? 60 : 72}
         />
       </div>
+      )}
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 gap-3 sm:gap-4 overflow-y-auto"
@@ -718,8 +731,95 @@ export default function WorkoutExecutionPage() {
               Save & Finish
             </button>
           </motion.div>
+        ) : !hasStarted ? (
+          /* ── PRE-START SCREEN — Tacx-style hero card + metric tiles ──── */
+          <PreStartHero
+            firstStep={expandedSteps[0]}
+            targetWatts={expandedSteps[0]?.powerTarget ? resolveTargetWatts(expandedSteps[0].powerTarget, context) : null}
+            targetLabel={resolveTargetLabel(expandedSteps[0]?.powerTarget, context)}
+            workoutTitle={workout?.title}
+            workoutDuration={totalDuration}
+            onStart={() => setIsRunning(true)}
+            onExit={handleAbandon}
+            onSettings={() => setErgMode((e) => !e)}
+            stepColors={{
+              warmup:   { bar: '#fbbf24', edge: '#f59e0b' },
+              work:     { bar: '#a78bfa', edge: '#7c3aed' },
+              recovery: { bar: '#22c55e', edge: '#16a34a' },
+              cooldown: { bar: '#38bdf8', edge: '#0ea5e9' },
+              rest:     { bar: '#9ca3af', edge: '#6b7280' },
+            }}
+            metricsSlot={(
+              <div className="grid grid-cols-2 gap-2.5 h-full">
+                <MetricTile
+                  label="WATT"
+                  value={trainer.data.power != null ? Math.round(trainer.data.power) : null}
+                  icon={<BoltSolid className="w-3.5 h-3.5" />}
+                  accent="#a78bfa"
+                />
+                <MetricTile
+                  label="BPM"
+                  value={liveHr != null ? Math.round(liveHr) : null}
+                  icon={<span className="text-base leading-none">♥</span>}
+                  accent="#fb7185"
+                />
+                <MetricTile
+                  label="RPM"
+                  value={trainer.data.cadence != null ? Math.round(trainer.data.cadence) : null}
+                  accent="#38bdf8"
+                />
+                <MetricTile
+                  label="KM/H"
+                  value={trainer.data.speed != null ? trainer.data.speed.toFixed(1) : null}
+                  accent="#34d399"
+                />
+              </div>
+            )}
+          />
         ) : (
           <>
+            {/* ── METRIC TILES ROW (live) ─────────────────────────────────
+                Compact horizontal strip at the top of the active view —
+                4 always-on readings the athlete glances at most. Stays at
+                the top of the column so it doesn't shift when the live
+                chart resizes underneath. */}
+            <div className="w-full max-w-2xl grid grid-cols-4 gap-2 mb-1">
+              <MetricTile
+                compact
+                label="WATT"
+                value={trainer.data.power != null ? Math.round(trainer.data.power) : null}
+                icon={<BoltSolid className="w-3 h-3" />}
+                accent="#a78bfa"
+                trend={currentTargetWatts != null && trainer.data.power != null && currentTargetWatts > 0
+                  ? `${Math.round((trainer.data.power / currentTargetWatts) * 100)}% target`
+                  : null}
+                trendColor={(() => {
+                  if (currentTargetWatts == null || trainer.data.power == null || currentTargetWatts === 0) return null;
+                  const off = Math.abs(trainer.data.power / currentTargetWatts - 1);
+                  return off <= 0.05 ? '#34d399' : off <= 0.15 ? '#fbbf24' : '#fb7185';
+                })()}
+              />
+              <MetricTile
+                compact
+                label="BPM"
+                value={liveHr != null ? Math.round(liveHr) : null}
+                icon={<span className="text-sm leading-none">♥</span>}
+                accent="#fb7185"
+              />
+              <MetricTile
+                compact
+                label="RPM"
+                value={trainer.data.cadence != null ? Math.round(trainer.data.cadence) : null}
+                accent="#38bdf8"
+              />
+              <MetricTile
+                compact
+                label="KM/H"
+                value={trainer.data.speed != null ? trainer.data.speed.toFixed(1) : null}
+                accent="#34d399"
+              />
+            </div>
+
             {/* ── Current step badge ── */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -851,8 +951,11 @@ export default function WorkoutExecutionPage() {
         )}
       </div>
 
-      {/* ── Controls ────────────────────────────────────────────────────────── */}
-      {!isFinished && (
+      {/* ── Controls ──────────────────────────────────────────────────────────
+          Hidden on the pre-start screen because the hero card already has its
+          own big Start Now / Exit / Settings cluster. Reappears once the
+          athlete is in active or paused mode. */}
+      {!isFinished && hasStarted && (
         <div className={`px-4 sm:px-6 ${isNative ? 'pb-4 pt-3' : 'pb-6 pt-4'} border-t border-white/10`}>
           <div className="flex items-center justify-center gap-5 sm:gap-6">
             {/* Prev step */}
