@@ -1,6 +1,7 @@
 const axios = require('axios');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
+const stravaBudget = require('../utils/stravaBudget');
 
 // Helper function to delay execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -129,6 +130,7 @@ async function syncStravaForUser(user, opts = {}) {
 
     while (page <= maxPages) {
       try {
+        await stravaBudget.take();
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },
           params: { ...params, page },
