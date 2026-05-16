@@ -15,6 +15,10 @@ const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const router = express.Router();
 
+// Process-wide token bucket so no single hot path can drain Strava's quota.
+// take() awaits a slot inside our SAFE-headroom window (500/15min, 1800/day).
+const stravaBudget = require('../utils/stravaBudget');
+
 // ────────────────────────────────────────────────────────────────────────────
 // Global Strava rate-limit memo (process-local, single-instance).
 //
@@ -335,6 +339,7 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
       }
 
       for (let page = 1; page <= maxPagesPerBatch; page += 1) {
+        await stravaBudget.take();
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },
           params: { per_page: perPage, page: 1, before: nextCursor },
@@ -565,6 +570,8 @@ router.get('/strava/status', verifyToken, async (req, res) => {
       // UI can show a "Strava API quota — retry in N min" banner.
       rateLimitedUntil: stravaUnlockAt > Date.now() ? new Date(stravaUnlockAt).toISOString() : null,
       rateLimitedSecondsLeft: stravaLockoutSecondsRemaining(),
+      // Live token-bucket usage — helpful for the diagnose-the-spike workflow.
+      budget: stravaBudget.snapshot(),
     });
   } catch (error) {
     console.error('[Strava status] error:', error);
@@ -661,6 +668,7 @@ async function fetchStravaActivityStreams(token, stravaId) {
   // variants on 400/404, burning the rate-limit token bucket. Strava omits
   // unsupported keys silently in the response so one shot is enough.
   const url = `https://www.strava.com/api/v3/activities/${stravaId}/streams`;
+  await stravaBudget.take();
   try {
     const r = await axios.get(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -739,6 +747,9 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null) {
 async function fetchAndSaveStravaActivity(user, stravaActivityId) {
   const token = await getValidStravaToken(user);
   if (!token) throw new Error('No valid Strava token');
+  // Wait for a budget slot — a single morning upload burst from many users
+  // used to fire ~300 of these in 15 min and tip us over Strava's limit.
+  await stravaBudget.take();
   const resp = await axios.get(
     `https://www.strava.com/api/v3/activities/${stravaActivityId}`,
     { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
@@ -944,7 +955,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     while (page <= maxPages) {
       try {
         console.log(`Fetching page ${page}...`);
-        
+        await stravaBudget.take();
+
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },
           params: { ...params, page },

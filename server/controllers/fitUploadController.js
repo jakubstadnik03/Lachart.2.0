@@ -1919,6 +1919,8 @@ async function analyzeTrainingsByMonth(req, res) {
             ? 'time,velocity_smooth,heartrate' // velocity_smooth for pace calculation
             : 'time,watts,heartrate'; // watts for cycling
 
+          const stravaBudget = require('../utils/stravaBudget');
+          await stravaBudget.take();
           const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
             headers: { Authorization: `Bearer ${token}` },
             params: { keys: streamKeys, key_by_type: true },
@@ -3047,6 +3049,8 @@ async function getPowerMetrics(req, res) {
             break;
           }
           // Load streams from Strava API (cache-miss path)
+          const stravaBudget = require('../utils/stravaBudget');
+          await stravaBudget.take();
           const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
             headers: { Authorization: `Bearer ${stravaToken}` },
             params: { keys: 'time,watts', key_by_type: true },
