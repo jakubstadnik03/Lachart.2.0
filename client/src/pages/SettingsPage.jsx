@@ -3366,7 +3366,7 @@ function AppleHealthCard({ isMobile }) {
 
   const handleSync = async () => {
     setBusy(true);
-    setMsg(null);
+    setMsg('Starting HealthKit sync…');
     // Hard watchdog — if anything in the HealthKit pipeline hangs (dynamic
     // import stuck, plugin not responding, user dismissed the permission
     // sheet by swiping it away), make sure the button doesn't stay stuck
@@ -3377,7 +3377,10 @@ function AppleHealthCard({ isMobile }) {
     }, 40000);
     try {
       const { syncHealthKit, lastSyncedAt } = await import('../services/healthKitSync');
-      const result = await syncHealthKit({ force: true });
+      // Per-step diagnostic so the user can see exactly which stage stalled.
+      // When the pipeline hangs (permission sheet auto-dismissed, plugin
+      // wedged), the last visible step is the smoking gun.
+      const result = await syncHealthKit({ force: true, onProgress: (label) => setMsg(label) });
       const ls = lastSyncedAt();
       setLast(ls);
       if (result?.imported > 0) {

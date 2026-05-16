@@ -231,20 +231,29 @@ async function ensurePermission(plugin) {
  * @param {{ force?: boolean }} opts force=true bypasses the 24h throttle (used by the
  *   manual Settings button).
  */
-export async function syncHealthKit({ force = false } = {}) {
+export async function syncHealthKit({ force = false, onProgress } = {}) {
+  // Surface every step both to console AND to the optional progress callback
+  // so the Settings card can render "step 3/5: queryHKitSampleType…" live.
+  // Without this, when the call hangs we have no idea which line is stuck.
+  const step = (label) => {
+    console.log('[healthkit] step:', label);
+    try { if (typeof onProgress === 'function') onProgress(label); } catch {}
+  };
+
   if (!isCapacitorNative()) return { skipped: 'web' };
+  step('loading plugin');
 
   const plugin = await getPlugin();
   if (!plugin) {
     console.warn('[healthkit] plugin missing');
     return { skipped: 'plugin-missing' };
   }
-  console.log('[healthkit] starting sync (force=' + force + ')');
+  step('checking HealthKit availability');
 
   // Bail early if data isn't available (iPad without Health, simulator, etc.)
   try {
     await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable');
-    console.log('[healthkit] isAvailable: ok');
+    step('HealthKit available — requesting permission');
   } catch (e) {
     console.warn('[healthkit] isAvailable failed:', e?.message);
     return { skipped: 'unavailable', error: e?.message };
@@ -256,7 +265,7 @@ export async function syncHealthKit({ force = false } = {}) {
     if (!(await withTimeout(ensurePermission(plugin), PLUGIN_TIMEOUT_MS, 'requestAuthorization'))) {
       return { skipped: 'denied' };
     }
-    console.log('[healthkit] permission requested (note: iOS does not report what the user granted)');
+    step('permission flow done — reading workouts');
   } catch (e) {
     console.warn('[healthkit] requestAuthorization failed:', e?.message);
     return { skipped: 'denied', error: e?.message };
@@ -274,7 +283,7 @@ export async function syncHealthKit({ force = false } = {}) {
       limit:     MAX_WORKOUTS,
     }), PLUGIN_TIMEOUT_MS, 'queryHKitSampleType');
     workouts = Array.isArray(res?.resultData) ? res.resultData : [];
-    console.log('[healthkit] queried ' + workouts.length + ' workouts in last ' + LOOKBACK_DAYS + ' days');
+    step(`got ${workouts.length} workouts back`);
   } catch (e) {
     console.warn('[healthkit] query failed:', e?.message || e);
     return { skipped: 'query-failed', error: e?.message || String(e) };
@@ -289,7 +298,7 @@ export async function syncHealthKit({ force = false } = {}) {
   }
 
   const payload = { workouts: workouts.map(workoutToPayload).filter(w => w.id && w.startDate) };
-  console.log('[healthkit] uploading ' + payload.workouts.length + ' workouts to server');
+  step(`uploading ${payload.workouts.length} workouts to server`);
 
   try {
     const { data } = await api.post('/api/integrations/apple-health/sync', payload);
