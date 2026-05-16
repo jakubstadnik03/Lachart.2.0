@@ -404,12 +404,16 @@ app.use('/api-docs', swaggerAdminGuard, swaggerUi.serve, swaggerUi.setup(swagger
   ]
 }));
 
-// Health check endpoint for Render.com warmup
+// Health check endpoint for Render.com warmup. Also exposes the git commit
+// the server was built from — invaluable for "is my fix actually live?"
+// verification (without needing Render dashboard access).
+const SERVER_COMMIT = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.COMMIT_SHA || null;
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  res.status(200).json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    commit: SERVER_COMMIT,
   });
 });
 
