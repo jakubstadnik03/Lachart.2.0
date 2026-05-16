@@ -199,6 +199,23 @@ export default function WorkoutExecutionPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [ergMode, setErgMode] = useState(false);
+  // ERG bias — multiplier applied to the planned target wattage before
+  // sending to the trainer. 1.00 = ride exactly as prescribed, 1.10 = +10 %,
+  // 0.90 = −10 %. Useful when the athlete wants a slightly harder/easier
+  // session without rebuilding the planned workout. Persists for the entire
+  // workout (does not reset on step change).
+  const [ergBias, setErgBias] = useState(1.0);
+  const ERG_BIAS_STEP = 0.05; // ±5 %
+  const ERG_BIAS_MIN  = 0.50;
+  const ERG_BIAS_MAX  = 1.50;
+  const bumpErgBias = useCallback((delta) => {
+    setErgBias((b) => {
+      const next = Math.round((b + delta) * 100) / 100;
+      return Math.max(ERG_BIAS_MIN, Math.min(ERG_BIAS_MAX, next));
+    });
+    // Force a re-send on the next ERG effect tick.
+    ergSentRef.current = null;
+  }, []);
   // Tracks whether the user ever pressed Start. `isRunning` flips to false
   // every time they pause; this flag stays true so we know to show the
   // "active" UI (metrics grid, live chart, etc.) instead of the pre-start
@@ -361,14 +378,23 @@ export default function WorkoutExecutionPage() {
     currentStepIdxRef.current = currentStepIdx;
   }, [currentStepIdx]);
 
-  // ── ERG power sending ─────────────────────────────────────────────────────────
+  // ── ERG power sending ─────────────────────────────────────────────────────
+  // Effective target = plan × ergBias. So when the athlete taps + to bump to
+  // 110 %, the trainer immediately gets the new wattage; when they jump to the
+  // next step the new step's target is also biased. `ergSentRef` stores the
+  // last value we wrote, so a redundant write is skipped (cheap deduplication).
+  const effectiveErgWatts = useMemo(() => {
+    if (currentTargetWatts == null) return null;
+    return Math.max(0, Math.round(currentTargetWatts * ergBias));
+  }, [currentTargetWatts, ergBias]);
+
   useEffect(() => {
     if (!ergMode || trainer.status !== 'connected') return;
-    if (currentTargetWatts == null) return;
-    if (ergSentRef.current === currentTargetWatts) return;
-    ergSentRef.current = currentTargetWatts;
-    trainer.setPower(currentTargetWatts);
-  }, [ergMode, currentTargetWatts, trainer.status]); // eslint-disable-line
+    if (effectiveErgWatts == null) return;
+    if (ergSentRef.current === effectiveErgWatts) return;
+    ergSentRef.current = effectiveErgWatts;
+    trainer.setPower(effectiveErgWatts);
+  }, [ergMode, effectiveErgWatts, trainer.status]); // eslint-disable-line
 
   // ── Accumulate actual power per step ─────────────────────────────────────────
   useEffect(() => {
@@ -655,16 +681,49 @@ export default function WorkoutExecutionPage() {
               )}
             </button>
           )}
-          {/* ERG toggle */}
-          <button
-            onClick={() => setErgMode(e => !e)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              ergMode ? 'bg-primary border-primary text-white' : 'border-white/20 text-gray-400 hover:bg-white/10'
-            }`}
-          >
-            <BoltSolid className="w-3.5 h-3.5" />
-            ERG
-          </button>
+          {/* ERG toggle + bias adjuster.
+              When ERG is on, a connected −/+ pill lets the athlete bias the
+              prescribed wattage in 5 % steps (50–150 %). Bias persists for
+              the rest of the workout — set it once, every following interval
+              is scaled. */}
+          {ergMode ? (
+            <div className="flex items-stretch rounded-lg overflow-hidden border border-primary"
+              style={{ WebkitTapHighlightColor: 'transparent' }}>
+              <button
+                onClick={() => bumpErgBias(-ERG_BIAS_STEP)}
+                disabled={ergBias <= ERG_BIAS_MIN + 1e-6}
+                className="px-2.5 bg-primary/20 text-primary font-bold text-base hover:bg-primary/30 active:bg-primary/40 disabled:opacity-40 transition-colors"
+                aria-label="Decrease ERG intensity 5%"
+              >
+                −
+              </button>
+              <button
+                onClick={() => setErgMode(false)}
+                className="px-2 py-1.5 bg-primary text-white font-bold text-[10px] flex flex-col items-center justify-center leading-tight"
+                title="Tap to disable ERG"
+              >
+                <span className="tabular-nums">{Math.round(ergBias * 100)}%</span>
+                <span className="text-[8px] opacity-80 uppercase tracking-wider">ERG</span>
+              </button>
+              <button
+                onClick={() => bumpErgBias(ERG_BIAS_STEP)}
+                disabled={ergBias >= ERG_BIAS_MAX - 1e-6}
+                className="px-2.5 bg-primary/20 text-primary font-bold text-base hover:bg-primary/30 active:bg-primary/40 disabled:opacity-40 transition-colors"
+                aria-label="Increase ERG intensity 5%"
+              >
+                +
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setErgMode(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/20 text-gray-400 hover:bg-white/10 transition-all"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <BoltSolid className="w-3.5 h-3.5" />
+              ERG
+            </button>
+          )}
         </div>
       </div>
 
@@ -790,12 +849,15 @@ export default function WorkoutExecutionPage() {
                 value={trainer.data.power != null ? Math.round(trainer.data.power) : null}
                 icon={<BoltSolid className="w-3 h-3" />}
                 accent="#a78bfa"
-                trend={currentTargetWatts != null && trainer.data.power != null && currentTargetWatts > 0
-                  ? `${Math.round((trainer.data.power / currentTargetWatts) * 100)}% target`
-                  : null}
+                trend={(() => {
+                  const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
+                  if (denom == null || trainer.data.power == null || denom === 0) return null;
+                  return `${Math.round((trainer.data.power / denom) * 100)}% target`;
+                })()}
                 trendColor={(() => {
-                  if (currentTargetWatts == null || trainer.data.power == null || currentTargetWatts === 0) return null;
-                  const off = Math.abs(trainer.data.power / currentTargetWatts - 1);
+                  const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
+                  if (denom == null || trainer.data.power == null || denom === 0) return null;
+                  const off = Math.abs(trainer.data.power / denom - 1);
                   return off <= 0.05 ? '#34d399' : off <= 0.15 ? '#fbbf24' : '#fb7185';
                 })()}
               />
@@ -852,16 +914,29 @@ export default function WorkoutExecutionPage() {
                   <p className="text-gray-500 text-xs sm:text-sm mb-3">of {fmtTime(stepDuration)}</p>
                 )}
 
-                {/* Power target */}
+                {/* Power target — show biased value when ERG is non-100 % */}
                 {currentTargetWatts != null && (
                   <div className="flex items-center justify-center gap-2 mb-1">
                     <BoltSolid className="w-5 h-5" style={{ color: col.bg }} />
                     <span className="text-2xl font-bold" style={{ color: col.bg }}>
-                      {currentTargetWatts} W
+                      {ergMode && Math.abs(ergBias - 1) > 1e-3 && effectiveErgWatts != null
+                        ? effectiveErgWatts
+                        : currentTargetWatts} W
                     </span>
                     <span className="text-gray-500 text-sm">
                       {resolveTargetLabel(currentStep?.powerTarget, context)}
                     </span>
+                    {ergMode && Math.abs(ergBias - 1) > 1e-3 && (
+                      <span
+                        className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded-md"
+                        style={{
+                          color: ergBias > 1 ? '#fb7185' : '#34d399',
+                          background: (ergBias > 1 ? '#fb7185' : '#34d399') + '22',
+                        }}
+                      >
+                        {ergBias > 1 ? '+' : ''}{Math.round((ergBias - 1) * 100)}%
+                      </span>
+                    )}
                   </div>
                 )}
                 {currentStep?.powerTarget?.useRange && (
@@ -872,9 +947,12 @@ export default function WorkoutExecutionPage() {
               </motion.div>
             </AnimatePresence>
 
-            {/* ── Intensity % chip — quick read of "how hard am I going relative to target" ── */}
+            {/* ── Intensity % chip — quick read of "how hard am I going relative to target" ──
+                When ERG bias ≠ 100 %, compare against the biased target so the
+                chip shows compliance with the modified ride, not the original plan. */}
             {trainer.status === 'connected' && trainer.data.power != null && currentTargetWatts != null && currentTargetWatts > 0 && (() => {
-              const pct = Math.round((trainer.data.power / currentTargetWatts) * 100);
+              const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
+              const pct = Math.round((trainer.data.power / denom) * 100);
               const off = Math.abs(pct - 100);
               const tone = off <= 5
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
