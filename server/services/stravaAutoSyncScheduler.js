@@ -22,10 +22,13 @@ function startStravaAutoSyncScheduler() {
   // Interval — webhook delivers activities in real-time; this is a fallback
   // safety net only. Default 60 minutes keeps daily API usage well under
   // Strava's 6 000/day limit even with many connected users.
-  // Align with the 60-min cutoff used in syncStravaForAllUsers so every tick
-  // actually finds work to do instead of wasting quota re-checking users that
-  // were just synced.
-  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000);
+  // Default poll cadence: 15 min (was 60). Real-time push is supposed to come
+  // via the Strava webhook, but in practice subscriptions go silent (network
+  // hiccup, callback URL change after redeploy, Strava-side throttle) and
+  // users are stuck waiting an hour for the next tick. 15 min is still well
+  // inside Strava's 600-req / 15-min quota — batch=6 users × ~3 pages per
+  // user × 4 ticks/hour ≈ 72 req/hour for the whole app.
+  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 15 * 60 * 1000);
 
   // 6 users per tick is enough: at 60-min cadence the whole base of ~60 users
   // rotates every ~10 ticks = 10 hours, well inside Strava's daily window.
