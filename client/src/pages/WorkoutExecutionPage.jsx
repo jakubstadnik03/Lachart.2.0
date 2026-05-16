@@ -20,12 +20,13 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   PlayIcon, PauseIcon, ForwardIcon, BackwardIcon,
   SignalIcon, CheckCircleIcon,
-  ArrowLeftIcon,
+  ArrowLeftIcon, BeakerIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlannerApi';
 import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
+import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 
@@ -192,12 +193,55 @@ export default function WorkoutExecutionPage() {
 
   const timerRef = useRef(null);
   const ergSentRef = useRef(null); // last sent power target (to avoid redundant writes)
-  // Power tracking for planned vs actual comparison
+  // Power + HR tracking for planned vs actual comparison
   const stepPowerRef = useRef({}); // { [stepIdx]: { sum, count } }
+  const stepHrRef    = useRef({}); // { [stepIdx]: { sum, count } }
   const currentStepIdxRef = useRef(0); // mirror of currentStepIdx for closure access
 
-  // Bluetooth
+  // ── Lactate input ─────────────────────────────────────────────────────────
+  // Inline mid-workout lactate entry. Pressing the "+ Lac" button opens a
+  // bottom sheet, the user types a mmol/L value, and we POST it to
+  // /api/field-lactate immediately with a timestamp + the current HR/power
+  // snapshot + the current step's lap index. Lactate measurements also stack
+  // locally so the laps sidebar can show them and they're sent again on
+  // finish (linked to the resulting Training doc).
+  const [showLactateSheet, setShowLactateSheet] = useState(false);
+  const [lactateInput, setLactateInput] = useState('');
+  const [lactateNote, setLactateNote] = useState('');
+  const [lactateSubmitting, setLactateSubmitting] = useState(false);
+  const lactateLogRef = useRef([]); // { value, ts, stepIdx, power, hr, note }
+
+  // Sidebar panel showing all laps with running averages. Toggle-driven so
+  // mobile users with small screens can hide it; auto-shown on first render
+  // for desktop.
+  const [showLapsSidebar, setShowLapsSidebar] = useState(false);
+  // A bumping counter forces re-render when stepPowerRef / stepHrRef /
+  // lactateLogRef mutate (refs alone don't trigger React re-renders, but
+  // the sidebar needs to refresh as averages tick forward).
+  const [sidebarTick, setSidebarTick] = useState(0);
+  useEffect(() => {
+    if (!showLapsSidebar || !isRunning) return;
+    const t = setInterval(() => setSidebarTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [showLapsSidebar, isRunning]);
+
+  // Bluetooth: trainer + independent HR strap. Many real setups use a
+  // dedicated HR strap (Polar/Wahoo/Garmin) even when on a trainer, because
+  // strap HR is more accurate than the optional HR field in FTMS Indoor Bike
+  // Data. Outdoor/running uses HR-only with no trainer at all.
   const trainer = useBluetoothTrainer();
+  const hrStrap = useBluetoothHeartRate();
+
+  // Live HR: prefer the standalone strap when connected (more accurate),
+  // fall back to trainer-reported HR. Wrapping `trainer.data` so the rest
+  // of the page can read `liveData.heartRate` without caring about source.
+  const liveHr = hrStrap.status === 'connected' && hrStrap.data.heartRate != null
+    ? hrStrap.data.heartRate
+    : trainer.data.heartRate;
+  const liveData = useMemo(
+    () => ({ ...trainer.data, heartRate: liveHr }),
+    [trainer.data, liveHr],
+  );
 
   // ── Load workout + athlete context ──────────────────────────────────────────
   useEffect(() => {
@@ -270,6 +314,59 @@ export default function WorkoutExecutionPage() {
     stepPowerRef.current[idx] = { sum: prev.sum + trainer.data.power, count: prev.count + 1 };
   }, [trainer.data.power, isRunning]); // eslint-disable-line
 
+  // ── Accumulate actual HR per step (from whichever source is live) ─────────
+  useEffect(() => {
+    if (!isRunning || liveHr == null) return;
+    const idx = currentStepIdxRef.current;
+    const prev = stepHrRef.current[idx] || { sum: 0, count: 0 };
+    stepHrRef.current[idx] = { sum: prev.sum + liveHr, count: prev.count + 1 };
+  }, [liveHr, isRunning]); // eslint-disable-line
+
+  // ── Lactate submit ──────────────────────────────────────────────────────────
+  const handleLactateSubmit = useCallback(async () => {
+    const raw = String(lactateInput || '').trim().replace(',', '.');
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0 || value > 30) {
+      addNotification('Enter a value between 0.1 and 30 mmol/L', 'error');
+      return;
+    }
+    setLactateSubmitting(true);
+    try {
+      // Snapshot context at the moment of measurement
+      const idx = currentStepIdxRef.current;
+      const power = trainer.data.power != null ? Math.round(trainer.data.power) : null;
+      const hr = liveHr != null ? Math.round(liveHr) : null;
+      const ts = new Date().toISOString();
+      const note = lactateNote.trim();
+
+      // Persist immediately to /api/field-lactate so a network blip mid-workout
+      // doesn't lose the measurement.
+      const body = {
+        value,
+        recordedAt: ts,
+        notes: note
+          ? `${note} (workout: ${workout?.title || 'Workout'}, step ${idx + 1})`
+          : `Workout: ${workout?.title || 'Workout'}, step ${idx + 1}`,
+      };
+      if (athleteId) body.athleteId = athleteId;
+      await api.post('/api/field-lactate', body);
+
+      // Track locally too so the laps sidebar (next phase) can render and the
+      // finish handler can attach it to the resulting Training.
+      lactateLogRef.current.push({ value, ts, stepIdx: idx, power, hr, note });
+
+      setLactateInput('');
+      setLactateNote('');
+      setShowLactateSheet(false);
+      addNotification(`Lactate ${value.toFixed(1)} mmol/L saved`, 'success');
+    } catch (e) {
+      console.error('[lactate] save failed', e);
+      addNotification('Failed to save lactate — try again', 'error');
+    } finally {
+      setLactateSubmitting(false);
+    }
+  }, [lactateInput, lactateNote, trainer, liveHr, workout, athleteId, addNotification]);
+
   // ── Timer tick ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isRunning || isFinished) {
@@ -328,25 +425,36 @@ export default function WorkoutExecutionPage() {
         completedAt: new Date().toISOString(),
         steps: expandedSteps.map((s, i) => {
           const p = stepPowerRef.current[i];
+          const h = stepHrRef.current[i];
+          // Lactate values recorded *during* this step (might be more than one
+          // per step if the athlete sampled at multiple points).
+          const lactates = lactateLogRef.current
+            .filter((l) => l.stepIdx === i)
+            .map((l) => ({ value: l.value, ts: l.ts, power: l.power, hr: l.hr, note: l.note }));
           return {
             stepType: s.stepType,
             label: s.label || s.stepType,
             durationSeconds: s.durationSeconds,
             targetWatts: s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null,
             actualAvgWatts: p && p.count > 0 ? Math.round(p.sum / p.count) : null,
+            actualAvgHr: h && h.count > 0 ? Math.round(h.sum / h.count) : null,
+            lactates,
           };
         }),
+        lactateMeasurements: lactateLogRef.current.slice(),
       };
       await updatePlannedWorkout(plannedWorkoutId, { status: 'completed', executionData });
       addNotification('Workout completed! Great job!', 'success');
     } catch (_) {}
     if (trainer.status === 'connected') trainer.disconnect();
+    if (hrStrap.status === 'connected') hrStrap.disconnect();
     navigate(athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner');
-  }, [plannedWorkoutId, athleteId, trainer, navigate, addNotification, totalElapsed, expandedSteps, context]);
+  }, [plannedWorkoutId, athleteId, trainer, hrStrap, navigate, addNotification, totalElapsed, expandedSteps, context]);
 
   // ── Abandon ──────────────────────────────────────────────────────────────────
   const handleAbandon = useCallback(() => {
     if (trainer.status === 'connected') trainer.disconnect();
+    if (hrStrap.status === 'connected') hrStrap.disconnect();
     navigate(-1);
   }, [trainer, navigate]);
 
@@ -393,16 +501,50 @@ export default function WorkoutExecutionPage() {
           <h1 className="text-sm font-bold truncate px-4">{workout.title || 'Workout'}</h1>
           <p className="text-xs text-gray-400">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
         </div>
-        {/* ERG toggle */}
-        <button
-          onClick={() => setErgMode(e => !e)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-            ergMode ? 'bg-primary border-primary text-white' : 'border-white/20 text-gray-400 hover:bg-white/10'
-          }`}
-        >
-          <BoltSolid className="w-3.5 h-3.5" />
-          ERG
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Laps sidebar toggle */}
+          {!isFinished && (
+            <button
+              onClick={() => setShowLapsSidebar((s) => !s)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                showLapsSidebar
+                  ? 'border-primary bg-primary/20 text-primary'
+                  : 'border-white/20 text-gray-400 hover:bg-white/10'
+              }`}
+              title="Show all steps"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
+          {/* Lactate sample button — opens bottom sheet */}
+          {!isFinished && (
+            <button
+              onClick={() => setShowLactateSheet(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-all"
+              title="Record a lactate sample"
+            >
+              <BeakerIcon className="w-3.5 h-3.5" />
+              + Lac
+              {lactateLogRef.current.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0 rounded-full bg-amber-400/30 text-[10px] font-bold">
+                  {lactateLogRef.current.length}
+                </span>
+              )}
+            </button>
+          )}
+          {/* ERG toggle */}
+          <button
+            onClick={() => setErgMode(e => !e)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              ergMode ? 'bg-primary border-primary text-white' : 'border-white/20 text-gray-400 hover:bg-white/10'
+            }`}
+          >
+            <BoltSolid className="w-3.5 h-3.5" />
+            ERG
+          </button>
+        </div>
       </div>
 
       {/* ── Step mini-map ───────────────────────────────────────────────────── */}
@@ -494,8 +636,10 @@ export default function WorkoutExecutionPage() {
                   {trainer.data.cadence != null && (
                     <span>{Math.round(trainer.data.cadence)} rpm</span>
                   )}
-                  {trainer.data.heartRate != null && (
-                    <span>♥ {trainer.data.heartRate} bpm</span>
+                  {liveHr != null && (
+                    <span className={hrStrap.status === 'connected' ? 'text-rose-300' : ''}>
+                      ♥ {Math.round(liveHr)} bpm
+                    </span>
                   )}
                   {powerDiff != null && Math.abs(powerDiff) > 5 && (
                     <span style={{ color: powerDiff > 0 ? '#ef4444' : '#22c55e' }}>
@@ -561,8 +705,9 @@ export default function WorkoutExecutionPage() {
             </button>
           </div>
 
-          {/* Bluetooth connect button */}
-          <div className="flex justify-center mt-4">
+          {/* Bluetooth connect buttons — trainer + independent HR strap */}
+          <div className="flex justify-center gap-2 mt-4 flex-wrap">
+            {/* Trainer */}
             {trainer.status === 'disconnected' || trainer.status === 'error' ? (
               <button
                 onClick={trainer.connect}
@@ -572,27 +717,279 @@ export default function WorkoutExecutionPage() {
                 Connect Trainer
               </button>
             ) : trainer.status === 'connecting' ? (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
+              <div className="flex items-center gap-2 text-sm text-gray-400 px-4 py-2">
                 <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                Connecting…
+                Trainer…
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={trainer.disconnect}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-green-500/40 bg-green-500/10 text-sm text-green-400 hover:bg-green-500/20 transition-colors"
-                >
-                  <SignalIcon className="w-4 h-4" />
-                  {trainer.deviceName || 'Trainer Connected'}
-                </button>
-              </div>
+              <button
+                onClick={trainer.disconnect}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-green-500/40 bg-green-500/10 text-sm text-green-400 hover:bg-green-500/20 transition-colors"
+              >
+                <SignalIcon className="w-4 h-4" />
+                {trainer.deviceName || 'Trainer'}
+              </button>
             )}
-            {trainer.error && (
-              <p className="text-xs text-red-400 mt-1 text-center">{trainer.error}</p>
+
+            {/* Heart-rate strap (independent — works without a trainer) */}
+            {hrStrap.status === 'disconnected' || hrStrap.status === 'error' ? (
+              <button
+                onClick={hrStrap.connect}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/30 bg-rose-500/5 text-sm text-rose-300 hover:bg-rose-500/15 transition-colors"
+                title="Connect a BLE heart-rate strap (Polar / Wahoo / Garmin / etc.)"
+              >
+                <span className="text-base leading-none">♥</span>
+                Connect HR
+              </button>
+            ) : hrStrap.status === 'connecting' ? (
+              <div className="flex items-center gap-2 text-sm text-rose-400 px-4 py-2">
+                <div className="w-4 h-4 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                HR…
+              </div>
+            ) : (
+              <button
+                onClick={hrStrap.disconnect}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/15 text-sm text-rose-300 hover:bg-rose-500/25 transition-colors"
+              >
+                <span className="text-base leading-none">♥</span>
+                {hrStrap.deviceName || 'HR'}
+                {liveHr != null && (
+                  <span className="ml-1 font-bold tabular-nums">{Math.round(liveHr)}</span>
+                )}
+              </button>
             )}
           </div>
+          {(trainer.error || hrStrap.error) && (
+            <p className="text-xs text-red-400 mt-1 text-center">
+              {trainer.error || hrStrap.error}
+            </p>
+          )}
         </div>
       )}
+
+      {/* ── Laps sidebar ─────────────────────────────────────────────────────
+          Slide-in from the right, lists all expanded steps with planned target,
+          actual averages (power + HR) accumulated so far, and any lactate
+          measurements recorded during that step. Tapping a row jumps the
+          workout to that step. */}
+      <AnimatePresence>
+        {showLapsSidebar && !isFinished && (
+          <motion.div
+            data-tick={sidebarTick}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowLapsSidebar(false)}
+            className="fixed inset-0 z-[9998] bg-black/40 flex justify-end"
+          >
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm h-full bg-gray-900 border-l border-white/10 overflow-y-auto"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white">All Steps</h3>
+                <button
+                  onClick={() => setShowLapsSidebar(false)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-400"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-2 py-2 space-y-1">
+                {expandedSteps.map((s, i) => {
+                  const c = STEP_COLORS[s.stepType] || STEP_COLORS.work;
+                  const isCurrent = i === currentStepIdx;
+                  const isPast = i < currentStepIdx;
+                  const target = s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null;
+                  const p = stepPowerRef.current[i];
+                  const h = stepHrRef.current[i];
+                  const avgP = p && p.count > 0 ? Math.round(p.sum / p.count) : null;
+                  const avgH = h && h.count > 0 ? Math.round(h.sum / h.count) : null;
+                  const stepLactates = lactateLogRef.current.filter((l) => l.stepIdx === i);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        ergSentRef.current = null;
+                        setCurrentStepIdx(i);
+                        setStepElapsed(0);
+                        setShowLapsSidebar(false);
+                      }}
+                      className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors ${
+                        isCurrent
+                          ? 'bg-white/10 border-white/30'
+                          : isPast
+                            ? 'bg-white/[0.02] border-white/5 opacity-70'
+                            : 'border-white/10 hover:bg-white/5'
+                      }`}
+                      style={{ borderLeftColor: c.bg, borderLeftWidth: 3 }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-gray-500 tabular-nums">{i + 1}.</span>
+                            <span className="text-xs font-bold text-white truncate">
+                              {s.label || s.stepType}
+                            </span>
+                            {s._repeatIdx && (
+                              <span className="text-[9px] text-gray-500">
+                                {s._repeatIdx}/{s._totalReps}
+                              </span>
+                            )}
+                            {isCurrent && (
+                              <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-primary">
+                                Now
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400 tabular-nums">
+                            <span>{fmtTime(s.durationSeconds)}</span>
+                            {target != null && (
+                              <>
+                                <span className="text-gray-600">·</span>
+                                <span className="font-semibold" style={{ color: c.bg }}>{target} W</span>
+                              </>
+                            )}
+                          </div>
+                          {/* Actual averages — only show when we have data */}
+                          {(avgP != null || avgH != null) && (
+                            <div className="flex items-center gap-3 mt-1 text-[10px] tabular-nums">
+                              {avgP != null && (
+                                <span className={`font-semibold ${
+                                  target != null && Math.abs(avgP - target) > target * 0.07
+                                    ? 'text-orange-400'
+                                    : 'text-emerald-400'
+                                }`}>
+                                  ⌀ {avgP} W
+                                </span>
+                              )}
+                              {avgH != null && (
+                                <span className="text-rose-400 font-semibold">♥ {avgH}</span>
+                              )}
+                            </div>
+                          )}
+                          {/* Lactate samples in this step */}
+                          {stepLactates.length > 0 && (
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {stepLactates.map((l, li) => (
+                                <span key={li} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 text-[10px] font-bold tabular-nums">
+                                  <BeakerIcon className="w-2.5 h-2.5" />
+                                  {l.value.toFixed(1)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Lactate bottom sheet ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showLactateSheet && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => !lactateSubmitting && setShowLactateSheet(false)}
+            className="fixed inset-0 z-[10000] bg-black/60 flex items-end justify-center"
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-gray-900 border border-white/10 rounded-t-3xl p-5 pb-[max(20px,env(safe-area-inset-bottom))]"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-white">Record Lactate</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Step {currentStepIdx + 1} · {fmtTime(totalElapsed)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowLactateSheet(false)}
+                  disabled={lactateSubmitting}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 disabled:opacity-50"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Snapshot of current power / HR — what the value will be tagged with */}
+              <div className="flex items-center gap-4 mb-4 px-3 py-2 rounded-xl bg-white/5 text-xs text-gray-400">
+                {trainer.data.power != null && (
+                  <span>
+                    <BoltSolid className="w-3 h-3 inline -mt-0.5 text-amber-400" /> {Math.round(trainer.data.power)} W
+                  </span>
+                )}
+                {liveHr != null && (
+                  <span>♥ {Math.round(liveHr)} bpm</span>
+                )}
+                {(trainer.data.power == null && liveHr == null) && (
+                  <span>No live data — value will be saved with current time only.</span>
+                )}
+              </div>
+
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                Lactate (mmol/L)
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoFocus
+                value={lactateInput}
+                onChange={(e) => setLactateInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLactateSubmit(); }}
+                placeholder="e.g. 2.4"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-2xl font-bold text-white text-center placeholder-gray-600 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 tabular-nums"
+              />
+
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mt-3 mb-1.5">
+                Note (optional)
+              </label>
+              <input
+                type="text"
+                value={lactateNote}
+                onChange={(e) => setLactateNote(e.target.value)}
+                placeholder="e.g. end of 3rd interval"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-400/40"
+              />
+
+              <div className="flex gap-2 mt-5">
+                <button
+                  onClick={() => setShowLactateSheet(false)}
+                  disabled={lactateSubmitting}
+                  className="flex-1 py-3 rounded-xl border border-white/15 text-gray-300 font-semibold text-sm hover:bg-white/5 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleLactateSubmit}
+                  disabled={lactateSubmitting || !lactateInput.trim()}
+                  className="flex-2 py-3 px-6 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-400 disabled:opacity-50 transition-colors"
+                  style={{ flex: 2 }}
+                >
+                  {lactateSubmitting ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
