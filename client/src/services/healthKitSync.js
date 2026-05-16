@@ -37,6 +37,54 @@ export function resetHealthKitSyncState() {
   } catch { /* ignore */ }
 }
 
+/**
+ * Full disconnect — wipes the server-side AppleHealthActivity records AND
+ * clears the local sync metadata. iOS itself does not let apps revoke
+ * their HealthKit authorization (privacy); callers should additionally
+ * deep-link the user into iOS Settings via openHealthKitSettings() below
+ * so they can flip off the per-category switches.
+ */
+export async function disconnectHealthKit() {
+  let serverDeleted = 0;
+  try {
+    const { data } = await api.delete('/api/integrations/apple-health');
+    serverDeleted = data?.deleted ?? 0;
+  } catch (e) {
+    console.warn('[healthkit] server disconnect failed:', e?.response?.data || e?.message);
+  }
+  resetHealthKitSyncState();
+  _plugin = null; // force a fresh plugin import on next sync attempt
+  return { serverDeleted };
+}
+
+/** Best-effort deep-link into the iOS Health app so the user can verify the
+ *  per-source permissions. Falls back to a no-op on non-native / blocked. */
+export async function openHealthApp() {
+  if (!isCapacitorNative()) return false;
+  try {
+    const { App } = await import('@capacitor/app');
+    await App.openUrl({ url: 'x-apple-health://' });
+    return true;
+  } catch (e) {
+    console.warn('[healthkit] openHealthApp failed:', e?.message || e);
+    try { window.location.href = 'x-apple-health://'; return true; } catch { return false; }
+  }
+}
+
+/** Deep-link into the per-app iOS Settings page for LaChart (where Health
+ *  permissions live under "Health → Data Access & Devices → LaChart"). */
+export async function openAppSettings() {
+  if (!isCapacitorNative()) return false;
+  try {
+    const { App } = await import('@capacitor/app');
+    await App.openUrl({ url: 'app-settings:' });
+    return true;
+  } catch (e) {
+    console.warn('[healthkit] openAppSettings failed:', e?.message || e);
+    try { window.location.href = 'app-settings:'; return true; } catch { return false; }
+  }
+}
+
 // Lazy-loaded to keep the web bundle clean.
 let _plugin = null;
 async function getPlugin() {

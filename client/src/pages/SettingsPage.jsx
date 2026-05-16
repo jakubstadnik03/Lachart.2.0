@@ -3307,6 +3307,9 @@ function AppleHealthCard({ isMobile }) {
   const [busy, setBusy] = React.useState(false);
   const [last, setLast] = React.useState(null);
   const [msg, setMsg] = React.useState(null);
+  // True once we've successfully imported workouts at least once — drives
+  // the Connect vs Disconnect button switch.
+  const [connected, setConnected] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3314,7 +3317,9 @@ function AppleHealthCard({ isMobile }) {
       const { isHealthKitSupported, lastSyncedAt } = await import('../services/healthKitSync');
       if (cancelled) return;
       setSupported(isHealthKitSupported());
-      setLast(lastSyncedAt());
+      const ls = lastSyncedAt();
+      setLast(ls);
+      setConnected(!!ls);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -3328,11 +3333,15 @@ function AppleHealthCard({ isMobile }) {
     try {
       const { syncHealthKit, lastSyncedAt } = await import('../services/healthKitSync');
       const result = await syncHealthKit({ force: true });
-      setLast(lastSyncedAt());
-      if (result?.imported > 0) setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
-      else if (result?.skipped === 'denied') setMsg('Permission denied. Open iPhone Settings → Privacy → Health → LaChart and allow read access.');
-      else if (result?.skipped === 'empty-or-denied') setMsg('Got 0 workouts back from Apple Health. If you have workouts in the Health app, iOS may have silently denied access — open iPhone Settings → Health → Data Access & Devices → LaChart and turn ON every category (Workouts, Heart Rate, Distance, Active Energy), then tap "Reset / Disconnect" here and "Sync now" again.');
-      else if (result?.skipped === 'plugin-missing') setMsg('HealthKit plugin not installed in this build. Rebuild the app after running pod install.');
+      const ls = lastSyncedAt();
+      setLast(ls);
+      if (result?.imported > 0) {
+        setConnected(true);
+        setMsg(`Imported ${result.imported} workout${result.imported === 1 ? '' : 's'}.`);
+      }
+      else if (result?.skipped === 'denied') setMsg('Permission denied. Open iPhone Settings → Health → Data Access & Devices → LaChart and turn ON every category, then tap Connect again.');
+      else if (result?.skipped === 'empty-or-denied') setMsg('Got 0 workouts back. If you have workouts in Apple Health, iOS may have silently denied access — open iPhone Settings → Health → Data Access & Devices → LaChart and turn ON Workouts / Heart Rate / Distance / Active Energy, then tap Connect again.');
+      else if (result?.skipped === 'plugin-missing') setMsg('HealthKit plugin not installed in this build.');
       else if (result?.skipped === 'unavailable') setMsg('HealthKit not available on this device (iPad without Health, or simulator).');
       else if (result?.skipped === 'query-failed') setMsg(`HealthKit query failed: ${result.error || 'unknown'}.`);
       else if (result?.skipped === 'upload-failed') setMsg(`Server upload failed: ${result.error || 'unknown'}.`);
@@ -3345,14 +3354,36 @@ function AppleHealthCard({ isMobile }) {
     }
   };
 
-  const handleReset = async () => {
-    const { resetHealthKitSyncState } = await import('../services/healthKitSync');
-    resetHealthKitSyncState();
-    setLast(null);
-    setMsg('Local sync state cleared. Tap "Sync now" to reconnect — iOS will re-prompt for permission. To fully revoke, also open iOS Settings → Health → Data Access & Devices → LaChart.');
+  const handleDisconnect = async () => {
+    if (!window.confirm('Disconnect Apple Health?\n\nThis removes all imported workouts from LaChart and clears the local sync state. iOS itself stays linked — to fully revoke read access you also need to flip off the categories under iPhone Settings → Health → Data Access & Devices → LaChart (button below opens it).')) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { disconnectHealthKit } = await import('../services/healthKitSync');
+      const result = await disconnectHealthKit();
+      setLast(null);
+      setConnected(false);
+      setMsg(`Disconnected. Removed ${result?.serverDeleted ?? 0} imported workout${result?.serverDeleted === 1 ? '' : 's'} from LaChart. To fully revoke iOS Health permission, tap "Open Health permissions" below.`);
+    } catch (e) {
+      setMsg(`Disconnect failed: ${e?.message || 'unknown error'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenHealthApp = async () => {
+    const { openHealthApp } = await import('../services/healthKitSync');
+    const ok = await openHealthApp();
+    if (!ok) setMsg('Could not open the Health app. Open it manually from the home screen.');
+  };
+  const handleOpenAppSettings = async () => {
+    const { openAppSettings } = await import('../services/healthKitSync');
+    const ok = await openAppSettings();
+    if (!ok) setMsg('Could not open iOS Settings. Open it manually → Health → Data Access & Devices → LaChart.');
   };
 
   const lastStr = last ? last.toLocaleString() : 'never';
+  const btnBase = isMobile ? 'px-2.5 py-1.5 text-[10px] rounded-md' : 'px-3 py-2 text-sm rounded';
 
   return (
     <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
@@ -3365,40 +3396,73 @@ function AppleHealthCard({ isMobile }) {
           </div>
           <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Apple Health</h4>
         </div>
-        <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${last ? 'text-green-600' : 'text-gray-500'}`}>
-          {last ? 'Synced' : 'Not synced'}
+        <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${connected ? 'text-green-600' : 'text-gray-500'}`}>
+          {connected ? 'Connected' : 'Not connected'}
         </span>
       </div>
       <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-        Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone, etc).
-        Syncs automatically once a day when you open the app.
+        Imports the last 30 days of workouts from Apple Health (Apple Watch, iPhone). Read-only — LaChart never writes to Health.
       </p>
-      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col items-stretch' : ''}`}>
-        <div className={`flex items-center gap-2 ${isMobile ? 'w-full' : ''}`}>
+
+      {/* Primary action row — Connect / Sync now switches based on state. */}
+      <div className={`flex items-center gap-2 ${isMobile ? 'flex-col items-stretch' : 'flex-wrap'}`}>
+        {!connected ? (
           <button
             type="button"
             onClick={handleSync}
             disabled={busy}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-rose-500 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+            className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium inline-flex items-center justify-center gap-1.5`}
           >
-            {busy ? 'Syncing…' : 'Sync now'}
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor"><path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" /></svg>
+            {busy ? 'Connecting…' : 'Connect Apple Health'}
           </button>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={busy}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} bg-white text-gray-700 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
-            title="Clear local sync state and re-request HealthKit permission"
-          >
-            Reset / Disconnect
-          </button>
-        </div>
-        <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
-          Last sync: {lastStr}
-        </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={busy}
+              className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+            >
+              {busy ? 'Syncing…' : 'Sync now'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              disabled={busy}
+              className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
+            >
+              Disconnect
+            </button>
+          </>
+        )}
       </div>
+
+      {/* Secondary deep-links — always available so the user can fix
+          permission state regardless of connection state. */}
+      <div className={`flex items-center gap-2 mt-2 ${isMobile ? 'flex-col items-stretch' : 'flex-wrap'}`}>
+        <button
+          type="button"
+          onClick={handleOpenHealthApp}
+          className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
+        >
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="#EF4444"><path d="M12 21s-7-4.5-9.5-9C.5 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.5 4 4.5 8-2.5 4.5-9.5 9-9.5 9z" /></svg>
+          Open Health app
+        </button>
+        <button
+          type="button"
+          onClick={handleOpenAppSettings}
+          className={`${btnBase} ${isMobile ? 'flex-1' : ''} bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium`}
+        >
+          Open Health permissions
+        </button>
+      </div>
+
+      <span className={`block ${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 mt-2`}>
+        Last sync: {lastStr}
+      </span>
       {msg && (
-        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700`}>
+        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700 bg-gray-50 border border-gray-100 rounded-md px-2.5 py-2 leading-relaxed`}>
           {msg}
         </div>
       )}
