@@ -1152,6 +1152,18 @@ export const syncStravaActivities = async (since=null) => {
 let stravaAutoSyncInFlight = false;
 let garminAutoSyncInFlight = false;
 
+// GET /strava/status — connection + real-time webhook health
+// Returns { connected, autoSync, lastSyncDate, webhookLastEventAt, webhookHealthy }
+export const fetchStravaStatus = async () => {
+  try {
+    const { data } = await api.get('/api/integrations/strava/status', { timeout: 10000 });
+    return data;
+  } catch (e) {
+    console.warn('[strava status] fetch failed:', e?.response?.data || e?.message);
+    return null;
+  }
+};
+
 export const autoSyncStravaActivities = async ({ force = false } = {}) => {
   // Prevent multiple simultaneous syncs
   if (stravaAutoSyncInFlight) {
@@ -1160,14 +1172,23 @@ export const autoSyncStravaActivities = async ({ force = false } = {}) => {
   }
 
   // Check for 429 errors in recent attempts (prevent rapid retries).
-  // User-initiated `force` syncs still respect the 429 wall — Strava itself
-  // is rate-limiting us so we can't talk to it anyway.
-  const last429Key = 'strava_auto_sync_last_429';
-  const last429 = localStorage.getItem(last429Key);
+  // The lockout duration is dynamic — we store the unlock timestamp itself
+  // (`strava_auto_sync_unlock_at`), derived from the server's Retry-After
+  // header. This lets a real Strava 15-min quota reset unlock us in 15 min,
+  // but a transient burst unlock in 60s.
+  // User-initiated force syncs get a much shorter floor (60 s) since the
+  // user is actively waiting and another request won't make anything worse —
+  // if Strava is still rate-limited we just bounce off another 429.
+  const unlockKey = 'strava_auto_sync_unlock_at';
+  const unlockAt = parseInt(localStorage.getItem(unlockKey) || '0', 10);
   const now = Date.now();
-  if (last429 && (now - parseInt(last429)) < 15 * 60 * 1000) { // Wait 15 min after 429
-    console.log('Strava auto-sync: Too many requests, waiting...');
-    return { imported: 0, updated: 0 };
+  if (unlockAt && now < unlockAt) {
+    const minLockoutForForce = 60 * 1000;
+    const stillLocked = !force || (unlockAt - now) > minLockoutForForce;
+    if (stillLocked) {
+      console.log(`Strava auto-sync: Rate-limit lockout active, ${Math.round((unlockAt - now) / 1000)}s left`);
+      return { imported: 0, updated: 0, rateLimited: true, retryAfterMs: unlockAt - now };
+    }
   }
 
   stravaAutoSyncInFlight = true;
@@ -1175,15 +1196,24 @@ export const autoSyncStravaActivities = async ({ force = false } = {}) => {
     const { data } = await api.post('/api/integrations/strava/auto-sync', { force: !!force }, {
       timeout: 120000 // 2 minutes timeout for auto-sync
     });
-    // Clear 429 flag on success
-    localStorage.removeItem(last429Key);
+    // Clear lockout on success
+    localStorage.removeItem(unlockKey);
     return data; // { imported, updated }
   } catch (error) {
-    // Handle 429 (Too Many Requests) gracefully
+    // Handle 429 (Too Many Requests) gracefully — honour Retry-After when
+    // provided. Strava sends seconds; fall back to 5 min if the header is
+    // missing (much friendlier than the previous 15-min wall).
     if (error.response?.status === 429) {
-      console.log('Strava auto-sync: Rate limited (429), will retry later');
-      localStorage.setItem(last429Key, now.toString());
-      return { imported: 0, updated: 0 };
+      const retryAfterSec = Number(
+        error.response.headers?.['retry-after'] ||
+        error.response.data?.retryAfter ||
+        300
+      );
+      const lockoutMs = Math.min(Math.max(retryAfterSec, 60), 15 * 60) * 1000;
+      const unlockTs = now + lockoutMs;
+      console.log(`Strava auto-sync: Rate limited (429), unlock in ${Math.round(lockoutMs / 1000)}s`);
+      localStorage.setItem(unlockKey, String(unlockTs));
+      return { imported: 0, updated: 0, rateLimited: true, retryAfterMs: lockoutMs };
     }
     // Silently fail for other errors - don't show errors to user
     console.log('Auto-sync failed:', error);

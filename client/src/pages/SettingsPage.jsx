@@ -91,6 +91,9 @@ const SettingsPage = () => {
   const [stravaConnected, setStravaConnected] = useState(false);
   const [garminConnected, setGarminConnected] = useState(false);
   const [stravaAutoSync, setStravaAutoSync] = useState(false);
+  // Real-time webhook health — populated by /api/integrations/strava/status.
+  // {webhookHealthy:boolean, webhookLastEventAt:string|null}
+  const [stravaWebhookStatus, setStravaWebhookStatus] = useState(null);
   const [garminAutoSync, setGarminAutoSync] = useState(false);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
@@ -274,6 +277,19 @@ const SettingsPage = () => {
           setGarminConnected(Boolean(status.garminConnected));
           if (status.garminLastSync) setGarminLastSync(status.garminLastSync);
           if (status.garminAutoSync !== undefined) setGarminAutoSync(Boolean(status.garminAutoSync));
+
+          // Pull real-time webhook health so we can tell the user whether
+          // their uploads should appear instantly (webhook) or with up to a
+          // 15-min polling delay (scheduler fallback).
+          if (isNowConnected) {
+            try {
+              const { fetchStravaStatus } = await import('../services/api');
+              const s = await fetchStravaStatus();
+              if (s) setStravaWebhookStatus(s);
+            } catch (e) { /* non-fatal */ }
+          } else {
+            setStravaWebhookStatus(null);
+          }
           
           // If Strava connection status changed (from not connected to connected), reload user profile
           if (!wasConnected && isNowConnected && user) {
@@ -2718,6 +2734,23 @@ const SettingsPage = () => {
                   
                   {stravaConnected && (
                     <>
+                      {/* Real-time sync health pill. Green = webhook fired in
+                          the last 7 days (uploads appear in seconds). Amber =
+                          falling back to the 15-min polling scheduler so the
+                          user knows why a fresh ride isn't showing up yet. */}
+                      {stravaWebhookStatus && (
+                        <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b flex items-center gap-2`}>
+                          <span className={`inline-flex items-center gap-1.5 ${isMobile ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1'} rounded-full font-medium ${stravaWebhookStatus.webhookHealthy ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${stravaWebhookStatus.webhookHealthy ? 'bg-green-500' : 'bg-amber-500'}`} />
+                            {stravaWebhookStatus.webhookHealthy ? 'Real-time sync active' : 'Polling fallback (≤15 min)'}
+                          </span>
+                          {stravaWebhookStatus.webhookLastEventAt && (
+                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
+                              last push {new Date(stravaWebhookStatus.webhookLastEventAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
                         <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
                           <div className={isMobile ? 'w-full' : ''}>

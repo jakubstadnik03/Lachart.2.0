@@ -483,6 +483,34 @@ router.get('/strava/callback', async (req, res) => {
   }
 });
 
+// GET /api/integrations/strava/status — connection + real-time sync health
+// Used by the Settings card to display "Real-time sync: active / inactive"
+// and the last webhook event timestamp. A webhook event in the last 7 days
+// is treated as "healthy" — Strava typically pushes within seconds of upload,
+// so anything older means either the user hasn't uploaded recently or the
+// push subscription has gone silently stale.
+router.get('/strava/status', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('strava').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const s = user.strava || {};
+    const connected = !!s.accessToken && !!s.athleteId;
+    const webhookLastEventAt = s.webhookLastEventAt || null;
+    const webhookHealthy = !!webhookLastEventAt &&
+      (Date.now() - new Date(webhookLastEventAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
+    res.json({
+      connected,
+      autoSync: !!s.autoSync,
+      lastSyncDate: s.lastSyncDate || null,
+      webhookLastEventAt,
+      webhookHealthy,
+    });
+  } catch (error) {
+    console.error('[Strava status] error:', error);
+    res.status(500).json({ error: error.message || 'Failed to load Strava status' });
+  }
+});
+
 // POST /api/integrations/strava/disconnect - remove Strava tokens & disable auto-sync
 router.post('/strava/disconnect', verifyToken, async (req, res) => {
   try {
@@ -717,13 +745,20 @@ router.post('/strava/webhook', async (req, res) => {
       const { isNew } = await fetchAndSaveStravaActivity(user, object_id);
       // Update lastSyncDate so the scheduler doesn't redundantly re-fetch this
       // activity on its next tick (the webhook already handled it).
-      await User.findByIdAndUpdate(user._id, { 'strava.lastSyncDate': new Date() });
+      // Also stamp webhookLastEventAt so the UI / /strava/status endpoint can
+      // distinguish "real-time sync working" from "falling back to polling".
+      const eventStamp = new Date();
+      await User.findByIdAndUpdate(user._id, {
+        'strava.lastSyncDate': eventStamp,
+        'strava.webhookLastEventAt': eventStamp,
+      });
       if (aspect_type === 'create' && isNew) {
         notifyStravaImportedPush(user._id, 1, object_id);
       }
       console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
     } else if (aspect_type === 'delete') {
       await StravaActivity.deleteOne({ userId: user._id, stravaId: Number(object_id) });
+      await User.findByIdAndUpdate(user._id, { 'strava.webhookLastEventAt': new Date() });
       console.log(`[StravaWebhook] deleted activity ${object_id} for user ${user._id}`);
     }
   } catch (err) {
