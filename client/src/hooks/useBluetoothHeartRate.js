@@ -1,37 +1,43 @@
 /**
  * useBluetoothHeartRate
  * ─────────────────────
- * React hook for connecting to a standard BLE heart-rate strap.
+ * React hook for a standard BLE heart-rate strap. Works in TWO modes
+ * transparently:
  *
- * Supported profile: Heart Rate Service (HRS) — UUID 0x180D
- *   • Heart Rate Measurement characteristic — UUID 0x2A37 (notify)
+ *   1. **Web Bluetooth** — used on desktop browsers (Chrome / Edge). Calls
+ *      `navigator.bluetooth.requestDevice` and the standard GATT API.
  *
- * Compatible with virtually every consumer HR strap: Polar H10/H9, Garmin
- * HRM-Pro / HRM-Dual, Wahoo TICKR, Coros HRM, Suunto Smart Sensor, etc.
- * The HR Service is a SIG-standardised profile so the UUID + flags layout
- * are identical across vendors.
+ *   2. **Capacitor native** — used inside the iOS / Android app shell where
+ *      WKWebView has no Web Bluetooth. Lazy-loads `BleClient` from
+ *      `@capacitor-community/bluetooth-le` (the pod is already installed
+ *      because the bike-trainer adapter uses it).
  *
- * Independent of `useBluetoothTrainer` — most athletes wear an HR strap
- * AND a trainer simultaneously, and outdoor / running use cases need HR
- * without any trainer at all. The two hooks coexist in the same page.
+ * Profile: Heart Rate Service (HRS) — UUID 0x180D, Heart Rate Measurement
+ * characteristic 0x2A37. Compatible with virtually every HR strap (Polar
+ * H10/H9, Garmin HRM-Pro / HRM-Dual, Wahoo TICKR, Coros, Suunto, etc.).
  *
- * Usage:
+ * Usage is identical regardless of platform:
  *   const hr = useBluetoothHeartRate();
- *   await hr.connect();              // shows native BLE picker
- *   hr.data.heartRate                // number | null (bpm)
- *   hr.data.rrIntervals              // number[] (ms between beats), optional
+ *   await hr.connect();
+ *   hr.data.heartRate     // number | null (bpm)
+ *   hr.data.rrIntervals   // number[]    (ms between beats, optional)
  *   hr.disconnect();
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
-const HR_SERVICE                = 0x180D;
-const HR_MEASUREMENT_CHAR       = 0x2A37;
+// 16-bit (web bluetooth) ids:
+const HR_SERVICE_16          = 0x180D;
+const HR_MEASUREMENT_CHAR_16 = 0x2A37;
+// Full 128-bit ids (Capacitor expects full UUIDs):
+const HR_SERVICE_UUID        = '0000180d-0000-1000-8000-00805f9b34fb';
+const HR_MEASUREMENT_UUID    = '00002a37-0000-1000-8000-00805f9b34fb';
 
 /**
- * Parse the Heart Rate Measurement characteristic. Per the spec the layout is:
+ * Parse the Heart Rate Measurement characteristic. Spec layout:
  *   byte 0: flags
  *     bit 0: HR value format — 0 = uint8, 1 = uint16
- *     bit 1-2: sensor contact bits (0b00 = not supported)
+ *     bit 1-2: sensor contact (we don't expose)
  *     bit 3: energy expended present
  *     bit 4: RR interval(s) present
  *   then HR value (1 or 2 bytes), then optional fields in order.
@@ -55,13 +61,11 @@ function parseHeartRateMeasurement(dataView) {
   }
 
   if (hasEnergy && offset + 2 <= dataView.byteLength) {
-    // Skip energy expended — not exposed by this hook yet.
-    offset += 2;
+    offset += 2; // skip energy expended
   }
 
   const rrIntervals = [];
   if (hasRR) {
-    // Each RR is uint16 in 1/1024 seconds — convert to ms.
     while (offset + 2 <= dataView.byteLength) {
       const raw = dataView.getUint16(offset, true);
       rrIntervals.push(Math.round((raw / 1024) * 1000));
@@ -72,6 +76,16 @@ function parseHeartRateMeasurement(dataView) {
   return { heartRate, rrIntervals };
 }
 
+// Lazy-load BleClient so the web bundle never imports the Capacitor plugin.
+let _BleClient = null;
+async function getBleClient() {
+  if (_BleClient) return _BleClient;
+  const mod = await import('@capacitor-community/bluetooth-le');
+  _BleClient = mod.BleClient;
+  await _BleClient.initialize({ androidNeverForLocation: true });
+  return _BleClient;
+}
+
 export default function useBluetoothHeartRate() {
   const [status, setStatus] = useState('disconnected'); // 'disconnected'|'connecting'|'connected'|'error'
   const [deviceName, setDeviceName] = useState(null);
@@ -79,24 +93,71 @@ export default function useBluetoothHeartRate() {
   const [error, setError] = useState(null);
   const [supported, setSupported] = useState(false);
 
+  // Web-Bluetooth refs
   const deviceRef = useRef(null);
-  const serverRef = useRef(null);
   const charRef = useRef(null);
+  // Capacitor refs
+  const nativeDeviceIdRef = useRef(null);
 
   useEffect(() => {
-    setSupported(typeof navigator !== 'undefined' && !!navigator.bluetooth);
+    const native = isCapacitorNative();
+    const webBt = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+    setSupported(native || webBt);
   }, []);
 
   const handleDisconnected = useCallback(() => {
     setStatus('disconnected');
     setDeviceName(null);
     charRef.current = null;
-    serverRef.current = null;
     deviceRef.current = null;
+    nativeDeviceIdRef.current = null;
     setData({ heartRate: null, rrIntervals: [] });
   }, []);
 
-  const connect = useCallback(async () => {
+  // ── Capacitor-native connect path ──────────────────────────────────────────
+  const connectNative = useCallback(async () => {
+    try {
+      setStatus('connecting');
+      setError(null);
+      const BleClient = await getBleClient();
+      const device = await BleClient.requestDevice({
+        services: [HR_SERVICE_UUID],
+        optionalServices: [HR_SERVICE_UUID],
+      });
+      if (!device?.deviceId) {
+        setStatus('disconnected');
+        return false;
+      }
+      nativeDeviceIdRef.current = device.deviceId;
+      setDeviceName(device.name || 'Heart Rate Monitor');
+      await BleClient.connect(device.deviceId, () => handleDisconnected());
+
+      await BleClient.startNotifications(
+        device.deviceId,
+        HR_SERVICE_UUID,
+        HR_MEASUREMENT_UUID,
+        (value) => {
+          // `value` is a DataView in @capacitor-community/bluetooth-le v3+.
+          const parsed = parseHeartRateMeasurement(value);
+          setData(parsed);
+        },
+      );
+      setStatus('connected');
+      return true;
+    } catch (err) {
+      const msg = err?.message || 'Failed to connect to HR strap';
+      if (/cancel|dismiss/i.test(msg)) {
+        setStatus('disconnected');
+        return false;
+      }
+      setError(msg);
+      setStatus('error');
+      return false;
+    }
+  }, [handleDisconnected]);
+
+  // ── Web-Bluetooth connect path ─────────────────────────────────────────────
+  const connectWeb = useCallback(async () => {
     if (!navigator.bluetooth) {
       setError('Web Bluetooth is not supported in this browser.');
       setStatus('error');
@@ -107,8 +168,8 @@ export default function useBluetoothHeartRate() {
       setError(null);
 
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [HR_SERVICE] }],
-        optionalServices: [HR_SERVICE],
+        filters: [{ services: [HR_SERVICE_16] }],
+        optionalServices: [HR_SERVICE_16],
       });
 
       deviceRef.current = device;
@@ -116,10 +177,8 @@ export default function useBluetoothHeartRate() {
       device.addEventListener('gattserverdisconnected', handleDisconnected);
 
       const server = await device.gatt.connect();
-      serverRef.current = server;
-
-      const service = await server.getPrimaryService(HR_SERVICE);
-      const char = await service.getCharacteristic(HR_MEASUREMENT_CHAR);
+      const service = await server.getPrimaryService(HR_SERVICE_16);
+      const char = await service.getCharacteristic(HR_MEASUREMENT_CHAR_16);
       charRef.current = char;
       await char.startNotifications();
       char.addEventListener('characteristicvaluechanged', (event) => {
@@ -141,9 +200,17 @@ export default function useBluetoothHeartRate() {
     }
   }, [handleDisconnected]);
 
-  const disconnect = useCallback(() => {
+  const connect = useCallback(async () => {
+    if (isCapacitorNative()) return connectNative();
+    return connectWeb();
+  }, [connectNative, connectWeb]);
+
+  const disconnect = useCallback(async () => {
     try {
-      if (deviceRef.current?.gatt?.connected) {
+      if (nativeDeviceIdRef.current) {
+        const BleClient = await getBleClient();
+        await BleClient.disconnect(nativeDeviceIdRef.current).catch(() => {});
+      } else if (deviceRef.current?.gatt?.connected) {
         deviceRef.current.gatt.disconnect();
       }
     } catch (_) { /* swallow */ }
@@ -159,7 +226,7 @@ export default function useBluetoothHeartRate() {
     data,
     /** Last error string or null */
     error,
-    /** Whether Web Bluetooth is supported in this browser */
+    /** Whether BLE is available in this environment (web bt OR native) */
     supported,
     connect,
     disconnect,

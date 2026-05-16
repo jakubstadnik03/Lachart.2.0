@@ -28,6 +28,8 @@ import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlan
 import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
+import StepBarChart from '../components/WorkoutExecution/StepBarChart';
+import { isCapacitorNative } from '../utils/isNativeApp';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 
@@ -177,6 +179,10 @@ export default function WorkoutExecutionPage() {
   const athleteId = searchParams.get('athleteId');
   const navigate = useNavigate();
   const { addNotification } = useNotification();
+
+  // Mobile-native (Capacitor) gets safe-area padding and slightly tighter
+  // typography. Evaluated once on mount — the env doesn't change at runtime.
+  const isNative = isCapacitorNative();
 
   // Workout data
   const [workout, setWorkout] = useState(null);
@@ -572,7 +578,14 @@ export default function WorkoutExecutionPage() {
   return (
     <div
       className="fixed inset-0 flex flex-col bg-gray-950 text-white overflow-hidden select-none"
-      style={{ zIndex: 9999 }}
+      style={{
+        zIndex: 9999,
+        // Capacitor: honour the notch / home-indicator so the back button
+        // doesn't fight the system status bar and the controls don't sit
+        // under the home indicator.
+        paddingTop: isNative ? 'env(safe-area-inset-top)' : undefined,
+        paddingBottom: isNative ? 'env(safe-area-inset-bottom)' : undefined,
+      }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -645,13 +658,32 @@ export default function WorkoutExecutionPage() {
         </div>
       </div>
 
-      {/* ── Step mini-map ───────────────────────────────────────────────────── */}
-      <div className="px-4 py-2">
-        <StepMiniMap expandedSteps={expandedSteps} currentIdx={currentStepIdx} context={context} />
+      {/* ── Workout profile bar chart ───────────────────────────────────────
+          Replaces the old uniform-colour mini-map. Bar HEIGHT communicates
+          interval intensity (target watts), bar WIDTH communicates duration
+          — so the user instantly sees the workout shape (warm-up ramp,
+          sprint blocks, cool-down) and where they are in it. */}
+      <div className="px-3 sm:px-4 pt-1.5 pb-2">
+        <StepBarChart
+          steps={expandedSteps}
+          currentIdx={currentStepIdx}
+          resolveTargetWatts={resolveTargetWatts}
+          context={context}
+          stepPowerRef={stepPowerRef}
+          lactateLogRef={lactateLogRef}
+          onStepTap={(i) => {
+            ergSentRef.current = null;
+            setCurrentStepIdx(i);
+            setStepElapsed(0);
+          }}
+          height={isNative ? 60 : 72}
+        />
       </div>
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 gap-3 sm:gap-4 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {isFinished ? (
           /* ── Finished screen ── */
           <motion.div
@@ -708,14 +740,16 @@ export default function WorkoutExecutionPage() {
                   )}
                 </div>
 
-                {/* Countdown */}
-                <div className="text-7xl font-black tabular-nums leading-none mb-2"
+                {/* Countdown — 6xl on phones (saves vertical space when both
+                    the chart and the power gauge are visible), 7xl on tablets+ */}
+                <div
+                  className={`font-black tabular-nums leading-none mb-2 ${isNative ? 'text-6xl sm:text-7xl' : 'text-7xl'}`}
                   style={{ color: stepRemaining <= 10 && stepRemaining > 0 ? '#ef4444' : col.bg }}
                 >
                   {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
                 </div>
                 {stepDuration > 0 && (
-                  <p className="text-gray-500 text-sm mb-4">of {fmtTime(stepDuration)}</p>
+                  <p className="text-gray-500 text-xs sm:text-sm mb-3">of {fmtTime(stepDuration)}</p>
                 )}
 
                 {/* Power target */}
@@ -738,13 +772,30 @@ export default function WorkoutExecutionPage() {
               </motion.div>
             </AnimatePresence>
 
+            {/* ── Intensity % chip — quick read of "how hard am I going relative to target" ── */}
+            {trainer.status === 'connected' && trainer.data.power != null && currentTargetWatts != null && currentTargetWatts > 0 && (() => {
+              const pct = Math.round((trainer.data.power / currentTargetWatts) * 100);
+              const off = Math.abs(pct - 100);
+              const tone = off <= 5
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                : off <= 15
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                  : 'bg-rose-500/25 text-rose-300 border-rose-400/40';
+              return (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold tabular-nums ${tone}`}>
+                  <span>{pct}%</span>
+                  <span className="opacity-60">of target</span>
+                </div>
+              );
+            })()}
+
             {/* ── Power Gauge (Bluetooth) ── */}
             {trainer.status === 'connected' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xs">
                 <PowerGauge
                   actual={trainer.data.power}
                   target={currentTargetWatts}
-                  size={220}
+                  size={isNative ? 180 : 220}
                 />
                 <div className="flex justify-center gap-6 mt-1 text-xs text-gray-500">
                   {trainer.data.cadence != null && (
@@ -802,26 +853,27 @@ export default function WorkoutExecutionPage() {
 
       {/* ── Controls ────────────────────────────────────────────────────────── */}
       {!isFinished && (
-        <div className="px-6 pb-8 pt-4 border-t border-white/10">
-          <div className="flex items-center justify-center gap-6">
+        <div className={`px-4 sm:px-6 ${isNative ? 'pb-4 pt-3' : 'pb-6 pt-4'} border-t border-white/10`}>
+          <div className="flex items-center justify-center gap-5 sm:gap-6">
             {/* Prev step */}
             <button
               onClick={handlePrevStep}
               disabled={currentStepIdx === 0 && stepElapsed === 0}
-              className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"
+              className="p-3 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 transition-colors"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               <BackwardIcon className="w-6 h-6" />
             </button>
 
-            {/* Play/Pause */}
+            {/* Play/Pause — smaller on phone (saves space for chart) */}
             <button
               onClick={handlePlayPause}
-              className="w-20 h-20 rounded-full flex items-center justify-center text-white font-bold shadow-lg transition-all active:scale-95"
-              style={{ backgroundColor: col.bg, boxShadow: `0 0 30px ${col.bg}55` }}
+              className={`${isNative ? 'w-16 h-16' : 'w-20 h-20'} rounded-full flex items-center justify-center text-white font-bold shadow-lg transition-all active:scale-95`}
+              style={{ backgroundColor: col.bg, boxShadow: `0 0 30px ${col.bg}55`, WebkitTapHighlightColor: 'transparent' }}
             >
               {isRunning
-                ? <PauseIcon className="w-9 h-9" />
-                : <PlayIcon className="w-9 h-9 ml-1" />
+                ? <PauseIcon className={isNative ? 'w-7 h-7' : 'w-9 h-9'} />
+                : <PlayIcon className={`${isNative ? 'w-7 h-7' : 'w-9 h-9'} ml-1`} />
               }
             </button>
 
@@ -829,7 +881,8 @@ export default function WorkoutExecutionPage() {
             <button
               onClick={handleNextStep}
               disabled={currentStepIdx >= expandedSteps.length - 1}
-              className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"
+              className="p-3 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 transition-colors"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               <ForwardIcon className="w-6 h-6" />
             </button>
