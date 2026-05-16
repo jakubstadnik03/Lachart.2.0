@@ -57,32 +57,41 @@ export async function disconnectHealthKit() {
   return { serverDeleted };
 }
 
-/** Best-effort deep-link into the iOS Health app so the user can verify the
- *  per-source permissions. Falls back to a no-op on non-native / blocked. */
-export async function openHealthApp() {
+/**
+ * Open a native URL scheme from inside the Capacitor WKWebView.
+ *
+ * The @capacitor/app `openUrl` API is NOT implemented on iOS in v6 (only
+ * Android + web) — calling it logs "App.openUrl() is not implemented on
+ * ios" and resolves with completed=false, so the URL never actually opens.
+ *
+ * The reliable workaround on WKWebView is `window.open(url, '_blank')` —
+ * Capacitor's iOS shell intercepts that and asks UIApplication to open
+ * the scheme through the OS. Bare `window.location.href = url` doesn't
+ * work because WKWebView blocks navigation to non-http schemes with a
+ * sandbox error.
+ */
+function openNativeUrl(url) {
   if (!isCapacitorNative()) return false;
   try {
-    const { App } = await import('@capacitor/app');
-    await App.openUrl({ url: 'x-apple-health://' });
-    return true;
+    const w = window.open(url, '_blank');
+    return !!w || true; // open() returns null in WKWebView even on success
   } catch (e) {
-    console.warn('[healthkit] openHealthApp failed:', e?.message || e);
-    try { window.location.href = 'x-apple-health://'; return true; } catch { return false; }
+    console.warn('[healthkit] openNativeUrl failed:', url, e?.message || e);
+    return false;
   }
 }
 
-/** Deep-link into the per-app iOS Settings page for LaChart (where Health
- *  permissions live under "Health → Data Access & Devices → LaChart"). */
+/** Best-effort deep-link into the iOS Health app so the user can verify the
+ *  per-source permissions. */
+export async function openHealthApp() {
+  return openNativeUrl('x-apple-health://');
+}
+
+/** Deep-link into iOS Settings. We try the per-app page first
+ *  (`app-settings:`) which lands on LaChart's privacy switches — including
+ *  the Health row that opens "Health → Data Access & Devices → LaChart". */
 export async function openAppSettings() {
-  if (!isCapacitorNative()) return false;
-  try {
-    const { App } = await import('@capacitor/app');
-    await App.openUrl({ url: 'app-settings:' });
-    return true;
-  } catch (e) {
-    console.warn('[healthkit] openAppSettings failed:', e?.message || e);
-    try { window.location.href = 'app-settings:'; return true; } catch { return false; }
-  }
+  return openNativeUrl('app-settings:');
 }
 
 // Lazy-loaded to keep the web bundle clean.
