@@ -1224,14 +1224,20 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
 
 export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
   const a = activity;
-  const color = sportColor(a.sport);
-  const sport = String(a.sport || '').toLowerCase();
-  const isRun  = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
-  const isSwim = sport.includes('swim');
-  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike');
 
   // Full detail loaded async (for laps)
   const [detail, setDetail] = useState(null);
+
+  // Resolve sport from BOTH the summary and the freshly-loaded detail. FIT
+  // uploads sometimes reach this modal with `a.sport` empty because the
+  // dashboard activity-feed assembler doesn't propagate it — but the FIT
+  // training document does. Without this fallback the icon shows generic
+  // (bolt) and `isBike` checks fail so power/cadence columns hide.
+  const sport = String(a.sport || detail?.sport || '').toLowerCase();
+  const color = sportColor(sport);
+  const isRun  = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
+  const isSwim = sport.includes('swim');
+  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling';
   const [detailLoading, setDetailLoading] = useState(true);
   const [streams, setStreams] = useState(null);
 
@@ -1973,10 +1979,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       </div>
                       <div className="divide-y divide-gray-50">
                         {laps.map((lap, i) => {
+                          // Accept both Strava (snake_case) and FIT (camelCase)
+                          // field names. The FIT parser saves laps with
+                          // `totalDistance`, `avgHeartRate`, `avgPower`, etc.
+                          // which previously weren't matched here — all rows
+                          // came up blank for FIT uploads.
                           const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
-                          const lapDist = Number(lap.distance || 0);
+                          const lapDist = Number(lap.distance || lap.totalDistance || 0);
                           const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
-                          const lapHr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                          const lapHr = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
                           const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
                           const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
                           const lapLa = lap.lactate ?? lap.lactateValue;
@@ -2296,11 +2307,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     </div>
                     <div className="divide-y divide-gray-50">
                       {laps.map((lap, i) => {
+                        // Mirror the mobile block: accept both Strava
+                        // (snake_case) and FIT (camelCase, e.g. totalDistance,
+                        // avgHeartRate) field names so FIT uploads don't
+                        // render every column blank.
                         const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
-                        const lapDist  = Number(lap.distance || 0);
+                        const lapDist  = Number(lap.distance || lap.totalDistance || 0);
                         const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                         const lapPower = Number(lap.average_watts || lap.avgPower || 0);
-                        const lapHr    = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || 0);
+                        const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
                         const lapLa    = lap.lactate ?? lap.lactateValue;
                         const lapNum   = lap.lapNumber ?? (i + 1);
 
