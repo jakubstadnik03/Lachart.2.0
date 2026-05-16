@@ -174,10 +174,36 @@ function workoutToPayload(w) {
  * a denied permission produces an empty query result, which the caller
  * surfaces as skipped:'empty-or-denied'.
  */
+// Public so the Settings card can show the user exactly which categories
+// are being requested (the "Data types: …" footer).
+export const HEALTHKIT_READ_PERMISSIONS = [
+  'activity',          // HKWorkoutType — workouts (essential)
+  'duration',          // appleExerciseTime — exercise minutes
+  'steps',             // step count
+  'stairs',            // flights climbed
+  'distance',          // walking/running + cycling distance
+  'calories',          // active + basal energy burned
+  'heartRate',         // beat-to-beat HR samples
+  'restingHeartRate',  // daily resting HR
+  'respiratoryRate',   // breaths per minute
+  'oxygenSaturation',  // SpO₂
+  'bodyFat',           // body-fat percentage
+  'weight',            // body mass
+];
+
 async function ensurePermission(plugin) {
   try {
+    // Friendly-name vocabulary expected by `getTypes()` inside the plugin.
+    // Anything not in that list is silently dropped from the permission
+    // sheet (and you'll get queries that mysteriously return empty arrays).
+    // We request every read-type the plugin knows about so the iOS Health
+    // sheet exposes the full set of categories at once, matching the UX of
+    // mature integrations (TrainingPeaks, MyTrainPal, Athlytic).
     await plugin.requestAuthorization({
-      read: ['activity', 'distance', 'heartRate', 'calories'],
+      read: HEALTHKIT_READ_PERMISSIONS,
+      // The plugin requires `write` and `all` keys to be PRESENT arrays —
+      // omitting them rejects with "Must provide write" / "Must provide all".
+      // Both stay empty: we never write to Health.
       write: [],
       all: [],
     });
