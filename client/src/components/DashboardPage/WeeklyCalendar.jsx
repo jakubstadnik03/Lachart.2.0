@@ -481,8 +481,14 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         setRepeatOpen(false);
       }
     };
+    // Touch listener (iOS / Android) AND mousedown (desktop). Without
+    // touchstart the menu would stay open after a tap-outside on mobile.
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
   }, [menuOpen]);
 
   const openMenu = (e) => {
@@ -493,6 +499,50 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
     }
     setMenuOpen(v => !v);
     setRepeatOpen(false);
+  };
+
+  // ── Long-press handler ────────────────────────────────────────────────────
+  // The desktop ⋯ button is hidden on touch (no hover), so on iOS/Android the
+  // menu was unreachable. Holding the whole card for ~450 ms now opens the
+  // same dropdown — same UX pattern as iOS home-screen icons, Mac trackpad
+  // long-press, etc. Cancelled on scroll / move to keep tap-through working.
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+  const longPressStartRef = useRef({ x: 0, y: 0 });
+  const cardRef = useRef(null);
+  const startLongPress = (e) => {
+    longPressFiredRef.current = false;
+    const t = e.touches ? e.touches[0] : e;
+    longPressStartRef.current = { x: t.clientX, y: t.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      // Position the menu over the card so it feels anchored to where the
+      // finger is, not floating in space.
+      const rect = cardRef.current?.getBoundingClientRect();
+      if (rect) {
+        const right = Math.max(8, window.innerWidth - rect.right);
+        const top = Math.min(window.innerHeight - 220, rect.bottom + 6);
+        setMenuPos({ top, right });
+      }
+      setMenuOpen(true);
+      setRepeatOpen(false);
+      // Haptic feedback on iOS — if available it gives a subtle nudge when
+      // the menu pops, just like native long-press.
+      try { window?.navigator?.vibrate?.(15); } catch (_) {}
+    }, 450);
+  };
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+  const moveLongPress = (e) => {
+    if (!longPressTimerRef.current) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - longPressStartRef.current.x;
+    const dy = t.clientY - longPressStartRef.current.y;
+    if (Math.hypot(dx, dy) > 8) cancelLongPress();
   };
 
   const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
@@ -573,9 +623,25 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   return (
     <div className="relative group">
       <button
+        ref={cardRef}
         onClick={() => {
+          // Long-press path opened the menu — swallow the synthetic click
+          // that fires when the finger lifts so we don't also open the editor.
+          if (longPressFiredRef.current) {
+            longPressFiredRef.current = false;
+            return;
+          }
           if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
           else if (onSelect) onSelect(pw);
+        }}
+        onTouchStart={startLongPress}
+        onTouchMove={moveLongPress}
+        onTouchEnd={cancelLongPress}
+        onTouchCancel={cancelLongPress}
+        onContextMenu={(e) => {
+          // Desktop right-click → same menu as long-press, same as ⋯ button.
+          e.preventDefault();
+          openMenu(e);
         }}
         className={`w-full text-left rounded-xl border transition-colors p-2 flex flex-col gap-1 ${
           isCompletedPair
@@ -587,6 +653,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         style={{
           borderLeftColor: sportBorderColor,
           borderLeftWidth: 3,
+          WebkitTouchCallout: 'none',  // suppress iOS image preview popup
         }}
         title={pw.title}
       >

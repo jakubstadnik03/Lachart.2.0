@@ -914,31 +914,42 @@ export default function WorkoutExecutionPage() {
                   <p className="text-gray-500 text-xs sm:text-sm mb-3">of {fmtTime(stepDuration)}</p>
                 )}
 
-                {/* Power target — show biased value when ERG is non-100 % */}
-                {currentTargetWatts != null && (
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <BoltSolid className="w-5 h-5" style={{ color: col.bg }} />
-                    <span className="text-2xl font-bold" style={{ color: col.bg }}>
-                      {ergMode && Math.abs(ergBias - 1) > 1e-3 && effectiveErgWatts != null
-                        ? effectiveErgWatts
-                        : currentTargetWatts} W
-                    </span>
-                    <span className="text-gray-500 text-sm">
-                      {resolveTargetLabel(currentStep?.powerTarget, context)}
-                    </span>
-                    {ergMode && Math.abs(ergBias - 1) > 1e-3 && (
-                      <span
-                        className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded-md"
-                        style={{
-                          color: ergBias > 1 ? '#fb7185' : '#34d399',
-                          background: (ergBias > 1 ? '#fb7185' : '#34d399') + '22',
-                        }}
-                      >
-                        {ergBias > 1 ? '+' : ''}{Math.round((ergBias - 1) * 100)}%
+                {/* Power target — when ERG bias is non-100 %, show the new
+                    value bold + the original prescribed wattage struck-through
+                    next to it, so the athlete sees both numbers at a glance.
+                    "240 ⚡ 264 W · 95% LT2  +10%" reads as
+                    "the plan said 240, you're biased to 264, that's +10%". */}
+                {currentTargetWatts != null && (() => {
+                  const isBiased = ergMode && Math.abs(ergBias - 1) > 1e-3 && effectiveErgWatts != null;
+                  const biasUp = ergBias > 1;
+                  return (
+                    <div className="flex items-center justify-center gap-2 mb-1 flex-wrap">
+                      {isBiased && (
+                        <span className="text-sm font-semibold text-gray-500 line-through tabular-nums">
+                          {currentTargetWatts}
+                        </span>
+                      )}
+                      <BoltSolid className="w-5 h-5" style={{ color: col.bg }} />
+                      <span className="text-2xl font-bold tabular-nums" style={{ color: col.bg }}>
+                        {isBiased ? effectiveErgWatts : currentTargetWatts} W
                       </span>
-                    )}
-                  </div>
-                )}
+                      <span className="text-gray-500 text-sm">
+                        {resolveTargetLabel(currentStep?.powerTarget, context)}
+                      </span>
+                      {isBiased && (
+                        <span
+                          className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded-md"
+                          style={{
+                            color: biasUp ? '#fb7185' : '#34d399',
+                            background: (biasUp ? '#fb7185' : '#34d399') + '22',
+                          }}
+                        >
+                          {biasUp ? '+' : ''}{Math.round((ergBias - 1) * 100)}%
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {currentStep?.powerTarget?.useRange && (
                   <p className="text-gray-500 text-sm">
                     {currentStep.powerTarget.rangeMin}–{currentStep.powerTarget.rangeMax} W
@@ -1018,11 +1029,24 @@ export default function WorkoutExecutionPage() {
                 {nextStep.durationSeconds > 0 && (
                   <span className="ml-1">· {fmtTime(nextStep.durationSeconds)}</span>
                 )}
-                {nextStep.powerTarget && resolveTargetWatts(nextStep.powerTarget, context) && (
-                  <span className="ml-1 text-gray-400">
-                    @ {resolveTargetWatts(nextStep.powerTarget, context)} W
-                  </span>
-                )}
+                {nextStep.powerTarget && resolveTargetWatts(nextStep.powerTarget, context) && (() => {
+                  const plain = resolveTargetWatts(nextStep.powerTarget, context);
+                  const biased = ergMode && Math.abs(ergBias - 1) > 1e-3
+                    ? Math.round(plain * ergBias)
+                    : null;
+                  return (
+                    <span className="ml-1 text-gray-400 tabular-nums">
+                      @
+                      {biased != null && (
+                        <span className="line-through opacity-70 mx-1">{plain}</span>
+                      )}
+                      <span className={biased != null ? 'text-gray-200 font-semibold' : ''}>
+                        {biased ?? plain}
+                      </span>
+                      <span className="ml-0.5">W</span>
+                    </span>
+                  );
+                })()}
               </div>
             )}
           </>
@@ -1170,6 +1194,9 @@ export default function WorkoutExecutionPage() {
                   const isCurrent = i === currentStepIdx;
                   const isPast = i < currentStepIdx;
                   const target = s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null;
+                  const biasedTarget = target != null && ergMode && Math.abs(ergBias - 1) > 1e-3
+                    ? Math.round(target * ergBias)
+                    : null;
                   const p = stepPowerRef.current[i];
                   const h = stepHrRef.current[i];
                   const avgP = p && p.count > 0 ? Math.round(p.sum / p.count) : null;
@@ -1216,7 +1243,12 @@ export default function WorkoutExecutionPage() {
                             {target != null && (
                               <>
                                 <span className="text-gray-600">·</span>
-                                <span className="font-semibold" style={{ color: c.bg }}>{target} W</span>
+                                {biasedTarget != null && (
+                                  <span className="text-gray-500 line-through mr-0.5 tabular-nums">{target}</span>
+                                )}
+                                <span className="font-semibold tabular-nums" style={{ color: c.bg }}>
+                                  {biasedTarget ?? target} W
+                                </span>
                               </>
                             )}
                           </div>
