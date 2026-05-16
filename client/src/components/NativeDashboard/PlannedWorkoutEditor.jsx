@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
 import { useCategories } from '../../context/CategoryContext';
@@ -42,6 +43,7 @@ export default function PlannedWorkoutEditor({
   onOpenLinkedActivity,
 }) {
   const isOpen = !!plannedWorkout;
+  const navigate = useNavigate();
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [title, setTitle]       = useState('');
@@ -469,6 +471,45 @@ export default function PlannedWorkoutEditor({
             }}>
               {error}
             </div>
+          )}
+
+          {/* Start workout — primary CTA for not-yet-completed bike plans
+              with at least one step. Navigates to the full-screen execution
+              page (which now opens to a Tacx-style pre-start hero). */}
+          {!linkedActivity && Array.isArray(plannedWorkout?.steps) && plannedWorkout.steps.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const id = plannedWorkout._id;
+                if (!id) return;
+                const qs = athleteId ? `?athleteId=${athleteId}` : '';
+                onClose && onClose();
+                navigate(`/workout-execution/${id}${qs}`);
+              }}
+              style={{
+                marginTop: 4,
+                width: '100%',
+                padding: '13px 14px',
+                borderRadius: 14,
+                background: 'linear-gradient(135deg,#0EA5E9 0%,#0284C7 100%)',
+                border: 'none',
+                color: '#fff',
+                fontFamily: 'inherit',
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: '0.02em',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 8px 24px -6px rgba(14,165,233,.55)',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              Start Workout
+            </button>
           )}
 
           {/* Action row */}
