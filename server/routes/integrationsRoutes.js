@@ -847,14 +847,29 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     
     const per_page = 100;
     let page = 1;
-    const maxPages = 200; // Safety limit: max 20,000 activities (200 × 100)
-    
+
     // Optional: support 'since' parameter to fetch activities after a specific date
     const { since } = req.body || {};
     const params = { per_page };
     if (since) {
       params.after = new Date(since).getTime() / 1000; // Strava expects Unix timestamp
     }
+
+    // Page cap scales with the `since` window — there's no reason to scan
+    // 200 pages (20 000 activities) for a 7-day refresh request. The old
+    // blanket 200-page ceiling was the main reason a single user tapping
+    // "Sync now" could burn through the entire Strava 600 req/15 min quota
+    // and force everyone (including the webhook handler) into a 429 wall.
+    // Heuristic: ~25 activities/day for the most active multi-sport athlete,
+    // round generously to 50/day → 1 page per 2 days, floor 3, cap 20.
+    let maxPages;
+    if (since) {
+      const days = Math.max(1, Math.ceil((Date.now() - new Date(since).getTime()) / (24 * 60 * 60 * 1000)));
+      maxPages = Math.min(20, Math.max(3, Math.ceil(days / 2)));
+    } else {
+      maxPages = 50; // No `since` = full-history request, but still capped so one user can't drain quota.
+    }
+    console.log(`[/strava/sync] page cap=${maxPages} (since=${since || 'none'})`);
     
     // Strava rate limit: 600 requests per 15 minutes = ~1 request per 1.5 seconds
     // Add delay between requests to avoid hitting rate limit
