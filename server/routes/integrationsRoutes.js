@@ -15,6 +15,62 @@ const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const router = express.Router();
 
+// ────────────────────────────────────────────────────────────────────────────
+// Global Strava rate-limit memo (process-local, single-instance).
+//
+// Strava's rate limit is per-app, not per-user. Once we get one 429, EVERY
+// subsequent request from ANY user across our app will also 429 until the
+// window resets. Without this guard each user retry produced another wasted
+// outbound call to Strava — burning quota on the same 429s and slowing the
+// recovery. We now remember the unlock timestamp from the first 429's
+// Retry-After header and short-circuit every Strava-bound endpoint until
+// that moment, returning 429 to the client instantly without contacting
+// Strava at all.
+// ────────────────────────────────────────────────────────────────────────────
+let stravaUnlockAt = 0; // Unix ms — earliest time we're allowed to retry Strava.
+
+function stravaIsLockedNow() {
+  return Date.now() < stravaUnlockAt;
+}
+
+function stravaLockoutSecondsRemaining() {
+  return Math.max(0, Math.ceil((stravaUnlockAt - Date.now()) / 1000));
+}
+
+/** Record a 429 from Strava and stop talking to them for `retryAfterSec`.
+ *  Clamped to 60 s..30 min so a busted Retry-After header can't lock us out
+ *  for half a day. */
+function stravaNoteRateLimit(retryAfterSec) {
+  const sec = Math.min(Math.max(Number(retryAfterSec) || 300, 60), 30 * 60);
+  const candidate = Date.now() + sec * 1000;
+  // Honour the LATEST 429 even if it's longer — Strava sometimes escalates.
+  if (candidate > stravaUnlockAt) stravaUnlockAt = candidate;
+  console.warn(`[StravaRateLimit] locked for ${sec}s (until ${new Date(stravaUnlockAt).toISOString()})`);
+}
+
+/** Clear the lockout — call after any successful Strava response so a single
+ *  conservative 429 estimate doesn't keep us idle once Strava is happy again. */
+function stravaClearRateLimit() {
+  if (stravaUnlockAt > 0) {
+    console.log('[StravaRateLimit] cleared');
+    stravaUnlockAt = 0;
+  }
+}
+
+/** Shared 429 short-circuit for Express handlers. Returns true if the
+ *  handler should bail; the response is already sent. */
+function bailIfStravaLocked(res) {
+  if (!stravaIsLockedNow()) return false;
+  const sec = stravaLockoutSecondsRemaining();
+  res.status(429).json({
+    error: 'Strava rate limit active',
+    message: `Strava API quota was exhausted. Retry in about ${Math.max(1, Math.ceil(sec / 60))} min.`,
+    retryAfter: sec,
+    appLevelLockout: true,
+  });
+  return true;
+}
+
 /** Resolve athlete user id for integration routes (pending lactate, lactate form). */
 async function resolveIntegrationTargetUserId(req) {
   const userId = req.user.userId;
@@ -504,6 +560,11 @@ router.get('/strava/status', verifyToken, async (req, res) => {
       lastSyncDate: s.lastSyncDate || null,
       webhookLastEventAt,
       webhookHealthy,
+      // App-wide Strava rate-limit lockout — when this is non-zero, every
+      // /strava/sync and /strava/auto-sync call will short-circuit with 429.
+      // UI can show a "Strava API quota — retry in N min" banner.
+      rateLimitedUntil: stravaUnlockAt > Date.now() ? new Date(stravaUnlockAt).toISOString() : null,
+      rateLimitedSecondsLeft: stravaLockoutSecondsRemaining(),
     });
   } catch (error) {
     console.error('[Strava status] error:', error);
@@ -821,7 +882,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
   let updated = 0;
   let total = 0;
   const lockKey = String(req.user?.userId || '');
-  
+
+  // App-wide Strava lockout — return 429 immediately without touching Strava.
+  if (bailIfStravaLocked(res)) return;
+
   try {
     if (stravaManualSyncLocks.has(lockKey)) {
       return res.status(200).json({
@@ -949,11 +1013,15 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         console.error(`Error on page ${page}:`, requestErr.response?.data || requestErr.message);
         
         // Handle rate limit errors
-        if (requestErr.response?.status === 429 || 
+        if (requestErr.response?.status === 429 ||
             (requestErr.response?.data?.message && requestErr.response.data.message.includes('Rate Limit'))) {
           const rateLimitData = requestErr.response?.data || {};
           const retryAfter = requestErr.response?.headers?.['retry-after'] || 900; // Default 15 minutes
-          
+
+          // Remember the lockout app-wide so every subsequent request
+          // short-circuits without burning more quota on the same 429.
+          stravaNoteRateLimit(retryAfter);
+
           console.error('Strava rate limit exceeded', {
             retryAfter,
             errors: rateLimitData.errors,
@@ -961,7 +1029,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
             updated,
             total
           });
-          
+
           notifyStravaImportedPush(user._id, imported);
           return res.status(429).json({
             error: 'Strava rate limit exceeded',
@@ -986,7 +1054,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     }
     
     console.log(`Strava sync completed: imported ${imported}, updated ${updated}, total ${total}`);
-    
+    // Successful path through the Strava API → quota window is healthy.
+    // Clear any prior lockout so we don't keep short-circuiting.
+    stravaClearRateLimit();
+
     // Update last sync date in user profile
     if (imported > 0 || updated > 0) {
       await User.findByIdAndUpdate(user._id, {
@@ -1002,9 +1073,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     console.error('Error stack:', err.stack);
     
     // Handle rate limit errors in catch block too
-    if (err.response?.status === 429 || 
+    if (err.response?.status === 429 ||
         (err.response?.data?.message && err.response.data.message.includes('Rate Limit'))) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
+      stravaNoteRateLimit(retryAfter);
       notifyStravaImportedPush(user?._id || req.user?.userId, imported);
       return res.status(429).json({
         error: 'Strava rate limit exceeded',
@@ -1042,6 +1114,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
 
 // POST /api/integrations/strava/auto-sync (automatic sync for new activities only)
 router.post('/strava/auto-sync', verifyToken, async (req, res) => {
+  // App-wide Strava lockout — bail before doing anything that would call Strava.
+  if (bailIfStravaLocked(res)) return;
   try {
     const user = await User.findById(req.user.userId);
     if (!user || !user.strava?.accessToken) {
