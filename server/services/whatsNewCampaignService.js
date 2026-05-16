@@ -228,9 +228,17 @@ async function getPendingCount() {
  *   • For a 100-user list this completes in ~20 minutes. For 1000, ~3.3 h.
  */
 async function runCampaign({
-  batchSize = 5,
-  batchIntervalMs = 60 * 1000,
+  // Conservative defaults tuned for Zoho Mail FREE (≈25/day to new external
+  // addresses, 200/day mixed). 1 email every 5 minutes = 12/h = 250/day
+  // worst case — still below the free-tier soft throttle, and most actual
+  // runs complete well inside the window.
+  batchSize = 1,
+  batchIntervalMs = 5 * 60 * 1000,
   maxBatches = 1000,
+  // Hard cap on emails sent in this single run. Useful for "send 20 today,
+  // 20 tomorrow" cadence on Zoho free — set to 20 by default. Pass null to
+  // let the run drain the whole pending queue.
+  maxEmailsPerRun = 20,
   dryRun = false,
   onProgress,
 } = {}) {
@@ -238,7 +246,14 @@ async function runCampaign({
   let batchIndex = 0;
 
   while (batchIndex < maxBatches) {
-    const users = await findPendingUsers(batchSize);
+    // Respect the per-run cap (Zoho-free safety).
+    if (maxEmailsPerRun != null && stats.sent >= maxEmailsPerRun) {
+      console.log(`[whatsNewCampaign] reached maxEmailsPerRun=${maxEmailsPerRun}, pausing`);
+      break;
+    }
+    const slotsLeft = maxEmailsPerRun != null ? Math.max(0, maxEmailsPerRun - stats.sent) : batchSize;
+    const fetchLimit = Math.min(batchSize, slotsLeft || batchSize);
+    const users = await findPendingUsers(fetchLimit);
     if (users.length === 0) break; // queue empty → campaign done
 
     const results = await Promise.allSettled(users.map((u) => sendOne(u, { dryRun })));

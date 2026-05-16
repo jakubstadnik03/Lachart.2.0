@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser, sendRetentionEmailPreview } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -2057,6 +2057,11 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4 sm:space-y-6"
           >
+            {/* One-off "What's new — May 2026" re-engagement campaign card.
+                Lives at the top of the Marketing tab because it's the
+                active campaign the admin will be operating right now. */}
+            <WhatsNewMay2026Card />
+
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900">Email Campaign Stats</h3>
               <p className="text-xs sm:text-sm text-gray-600 mt-1">Overview of sent campaign emails and reach.</p>
@@ -3230,5 +3235,268 @@ const AdminDashboard = () => {
     </div>
   );
 };
+
+// ─── "What's new — May 2026" admin campaign card ───────────────────────────
+// Self-contained: queries its own status, owns its own form state, blocks
+// the page while a run is in progress. Conservative defaults are picked
+// for Zoho Mail FREE — 1 email every 5 minutes, hard cap of 20 per run.
+function WhatsNewMay2026Card() {
+  const [status, setStatus] = useState(null);          // { pending, sent, totalEligible }
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewEmail, setPreviewEmail] = useState('');
+  const [running, setRunning] = useState(false);
+  const [runStats, setRunStats] = useState(null);
+  const [error, setError] = useState(null);
+  // Conservative Zoho-free defaults. Admin can tighten if they're on a paid plan.
+  const [batchSize, setBatchSize] = useState(1);
+  const [intervalMin, setIntervalMin] = useState(5);       // minutes between batches
+  const [maxThisRun, setMaxThisRun] = useState(20);
+
+  const loadStatus = useCallback(async () => {
+    setLoadingStatus(true);
+    try {
+      const data = await fetchWhatsNewMay2026Status();
+      setStatus(data);
+      setError(null);
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    setError(null);
+    try {
+      const r = await sendWhatsNewMay2026Preview(previewEmail ? { email: previewEmail.trim() } : {});
+      if (r.sent) {
+        alert(`Preview sent to ${r.to || previewEmail || 'your inbox'} (${r.lang === 'cz' ? 'Czech' : 'English'} version).\nCheck spam folder if it's not there.`);
+      } else {
+        alert(`Preview not sent: ${r.reason || 'unknown reason'}`);
+      }
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleRun = async ({ dryRun = false } = {}) => {
+    const eta = Math.round((maxThisRun * intervalMin / batchSize));
+    if (!dryRun) {
+      const ok = window.confirm(
+        `Send the email to up to ${maxThisRun} users now?\n\n` +
+        `Pace: ${batchSize} email${batchSize === 1 ? '' : 's'} every ${intervalMin} min.\n` +
+        `Estimated duration: ~${eta} min.\n\n` +
+        `The request will block the browser until the run finishes — keep this tab open. ` +
+        `You can come back and run again to send the next batch.`
+      );
+      if (!ok) return;
+    }
+    setRunning(true);
+    setRunStats(null);
+    setError(null);
+    try {
+      const r = await runWhatsNewMay2026Campaign({
+        batchSize,
+        batchIntervalMs: intervalMin * 60 * 1000,
+        maxEmailsPerRun: maxThisRun,
+        dryRun,
+      });
+      setRunStats(r?.stats || null);
+      await loadStatus();
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!window.confirm('Clear the "sent" marker for EVERYONE so they can receive the email again on the next run?\n\nUse only if you re-sent the wrong content.')) return;
+    try {
+      const r = await resetWhatsNewMay2026();
+      alert(`Reset: ${r.modified} of ${r.matched} users cleared.`);
+      await loadStatus();
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    }
+  };
+
+  const pendingPct = status && status.totalEligible
+    ? Math.round((status.sent / status.totalEligible) * 100)
+    : 0;
+
+  return (
+    <div className="bg-white rounded-lg shadow p-4 sm:p-6 border-l-4 border-primary">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wider font-bold text-primary bg-primary/10 rounded-full px-2 py-0.5">Active campaign</span>
+          </div>
+          <h3 className="mt-1 text-base sm:text-lg font-semibold text-gray-900">What's new — May 2026</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">
+            Re-engagement email announcing lactate-test, training-log, calendar improvements + coming-soon mobile app.
+            Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends).
+          </p>
+        </div>
+        <button
+          onClick={loadStatus}
+          disabled={loadingStatus}
+          className="self-start sm:self-auto px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50"
+        >
+          {loadingStatus ? 'Refreshing…' : 'Refresh status'}
+        </button>
+      </div>
+
+      {/* Status pills */}
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+          <div className="text-[10px] sm:text-xs text-gray-600 uppercase tracking-wide">Eligible</div>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{status?.totalEligible ?? '—'}</div>
+        </div>
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3">
+          <div className="text-[10px] sm:text-xs text-emerald-700 uppercase tracking-wide">Sent</div>
+          <div className="text-xl sm:text-2xl font-bold text-emerald-700 mt-1">{status?.sent ?? '—'}</div>
+        </div>
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+          <div className="text-[10px] sm:text-xs text-amber-700 uppercase tracking-wide">Pending</div>
+          <div className="text-xl sm:text-2xl font-bold text-amber-700 mt-1">{status?.pending ?? '—'}</div>
+        </div>
+      </div>
+
+      {status && status.totalEligible > 0 && (
+        <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-primary transition-all" style={{ width: `${pendingPct}%` }} />
+        </div>
+      )}
+
+      {/* Preview row */}
+      <div className="mt-5 pt-4 border-t border-gray-100">
+        <div className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">1. Preview to yourself</div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email"
+            placeholder="your@email.com (leave blank to send to your admin account)"
+            value={previewEmail}
+            onChange={(e) => setPreviewEmail(e.target.value)}
+            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <button
+            onClick={handlePreview}
+            disabled={previewing}
+            className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50"
+          >
+            {previewing ? 'Sending…' : 'Send preview'}
+          </button>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1">
+          Sends one email immediately. Doesn't count toward the campaign queue — use it freely to iterate.
+        </p>
+      </div>
+
+      {/* Run controls */}
+      <div className="mt-5 pt-4 border-t border-gray-100">
+        <div className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">2. Send to users (paced)</div>
+        <div className="grid grid-cols-3 gap-2">
+          <label className="block">
+            <span className="text-[11px] text-gray-600">Emails per batch</span>
+            <input
+              type="number" min="1" max="50" value={batchSize}
+              onChange={(e) => setBatchSize(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-gray-600">Interval (min)</span>
+            <input
+              type="number" min="1" max="120" value={intervalMin}
+              onChange={(e) => setIntervalMin(Math.max(1, Math.min(120, Number(e.target.value) || 5)))}
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-gray-600">Max this run</span>
+            <input
+              type="number" min="1" max="1000" value={maxThisRun}
+              onChange={(e) => setMaxThisRun(Math.max(1, Math.min(1000, Number(e.target.value) || 20)))}
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+            />
+          </label>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+          Zoho Mail FREE tolerates ~25 outbound to new addresses per day. Defaults (1 email / 5 min, cap 20)
+          stay well under that. On a paid plan you can crank up to 5 per 1 min.
+          Estimated this run: ~{Math.round(maxThisRun * intervalMin / batchSize)} min.
+        </p>
+        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={() => handleRun({ dryRun: false })}
+            disabled={running || !status || status.pending === 0}
+            className="flex-1 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-md hover:bg-primary-dark disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {running ? (
+              <>
+                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="4" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                </svg>
+                Running… keep tab open
+              </>
+            ) : (
+              <>
+                Send to {Math.min(maxThisRun, status?.pending ?? maxThisRun)} pending users
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => handleRun({ dryRun: true })}
+            disabled={running || !status || status.pending === 0}
+            className="px-4 py-2.5 bg-gray-100 text-gray-800 text-sm font-medium rounded-md hover:bg-gray-200 disabled:opacity-50"
+            title="Pick the first batch and run through the prep without actually emailing — useful to confirm template selection."
+          >
+            Dry run
+          </button>
+        </div>
+      </div>
+
+      {runStats && (
+        <div className="mt-4 rounded-md bg-gray-50 border border-gray-200 p-3 text-xs leading-relaxed">
+          <div className="font-semibold text-gray-800 mb-1">Last run</div>
+          <div className="text-gray-700">
+            attempted <b>{runStats.totalAttempted}</b> · sent <b className="text-emerald-700">{runStats.sent}</b> · skipped <b>{runStats.skipped}</b> · failed <b className="text-red-700">{runStats.failed}</b>
+          </div>
+          {Object.entries(runStats.byReason || {}).length > 0 && (
+            <div className="mt-1 text-gray-500">
+              {Object.entries(runStats.byReason).map(([r, n]) => <span key={r} className="mr-2">{r}: {n}</span>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
+        <span className="text-[11px] text-gray-400">
+          Idempotent — already-sent users are skipped automatically.
+        </span>
+        <button
+          onClick={handleReset}
+          className="text-[11px] text-gray-500 hover:text-red-600 underline"
+        >
+          Reset sent markers
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default AdminDashboard;

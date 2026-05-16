@@ -90,16 +90,18 @@ router.post('/campaigns/whats-new-2026-05/run', verifyToken, async (req, res) =>
   try {
     if (!(await requireAdmin(req, res))) return;
     const {
-      batchSize = 5,
-      batchIntervalMs = 60 * 1000,
+      batchSize = 1,
+      batchIntervalMs = 5 * 60 * 1000,
       maxBatches = 1000,
+      maxEmailsPerRun = 20,
       dryRun = false,
     } = req.body || {};
 
     const stats = await runCampaign({
-      batchSize: Math.max(1, Math.min(50, Number(batchSize) || 5)),
-      batchIntervalMs: Math.max(5_000, Number(batchIntervalMs) || 60_000),
+      batchSize: Math.max(1, Math.min(50, Number(batchSize) || 1)),
+      batchIntervalMs: Math.max(5_000, Number(batchIntervalMs) || 5 * 60_000),
       maxBatches: Math.max(1, Math.min(10_000, Number(maxBatches) || 1000)),
+      maxEmailsPerRun: maxEmailsPerRun === null ? null : Math.max(1, Math.min(1000, Number(maxEmailsPerRun) || 20)),
       dryRun: !!dryRun,
     });
     res.json({ ok: true, stats });

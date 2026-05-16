@@ -1154,6 +1154,43 @@ let garminAutoSyncInFlight = false;
 
 // GET /strava/status — connection + real-time webhook health
 // Returns { connected, autoSync, lastSyncDate, webhookLastEventAt, webhookHealthy }
+// ─── "What's new — May 2026" mass email campaign ─────────────────────────────
+// Admin-only — backend gates all of these on user.admin === true.
+export const fetchWhatsNewMay2026Status = async () => {
+  const { data } = await api.get('/api/email/campaigns/whats-new-2026-05/status');
+  return data; // { pending, sent, totalEligible }
+};
+
+/** Send a single preview email (default: to the admin themselves; override by passing `email`).
+ *  Does NOT mark the recipient as sent — the campaign queue is unaffected. */
+export const sendWhatsNewMay2026Preview = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/whats-new-2026-05/preview', email ? { email } : {});
+  return data; // { sent, lang, reason? }
+};
+
+/** Run the campaign with explicit pacing. The request blocks until the run
+ *  finishes (queue empty OR maxEmailsPerRun reached). Set a generous client
+ *  timeout — at the default 1 / 5 min the 20-email cap takes ~100 minutes. */
+export const runWhatsNewMay2026Campaign = async ({
+  batchSize = 1,
+  batchIntervalMs = 5 * 60 * 1000,
+  maxEmailsPerRun = 20,
+  dryRun = false,
+} = {}) => {
+  const { data } = await api.post(
+    '/api/email/campaigns/whats-new-2026-05/run',
+    { batchSize, batchIntervalMs, maxEmailsPerRun, dryRun },
+    { timeout: 6 * 60 * 60 * 1000 } // 6h — way more than any sane Zoho-free pace
+  );
+  return data; // { ok, stats }
+};
+
+/** Clear the sent-marker so the campaign can be re-sent (everyone or one email). */
+export const resetWhatsNewMay2026 = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/whats-new-2026-05/reset', email ? { email } : {});
+  return data; // { matched, modified }
+};
+
 export const fetchStravaStatus = async () => {
   try {
     const { data } = await api.get('/api/integrations/strava/status', { timeout: 10000 });
