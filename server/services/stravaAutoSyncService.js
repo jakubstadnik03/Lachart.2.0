@@ -323,6 +323,12 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
     const minAgeMs = Math.max(syncIntervalMs - 2 * 60 * 1000, 5 * 60 * 1000); // at least 5 min
     const cutoff = new Date(Date.now() - minAgeMs);
 
+    // Skip users whose webhook is healthy — if Strava pushed an event within
+    // the last 24 hours, real-time sync is doing its job and polling them
+    // burns quota with no upside. Users whose webhook went silent fall back
+    // to the scheduler automatically.
+    const webhookHealthyCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     // Find users with Strava connected and auto-sync enabled,
     // sorted by lastSyncDate ascending so the least-recently-synced users go first.
     // .limit(batchSize) now rotates fairly because users are ordered by sync age.
@@ -335,6 +341,14 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
         { 'strava.lastSyncDate': null },
         { 'strava.lastSyncDate': { $lt: cutoff } },
       ],
+      // Webhook-healthy users (push event in last 24h) don't need polling.
+      $and: [{
+        $or: [
+          { 'strava.webhookLastEventAt': { $exists: false } },
+          { 'strava.webhookLastEventAt': null },
+          { 'strava.webhookLastEventAt': { $lt: webhookHealthyCutoff } },
+        ],
+      }],
     })
       .select('_id strava email name')
       .sort({ 'strava.lastSyncDate': 1 }) // oldest first → fair rotation

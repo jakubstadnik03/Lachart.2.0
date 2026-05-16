@@ -1877,42 +1877,62 @@ async function analyzeTrainingsByMonth(req, res) {
         continue;
       }
       
-      // Load streams from Strava API for second-by-second data
+      // Load streams — prefer the persisted MongoDB cache. Strava activities
+      // are immutable, so once we've fetched the streams for an activity we
+      // never need to call Strava for it again. This is essential for the
+      // monthly-analysis loop, which can otherwise burn dozens of Strava
+      // requests on a single page render and 429-lock the whole app.
       let streams = null;
       try {
         const axios = require('axios');
         const integrationsRoutes = require('../routes/integrationsRoutes');
         const getValidStravaToken = integrationsRoutes.getValidStravaToken;
         const User = require('../models/UserModel');
+        const StravaStream = require('../models/StravaStream');
         const user = await User.findById(userId);
-        
-        if (!user || !getValidStravaToken) {
+
+        if (!user || !getValidStravaToken || !activity.stravaId) {
           stravaSkipped++;
           continue;
         }
-        
-        const token = await getValidStravaToken(user);
-        if (!token || !activity.stravaId) {
-          stravaSkipped++;
-          continue;
+
+        const cached = await StravaStream.findOne({
+          userId: user._id,
+          stravaId: activity.stravaId,
+        }).lean();
+        if (cached?.streams && Object.keys(cached.streams).length > 0) {
+          streams = cached.streams;
+        } else {
+          const token = await getValidStravaToken(user);
+          if (!token) {
+            stravaSkipped++;
+            continue;
+          }
+
+          // Get sport type from activity
+          const activitySport = activity.sport || activity.sport_type || 'Ride';
+          const isStravaRunning = ['Run', 'VirtualRun', 'Walk', 'Hike'].includes(activitySport);
+          const isStravaSwimming = ['Swim'].includes(activitySport);
+
+          // Request appropriate streams based on sport
+          const streamKeys = isStravaRunning || isStravaSwimming
+            ? 'time,velocity_smooth,heartrate' // velocity_smooth for pace calculation
+            : 'time,watts,heartrate'; // watts for cycling
+
+          const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { keys: streamKeys, key_by_type: true },
+            timeout: 5000 // Zkrácený timeout na 5 sekund
+          });
+          streams = streamsResp.data;
+          if (streams && Object.keys(streams).length > 0) {
+            StravaStream.updateOne(
+              { userId: user._id, stravaId: activity.stravaId },
+              { $set: { streams, fetchedAt: new Date() } },
+              { upsert: true }
+            ).catch(() => {});
+          }
         }
-        
-        // Get sport type from activity
-        const activitySport = activity.sport || activity.sport_type || 'Ride';
-        const isStravaRunning = ['Run', 'VirtualRun', 'Walk', 'Hike'].includes(activitySport);
-        const isStravaSwimming = ['Swim'].includes(activitySport);
-        
-        // Request appropriate streams based on sport
-        const streamKeys = isStravaRunning || isStravaSwimming 
-          ? 'time,velocity_smooth,heartrate' // velocity_smooth for pace calculation
-          : 'time,watts,heartrate'; // watts for cycling
-        
-        const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { keys: streamKeys, key_by_type: true },
-          timeout: 5000 // Zkrácený timeout na 5 sekund
-        });
-        streams = streamsResp.data;
       } catch (streamError) {
         // If streams fail, use database data as fallback
         streams = null;
@@ -3004,22 +3024,45 @@ async function getPowerMetrics(req, res) {
       }
       
       try {
-        const stravaToken = await getValidStravaToken(user);
-        if (!stravaToken) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log(`[Power Metrics] No valid Strava token, skipping remaining activities`);
+        // ── Cache hit: serve persisted streams from MongoDB.
+        // Strava activities are immutable, so we never need to refetch.
+        // This is the SINGLE biggest rate-limit win — the power-metrics
+        // view used to fire one Strava request per activity in the window
+        // (up to 60/page-load), which alone could exhaust the 200/15-min
+        // app-wide quota and cascade into 429s on every other Strava call.
+        const StravaStream = require('../models/StravaStream');
+        let streams = null;
+        const cached = await StravaStream.findOne({
+          userId: user._id,
+          stravaId: activity.stravaId,
+        }).lean();
+        if (cached?.streams && Object.keys(cached.streams).length > 0) {
+          streams = cached.streams;
+        } else {
+          const stravaToken = await getValidStravaToken(user);
+          if (!stravaToken) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log(`[Power Metrics] No valid Strava token, skipping remaining activities`);
+            }
+            break;
           }
-          break;
+          // Load streams from Strava API (cache-miss path)
+          const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
+            headers: { Authorization: `Bearer ${stravaToken}` },
+            params: { keys: 'time,watts', key_by_type: true },
+            timeout: 10000 // 10 second timeout
+          });
+          streams = streamsResp.data;
+          // Persist for future calls so this never costs another Strava request.
+          if (streams && Object.keys(streams).length > 0) {
+            StravaStream.updateOne(
+              { userId: user._id, stravaId: activity.stravaId },
+              { $set: { streams, fetchedAt: new Date() } },
+              { upsert: true }
+            ).catch(err => console.warn('[Power Metrics] failed to persist streams:', err.message));
+          }
         }
-        
-        // Load streams from Strava API
-        const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
-          headers: { Authorization: `Bearer ${stravaToken}` },
-          params: { keys: 'time,watts', key_by_type: true },
-          timeout: 10000 // 10 second timeout
-        });
-        
-        const streams = streamsResp.data;
+
         const timeStream = streams.time?.data || [];
         const powerStream = streams.watts?.data || [];
         
@@ -3041,10 +3084,10 @@ async function getPowerMetrics(req, res) {
           stravaId: activity.stravaId ? activity.stravaId.toString() : null
         });
         
-        // Longer delay to avoid rate limiting (1 second between requests)
-        // Strava allows 100 requests per 15 minutes = ~9 seconds per request on average
-        // We use 1 second to be safe but not too slow
-        if (i < stravaActivitiesToProcess.length - 1) {
+        // Inter-request delay only when we actually hit Strava — cache hits
+        // are free. Without this guard a fully-cached window slept 60 s for
+        // no reason and the loop was glacial.
+        if (i < stravaActivitiesToProcess.length - 1 && !cached) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error) {
