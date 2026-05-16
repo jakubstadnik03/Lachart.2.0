@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlannerApi';
 import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
+import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 
@@ -211,6 +212,20 @@ export default function WorkoutExecutionPage() {
   const [lactateSubmitting, setLactateSubmitting] = useState(false);
   const lactateLogRef = useRef([]); // { value, ts, stepIdx, power, hr, note }
 
+  // ── Live chart sample buffer ──────────────────────────────────────────────
+  // 1Hz time-series of {t, power, hr, stepIdx}. Stored in a ref so the
+  // common case (pushing a sample each second) doesn't trigger a render
+  // for every other state. `chartTick` (1Hz) is the re-render signal for
+  // the chart component itself.
+  const samplesRef = useRef([]);  // [{ t, power, hr, stepIdx }]
+  const [chartTick, setChartTick] = useState(0);
+  const [showChart, setShowChart] = useState(true);
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => setChartTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
   // Sidebar panel showing all laps with running averages. Toggle-driven so
   // mobile users with small screens can hide it; auto-shown on first render
   // for desktop.
@@ -292,6 +307,39 @@ export default function WorkoutExecutionPage() {
     expandedSteps.reduce((s, st) => s + (st.durationSeconds || 0), 0),
     [expandedSteps]);
 
+  // ── Live-chart auxiliary data ───────────────────────────────────────────
+  // Cumulative time offset at the start of each step → vertical lines.
+  const stepBoundaries = useMemo(() => {
+    const out = [];
+    let acc = 0;
+    for (let i = 0; i < expandedSteps.length; i++) {
+      out.push({ t: acc, label: expandedSteps[i].label || expandedSteps[i].stepType });
+      acc += expandedSteps[i].durationSeconds || 0;
+    }
+    return out;
+  }, [expandedSteps]);
+
+  // Lactate sample markers — re-derived from the ref each render (cheap;
+  // arrays stay tiny). chartTick is in the deps so the chart updates
+  // immediately after a new sample is submitted.
+  const lactateMarks = useMemo(
+    () => lactateLogRef.current.map((l) => ({ t: l.tElapsed ?? 0, value: l.value })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chartTick, isFinished],
+  );
+
+  // Target band for the current step (used by the chart to draw a coloured
+  // horizontal band). Falls back to a ±5% range when the step uses a single
+  // target value rather than a range.
+  const currentTargetRange = useMemo(() => {
+    const t = currentStep?.powerTarget;
+    if (!t || t.type === 'open') return null;
+    const center = resolveTargetWatts(t, context);
+    if (center == null) return null;
+    if (t.useRange) return { min: t.rangeMin || center - 10, max: t.rangeMax || center + 10 };
+    return { min: Math.round(center * 0.95), max: Math.round(center * 1.05) };
+  }, [currentStep, context]);
+
   // ── Sync step index ref ──────────────────────────────────────────────────────
   useEffect(() => {
     currentStepIdxRef.current = currentStepIdx;
@@ -352,8 +400,18 @@ export default function WorkoutExecutionPage() {
       await api.post('/api/field-lactate', body);
 
       // Track locally too so the laps sidebar (next phase) can render and the
-      // finish handler can attach it to the resulting Training.
-      lactateLogRef.current.push({ value, ts, stepIdx: idx, power, hr, note });
+      // finish handler can attach it to the resulting Training. `tElapsed`
+      // is workout-elapsed seconds at the moment of submission — used by
+      // the live chart to position the marker on the time axis.
+      lactateLogRef.current.push({
+        value,
+        ts,
+        tElapsed: totalElapsed,
+        stepIdx: idx,
+        power,
+        hr,
+        note,
+      });
 
       setLactateInput('');
       setLactateNote('');
@@ -392,10 +450,21 @@ export default function WorkoutExecutionPage() {
         }
         return next;
       });
-      setTotalElapsed(t => t + 1);
+      setTotalElapsed(t => {
+        const next = t + 1;
+        // Push a sample into the live-chart buffer for this second.
+        // Power may legitimately be 0 (coasting), so use `?? null` not `|| null`.
+        samplesRef.current.push({
+          t: next,
+          power: trainer.data.power != null ? Math.round(trainer.data.power) : null,
+          hr: liveHr != null ? Math.round(liveHr) : null,
+          stepIdx: currentStepIdxRef.current,
+        });
+        return next;
+      });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isRunning, isFinished, stepDuration, expandedSteps.length]);
+  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr]);
 
   // ── Controls ─────────────────────────────────────────────────────────────────
   const handlePlayPause = useCallback(() => {
@@ -442,6 +511,19 @@ export default function WorkoutExecutionPage() {
           };
         }),
         lactateMeasurements: lactateLogRef.current.slice(),
+        // 1Hz time-series — power + HR per second. Downsampled to 5 s
+        // intervals before storage if the buffer is large (>1800 points =
+        // 30 min) so the planned-workout doc doesn't balloon. Anyone who
+        // needs full 1Hz can build a Training doc separately later.
+        timeSeries: (() => {
+          const arr = samplesRef.current;
+          if (!arr.length) return [];
+          const stride = arr.length > 1800 ? 5 : 1;
+          const out = [];
+          for (let i = 0; i < arr.length; i += stride) out.push(arr[i]);
+          if (arr.length && (arr.length - 1) % stride !== 0) out.push(arr[arr.length - 1]);
+          return out;
+        })(),
       };
       await updatePlannedWorkout(plannedWorkoutId, { status: 'completed', executionData });
       addNotification('Workout completed! Great job!', 'success');
@@ -502,6 +584,22 @@ export default function WorkoutExecutionPage() {
           <p className="text-xs text-gray-400">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Chart toggle */}
+          {!isFinished && (
+            <button
+              onClick={() => setShowChart((s) => !s)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                showChart
+                  ? 'border-primary bg-primary/20 text-primary'
+                  : 'border-white/20 text-gray-400 hover:bg-white/10'
+              }`}
+              title={showChart ? 'Hide live chart' : 'Show live chart'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 7-7" />
+              </svg>
+            </button>
+          )}
           {/* Laps sidebar toggle */}
           {!isFinished && (
             <button
@@ -564,7 +662,23 @@ export default function WorkoutExecutionPage() {
             <CheckCircleIcon className="w-20 h-20 text-green-400 mx-auto mb-4" />
             <h2 className="text-3xl font-bold mb-2">Workout Complete!</h2>
             <p className="text-gray-400 mb-2">Total time: {fmtTime(totalElapsed)}</p>
-            <p className="text-gray-400 mb-8">{expandedSteps.length} steps completed</p>
+            <p className="text-gray-400 mb-6">{expandedSteps.length} steps completed</p>
+
+            {/* Summary chart of the entire workout */}
+            {samplesRef.current.length > 0 && (
+              <div className="w-full max-w-2xl mx-auto mb-6 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2">
+                <LiveWorkoutChart
+                  samples={samplesRef.current}
+                  currentT={totalElapsed}
+                  stepBoundaries={stepBoundaries}
+                  lactateMarks={lactateMarks}
+                  currentStepTarget={null}
+                  windowSec={-1}
+                  height={170}
+                />
+              </div>
+            )}
+
             <button
               onClick={handleFinish}
               className="px-8 py-3 bg-primary rounded-2xl text-white font-bold text-lg hover:bg-primary/80 transition-colors"
@@ -648,6 +762,22 @@ export default function WorkoutExecutionPage() {
                   )}
                 </div>
               </motion.div>
+            )}
+
+            {/* ── Live chart (power + HR over time) ── */}
+            {showChart && samplesRef.current.length > 0 && (
+              <div className="w-full max-w-2xl mt-1 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2"
+                data-tick={chartTick}>
+                <LiveWorkoutChart
+                  samples={samplesRef.current}
+                  currentT={totalElapsed}
+                  stepBoundaries={stepBoundaries}
+                  lactateMarks={lactateMarks}
+                  currentStepTarget={currentTargetRange}
+                  windowSec={300}
+                  height={150}
+                />
+              </div>
             )}
 
             {/* ── Next step preview ── */}
