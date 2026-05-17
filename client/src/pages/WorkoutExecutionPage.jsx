@@ -35,6 +35,7 @@ import StepBarChart from '../components/WorkoutExecution/StepBarChart';
 import MetricTile from '../components/WorkoutExecution/MetricTile';
 import PreStartHero from '../components/WorkoutExecution/PreStartHero';
 import WorkoutSettingsSheet from '../components/WorkoutExecution/WorkoutSettingsSheet';
+import MobileSwipeViews from '../components/WorkoutExecution/MobileSwipeViews';
 import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import api from '../services/api';
@@ -210,6 +211,33 @@ export default function WorkoutExecutionPage() {
   // Mobile-native (Capacitor) gets safe-area padding and slightly tighter
   // typography. Evaluated once on mount — the env doesn't change at runtime.
   const isNative = isCapacitorNative();
+
+  // Viewport detection — under lg (1024 px) we switch to the swipeable
+  // 4-page layout designed for one-handed phone use. Re-evaluated on
+  // every resize / orientation change so an iPad rotation flips between
+  // layouts automatically.
+  const [isMobileLayout, setIsMobileLayout] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  ));
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setIsMobileLayout(window.innerWidth < 1024);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+
+  // Persist which swipe page the user was on so a tab-hide → re-show
+  // (or screen lock cycle) doesn't snap them back to page 0.
+  const [mobilePageIdx, setMobilePageIdx] = useState(() => {
+    try { return Number(localStorage.getItem('wo_mobile_page')) || 1; } catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('wo_mobile_page', String(mobilePageIdx)); } catch {}
+  }, [mobilePageIdx]);
 
   // Workout data
   const [workout, setWorkout] = useState(null);
@@ -1045,6 +1073,169 @@ export default function WorkoutExecutionPage() {
                   value={trainer.data.speed != null ? trainer.data.speed.toFixed(1) : null}
                   accent="#34d399"
                 />
+              </div>
+            )}
+          />
+        ) : isMobileLayout ? (
+          /* ── MOBILE: 4-page swipeable layout ────────────────────────────
+              On phones / portrait tablets the screen is too narrow to show
+              metric tiles + countdown + gauge + chart at once. We split
+              into 4 swipeable pages instead — flick left/right to switch.
+              Page dots + labels at the top double as tap targets. */
+          <MobileSwipeViews
+            initialIndex={mobilePageIdx}
+            onIndexChange={setMobilePageIdx}
+            renderNumbers={() => (
+              <div className="h-full flex flex-col justify-center items-center px-6 py-4">
+                {/* Huge live power — read at arm's length */}
+                <div className="text-center mb-6">
+                  <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Power</div>
+                  <div className="text-[120px] font-black text-white tabular-nums leading-none" style={{ letterSpacing: '-0.04em' }}>
+                    {trainer.data.power != null ? Math.round(trainer.data.power) : '—'}
+                  </div>
+                  <div className="text-sm text-gray-400 tabular-nums">
+                    {currentTargetWatts != null && (
+                      <>target {effectiveErgWatts ?? currentTargetWatts} W</>
+                    )}
+                  </div>
+                </div>
+                {/* HR + Cadence */}
+                <div className="grid grid-cols-2 gap-3 w-full max-w-xs mb-4">
+                  <div className="text-center">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Heart Rate</div>
+                    <div className="text-5xl font-black text-rose-400 tabular-nums leading-none mt-1">
+                      {liveHr != null ? Math.round(liveHr) : '—'}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Cadence</div>
+                    <div className="text-5xl font-black text-sky-400 tabular-nums leading-none mt-1">
+                      {trainer.data.cadence != null ? Math.round(trainer.data.cadence) : '—'}
+                    </div>
+                  </div>
+                </div>
+                {/* Step + countdown small */}
+                <div className="text-center mt-2">
+                  <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: col.bg }}>
+                    {currentStep?.label || currentStep?.stepType}
+                  </div>
+                  <div className="text-2xl font-bold text-white tabular-nums mt-1">
+                    {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
+                  </div>
+                </div>
+              </div>
+            )}
+            renderWorkout={() => (
+              <div className="h-full flex flex-col items-center justify-center px-4 py-2 gap-3">
+                {/* Metric tiles strip */}
+                <div className="w-full grid grid-cols-4 gap-1.5">
+                  <MetricTile compact label="WATT" value={trainer.data.power != null ? Math.round(trainer.data.power) : null} accent="#a78bfa" />
+                  <MetricTile compact label="BPM"  value={liveHr != null ? Math.round(liveHr) : null} accent="#fb7185" />
+                  <MetricTile compact label="RPM"  value={trainer.data.cadence != null ? Math.round(trainer.data.cadence) : null} accent="#38bdf8" />
+                  <MetricTile compact label="KM/H" value={trainer.data.speed != null ? trainer.data.speed.toFixed(1) : null} accent="#34d399" />
+                </div>
+                {coreTemp.status === 'connected' && coreTemp.data?.coreTemp != null && (
+                  <div className="w-full grid grid-cols-2 gap-1.5">
+                    <MetricTile compact label="CORE °C" value={coreTemp.data.coreTemp.toFixed(2)} accent="#f97316" trend={coreTemp.data.hsi != null ? `HSI ${coreTemp.data.hsi.toFixed(1)}` : null} />
+                    {coreTemp.data.skinTemp != null && (
+                      <MetricTile compact label="SKIN °C" value={coreTemp.data.skinTemp.toFixed(2)} accent="#fb923c" />
+                    )}
+                  </div>
+                )}
+                {/* Step badge + countdown + gauge */}
+                <div className="flex-1 flex flex-col items-center justify-center w-full">
+                  <div className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2"
+                    style={{ backgroundColor: col.bg + '33', color: col.bg, border: `1.5px solid ${col.bg}40` }}>
+                    {currentStep?.label || currentStep?.stepType || 'Step'}
+                  </div>
+                  <div className="text-7xl font-black tabular-nums leading-none mb-1"
+                    style={{ color: stepRemaining <= 10 && stepRemaining > 0 ? '#ef4444' : col.bg }}>
+                    {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
+                  </div>
+                  {stepDuration > 0 && <p className="text-gray-500 text-xs mb-3">of {fmtTime(stepDuration)}</p>}
+                  {currentTargetWatts != null && (
+                    <div className="flex items-center gap-1.5 text-xl font-bold mb-3" style={{ color: col.bg }}>
+                      <BoltSolid className="w-4 h-4" />
+                      <span className="tabular-nums">{effectiveErgWatts ?? currentTargetWatts} W</span>
+                    </div>
+                  )}
+                  {trainer.status === 'connected' && (
+                    <PowerGauge actual={trainer.data.power} target={currentTargetWatts} size={180} />
+                  )}
+                </div>
+              </div>
+            )}
+            renderChart={() => (
+              <div className="h-full flex flex-col px-2 py-3 gap-2">
+                {/* Compact metric strip on top so chart-page still shows live numbers */}
+                <div className="grid grid-cols-3 gap-1.5 flex-shrink-0">
+                  <MetricTile compact label="W"     value={trainer.data.power != null ? Math.round(trainer.data.power) : null} accent="#a78bfa" />
+                  <MetricTile compact label="BPM"   value={liveHr != null ? Math.round(liveHr) : null} accent="#fb7185" />
+                  <MetricTile compact label="RPM"   value={trainer.data.cadence != null ? Math.round(trainer.data.cadence) : null} accent="#38bdf8" />
+                </div>
+                <div className="flex-1 min-h-0 rounded-2xl border border-white/5 bg-white/[0.02] px-1 py-1" data-tick={chartTick}>
+                  {samplesRef.current.length > 0 ? (
+                    <LiveWorkoutChart
+                      samples={samplesRef.current}
+                      currentT={totalElapsed}
+                      stepBoundaries={stepBoundaries}
+                      lactateMarks={lactateMarks}
+                      currentStepTarget={currentTargetRange}
+                      windowSec={300}
+                      height={420}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center text-xs text-gray-500 h-full">
+                      Chart starts after the first second of data.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            renderSteps={() => (
+              <div className="h-full overflow-y-auto px-3 py-3 space-y-1.5" style={{ WebkitOverflowScrolling: 'touch' }}>
+                {expandedSteps.map((s, i) => {
+                  const c = STEP_COLORS[s.stepType] || STEP_COLORS.work;
+                  const isCur = i === currentStepIdx;
+                  const isPast = i < currentStepIdx;
+                  const t = s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null;
+                  const p = stepPowerRef.current[i];
+                  const h = stepHrRef.current[i];
+                  const avgP = p && p.count > 0 ? Math.round(p.sum / p.count) : null;
+                  const avgH = h && h.count > 0 ? Math.round(h.sum / h.count) : null;
+                  const lac = lactateLogRef.current.filter((l) => l.stepIdx === i);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => { ergSentRef.current = null; setCurrentStepIdx(i); setStepElapsed(0); }}
+                      className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors flex flex-col gap-1 ${
+                        isCur ? 'bg-white/10 border-white/30' : isPast ? 'bg-white/[0.02] border-white/5 opacity-70' : 'border-white/10 hover:bg-white/5'
+                      }`}
+                      style={{ borderLeftColor: c.bg, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-500 tabular-nums w-5 text-right">{i + 1}</span>
+                        <span className="text-sm font-bold text-white truncate flex-1">{s.label || s.stepType}</span>
+                        {isCur && <span className="text-[9px] font-bold uppercase tracking-wider text-primary">Now</span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-400 tabular-nums">
+                        <span>{fmtTime(s.durationSeconds)}</span>
+                        {t != null && <><span className="text-gray-600">·</span><span className="font-semibold" style={{ color: c.bg }}>{t}W</span></>}
+                        {avgP != null && <><span className="text-gray-600">·</span><span className="font-bold text-emerald-400">⌀{avgP}W</span></>}
+                        {avgH != null && <span className="text-rose-400 font-semibold">♥{avgH}</span>}
+                      </div>
+                      {lac.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {lac.map((l, li) => (
+                            <span key={li} className="px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 text-[10px] font-bold tabular-nums">
+                              {l.value.toFixed(1)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           />
