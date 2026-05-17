@@ -312,6 +312,85 @@ export async function syncHealthKit({ force = false, onProgress } = {}) {
 }
 
 /**
+ * Read-only diagnostic — figures out exactly WHERE the HealthKit pipeline
+ * is broken without doing a full sync or touching the server. Used by the
+ * Settings card "Diagnose" button so users can paste the resulting object
+ * into a support email instead of generic "still doesn't work".
+ *
+ * Checks, in order:
+ *   1. Is `isCapacitorNative()` true? (web build can't talk to HealthKit)
+ *   2. Does the npm plugin module load? (means pod is in the .ipa)
+ *   3. Does the plugin expose its core methods? (`isAvailable`,
+ *      `requestAuthorization`, `queryHKitSampleType`)
+ *   4. Does `isAvailable()` resolve? (HealthKit capability + entitlement)
+ *   5. Try a TINY query without asking for permission (1 sample, 7 days).
+ *      The plugin will silently return empty when iOS hasn't granted
+ *      access — which is the #1 cause of "nothing happens".
+ *
+ * Returns: { native, pluginLoaded, methods, isAvailable, querySupported,
+ *            sampleCount, lastSyncedAt, permsAskedBefore, error }
+ */
+export async function diagnoseHealthKit() {
+  const out = {
+    native: isCapacitorNative(),
+    pluginLoaded: false,
+    methods: { isAvailable: false, requestAuthorization: false, queryHKitSampleType: false, openAppleHealthApp: false },
+    isAvailable: null,
+    querySupported: false,
+    sampleCount: null,
+    lastSyncedAt: lastSyncedAt(),
+    permsAskedBefore: null,
+    plannedReadPerms: HEALTHKIT_READ_PERMISSIONS,
+    error: null,
+  };
+  try { out.permsAskedBefore = localStorage.getItem(PERMS_KEY) === '1'; } catch {}
+  if (!out.native) { out.error = 'Not running inside Capacitor — HealthKit only works in the iOS app build.'; return out; }
+  let plugin;
+  try {
+    plugin = await getPlugin();
+    out.pluginLoaded = !!plugin;
+    if (!plugin) { out.error = 'Plugin module loaded as null. Check the .ipa was built with `pod install` after adding @perfood/capacitor-healthkit.'; return out; }
+  } catch (e) {
+    out.error = `Plugin import threw: ${e?.message || e}`;
+    return out;
+  }
+  out.methods.isAvailable          = typeof plugin.isAvailable === 'function';
+  out.methods.requestAuthorization = typeof plugin.requestAuthorization === 'function';
+  out.methods.queryHKitSampleType  = typeof plugin.queryHKitSampleType === 'function';
+  out.methods.openAppleHealthApp   = typeof plugin.openAppleHealthApp === 'function';
+  try {
+    await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable');
+    out.isAvailable = true;
+  } catch (e) {
+    out.isAvailable = false;
+    out.error = `isAvailable rejected: ${e?.message || e}. Likely missing NSHealthShareUsageDescription or the HealthKit capability isn't enabled on the App target in Xcode.`;
+    return out;
+  }
+  if (!out.methods.queryHKitSampleType) {
+    out.error = 'queryHKitSampleType missing — plugin version mismatch?';
+    return out;
+  }
+  try {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const res = await withTimeout(plugin.queryHKitSampleType({
+      sampleName: 'workoutType',
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      limit: 1,
+    }), PLUGIN_TIMEOUT_MS, 'queryHKitSampleType (probe)');
+    out.querySupported = true;
+    out.sampleCount = Array.isArray(res?.resultData) ? res.resultData.length : 0;
+    if (out.sampleCount === 0) {
+      out.error = 'Query returned 0 workouts. If you have workouts in Apple Health in the last 7 days, iOS has silently denied read access — open iPhone Settings → Health → Data Access & Devices → LaChart → turn ON Workouts + Heart Rate + Distance + Active Energy.';
+    }
+  } catch (e) {
+    out.error = `Probe query threw: ${e?.message || e}`;
+  }
+  return out;
+}
+
+/**
  * Idempotent fire-and-forget call for app boot. Wrapped in a try so we never
  * crash the app on startup; logs to console for diagnostics.
  */

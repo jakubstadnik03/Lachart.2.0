@@ -3465,6 +3465,38 @@ function AppleHealthCard({ isMobile }) {
     if (!ok) setMsg('Could not open iOS Settings. Open it manually → Health → Data Access & Devices → LaChart.');
   };
 
+  // Read-only probe — figures out exactly which step of the HealthKit
+  // pipeline is broken (plugin missing, capability off, perms denied, etc.)
+  // without doing a full sync or touching the server. Shows the result as
+  // a human-readable summary + raw JSON the user can paste in a support
+  // email.
+  const handleDiagnose = async () => {
+    setBusy(true);
+    setMsg('Running diagnostics…');
+    try {
+      const { diagnoseHealthKit } = await import('../services/healthKitSync');
+      const r = await diagnoseHealthKit();
+      // Build a 5-line summary the user can scan at a glance.
+      const lines = [];
+      lines.push(`Native shell: ${r.native ? 'YES (Capacitor)' : 'NO (web — HealthKit unavailable)'}`);
+      lines.push(`Plugin loaded: ${r.pluginLoaded ? 'YES' : 'NO — rebuild app after `pod install`'}`);
+      lines.push(`isAvailable(): ${r.isAvailable == null ? 'not checked' : r.isAvailable ? 'YES' : 'NO — capability or Info.plist missing'}`);
+      lines.push(`Probe query: ${r.querySupported ? `OK (got ${r.sampleCount} workouts from last 7 days)` : 'failed'}`);
+      lines.push(`Last sync: ${r.lastSyncedAt ? r.lastSyncedAt.toLocaleString() : 'never'}`);
+      if (r.error) {
+        lines.push('');
+        lines.push(`ISSUE: ${r.error}`);
+      }
+      lines.push('');
+      lines.push('Raw: ' + JSON.stringify(r, null, 0));
+      setMsg(lines.join('\n'));
+    } catch (e) {
+      setMsg(`Diagnose failed: ${e?.message || 'unknown'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // "Less than a minute ago" / "5 minutes ago" / "3 hours ago" — relative
   // time reads better than a raw timestamp for a frequently-updated value.
   const relativeLast = (d) => {
@@ -3628,21 +3660,30 @@ function AppleHealthCard({ isMobile }) {
 
       {/* Secondary deep-links — always visible. The user must use these to
           flip individual category permissions back on if iOS denied them. */}
-      <div className={`grid grid-cols-2 gap-2 ${isMobile ? 'mt-2' : 'mt-3'}`}>
+      <div className={`grid grid-cols-3 gap-2 ${isMobile ? 'mt-2' : 'mt-3'}`}>
         <button
           type="button"
           onClick={handleOpenHealthApp}
-          className={`${isMobile ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
+          className={`${isMobile ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium inline-flex items-center justify-center gap-1.5`}
         >
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="#FB1B4F"><path d="M12 20.5s-6.6-4.2-9-8.4C.8 8.4 3.2 4.8 6.9 4.8c1.9 0 3.4 1 5.1 2.8 1.7-1.8 3.2-2.8 5.1-2.8 3.7 0 6.1 3.6 3.9 7.3-2.4 4.2-9 8.4-9 8.4z" /></svg>
-          Open Health
+          Health
         </button>
         <button
           type="button"
           onClick={handleOpenAppSettings}
-          className={`${isMobile ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium`}
+          className={`${isMobile ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium`}
         >
           Permissions
+        </button>
+        <button
+          type="button"
+          onClick={handleDiagnose}
+          disabled={busy}
+          className={`${isMobile ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-primary border border-primary/30 hover:bg-primary/5 font-medium disabled:opacity-50`}
+          title="Probe the HealthKit pipeline and show what's broken"
+        >
+          Diagnose
         </button>
       </div>
 
@@ -3652,7 +3693,16 @@ function AppleHealthCard({ isMobile }) {
       </p>
 
       {msg && (
-        <div className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed`}>
+        <div
+          className={`${isMobile ? 'mt-2 text-[10px]' : 'mt-3 text-xs'} text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed`}
+          style={{
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 280,
+            overflowY: 'auto',
+            fontFamily: msg.includes('Raw:') ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : undefined,
+          }}
+        >
           {msg}
         </div>
       )}
