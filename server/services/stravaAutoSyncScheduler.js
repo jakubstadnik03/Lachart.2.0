@@ -1,4 +1,5 @@
 const { syncStravaForAllUsers } = require('./stravaAutoSyncService');
+const stravaBudget = require('../utils/stravaBudget');
 
 /**
  * Start the Strava auto-sync scheduler
@@ -39,7 +40,22 @@ function startStravaAutoSyncScheduler() {
 
   const tick = async () => {
     try {
-      console.log('[StravaAutoSyncScheduler] Starting scheduled sync...');
+      // Defence against budget exhaustion — if the local Strava token bucket
+      // is already > 60 % used for the current 15-min window (typically
+      // because a historical backfill is in flight, or a morning upload
+      // burst has fired a lot of webhook detail fetches), skip this tick
+      // entirely. The next tick will see a fresher window and try again.
+      // Without this guard the scheduler would compete with backfill / webhooks
+      // for the same finite budget and trigger 429s.
+      const snap = stravaBudget.snapshot();
+      const usedPct = snap.windowLimit > 0 ? snap.windowUsed / snap.windowLimit : 0;
+      if (usedPct > 0.6) {
+        console.log(`[StravaAutoSyncScheduler] Skipping tick — budget ${snap.windowUsed}/${snap.windowLimit} (${Math.round(usedPct * 100)}%) used.`);
+        return;
+      }
+      console.log('[StravaAutoSyncScheduler] Starting scheduled sync...', {
+        windowBudget: `${snap.windowUsed}/${snap.windowLimit}`,
+      });
       const result = await syncStravaForAllUsers({ batchSize, delayBetweenUsers });
       console.log('[StravaAutoSyncScheduler] Scheduled sync completed:', {
         total: result.total,

@@ -317,13 +317,31 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
   stravaBackfillLocks.add(lockKey);
 
   const perPage = 100;
-  const maxPagesPerBatch = 3;
-  const delayBetweenPagesMs = 2500;
-  const delayBetweenBatchesMs = 20000; // 20 s between batches — well within rate limits
+  // Aggressive defaults caused the budget to burn ~100 req / 15-min window
+  // per user for the entire duration of a backfill (could be 75+ min for
+  // a multi-year history). Slowed to ~3× — finishes in maybe 3-4 h for a
+  // big history instead of 75 min, but stays at ≤30 req / window so it
+  // can't visibly affect daily Strava budget or other users' real-time
+  // webhook deliveries.
+  const maxPagesPerBatch = Number(process.env.STRAVA_BACKFILL_MAX_PAGES || 2);
+  const delayBetweenPagesMs = Number(process.env.STRAVA_BACKFILL_PAGE_DELAY_MS || 5000);
+  const delayBetweenBatchesMs = Number(process.env.STRAVA_BACKFILL_BATCH_DELAY_MS || 90000);
+  // Hard ceiling on consecutive batches in one session — defence against
+  // a cursor-stuck loop. 80 × 2 pages × 100 activities = 16 000 activities,
+  // far more than any real history. If the user has more, the next time the
+  // scheduler ticks it'll keep filling.
+  const maxBatchesPerSession = Number(process.env.STRAVA_BACKFILL_MAX_BATCHES || 80);
+  let batchesRun = 0;
 
   const runBatch = async (beforeCursor, retryDelay = delayBetweenBatchesMs) => {
     let nextCursor = beforeCursor;
     let shouldContinue = true;
+    batchesRun += 1;
+    if (batchesRun > maxBatchesPerSession) {
+      console.log(`[StravaBackfill] Hit batch cap (${maxBatchesPerSession}) for user ${userId}; stopping.`);
+      stravaBackfillLocks.delete(lockKey);
+      return;
+    }
 
     try {
       const user = await User.findById(userId);
