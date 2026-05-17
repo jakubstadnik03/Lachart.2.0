@@ -3470,6 +3470,31 @@ function AppleHealthCard({ isMobile }) {
   // without doing a full sync or touching the server. Shows the result as
   // a human-readable summary + raw JSON the user can paste in a support
   // email.
+  // Force-trigger the iOS Health permission sheet WITHOUT going through
+  // the full sync pipeline. Useful when LaChart hasn't yet appeared
+  // under iPhone Settings → Health → Data Access & Devices because the
+  // app has never made a real HealthKit auth call (or the previous one
+  // was swallowed by an entitlement / build mismatch). On failure the
+  // raw NSError bubbles up so the user can see "Missing entitlement"
+  // and know to rebuild.
+  const handleForcePermission = async () => {
+    setBusy(true);
+    setMsg('Asking iOS for HealthKit permission…');
+    try {
+      const { requestHealthKitPermissionOnly } = await import('../services/healthKitSync');
+      const r = await requestHealthKitPermissionOnly();
+      if (r.ok) {
+        setMsg('Permission sheet shown. LaChart should now appear under iPhone Settings → Health → Data Access & Devices → LaChart. Open it and turn ON the categories you want, then tap "Connect" above to import workouts.');
+      } else {
+        setMsg(`Permission request failed: ${r.error || 'unknown'}`);
+      }
+    } catch (e) {
+      setMsg(`Permission request crashed: ${e?.message || 'unknown'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleDiagnose = async () => {
     setBusy(true);
     setMsg('Running diagnostics…');
@@ -3480,7 +3505,7 @@ function AppleHealthCard({ isMobile }) {
       const lines = [];
       lines.push(`Native shell: ${r.native ? 'YES (Capacitor)' : 'NO (web — HealthKit unavailable)'}`);
       lines.push(`Plugin loaded: ${r.pluginLoaded ? 'YES' : 'NO — rebuild app after `pod install`'}`);
-      lines.push(`isAvailable(): ${r.isAvailable == null ? 'not checked' : r.isAvailable ? 'YES' : 'NO — capability or Info.plist missing'}`);
+      lines.push(`isAvailable(): ${r.isAvailable == null ? 'not checked' : r.isAvailable ? 'YES' : 'NO — REBUILD REQUIRED. The installed iOS app was built before HealthKit was added. Open ios/App/App.xcworkspace in Xcode, archive a fresh build (or push a new TestFlight), and reinstall.'}`);
       lines.push(`Probe query: ${r.querySupported ? `OK (got ${r.sampleCount} workouts from last 7 days)` : 'failed'}`);
       lines.push(`Last sync: ${r.lastSyncedAt ? r.lastSyncedAt.toLocaleString() : 'never'}`);
       if (r.error) {
@@ -3684,6 +3709,15 @@ function AppleHealthCard({ isMobile }) {
           title="Probe the HealthKit pipeline and show what's broken"
         >
           Diagnose
+        </button>
+        <button
+          type="button"
+          onClick={handleForcePermission}
+          disabled={busy}
+          className={`${isMobile ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-lg bg-white text-amber-700 border border-amber-300 hover:bg-amber-50 font-medium disabled:opacity-50`}
+          title="Force the iOS Health permission sheet to appear — useful when LaChart isn't yet listed under iPhone Settings → Health"
+        >
+          Force ask
         </button>
       </div>
 

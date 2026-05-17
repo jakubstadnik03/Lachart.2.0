@@ -225,6 +225,71 @@ async function ensurePermission(plugin) {
 }
 
 /**
+ * Force the iOS HealthKit permission sheet to appear, NOTHING else.
+ *
+ * Used by the "Force permission request" button in Settings — strips
+ * out the isAvailable() gate, the throttle, the query, the upload, and
+ * the success bookkeeping. The single goal is to make iOS register
+ * LaChart as a HealthKit-aware app so it shows up under iPhone Settings
+ * → Health → Data Access & Devices. If the auth call itself throws,
+ * the raw NSError message bubbles back to the UI so the user can see
+ * "Missing com.apple.developer.healthkit entitlement" (= rebuild
+ * required) instead of a generic "denied".
+ *
+ * Returns { ok: bool, error?: string, code?: string }.
+ */
+export async function requestHealthKitPermissionOnly() {
+  if (!isCapacitorNative()) return { ok: false, error: 'Not on native iOS — open the LaChart app on your iPhone.', code: 'web' };
+  const plugin = await getPlugin();
+  if (!plugin) return { ok: false, error: 'HealthKit plugin not in this build. Rebuild the iOS app and reinstall via Xcode / TestFlight.', code: 'plugin-missing' };
+  try {
+    await withTimeout(plugin.requestAuthorization({
+      read: HEALTHKIT_READ_PERMISSIONS,
+      write: [],
+      all: [],
+    }), PLUGIN_TIMEOUT_MS, 'requestAuthorization');
+    try { localStorage.setItem(PERMS_KEY, '1'); } catch {}
+    return { ok: true };
+  } catch (e) {
+    // Common error patterns we can map to actionable hints:
+    //   – "Missing com.apple.developer.healthkit entitlement" → rebuild
+    //   – "Authorization not determined" → user dismissed sheet by swipe
+    //   – timeout → plugin wedged / sheet never appeared
+    const raw = String(e?.message || e || 'unknown');
+    let hint = raw;
+    if (/entitlement/i.test(raw)) hint = `${raw} — REBUILD REQUIRED: open ios/App/App.xcworkspace in Xcode and re-run/re-archive. The HealthKit capability only gets compiled into the .ipa at build/sign time, so a build made before the capability was added won't have it.`;
+    return { ok: false, error: hint, code: 'auth-failed' };
+  }
+}
+
+/**
+ * One-shot probe run on app boot: silently triggers the HealthKit
+ * permission flow the FIRST time the native app launches, so the iOS
+ * Health permission sheet appears without the user having to find the
+ * Settings button. Subsequent launches no-op (PERMS_KEY tracks that
+ * we've asked once). Safe on web — returns immediately.
+ */
+export async function maybePromptHealthKitOnBoot() {
+  if (!isCapacitorNative()) return;
+  try {
+    if (localStorage.getItem(PERMS_KEY) === '1') return;
+  } catch {}
+  // Wait a beat so the app's UI settles before the OS sheet pops up —
+  // sheets that fire during the launch transition can be auto-dismissed.
+  setTimeout(async () => {
+    try {
+      const plugin = await getPlugin();
+      if (!plugin) return;
+      try { await withTimeout(plugin.isAvailable(), PLUGIN_TIMEOUT_MS, 'isAvailable'); } catch { return; }
+      await plugin.requestAuthorization({ read: HEALTHKIT_READ_PERMISSIONS, write: [], all: [] });
+      try { localStorage.setItem(PERMS_KEY, '1'); } catch {}
+    } catch (e) {
+      console.warn('[healthkit] boot prompt failed:', e?.message || e);
+    }
+  }, 3000);
+}
+
+/**
  * Run the sync. Returns { imported, total } when posted, or { skipped: 'reason' }
  * when nothing was attempted.
  *

@@ -42,7 +42,12 @@ export async function initCapacitorShell() {
     // Apple Health auto-sync — runs once on cold-start, then again whenever
     // the app comes back to foreground (throttled to 1× / 24h via localStorage
     // inside healthKitSync.maybeSyncOnAppOpen).
-    const { maybeSyncOnAppOpen } = await import('../services/healthKitSync');
+    const { maybeSyncOnAppOpen, maybePromptHealthKitOnBoot } = await import('../services/healthKitSync');
+    // On the very first launch of a fresh install, surface the iOS Health
+    // permission sheet automatically so LaChart registers under iPhone
+    // Settings → Health → Data Access & Devices without the user having
+    // to hunt for the "Connect" button in Settings. No-op after first ask.
+    void maybePromptHealthKitOnBoot();
     void maybeSyncOnAppOpen();
     App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) void maybeSyncOnAppOpen();
