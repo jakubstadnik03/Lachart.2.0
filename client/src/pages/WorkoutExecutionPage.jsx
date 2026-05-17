@@ -27,10 +27,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlannerApi';
 import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
+import useBluetoothCoreTemp from '../hooks/useBluetoothCoreTemp';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
 import StepBarChart from '../components/WorkoutExecution/StepBarChart';
 import MetricTile from '../components/WorkoutExecution/MetricTile';
 import PreStartHero from '../components/WorkoutExecution/PreStartHero';
+import WorkoutSettingsSheet from '../components/WorkoutExecution/WorkoutSettingsSheet';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
@@ -279,6 +282,8 @@ export default function WorkoutExecutionPage() {
   // Data. Outdoor/running uses HR-only with no trainer at all.
   const trainer = useBluetoothTrainer();
   const hrStrap = useBluetoothHeartRate();
+  const coreTemp = useBluetoothCoreTemp();
+  const [showSettingsSheet, setShowSettingsSheet] = useState(false);
 
   // Live HR: prefer the standalone strap when connected (more accurate),
   // fall back to trainer-reported HR. Wrapping `trainer.data` so the rest
@@ -500,13 +505,18 @@ export default function WorkoutExecutionPage() {
           t: next,
           power: trainer.data.power != null ? Math.round(trainer.data.power) : null,
           hr: liveHr != null ? Math.round(liveHr) : null,
+          // Optional CORE body-temp + heat-strain index, captured only when
+          // the sensor is paired. Two-decimal °C precision matches CORE's
+          // native granularity.
+          coreTemp: coreTemp.data?.coreTemp != null ? Number(coreTemp.data.coreTemp.toFixed(2)) : null,
+          hsi: coreTemp.data?.hsi != null ? Number(coreTemp.data.hsi.toFixed(1)) : null,
           stepIdx: currentStepIdxRef.current,
         });
         return next;
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr]);
+  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr, coreTemp]);
 
   // ── Controls ─────────────────────────────────────────────────────────────────
   const handlePlayPause = useCallback(() => {
@@ -572,6 +582,7 @@ export default function WorkoutExecutionPage() {
     } catch (_) {}
     if (trainer.status === 'connected') trainer.disconnect();
     if (hrStrap.status === 'connected') hrStrap.disconnect();
+    if (coreTemp.status === 'connected') coreTemp.disconnect();
     navigate(athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner');
   }, [plannedWorkoutId, athleteId, trainer, hrStrap, navigate, addNotification, totalElapsed, expandedSteps, context]);
 
@@ -579,6 +590,7 @@ export default function WorkoutExecutionPage() {
   const handleAbandon = useCallback(() => {
     if (trainer.status === 'connected') trainer.disconnect();
     if (hrStrap.status === 'connected') hrStrap.disconnect();
+    if (coreTemp.status === 'connected') coreTemp.disconnect();
     navigate(-1);
   }, [trainer, navigate]);
 
@@ -623,28 +635,35 @@ export default function WorkoutExecutionPage() {
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <button onClick={handleAbandon} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-          <ArrowLeftIcon className="w-5 h-5" />
+      {/* ── Header — wide tap targets (44 × 44 minimum on phones) ───────── */}
+      <div className="flex items-center justify-between px-2 py-2 border-b border-white/10 gap-1">
+        <button
+          onClick={handleAbandon}
+          aria-label="Exit workout"
+          className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 active:bg-white/15 transition-colors"
+          style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+        >
+          <ArrowLeftIcon className="w-6 h-6" />
         </button>
-        <div className="flex-1 text-center">
-          <h1 className="text-sm font-bold truncate px-4">{workout.title || 'Workout'}</h1>
-          <p className="text-xs text-gray-400">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
+        <div className="flex-1 text-center min-w-0">
+          <h1 className="text-sm font-bold truncate px-2">{workout.title || 'Workout'}</h1>
+          <p className="text-xs text-gray-400 tabular-nums">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Chart toggle */}
+        <div className="flex items-center gap-0.5">
+          {/* Chart toggle — 44 × 44 tap target on phones */}
           {!isFinished && (
             <button
               onClick={() => setShowChart((s) => !s)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              aria-label={showChart ? 'Hide live chart' : 'Show live chart'}
+              className={`w-11 h-11 flex items-center justify-center rounded-lg transition-all ${
                 showChart
-                  ? 'border-primary bg-primary/20 text-primary'
-                  : 'border-white/20 text-gray-400 hover:bg-white/10'
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-gray-400 hover:bg-white/10 active:bg-white/15'
               }`}
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
               title={showChart ? 'Hide live chart' : 'Show live chart'}
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 7-7" />
               </svg>
             </button>
@@ -653,14 +672,16 @@ export default function WorkoutExecutionPage() {
           {!isFinished && (
             <button
               onClick={() => setShowLapsSidebar((s) => !s)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              aria-label="Show all steps"
+              className={`w-11 h-11 flex items-center justify-center rounded-lg transition-all ${
                 showLapsSidebar
-                  ? 'border-primary bg-primary/20 text-primary'
-                  : 'border-white/20 text-gray-400 hover:bg-white/10'
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-gray-400 hover:bg-white/10 active:bg-white/15'
               }`}
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
               title="Show all steps"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
@@ -669,11 +690,13 @@ export default function WorkoutExecutionPage() {
           {!isFinished && (
             <button
               onClick={() => setShowLactateSheet(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-all"
+              aria-label="Record a lactate sample"
+              className="h-11 min-w-11 flex items-center justify-center gap-1 px-2 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 active:bg-amber-400/30 transition-all"
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
               title="Record a lactate sample"
             >
-              <BeakerIcon className="w-3.5 h-3.5" />
-              + Lac
+              <BeakerIcon className="w-4 h-4" />
+              <span className="text-xs font-bold hidden xs:inline">+ Lac</span>
               {lactateLogRef.current.length > 0 && (
                 <span className="ml-0.5 px-1.5 py-0 rounded-full bg-amber-400/30 text-[10px] font-bold">
                   {lactateLogRef.current.length}
@@ -681,47 +704,29 @@ export default function WorkoutExecutionPage() {
               )}
             </button>
           )}
-          {/* ERG toggle + bias adjuster.
-              When ERG is on, a connected −/+ pill lets the athlete bias the
-              prescribed wattage in 5 % steps (50–150 %). Bias persists for
-              the rest of the workout — set it once, every following interval
-              is scaled. */}
-          {ergMode ? (
-            <div className="flex items-stretch rounded-lg overflow-hidden border border-primary"
-              style={{ WebkitTapHighlightColor: 'transparent' }}>
-              <button
-                onClick={() => bumpErgBias(-ERG_BIAS_STEP)}
-                disabled={ergBias <= ERG_BIAS_MIN + 1e-6}
-                className="px-2.5 bg-primary/20 text-primary font-bold text-base hover:bg-primary/30 active:bg-primary/40 disabled:opacity-40 transition-colors"
-                aria-label="Decrease ERG intensity 5%"
-              >
-                −
-              </button>
-              <button
-                onClick={() => setErgMode(false)}
-                className="px-2 py-1.5 bg-primary text-white font-bold text-[10px] flex flex-col items-center justify-center leading-tight"
-                title="Tap to disable ERG"
-              >
-                <span className="tabular-nums">{Math.round(ergBias * 100)}%</span>
-                <span className="text-[8px] opacity-80 uppercase tracking-wider">ERG</span>
-              </button>
-              <button
-                onClick={() => bumpErgBias(ERG_BIAS_STEP)}
-                disabled={ergBias >= ERG_BIAS_MAX - 1e-6}
-                className="px-2.5 bg-primary/20 text-primary font-bold text-base hover:bg-primary/30 active:bg-primary/40 disabled:opacity-40 transition-colors"
-                aria-label="Increase ERG intensity 5%"
-              >
-                +
-              </button>
-            </div>
-          ) : (
+          {/* Settings — opens bottom sheet with devices + ERG + display
+              toggles. Replaces the old inline ERG pill which crowded the
+              header on phones. ERG state still surfaces visually: when
+              ERG is on we recolour the gear so the user can see it without
+              opening the sheet. */}
+          {!isFinished && (
             <button
-              onClick={() => setErgMode(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/20 text-gray-400 hover:bg-white/10 transition-all"
-              style={{ WebkitTapHighlightColor: 'transparent' }}
+              onClick={() => setShowSettingsSheet(true)}
+              aria-label="Workout settings"
+              className={`w-11 h-11 flex items-center justify-center rounded-lg transition-all relative ${
+                ergMode
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-gray-400 hover:bg-white/10 active:bg-white/15'
+              }`}
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+              title="Settings · devices · ERG"
             >
-              <BoltSolid className="w-3.5 h-3.5" />
-              ERG
+              <Cog6ToothIcon className="w-6 h-6" />
+              {ergMode && (
+                <span className="absolute -top-0.5 -right-0.5 text-[8px] font-black tabular-nums bg-primary text-white rounded-full px-1 leading-tight">
+                  {Math.round(ergBias * 100)}
+                </span>
+              )}
             </button>
           )}
         </div>
@@ -738,6 +743,7 @@ export default function WorkoutExecutionPage() {
         <StepBarChart
           steps={expandedSteps}
           currentIdx={currentStepIdx}
+          stepElapsed={stepElapsed}
           resolveTargetWatts={resolveTargetWatts}
           context={context}
           stepPowerRef={stepPowerRef}
@@ -747,7 +753,7 @@ export default function WorkoutExecutionPage() {
             setCurrentStepIdx(i);
             setStepElapsed(0);
           }}
-          height={isNative ? 60 : 72}
+          height={isNative ? 78 : 90}
         />
       </div>
       )}
@@ -889,6 +895,29 @@ export default function WorkoutExecutionPage() {
                 accent="#34d399"
               />
             </div>
+
+            {/* Extra CORE row when the sensor is connected. Kept out of the
+                main 4-tile strip so phones without the sensor don't waste
+                vertical space on a permanent --. */}
+            {coreTemp.status === 'connected' && coreTemp.data?.coreTemp != null && (
+              <div className="w-full max-w-2xl lg:max-w-4xl grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
+                <MetricTile
+                  compact
+                  label="CORE °C"
+                  value={coreTemp.data.coreTemp.toFixed(2)}
+                  accent="#f97316"
+                  trend={coreTemp.data.hsi != null ? `HSI ${coreTemp.data.hsi.toFixed(1)}` : null}
+                />
+                {coreTemp.data.skinTemp != null && (
+                  <MetricTile
+                    compact
+                    label="SKIN °C"
+                    value={coreTemp.data.skinTemp.toFixed(2)}
+                    accent="#fb923c"
+                  />
+                )}
+              </div>
+            )}
 
             {/* ── Current step badge ── */}
             <AnimatePresence mode="wait">
@@ -1101,63 +1130,48 @@ export default function WorkoutExecutionPage() {
             </button>
           </div>
 
-          {/* Bluetooth connect buttons — trainer + independent HR strap */}
-          <div className="flex justify-center gap-2 mt-4 flex-wrap">
-            {/* Trainer */}
-            {trainer.status === 'disconnected' || trainer.status === 'error' ? (
-              <button
-                onClick={trainer.connect}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-colors"
-              >
-                <SignalIcon className="w-4 h-4" />
-                Connect Trainer
-              </button>
-            ) : trainer.status === 'connecting' ? (
-              <div className="flex items-center gap-2 text-sm text-gray-400 px-4 py-2">
-                <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                Trainer…
-              </div>
-            ) : (
-              <button
-                onClick={trainer.disconnect}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-green-500/40 bg-green-500/10 text-sm text-green-400 hover:bg-green-500/20 transition-colors"
-              >
-                <SignalIcon className="w-4 h-4" />
-                {trainer.deviceName || 'Trainer'}
+          {/* Compact device summary — shows which devices are connected
+              without crowding the control area. Tap any pill (or the
+              "Connect devices" link) to jump straight into the settings
+              sheet where everything is connectable. */}
+          <div className="flex justify-center items-center gap-2 mt-3 flex-wrap text-xs">
+            {trainer.status === 'connected' && (
+              <button onClick={() => setShowSettingsSheet(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <SignalIcon className="w-3.5 h-3.5" /> Trainer
               </button>
             )}
-
-            {/* Heart-rate strap (independent — works without a trainer) */}
-            {hrStrap.status === 'disconnected' || hrStrap.status === 'error' ? (
-              <button
-                onClick={hrStrap.connect}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/30 bg-rose-500/5 text-sm text-rose-300 hover:bg-rose-500/15 transition-colors"
-                title="Connect a BLE heart-rate strap (Polar / Wahoo / Garmin / etc.)"
-              >
-                <span className="text-base leading-none">♥</span>
-                Connect HR
+            {hrStrap.status === 'connected' && (
+              <button onClick={() => setShowSettingsSheet(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-300"
+                style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <span>♥</span> {liveHr != null && <span className="font-bold tabular-nums">{Math.round(liveHr)}</span>}
               </button>
-            ) : hrStrap.status === 'connecting' ? (
-              <div className="flex items-center gap-2 text-sm text-rose-400 px-4 py-2">
-                <div className="w-4 h-4 border border-rose-400 border-t-transparent rounded-full animate-spin" />
-                HR…
-              </div>
-            ) : (
+            )}
+            {coreTemp.status === 'connected' && (
+              <button onClick={() => setShowSettingsSheet(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 text-orange-300"
+                style={{ WebkitTapHighlightColor: 'transparent' }}>
+                CORE {coreTemp.data?.coreTemp != null && <span className="font-bold tabular-nums">{coreTemp.data.coreTemp.toFixed(1)}°</span>}
+              </button>
+            )}
+            {/* "Connect devices" only when at least one device is not yet
+                connected. Clear, single-tap entry into the settings sheet. */}
+            {(trainer.status !== 'connected' || hrStrap.status !== 'connected' || coreTemp.status !== 'connected') && (
               <button
-                onClick={hrStrap.disconnect}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-500/50 bg-rose-500/15 text-sm text-rose-300 hover:bg-rose-500/25 transition-colors"
+                onClick={() => setShowSettingsSheet(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/[0.04] text-gray-300 hover:bg-white/10 active:bg-white/15 transition-colors"
+                style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
               >
-                <span className="text-base leading-none">♥</span>
-                {hrStrap.deviceName || 'HR'}
-                {liveHr != null && (
-                  <span className="ml-1 font-bold tabular-nums">{Math.round(liveHr)}</span>
-                )}
+                <SignalIcon className="w-3.5 h-3.5" />
+                Connect devices
               </button>
             )}
           </div>
-          {(trainer.error || hrStrap.error) && (
+          {(trainer.error || hrStrap.error || coreTemp.error) && (
             <p className="text-xs text-red-400 mt-1 text-center">
-              {trainer.error || hrStrap.error}
+              {trainer.error || hrStrap.error || coreTemp.error}
             </p>
           )}
         </div>
@@ -1184,16 +1198,27 @@ export default function WorkoutExecutionPage() {
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 280 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm h-full bg-gray-900 border-l border-white/10 overflow-y-auto"
-              style={{ WebkitOverflowScrolling: 'touch' }}
+              className="w-full max-w-sm h-full bg-gray-900 border-l border-white/10 overflow-y-auto flex flex-col"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }}
             >
-              <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white">All Steps</h3>
+              {/* Header sits BELOW the notch — the close button must be tappable.
+                  paddingTop on the sticky header pushes content down by the
+                  safe-area amount but keeps the bar's background painted up
+                  to the top of the viewport (covering the status bar nicely). */}
+              <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur px-3 pb-2.5 border-b border-white/10 flex items-center justify-between"
+                style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}
+              >
+                <h3 className="text-sm font-bold text-white pl-1">All Steps</h3>
                 <button
                   onClick={() => setShowLapsSidebar(false)}
-                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-400"
+                  aria-label="Close steps list"
+                  className="w-11 h-11 flex items-center justify-center rounded-full hover:bg-white/10 active:bg-white/20 text-white"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
                 >
-                  <XMarkIcon className="w-5 h-5" />
+                  <XMarkIcon className="w-6 h-6" />
                 </button>
               </div>
               <div className="px-2 py-2 space-y-1">
@@ -1298,6 +1323,27 @@ export default function WorkoutExecutionPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Workout settings bottom sheet — devices + ERG + display ──────── */}
+      <WorkoutSettingsSheet
+        open={showSettingsSheet}
+        onClose={() => setShowSettingsSheet(false)}
+        trainer={trainer}
+        hrStrap={hrStrap}
+        coreTemp={coreTemp}
+        liveHr={liveHr}
+        ergMode={ergMode}
+        setErgMode={setErgMode}
+        ergBias={ergBias}
+        bumpErgBias={bumpErgBias}
+        ergStep={ERG_BIAS_STEP}
+        ergMin={ERG_BIAS_MIN}
+        ergMax={ERG_BIAS_MAX}
+        showChart={showChart}
+        setShowChart={setShowChart}
+        showLapsSidebar={showLapsSidebar}
+        setShowLapsSidebar={setShowLapsSidebar}
+      />
 
       {/* ── Lactate bottom sheet ────────────────────────────────────────────── */}
       <AnimatePresence>
