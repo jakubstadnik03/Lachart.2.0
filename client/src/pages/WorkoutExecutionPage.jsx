@@ -344,6 +344,13 @@ export default function WorkoutExecutionPage() {
   const RESUME_CADENCE = 40;
   const stallSecRef = useRef(0);
   const [autoPausedAt, setAutoPausedAt] = useState(null); // timestamp ms when paused
+  // "Save & End" confirmation modal — shown when the athlete taps the
+  // square stop button next to play (only visible when the workout is
+  // already running but currently paused). Lets them see a quick
+  // summary of what they actually rode (total time + per-step actuals
+  // + lactate samples) before committing to save, so an accidental tap
+  // doesn't terminate a workout they meant to resume.
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   // Live HR: prefer the standalone strap when connected (more accurate),
   // fall back to trainer-reported HR. Wrapping `trainer.data` so the rest
@@ -1002,7 +1009,11 @@ export default function WorkoutExecutionPage() {
               setIsRunning(true);
             }}
             onExit={handleAbandon}
-            onSettings={() => setErgMode((e) => !e)}
+            // Settings button on the pre-start hero opens the full Settings
+            // sheet (devices + ERG + audio + display toggles), not just ERG
+            // — matches what the gear in the header does once the workout
+            // is running, so the affordance is consistent end-to-end.
+            onSettings={() => setShowSettingsSheet(true)}
             stepColors={{
               warmup:   { bar: '#fbbf24', edge: '#f59e0b' },
               work:     { bar: '#a78bfa', edge: '#7c3aed' },
@@ -1361,6 +1372,26 @@ export default function WorkoutExecutionPage() {
             >
               <ForwardIcon className="w-6 h-6" />
             </button>
+
+            {/* Save & End — only visible when paused (isRunning === false),
+                so a casual mid-workout tap can never accidentally terminate
+                the session. Opens a confirmation modal that summarises what
+                was actually ridden, then the user commits via that modal's
+                button. */}
+            {!isRunning && (
+              <button
+                onClick={() => setShowSaveModal(true)}
+                aria-label="Save and end workout"
+                className="p-3 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 active:bg-emerald-500/40 border border-emerald-500/40 text-emerald-300 transition-colors"
+                style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                title="Save and end workout"
+              >
+                {/* Stop / square icon */}
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            )}
           </div>
 
           {/* Compact device summary — shows which devices are connected
@@ -1551,6 +1582,138 @@ export default function WorkoutExecutionPage() {
                     </button>
                   );
                 })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Save & End modal — summary + confirm ──────────────────────────
+          Shown when the user taps the green stop button while paused.
+          Renders the same per-step + lactate summary the real "finish"
+          handler would save, plus a big Save & Finish button. Cancel
+          just dismisses the modal so they can resume. */}
+      <AnimatePresence>
+        {showSaveModal && !isFinished && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowSaveModal(false)}
+            className="fixed inset-0 z-[10001] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          >
+            <motion.div
+              initial={{ y: '100%', opacity: 0.8 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0.8 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-gray-900 border border-white/10 rounded-t-3xl sm:rounded-3xl flex flex-col"
+              style={{
+                maxHeight: '85vh',
+                paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full bg-white/15" />
+              </div>
+              <div className="flex items-center justify-between px-5 pt-3 pb-2 flex-shrink-0">
+                <h3 className="text-base font-bold text-white">End Workout?</h3>
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  aria-label="Cancel"
+                  className="w-11 h-11 -mr-2 flex items-center justify-center rounded-full hover:bg-white/10 active:bg-white/15 text-white"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                >
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="px-5 pb-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <p className="text-xs text-gray-400 mb-3">
+                  Saving will close this session and store it under the planned workout. The
+                  resulting Training will appear in your history with per-step averages and
+                  any lactate samples you recorded.
+                </p>
+
+                {/* Headline numbers */}
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-center">
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Total time</div>
+                    <div className="text-xl font-black text-white tabular-nums mt-1">{fmtTime(totalElapsed)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-center">
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Steps</div>
+                    <div className="text-xl font-black text-white tabular-nums mt-1">
+                      {Math.min(currentStepIdx + 1, expandedSteps.length)}<span className="text-sm text-gray-500">/{expandedSteps.length}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-center">
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Lactate</div>
+                    <div className="text-xl font-black text-amber-300 tabular-nums mt-1">
+                      {lactateLogRef.current.length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Per-step actuals */}
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500 mb-2">
+                  Per step
+                </h4>
+                <div className="space-y-1.5 mb-4">
+                  {expandedSteps.slice(0, currentStepIdx + 1).map((s, i) => {
+                    const p = stepPowerRef.current[i];
+                    const h = stepHrRef.current[i];
+                    const avgP = p && p.count > 0 ? Math.round(p.sum / p.count) : null;
+                    const avgH = h && h.count > 0 ? Math.round(h.sum / h.count) : null;
+                    const target = s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null;
+                    const lac = lactateLogRef.current.filter((l) => l.stepIdx === i);
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+                        <span className="text-gray-500 tabular-nums w-4 text-right">{i + 1}</span>
+                        <span className="text-white truncate flex-1">{s.label || s.stepType}</span>
+                        {target != null && (
+                          <span className="text-gray-500 tabular-nums">→ {target}W</span>
+                        )}
+                        {avgP != null && (
+                          <span className={`tabular-nums font-bold ${
+                            target == null || Math.abs(avgP - target) / target < 0.07 ? 'text-emerald-400' : 'text-amber-400'
+                          }`}>{avgP}W</span>
+                        )}
+                        {avgH != null && (
+                          <span className="text-rose-400 tabular-nums">♥{avgH}</span>
+                        )}
+                        {lac.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-bold tabular-nums">
+                            {lac.map((l) => l.value.toFixed(1)).join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action row */}
+              <div className="px-5 pt-2 flex gap-2 flex-shrink-0 border-t border-white/10">
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="flex-1 py-3 rounded-2xl border border-white/15 text-gray-300 font-semibold text-sm hover:bg-white/5 active:bg-white/10"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSaveModal(false);
+                    setIsFinished(true);
+                    handleFinish();
+                  }}
+                  className="flex-[2] py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-bold text-sm shadow-lg"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                >
+                  Save &amp; Finish
+                </button>
               </div>
             </motion.div>
           </motion.div>
