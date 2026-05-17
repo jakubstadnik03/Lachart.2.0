@@ -17,7 +17,9 @@ import {
   DocumentDuplicateIcon,
   TrashIcon,
   ArrowPathIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
+import { exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import TrainingStats from '../FitAnalysis/TrainingStats';
@@ -469,6 +471,31 @@ function pairPlannedWithDayActivities(planned, activities) {
 function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pairingState = null, linkedActivity = null, onSelectLinked = null }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  // Export-format triggers (ZWO / TCX / FIT). Failure shown via window.alert
+  // — the card sits inside many host components that don't share a
+  // notification context, so a plain alert is the safest fallback.
+  const handleExport = async (format) => {
+    if (!pw?._id) return;
+    setExportBusy(true);
+    try {
+      await exportPlannedWorkout(pw._id, {
+        format,
+        athleteId: pw.athleteId,
+        suggestedName: (pw.title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+      });
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Export failed';
+      // eslint-disable-next-line no-alert
+      alert(`Export failed: ${msg}`);
+    } finally {
+      setExportBusy(false);
+      setExportOpen(false);
+      setMenuOpen(false);
+    }
+  };
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef(null);
   const { getCategory, getCategoryStyle: getCatStyle } = useCategories();
@@ -606,6 +633,30 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
           <PlayIcon className="w-3.5 h-3.5" /> Start
         </button>
+      )}
+      {/* Export — only meaningful when the workout has structured steps */}
+      {Array.isArray(pw.steps) && pw.steps.length > 0 && (
+        <>
+          <button
+            onClick={() => setExportOpen((v) => !v)}
+            className="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            disabled={exportBusy}
+          >
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Export ›
+          </button>
+          {exportOpen && (
+            <div className="px-3 pb-2 space-y-0.5">
+              <button onClick={() => handleExport('zwo')} disabled={exportBusy}
+                className="w-full text-left text-[11px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
+                ZWO <span className="text-gray-400">· Zwift / TrainerRoad</span>
+              </button>
+              <button onClick={() => handleExport('tcx')} disabled={exportBusy}
+                className="w-full text-left text-[11px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
+                TCX <span className="text-gray-400">· Garmin / TrainingPeaks</span>
+              </button>
+            </div>
+          )}
+        </>
       )}
       {onDelete && (
         <button onClick={() => { setMenuOpen(false); onDelete(pw); }}

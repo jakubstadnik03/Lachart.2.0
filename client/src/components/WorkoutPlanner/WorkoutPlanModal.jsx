@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
-import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
+import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { useCategories } from '../../context/CategoryContext';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -690,6 +690,50 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                   <BookmarkIcon className="w-4 h-4" />
                   Save as template
                 </button>
+              )}
+              {/* Export — only when editing an already-saved workout. New
+                  workouts have no _id yet so there's nothing to export. */}
+              {isEdit && steps.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await exportPlannedWorkout(workout._id, {
+                          format: 'zwo',
+                          athleteId: context?.athleteId,
+                          suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+                        });
+                      } catch (err) {
+                        // eslint-disable-next-line no-alert
+                        alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors"
+                    title="Download as Zwift / TrainerRoad workout (.zwo)"
+                  >
+                    .zwo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await exportPlannedWorkout(workout._id, {
+                          format: 'tcx',
+                          athleteId: context?.athleteId,
+                          suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+                        });
+                      } catch (err) {
+                        // eslint-disable-next-line no-alert
+                        alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors"
+                    title="Download as Garmin / TrainingPeaks workout (.tcx)"
+                  >
+                    .tcx
+                  </button>
+                </>
               )}
             </div>
             <div className="flex gap-2">

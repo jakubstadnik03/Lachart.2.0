@@ -65,3 +65,42 @@ export const deletePlannedWorkout = async (id, athleteId = null) => {
   const { data } = await api.delete(`${BASE}/planned/${id}`, { params });
   return data;
 };
+
+/**
+ * Download a planned workout as a structured-workout file (ZWO / TCX / FIT).
+ * Triggers the browser's download dialog with a sensible filename so the
+ * user can drop the file into Garmin Connect, TrainingPeaks, Zwift, etc.
+ *
+ * Returns true on success, throws otherwise (so the caller can show a
+ * notification). The actual HTTP call goes through the same `api` axios
+ * instance — auth headers + base URL are handled the same way as every
+ * other request.
+ */
+export const exportPlannedWorkout = async (id, { format = 'tcx', athleteId = null, suggestedName = null } = {}) => {
+  const params = { format };
+  if (athleteId) params.athleteId = athleteId;
+  const res = await api.get(`${BASE}/planned/${id}/export`, {
+    params,
+    responseType: 'blob',
+  });
+  // Filename: prefer the server-side Content-Disposition; fall back to the
+  // suggested name or a generic "workout.<ext>".
+  let filename = `${suggestedName || 'workout'}.${format}`;
+  const cd = res.headers?.['content-disposition'] || res.headers?.['Content-Disposition'];
+  if (cd) {
+    const m = /filename="?([^";]+)"?/i.exec(cd);
+    if (m) filename = m[1];
+  }
+  // Create a temporary <a> to trigger the download. Works in both desktop
+  // browsers and Capacitor WKWebView (the browser's native download flow).
+  const blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: res.headers?.['content-type'] || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+};

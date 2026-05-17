@@ -221,6 +221,98 @@ router.put('/planned/:id', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/workout-planner/planned/:id/export?format=zwo|tcx|fit[&ftp=300]
+ *
+ * Returns the planned workout as a downloadable file in the requested
+ * structured-workout format:
+ *
+ *   • zwo — Zwift / TrainerRoad / Wahoo SYSTM / Rouvy import
+ *   • tcx — Garmin Connect (Workouts → Import) and TrainingPeaks
+ *   • fit — not yet implemented (binary encoder pending)
+ *
+ * FTP / LT1 / LT2 are resolved from the athlete's most recent saved test
+ * unless `ftp=NNN` is provided in the query string (lets a coach
+ * override on the fly).
+ */
+router.get('/planned/:id/export', verifyToken, async (req, res) => {
+  try {
+    const Test = require('../models/test');
+    const { buildZwo, buildTcx, buildFit } = require('../utils/workoutExporters');
+
+    const pw = await PlannedWorkout.findById(req.params.id).lean();
+    if (!pw) return res.status(404).json({ error: 'Not found' });
+
+    // Authorisation — own data OR coach view of an athlete via ?athleteId.
+    const { athleteId } = await resolveAthleteId(req);
+    if (String(pw.athleteId) !== athleteId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (!Array.isArray(pw.steps) || pw.steps.length === 0) {
+      return res.status(400).json({ error: 'Workout has no structured steps to export' });
+    }
+
+    // Resolve FTP context. Order:
+    //   1. Explicit ?ftp=NNN query (coach override)
+    //   2. Most recent test with LT2 / FTP for this athlete
+    //   3. Hard fallback 250 W
+    let ctx = { ftp: 250, lt1Power: null, lt2Power: null };
+    const ftpOverride = Number(req.query.ftp);
+    if (Number.isFinite(ftpOverride) && ftpOverride > 0) {
+      ctx.ftp = ftpOverride;
+    } else {
+      try {
+        const tests = await Test.find({ userId: pw.athleteId }).sort({ date: -1 }).limit(10).lean();
+        const latest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp);
+        if (latest) {
+          ctx = {
+            ftp: Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250,
+            lt1Power: latest.lt1Power || null,
+            lt2Power: latest.lt2Power || latest.ltPower || null,
+          };
+        }
+      } catch (_) { /* keep defaults */ }
+    }
+
+    const format = String(req.query.format || 'tcx').toLowerCase();
+    const safeName = (pw.title || 'workout')
+      .replace(/[^A-Za-z0-9_-]+/g, '_')
+      .slice(0, 50) || 'workout';
+
+    let body; let mime; let ext;
+    if (format === 'zwo') {
+      body = buildZwo(pw, ctx);
+      mime = 'application/xml';
+      ext = 'zwo';
+    } else if (format === 'tcx') {
+      body = buildTcx(pw, ctx);
+      mime = 'application/vnd.garmin.tcx+xml';
+      ext = 'tcx';
+    } else if (format === 'fit') {
+      try {
+        body = buildFit(pw, ctx);
+        mime = 'application/vnd.ant.fit';
+        ext = 'fit';
+      } catch (e) {
+        if (e.code === 'FORMAT_NOT_IMPLEMENTED') {
+          return res.status(501).json({ error: e.message });
+        }
+        throw e;
+      }
+    } else {
+      return res.status(400).json({ error: `Unknown format "${format}". Use one of: zwo, tcx, fit.` });
+    }
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.${ext}"`);
+    res.send(body);
+  } catch (e) {
+    console.error('[/workout-planner/planned/:id/export]', e);
+    res.status(500).json({ error: 'Failed to export workout' });
+  }
+});
+
 /** DELETE /api/workout-planner/planned/:id */
 router.delete('/planned/:id', verifyToken, async (req, res) => {
   try {

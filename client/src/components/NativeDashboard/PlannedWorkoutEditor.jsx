@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { updatePlannedWorkout, deletePlannedWorkout } from '../../services/workoutPlannerApi';
+import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
 import { useCategories } from '../../context/CategoryContext';
 
@@ -470,6 +470,57 @@ export default function PlannedWorkoutEditor({
               color: '#B91C1C', fontSize: 12, fontWeight: 600,
             }}>
               {error}
+            </div>
+          )}
+
+          {/* Export to .zwo / .tcx — visible whenever there are structured
+              steps. ZWO covers Zwift / TrainerRoad / Wahoo SYSTM; TCX
+              covers Garmin Connect + TrainingPeaks. Files trigger the
+              system download — on iOS the share-sheet opens so the
+              athlete can AirDrop / save to Files / mail it. */}
+          {Array.isArray(plannedWorkout?.steps) && plannedWorkout.steps.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              {[
+                { label: 'Export ZWO', tip: 'Zwift / TrainerRoad', format: 'zwo' },
+                { label: 'Export TCX', tip: 'Garmin / TrainingPeaks', format: 'tcx' },
+              ].map((b) => (
+                <button
+                  key={b.format}
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await exportPlannedWorkout(plannedWorkout._id, {
+                        format: b.format,
+                        athleteId,
+                        suggestedName: (plannedWorkout.title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+                      });
+                    } catch (err) {
+                      const msg = err?.response?.data?.error || err?.message || 'Export failed';
+                      // eslint-disable-next-line no-alert
+                      alert(`Export failed: ${msg}`);
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '9px 8px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(118,126,181,.22)',
+                    background: 'rgba(118,126,181,.06)',
+                    color: '#5E6590',
+                    fontFamily: 'inherit',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                    cursor: 'pointer',
+                    WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation',
+                  }}
+                  title={b.tip}
+                >
+                  <span>{b.label}</span>
+                  <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 500 }}>{b.tip}</span>
+                </button>
+              ))}
             </div>
           )}
 
