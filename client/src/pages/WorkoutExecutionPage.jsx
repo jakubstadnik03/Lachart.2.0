@@ -90,7 +90,22 @@ function resolveTargetLabel(target, ctx) {
   return '';
 }
 
-/** Expand repeat groups into flat list for execution */
+/** Expand repeat groups into a flat list of steps for execution.
+ *
+ *  IMPORTANT: in the WorkoutBuilder data model, the group HEADER is itself
+ *  a real step (typically the WORK interval). The header just carries the
+ *  `groupRepeat` count for the whole block — it is NOT a label-only
+ *  container. So a "5 × (8 min work + 2 min recovery)" block is stored as
+ *
+ *      { groupId:G, isGroupHeader:true,  groupRepeat:5,  stepType:'work',     dur:480 }
+ *      { groupId:G, isGroupHeader:false,                  stepType:'recovery', dur:120 }
+ *
+ *  Filtering the header out (an earlier bug here) made the executed
+ *  workout just 5 × recovery — no work intervals at all. We now keep the
+ *  header and expand the FULL group N times. `isGroupHeader` is stripped
+ *  on each emitted copy so downstream code doesn't accidentally treat
+ *  every repeat's first step as still being the header.
+ */
 function expandSteps(steps) {
   if (!Array.isArray(steps)) return [];
   const out = [];
@@ -101,9 +116,14 @@ function expandSteps(steps) {
     visited.add(s.groupId);
     const group = steps.filter(x => x.groupId === s.groupId);
     const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    const nonHeaders = group.filter(x => !x.isGroupHeader);
     for (let r = 0; r < reps; r++) {
-      nonHeaders.forEach(gs => out.push({ ...gs, _repeatIdx: r + 1, _totalReps: reps, _groupId: gs.groupId }));
+      group.forEach(gs => out.push({
+        ...gs,
+        isGroupHeader: false,
+        _repeatIdx: r + 1,
+        _totalReps: reps,
+        _groupId: gs.groupId,
+      }));
     }
   });
   return out;

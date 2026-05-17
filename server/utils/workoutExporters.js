@@ -98,32 +98,47 @@ function resolveTargetRange(target, ctx = {}) {
   };
 }
 
-/** Flatten grouped repeat blocks so each output step is a single occurrence. */
+/**
+ * Flatten grouped repeat blocks into a single linear step list.
+ *
+ * Important: the WorkoutBuilder data model treats the group HEADER as a
+ * REAL step (typically the work interval). The header only carries the
+ * `groupRepeat` count for the whole block — it is not a label-only
+ * container. So a "5 × (8 min work + 2 min recovery)" block is stored as
+ *
+ *     { groupId:G, isGroupHeader:true,  groupRepeat:5, stepType:'work',     dur:480 }
+ *     { groupId:G, isGroupHeader:false,                stepType:'recovery', dur:120 }
+ *
+ * The earlier version of this function dropped the header on the floor,
+ * which made every exported ZWO / TCX file lose the work intervals
+ * entirely. We now include the header in the per-repeat emission and
+ * strip `isGroupHeader` from each emitted copy so downstream code
+ * (Zwift / Garmin / TP) doesn't treat them as anything special.
+ */
 function expandSteps(steps = []) {
   const out = [];
-  let groupHeader = null;
-  let groupChildren = [];
+  let group = null;
   const flushGroup = () => {
-    if (!groupHeader || !groupChildren.length) {
-      groupHeader = null;
-      groupChildren = [];
-      return;
-    }
-    const repeat = Math.max(1, Number(groupHeader.groupRepeat) || 1);
+    if (!group || !group.members.length) { group = null; return; }
+    const repeat = Math.max(1, Number(group.repeat) || 1);
     for (let r = 0; r < repeat; r++) {
-      for (const c of groupChildren) out.push({ ...c });
+      for (const c of group.members) out.push({ ...c, isGroupHeader: false });
     }
-    groupHeader = null;
-    groupChildren = [];
+    group = null;
   };
   for (const s of steps) {
     if (s.isGroupHeader) {
+      // Header opens a new group — it IS the first member of that group.
       flushGroup();
-      groupHeader = s;
+      group = {
+        id: s.groupId,
+        repeat: s.groupRepeat || 1,
+        members: [{ ...s }],
+      };
       continue;
     }
-    if (groupHeader && s.groupId && s.groupId === groupHeader.groupId) {
-      groupChildren.push(s);
+    if (group && s.groupId && s.groupId === group.id) {
+      group.members.push({ ...s });
     } else {
       flushGroup();
       out.push({ ...s });
