@@ -29,11 +29,19 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 const FTMS_SERVICE_16          = 0x1826;
 const INDOOR_BIKE_DATA_CHAR_16 = 0x2AD2;
 const CONTROL_POINT_CHAR_16    = 0x2AD9;
+const CPS_SERVICE_16           = 0x1818; // Cycling Power Service — primary advertisement on Wahoo / Saris / Stages
+const CPS_MEASUREMENT_16       = 0x2A63;
+const CSC_SERVICE_16           = 0x1816; // Cycling Speed and Cadence
 
 // 128-bit ids (Capacitor expects full UUIDs)
 const FTMS_SERVICE_UUID        = '00001826-0000-1000-8000-00805f9b34fb';
 const INDOOR_BIKE_DATA_UUID    = '00002ad2-0000-1000-8000-00805f9b34fb';
 const CONTROL_POINT_UUID       = '00002ad9-0000-1000-8000-00805f9b34fb';
+const CPS_SERVICE_UUID         = '00001818-0000-1000-8000-00805f9b34fb';
+const CPS_MEASUREMENT_UUID     = '00002a63-0000-1000-8000-00805f9b34fb';
+const CSC_SERVICE_UUID         = '00001816-0000-1000-8000-00805f9b34fb';
+// Wahoo's custom service some Kickrs advertise but no FTMS in adv packet.
+const WAHOO_FTMS_SERVICE_UUID  = 'a026ee0b-0a7d-4ab3-97fa-f1500f9feb8b';
 
 // FTMS Control Point opcodes
 const OP_REQUEST_CONTROL  = 0x00;
@@ -109,6 +117,16 @@ function parseIndoorBikeData(dataView) {
   return result;
 }
 
+/** Parse Cycling Power Measurement (0x2A63) — much simpler than FTMS IBD.
+ *  We only need instantaneous power here; the rest (cadence revs, wheel revs)
+ *  needs delta tracking which we skip for v1 fallback. */
+function parseCyclingPowerMeasurement(dataView) {
+  if (!dataView || dataView.byteLength < 4) return {};
+  // bytes 0-1 flags, bytes 2-3 instantaneous power (sint16 LE)
+  const power = dataView.getInt16(2, true);
+  return { power };
+}
+
 // Lazy BleClient import so the web bundle never pulls in the Capacitor plugin.
 let _BleClient = null;
 async function getBleClient() {
@@ -151,14 +169,24 @@ export default function useBluetoothTrainer() {
   }, []);
 
   // ── Capacitor native connect path ─────────────────────────────────────────
+  // The iOS native BLE picker only shows devices whose ADVERTISEMENT packet
+  // contains one of the services in the filter. Many real trainers (Wahoo
+  // Kickr, Saris H3, Stages SB20, older Tacx) advertise ONLY the standard
+  // Cycling Power Service (0x1818) — they expose FTMS as a GATT service
+  // discovered after connecting. If we filter only on FTMS_SERVICE_UUID
+  // those trainers never appear, which is the #1 "trainer not found"
+  // complaint. We therefore pass a UNION of FTMS + CPS + Wahoo's custom
+  // service as the picker filter, and on connect probe for FTMS first
+  // (full ERG support) with a CPS-only fallback (live power readout but
+  // no ERG, since CPS has no control point).
   const connectNative = useCallback(async () => {
     try {
       setStatus('connecting');
       setError(null);
       const BleClient = await getBleClient();
       const device = await BleClient.requestDevice({
-        services: [FTMS_SERVICE_UUID],
-        optionalServices: [FTMS_SERVICE_UUID],
+        services: [FTMS_SERVICE_UUID, CPS_SERVICE_UUID, WAHOO_FTMS_SERVICE_UUID],
+        optionalServices: [FTMS_SERVICE_UUID, CPS_SERVICE_UUID, CSC_SERVICE_UUID, WAHOO_FTMS_SERVICE_UUID],
       });
       if (!device?.deviceId) {
         setStatus('disconnected');
@@ -169,7 +197,8 @@ export default function useBluetoothTrainer() {
 
       await BleClient.connect(device.deviceId, () => handleDisconnected());
 
-      // Indoor Bike Data — notifications
+      // Try FTMS first — full Indoor Bike Data + ERG control point.
+      let gotFtms = false;
       try {
         await BleClient.startNotifications(
           device.deviceId,
@@ -180,14 +209,33 @@ export default function useBluetoothTrainer() {
             setData((prev) => ({ ...prev, ...parsed }));
           },
         );
+        gotFtms = true;
+        controlPointRef.current = { kind: 'native', protocol: 'ftms' };
       } catch (e) {
-        console.warn('[trainer/native] IBD subscribe failed:', e?.message || e);
+        console.warn('[trainer/native] FTMS not available, falling back to CPS:', e?.message || e);
       }
 
-      // Control Point — best-effort. Some trainers expose it lazily;
-      // we just remember the IDs and write directly via BleClient when
-      // setPower is called.
-      controlPointRef.current = { kind: 'native' };
+      // Fallback: subscribe to the Cycling Power Measurement characteristic
+      // for live power. No ERG control with CPS-only — the user can still
+      // see their power but `setPower()` becomes a no-op (warns in console).
+      if (!gotFtms) {
+        try {
+          await BleClient.startNotifications(
+            device.deviceId,
+            CPS_SERVICE_UUID,
+            CPS_MEASUREMENT_UUID,
+            (value) => {
+              const parsed = parseCyclingPowerMeasurement(value);
+              setData((prev) => ({ ...prev, ...parsed }));
+            },
+          );
+          controlPointRef.current = { kind: 'native', protocol: 'cps-readonly' };
+        } catch (e) {
+          console.warn('[trainer/native] CPS subscribe failed too:', e?.message || e);
+          // Last-resort connection still succeeds — caller will see status
+          // 'connected' with no live data and can disconnect/retry.
+        }
+      }
 
       setStatus('connected');
       return true;
@@ -214,35 +262,61 @@ export default function useBluetoothTrainer() {
       setStatus('connecting');
       setError(null);
 
+      // Same union-of-services rationale as the native path — many trainers
+      // only advertise CPS but expose FTMS post-connect.
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [FTMS_SERVICE_16] }],
-        optionalServices: [FTMS_SERVICE_16],
+        filters: [
+          { services: [FTMS_SERVICE_16] },
+          { services: [CPS_SERVICE_16] },
+        ],
+        optionalServices: [FTMS_SERVICE_16, CPS_SERVICE_16, CSC_SERVICE_16],
       });
       deviceRef.current = device;
       setDeviceName(device.name || 'Smart Trainer');
       device.addEventListener('gattserverdisconnected', handleDisconnected);
 
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(FTMS_SERVICE_16);
 
-      try {
-        const ibd = await service.getCharacteristic(INDOOR_BIKE_DATA_CHAR_16);
-        await ibd.startNotifications();
-        ibd.addEventListener('characteristicvaluechanged', (event) => {
-          const parsed = parseIndoorBikeData(event.target.value);
-          setData((prev) => ({ ...prev, ...parsed }));
-        });
-      } catch (e) {
-        console.warn('[trainer/web] IBD subscribe failed:', e.message);
-      }
+      // Try FTMS first — it gives us the richer Indoor Bike Data
+      // characteristic + a Control Point for ERG. CPS-only trainers fall
+      // back to the simpler cycling-power-measurement characteristic.
+      let ftmsService = null;
+      try { ftmsService = await server.getPrimaryService(FTMS_SERVICE_16); }
+      catch (_) { /* trainer doesn't expose FTMS — fall through to CPS */ }
 
-      try {
-        const cp = await service.getCharacteristic(CONTROL_POINT_CHAR_16);
-        controlPointRef.current = { kind: 'web', char: cp };
-        await cp.startNotifications();
-        cp.addEventListener('characteristicvaluechanged', () => {});
-      } catch (e) {
-        console.warn('[trainer/web] Control Point not available:', e.message);
+      if (ftmsService) {
+        try {
+          const ibd = await ftmsService.getCharacteristic(INDOOR_BIKE_DATA_CHAR_16);
+          await ibd.startNotifications();
+          ibd.addEventListener('characteristicvaluechanged', (event) => {
+            const parsed = parseIndoorBikeData(event.target.value);
+            setData((prev) => ({ ...prev, ...parsed }));
+          });
+        } catch (e) {
+          console.warn('[trainer/web] IBD subscribe failed:', e.message);
+        }
+        try {
+          const cp = await ftmsService.getCharacteristic(CONTROL_POINT_CHAR_16);
+          controlPointRef.current = { kind: 'web', char: cp, protocol: 'ftms' };
+          await cp.startNotifications();
+          cp.addEventListener('characteristicvaluechanged', () => {});
+        } catch (e) {
+          console.warn('[trainer/web] Control Point not available:', e.message);
+        }
+      } else {
+        // CPS fallback — live power but no ERG.
+        try {
+          const cps = await server.getPrimaryService(CPS_SERVICE_16);
+          const meas = await cps.getCharacteristic(CPS_MEASUREMENT_16);
+          await meas.startNotifications();
+          meas.addEventListener('characteristicvaluechanged', (event) => {
+            const parsed = parseCyclingPowerMeasurement(event.target.value);
+            setData((prev) => ({ ...prev, ...parsed }));
+          });
+          controlPointRef.current = { kind: 'web', protocol: 'cps-readonly' };
+        } catch (e) {
+          console.warn('[trainer/web] CPS subscribe failed too:', e.message);
+        }
       }
 
       setStatus('connected');
@@ -268,8 +342,15 @@ export default function useBluetoothTrainer() {
   const writeControl = useCallback(async (bytes) => {
     const cp = controlPointRef.current;
     if (!cp) return false;
+    // CPS-only trainers have no FTMS Control Point — ERG writes are a no-op.
+    // The caller (setPower / start / reset) should already gate on protocol,
+    // but check here too so a stale call doesn't throw.
+    if (cp.protocol === 'cps-readonly') {
+      console.warn('[trainer] writeControl: trainer is CPS-only (no ERG support).');
+      return false;
+    }
     try {
-      if (cp.kind === 'web') {
+      if (cp.kind === 'web' && cp.char) {
         await cp.char.writeValueWithResponse(bytes);
         return true;
       }
@@ -350,6 +431,11 @@ export default function useBluetoothTrainer() {
     error,
     /** Whether BLE is available (web bt OR native) */
     supported,
+    /** Negotiated protocol after connect: 'ftms' (full ERG) or
+     *  'cps-readonly' (live power but no ERG control) or null. */
+    protocol: controlPointRef.current?.protocol || null,
+    /** Convenience flag — true when the trainer supports setPower(). */
+    ergCapable: controlPointRef.current?.protocol === 'ftms',
     connect,
     disconnect,
     setPower,
