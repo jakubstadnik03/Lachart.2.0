@@ -628,6 +628,11 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const { user, logout, isAuthenticated } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Routes that take over the entire viewport — top bar, athlete bar, and
+  // bottom tab bar all hide. Anything that needs to feel like a dedicated
+  // session (live workout execution, future video playback) goes here.
+  const isImmersiveRoute = /^\/workout-execution(\/|$)/.test(location.pathname);
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs]     = useState([]);
@@ -754,16 +759,18 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       background: '#f9fafb',
       overflow: 'hidden',
     }}>
-      {/* Top bar — safe-area top is on the bar itself */}
-      <NativeTopBar
-        user={user}
-        onProfileTap={() => setShowProfile(true)}
-        onBellTap={handleBellTap}
-        unreadCount={unreadCount}
-      />
+      {/* Top bar — hidden on immersive routes so the page can use full height */}
+      {!isImmersiveRoute && (
+        <NativeTopBar
+          user={user}
+          onProfileTap={() => setShowProfile(true)}
+          onBellTap={handleBellTap}
+          unreadCount={unreadCount}
+        />
+      )}
 
-      {/* Coach athlete selector */}
-      {isCoach && (
+      {/* Coach athlete selector — hidden on immersive routes */}
+      {!isImmersiveRoute && isCoach && (
         <NativeAthleteBar
           coach={user}
           athletes={athletes}
@@ -774,12 +781,14 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         />
       )}
 
-      {/* Scrollable page content — flex-1 fills remaining space exactly */}
+      {/* Scrollable page content — flex-1 fills remaining space exactly.
+          On immersive routes, drop overflow so the page can position-fixed
+          properly without competing with this scroller. */}
       <div
         style={{
           flex: 1,
-          minHeight: 0,          // critical for flex child to not overflow
-          overflowY: 'auto',
+          minHeight: 0,
+          overflowY: isImmersiveRoute ? 'hidden' : 'auto',
           overflowX: 'hidden',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
@@ -788,8 +797,8 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         <Outlet />
       </div>
 
-      {/* Bottom tab bar — safe-area bottom is on the bar itself */}
-      <NativeBottomTabBar tabs={tabs} />
+      {/* Bottom tab bar — hidden on immersive routes (live workout) */}
+      {!isImmersiveRoute && <NativeBottomTabBar tabs={tabs} />}
 
       {/* Profile sheet */}
       <NativeProfileSheet

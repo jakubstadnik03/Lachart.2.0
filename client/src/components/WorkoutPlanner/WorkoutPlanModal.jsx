@@ -16,8 +16,9 @@
  */
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate } from '../../services/workoutPlannerApi';
@@ -186,6 +187,7 @@ function secsToHMS(s) {
 // ─── Main modal ────────────────────────────────────────────────────────────────
 export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [] }) {
   const isEdit = Boolean(workout?._id);
+  const navigate = useNavigate();
   const { categories } = useCategories();
   // 'pick' = sport selector (new workouts only), 'build' = full builder
   const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
@@ -691,6 +693,40 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               )}
             </div>
             <div className="flex gap-2">
+              {/* Start Workout — only when editing an existing saved plan
+                  that has structured steps. Saves first, then navigates to
+                  the execution screen so unsaved tweaks (like ERG bias prep)
+                  aren't lost. Hidden for lactate-test plans because those
+                  don't run on the trainer. */}
+              {isEdit && steps.length > 0 && sport !== 'lactate' && (
+                <button
+                  onClick={async () => {
+                    try {
+                      if (title.trim()) {
+                        setSaving(true);
+                        await onSave({
+                          _id: workout._id, date, sport, title: title.trim(),
+                          description: desc, targetTss: Number(tss) || 0,
+                          steps, category,
+                          plannedDuration: 0, plannedDistance: 0,
+                          comment,
+                        });
+                      }
+                    } catch (_) { /* fall through and still navigate */ }
+                    finally { setSaving(false); }
+                    const qs = context?.athleteId ? `?athleteId=${context.athleteId}` : '';
+                    onClose && onClose();
+                    navigate(`/workout-execution/${workout._id}${qs}`);
+                  }}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold disabled:opacity-40 touch-manipulation min-h-[44px] shadow-sm"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                  title="Save and start this workout"
+                >
+                  <PlayIcon className="w-4 h-4" />
+                  Start
+                </button>
+              )}
               <button onClick={onClose}
                 className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors touch-manipulation min-h-[44px]">
                 Cancel

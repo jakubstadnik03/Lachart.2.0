@@ -616,11 +616,11 @@ export default function WorkoutExecutionPage() {
       className="fixed inset-0 flex flex-col bg-gray-950 text-white overflow-hidden select-none"
       style={{
         zIndex: 9999,
-        // Capacitor: honour the notch / home-indicator so the back button
-        // doesn't fight the system status bar and the controls don't sit
-        // under the home indicator.
-        paddingTop: isNative ? 'env(safe-area-inset-top)' : undefined,
-        paddingBottom: isNative ? 'env(safe-area-inset-bottom)' : undefined,
+        // Capacitor: honour the notch / home-indicator. The native layout
+        // already hides its top + bottom bars on this route, so the page
+        // owns the entire viewport including the safe areas.
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -752,8 +752,16 @@ export default function WorkoutExecutionPage() {
       </div>
       )}
 
-      {/* ── Main content ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 gap-3 sm:gap-4 overflow-y-auto"
+      {/* ── Main content ──────────────────────────────────────────────────────
+          Phone portrait: vertical stack (tiles → step → gauge → chart).
+          Tablet / landscape (md+): the chart breaks out into a wider
+          panel via its own `md:max-w-3xl`, while the centred column with
+          countdown + gauge stays compact. The grid layout below keeps it
+          simple by relying on flex centring + max-widths instead of a
+          true two-column grid that would over-engineer the small-screen
+          case. */}
+      <div
+        className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {isFinished ? (
@@ -770,7 +778,7 @@ export default function WorkoutExecutionPage() {
 
             {/* Summary chart of the entire workout */}
             {samplesRef.current.length > 0 && (
-              <div className="w-full max-w-2xl mx-auto mb-6 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2">
+              <div className="w-full max-w-2xl lg:max-w-4xl mx-auto mb-6 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2">
                 <LiveWorkoutChart
                   samples={samplesRef.current}
                   currentT={totalElapsed}
@@ -842,7 +850,7 @@ export default function WorkoutExecutionPage() {
                 4 always-on readings the athlete glances at most. Stays at
                 the top of the column so it doesn't shift when the live
                 chart resizes underneath. */}
-            <div className="w-full max-w-2xl grid grid-cols-4 gap-2 mb-1">
+            <div className="w-full max-w-2xl lg:max-w-4xl grid grid-cols-4 gap-2 mb-1">
               <MetricTile
                 compact
                 label="WATT"
@@ -1006,7 +1014,7 @@ export default function WorkoutExecutionPage() {
 
             {/* ── Live chart (power + HR over time) ── */}
             {showChart && samplesRef.current.length > 0 && (
-              <div className="w-full max-w-2xl mt-1 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2"
+              <div className="w-full max-w-2xl lg:max-w-4xl mt-1 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2"
                 data-tick={chartTick}>
                 <LiveWorkoutChart
                   samples={samplesRef.current}
