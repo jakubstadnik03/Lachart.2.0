@@ -211,18 +211,38 @@ export function WorkoutSessionProvider({ children }) {
   }, [ergMode, effectiveErgWatts, trainer.status]); // eslint-disable-line
 
   // ── Timer tick ─────────────────────────────────────────────────────────
+  // Wall-clock based: each tick computes how many seconds elapsed since
+  // the previous tick and advances counters by that delta. In the
+  // foreground delta is typically 1 (matches the 1Hz interval). When
+  // the tab/app is backgrounded the browser may throttle the interval
+  // (or, on Capacitor, suspend JS entirely); on resume the very next
+  // tick observes a large delta and catches everything up so the timer
+  // and the chart's t-axis don't drift behind the real workout time.
+  const lastTickAtRef = useRef(0);
   useEffect(() => {
     if (!isRunning || isFinished) {
       clearInterval(timerRef.current);
       return;
     }
-    timerRef.current = setInterval(() => {
+    lastTickAtRef.current = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      let delta = Math.round((now - lastTickAtRef.current) / 1000);
+      if (delta < 1) delta = 1;
+      // Cap to a sane bound so a multi-hour suspend (laptop sleep)
+      // doesn't dump 10 000 samples into the buffer in one shot.
+      if (delta > 600) delta = 600;
+      lastTickAtRef.current = now;
+
       const tr = trainerRef.current;
       const cn = contextRef.current;
       const xs = expandedStepsRef.current;
 
-      // Auto-pause detection
-      if (autoPauseEnabledRef.current && tr.status === 'connected') {
+      // Auto-pause detection — only sensible at 1s resolution. If we
+      // just caught up from a background suspend (delta > 1), reset
+      // the stall counter — we have no idea what happened off-screen.
+      if (delta > 1) stallSecRef.current = 0;
+      else if (autoPauseEnabledRef.current && tr.status === 'connected') {
         const pw = tr.data.power;
         const cd = tr.data.cadence;
         const stalled = (pw == null || pw < STALL_POWER) && (cd == null || cd < STALL_CADENCE);
@@ -239,6 +259,8 @@ export function WorkoutSessionProvider({ children }) {
         }
       }
 
+      // Apply `delta` seconds of progress in a single state update.
+      for (let i = 0; i < delta; i++) {
       setStepElapsed((prev) => {
         const next = prev + 1;
         const sd = xs[currentStepIdxRef.current]?.durationSeconds || 0;
@@ -286,8 +308,22 @@ export function WorkoutSessionProvider({ children }) {
         });
         return next;
       });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
+      } // close the `for (let i = 0; i < delta; i++)` loop
+    };
+    timerRef.current = setInterval(tick, 1000);
+    // Catch-up tick when tab/app becomes visible again. This is what
+    // makes the timer survive Capacitor app backgrounding on iOS: when
+    // the WebView resumes JS, the visibility event fires and we run a
+    // single tick which observes the large wall-clock delta and
+    // fast-forwards stepElapsed / totalElapsed / samples buffer.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isRunning, isFinished]);
 
   // ── Auto-resume from auto-pause ────────────────────────────────────────
@@ -466,9 +502,22 @@ export function useWorkoutSession() {
 export function useHasActiveSession() {
   const c = useContext(Ctx);
   if (!c) return null;
-  return c.hasStarted && !c.isFinished && c.plannedWorkoutId
-    ? { plannedWorkoutId: c.plannedWorkoutId, athleteId: c.athleteId, totalElapsed: c.totalElapsed, isRunning: c.isRunning }
-    : null;
+  if (!(c.hasStarted && !c.isFinished && c.plannedWorkoutId)) return null;
+  return {
+    plannedWorkoutId: c.plannedWorkoutId,
+    athleteId: c.athleteId,
+    totalElapsed: c.totalElapsed,
+    isRunning: c.isRunning,
+    // Live metrics so the floating pill can show actual numbers
+    // while the user is on another route — proves to the athlete the
+    // workout is still recording.
+    power: c.trainer?.data?.power ?? null,
+    heartRate: c.liveHr ?? null,
+    cadence: c.trainer?.data?.cadence ?? null,
+    autoPausedAt: c.autoPausedAt,
+    endSession: c.endSession,
+    playPause: c.playPause,
+  };
 }
 
 export { expandSteps, resolveTargetWatts };
