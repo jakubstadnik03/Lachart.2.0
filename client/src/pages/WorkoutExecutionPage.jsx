@@ -512,6 +512,32 @@ export default function WorkoutExecutionPage() {
     }
   }, [lactateInput, lactateNote, trainer, liveHr, workout, athleteId, addNotification]);
 
+  // ── Live-data refs read inside the timer interval ──────────────────────────
+  // Reading these objects directly inside the timer interval was crashing
+  // the ticker: putting `trainer` / `liveHr` / `coreTemp` / `context` into
+  // the effect's dependency array caused the interval to be torn down and
+  // recreated every time the BLE hook re-rendered (which happens on every
+  // sensor packet — many times per second). The interval never had time
+  // to fire its 1000 ms callback. Result: the on-screen timer stayed at
+  // 5:00 even though `isRunning` was true and the pause icon was showing.
+  //
+  // Fix: mirror the live values into refs that update on every render but
+  // don't trigger effect re-runs. The interval reads from the refs and the
+  // dependency list is reduced to primitives that legitimately should
+  // restart the interval (isRunning, isFinished, stepDuration, etc.).
+  const trainerRef = useRef(trainer);
+  const liveHrRef = useRef(liveHr);
+  const coreTempRef = useRef(coreTemp);
+  const contextRef = useRef(context);
+  const autoPauseEnabledRef = useRef(autoPauseEnabled);
+  const expandedStepsRef = useRef(expandedSteps);
+  useEffect(() => { trainerRef.current = trainer; }, [trainer]);
+  useEffect(() => { liveHrRef.current = liveHr; }, [liveHr]);
+  useEffect(() => { coreTempRef.current = coreTemp; }, [coreTemp]);
+  useEffect(() => { contextRef.current = context; }, [context]);
+  useEffect(() => { autoPauseEnabledRef.current = autoPauseEnabled; }, [autoPauseEnabled]);
+  useEffect(() => { expandedStepsRef.current = expandedSteps; }, [expandedSteps]);
+
   // ── Timer tick ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isRunning || isFinished) {
@@ -519,14 +545,19 @@ export default function WorkoutExecutionPage() {
       return;
     }
     timerRef.current = setInterval(() => {
+      const trainerNow = trainerRef.current;
+      const liveHrNow = liveHrRef.current;
+      const coreTempNow = coreTempRef.current;
+      const contextNow = contextRef.current;
+      const expandedStepsNow = expandedStepsRef.current;
       // ── Auto-pause check ──────────────────────────────────────────────
       // Detects coasting / stop. We tally seconds where both metrics sit
       // below the floor, then flip running off after STALL_THRESHOLD.
       // Skipped when the trainer isn't streaming data (no live source ⇒
       // can't tell coasting from a regular outdoor lull).
-      if (autoPauseEnabled && trainer.status === 'connected') {
-        const pw = trainer.data.power;
-        const cd = trainer.data.cadence;
+      if (autoPauseEnabledRef.current && trainerNow.status === 'connected') {
+        const pw = trainerNow.data.power;
+        const cd = trainerNow.data.cadence;
         const stalled =
           (pw == null || pw < STALL_POWER) &&
           (cd == null || cd < STALL_CADENCE);
@@ -558,7 +589,7 @@ export default function WorkoutExecutionPage() {
         if (stepDuration > 0 && next >= stepDuration) {
           setCurrentStepIdx(idx => {
             const nextIdx = idx + 1;
-            if (nextIdx >= expandedSteps.length) {
+            if (nextIdx >= expandedStepsNow.length) {
               setIsRunning(false);
               setIsFinished(true);
               audioCoach.cues.finished();
@@ -566,9 +597,9 @@ export default function WorkoutExecutionPage() {
             }
             ergSentRef.current = null; // force re-send for next step
             // ── Audio: voice prompt for the upcoming step ──
-            const ns = expandedSteps[nextIdx];
+            const ns = expandedStepsNow[nextIdx];
             if (ns) {
-              const nsTarget = ns.powerTarget ? resolveTargetWatts(ns.powerTarget, context) : null;
+              const nsTarget = ns.powerTarget ? resolveTargetWatts(ns.powerTarget, contextNow) : null;
               const min = Math.floor((ns.durationSeconds || 0) / 60);
               const sec = (ns.durationSeconds || 0) % 60;
               const durPhrase = min > 0
@@ -591,20 +622,22 @@ export default function WorkoutExecutionPage() {
         // Power may legitimately be 0 (coasting), so use `?? null` not `|| null`.
         samplesRef.current.push({
           t: next,
-          power: trainer.data.power != null ? Math.round(trainer.data.power) : null,
-          hr: liveHr != null ? Math.round(liveHr) : null,
+          power: trainerNow.data.power != null ? Math.round(trainerNow.data.power) : null,
+          hr: liveHrNow != null ? Math.round(liveHrNow) : null,
           // Optional CORE body-temp + heat-strain index, captured only when
           // the sensor is paired. Two-decimal °C precision matches CORE's
           // native granularity.
-          coreTemp: coreTemp.data?.coreTemp != null ? Number(coreTemp.data.coreTemp.toFixed(2)) : null,
-          hsi: coreTemp.data?.hsi != null ? Number(coreTemp.data.hsi.toFixed(1)) : null,
+          coreTemp: coreTempNow.data?.coreTemp != null ? Number(coreTempNow.data.coreTemp.toFixed(2)) : null,
+          hsi: coreTempNow.data?.hsi != null ? Number(coreTempNow.data.hsi.toFixed(1)) : null,
           stepIdx: currentStepIdxRef.current,
         });
         return next;
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr, coreTemp, autoPauseEnabled, context]);
+    // Only primitives in deps — see "Live-data refs read inside the timer
+    // interval" comment above for why we read trainer/liveHr/coreTemp via refs.
+  }, [isRunning, isFinished, stepDuration, expandedSteps.length]);
 
   // ── Off-target beep ──────────────────────────────────────────────────────
   // Separate effect (not inside the 1-second timer) so we can sample power at
@@ -897,7 +930,7 @@ export default function WorkoutExecutionPage() {
           true two-column grid that would over-engineer the small-screen
           case. */}
       <div
-        className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto"
+        className="flex-1 flex flex-col items-center justify-start lg:justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto py-3 sm:py-4"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {isFinished ? (
@@ -1075,9 +1108,11 @@ export default function WorkoutExecutionPage() {
                 </div>
 
                 {/* Countdown — 6xl on phones (saves vertical space when both
-                    the chart and the power gauge are visible), 7xl on tablets+ */}
+                    the chart and the power gauge are visible), 7xl on
+                    tablets+. Cap at 7xl on desktop too — going larger pushes
+                    the power gauge below the fold. */}
                 <div
-                  className={`font-black tabular-nums leading-none mb-2 ${isNative ? 'text-6xl sm:text-7xl' : 'text-7xl'}`}
+                  className={`font-black tabular-nums leading-none mb-2 text-6xl sm:text-7xl`}
                   style={{ color: stepRemaining <= 10 && stepRemaining > 0 ? '#ef4444' : col.bg }}
                 >
                   {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
