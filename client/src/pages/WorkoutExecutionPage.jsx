@@ -1087,6 +1087,14 @@ export default function WorkoutExecutionPage() {
               </div>
             )}
 
+            {/* ── Active workout main grid ──────────────────────────────────
+                Desktop landscape (lg+): two columns — left is the countdown
+                + power gauge + targets, right is the live chart taking full
+                column height. Phones / tablets portrait stack vertically.
+                Goal: see every metric + the chart without scrolling on a
+                normal laptop / iPad screen. */}
+            <div className="w-full max-w-5xl xl:max-w-6xl grid grid-cols-1 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] gap-4 lg:gap-6 items-start">
+            <div className="flex flex-col items-center gap-3 sm:gap-4 min-w-0">
             {/* ── Current step badge ── */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -1228,21 +1236,39 @@ export default function WorkoutExecutionPage() {
               </motion.div>
             )}
 
-            {/* ── Live chart (power + HR over time) ── */}
-            {showChart && samplesRef.current.length > 0 && (
-              <div className="w-full max-w-2xl lg:max-w-4xl mt-1 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2"
-                data-tick={chartTick}>
-                <LiveWorkoutChart
-                  samples={samplesRef.current}
-                  currentT={totalElapsed}
-                  stepBoundaries={stepBoundaries}
-                  lactateMarks={lactateMarks}
-                  currentStepTarget={currentTargetRange}
-                  windowSec={300}
-                  height={150}
-                />
-              </div>
-            )}
+            </div>{/* end LEFT column */}
+
+            {/* ── RIGHT column: Live chart (power + HR over time) ──
+                Always rendered on desktop (placeholder when no samples yet)
+                so the right column reserves its space and the left column
+                doesn't shift after the first second of recording. On phones
+                the chart stacks below the gauge as before. */}
+            <div className="w-full min-w-0">
+              {showChart && (
+                <div
+                  className="w-full rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2"
+                  data-tick={chartTick}
+                  style={{ minHeight: 180 }}
+                >
+                  {samplesRef.current.length > 0 ? (
+                    <LiveWorkoutChart
+                      samples={samplesRef.current}
+                      currentT={totalElapsed}
+                      stepBoundaries={stepBoundaries}
+                      lactateMarks={lactateMarks}
+                      currentStepTarget={currentTargetRange}
+                      windowSec={300}
+                      height={isNative ? 200 : 280}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center text-xs text-gray-500" style={{ height: 180 }}>
+                      Live chart will appear after the first second of data.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            </div>{/* end main grid */}
 
             {/* ── Next step preview ── */}
             {nextStep && (
