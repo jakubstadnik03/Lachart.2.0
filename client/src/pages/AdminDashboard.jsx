@@ -3273,11 +3273,29 @@ function WhatsNewMay2026Card() {
     setError(null);
     try {
       const r = await sendWhatsNewMay2026Preview(previewEmail ? { email: previewEmail.trim() } : {});
+      // Build a detailed diagnostic so it's obvious whether the relay
+      // actually accepted the recipient. nodemailer can return 250 OK
+      // from the local connector even when the upstream (Zoho, Gmail)
+      // silently drops the address — the `smtp.accepted` / `rejected`
+      // arrays are the truth.
+      const lines = [];
       if (r.sent) {
-        alert(`Preview sent to ${r.to || previewEmail || 'your inbox'} (${r.lang === 'cz' ? 'Czech' : 'English'} version).\nCheck spam folder if it's not there.`);
+        lines.push(`✓ Sent to ${r.to || previewEmail || 'your inbox'} (${r.lang === 'cz' ? 'Czech' : 'English'}).`);
       } else {
-        alert(`Preview not sent: ${r.reason || 'unknown reason'}`);
+        lines.push(`✗ Preview NOT sent.`);
+        if (r.reason) lines.push(`Reason: ${r.reason}`);
       }
+      if (r.smtp) {
+        const { accepted, rejected, response, messageId, code, command } = r.smtp;
+        if (accepted?.length) lines.push(`Accepted: ${accepted.join(', ')}`);
+        if (rejected?.length) lines.push(`Rejected: ${rejected.join(', ')}`);
+        if (response) lines.push(`SMTP: ${response}`);
+        if (messageId) lines.push(`Message-Id: ${messageId}`);
+        if (code) lines.push(`Code: ${code}${command ? ' / ' + command : ''}`);
+      }
+      lines.push('');
+      lines.push('If sent OK but no email arrived: check spam, then the sending-mailbox provider dashboard (Zoho/Gmail Sent Items + outbound logs).');
+      alert(lines.join('\n'));
     } catch (e) {
       setError(e?.response?.data?.error || e.message);
     } finally {

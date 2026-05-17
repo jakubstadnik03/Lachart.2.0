@@ -150,7 +150,15 @@ async function sendOne(user, { dryRun = false } = {}) {
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
-    await transporter.sendMail({
+    // Capture nodemailer's full response so callers can diagnose
+    // "transporter said OK but the email never arrived" situations
+    // (Zoho silently dropping after hourly cap, recipient on a deny
+    // list, etc.). nodemailer returns:
+    //   messageId — set by SMTP
+    //   accepted  — recipients the relay accepted
+    //   rejected  — recipients the relay rejected
+    //   response  — final SMTP server response string
+    const sendInfo = await transporter.sendMail({
       from: { name: 'LaChart', address: process.env.EMAIL_USER },
       to: user.email,
       subject,
@@ -165,6 +173,20 @@ async function sendOne(user, { dryRun = false } = {}) {
       },
     });
 
+    // Defence against the relay silently dropping the recipient: if the
+    // address ended up in `rejected` (or didn't make it into `accepted`),
+    // treat it as a non-sent so the UI can show the reason instead of a
+    // false "sent" toast.
+    const accepted = Array.isArray(sendInfo?.accepted) ? sendInfo.accepted : [];
+    const rejected = Array.isArray(sendInfo?.rejected) ? sendInfo.rejected : [];
+    const wasAccepted = accepted.some((a) => String(a).toLowerCase() === user.email.toLowerCase());
+    const wasRejected = rejected.some((r) => String(r).toLowerCase() === user.email.toLowerCase());
+    if (!wasAccepted || wasRejected) {
+      const reason = `relay did not accept recipient — accepted=[${accepted.join(',')}] rejected=[${rejected.join(',')}] response="${sendInfo?.response || ''}"`;
+      console.error(`[whatsNewCampaign] ${user.email}: ${reason}`);
+      return { sent: false, reason, smtp: { accepted, rejected, response: sendInfo?.response, messageId: sendInfo?.messageId } };
+    }
+
     // Mark sent so a retry doesn't double-deliver. We write only the
     // campaign timestamp, no full document overwrite, to avoid race
     // conditions with login/profile updates happening concurrently.
@@ -173,11 +195,26 @@ async function sendOne(user, { dryRun = false } = {}) {
       { $set: { [`retentionEmails.${CAMPAIGN_KEY}`]: new Date() } }
     );
 
-    return { sent: true, lang };
+    console.log(`[whatsNewCampaign] sent to ${user.email}`, {
+      messageId: sendInfo?.messageId,
+      response: sendInfo?.response,
+      accepted, rejected,
+    });
+
+    return {
+      sent: true,
+      lang,
+      smtp: {
+        accepted,
+        rejected,
+        response: sendInfo?.response,
+        messageId: sendInfo?.messageId,
+      },
+    };
   } catch (e) {
     const reason = (e && (e.message || e.reason || String(e))) || 'send_failed';
-    console.error(`[whatsNewCampaign] failed to send to ${user.email}:`, reason);
-    return { sent: false, reason };
+    console.error(`[whatsNewCampaign] failed to send to ${user.email}:`, reason, e?.code || '');
+    return { sent: false, reason, smtp: { code: e?.code, command: e?.command, response: e?.response } };
   }
 }
 
