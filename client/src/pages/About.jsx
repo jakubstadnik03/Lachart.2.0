@@ -691,6 +691,127 @@ export default function About() {
           </div>
         </section>
 
+        {/* ── 14b. Learn section — SEO + organic awareness ──────────────
+            Surfaces our guide articles in the About page so visitors
+            evaluating LaChart can dive into the science before they
+            sign up. Each card links to a long-form article that ranks
+            for a specific high-intent keyword and ends with a soft
+            CTA to the free calculator. */}
+        <section id="learn" style={{ background: '#fafbff' }}>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 40px' }}>
+              <span style={{ display: 'inline-block', padding: '6px 14px', borderRadius: 999, background: LC.primary + '15', color: LC.primaryDark, fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 14 }}>
+                Learn
+              </span>
+              <h2 style={{ fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 800, color: LC.text, margin: '0 0 12px', letterSpacing: '-0.02em' }}>
+                The science, explained
+              </h2>
+              <p style={{ fontSize: 16, color: LC.muted, lineHeight: 1.6 }}>
+                Long-form guides on lactate testing, threshold detection methods,
+                and what your curve actually means for training.
+              </p>
+            </div>
+            <div
+              className="lc-reveal"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: 18,
+                maxWidth: 1200,
+                margin: '0 auto',
+              }}
+            >
+              {[
+                {
+                  href: '/blog/lactate-test-at-home',
+                  badge: 'Protocol · 14 min',
+                  title: 'How to do a lactate test at home',
+                  body: 'Equipment, step protocol, blood-sampling technique, and the four mistakes that ruin a test.',
+                },
+                {
+                  href: '/blog/lactate-test-interpretation',
+                  badge: 'Reading · 11 min',
+                  title: 'Read your lactate curve step-by-step',
+                  body: 'Spot LT1, LT2, the curve shape clues, and the red flags that mean re-test.',
+                },
+                {
+                  href: '/blog/lt1-vs-lt2-training-zones',
+                  badge: 'Zones · 9 min',
+                  title: 'LT1 vs LT2 — what they mean for training',
+                  body: 'The physiological difference, why both matter, and how to build zones from each.',
+                },
+                {
+                  href: '/blog/ftp-vs-lt2',
+                  badge: 'Concepts · 10 min',
+                  title: 'FTP vs LT2 — are they the same?',
+                  body: 'Usually yes, sometimes no. When they diverge and which one to actually train against.',
+                },
+                {
+                  href: '/blog/obla-dmax-iat-methods-compared',
+                  badge: 'Methods · 11 min',
+                  title: 'OBLA, D-max, IAT, log-log compared',
+                  body: 'Why no single threshold method is perfect — and why LaChart uses an ensemble of all of them.',
+                },
+                {
+                  href: '/blog/how-lachart-calculates-lt1-lt2',
+                  badge: 'Algorithm · 12 min',
+                  title: 'How LaChart calculates LT1 / LT2',
+                  body: 'Inside the 8-method ensemble, isotonic regression, and the noise-detection guards.',
+                },
+              ].map((p) => (
+                <Link
+                  key={p.href}
+                  to={p.href}
+                  onClick={() => track('learn_card_' + p.href)}
+                  style={{
+                    display: 'block',
+                    padding: 22,
+                    borderRadius: 16,
+                    background: '#fff',
+                    border: '1px solid ' + LC.border,
+                    textDecoration: 'none',
+                    color: 'inherit',
+                    boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+                    transition: 'transform .15s ease, box-shadow .15s ease, border-color .15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-3px)';
+                    e.currentTarget.style.boxShadow = '0 10px 30px -10px rgba(94,101,144,.3)';
+                    e.currentTarget.style.borderColor = LC.primary + '40';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = '';
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(15,23,42,.04)';
+                    e.currentTarget.style.borderColor = LC.border;
+                  }}
+                >
+                  <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, background: LC.primary + '12', color: LC.primaryDark, fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {p.badge}
+                  </span>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: LC.text, margin: '12px 0 8px', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+                    {p.title}
+                  </h3>
+                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.6, margin: 0 }}>
+                    {p.body}
+                  </p>
+                  <span style={{ display: 'inline-block', marginTop: 12, color: LC.primaryDark, fontSize: 13, fontWeight: 700 }}>
+                    Read article →
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 32 }}>
+              <Link
+                to="/lactate-guide"
+                onClick={() => track('learn_all')}
+                style={{ display: 'inline-block', padding: '12px 24px', borderRadius: 12, background: LC.primary, color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px -4px rgba(94,101,144,.4)' }}
+              >
+                Browse all articles →
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* ── 15. Integrations ─────────────────────────────────────────── */}
         <section id="connect">
           <div className="lc-sectpad">
@@ -902,7 +1023,14 @@ export default function About() {
             </div>
             {[
               { h: 'Product', l: [['Features','#features'], ['Pricing','#pricing'], ['Calculator','/lactate-curve-calculator'], ['Tutorials','/how-to-use']] },
-              { h: 'Company', l: [['About','#hero'], ['Blog','/blog'], ['Contact','/contact']] },
+              { h: 'Learn',   l: [
+                ['Lactate Guide','/lactate-guide'],
+                ['Test at home','/blog/lactate-test-at-home'],
+                ['Read your curve','/blog/lactate-test-interpretation'],
+                ['LT1 vs LT2','/blog/lt1-vs-lt2-training-zones'],
+                ['FTP vs LT2','/blog/ftp-vs-lt2'],
+              ] },
+              { h: 'Company', l: [['About','#hero'], ['Blog','/lactate-guide'], ['Contact','/contact']] },
               { h: 'Legal',   l: [['Privacy','/privacy'], ['Terms','/terms']] },
             ].map(col => (
               <div key={col.h}>

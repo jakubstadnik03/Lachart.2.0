@@ -45,6 +45,9 @@ const HowLaChartCalculates = lazy(() => import('./pages/blog/HowLaChartCalculate
 const LactateTestingProtocolGuide = lazy(() => import('./pages/blog/LactateTestingProtocolGuide'));
 const Lt1VsLt2TrainingZones = lazy(() => import('./pages/blog/Lt1VsLt2TrainingZones'));
 const OblaDmaxIatMethodsCompared = lazy(() => import('./pages/blog/OblaDmaxIatMethodsCompared'));
+const LactateTestAtHome = lazy(() => import('./pages/blog/LactateTestAtHome'));
+const LactateTestInterpretation = lazy(() => import('./pages/blog/LactateTestInterpretation'));
+const FtpVsLt2 = lazy(() => import('./pages/blog/FtpVsLt2'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
@@ -252,6 +255,9 @@ function AppRoutes() {
         <Route path="/blog/lactate-testing-protocol-guide" element={<LactateTestingProtocolGuide />} />
         <Route path="/blog/lt1-vs-lt2-training-zones" element={<Lt1VsLt2TrainingZones />} />
         <Route path="/blog/obla-dmax-iat-methods-compared" element={<OblaDmaxIatMethodsCompared />} />
+        <Route path="/blog/lactate-test-at-home" element={<LactateTestAtHome />} />
+        <Route path="/blog/lactate-test-interpretation" element={<LactateTestInterpretation />} />
+        <Route path="/blog/ftp-vs-lt2" element={<FtpVsLt2 />} />
 
         {/* Chráněné routy s Layoutem */}
         <Route
