@@ -15,7 +15,7 @@
  * Route: /workout-execution/:plannedWorkoutId
  * Also accepts query param ?athleteId= for coach view
  */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   PlayIcon, PauseIcon, ForwardIcon, BackwardIcon,
@@ -25,11 +25,8 @@ import {
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlannerApi';
-import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
-import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
-import useBluetoothCoreTemp from '../hooks/useBluetoothCoreTemp';
-import useWakeLock from '../hooks/useWakeLock';
 import * as audioCoach from '../utils/audioCoach';
+import { useWorkoutSession } from '../context/WorkoutSessionContext';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
 import StepBarChart from '../components/WorkoutExecution/StepBarChart';
 import MetricTile from '../components/WorkoutExecution/MetricTile';
@@ -239,51 +236,43 @@ export default function WorkoutExecutionPage() {
     try { localStorage.setItem('wo_mobile_page', String(mobilePageIdx)); } catch {}
   }, [mobilePageIdx]);
 
-  // Workout data
-  const [workout, setWorkout] = useState(null);
-  const [expandedSteps, setExpandedSteps] = useState([]);
-  const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
+  // ── Workout session — global context owns ALL execution state ──────────
+  // The page used to keep this state locally, which meant navigating away
+  // (back arrow, banner tap, browser back) tore everything down: BLE
+  // disconnected, timer cleared, samples GC'd. We now read it from the
+  // app-root WorkoutSessionContext so the session keeps recording even
+  // when the page unmounts. The floating ResumeBanner brings the user
+  // back without losing the in-progress workout.
+  const session = useWorkoutSession();
+  const {
+    // metadata + steps
+    plannedWorkoutId: ctxPid,
+    workout, expandedSteps, context,
+    // exec state
+    currentStep, currentStepIdx, stepElapsed, totalElapsed, totalDuration,
+    isRunning, isFinished, hasStarted, autoPausedAt,
+    currentTargetWatts, effectiveErgWatts,
+    // BLE
+    trainer, hrStrap, coreTemp, liveHr,
+    // ERG
+    ergMode, ergBias, ergStep: ERG_BIAS_STEP, ergMin: ERG_BIAS_MIN, ergMax: ERG_BIAS_MAX,
+    // toggles
+    audioEnabled, setAudioEnabled,
+    voiceEnabled, setVoiceEnabled,
+    wakeLockEnabled, setWakeLockEnabled,
+    autoPauseEnabled, setAutoPauseEnabled,
+    // refs (read-only — same identity across renders)
+    samplesRef, stepPowerRef, stepHrRef, lactateLogRef,
+    // actions
+    startSession, endSession, playPause, nextStep: nextStepAction, prevStep, jumpToStep,
+    recordLactate, setErgMode, bumpErgBias, setIsFinished,
+  } = session;
+  // Loading is still page-local — the page kicks off the data fetch.
   const [loading, setLoading] = useState(true);
-
-  // Execution state
-  const [currentStepIdx, setCurrentStepIdx] = useState(0);
-  const [stepElapsed, setStepElapsed] = useState(0); // seconds into current step
-  const [totalElapsed, setTotalElapsed] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
-  const [isFinished, setIsFinished] = useState(false);
-  const [ergMode, setErgMode] = useState(false);
-  // ERG bias — multiplier applied to the planned target wattage before
-  // sending to the trainer. 1.00 = ride exactly as prescribed, 1.10 = +10 %,
-  // 0.90 = −10 %. Useful when the athlete wants a slightly harder/easier
-  // session without rebuilding the planned workout. Persists for the entire
-  // workout (does not reset on step change).
-  const [ergBias, setErgBias] = useState(1.0);
-  const ERG_BIAS_STEP = 0.05; // ±5 %
-  const ERG_BIAS_MIN  = 0.50;
-  const ERG_BIAS_MAX  = 1.50;
-  const bumpErgBias = useCallback((delta) => {
-    setErgBias((b) => {
-      const next = Math.round((b + delta) * 100) / 100;
-      return Math.max(ERG_BIAS_MIN, Math.min(ERG_BIAS_MAX, next));
-    });
-    // Force a re-send on the next ERG effect tick.
-    ergSentRef.current = null;
-  }, []);
-  // Tracks whether the user ever pressed Start. `isRunning` flips to false
-  // every time they pause; this flag stays true so we know to show the
-  // "active" UI (metrics grid, live chart, etc.) instead of the pre-start
-  // hero card.
-  const [hasStarted, setHasStarted] = useState(false);
-  useEffect(() => {
-    if (isRunning) setHasStarted(true);
-  }, [isRunning]);
-
-  const timerRef = useRef(null);
-  const ergSentRef = useRef(null); // last sent power target (to avoid redundant writes)
-  // Power + HR tracking for planned vs actual comparison
-  const stepPowerRef = useRef({}); // { [stepIdx]: { sum, count } }
-  const stepHrRef    = useRef({}); // { [stepIdx]: { sum, count } }
-  const currentStepIdxRef = useRef(0); // mirror of currentStepIdx for closure access
+  // Step jump used to live as a useCallback — emulate the old name so the
+  // existing handlers below don't need renaming.
+  const handlePrevStep = prevStep;
+  const handleNextStep = nextStepAction;
 
   // ── Lactate input ─────────────────────────────────────────────────────────
   // Inline mid-workout lactate entry. Pressing the "+ Lac" button opens a
@@ -296,14 +285,11 @@ export default function WorkoutExecutionPage() {
   const [lactateInput, setLactateInput] = useState('');
   const [lactateNote, setLactateNote] = useState('');
   const [lactateSubmitting, setLactateSubmitting] = useState(false);
-  const lactateLogRef = useRef([]); // { value, ts, stepIdx, power, hr, note }
 
-  // ── Live chart sample buffer ──────────────────────────────────────────────
-  // 1Hz time-series of {t, power, hr, stepIdx}. Stored in a ref so the
-  // common case (pushing a sample each second) doesn't trigger a render
-  // for every other state. `chartTick` (1Hz) is the re-render signal for
-  // the chart component itself.
-  const samplesRef = useRef([]);  // [{ t, power, hr, stepIdx }]
+  // ── Live chart re-render signal ─────────────────────────────────────────
+  // The actual 1Hz samples buffer lives in the context (samplesRef from
+  // destructuring above). chartTick is just a 1Hz counter that forces the
+  // chart component to re-render with the latest samples in the ref.
   const [chartTick, setChartTick] = useState(0);
   const [showChart, setShowChart] = useState(true);
   useEffect(() => {
@@ -326,73 +312,31 @@ export default function WorkoutExecutionPage() {
     return () => clearInterval(t);
   }, [showLapsSidebar, isRunning]);
 
-  // Bluetooth: trainer + independent HR strap. Many real setups use a
-  // dedicated HR strap (Polar/Wahoo/Garmin) even when on a trainer, because
-  // strap HR is more accurate than the optional HR field in FTMS Indoor Bike
-  // Data. Outdoor/running uses HR-only with no trainer at all.
-  const trainer = useBluetoothTrainer();
-  const hrStrap = useBluetoothHeartRate();
-  const coreTemp = useBluetoothCoreTemp();
+  // Settings + Save-End modal state — UI-only, stays page-local.
   const [showSettingsSheet, setShowSettingsSheet] = useState(false);
-
-  // ── Audio coach + wake lock + auto-pause preferences ──────────────────────
-  // All three persist across workouts via localStorage so the athlete sets
-  // them once and they stick. Defaults are friendly: audio on, voice on,
-  // wake lock on, auto-pause on. The toggles live in the Settings sheet.
-  const [audioEnabled, setAudioEnabled] = useState(() => {
-    try { return localStorage.getItem('wo_audio') !== '0'; } catch { return true; }
-  });
-  const [voiceEnabled, setVoiceEnabled] = useState(() => {
-    try { return localStorage.getItem('wo_voice') !== '0'; } catch { return true; }
-  });
-  const [wakeLockEnabled, setWakeLockEnabled] = useState(() => {
-    try { return localStorage.getItem('wo_wakelock') !== '0'; } catch { return true; }
-  });
-  const [autoPauseEnabled, setAutoPauseEnabled] = useState(() => {
-    try { return localStorage.getItem('wo_autopause') !== '0'; } catch { return true; }
-  });
-  // Mirror preference into the audio module + persist.
-  useEffect(() => { audioCoach.setEnabled(audioEnabled); try { localStorage.setItem('wo_audio', audioEnabled ? '1' : '0'); } catch {} }, [audioEnabled]);
-  useEffect(() => { audioCoach.setVoiceEnabled(voiceEnabled); try { localStorage.setItem('wo_voice', voiceEnabled ? '1' : '0'); } catch {} }, [voiceEnabled]);
-  useEffect(() => { try { localStorage.setItem('wo_wakelock', wakeLockEnabled ? '1' : '0'); } catch {} }, [wakeLockEnabled]);
-  useEffect(() => { try { localStorage.setItem('wo_autopause', autoPauseEnabled ? '1' : '0'); } catch {} }, [autoPauseEnabled]);
-
-  // Screen-on hold — active only while the workout is running. Released on
-  // finish, pause, or unmount. Re-acquires after a tab-hide → re-show.
-  const wakeLock = useWakeLock(wakeLockEnabled && isRunning && !isFinished);
-
-  // ── Auto-pause state ──────────────────────────────────────────────────────
-  // Counts the seconds the athlete has been visibly coasting (power < 30W
-  // AND cadence < 30 rpm). After STALL_THRESHOLD seconds we flip isRunning
-  // off automatically. Activity resumes on the next pedal turn.
-  const STALL_THRESHOLD = 10;
-  const STALL_POWER = 30;
-  const STALL_CADENCE = 30;
-  const RESUME_POWER = 50;
-  const RESUME_CADENCE = 40;
-  const stallSecRef = useRef(0);
-  const [autoPausedAt, setAutoPausedAt] = useState(null); // timestamp ms when paused
-  // "Save & End" confirmation modal — shown when the athlete taps the
-  // square stop button next to play (only visible when the workout is
-  // already running but currently paused). Lets them see a quick
-  // summary of what they actually rode (total time + per-step actuals
-  // + lactate samples) before committing to save, so an accidental tap
-  // doesn't terminate a workout they meant to resume.
   const [showSaveModal, setShowSaveModal] = useState(false);
 
-  // Live HR: prefer the standalone strap when connected (more accurate),
-  // fall back to trainer-reported HR. Wrapping `trainer.data` so the rest
-  // of the page can read `liveData.heartRate` without caring about source.
-  const liveHr = hrStrap.status === 'connected' && hrStrap.data.heartRate != null
-    ? hrStrap.data.heartRate
-    : trainer.data.heartRate;
+  // Wake-lock indicator (only used to pass `supported` to the settings
+  // sheet — actual lock is managed by the context provider).
+  const wakeLock = { supported: typeof navigator !== 'undefined' && 'wakeLock' in navigator };
+
+  // Combined live data view — trainer power/cadence + best-source HR.
   const liveData = useMemo(
     () => ({ ...trainer.data, heartRate: liveHr }),
     [trainer.data, liveHr],
   );
 
   // ── Load workout + athlete context ──────────────────────────────────────────
+  // If the context already holds an active session for THIS planned workout
+  // (e.g. user navigated away and came back via the resume pill), we don't
+  // reload — we just bind to what's already running. Otherwise we fetch
+  // fresh data and hand it to `startSession`, which becomes the single
+  // source of truth from that point on.
   useEffect(() => {
+    if (ctxPid && ctxPid === plannedWorkoutId && workout) {
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         setLoading(true);
@@ -401,21 +345,25 @@ export default function WorkoutExecutionPage() {
           api.get(athleteId ? `/test/list/${athleteId}` : '/test').catch(() => ({ data: [] })),
         ]);
         const w = wRes.data || wRes;
-        setWorkout(w);
         const steps = expandSteps(w.steps || []);
-        setExpandedSteps(steps);
 
         // Find latest test with power data
         const tests = Array.isArray(profileRes.data) ? profileRes.data : [];
         const sorted = [...tests].sort((a, b) => new Date(b.date) - new Date(a.date));
         const latest = sorted.find(t => t.lt2Power || t.ltPower || t.ftp);
-        if (latest) {
-          setContext({
-            ftp: latest.lt2Power || latest.ltPower || latest.ftp || 250,
-            lt1Power: latest.lt1Power || null,
-            lt2Power: latest.lt2Power || latest.ltPower || null,
-          });
-        }
+        const ctx = latest ? {
+          ftp: latest.lt2Power || latest.ltPower || latest.ftp || 250,
+          lt1Power: latest.lt1Power || null,
+          lt2Power: latest.lt2Power || latest.ltPower || null,
+        } : { ftp: 250, lt1Power: null, lt2Power: null };
+
+        startSession({
+          plannedWorkoutId,
+          athleteId,
+          workout: w,
+          expandedSteps: steps,
+          context: ctx,
+        });
       } catch (err) {
         addNotification('Failed to load workout', 'error');
         navigate(-1);
@@ -426,19 +374,11 @@ export default function WorkoutExecutionPage() {
     load();
   }, [plannedWorkoutId, athleteId]); // eslint-disable-line
 
-  // ── Current step ─────────────────────────────────────────────────────────────
-  const currentStep = expandedSteps[currentStepIdx] || null;
-  const currentTargetWatts = useMemo(() =>
-    currentStep?.powerTarget ? resolveTargetWatts(currentStep.powerTarget, context) : null,
-    [currentStep, context]);
-
+  // ── Derived per-step values ──────────────────────────────────────────────
+  // currentStep / currentTargetWatts / totalDuration come from context
+  // (see destructuring above). Page only computes UI-local stepRemaining.
   const stepDuration = currentStep?.durationSeconds || 0;
   const stepRemaining = Math.max(0, stepDuration - stepElapsed);
-
-  // Total workout duration
-  const totalDuration = useMemo(() =>
-    expandedSteps.reduce((s, st) => s + (st.durationSeconds || 0), 0),
-    [expandedSteps]);
 
   // ── Live-chart auxiliary data ───────────────────────────────────────────
   // Cumulative time offset at the start of each step → vertical lines.
@@ -473,46 +413,17 @@ export default function WorkoutExecutionPage() {
     return { min: Math.round(center * 0.95), max: Math.round(center * 1.05) };
   }, [currentStep, context]);
 
-  // ── Sync step index ref ──────────────────────────────────────────────────────
-  useEffect(() => {
-    currentStepIdxRef.current = currentStepIdx;
-  }, [currentStepIdx]);
-
-  // ── ERG power sending ─────────────────────────────────────────────────────
-  // Effective target = plan × ergBias. So when the athlete taps + to bump to
-  // 110 %, the trainer immediately gets the new wattage; when they jump to the
-  // next step the new step's target is also biased. `ergSentRef` stores the
-  // last value we wrote, so a redundant write is skipped (cheap deduplication).
-  const effectiveErgWatts = useMemo(() => {
-    if (currentTargetWatts == null) return null;
-    return Math.max(0, Math.round(currentTargetWatts * ergBias));
-  }, [currentTargetWatts, ergBias]);
-
-  useEffect(() => {
-    if (!ergMode || trainer.status !== 'connected') return;
-    if (effectiveErgWatts == null) return;
-    if (ergSentRef.current === effectiveErgWatts) return;
-    ergSentRef.current = effectiveErgWatts;
-    trainer.setPower(effectiveErgWatts);
-  }, [ergMode, effectiveErgWatts, trainer.status]); // eslint-disable-line
-
-  // ── Accumulate actual power per step ─────────────────────────────────────────
-  useEffect(() => {
-    if (!isRunning || trainer.data.power == null) return;
-    const idx = currentStepIdxRef.current;
-    const prev = stepPowerRef.current[idx] || { sum: 0, count: 0 };
-    stepPowerRef.current[idx] = { sum: prev.sum + trainer.data.power, count: prev.count + 1 };
-  }, [trainer.data.power, isRunning]); // eslint-disable-line
-
-  // ── Accumulate actual HR per step (from whichever source is live) ─────────
-  useEffect(() => {
-    if (!isRunning || liveHr == null) return;
-    const idx = currentStepIdxRef.current;
-    const prev = stepHrRef.current[idx] || { sum: 0, count: 0 };
-    stepHrRef.current[idx] = { sum: prev.sum + liveHr, count: prev.count + 1 };
-  }, [liveHr, isRunning]); // eslint-disable-line
+  // NOTE: ERG sending, per-step power/HR accumulation, step-idx ref sync
+  // and effectiveErgWatts now all live in WorkoutSessionContext. Don't
+  // re-implement here — that caused double-accumulation when the page
+  // owned the state.
 
   // ── Lactate submit ──────────────────────────────────────────────────────────
+  // POSTs the value to /api/field-lactate (immediate persistence so a
+  // network blip mid-workout doesn't lose it) and pushes it onto the
+  // context's lactate log (so the chart marker + finish payload pick it
+  // up). The actual logging into the ref-backed list happens in
+  // `recordLactate` on the context.
   const handleLactateSubmit = useCallback(async () => {
     const raw = String(lactateInput || '').trim().replace(',', '.');
     const value = Number(raw);
@@ -522,15 +433,9 @@ export default function WorkoutExecutionPage() {
     }
     setLactateSubmitting(true);
     try {
-      // Snapshot context at the moment of measurement
-      const idx = currentStepIdxRef.current;
-      const power = trainer.data.power != null ? Math.round(trainer.data.power) : null;
-      const hr = liveHr != null ? Math.round(liveHr) : null;
       const ts = new Date().toISOString();
       const note = lactateNote.trim();
-
-      // Persist immediately to /api/field-lactate so a network blip mid-workout
-      // doesn't lose the measurement.
+      const idx = currentStepIdx;
       const body = {
         value,
         recordedAt: ts,
@@ -541,19 +446,7 @@ export default function WorkoutExecutionPage() {
       if (athleteId) body.athleteId = athleteId;
       await api.post('/api/field-lactate', body);
 
-      // Track locally too so the laps sidebar (next phase) can render and the
-      // finish handler can attach it to the resulting Training. `tElapsed`
-      // is workout-elapsed seconds at the moment of submission — used by
-      // the live chart to position the marker on the time axis.
-      lactateLogRef.current.push({
-        value,
-        ts,
-        tElapsed: totalElapsed,
-        stepIdx: idx,
-        power,
-        hr,
-        note,
-      });
+      recordLactate({ value, note, ts });
 
       setLactateInput('');
       setLactateNote('');
@@ -565,196 +458,13 @@ export default function WorkoutExecutionPage() {
     } finally {
       setLactateSubmitting(false);
     }
-  }, [lactateInput, lactateNote, trainer, liveHr, workout, athleteId, addNotification]);
+  }, [lactateInput, lactateNote, currentStepIdx, workout, athleteId, addNotification, recordLactate]);
 
-  // ── Live-data refs read inside the timer interval ──────────────────────────
-  // Reading these objects directly inside the timer interval was crashing
-  // the ticker: putting `trainer` / `liveHr` / `coreTemp` / `context` into
-  // the effect's dependency array caused the interval to be torn down and
-  // recreated every time the BLE hook re-rendered (which happens on every
-  // sensor packet — many times per second). The interval never had time
-  // to fire its 1000 ms callback. Result: the on-screen timer stayed at
-  // 5:00 even though `isRunning` was true and the pause icon was showing.
-  //
-  // Fix: mirror the live values into refs that update on every render but
-  // don't trigger effect re-runs. The interval reads from the refs and the
-  // dependency list is reduced to primitives that legitimately should
-  // restart the interval (isRunning, isFinished, stepDuration, etc.).
-  const trainerRef = useRef(trainer);
-  const liveHrRef = useRef(liveHr);
-  const coreTempRef = useRef(coreTemp);
-  const contextRef = useRef(context);
-  const autoPauseEnabledRef = useRef(autoPauseEnabled);
-  const expandedStepsRef = useRef(expandedSteps);
-  useEffect(() => { trainerRef.current = trainer; }, [trainer]);
-  useEffect(() => { liveHrRef.current = liveHr; }, [liveHr]);
-  useEffect(() => { coreTempRef.current = coreTemp; }, [coreTemp]);
-  useEffect(() => { contextRef.current = context; }, [context]);
-  useEffect(() => { autoPauseEnabledRef.current = autoPauseEnabled; }, [autoPauseEnabled]);
-  useEffect(() => { expandedStepsRef.current = expandedSteps; }, [expandedSteps]);
-
-  // ── Timer tick ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isRunning || isFinished) {
-      clearInterval(timerRef.current);
-      return;
-    }
-    timerRef.current = setInterval(() => {
-      const trainerNow = trainerRef.current;
-      const liveHrNow = liveHrRef.current;
-      const coreTempNow = coreTempRef.current;
-      const contextNow = contextRef.current;
-      const expandedStepsNow = expandedStepsRef.current;
-      // ── Auto-pause check ──────────────────────────────────────────────
-      // Detects coasting / stop. We tally seconds where both metrics sit
-      // below the floor, then flip running off after STALL_THRESHOLD.
-      // Skipped when the trainer isn't streaming data (no live source ⇒
-      // can't tell coasting from a regular outdoor lull).
-      if (autoPauseEnabledRef.current && trainerNow.status === 'connected') {
-        const pw = trainerNow.data.power;
-        const cd = trainerNow.data.cadence;
-        const stalled =
-          (pw == null || pw < STALL_POWER) &&
-          (cd == null || cd < STALL_CADENCE);
-        if (stalled) {
-          stallSecRef.current += 1;
-          if (stallSecRef.current >= STALL_THRESHOLD) {
-            // Pause now — keep the elapsed counters frozen by returning
-            // BEFORE the increments below.
-            setIsRunning(false);
-            setAutoPausedAt(Date.now());
-            stallSecRef.current = 0;
-            return;
-          }
-        } else {
-          stallSecRef.current = 0;
-        }
-      }
-
-      setStepElapsed(prev => {
-        const next = prev + 1;
-        // ── Audio cues: 3-2-1 countdown to end of step ──
-        if (stepDuration > 0) {
-          const remaining = stepDuration - next;
-          if (remaining === 3 || remaining === 2 || remaining === 1) {
-            audioCoach.beep(880, 80);
-          }
-        }
-        // Auto-advance step when duration reached
-        if (stepDuration > 0 && next >= stepDuration) {
-          setCurrentStepIdx(idx => {
-            const nextIdx = idx + 1;
-            if (nextIdx >= expandedStepsNow.length) {
-              setIsRunning(false);
-              setIsFinished(true);
-              audioCoach.cues.finished();
-              return idx;
-            }
-            ergSentRef.current = null; // force re-send for next step
-            // ── Audio: voice prompt for the upcoming step ──
-            const ns = expandedStepsNow[nextIdx];
-            if (ns) {
-              const nsTarget = ns.powerTarget ? resolveTargetWatts(ns.powerTarget, contextNow) : null;
-              const min = Math.floor((ns.durationSeconds || 0) / 60);
-              const sec = (ns.durationSeconds || 0) % 60;
-              const durPhrase = min > 0
-                ? (sec > 0 ? `${min} minute${min > 1 ? 's' : ''} ${sec} seconds` : `${min} minute${min > 1 ? 's' : ''}`)
-                : `${sec} seconds`;
-              const label = ns.label || ns.stepType || 'next step';
-              const targetPhrase = nsTarget ? ` at ${nsTarget} watts` : '';
-              audioCoach.beep(1320, 180, 0.5);                       // step-start chime
-              audioCoach.speak(`${label}, ${durPhrase}${targetPhrase}`);
-            }
-            return nextIdx;
-          });
-          return 0; // reset elapsed for new step
-        }
-        return next;
-      });
-      setTotalElapsed(t => {
-        const next = t + 1;
-        // Push a sample into the live-chart buffer for this second.
-        // Power may legitimately be 0 (coasting), so use `?? null` not `|| null`.
-        samplesRef.current.push({
-          t: next,
-          power: trainerNow.data.power != null ? Math.round(trainerNow.data.power) : null,
-          hr: liveHrNow != null ? Math.round(liveHrNow) : null,
-          // Optional CORE body-temp + heat-strain index, captured only when
-          // the sensor is paired. Two-decimal °C precision matches CORE's
-          // native granularity.
-          coreTemp: coreTempNow.data?.coreTemp != null ? Number(coreTempNow.data.coreTemp.toFixed(2)) : null,
-          hsi: coreTempNow.data?.hsi != null ? Number(coreTempNow.data.hsi.toFixed(1)) : null,
-          stepIdx: currentStepIdxRef.current,
-        });
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-    // Only primitives in deps — see "Live-data refs read inside the timer
-    // interval" comment above for why we read trainer/liveHr/coreTemp via refs.
-  }, [isRunning, isFinished, stepDuration, expandedSteps.length]);
-
-  // ── Off-target beep ──────────────────────────────────────────────────────
-  // Separate effect (not inside the 1-second timer) so we can sample power at
-  // its own native cadence and throttle to one beep per 5 s. Only fires when
-  // the workout is running, the target is non-open, and a trainer is live.
-  const lastOffTargetBeepRef = useRef(0);
-  useEffect(() => {
-    if (!isRunning || isFinished) return;
-    if (!audioEnabled) return;
-    if (trainer.status !== 'connected') return;
-    if (trainer.data.power == null) return;
-    const t = effectiveErgWatts != null ? effectiveErgWatts : currentTargetWatts;
-    if (!t) return;
-    const off = (trainer.data.power - t) / t;
-    if (Math.abs(off) < 0.2) return;
-    const now = Date.now();
-    if (now - lastOffTargetBeepRef.current < 5000) return;
-    lastOffTargetBeepRef.current = now;
-    if (off > 0) audioCoach.cues.overTarget();
-    else         audioCoach.cues.underTarget();
-  }, [trainer.data.power, isRunning, isFinished, audioEnabled, trainer.status, effectiveErgWatts, currentTargetWatts]);
-
-  // ── Auto-resume from auto-pause ──────────────────────────────────────────
-  // When auto-paused, watch for the athlete starting to pedal again. Power
-  // OR cadence past their resume floors flips isRunning back on — no manual
-  // tap needed. Also clears the auto-pause indicator.
-  useEffect(() => {
-    if (!autoPausedAt || isRunning || isFinished) return;
-    const pw = trainer.data.power;
-    const cd = trainer.data.cadence;
-    if ((pw != null && pw >= RESUME_POWER) || (cd != null && cd >= RESUME_CADENCE)) {
-      setIsRunning(true);
-      setAutoPausedAt(null);
-      stallSecRef.current = 0;
-    }
-  }, [trainer.data.power, trainer.data.cadence, autoPausedAt, isRunning, isFinished]);
-
-  // ── Controls ─────────────────────────────────────────────────────────────────
-  const handlePlayPause = useCallback(() => {
-    if (isFinished) return;
-    // First Play tap is the canonical user-gesture for iOS audio unlock.
-    audioCoach.unlock();
-    // Manual pause/resume also clears any auto-pause overlay so a tap
-    // brings the athlete straight back into the workout.
-    setAutoPausedAt(null);
-    stallSecRef.current = 0;
-    setIsRunning(r => !r);
-  }, [isFinished]);
-
-  const handleNextStep = useCallback(() => {
-    if (currentStepIdx >= expandedSteps.length - 1) return;
-    ergSentRef.current = null;
-    setCurrentStepIdx(i => i + 1);
-    setStepElapsed(0);
-  }, [currentStepIdx, expandedSteps.length]);
-
-  const handlePrevStep = useCallback(() => {
-    if (currentStepIdx === 0) { setStepElapsed(0); return; }
-    ergSentRef.current = null;
-    setCurrentStepIdx(i => i - 1);
-    setStepElapsed(0);
-  }, [currentStepIdx]);
+  // Timer tick, auto-pause detection, off-target beep, auto-resume from
+  // auto-pause, and the play/pause/next/prev handlers all live in
+  // WorkoutSessionContext. Page just consumes `playPause` / `upcomingStep` /
+  // `prevStep` from there (aliased at the top of this component).
+  const handlePlayPause = playPause;
 
   // ── Finish ───────────────────────────────────────────────────────────────────
   const handleFinish = useCallback(async () => {
@@ -798,19 +508,19 @@ export default function WorkoutExecutionPage() {
       await updatePlannedWorkout(plannedWorkoutId, { status: 'completed', executionData });
       addNotification('Workout completed! Great job!', 'success');
     } catch (_) {}
-    if (trainer.status === 'connected') trainer.disconnect();
-    if (hrStrap.status === 'connected') hrStrap.disconnect();
-    if (coreTemp.status === 'connected') coreTemp.disconnect();
+    // Tear down BLE, timer, snapshot, ERG release — all in context.
+    endSession();
     navigate(athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner');
-  }, [plannedWorkoutId, athleteId, trainer, hrStrap, navigate, addNotification, totalElapsed, expandedSteps, context]);
+  }, [plannedWorkoutId, athleteId, navigate, addNotification, totalElapsed, expandedSteps, context, endSession, stepPowerRef, stepHrRef, lactateLogRef, samplesRef]);
 
   // ── Abandon ──────────────────────────────────────────────────────────────────
+  // "Abandon" ends the session for real (vs. just navigating away, which
+  // keeps the session alive and shows the resume pill). Used by the
+  // confirm-discard flow in the top-left back button.
   const handleAbandon = useCallback(() => {
-    if (trainer.status === 'connected') trainer.disconnect();
-    if (hrStrap.status === 'connected') hrStrap.disconnect();
-    if (coreTemp.status === 'connected') coreTemp.disconnect();
+    endSession();
     navigate(-1);
-  }, [trainer, navigate]);
+  }, [navigate, endSession]);
 
   // ── Loading ───────────────────────────────────────────────────────────────────
   if (loading) {
@@ -836,7 +546,7 @@ export default function WorkoutExecutionPage() {
   }
 
   const col = STEP_COLORS[currentStep?.stepType] || STEP_COLORS.work;
-  const nextStep = expandedSteps[currentStepIdx + 1] || null;
+  const upcomingStep = expandedSteps[currentStepIdx + 1] || null;
   const powerDiff = (trainer.data.power != null && currentTargetWatts != null)
     ? trainer.data.power - currentTargetWatts : null;
 
@@ -966,11 +676,7 @@ export default function WorkoutExecutionPage() {
           context={context}
           stepPowerRef={stepPowerRef}
           lactateLogRef={lactateLogRef}
-          onStepTap={(i) => {
-            ergSentRef.current = null;
-            setCurrentStepIdx(i);
-            setStepElapsed(0);
-          }}
+          onStepTap={(i) => jumpToStep(i)}
           height={isNative ? 78 : 90}
         />
       </div>
@@ -1034,7 +740,7 @@ export default function WorkoutExecutionPage() {
               // Unlock audio on the first user gesture — iOS Safari /
               // WKWebView keep the AudioContext suspended until then.
               audioCoach.unlock();
-              setIsRunning(true);
+              if (!isRunning) playPause();
             }}
             onExit={handleAbandon}
             // Settings button on the pre-start hero opens the full Settings
@@ -1207,7 +913,7 @@ export default function WorkoutExecutionPage() {
                   return (
                     <button
                       key={i}
-                      onClick={() => { ergSentRef.current = null; setCurrentStepIdx(i); setStepElapsed(0); }}
+                      onClick={() => jumpToStep(i)}
                       className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors flex flex-col gap-1 ${
                         isCur ? 'bg-white/10 border-white/30' : isPast ? 'bg-white/[0.02] border-white/5 opacity-70' : 'border-white/10 hover:bg-white/5'
                       }`}
@@ -1493,16 +1199,16 @@ export default function WorkoutExecutionPage() {
             </div>{/* end main grid */}
 
             {/* ── Next step preview ── */}
-            {nextStep && (
+            {upcomingStep && (
               <div className="text-center text-sm text-gray-500">
                 Next: <span className="text-gray-300 font-medium">
-                  {nextStep.label || nextStep.stepType}
+                  {upcomingStep.label || upcomingStep.stepType}
                 </span>
-                {nextStep.durationSeconds > 0 && (
-                  <span className="ml-1">· {fmtTime(nextStep.durationSeconds)}</span>
+                {upcomingStep.durationSeconds > 0 && (
+                  <span className="ml-1">· {fmtTime(upcomingStep.durationSeconds)}</span>
                 )}
-                {nextStep.powerTarget && resolveTargetWatts(nextStep.powerTarget, context) && (() => {
-                  const plain = resolveTargetWatts(nextStep.powerTarget, context);
+                {upcomingStep.powerTarget && resolveTargetWatts(upcomingStep.powerTarget, context) && (() => {
+                  const plain = resolveTargetWatts(upcomingStep.powerTarget, context);
                   const biased = ergMode && Math.abs(ergBias - 1) > 1e-3
                     ? Math.round(plain * ergBias)
                     : null;
@@ -1694,9 +1400,7 @@ export default function WorkoutExecutionPage() {
                     <button
                       key={i}
                       onClick={() => {
-                        ergSentRef.current = null;
-                        setCurrentStepIdx(i);
-                        setStepElapsed(0);
+                        jumpToStep(i);
                         setShowLapsSidebar(false);
                       }}
                       className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors ${
