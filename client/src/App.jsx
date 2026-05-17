@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
+import { WorkoutSessionProvider } from './context/WorkoutSessionContext';
+import WorkoutResumeBanner from './components/WorkoutExecution/WorkoutResumeBanner';
 import { TrainingProvider } from './context/TrainingContext';
 import { CategoryProvider } from './context/CategoryContext';
 import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
@@ -393,10 +395,17 @@ function App() {
         <AuthProvider>
           <AthleteSelectionProvider>
           <TrainingProvider>
-            {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
-            <AppRoutes />
-            {isProd && <DeferredVercelTrackers />}
-            {isProd && <DeferredBuyMeACoffeeWidget />}
+            <WorkoutSessionProvider>
+              {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
+              <AppRoutes />
+              {/* Floating "return to active workout" pill — renders only when
+                  a session is live and the user is on a non-execution route.
+                  Lives at app root so it shows above every page including
+                  the native shell layout. */}
+              <WorkoutResumeBanner />
+              {isProd && <DeferredVercelTrackers />}
+              {isProd && <DeferredBuyMeACoffeeWidget />}
+            </WorkoutSessionProvider>
           </TrainingProvider>
           </AthleteSelectionProvider>
         </AuthProvider>
