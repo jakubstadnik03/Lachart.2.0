@@ -3479,14 +3479,18 @@ function AppleHealthCard({ isMobile }) {
   // and know to rebuild.
   const handleForcePermission = async () => {
     setBusy(true);
-    setMsg('Asking iOS for HealthKit permission…');
+    setMsg('Asking iOS for HealthKit permission (max 10s)…');
     try {
       const { requestHealthKitPermissionOnly } = await import('../services/healthKitSync');
       const r = await requestHealthKitPermissionOnly();
-      if (r.ok) {
-        setMsg('Permission sheet shown. LaChart should now appear under iPhone Settings → Health → Data Access & Devices → LaChart. Open it and turn ON the categories you want, then tap "Connect" above to import workouts.');
+      if (r.ok && r.warning) {
+        // Apple's API resolved success=true but we suspect the sheet was
+        // silently skipped (no entitlement). Surface the warning verbatim.
+        setMsg(`⚠️  ${r.warning}`);
+      } else if (r.ok) {
+        setMsg('✅ Permission sheet shown. LaChart should now appear under iPhone Settings → Health → Data Access & Devices → LaChart. Open it and turn ON the categories you want, then tap "Connect" above to import workouts.');
       } else {
-        setMsg(`Permission request failed: ${r.error || 'unknown'}`);
+        setMsg(`❌ ${r.error || 'Unknown error'}`);
       }
     } catch (e) {
       setMsg(`Permission request crashed: ${e?.message || 'unknown'}`);

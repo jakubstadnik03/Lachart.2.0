@@ -242,24 +242,71 @@ export async function requestHealthKitPermissionOnly() {
   if (!isCapacitorNative()) return { ok: false, error: 'Not on native iOS — open the LaChart app on your iPhone.', code: 'web' };
   const plugin = await getPlugin();
   if (!plugin) return { ok: false, error: 'HealthKit plugin not in this build. Rebuild the iOS app and reinstall via Xcode / TestFlight.', code: 'plugin-missing' };
+
+  // Pre-flight: isAvailable() is the cheapest signal that HealthKit is
+  // actually usable on this binary. When the .ipa lacks the entitlement
+  // (the #1 cause of "nothing happens"), isAvailable usually still
+  // resolves OK — but it's a quick sanity check we can do first.
   try {
+    await withTimeout(plugin.isAvailable(), 5000, 'isAvailable');
+  } catch (e) {
+    return {
+      ok: false,
+      code: 'unavailable',
+      error: `HealthKit reports unavailable on this device: ${e?.message || e}. If this is an iPhone (not iPad/simulator) the most likely cause is that the installed app build is missing the HealthKit entitlement — open ios/App/App.xcworkspace in Xcode, App target → Signing & Capabilities → ensure HealthKit capability is present, then Archive a new build and reinstall.`,
+    };
+  }
+
+  // 10s timeout: when the entitlement and provisioning profile are wired
+  // up correctly, the iOS HealthKit permission sheet appears within ~1 s.
+  // If we hit 10 s, iOS is silently swallowing the call — almost always
+  // because the App ID in the Apple Developer Portal doesn't have the
+  // HealthKit capability enabled, OR the installed build was signed
+  // with an old provisioning profile that pre-dates that change.
+  const AUTH_TIMEOUT_MS = 10 * 1000;
+  let authResolvedAt = 0;
+  try {
+    const t0 = Date.now();
     await withTimeout(plugin.requestAuthorization({
       read: HEALTHKIT_READ_PERMISSIONS,
       write: [],
       all: [],
-    }), PLUGIN_TIMEOUT_MS, 'requestAuthorization');
+    }), AUTH_TIMEOUT_MS, 'requestAuthorization');
+    authResolvedAt = Date.now() - t0;
     try { localStorage.setItem(PERMS_KEY, '1'); } catch {}
-    return { ok: true };
   } catch (e) {
-    // Common error patterns we can map to actionable hints:
-    //   – "Missing com.apple.developer.healthkit entitlement" → rebuild
-    //   – "Authorization not determined" → user dismissed sheet by swipe
-    //   – timeout → plugin wedged / sheet never appeared
     const raw = String(e?.message || e || 'unknown');
-    let hint = raw;
-    if (/entitlement/i.test(raw)) hint = `${raw} — REBUILD REQUIRED: open ios/App/App.xcworkspace in Xcode and re-run/re-archive. The HealthKit capability only gets compiled into the .ipa at build/sign time, so a build made before the capability was added won't have it.`;
-    return { ok: false, error: hint, code: 'auth-failed' };
+    if (/timed out/i.test(raw)) {
+      return {
+        ok: false,
+        code: 'timeout',
+        error: `iOS did not display the HealthKit permission sheet within ${AUTH_TIMEOUT_MS / 1000} s. This means HealthKit is enabled in code (.entitlements + Info.plist) but NOT on this binary's App ID in the Apple Developer Portal. Fix: in Xcode, App target → Signing & Capabilities → click "+" → HealthKit → save → Product → Clean Build Folder → Archive again. Then delete the LaChart app from the iPhone and reinstall the fresh archive.`,
+      };
+    }
+    if (/entitlement/i.test(raw)) {
+      return {
+        ok: false,
+        code: 'entitlement',
+        error: `${raw} — REBUILD REQUIRED. Open ios/App/App.xcworkspace in Xcode, App target → Signing & Capabilities → ensure HealthKit capability is enabled, then Product → Clean Build Folder → Archive. Reinstall the fresh build via TestFlight or USB.`,
+      };
+    }
+    return { ok: false, code: 'auth-failed', error: raw };
   }
+
+  // Apple's API resolves success=true even when the entitlement is missing
+  // (no sheet shown, no permissions granted — silent denial). Detect that
+  // by checking how fast the call resolved: < 200 ms with no prior PERMS_KEY
+  // is a strong signal that the OS skipped the sheet entirely. We can't
+  // tell granted-vs-denied for sure (Apple hides that for privacy), but
+  // a near-instant resolution before the user has ever been asked is
+  // almost always the silent-skip path.
+  if (authResolvedAt < 200) {
+    return {
+      ok: true,
+      warning: `requestAuthorization resolved in ${authResolvedAt} ms without showing a sheet — iOS may have skipped the prompt because HealthKit isn't enabled on this build's App ID in the Apple Developer Portal. Open the Health app on your iPhone and check Browse → Sharing → Apps → LaChart. If LaChart isn't listed, rebuild in Xcode with the HealthKit capability added to Signing & Capabilities.`,
+    };
+  }
+  return { ok: true };
 }
 
 /**
