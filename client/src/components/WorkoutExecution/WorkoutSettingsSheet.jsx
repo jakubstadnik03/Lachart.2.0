@@ -92,6 +92,16 @@ export default function WorkoutSettingsSheet({
   setShowChart,
   showLapsSidebar,
   setShowLapsSidebar,
+  // Coach / safety
+  audioEnabled,
+  setAudioEnabled,
+  voiceEnabled,
+  setVoiceEnabled,
+  wakeLockEnabled,
+  setWakeLockEnabled,
+  wakeLockSupported,
+  autoPauseEnabled,
+  setAutoPauseEnabled,
 }) {
   return (
     <AnimatePresence>
@@ -240,6 +250,69 @@ export default function WorkoutSettingsSheet({
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* ── Coach (audio + safety) ───────────────────────────── */}
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500 mt-6 mb-2">
+                Coach &amp; Safety
+              </h4>
+              <div className="space-y-2">
+                {[
+                  {
+                    label: 'Audio cues',
+                    sublabel: '3-2-1 countdown · off-target alerts · interval chime',
+                    value: audioEnabled,
+                    setter: setAudioEnabled,
+                  },
+                  {
+                    label: 'Voice prompts',
+                    sublabel: '"Next: 3 minutes at 280 watts"',
+                    value: voiceEnabled,
+                    setter: setVoiceEnabled,
+                    disabled: !audioEnabled,
+                  },
+                  {
+                    label: 'Keep screen on',
+                    sublabel: wakeLockSupported
+                      ? 'Phone stays awake for the whole workout'
+                      : 'Not supported in this browser',
+                    value: wakeLockEnabled,
+                    setter: setWakeLockEnabled,
+                    disabled: !wakeLockSupported,
+                  },
+                  {
+                    label: 'Auto-pause',
+                    sublabel: 'Pause when power < 30 W and cadence < 30 rpm for 10 s',
+                    value: autoPauseEnabled,
+                    setter: setAutoPauseEnabled,
+                  },
+                ].map((toggle) => (
+                  <button
+                    key={toggle.label}
+                    onClick={() => !toggle.disabled && toggle.setter(!toggle.value)}
+                    disabled={toggle.disabled}
+                    className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl border border-white/10 bg-white/[0.03] active:bg-white/[0.06] disabled:opacity-50"
+                    style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                  >
+                    <div className="min-w-0 text-left">
+                      <div className="text-sm text-white">{toggle.label}</div>
+                      {toggle.sublabel && (
+                        <div className="text-[11px] text-gray-500 mt-0.5">{toggle.sublabel}</div>
+                      )}
+                    </div>
+                    <span
+                      role="switch"
+                      aria-checked={toggle.value}
+                      className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                      style={{ background: toggle.value && !toggle.disabled ? '#a78bfa' : 'rgba(255,255,255,0.15)' }}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform"
+                        style={{ transform: toggle.value ? 'translateX(20px)' : 'translateX(0)' }}
+                      />
+                    </span>
+                  </button>
+                ))}
               </div>
 
               {/* ── Display ──────────────────────────────────────────── */}

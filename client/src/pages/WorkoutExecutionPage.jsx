@@ -28,6 +28,8 @@ import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlan
 import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import useBluetoothCoreTemp from '../hooks/useBluetoothCoreTemp';
+import useWakeLock from '../hooks/useWakeLock';
+import * as audioCoach from '../utils/audioCoach';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
 import StepBarChart from '../components/WorkoutExecution/StepBarChart';
 import MetricTile from '../components/WorkoutExecution/MetricTile';
@@ -285,6 +287,44 @@ export default function WorkoutExecutionPage() {
   const coreTemp = useBluetoothCoreTemp();
   const [showSettingsSheet, setShowSettingsSheet] = useState(false);
 
+  // ── Audio coach + wake lock + auto-pause preferences ──────────────────────
+  // All three persist across workouts via localStorage so the athlete sets
+  // them once and they stick. Defaults are friendly: audio on, voice on,
+  // wake lock on, auto-pause on. The toggles live in the Settings sheet.
+  const [audioEnabled, setAudioEnabled] = useState(() => {
+    try { return localStorage.getItem('wo_audio') !== '0'; } catch { return true; }
+  });
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    try { return localStorage.getItem('wo_voice') !== '0'; } catch { return true; }
+  });
+  const [wakeLockEnabled, setWakeLockEnabled] = useState(() => {
+    try { return localStorage.getItem('wo_wakelock') !== '0'; } catch { return true; }
+  });
+  const [autoPauseEnabled, setAutoPauseEnabled] = useState(() => {
+    try { return localStorage.getItem('wo_autopause') !== '0'; } catch { return true; }
+  });
+  // Mirror preference into the audio module + persist.
+  useEffect(() => { audioCoach.setEnabled(audioEnabled); try { localStorage.setItem('wo_audio', audioEnabled ? '1' : '0'); } catch {} }, [audioEnabled]);
+  useEffect(() => { audioCoach.setVoiceEnabled(voiceEnabled); try { localStorage.setItem('wo_voice', voiceEnabled ? '1' : '0'); } catch {} }, [voiceEnabled]);
+  useEffect(() => { try { localStorage.setItem('wo_wakelock', wakeLockEnabled ? '1' : '0'); } catch {} }, [wakeLockEnabled]);
+  useEffect(() => { try { localStorage.setItem('wo_autopause', autoPauseEnabled ? '1' : '0'); } catch {} }, [autoPauseEnabled]);
+
+  // Screen-on hold — active only while the workout is running. Released on
+  // finish, pause, or unmount. Re-acquires after a tab-hide → re-show.
+  const wakeLock = useWakeLock(wakeLockEnabled && isRunning && !isFinished);
+
+  // ── Auto-pause state ──────────────────────────────────────────────────────
+  // Counts the seconds the athlete has been visibly coasting (power < 30W
+  // AND cadence < 30 rpm). After STALL_THRESHOLD seconds we flip isRunning
+  // off automatically. Activity resumes on the next pedal turn.
+  const STALL_THRESHOLD = 10;
+  const STALL_POWER = 30;
+  const STALL_CADENCE = 30;
+  const RESUME_POWER = 50;
+  const RESUME_CADENCE = 40;
+  const stallSecRef = useRef(0);
+  const [autoPausedAt, setAutoPausedAt] = useState(null); // timestamp ms when paused
+
   // Live HR: prefer the standalone strap when connected (more accurate),
   // fall back to trainer-reported HR. Wrapping `trainer.data` so the rest
   // of the page can read `liveData.heartRate` without caring about source.
@@ -479,18 +519,66 @@ export default function WorkoutExecutionPage() {
       return;
     }
     timerRef.current = setInterval(() => {
+      // ── Auto-pause check ──────────────────────────────────────────────
+      // Detects coasting / stop. We tally seconds where both metrics sit
+      // below the floor, then flip running off after STALL_THRESHOLD.
+      // Skipped when the trainer isn't streaming data (no live source ⇒
+      // can't tell coasting from a regular outdoor lull).
+      if (autoPauseEnabled && trainer.status === 'connected') {
+        const pw = trainer.data.power;
+        const cd = trainer.data.cadence;
+        const stalled =
+          (pw == null || pw < STALL_POWER) &&
+          (cd == null || cd < STALL_CADENCE);
+        if (stalled) {
+          stallSecRef.current += 1;
+          if (stallSecRef.current >= STALL_THRESHOLD) {
+            // Pause now — keep the elapsed counters frozen by returning
+            // BEFORE the increments below.
+            setIsRunning(false);
+            setAutoPausedAt(Date.now());
+            stallSecRef.current = 0;
+            return;
+          }
+        } else {
+          stallSecRef.current = 0;
+        }
+      }
+
       setStepElapsed(prev => {
         const next = prev + 1;
-        // Auto-advance step when duration reached (but not for open/0-duration steps)
+        // ── Audio cues: 3-2-1 countdown to end of step ──
+        if (stepDuration > 0) {
+          const remaining = stepDuration - next;
+          if (remaining === 3 || remaining === 2 || remaining === 1) {
+            audioCoach.beep(880, 80);
+          }
+        }
+        // Auto-advance step when duration reached
         if (stepDuration > 0 && next >= stepDuration) {
           setCurrentStepIdx(idx => {
             const nextIdx = idx + 1;
             if (nextIdx >= expandedSteps.length) {
               setIsRunning(false);
               setIsFinished(true);
+              audioCoach.cues.finished();
               return idx;
             }
             ergSentRef.current = null; // force re-send for next step
+            // ── Audio: voice prompt for the upcoming step ──
+            const ns = expandedSteps[nextIdx];
+            if (ns) {
+              const nsTarget = ns.powerTarget ? resolveTargetWatts(ns.powerTarget, context) : null;
+              const min = Math.floor((ns.durationSeconds || 0) / 60);
+              const sec = (ns.durationSeconds || 0) % 60;
+              const durPhrase = min > 0
+                ? (sec > 0 ? `${min} minute${min > 1 ? 's' : ''} ${sec} seconds` : `${min} minute${min > 1 ? 's' : ''}`)
+                : `${sec} seconds`;
+              const label = ns.label || ns.stepType || 'next step';
+              const targetPhrase = nsTarget ? ` at ${nsTarget} watts` : '';
+              audioCoach.beep(1320, 180, 0.5);                       // step-start chime
+              audioCoach.speak(`${label}, ${durPhrase}${targetPhrase}`);
+            }
             return nextIdx;
           });
           return 0; // reset elapsed for new step
@@ -516,11 +604,53 @@ export default function WorkoutExecutionPage() {
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr, coreTemp]);
+  }, [isRunning, isFinished, stepDuration, expandedSteps.length, trainer, liveHr, coreTemp, autoPauseEnabled, context]);
+
+  // ── Off-target beep ──────────────────────────────────────────────────────
+  // Separate effect (not inside the 1-second timer) so we can sample power at
+  // its own native cadence and throttle to one beep per 5 s. Only fires when
+  // the workout is running, the target is non-open, and a trainer is live.
+  const lastOffTargetBeepRef = useRef(0);
+  useEffect(() => {
+    if (!isRunning || isFinished) return;
+    if (!audioEnabled) return;
+    if (trainer.status !== 'connected') return;
+    if (trainer.data.power == null) return;
+    const t = effectiveErgWatts != null ? effectiveErgWatts : currentTargetWatts;
+    if (!t) return;
+    const off = (trainer.data.power - t) / t;
+    if (Math.abs(off) < 0.2) return;
+    const now = Date.now();
+    if (now - lastOffTargetBeepRef.current < 5000) return;
+    lastOffTargetBeepRef.current = now;
+    if (off > 0) audioCoach.cues.overTarget();
+    else         audioCoach.cues.underTarget();
+  }, [trainer.data.power, isRunning, isFinished, audioEnabled, trainer.status, effectiveErgWatts, currentTargetWatts]);
+
+  // ── Auto-resume from auto-pause ──────────────────────────────────────────
+  // When auto-paused, watch for the athlete starting to pedal again. Power
+  // OR cadence past their resume floors flips isRunning back on — no manual
+  // tap needed. Also clears the auto-pause indicator.
+  useEffect(() => {
+    if (!autoPausedAt || isRunning || isFinished) return;
+    const pw = trainer.data.power;
+    const cd = trainer.data.cadence;
+    if ((pw != null && pw >= RESUME_POWER) || (cd != null && cd >= RESUME_CADENCE)) {
+      setIsRunning(true);
+      setAutoPausedAt(null);
+      stallSecRef.current = 0;
+    }
+  }, [trainer.data.power, trainer.data.cadence, autoPausedAt, isRunning, isFinished]);
 
   // ── Controls ─────────────────────────────────────────────────────────────────
   const handlePlayPause = useCallback(() => {
     if (isFinished) return;
+    // First Play tap is the canonical user-gesture for iOS audio unlock.
+    audioCoach.unlock();
+    // Manual pause/resume also clears any auto-pause overlay so a tap
+    // brings the athlete straight back into the workout.
+    setAutoPausedAt(null);
+    stallSecRef.current = 0;
     setIsRunning(r => !r);
   }, [isFinished]);
 
@@ -812,7 +942,12 @@ export default function WorkoutExecutionPage() {
             targetLabel={resolveTargetLabel(expandedSteps[0]?.powerTarget, context)}
             workoutTitle={workout?.title}
             workoutDuration={totalDuration}
-            onStart={() => setIsRunning(true)}
+            onStart={() => {
+              // Unlock audio on the first user gesture — iOS Safari /
+              // WKWebView keep the AudioContext suspended until then.
+              audioCoach.unlock();
+              setIsRunning(true);
+            }}
             onExit={handleAbandon}
             onSettings={() => setErgMode((e) => !e)}
             stepColors={{
@@ -1014,6 +1149,23 @@ export default function WorkoutExecutionPage() {
                 </div>
               );
             })()}
+
+            {/* ── Auto-pause indicator — small badge between the intensity
+                chip and the power gauge so it never blocks the gauge but
+                is impossible to miss. Disappears the moment power /
+                cadence cross the resume floor. */}
+            {autoPausedAt && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-amber-400/50 bg-amber-500/15 text-amber-200"
+              >
+                <span className="text-base">⏸</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Auto-paused</span>
+                <span className="text-[11px] opacity-70">— pedal to resume</span>
+              </motion.div>
+            )}
 
             {/* ── Power Gauge (Bluetooth) ── */}
             {trainer.status === 'connected' && (
@@ -1343,6 +1495,15 @@ export default function WorkoutExecutionPage() {
         setShowChart={setShowChart}
         showLapsSidebar={showLapsSidebar}
         setShowLapsSidebar={setShowLapsSidebar}
+        audioEnabled={audioEnabled}
+        setAudioEnabled={setAudioEnabled}
+        voiceEnabled={voiceEnabled}
+        setVoiceEnabled={setVoiceEnabled}
+        wakeLockEnabled={wakeLockEnabled}
+        setWakeLockEnabled={setWakeLockEnabled}
+        wakeLockSupported={wakeLock.supported}
+        autoPauseEnabled={autoPauseEnabled}
+        setAutoPauseEnabled={setAutoPauseEnabled}
       />
 
       {/* ── Lactate bottom sheet ────────────────────────────────────────────── */}
