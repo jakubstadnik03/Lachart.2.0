@@ -1101,7 +1101,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('Strava sync error:', err);
     console.error('Error stack:', err.stack);
-    
+
     // Handle rate limit errors in catch block too
     if (err.response?.status === 429 ||
         (err.response?.data?.message && err.response.data.message.includes('Rate Limit'))) {
@@ -1118,7 +1118,31 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         partial: total > 0
       });
     }
-    
+
+    // Local-budget exhaustion (our own token bucket said "no" for longer than
+    // MAX_WAIT_MS). Surface as a 429 with retryAfter so the client shows a
+    // friendly "try again in N min" toast instead of a generic 500.
+    if (err.code === 'STRAVA_BUDGET_EXHAUSTED') {
+      const retryAfter = Number(err.retryAfterSec) || 60;
+      return res.status(429).json({
+        error: 'Strava sync deferred',
+        message: `Strava API budget is currently saturated (likely an in-progress historical backfill or a busy upload window). Please try again in ${Math.ceil(retryAfter / 60)} min.`,
+        retryAfter,
+        imported,
+        updated,
+        totalFetched: total,
+        partial: total > 0,
+      });
+    }
+
+    // Token-refresh wiped the connection mid-flight — return 400, not 500,
+    // so the client doesn't keep retrying with stale credentials.
+    if (/no valid strava token|invalid strava token/i.test(err.message || '')) {
+      return res.status(400).json({
+        error: 'Invalid or expired Strava token. Reconnect Strava in Settings.',
+      });
+    }
+
     // Return partial results if we have any
     if (total > 0) {
       notifyStravaImportedPush(user._id, imported);
@@ -1131,8 +1155,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         message: err.message
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Strava sync failed',
       message: err.response?.data?.message || err.message || 'Unknown error',
       details: process.env.NODE_ENV === 'development' ? err.stack : undefined
