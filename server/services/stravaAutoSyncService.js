@@ -136,7 +136,10 @@ async function syncStravaForUser(user, opts = {}) {
           params: { ...params, page },
           timeout: 30000
         });
-        
+        // Sync local counter with Strava's authoritative usage. Keeps the
+        // budget honest across concurrent processes.
+        try { stravaBudget.reconcileFromHeaders(resp.headers); } catch (_) { /* swallow */ }
+
         const arr = resp.data || [];
         
         if (arr.length === 0) {

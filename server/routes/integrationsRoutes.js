@@ -363,6 +363,7 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
           params: { per_page: perPage, page: 1, before: nextCursor },
           timeout: 30000
         });
+        try { stravaBudget.reconcileFromHeaders(resp.headers); } catch (_) { /* swallow */ }
 
         const arr = Array.isArray(resp.data) ? resp.data : [];
         if (!arr.length) {
@@ -772,6 +773,7 @@ async function fetchAndSaveStravaActivity(user, stravaActivityId) {
     `https://www.strava.com/api/v3/activities/${stravaActivityId}`,
     { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
   );
+  try { stravaBudget.reconcileFromHeaders(resp.headers); } catch (_) { /* swallow */ }
   const a = resp.data;
   const doc = {
     userId: user._id.toString(),
@@ -980,7 +982,11 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
           params: { ...params, page },
           timeout: 30000 // 30 second timeout per request
         });
-        
+        // Snap our local counter to whatever Strava just told us in the
+        // response headers — protects against drift from concurrent
+        // processes sharing the same Strava app credentials.
+        stravaBudget.reconcileFromHeaders(resp.headers);
+
         const arr = resp.data || [];
         
         if (arr.length === 0) {
