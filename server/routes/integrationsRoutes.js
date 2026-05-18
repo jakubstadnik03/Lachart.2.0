@@ -598,6 +598,36 @@ router.get('/strava/status', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/integrations/strava/budget/reset — zero the local token bucket.
+//
+// When the soft estimator gets stuck at MAX (e.g. a backfill ran wild
+// overnight and snapped windowUsed to 100, then reconcile never had a
+// chance to snap back down), users can't manually sync until the day
+// rolls over at UTC midnight. This endpoint clears the in-process
+// counters so the next call goes straight to Strava — whose own
+// rate-limit headers will then reconcile us to truth.
+//
+// Auth-gated to "admin" role so a regular user can't grief other
+// tenants on the same instance. Any authenticated user can read the
+// budget via /strava/status, but only admin can reset.
+router.post('/strava/budget/reset', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('role email');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const before = stravaBudget.snapshot();
+    stravaBudget.reset();
+    const after = stravaBudget.snapshot();
+    console.log(`[Strava] budget reset by ${user.email}: ${before.windowUsed}/${before.windowLimit} window, ${before.dayUsed}/${before.dayLimit} day → cleared`);
+    res.json({ ok: true, before, after });
+  } catch (error) {
+    console.error('[Strava budget reset] error:', error);
+    res.status(500).json({ error: error.message || 'Failed to reset budget' });
+  }
+});
+
 // POST /api/integrations/strava/disconnect - remove Strava tokens & disable auto-sync
 router.post('/strava/disconnect', verifyToken, async (req, res) => {
   try {
@@ -972,10 +1002,22 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     
     console.log(`Starting Strava sync for user ${user._id}, max pages: ${maxPages}`);
     
+    // User-initiated sync = bypass the soft budget for the FIRST page.
+    // A user clicking "Sync now" should never get rejected by our own
+    // conservative estimator — Strava will return a real 429 if we're
+    // truly over, and that's handled in the catch block below. The
+    // bypass still increments the counter so subsequent automated
+    // calls back off. Default is false (safe) so auto-sync / webhook
+    // paths keep the normal soft-budget gate.
+    const userInitiated = req.query.userInitiated === 'true' || req.body?.userInitiated === true;
     while (page <= maxPages) {
       try {
         console.log(`Fetching page ${page}...`);
-        await stravaBudget.take();
+        // Only the FIRST page uses bypass; if Strava lets that through
+        // we know we're not actually rate-limited and subsequent pages
+        // can use the normal budget gate. This keeps a manual click
+        // from accidentally draining 50 pages in one shot.
+        await stravaBudget.take({ bypass: userInitiated && page === 1 });
 
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },

@@ -72,8 +72,26 @@ function rollWindowsIfDue() {
   }
 }
 
-/** Reserve one token. Returns when granted, or throws after MAX_WAIT_MS. */
-async function take() {
+/** Reserve one token. Returns when granted, or throws after MAX_WAIT_MS.
+ *
+ * Options:
+ *   bypass: true — skip the soft-budget check and proceed regardless.
+ *           Use ONLY for user-initiated actions (Settings → Sync now click),
+ *           NEVER for automated backfill loops. Our local counter is a
+ *           defensive estimate; Strava is the actual gatekeeper and will
+ *           return a real HTTP 429 if we're truly over. A user click is
+ *           worth letting through even if our estimator is conservative.
+ *           The window/day counters still increment so the bucket reflects
+ *           reality on the next non-bypass call.
+ */
+async function take(opts = {}) {
+  const { bypass = false } = opts;
+  if (bypass) {
+    rollWindowsIfDue();
+    windowUsed += 1;
+    dayUsed += 1;
+    return;
+  }
   const startedAt = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -90,10 +108,24 @@ async function take() {
       const err = new Error('Strava local budget exhausted');
       err.code = 'STRAVA_BUDGET_EXHAUSTED';
       err.retryAfterSec = Math.ceil(waitMs / 1000);
+      err.snapshot = snapshot();
       throw err;
     }
     await new Promise((resolve) => setTimeout(resolve, Math.min(2000, Math.max(100, waitMs))));
   }
+}
+
+/** Admin escape hatch — zero the local counters. Used by the Strava status
+ *  admin endpoint to recover from a runaway-backfill estimate without
+ *  restarting the Node process. The next Strava response will re-snap us
+ *  to reality via reconcileFromHeaders, so we won't over-fire. */
+function reset() {
+  windowUsed = 0;
+  dayUsed = 0;
+  windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  dayStart = d.getTime();
 }
 
 /**
@@ -141,4 +173,4 @@ function snapshot() {
   };
 }
 
-module.exports = { take, snapshot, reconcileFromHeaders };
+module.exports = { take, snapshot, reconcileFromHeaders, reset };

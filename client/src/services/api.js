@@ -1138,8 +1138,19 @@ export const startGarminAuth = async () => {
   return data.url;
 };
 
+/** Admin-only: zero the server's local Strava rate-limit estimator. Used
+ *  by the Settings card when the bucket is stuck at MAX from a bad backfill. */
+export const resetStravaBudget = async () => {
+  const { data } = await api.post('/api/integrations/strava/budget/reset');
+  return data; // { ok, before: {...}, after: {...} }
+};
+
 export const syncStravaActivities = async (since=null) => {
-  const { data } = await api.post('/api/integrations/strava/sync', { since }, {
+  // userInitiated: true signals the server this is a manual click, not an
+  // auto-sync — the server bypasses its soft rate-limit estimator for the
+  // first page so a user click never bounces off our own conservative
+  // counter. Strava itself remains the real gatekeeper.
+  const { data } = await api.post('/api/integrations/strava/sync', { since, userInitiated: true }, {
     timeout: 600000 // 10 minutes timeout for large syncs (200 pages × 2 seconds = ~6-7 minutes max)
   });
   if (data?.status === 'in_progress') {

@@ -9,7 +9,7 @@ import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -855,6 +855,28 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Strava connect error:', e);
       addNotification('Failed to start Strava connection', 'error');
+    }
+  };
+
+  // Admin-only: wipe the server's local Strava rate-limit estimator.
+  // The bucket can get stuck near MAX when a backfill races overnight or
+  // a second Render instance shares credentials — the user then sees
+  // "try again in 600 min" even though Strava itself is fine. Reset
+  // clears local state; the very next Strava response will reconcile
+  // us to the real usage via X-RateLimit-Usage headers.
+  const handleResetStravaBudget = async () => {
+    try {
+      const data = await resetStravaBudget();
+      const b = data?.before;
+      addNotification(
+        b
+          ? `Strava budget reset (was ${b.windowUsed}/${b.windowLimit} window, ${b.dayUsed}/${b.dayLimit} day). Try Sync now.`
+          : 'Strava budget reset. Try Sync now.',
+        'success',
+      );
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || 'reset failed';
+      addNotification(`Budget reset failed: ${msg}`, 'error');
     }
   };
 
@@ -2147,6 +2169,15 @@ const SettingsPage = () => {
                   </div>
                 </div>
                 <div className={`flex items-center gap-2 flex-shrink-0 ml-2`}>
+                  {stravaConnected && (user?.admin || user?.role === 'admin') && (
+                    <button
+                      onClick={handleResetStravaBudget}
+                      title="Reset the server's Strava rate-limit estimator. Use when 'Sync now' bounces with 429 even though Strava itself is fine."
+                      className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'} rounded-lg bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-medium transition-colors`}
+                    >
+                      Reset budget
+                    </button>
+                  )}
                   {stravaConnected && (
                     <button
                       onClick={handleSyncStrava}
