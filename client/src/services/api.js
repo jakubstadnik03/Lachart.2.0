@@ -1127,15 +1127,26 @@ export const deleteFitTraining = async (trainingId) => {
   }
 };
 
-// External integrations: Strava & Garmin (stubs)
-export const getStravaAuthUrl = async () => {
-  const { data } = await api.get('/api/integrations/strava/auth-url');
-  return data.url;
-};
+// External integrations: Strava & Garmin
+// Strava auth-url moved below (with platform support).
 
 export const startGarminAuth = async () => {
   const { data } = await api.get('/api/integrations/garmin/auth-url');
   return data.url;
+};
+
+/** Build the Strava OAuth start URL.
+ *
+ * `platform`: 'ios' makes the server callback redirect to the iOS deep-link
+ *   scheme (com.lachart.app://strava-connected) instead of the web frontend.
+ *   This is critical inside Capacitor WebView — without it, the OAuth flow
+ *   either gets stuck mid-navigation or leaves the user stranded on the
+ *   web version of LaChart with no way back to the native app.
+ */
+export const getStravaAuthUrl = async (opts = {}) => {
+  const platform = opts.platform || (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.() ? 'ios' : 'web');
+  const { data } = await api.get('/api/integrations/strava/auth-url', { params: { platform } });
+  return data?.url;
 };
 
 /** Admin-only: zero the server's local Strava rate-limit estimator. Used

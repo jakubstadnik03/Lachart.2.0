@@ -39,6 +39,33 @@ export async function initCapacitorShell() {
       });
     }
 
+    // ── Deep-link handler for OAuth callbacks ─────────────────────────
+    // Strava OAuth on iOS opens in external Safari. After authorize,
+    // the server redirects to com.lachart.app://strava-connected. iOS
+    // asks the user "Open in LaChart?" — when they tap yes, Capacitor
+    // fires `appUrlOpen` with the full URL. We pull out the result and
+    // signal the React tree (via window event) so the Settings card
+    // refreshes integration status and the Strava banner flips to
+    // "Connected" without the user having to relaunch the app.
+    App.addListener('appUrlOpen', ({ url }) => {
+      try {
+        if (!url) return;
+        // Accept any scheme like com.lachart.app://strava-connected[?ok=1]
+        if (/strava-connected/i.test(url)) {
+          window.dispatchEvent(new CustomEvent('strava:connected', { detail: { url } }));
+          // Bring the user to the Settings page if they're not already there
+          // so they see the now-Connected card immediately.
+          if (!window.location.hash.includes('/settings') && !/settings/.test(window.location.pathname)) {
+            window.location.replace(`${window.location.origin}/settings`);
+          }
+        } else if (/strava-error/i.test(url)) {
+          window.dispatchEvent(new CustomEvent('strava:error', { detail: { url } }));
+        }
+      } catch (e) {
+        console.warn('[deeplink] appUrlOpen handler failed:', e?.message || e);
+      }
+    });
+
     // Apple Health auto-sync — runs once on cold-start, then again whenever
     // the app comes back to foreground (throttled to 1× / 24h via localStorage
     // inside healthKitSync.maybeSyncOnAppOpen).

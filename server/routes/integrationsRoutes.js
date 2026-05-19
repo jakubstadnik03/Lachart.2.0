@@ -454,40 +454,66 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
 }
 
 // GET /api/integrations/strava/auth-url
+//
+// `platform` query param:
+//   - 'web' (default) → callback redirects back to lachart.net
+//   - 'ios'           → callback redirects to com.lachart.app:// deep link
+//     so the native Capacitor app receives the connection result instead
+//     of leaving the user stranded on a web page.
 router.get('/strava/auth-url', (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID || 'STRAVA_CLIENT_ID';
-  
+
   const redirectUri = resolveStravaOAuthRedirectUri(req);
   if (!redirectUri) {
     return res.status(500).json({ error: 'Strava redirect URI could not be determined; set STRAVA_REDIRECT_URI or BACKEND_URL.' });
   }
-  
+
   const scope = 'activity:read_all,profile:read_all,read_all';
-  // Try to forward current JWT in state so callback can identify user without Authorization header
+  // Forward current JWT in state so callback can identify user without Authorization header.
+  // We prefix the JWT with the platform marker (ios|web) so the callback knows
+  // whether to redirect to a web URL or to the iOS deep-link scheme.
+  const platform = (req.query.platform === 'ios') ? 'ios' : 'web';
   const authHeader = req.headers.authorization || '';
-  const state = encodeURIComponent(authHeader.replace('Bearer ', ''));
-  
+  const jwt = authHeader.replace('Bearer ', '');
+  const state = encodeURIComponent(`${platform}:${jwt}`);
+
   console.log('Strava auth URL generation:', {
     clientId,
     redirectUri,
+    platform,
     host: req.get('host'),
     protocol: req.protocol
   });
-  
+
   const url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&approval_prompt=auto&state=${state}`;
   res.json({ url });
 });
 
 // OAuth callback - exchange code for tokens and save to user
 router.get('/strava/callback', async (req, res) => {
+  // Track whether the original auth-url request came from iOS so we know
+  // which URL to redirect back to at the end. Defaults to 'web' for
+  // legacy state values that don't carry a platform prefix.
+  let platform = 'web';
   try {
     const { code, state } = req.query;
     if (!code) return res.status(400).json({ error: 'Missing code' });
-    // Extract user from state (JWT passed from auth-url call)
+    // Extract user from state. New format: `<platform>:<jwt>`. Old format:
+    // bare JWT (no colon). Detect by presence of a colon — if found and
+    // the prefix is recognised, strip it before JWT verify.
     if (!state) return res.status(401).json({ error: 'Missing auth state' });
+    let rawState = decodeURIComponent(state);
+    const colonIdx = rawState.indexOf(':');
+    if (colonIdx > 0 && colonIdx < 12) {
+      const maybe = rawState.slice(0, colonIdx);
+      if (maybe === 'ios' || maybe === 'web') {
+        platform = maybe;
+        rawState = rawState.slice(colonIdx + 1);
+      }
+    }
     let decoded;
     try {
-      decoded = jwt.verify(decodeURIComponent(state), JWT_SECRET);
+      decoded = jwt.verify(rawState, JWT_SECRET);
     } catch (e) {
       return res.status(401).json({ error: 'Invalid auth state' });
     }
@@ -545,8 +571,17 @@ router.get('/strava/callback', async (req, res) => {
     // Start full historical import in background (progressive batches, not one massive sync).
     startStravaHistoricalBackfill(user._id);
 
+    // iOS flow: send the user back to the native LaChart app via custom
+    // URL scheme. Safari prompts "Open in LaChart?" — the app's deep-link
+    // listener (initCapacitorShell.js) intercepts and refreshes the
+    // integration status so the Settings card flips to "Connected"
+    // without the user having to relaunch the app manually.
+    if (platform === 'ios') {
+      const scheme = process.env.IOS_URL_SCHEME || 'com.lachart.app';
+      return res.redirect(`${scheme}://strava-connected?ok=1`);
+    }
     const frontend = getFrontendBaseUrl();
-    // Redirect back to app with a flag
+    // Web flow: redirect back to the training calendar with a flag.
     return res.redirect(`${frontend}/training-calendar?strava=connected`);
   } catch (err) {
     const stravaBody = err.response?.data;

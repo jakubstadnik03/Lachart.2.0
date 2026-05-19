@@ -348,13 +348,17 @@ const SettingsPage = () => {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const isStravaConnected = urlParams.get('strava') === 'connected' || 
+    const isStravaConnected = urlParams.get('strava') === 'connected' ||
                                hashParams.get('strava') === 'connected' ||
                                window.location.search.includes('strava=connected');
-    
-    if (isStravaConnected) {
-      // Reload user profile after Strava connection
-      const reloadUserProfile = async () => {
+
+    // Reload user profile + integration status after a successful Strava
+    // OAuth — used by both the web path (?strava=connected query string
+    // when the user lands back from the callback redirect) and the iOS
+    // deep-link path (com.lachart.app://strava-connected handled in
+    // initCapacitorShell, which dispatches the `strava:connected` window
+    // event we listen for below).
+    const reloadUserProfile = async () => {
         try {
           console.log('Strava connection detected, reloading user profile...');
           
@@ -455,8 +459,18 @@ const SettingsPage = () => {
           console.error('Error reloading user profile after Strava callback:', e);
         }
       };
+
+    // Trigger the reload for the web path (query string set on callback redirect).
+    if (isStravaConnected) reloadUserProfile();
+
+    // iOS deep-link path: initCapacitorShell.js fires this event when
+    // Safari hands control back via com.lachart.app://strava-connected.
+    const onStravaDeepLink = () => {
+      console.log('[Strava] deep-link signal received from iOS shell');
       reloadUserProfile();
-    }
+    };
+    window.addEventListener('strava:connected', onStravaDeepLink);
+    return () => window.removeEventListener('strava:connected', onStravaDeepLink);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -851,7 +865,19 @@ const SettingsPage = () => {
   const handleConnectStrava = async () => {
     try {
       const url = await getStravaAuthUrl();
-      window.location.href = url;
+      // On iOS inside Capacitor WebView, navigating window.location.href
+      // to an external https URL works but leaves the user stuck on Strava
+      // (or on lachart.net after the callback) with no way back to the
+      // native app. Open in external Safari instead — Capacitor intercepts
+      // window.open(_, '_blank') and asks UIApplication to open the URL
+      // through the OS. The OAuth callback then redirects to
+      // com.lachart.app://strava-connected which deep-links back to the app.
+      if (isCapacitorNative()) {
+        window.open(url, '_blank');
+        addNotification('Opening Strava in Safari… Authorize, then tap "Open in LaChart" to return.', 'info');
+      } else {
+        window.location.href = url;
+      }
     } catch (e) {
       console.error('Strava connect error:', e);
       addNotification('Failed to start Strava connection', 'error');
@@ -3534,8 +3560,8 @@ function AppleHealthCard({ isMobile }) {
     setBusy(true);
     setMsg('Running diagnostics…');
     try {
-      const { diagnoseHealthKit } = await import('../services/healthKitSync');
-      const r = await diagnoseHealthKit();
+      const { diagnoseHealthKit, probeEntitlement } = await import('../services/healthKitSync');
+      const [r, probe] = await Promise.all([diagnoseHealthKit(), probeEntitlement()]);
       // Build a 5-line summary the user can scan at a glance.
       const lines = [];
       lines.push(`Native shell: ${r.native ? 'YES (Capacitor)' : 'NO (web — HealthKit unavailable)'}`);
@@ -3543,9 +3569,27 @@ function AppleHealthCard({ isMobile }) {
       lines.push(`isAvailable(): ${r.isAvailable == null ? 'not checked' : r.isAvailable ? 'YES' : 'NO — REBUILD REQUIRED. The installed iOS app was built before HealthKit was added. Open ios/App/App.xcworkspace in Xcode, archive a fresh build (or push a new TestFlight), and reinstall.'}`);
       lines.push(`Probe query: ${r.querySupported ? `OK (got ${r.sampleCount} workouts from last 7 days)` : 'failed'}`);
       lines.push(`Last sync: ${r.lastSyncedAt ? r.lastSyncedAt.toLocaleString() : 'never'}`);
+      lines.push('');
+      // Entitlement probe — the definitive answer on whether the binary
+      // is properly signed for HealthKit. Goes BEFORE the query error
+      // because if entitlement is wrong, query results are meaningless.
+      lines.push(`Entitlement probe: ${probe.status}`);
+      lines.push(`  → ${probe.detail}`);
+      if (probe.status === 'no-entitlement') {
+        lines.push('');
+        lines.push('🚨 BINARY IS NOT ENTITLED FOR HEALTHKIT 🚨');
+        lines.push('This is why LaChart does not appear in Health → Sharing → Apps.');
+        lines.push('');
+        lines.push('Fix checklist:');
+        lines.push('1. In Xcode: App target → Signing & Capabilities → confirm HealthKit row is present.');
+        lines.push('2. Confirm "Automatically manage signing" is checked + correct paid Team selected.');
+        lines.push('3. Apple Developer Portal → Identifiers → com.lachart.app → confirm HealthKit capability is enabled (NOT just present in code).');
+        lines.push('4. Product → Clean Build Folder → Archive (or Run on device).');
+        lines.push('5. Delete LaChart from iPhone, install the fresh build.');
+      }
       if (r.error) {
         lines.push('');
-        lines.push(`ISSUE: ${r.error}`);
+        lines.push(`Query layer issue: ${r.error}`);
       }
       lines.push('');
       lines.push('Raw: ' + JSON.stringify(r, null, 0));

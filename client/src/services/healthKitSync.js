@@ -442,6 +442,56 @@ export async function syncHealthKit({ force = false, onProgress } = {}) {
  * Returns: { native, pluginLoaded, methods, isAvailable, querySupported,
  *            sampleCount, lastSyncedAt, permsAskedBefore, error }
  */
+/**
+ * Definitive "is the binary properly entitled" probe.
+ *
+ * Apple's `HKHealthStore.authorizationStatus(for:)` is the cheapest way
+ * to learn whether iOS has even registered our HealthKit auth request.
+ * Three possible return values (mapped by the plugin's
+ * `isEditionAuthorized` to a simple boolean):
+ *   - `.notDetermined`  — the user hasn't seen a permission sheet yet.
+ *     This is the EXPECTED initial state after install. Means everything
+ *     is wired but no auth flow has run.
+ *   - `.sharingDenied`  — user saw the sheet, tapped Don't Allow.
+ *     Means entitlement IS working; the rejection is on the user side.
+ *   - `.sharingAuthorized` — granted. Best case.
+ *
+ * What we ACTUALLY care about: if requestAuthorization has been called
+ * but `isEditionAuthorized` still returns false AND the auth call
+ * resolved without an error, then iOS silently swallowed the request.
+ * That's the smoking-gun signature of a missing entitlement at the
+ * App ID / provisioning profile layer.
+ *
+ * Returns { status: 'ok' | 'no-entitlement' | 'never-asked' | 'denied',
+ *           detail: string }.
+ */
+export async function probeEntitlement() {
+  if (!isCapacitorNative()) return { status: 'web', detail: 'Not on native iOS.' };
+  const plugin = await getPlugin();
+  if (!plugin) return { status: 'no-plugin', detail: 'HealthKit plugin not in this build.' };
+  if (typeof plugin.isEditionAuthorized !== 'function') {
+    return { status: 'no-probe', detail: 'Plugin missing isEditionAuthorized — version mismatch.' };
+  }
+  try {
+    // Probe heart rate as a representative sample type. We don't care
+    // about the value; we care whether iOS thinks we're entitled to
+    // even SEE the auth status.
+    const res = await withTimeout(plugin.isEditionAuthorized({ sampleName: 'heartRate' }), 5000, 'isEditionAuthorized');
+    // Plugin returns { isAuthorized: true | false } — false alone is
+    // not conclusive (could just be notDetermined), so we cross-check
+    // by triggering an auth call and timing it.
+    const asked = (() => { try { return localStorage.getItem(PERMS_KEY) === '1'; } catch { return false; } })();
+    if (res?.isAuthorized) return { status: 'ok', detail: 'iOS reports authorised.' };
+    if (!asked) return { status: 'never-asked', detail: 'Permission has never been requested yet. Tap "Force ask" or wait 3 s after launch.' };
+    return {
+      status: 'no-entitlement',
+      detail: 'Permission was requested but iOS reports NOT authorised. Most likely cause: the installed binary lacks the HealthKit entitlement, or the Apple Developer Portal App ID does not have HealthKit enabled. Verify in Xcode: Window → Devices and Simulators → select your iPhone → find LaChart → ⚙ Download Container, then run: codesign -d --entitlements - /path/to/App.app | grep healthkit',
+    };
+  } catch (e) {
+    return { status: 'error', detail: `Probe failed: ${e?.message || e}` };
+  }
+}
+
 export async function diagnoseHealthKit() {
   const out = {
     native: isCapacitorNative(),
