@@ -2294,52 +2294,91 @@ router.post("/google-auth", async (req, res) => {
 // returns a LaChart JWT. Apple only sends the user's name on the FIRST login,
 // so we fall back to "Apple User" if it's missing on subsequent logins.
 router.post("/apple-auth", async (req, res) => {
+    // App Store rejection 2.1(a) (submission 6d7103fa, May 2026) said the
+    // Apple Sign In flow "displays an error message". Without per-step
+    // logs in production we couldn't tell whether the reviewer hit a
+    // token-verify failure, a database error, a JWT signing problem, or
+    // something else. Walk the flow with explicit logging so every future
+    // failure has a fingerprint in the Render logs that says exactly
+    // which step bailed.
+    const reqId = Math.random().toString(36).slice(2, 8);
+    const log = (msg, extra) => console.log(`[AppleAuth ${reqId}] ${msg}`, extra ?? '');
     try {
+        log('request received', {
+            hasIdentityToken: !!req.body?.identityToken,
+            tokenLength: req.body?.identityToken?.length ?? 0,
+            hasUserPayload: !!req.body?.user,
+            role: req.body?.role,
+            userAgent: req.headers['user-agent']?.slice(0, 80),
+        });
         const { identityToken, user: appleUser, role } = req.body;
         if (!identityToken) {
+            log('rejected: missing identity token');
             return res.status(400).json({ error: "Missing Apple identity token" });
         }
 
         const appleSignin = require('apple-signin-auth');
         const expectedAudience = process.env.APPLE_BUNDLE_ID || 'com.lachart.app';
+        log('verifying token', { expectedAudience });
         let applePayload;
         try {
             applePayload = await appleSignin.verifyIdToken(identityToken, {
                 audience: expectedAudience,
                 ignoreExpiration: false,
             });
+            log('token verified', {
+                sub: applePayload?.sub?.slice(0, 12) + '…', // truncated for privacy
+                hasEmail: !!applePayload?.email,
+                emailVerified: applePayload?.email_verified,
+                iss: applePayload?.iss,
+                aud: applePayload?.aud,
+            });
         } catch (verifyErr) {
             // Surface the exact reason so the client (and logs) can tell whether
             // it's an audience mismatch, expired token, network issue fetching
             // Apple's JWKS, etc. Don't leak the raw token, but the reason is fine.
             const reason = verifyErr?.message || 'unknown verification error';
-            console.error('[AppleAuth] Token verification failed:', reason, {
+            const tokenAud = (() => {
+                try {
+                    const part = String(identityToken).split('.')[1];
+                    return JSON.parse(Buffer.from(part, 'base64').toString('utf8'))?.aud;
+                } catch { return null; }
+            })();
+            console.error(`[AppleAuth ${reqId}] Token verification failed:`, reason, {
                 expectedAudience,
-                tokenAud: (() => {
-                    try {
-                        const part = String(identityToken).split('.')[1];
-                        return JSON.parse(Buffer.from(part, 'base64').toString('utf8'))?.aud;
-                    } catch { return null; }
-                })(),
+                tokenAud,
+                audMatches: tokenAud === expectedAudience,
             });
             return res.status(401).json({
                 error: 'Apple identity token is invalid or expired',
                 reason,
-                hint: 'If `reason` mentions audience/aud, the iOS bundle ID does not match the server APPLE_BUNDLE_ID env variable.',
+                hint: tokenAud && tokenAud !== expectedAudience
+                  ? `Bundle ID mismatch: token audience is "${tokenAud}" but server expected "${expectedAudience}". Set APPLE_BUNDLE_ID env on the server to match.`
+                  : 'If reason mentions audience/aud, the iOS bundle ID does not match the server APPLE_BUNDLE_ID env variable.',
             });
         }
 
         const { sub: appleId, email } = applePayload;
         if (!appleId) {
+            log('rejected: token has no subject');
             return res.status(400).json({ error: 'Apple token missing subject (user ID)' });
         }
 
         const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
 
         // Apple only provides email on first sign-in. After that, look up by appleId.
-        let user = await userDao.findOne({ appleId });
-        if (!user && email) {
-            user = await userDao.findByEmail(email);
+        let user;
+        try {
+            user = await userDao.findOne({ appleId });
+            if (!user && email) {
+                user = await userDao.findByEmail(email);
+                log('lookup by email', { found: !!user });
+            } else {
+                log('lookup by appleId', { found: !!user });
+            }
+        } catch (dbErr) {
+            console.error(`[AppleAuth ${reqId}] database lookup failed:`, dbErr?.message || dbErr);
+            return res.status(500).json({ error: 'User lookup failed', reason: dbErr?.message });
         }
 
         if (!user) {
@@ -2347,6 +2386,7 @@ router.post("/apple-auth", async (req, res) => {
             const firstName = appleUser?.givenName || appleUser?.name?.split(' ')[0] || 'Apple';
             const lastName  = appleUser?.familyName || (appleUser?.name?.includes(' ') ? appleUser.name.split(' ').slice(1).join(' ') : 'User');
             const userEmail = email || `apple_${appleId}@privaterelay.appleid.com`;
+            log('creating new user', { firstName, lastName, emailIsPrivateRelay: !email });
 
             user = await userDao.createUser({
                 email: userEmail,
@@ -2382,6 +2422,7 @@ router.post("/apple-auth", async (req, res) => {
         });
         saveLoginLocation(userDao, user, req);
 
+        log('success', { userId: String(user._id), isNewUser: user.loginCount === undefined || user.loginCount === 0 });
         res.json({
             token,
             user: {
@@ -2394,8 +2435,15 @@ router.post("/apple-auth", async (req, res) => {
             },
         });
     } catch (error) {
-        console.error('[AppleAuth] Error:', error?.message || error);
-        res.status(500).json({ error: 'Apple authentication failed' });
+        // Full stack trace + name so we can tell Mongoose validation
+        // errors apart from JWT signing errors apart from anything else.
+        console.error(`[AppleAuth ${reqId}] Unhandled error:`, {
+            name: error?.name,
+            message: error?.message,
+            code: error?.code,
+            stack: error?.stack?.split('\n').slice(0, 6).join('\n'),
+        });
+        res.status(500).json({ error: 'Apple authentication failed', reason: error?.message });
     }
 });
 

@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
 import { WorkoutSessionProvider } from './context/WorkoutSessionContext';
 import WorkoutResumeBanner from './components/WorkoutExecution/WorkoutResumeBanner';
+import HealthKitSyncToaster from './components/HealthKitSyncToaster';
 import { TrainingProvider } from './context/TrainingContext';
 import { CategoryProvider } from './context/CategoryContext';
 import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
@@ -403,6 +404,10 @@ function App() {
                   Lives at app root so it shows above every page including
                   the native shell layout. */}
               <WorkoutResumeBanner />
+              {/* App Store 2.5.1: visible feedback whenever HealthKit
+                  data is pulled from Apple Health. Renders nothing —
+                  just listens for the custom event from healthKitSync. */}
+              <HealthKitSyncToaster />
               {isProd && <DeferredVercelTrackers />}
               {isProd && <DeferredBuyMeACoffeeWidget />}
             </WorkoutSessionProvider>

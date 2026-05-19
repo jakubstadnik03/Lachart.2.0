@@ -505,18 +505,45 @@ export async function diagnoseHealthKit() {
 /**
  * Idempotent fire-and-forget call for app boot. Wrapped in a try so we never
  * crash the app on startup; logs to console for diagnostics.
+ *
+ * App Store Review Guideline 2.5.1 requires that HealthKit data access be
+ * clearly identified in the app's UI. The auto-sync used to be invisible —
+ * it just pulled workouts in the background and they appeared in the
+ * activity feed without any "synced from Apple Health" indicator. To
+ * comply, we now dispatch a `healthkit:synced` CustomEvent on every sync
+ * outcome (success, empty, error). A listener in App.jsx turns those into
+ * toast notifications so the user always sees "Imported N workouts from
+ * Apple Health" when data flows in. Pre-emptively dispatching even on
+ * "skipped: throttled" would be noisy, so we only signal when the sync
+ * actually attempted or completed something the user should know about.
  */
+function dispatchHealthKitEvent(detail) {
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('healthkit:synced', { detail }));
+    }
+  } catch { /* ignore */ }
+}
+
 export async function maybeSyncOnAppOpen() {
   try {
     const result = await syncHealthKit();
     if (result?.imported > 0) {
       console.log(`[healthkit] auto-sync imported ${result.imported}/${result.total} workouts`);
+      dispatchHealthKitEvent({ kind: 'imported', imported: result.imported, total: result.total });
+    } else if (result?.skipped === 'empty-or-denied') {
+      console.log('[healthkit] auto-sync: empty or denied');
+      // Silent — user already saw the iOS permission sheet at onboarding.
+    } else if (result?.skipped === 'throttled') {
+      // Within the 24h throttle window — explicitly do NOT toast; users
+      // shouldn't see a popup every time they open the app.
     } else if (result?.skipped) {
       console.log(`[healthkit] auto-sync skipped: ${result.skipped}`);
     }
     return result;
   } catch (e) {
     console.warn('[healthkit] auto-sync error:', e?.message || e);
+    dispatchHealthKitEvent({ kind: 'error', error: e?.message });
     return { skipped: 'error', error: e?.message };
   }
 }
