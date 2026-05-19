@@ -2920,6 +2920,10 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
       if (streamFromDb && streamFromDb.streams && Object.keys(streamFromDb.streams).length > 0) {
         streamsData = streamFromDb.streams;
+        // Heal old cached entries that pre-date the polyline fallback —
+        // if the cache has streams but no latlng, the fallback below will
+        // still kick in because we only check streamsData (not the cache
+        // source). No need to rewrite this branch.
       } else {
         try {
           streamsData = await fetchStravaActivityStreams(token, stravaId);
@@ -2933,6 +2937,34 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
             { $set: { streams: streamsData, fetchedAt: new Date() } },
             { upsert: true }
           ).catch(err => console.warn('[Strava] failed to persist streams:', err.message));
+        }
+      }
+
+      // ── latlng fallback from polyline ────────────────────────────────
+      // Strava's /streams endpoint sometimes omits the `latlng` key (very
+      // short rides, transient 400/404, certain Garmin uploads). But the
+      // activity detail almost always carries `map.summary_polyline` (or
+      // `map.polyline` for full detail) as a Google-encoded polyline
+      // string — that's what powers the map preview on strava.com itself.
+      //
+      // Decode it and slot it into streams.latlng so the client's map
+      // renderer (CalendarView ActivityFullModal) doesn't have to know
+      // there are two source formats. The decoded polyline has lower
+      // resolution than the latlng stream (one point per ~10–50 m vs.
+      // one per second) but it's plenty for drawing the route shape.
+      if (!streamsData.latlng || !streamsData.latlng.data || streamsData.latlng.data.length === 0) {
+        const poly = detailResp?.data?.map?.polyline || detailResp?.data?.map?.summary_polyline;
+        if (poly && typeof poly === 'string') {
+          try {
+            const { decodePolyline } = require('../utils/polyline');
+            const pts = decodePolyline(poly);
+            if (pts.length > 0) {
+              streamsData.latlng = { data: pts, original_size: pts.length, resolution: 'low', series_type: 'distance' };
+              console.log(`[Strava] map: filled latlng from polyline fallback (${pts.length} points)`);
+            }
+          } catch (decodeErr) {
+            console.warn('[Strava] polyline decode failed:', decodeErr.message);
+          }
         }
       }
 
