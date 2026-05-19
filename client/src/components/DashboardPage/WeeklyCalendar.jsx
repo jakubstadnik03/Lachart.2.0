@@ -843,6 +843,9 @@ const WeeklyCalendar = ({
   selectedActivityId,
   selectedAthleteId = null,
   onActivityUpdate = null,
+  /** Called with { type, id } when the user deletes an activity from the
+   *  shared ActivityFullModal — dashboard refreshes its activity feed. */
+  onActivityDeleted = null,
   plannedWorkouts = [],
   onPlanWorkout = null,
   onSelectPlannedWorkout = null,
@@ -2555,6 +2558,8 @@ const WeeklyCalendar = ({
             setActivityModal(null);
             navigate(`/training-calendar/${id}`);
           }}
+          athleteId={selectedAthleteId}
+          onDeleted={onActivityDeleted}
         />
       )}
 

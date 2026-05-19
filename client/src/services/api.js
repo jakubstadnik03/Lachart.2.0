@@ -1425,6 +1425,27 @@ export const getStravaActivityDetail = async (stravaId, athleteId = null) => {
   return data; // { detail, streams, laps, titleManual, description }
 };
 
+/**
+ * Delete an imported Strava activity from LaChart.
+ *
+ * Removes our local StravaActivity document + cached streams; does NOT
+ * touch the activity on the user's Strava account (we have no permission
+ * to delete from Strava itself, and the user can still re-import via a
+ * fresh sync if they change their mind).
+ *
+ * Coach can delete an athlete's activity by passing athleteId — server
+ * verifies the coach-athlete link.
+ */
+export const deleteStravaActivity = async (stravaId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = normalizeStravaActivityRouteId(stravaId);
+  const { data } = await api.delete(
+    `/api/integrations/strava/activities/${encodeURIComponent(id)}`,
+    { params },
+  );
+  return data; // { ok: true, deleted: { activity, streams } }
+};
+
 export const updateStravaActivity = async (stravaId, { title, description, category }) => {
   try {
     const id = normalizeStravaActivityRouteId(stravaId);

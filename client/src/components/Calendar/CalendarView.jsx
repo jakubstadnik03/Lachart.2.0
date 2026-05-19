@@ -12,6 +12,7 @@ import {
   PlayIcon,
   CheckCircleIcon,
   XMarkIcon,
+  TrashIcon,
   PencilIcon,
   ArrowTopRightOnSquareIcon,
   BeakerIcon,
@@ -1222,11 +1223,44 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
   );
 }
 
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null, onDeleted = null }) {
   const a = activity;
 
   // Full detail loaded async (for laps)
   const [detail, setDetail] = useState(null);
+  // Two-tap delete confirm — first tap turns the icon red and changes the
+  // label to "Confirm?", second tap actually runs the delete. Reverts
+  // after 4 s if the user moves on.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const stravaIdForDelete = (() => {
+    const raw = String(a?.id || a?._id || '');
+    if (raw.startsWith('strava-')) return raw.replace('strava-', '');
+    return null; // delete only supported for Strava in this initial cut
+  })();
+  const handleDeleteTap = async () => {
+    if (deleting || !stravaIdForDelete) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 4000);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const { deleteStravaActivity } = await import('../../services/api.js');
+      await deleteStravaActivity(stravaIdForDelete, athleteId);
+      if (onDeleted) onDeleted({ type: 'strava', id: stravaIdForDelete });
+      onClose();
+    } catch (e) {
+      console.error('Strava activity delete failed:', e);
+      // Reset confirm state on failure so user can retry.
+      setConfirmDelete(false);
+      // eslint-disable-next-line no-alert
+      window.alert(`Failed to delete activity: ${e?.response?.data?.error || e?.message || 'unknown error'}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Resolve sport from BOTH the summary and the freshly-loaded detail. FIT
   // uploads sometimes reach this modal with `a.sport` empty because the
@@ -1692,6 +1726,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
+          {stravaIdForDelete && (
+            <button
+              onClick={handleDeleteTap}
+              disabled={deleting}
+              title={confirmDelete ? 'Tap again to confirm' : 'Delete activity from LaChart'}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all ${
+                confirmDelete
+                  ? 'bg-red-500 text-white active:bg-red-600'
+                  : 'text-gray-500 hover:bg-red-50 hover:text-red-600 active:bg-red-100'
+              } ${deleting ? 'opacity-60 pointer-events-none' : ''}`}
+            >
+              <TrashIcon className="w-4 h-4" />
+              {confirmDelete && <span>Delete?</span>}
+            </button>
+          )}
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
             <XMarkIcon className="w-5 h-5" />
           </button>
@@ -2138,6 +2187,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {onOpenFull && (
             <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
               <ArrowTopRightOnSquareIcon className="w-5 h-5" />
+            </button>
+          )}
+          {stravaIdForDelete && (
+            <button
+              onClick={handleDeleteTap}
+              disabled={deleting}
+              title={confirmDelete ? 'Tap again to confirm' : 'Delete activity from LaChart'}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all ${
+                confirmDelete
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : 'text-gray-400 hover:bg-red-50 hover:text-red-600'
+              } ${deleting ? 'opacity-60 pointer-events-none' : ''}`}
+            >
+              <TrashIcon className="w-4 h-4" />
+              {confirmDelete && <span>Delete?</span>}
             </button>
           )}
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
@@ -2972,6 +3036,9 @@ export default function CalendarView({
   athleteId = null,
   /** Optional: called with updated activity object when CalendarView renames an activity */
   onActivityUpdate = null,
+  /** Optional: called with { type, id } when the user deletes an activity from
+   *  ActivityFullModal — parent should refresh its activity list. */
+  onActivityDeleted = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -4978,11 +5045,13 @@ export default function CalendarView({
         <ActivityFullModal
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
+          athleteId={athleteId}
           onClose={() => setActivityModal(null)}
           onEditPlanned={onSelectPlannedWorkout}
           onAddLactate={onAddLactate}
           onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
+          onDeleted={onActivityDeleted}
         />
       )}
     </motion.div>

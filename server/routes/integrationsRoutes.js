@@ -2772,6 +2772,68 @@ router.get('/status', verifyToken, async (req, res) => {
 
 // Detailed activity with streams (time, speed, HR, power)
 // Supports both MongoDB _id and stravaId
+// DELETE /api/integrations/strava/activities/:id — remove an imported
+// Strava activity from LaChart. This does NOT touch the activity on
+// Strava itself (we have no permission to delete from the user's
+// Strava account), only our local copy. We also wipe the cached
+// streams document so re-import via webhook/sync starts fresh.
+//
+// Coach scope: the activity is matched by (userId, stravaId). A coach
+// can delete an athlete's activity only if they pass ?athleteId=<id>
+// AND the athlete is linked to them via the coach relationship — same
+// rule the GET path uses (see resolveStravaActivityScope below).
+router.delete('/strava/activities/:id', verifyToken, async (req, res) => {
+  try {
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+
+    let id = req.params.id;
+    if (typeof id === 'string') id = id.replace(/^strava-/i, '');
+    const stravaId = Number(id);
+    if (!Number.isFinite(stravaId)) {
+      return res.status(400).json({ error: 'Invalid Strava activity id' });
+    }
+
+    // Determine target user — same logic as the detail GET handler.
+    let targetUserId = requester._id;
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && isCoachLike) {
+      // Verify coach-athlete link before letting a coach delete.
+      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+      const isLinkedCoach = Array.isArray(athlete.coaches) &&
+        athlete.coaches.some((c) => String(c) === String(requester._id));
+      if (!isLinkedCoach && role !== 'admin') {
+        return res.status(403).json({ error: 'Not authorised to manage this athlete' });
+      }
+      targetUserId = athlete._id;
+    }
+
+    const StravaStream = require('../models/StravaStream');
+    const [actDel, streamDel] = await Promise.all([
+      StravaActivity.deleteOne({ userId: targetUserId, stravaId }),
+      StravaStream.deleteOne({ userId: targetUserId, stravaId }).catch(() => ({ deletedCount: 0 })),
+    ]);
+
+    if (actDel.deletedCount === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+
+    // Bust the in-process detail cache so a subsequent GET doesn't
+    // resurrect the doc from memory.
+    invalidateStravaActivityCache(targetUserId, stravaId);
+
+    console.log(`[Strava] user ${requester._id} deleted activity ${stravaId} for user ${targetUserId} (activity=${actDel.deletedCount}, streams=${streamDel.deletedCount})`);
+    res.json({ ok: true, deleted: { activity: actDel.deletedCount, streams: streamDel.deletedCount } });
+  } catch (err) {
+    console.error('[Strava delete] error:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to delete activity' });
+  }
+});
+
 router.get('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);

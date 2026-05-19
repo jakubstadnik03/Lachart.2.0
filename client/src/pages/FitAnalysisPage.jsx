@@ -4144,6 +4144,14 @@ const FitAnalysisPage = () => {
               return a;
             }));
           }}
+          onActivityDeleted={({ type, id }) => {
+            if (type !== 'strava') return;
+            setExternalActivities(prev => prev.filter(a => {
+              const matchId = String(a.id || '').replace(/^strava-/, '') === String(id);
+              const matchSid = String(a.stravaId || '') === String(id);
+              return !(a.type === 'strava' && (matchId || matchSid));
+            }));
+          }}
           onSelectPlannedWorkout={(pw) => {
             if (pw.status === 'completed' && pw.executionData) {
               setCompareModal(pw);

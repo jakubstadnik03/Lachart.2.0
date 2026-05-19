@@ -1525,6 +1525,23 @@ export default function DashboardPage() {
               localStorage.removeItem(cacheKey);
               localStorage.removeItem(cacheTimestampKey);
             }}
+            onActivityDeleted={({ type, id }) => {
+              // Drop the deleted activity from the local feed so the
+              // calendar updates without a full reload. Also bust the
+              // cache so the next dashboard mount doesn't resurrect it.
+              setCalendarData(prev => prev.filter(act => {
+                if (type === 'strava') {
+                  const matchById = String(act.id || '').replace(/^strava-/, '') === String(id);
+                  const matchByStravaId = String(act.stravaId || '') === String(id);
+                  return !(act.type === 'strava' && (matchById || matchByStravaId));
+                }
+                return true;
+              }));
+              const cacheKey = `calendarData_${dashboardDataAthleteId}`;
+              const cacheTimestampKey = `calendarData_timestamp_${dashboardDataAthleteId}`;
+              localStorage.removeItem(cacheKey);
+              localStorage.removeItem(cacheTimestampKey);
+            }}
             plannedWorkouts={plannedWorkouts}
             onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
             onSelectPlannedWorkout={(pw) => {
