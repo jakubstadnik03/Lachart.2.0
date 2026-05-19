@@ -6,6 +6,7 @@ import {
   UserGroupIcon, CreditCardIcon, WrenchScrewdriverIcon,
   QuestionMarkCircleIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 /* ── FAQ accordion item ─────────────────────────────────────────────────────── */
 const FAQItem = ({ question, answer, isOpen, onClick }) => (
@@ -62,7 +63,19 @@ const SupportPage = () => {
     setOpenQuestions(next);
   };
 
-  /* ── FAQ content ── */
+  /* ── FAQ content ──
+   *
+   * App Store Review 3.1.1 requires NO mention of paid digital content on
+   * iOS unless it's purchasable via Apple In-App Purchase. LaChart's web
+   * has subscription tiers, but the iOS shell intentionally hides every
+   * paid surface (UpgradeModal returns null on native, the Settings
+   * Subscription tab is excluded). The "Plans & Pricing" FAQ category
+   * below mentioned €9.99 / €19.99 / 30-day trial which an iOS reviewer
+   * could navigate to — that's what caused submission 6d7103fa rejection.
+   * Skipping the whole category (including the FAQ items it contained)
+   * when running inside Capacitor keeps the iOS build paid-content-free.
+   */
+  const onNativeIos = isCapacitorNative();
   const faqCategories = [
     {
       id: 'getting-started',
@@ -237,7 +250,12 @@ const SupportPage = () => {
         },
       ],
     },
-    {
+    // ── Plans & Pricing ─────────────────────────────────────────────
+    // Excluded entirely on native iOS (Capacitor) so the App Store
+    // build contains zero references to paid digital content. The web
+    // build keeps the category since it's billed through Stripe outside
+    // Apple's IAP, which is permitted.
+    ...(onNativeIos ? [] : [{
       id: 'pricing',
       label: 'Plans & Pricing',
       icon: CreditCardIcon,
@@ -277,7 +295,7 @@ const SupportPage = () => {
           answer: "Go to Settings → Subscription. From there you can upgrade, downgrade, or cancel your plan at any time. Cancellations take effect at the end of your current billing period — you keep access to paid features until then.",
         },
       ],
-    },
+    }]),
   ];
 
   const activeCat = faqCategories.find(c => c.id === activeCategory);
@@ -288,7 +306,8 @@ const SupportPage = () => {
     { icon: ChartBarIcon, title: "Training Log", description: "Import and analyze workouts", color: "bg-sky-50 text-sky-600", cat: "training" },
     { icon: ArrowPathIcon, title: "Integrations", description: "Strava, Garmin & FIT files", color: "bg-green-50 text-green-600", cat: "integrations" },
     { icon: UserGroupIcon, title: "For Coaches", description: "Manage athletes & dashboards", color: "bg-rose-50 text-rose-600", cat: "coaches" },
-    { icon: CreditCardIcon, title: "Plans & Pricing", description: "Free, Pro and Coach plans", color: "bg-indigo-50 text-indigo-600", cat: "pricing" },
+    // Plans & Pricing tile hidden on iOS — see faqCategories comment above.
+    ...(onNativeIos ? [] : [{ icon: CreditCardIcon, title: "Plans & Pricing", description: "Free, Pro and Coach plans", color: "bg-indigo-50 text-indigo-600", cat: "pricing" }]),
   ];
 
   return (

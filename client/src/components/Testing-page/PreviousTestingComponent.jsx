@@ -133,6 +133,8 @@ const PreviousTestingComponent = ({
   externalActivities = [],
 }) => {
   const { user } = useAuth();
+  // usePremium already force-unlocks on native iOS for App Store 3.1.1 —
+  // see comment in client/src/hooks/usePremium.js.
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
