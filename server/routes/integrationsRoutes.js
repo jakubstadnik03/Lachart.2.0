@@ -889,7 +889,97 @@ async function fetchAndSaveStravaActivity(user, stravaActivityId) {
     { $set: doc },
     { upsert: true }
   );
+
+  // ── Pre-warm laps + streams so the activity modal renders fully on the
+  // first open (no "loading…" round-trip to Strava when the user taps).
+  // Best-effort — failures here don't block the upsert above, they'll be
+  // retried lazily when the user opens the activity.
+  prewarmStravaActivityExtras(user, stravaActivityId, token).catch((e) =>
+    console.warn('[Strava] prewarm failed for', stravaActivityId, '-', e?.message || e)
+  );
+
   return { activity: doc, isNew: result.upsertedCount > 0 };
+}
+
+/**
+ * Fetch + cache laps and streams for a Strava activity in the background.
+ *
+ * Strava activity streams (HR, power, latlng) are usually unavailable for
+ * 30–120 s after the upload completes — that's why webhook-imported
+ * activities used to open with no map and no graphs: by the time the user
+ * tapped, the lazy-fetch on /activities/:id called Strava and got 404
+ * (silently swallowed), so streams stayed missing forever.
+ *
+ * This prewarmer retries the streams fetch on 404, with backoff up to ~5
+ * minutes. Once Strava returns data we persist it into the StravaStream
+ * collection so the next view of the activity is instant.
+ */
+async function prewarmStravaActivityExtras(user, stravaActivityId, token) {
+  // 1) Laps — usually ready immediately. Persist onto the StravaActivity doc.
+  try {
+    await stravaBudget.take();
+    const lapsResp = await axios.get(
+      `https://www.strava.com/api/v3/activities/${stravaActivityId}/laps`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 },
+    );
+    try { stravaBudget.reconcileFromHeaders(lapsResp.headers); } catch (_) { /* swallow */ }
+    const laps = Array.isArray(lapsResp.data) ? lapsResp.data : [];
+    if (laps.length > 0) {
+      await StravaActivity.updateOne(
+        { userId: user._id, stravaId: stravaActivityId },
+        { $set: { laps } },
+      );
+    }
+  } catch (e) {
+    console.warn('[Strava] prewarm laps failed:', e?.response?.status || e?.message);
+  }
+
+  // 2) Streams — retry on 404 because Strava takes time to generate them.
+  // Schedule: now, +60s, +180s, +300s. After the last try we give up and
+  // the next manual user-open will retry lazily.
+  const tryStreams = async () => {
+    try {
+      const streams = await fetchStravaActivityStreams(token, stravaActivityId);
+      if (streams && Object.keys(streams).length > 0) {
+        await StravaStream.updateOne(
+          { userId: user._id, stravaId: stravaActivityId },
+          { $set: { streams, fetchedAt: new Date() } },
+          { upsert: true },
+        );
+        return true;
+      }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 404) return false; // not ready yet — caller retries
+      console.warn('[Strava] prewarm streams non-404 error:', status, e?.message);
+    }
+    return false;
+  };
+
+  // First attempt immediate.
+  if (await tryStreams()) return;
+  // Then exponential-ish backoff. Use setTimeout so we don't block the
+  // webhook ack. Each attempt also re-validates the token in case 30 min
+  // have passed.
+  for (const delaySec of [60, 180, 300]) {
+    setTimeout(async () => {
+      try {
+        const freshUser = await User.findById(user._id);
+        if (!freshUser) return;
+        const freshToken = await getValidStravaToken(freshUser);
+        if (!freshToken) return;
+        const streams = await fetchStravaActivityStreams(freshToken, stravaActivityId);
+        if (streams && Object.keys(streams).length > 0) {
+          await StravaStream.updateOne(
+            { userId: user._id, stravaId: stravaActivityId },
+            { $set: { streams, fetchedAt: new Date() } },
+            { upsert: true },
+          );
+          console.log(`[Strava] prewarm streams ok after ${delaySec}s for ${stravaActivityId}`);
+        }
+      } catch (_) { /* swallow — final user-open will retry */ }
+    }, delaySec * 1000);
+  }
 }
 
 // GET /api/integrations/strava/webhook — subscription verification handshake
