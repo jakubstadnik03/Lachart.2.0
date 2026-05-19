@@ -305,7 +305,14 @@ async function requestGarminToken({
 }
 
 // Import all Strava history progressively in background to avoid backend/API spikes.
-function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.now() / 1000)) {
+//
+// Backfill state is now persisted to `user.strava.backfillCursorBefore` and
+// `user.strava.backfillState` on every successful batch. On server boot,
+// `resumeInterruptedStravaBackfills()` (registered with the app) scans for
+// users with `backfillState === 'running'` and reinvokes this function with
+// their saved cursor — so a Render redeploy mid-backfill no longer silently
+// drops the rest of someone's history.
+async function startStravaHistoricalBackfill(userId, initialBefore = null) {
   const lockKey = String(userId);
   if (stravaBackfillLocks.has(lockKey)) return;
   // Global concurrency cap — prevent multiple simultaneous backfills from burning rate limits
@@ -315,6 +322,28 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
     return;
   }
   stravaBackfillLocks.add(lockKey);
+
+  // Determine the starting cursor: explicit param > persisted cursor > now.
+  // Persisted cursor lets us pick up exactly where a previous (interrupted)
+  // backfill left off.
+  if (initialBefore == null) {
+    try {
+      const u = await User.findById(userId).select('strava.backfillCursorBefore').lean();
+      initialBefore = u?.strava?.backfillCursorBefore || Math.floor(Date.now() / 1000);
+    } catch (_) {
+      initialBefore = Math.floor(Date.now() / 1000);
+    }
+  }
+  // Mark running so a boot-time scanner knows to resume this user.
+  try {
+    await User.findByIdAndUpdate(userId, {
+      'strava.backfillState': 'running',
+      'strava.backfillCursorBefore': initialBefore,
+      'strava.backfillStartedAt': new Date(),
+    });
+  } catch (e) {
+    console.warn('[StravaBackfill] could not persist start state:', e?.message);
+  }
 
   const perPage = 100;
   // Aggressive defaults caused the budget to burn ~100 req / 15-min window
@@ -408,8 +437,13 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
         }
       }
 
+      // Persist the cursor + last-sync after every successful batch.
+      // If the server is killed mid-backfill, the next boot resumes from
+      // exactly this point instead of starting over (or worse, never
+      // continuing).
       await User.findByIdAndUpdate(user._id, {
-        'strava.lastSyncDate': new Date()
+        'strava.lastSyncDate': new Date(),
+        'strava.backfillCursorBefore': nextCursor,
       });
     } catch (error) {
       const status = error?.response?.status;
@@ -441,7 +475,15 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
         });
       }, delayBetweenBatchesMs);
     } else {
+      // Backfill reached the end (or hit a non-retryable error). Mark done
+      // so the boot-resume scanner ignores this user going forward.
       stravaBackfillLocks.delete(lockKey);
+      try {
+        await User.findByIdAndUpdate(userId, {
+          'strava.backfillState': 'done',
+          'strava.backfillFinishedAt': new Date(),
+        });
+      } catch (_) { /* ignore */ }
     }
   };
 
@@ -451,6 +493,32 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
       stravaBackfillLocks.delete(lockKey);
     });
   }, 4000);
+}
+
+/**
+ * Boot-time recovery: any user whose `strava.backfillState === 'running'`
+ * had their backfill interrupted by a server restart. We resume each one,
+ * starting from their persisted `backfillCursorBefore`. Concurrency cap
+ * is enforced inside startStravaHistoricalBackfill so resumption can't
+ * thunder-herd.
+ *
+ * Call this from server bootstrap, after the Mongo connection is ready.
+ */
+async function resumeInterruptedStravaBackfills() {
+  try {
+    const users = await User.find({ 'strava.backfillState': 'running' })
+      .select('_id strava.backfillCursorBefore')
+      .lean();
+    if (!users.length) return;
+    console.log(`[StravaBackfill] resuming ${users.length} interrupted backfills`);
+    for (const u of users) {
+      // Don't await — let the concurrency cap inside startStravaHistoricalBackfill
+      // decide whether to defer.
+      startStravaHistoricalBackfill(u._id, u.strava?.backfillCursorBefore || null);
+    }
+  } catch (e) {
+    console.error('[StravaBackfill] resume on boot failed:', e?.message || e);
+  }
 }
 
 // GET /api/integrations/strava/auth-url
@@ -613,12 +681,26 @@ router.get('/strava/status', verifyToken, async (req, res) => {
     const webhookLastEventAt = s.webhookLastEventAt || null;
     const webhookHealthy = !!webhookLastEventAt &&
       (Date.now() - new Date(webhookLastEventAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
+    // Webhook subscription health — exposes the boot bootstrap result so
+    // the Settings card can tell users "real-time sync is dead" instead of
+    // letting them assume webhook is fine when actually no subscription
+    // was ever registered (e.g. missing SERVER_PUBLIC_URL on Render).
+    let webhookSubscription = null;
+    try {
+      const { getWebhookStatus } = require('../services/stravaWebhookBootstrap');
+      webhookSubscription = getWebhookStatus();
+    } catch (_) { /* optional */ }
     res.json({
       connected,
       autoSync: !!s.autoSync,
       lastSyncDate: s.lastSyncDate || null,
+      backfillState: s.backfillState || null,
+      backfillCursorBefore: s.backfillCursorBefore || null,
+      backfillStartedAt: s.backfillStartedAt || null,
+      backfillFinishedAt: s.backfillFinishedAt || null,
       webhookLastEventAt,
       webhookHealthy,
+      webhookSubscription,
       // App-wide Strava rate-limit lockout — when this is non-zero, every
       // /strava/sync and /strava/auto-sync call will short-circuit with 429.
       // UI can show a "Strava API quota — retry in N min" banner.
@@ -680,69 +762,10 @@ router.post('/strava/disconnect', verifyToken, async (req, res) => {
   }
 });
 
-function stravaExpiresAtSeconds(expiresAt) {
-  if (expiresAt == null) return null;
-  if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) return expiresAt;
-  if (expiresAt instanceof Date && !Number.isNaN(expiresAt.getTime())) {
-    return Math.floor(expiresAt.getTime() / 1000);
-  }
-  const n = Number(expiresAt);
-  return Number.isFinite(n) ? n : null;
-}
-
-async function getValidStravaToken(user) {
-  if (!user?.strava?.accessToken) return null;
-  const now = Math.floor(Date.now() / 1000);
-  const exp = stravaExpiresAtSeconds(user.strava.expiresAt);
-  if (exp != null && exp - 60 > now) return user.strava.accessToken;
-  // refresh
-  const client_id = process.env.STRAVA_CLIENT_ID;
-  const client_secret = process.env.STRAVA_CLIENT_SECRET;
-  if (!client_id || !client_secret) {
-    console.error('Strava credentials missing for token refresh');
-    // Still try current access token (may work briefly after deploy / clock skew)
-    return user.strava.accessToken;
-  }
-  if (!user.strava.refreshToken) {
-    console.error('No refresh token available for user');
-    return user.strava.accessToken;
-  }
-  try {
-  const resp = await axios.post('https://www.strava.com/oauth/token', {
-    client_id,
-    client_secret,
-    grant_type: 'refresh_token',
-    refresh_token: user.strava.refreshToken
-  });
-  user.strava.accessToken = resp.data.access_token;
-  user.strava.refreshToken = resp.data.refresh_token || user.strava.refreshToken;
-  user.strava.expiresAt = resp.data.expires_at;
-  await user.save();
-  return user.strava.accessToken;
-  } catch (error) {
-    console.error('Error refreshing Strava token:', error.response?.data || error.message);
-    const body = error.response?.data;
-    const msg = typeof body?.message === 'string' ? body.message.toLowerCase() : '';
-    const invalidGrant =
-      msg.includes('invalid') && (msg.includes('grant') || msg.includes('refresh'));
-    const errors = Array.isArray(body?.errors) ? body.errors : [];
-    const refreshRevoked = errors.some(
-      (e) =>
-        String(e?.field || '') === 'refresh_token' &&
-        String(e?.code || '').toLowerCase().includes('invalid')
-    );
-    if (error.response?.status === 401 || error.response?.status === 400) {
-      if (invalidGrant || refreshRevoked) {
-        console.log('Strava refresh token rejected; clearing Strava connection for user');
-        user.strava = undefined;
-        await user.save();
-        return null;
-      }
-      console.warn('Strava token refresh failed (transient?); keeping tokens, returning current access token');
-    }
-    return user.strava.accessToken || null;
-  }
-}
+// Token-refresh logic moved to server/utils/stravaToken.js so the routes
+// and the auto-sync service share a single implementation. See that file
+// for the invariant that we only wipe user.strava on invalid_grant.
+const { getValidStravaToken, stravaExpiresAtSeconds } = require('../utils/stravaToken');
 
 /**
  * Streams often fail with 400 for some activity types or stream key combos; detail still loads.
@@ -801,9 +824,13 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
 
-  // Expo push (mobile)
+  // Expo push (mobile). The helper signature is (userId, count, opts) where
+  // opts.latestActivityId is what becomes data.activityId on the push payload
+  // — without that, tapping the notification on iPhone opens the app but
+  // can't deep-link into the new activity. Earlier code passed the id as the
+  // 3rd positional arg so it was silently dropped by the helper.
   const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-  notifyUserStravaActivitiesImported(userId, n, latestStravaId).catch((e) =>
+  notifyUserStravaActivitiesImported(userId, n, { latestActivityId: latestStravaId }).catch((e) =>
     console.error('[Strava sync push]', e.message || e)
   );
 
@@ -4198,3 +4225,5 @@ router.delete('/apple-health', verifyToken, async (req, res) => {
 
 module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;
+// Boot-time recovery for backfills interrupted by a restart.
+module.exports.resumeInterruptedStravaBackfills = resumeInterruptedStravaBackfills;

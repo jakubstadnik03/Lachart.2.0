@@ -2,56 +2,13 @@ const axios = require('axios');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
 const stravaBudget = require('../utils/stravaBudget');
+// Shared token helper — uses the same refresh + invalid-grant logic as the
+// route module. The old local copy aggressively wiped user.strava on every
+// 4xx, which caused users to be silently disconnected by transient errors.
+const { getValidStravaToken } = require('../utils/stravaToken');
 
 // Helper function to delay execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Get valid Strava token (refresh if needed)
-async function getValidStravaToken(user) {
-  if (!user?.strava?.accessToken) return null;
-  const now = Math.floor(Date.now() / 1000);
-  if (user.strava.expiresAt && user.strava.expiresAt - 60 > now) return user.strava.accessToken;
-  
-  // Refresh token
-  const client_id = process.env.STRAVA_CLIENT_ID;
-  const client_secret = process.env.STRAVA_CLIENT_SECRET;
-  if (!client_id || !client_secret) {
-    console.error('[StravaAutoSync] Strava credentials missing for token refresh');
-    return null;
-  }
-  if (!user.strava.refreshToken) {
-    console.error('[StravaAutoSync] No refresh token available for user', user._id);
-    return null;
-  }
-  
-  try {
-    const resp = await axios.post('https://www.strava.com/oauth/token', {
-      client_id,
-      client_secret,
-      grant_type: 'refresh_token',
-      refresh_token: user.strava.refreshToken
-    });
-    
-    user.strava.accessToken = resp.data.access_token;
-    user.strava.refreshToken = resp.data.refresh_token || user.strava.refreshToken;
-    user.strava.expiresAt = resp.data.expires_at;
-    await user.save();
-    return user.strava.accessToken;
-  } catch (error) {
-    console.error('[StravaAutoSync] Error refreshing Strava token:', error.response?.data || error.message);
-    // If refresh token is invalid (400) or unauthorized (401), clear Strava connection
-    if (error.response?.status === 400 || error.response?.status === 401) {
-      try {
-        user.strava = undefined;
-        await user.save();
-        console.log('[StravaAutoSync] Refresh token invalid/expired, clearing Strava connection for user', user._id);
-      } catch (saveErr) {
-        console.error('[StravaAutoSync] Error clearing Strava connection:', saveErr.message);
-      }
-    }
-    return null;
-  }
-}
 
 /**
  * Sync Strava activities for a single user
@@ -214,12 +171,12 @@ async function syncStravaForUser(user, opts = {}) {
             token = newToken;
             continue; // Retry this page with new token
           } else {
-            // Token refresh failed - clear Strava connection and stop sync
-            console.log('[StravaAutoSync] Token refresh failed, clearing Strava connection for user', user._id);
-            await User.findByIdAndUpdate(user._id, {
-              $unset: { strava: 1 }
-            });
-            return { imported, updated, error: 'Strava token expired and could not be refreshed' };
+            // Token refresh helper already handled the truly-dead case
+            // (it wipes user.strava only on confirmed invalid_grant).
+            // Here we just stop this sync; the user may simply need to
+            // wait for the next Strava recovery or manually reconnect.
+            console.log('[StravaAutoSync] Token refresh returned null for user', user._id);
+            return { imported, updated, error: 'Strava token refresh failed; will retry next cycle' };
           }
         }
         // For other errors, log and continue (don't crash)

@@ -240,6 +240,21 @@ startStravaAutoSyncScheduler();
 // Ensure Strava webhook subscription is registered (runs once on startup, idempotent)
 setTimeout(() => bootstrapStravaWebhook().catch(e => console.error('[StravaWebhook] Bootstrap failed:', e.message)), 5000);
 
+// Pick up any Strava backfills that were interrupted by the previous shutdown.
+// Persisted state on user.strava.backfillState tells us who to resume; the
+// concurrency cap inside startStravaHistoricalBackfill staggers them so we
+// don't thunder-herd Strava on every redeploy.
+setTimeout(() => {
+  try {
+    const { resumeInterruptedStravaBackfills } = require('./routes/integrationsRoutes');
+    if (typeof resumeInterruptedStravaBackfills === 'function') {
+      resumeInterruptedStravaBackfills();
+    }
+  } catch (e) {
+    console.error('[StravaBackfill] resume hook failed on boot:', e?.message || e);
+  }
+}, 8000);
+
 startLactateTestFollowUpScheduler();
 
 // Retention & lifecycle emails (weekly progress, monthly reports, milestones, re-engagement)
