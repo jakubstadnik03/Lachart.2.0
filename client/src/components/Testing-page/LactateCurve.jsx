@@ -533,8 +533,16 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           title: { display: !isMobile, text: "Lactate (mmol/L)" },
           min: 0,
           max: (() => {
+            // Glucose shares this axis (yAxisID: "y") and frequently runs
+            // higher than lactate at rest — 5-7 mmol/L is normal blood
+            // glucose vs. <4 mmol/L resting lactate. If we scale only by
+            // lactate, the glucose line gets clipped above the lactate
+            // ceiling. Compute the max across both series.
             const maxLactate = Math.max(...lactateData.filter((v) => v != null), 0);
-            return Math.ceil(maxLactate + 1);
+            const maxGlucose = hasGlucoseData && showGlucose
+              ? Math.max(...glucoseData.filter((v) => v != null), 0)
+              : 0;
+            return Math.ceil(Math.max(maxLactate, maxGlucose) + 1);
           })(),
           ticks: { display: true, font: { size: isMobile ? 9 : 11 } },
           position: "left",
