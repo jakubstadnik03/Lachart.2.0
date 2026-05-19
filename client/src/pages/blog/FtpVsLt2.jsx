@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+// (icons removed — were imported but never used)
 import BlogPostLayout from './BlogPostLayout';
 
 const FtpVsLt2 = () => (

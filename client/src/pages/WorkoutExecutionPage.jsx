@@ -166,36 +166,10 @@ function PowerGauge({ actual, target, size = 200 }) {
   );
 }
 
-// ─── Step mini-map bar ────────────────────────────────────────────────────────
-function StepMiniMap({ expandedSteps, currentIdx, context }) {
-  const total = expandedSteps.reduce((s, st) => s + (st.durationSeconds || 30), 0);
-  if (!total) return null;
-  return (
-    <div className="flex h-6 rounded overflow-hidden w-full gap-px">
-      {expandedSteps.map((step, i) => {
-        const w = ((step.durationSeconds || 30) / total) * 100;
-        const col = STEP_COLORS[step.stepType]?.bg || '#9ca3af';
-        const isActive = i === currentIdx;
-        const isDone = i < currentIdx;
-        return (
-          <div
-            key={i}
-            style={{
-              width: `${w}%`,
-              backgroundColor: col,
-              opacity: isDone ? 0.35 : isActive ? 1 : 0.6,
-              transition: 'opacity 0.3s',
-              minWidth: 2,
-              outline: isActive ? '2px solid white' : 'none',
-              outlineOffset: -1,
-            }}
-            title={step.label || step.stepType}
-          />
-        );
-      })}
-    </div>
-  );
-}
+// StepMiniMap was an inline step-progress bar used in an earlier desktop
+// layout iteration. The current layout uses StepBarChart instead, so the
+// mini-map function is no longer referenced. Removed to silence the
+// unused-no-vars warning; reachable in git history if needed back.
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WorkoutExecutionPage() {
@@ -320,11 +294,10 @@ export default function WorkoutExecutionPage() {
   // sheet — actual lock is managed by the context provider).
   const wakeLock = { supported: typeof navigator !== 'undefined' && 'wakeLock' in navigator };
 
-  // Combined live data view — trainer power/cadence + best-source HR.
-  const liveData = useMemo(
-    () => ({ ...trainer.data, heartRate: liveHr }),
-    [trainer.data, liveHr],
-  );
+  // Combined live data view (trainer power/cadence + best-source HR) is
+  // available via `session.liveData` from the context if a future view
+  // needs it. The page itself reads trainer.data / liveHr directly, so
+  // the local memo was unused and removed.
 
   // ── Load workout + athlete context ──────────────────────────────────────────
   // If the context already holds an active session for THIS planned workout

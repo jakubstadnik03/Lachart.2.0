@@ -191,7 +191,9 @@ export function WorkoutSessionProvider({ children }) {
     () => (currentStep?.powerTarget ? resolveTargetWatts(currentStep.powerTarget, context) : null),
     [currentStep, context],
   );
-  const stepDuration = currentStep?.durationSeconds || 0;
+  // stepDuration was computed here historically but the timer effect reads
+  // it from expandedStepsRef.current directly, so the value is unused at
+  // the provider level. Consumers that need it derive it from currentStep.
   const totalDuration = useMemo(
     () => expandedSteps.reduce((s, st) => s + (st.durationSeconds || 0), 0),
     [expandedSteps],

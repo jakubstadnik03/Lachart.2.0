@@ -16,7 +16,7 @@
  */
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, SignalIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 
 function DevicePill({ label, sublabel, color, connected, connecting, onConnect, onDisconnect, icon }) {
