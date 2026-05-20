@@ -440,13 +440,13 @@ function TargetEditor({ value = {}, onChange, label = 'Power target' }) {
         <div className="flex items-center gap-1">
           {t.useRange ? (
             <>
-              <input type="number" className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
+              <input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
               <span className="text-xs text-slate-400">-</span>
-              <input type="number" className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
+              <input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
               <span className="text-xs text-slate-400">%</span>
             </>
           ) : (
-            <><input type="number" className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="%" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">%</span></>
+            <><input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="%" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">%</span></>
           )}
           <button onClick={()=>set('useRange',!t.useRange)} className="text-[10px] text-primary hover:underline">{t.useRange?'Fixed':'Range'}</button>
         </div>
@@ -455,13 +455,13 @@ function TargetEditor({ value = {}, onChange, label = 'Power target' }) {
         <div className="flex items-center gap-1">
           {t.useRange ? (
             <>
-              <input type="number" className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min W" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
+              <input type="number" step={1} min={1} className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min W" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
               <span className="text-xs text-slate-400">-</span>
-              <input type="number" className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max W" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
+              <input type="number" step={1} min={1} className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max W" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
               <span className="text-xs text-slate-400">W</span>
             </>
           ) : (
-            <><input type="number" className="w-20 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="watts" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">W</span></>
+            <><input type="number" step={1} min={1} className="w-20 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="watts" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">W</span></>
           )}
           <button onClick={()=>set('useRange',!t.useRange)} className="text-[10px] text-primary hover:underline">{t.useRange?'Fixed':'Range'}</button>
         </div>
@@ -784,14 +784,14 @@ function QuickIntervalAdder({ context, onAdd }) {
       )}
       {['percent_ftp','percent_lt1','percent_lt2'].includes(target.type) && (
         <div className="flex items-center gap-1">
-          <input type="number" value={target.value||90} onChange={e=>setTarget({...target,value:Number(e.target.value),override:undefined})}
+          <input type="number" step={1} min={1} max={300} value={target.value||90} onChange={e=>setTarget({...target,value:Number(e.target.value),override:undefined})}
             className="w-14 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none bg-white" placeholder="%"/>
           <span className="text-xs text-slate-400">%</span>
         </div>
       )}
       {target.type==='watts' && (
         <div className="flex items-center gap-1">
-          <input type="number" value={target.value||''} onChange={e=>setTarget({...target,value:Number(e.target.value)})}
+          <input type="number" step={1} min={1} value={target.value||''} onChange={e=>setTarget({...target,value:Number(e.target.value)})}
             className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none bg-white" placeholder="W"/>
           <span className="text-xs text-slate-400">W</span>
         </div>
@@ -801,6 +801,8 @@ function QuickIntervalAdder({ context, onAdd }) {
         <div className="flex items-center gap-1">
           <input
             type="number"
+            step={1}
+            min={1}
             value={hasOverride ? target.override : ''}
             placeholder={String(calcW)}
             onChange={e => {
@@ -846,7 +848,7 @@ function QuickIntervalAdder({ context, onAdd }) {
       </div>
       <div className="flex items-center gap-2">
         <span className="text-xs text-slate-600 font-medium w-16 shrink-0">Repeat</span>
-        <input type="number" min={1} max={99} value={reps} onChange={e=>setReps(Math.max(1,Number(e.target.value)))}
+        <input type="number" min={1} max={99} step={1} value={reps} onChange={e=>setReps(Math.max(1,Number(e.target.value)))}
           className="w-14 text-xs text-center border border-violet-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400 bg-white"/>
         <span className="text-xs text-slate-400">x times</span>
       </div>
