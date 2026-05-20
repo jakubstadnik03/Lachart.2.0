@@ -700,15 +700,17 @@ function WorkoutSummary({ steps, context }) {
 
   const stats = useMemo(() => {
     const exp = expandSteps(steps);
-    let totalSecs = 0, tssSum = 0, workSecs = 0, belowLt1 = 0, lt1Zone = 0, lt2Zone = 0;
+    let totalSecs = 0, tssSum = 0, workSecs = 0, belowLt1 = 0, lt1Zone = 0, lt2Zone = 0, wattsSec = 0;
     exp.forEach(s => {
       const dur = s.durationSeconds || 0; totalSecs += dur;
       const w   = resolveTargetWatts(s.powerTarget, context);
       tssSum   += (dur / 3600) * (w / (ftp||250)) ** 2 * 100;
+      wattsSec += w * dur;
       if (s.stepType === 'work') workSecs += dur;
       if (w >= lt2) lt2Zone += dur; else if (w >= lt1) lt1Zone += dur; else belowLt1 += dur;
     });
-    return { totalSecs, tss: Math.round(tssSum), workSecs, belowLt1, lt1Zone, lt2Zone };
+    const avgPower = totalSecs > 0 ? Math.round(wattsSec / totalSecs) : null;
+    return { totalSecs, tss: Math.round(tssSum), workSecs, belowLt1, lt1Zone, lt2Zone, avgPower };
   }, [steps, ftp, lt1, lt2]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!stats.totalSecs) return null;
@@ -716,8 +718,13 @@ function WorkoutSummary({ steps, context }) {
 
   return (
     <div className="mt-3 pt-3 border-t border-slate-100">
-      <div className="grid grid-cols-3 gap-2 text-center mb-2">
-        {[['Duration', fmtShort(stats.totalSecs)], ['Est. TSS', `~${stats.tss}`], ['Work time', fmtShort(stats.workSecs)]].map(([label, val]) => (
+      <div className="grid grid-cols-4 gap-2 text-center mb-2">
+        {[
+          ['Duration',  fmtShort(stats.totalSecs)],
+          ['Est. TSS',  `~${stats.tss}`],
+          ['Work time', fmtShort(stats.workSecs)],
+          ['Avg power', stats.avgPower ? `~${stats.avgPower} W` : '—'],
+        ].map(([label, val]) => (
           <div key={label}>
             <div className="text-[9px] text-slate-400 uppercase tracking-wide">{label}</div>
             <div className="text-sm font-bold text-slate-700">{val}</div>
