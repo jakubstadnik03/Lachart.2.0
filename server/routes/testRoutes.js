@@ -518,4 +518,210 @@ router.delete("/:id", verifyToken, async (req, res) => {
     }
 });
 
+/**
+ * GET /api/test/:athleteId/training-context?testDate=YYYY-MM-DD&days=28
+ *
+ * Aggregates the athlete's training load in the N days BEFORE a given
+ * lactate test date. Used by the test detail page to show context for
+ * what the athlete actually did in the weeks leading up to the test —
+ * the missing piece sport scientists (e.g. test centres) need to
+ * interpret threshold drift between consecutive tests.
+ *
+ * Returns:
+ *   {
+ *     window: { from, to, days },
+ *     totals: { sessions, hours, distanceKm, tss, tssHr, lactateSessions, races },
+ *     daily:  [{ date, tss, hours }],   // for CTL/ATL sparkline
+ *     ctl:    [{ date, value }],        // 42-day exponential rolling
+ *     atl:    [{ date, value }],        // 7-day exponential rolling
+ *     ctlNow, atlNow, tsbNow,           // values at the test date
+ *   }
+ */
+router.get('/:athleteId/training-context', verifyToken, async (req, res) => {
+  try {
+    const { athleteId } = req.params;
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+
+    // Auth: caller can read their own context, or a coach can read a
+    // linked athlete's context. Mirror the existing /test/list/:athleteId
+    // permission rule rather than inventing a new one.
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+    let isOwnerOrAuthorised = String(requester._id) === String(athleteId);
+    if (!isOwnerOrAuthorised && isCoachLike) {
+      const athlete = await User.findById(athleteId).select('coaches').lean();
+      if (athlete && Array.isArray(athlete.coaches) &&
+          athlete.coaches.some((c) => String(c) === String(requester._id))) {
+        isOwnerOrAuthorised = true;
+      } else if (role === 'admin') {
+        isOwnerOrAuthorised = true;
+      }
+    }
+    if (!isOwnerOrAuthorised) {
+      return res.status(403).json({ error: 'Not authorised' });
+    }
+
+    const days = Math.max(7, Math.min(90, Number(req.query.days) || 28));
+    const testDateStr = String(req.query.testDate || '');
+    const testDate = testDateStr ? new Date(testDateStr) : new Date();
+    if (!Number.isFinite(testDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid testDate' });
+    }
+    const fromDate = new Date(testDate.getTime() - days * 24 * 60 * 60 * 1000);
+    // We pull a 70-day window so CTL (42-day chronic load) has enough
+    // history to be meaningful at the start of the displayed range.
+    const ctlLookback = 70;
+    const ctlFromDate = new Date(testDate.getTime() - (days + ctlLookback) * 24 * 60 * 60 * 1000);
+
+    // Pull from all three activity sources in parallel. Each is filtered
+    // to the athlete and the date window. We deliberately accept a small
+    // amount of over-count between Strava+FIT (when an activity exists in
+    // both) — averaging them isn't worth the complexity for this widget.
+    const StravaActivity = require('../models/StravaActivity');
+    const FitTraining = require('../models/fitTraining');
+    const Training = require('../models/training');
+
+    const [stravaActs, fitActs, trainingActs, athleteProfile] = await Promise.all([
+      StravaActivity.find({
+        userId: athleteId,
+        startDate: { $gte: ctlFromDate, $lte: testDate },
+      }).select('startDate elapsedTime movingTime distance sport averagePower averageHeartRate weightedAveragePower category raw').lean(),
+      FitTraining.find({
+        athleteId: athleteId,
+        startTime: { $gte: ctlFromDate, $lte: testDate },
+      }).select('startTime totalElapsedTime totalTimerTime totalDistance sport avgPower avgHeartRate normalizedPower trainingStressScore category').lean(),
+      Training.find({
+        athleteId: String(athleteId),
+        date: { $gte: ctlFromDate, $lte: testDate },
+      }).select('date duration distance sport title results').lean(),
+      User.findById(athleteId).select('powerZones runningZones maxHr restingHr ftp').lean(),
+    ]);
+
+    const ftp = athleteProfile?.powerZones?.cycling?.lt2 || athleteProfile?.powerZones?.cycling?.ftp || athleteProfile?.ftp || 0;
+    const thresholdPace = athleteProfile?.runningZones?.lt2 || 0;
+    const maxHr = athleteProfile?.maxHr || athleteProfile?.maxHeartRate || 0;
+    const restHr = athleteProfile?.restingHr || 60;
+
+    // Normalize each source into a common shape: { date, duration, distance, sport, tss, isRace, isLactate }.
+    const items = [];
+
+    for (const a of stravaActs) {
+      const date = a.startDate ? new Date(a.startDate) : null;
+      if (!date) continue;
+      const sport = String(a.sport || '').toLowerCase();
+      const dur = Number(a.elapsedTime || a.movingTime || 0);
+      const dist = Number(a.distance || 0);
+      const np = Number(a.weightedAveragePower || a.averagePower || 0);
+      const avgHr = Number(a.averageHeartRate || 0);
+      let tss = 0;
+      if ((sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) && np > 0 && ftp > 0) {
+        tss = (dur * np * np) / (ftp * ftp * 3600) * 100;
+      } else if (avgHr > 0 && maxHr > restHr) {
+        const hrr = Math.max(0, (avgHr - restHr) / (maxHr - restHr));
+        tss = (dur / 3600) * hrr * hrr * 100;
+      }
+      const name = String(a.raw?.name || '').toLowerCase();
+      const isRace = a.raw?.workout_type === 1 || name.includes('race') || name.includes('závod');
+      items.push({ date, duration: dur, distance: dist, sport, tss, isRace, isLactate: false });
+    }
+
+    for (const a of fitActs) {
+      const date = a.startTime ? new Date(a.startTime) : null;
+      if (!date) continue;
+      const sport = String(a.sport || '').toLowerCase();
+      const dur = Number(a.totalElapsedTime || a.totalTimerTime || 0);
+      const dist = Number(a.totalDistance || 0);
+      let tss = Number(a.trainingStressScore || 0);
+      if (tss === 0) {
+        const np = Number(a.normalizedPower || a.avgPower || 0);
+        const avgHr = Number(a.avgHeartRate || 0);
+        if ((sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) && np > 0 && ftp > 0) {
+          tss = (dur * np * np) / (ftp * ftp * 3600) * 100;
+        } else if (avgHr > 0 && maxHr > restHr) {
+          const hrr = Math.max(0, (avgHr - restHr) / (maxHr - restHr));
+          tss = (dur / 3600) * hrr * hrr * 100;
+        }
+      }
+      items.push({ date, duration: dur, distance: dist, sport, tss, isRace: false, isLactate: false });
+    }
+
+    for (const t of trainingActs) {
+      const date = t.date ? new Date(t.date) : null;
+      if (!date) continue;
+      const dur = Number(t.duration || 0);
+      const dist = Number(t.distance || 0);
+      const sport = String(t.sport || '').toLowerCase();
+      // Manual training: usually has lactate measurements in its results
+      const hasLactate = Array.isArray(t.results) && t.results.some(r => Number(r?.lactate) > 0);
+      items.push({ date, duration: dur, distance: dist, sport, tss: 0, isRace: false, isLactate: hasLactate });
+    }
+
+    // Bucket per day for the sparkline.
+    const bucketKey = (d) => d.toISOString().slice(0, 10);
+    const daysMap = new Map();
+    for (const it of items) {
+      const k = bucketKey(it.date);
+      if (!daysMap.has(k)) daysMap.set(k, { date: k, tss: 0, hours: 0 });
+      const bucket = daysMap.get(k);
+      bucket.tss += it.tss || 0;
+      bucket.hours += (it.duration || 0) / 3600;
+    }
+
+    // Fill missing days so the sparkline has a uniform x-axis.
+    const dayList = [];
+    for (let d = new Date(ctlFromDate); d <= testDate; d.setUTCDate(d.getUTCDate() + 1)) {
+      const k = d.toISOString().slice(0, 10);
+      dayList.push(daysMap.get(k) || { date: k, tss: 0, hours: 0 });
+    }
+
+    // CTL (42-day exponentially-weighted) + ATL (7-day) on TSS.
+    const ctl = [];
+    const atl = [];
+    const tauC = 42;
+    const tauA = 7;
+    let ctlV = 0, atlV = 0;
+    for (const d of dayList) {
+      ctlV = ctlV + (d.tss - ctlV) * (1 - Math.exp(-1 / tauC));
+      atlV = atlV + (d.tss - atlV) * (1 - Math.exp(-1 / tauA));
+      ctl.push({ date: d.date, value: Number(ctlV.toFixed(1)) });
+      atl.push({ date: d.date, value: Number(atlV.toFixed(1)) });
+    }
+    const ctlNow = ctl[ctl.length - 1]?.value || 0;
+    const atlNow = atl[atl.length - 1]?.value || 0;
+    const tsbNow = Number((ctlNow - atlNow).toFixed(1));
+
+    // Totals for the SHORTER (display) window only — typically last 28 days.
+    const displayItems = items.filter(it => it.date >= fromDate && it.date <= testDate);
+    const displayDays = dayList.filter(d => d.date >= bucketKey(fromDate));
+    const totals = {
+      sessions: displayItems.length,
+      hours: Number(displayDays.reduce((s, d) => s + d.hours, 0).toFixed(1)),
+      distanceKm: Number((displayItems.reduce((s, it) => s + (it.distance || 0), 0) / 1000).toFixed(1)),
+      tss: Math.round(displayDays.reduce((s, d) => s + d.tss, 0)),
+      lactateSessions: displayItems.filter(it => it.isLactate).length,
+      races: displayItems.filter(it => it.isRace).length,
+    };
+
+    res.json({
+      window: {
+        from: fromDate.toISOString().slice(0, 10),
+        to: testDate.toISOString().slice(0, 10),
+        days,
+      },
+      totals,
+      daily: displayDays,
+      ctl: ctl.filter(c => c.date >= bucketKey(fromDate)),
+      atl: atl.filter(a => a.date >= bucketKey(fromDate)),
+      ctlNow,
+      atlNow,
+      tsbNow,
+    });
+  } catch (err) {
+    console.error('[training-context] error:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to compute training context' });
+  }
+});
+
 module.exports = router;

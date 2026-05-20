@@ -4,6 +4,8 @@ import { Line } from 'react-chartjs-2';
 import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
 import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
+import ThresholdMethodPicker from './ThresholdMethodPicker';
+import PreTestTrainingContext from './PreTestTrainingContext';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -2905,6 +2907,59 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             )}
           </div>
         </div>
+
+        {/* Multi-method threshold picker — shows every LT1/LT2 candidate
+            LaChart computes internally, with radio-button to pin a specific
+            method (writes through the same thresholdOverrides mechanism
+            the manual panel below uses). */}
+        {!demoMode && (
+          <div className="mt-4">
+            <ThresholdMethodPicker
+              mockData={mockData}
+              ensembleLT1={thresholds?.['LTP1'] ?? null}
+              ensembleLT2={thresholds?.['LTP2'] ?? null}
+              currentOverride={ltOverrides}
+              onPinMethod={async ({ LTP1, LTP2, LTP1_lactate, LTP2_lactate }) => {
+                const testId = mockData?._id;
+                if (!testId) return;
+                const overrides = { LTP1, LTP2, LTP1_lactate, LTP2_lactate };
+                try {
+                  setSavingLtOverride(true);
+                  await api.put(`/test/${testId}`, { thresholdOverrides: overrides });
+                  setLtOverrides(overrides);
+                  setLtEditValues({
+                    LTP1: LTP1 != null ? String(Math.round(LTP1)) : '',
+                    LTP2: LTP2 != null ? String(Math.round(LTP2)) : '',
+                  });
+                  setLtEditLactates({
+                    LTP1: LTP1_lactate != null ? LTP1_lactate.toFixed(2) : '',
+                    LTP2: LTP2_lactate != null ? LTP2_lactate.toFixed(2) : '',
+                  });
+                  setLtOverrideStatus({ type: 'success', msg: 'Pinned to method' });
+                  setTimeout(() => setLtOverrideStatus(null), 3000);
+                } catch (e) {
+                  setLtOverrideStatus({ type: 'error', msg: e?.response?.data?.error || 'Save failed' });
+                } finally {
+                  setSavingLtOverride(false);
+                }
+              }}
+              onClearOverride={handleClearLtOverrides}
+              unitLabel={isPaceSport ? 'pace' : 'W'}
+            />
+          </div>
+        )}
+
+        {/* Pre-test training context — 28 days of training load leading up
+            to this test. Helps explain the curve in light of what the
+            athlete actually did before walking into the lab. */}
+        {!demoMode && (
+          <div className="mt-4">
+            <PreTestTrainingContext
+              athleteId={mockData?.athleteId || user?._id || user?.id}
+              testDate={mockData?.date}
+            />
+          </div>
+        )}
 
         {/* LT1/LT2 manual override panel */}
         {showLtOverridePanel && !demoMode && (() => {
