@@ -537,12 +537,19 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             // higher than lactate at rest — 5-7 mmol/L is normal blood
             // glucose vs. <4 mmol/L resting lactate. If we scale only by
             // lactate, the glucose line gets clipped above the lactate
-            // ceiling. Compute the max across both series.
-            const maxLactate = Math.max(...lactateData.filter((v) => v != null), 0);
-            const maxGlucose = hasGlucoseData && showGlucose
-              ? Math.max(...glucoseData.filter((v) => v != null), 0)
+            // ceiling. Compute the max across both series — and clamp to a
+            // sensible floor of 8 mmol/L whenever glucose is visible, so
+            // even an unusually low test set still leaves room for the
+            // glucose line without clipping.
+            const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
+            const maxLactate = Math.max(0, ...lactateData.filter(isFiniteNum));
+            const glucoseVisible = hasGlucoseData && showGlucose;
+            const maxGlucose = glucoseVisible
+              ? Math.max(0, ...glucoseData.filter(isFiniteNum))
               : 0;
-            return Math.ceil(Math.max(maxLactate, maxGlucose) + 1);
+            const combinedMax = Math.max(maxLactate, maxGlucose);
+            const floor = glucoseVisible ? 8 : 0;
+            return Math.max(floor, Math.ceil(combinedMax + 1));
           })(),
           ticks: { display: true, font: { size: isMobile ? 9 : 11 } },
           position: "left",

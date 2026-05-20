@@ -176,6 +176,105 @@ function makeSx(xMin, xMax, padLeft, cw, isPace) {
   };
 }
 
+/**
+ * Cubic-polynomial (degree 3) fit on log(lactate) — same shape the interactive
+ * LactateCurveCalculator chart uses. Returns a predictor function f(x) or null
+ * when we don't have enough distinct data. Pure JS Gaussian elimination — no
+ * mathjs dep, so the PDF bundle stays lean.
+ *
+ * Why log space: lactate curves are exponential, so fitting on log(la) gives
+ * a smoother shape and avoids the U-shape overshoot a raw cubic produces near
+ * the endpoints.
+ */
+function cubicFitLog(pts) {
+  if (!Array.isArray(pts) || pts.length < 4) return null;
+  const xs = pts.map(p => p.x);
+  const ys = pts.map(p => p.la);
+  if (new Set(xs).size < 4) return null;
+  const allPos = ys.every(y => y > 0);
+  const yfit = allPos ? ys.map(Math.log) : ys;
+
+  // Build normal-equation moments S_k = Σ x^k (k=0..6) and T_k = Σ y * x^k.
+  const S = new Array(7).fill(0);
+  const T = new Array(4).fill(0);
+  for (let i = 0; i < pts.length; i++) {
+    let xp = 1;
+    for (let k = 0; k <= 6; k++) {
+      S[k] += xp;
+      if (k <= 3) T[k] += yfit[i] * xp;
+      xp *= xs[i];
+    }
+  }
+  // Augmented 4x5 matrix.
+  const M = [
+    [S[0], S[1], S[2], S[3], T[0]],
+    [S[1], S[2], S[3], S[4], T[1]],
+    [S[2], S[3], S[4], S[5], T[2]],
+    [S[3], S[4], S[5], S[6], T[3]],
+  ];
+  // Gaussian elimination with partial pivoting.
+  for (let i = 0; i < 4; i++) {
+    let piv = i;
+    for (let r = i + 1; r < 4; r++) if (Math.abs(M[r][i]) > Math.abs(M[piv][i])) piv = r;
+    if (piv !== i) [M[i], M[piv]] = [M[piv], M[i]];
+    if (Math.abs(M[i][i]) < 1e-12) return null; // singular
+    for (let r = i + 1; r < 4; r++) {
+      const f = M[r][i] / M[i][i];
+      for (let c = i; c <= 4; c++) M[r][c] -= f * M[i][c];
+    }
+  }
+  // Back-substitution.
+  const b = new Array(4);
+  for (let i = 3; i >= 0; i--) {
+    let s = M[i][4];
+    for (let j = i + 1; j < 4; j++) s -= M[i][j] * b[j];
+    b[i] = s / M[i][i];
+  }
+  return (x) => {
+    const v = b[0] + b[1] * x + b[2] * x * x + b[3] * x * x * x;
+    return allPos ? Math.exp(v) : v;
+  };
+}
+
+/** Sample a smooth function across [xMin, xMax] and emit an SVG path string. */
+function sampledPath(fn, xMin, xMax, samples, sx, sy) {
+  if (!fn || xMin === xMax) return '';
+  const step = (xMax - xMin) / Math.max(1, samples);
+  let d = '';
+  for (let i = 0; i <= samples; i++) {
+    const x = xMin + i * step;
+    const y = fn(x);
+    if (!Number.isFinite(y)) continue;
+    const px = sx(x).toFixed(1);
+    const py = sy(Math.max(0, y)).toFixed(1);
+    d += d ? ` L ${px} ${py}` : `M ${px} ${py}`;
+  }
+  return d;
+}
+
+/** Build colored zone band specs from threshold keys.
+ *  Returns ordered list of { from, to, fill } in numerical x order. */
+function buildZoneBands(thresholds = {}, xMin, xMax) {
+  // The five-zone scheme matches what the interactive coach chart uses:
+  // Z1 recovery (below LTP1), Z2 aerobic (LTP1→IAT), Z3 tempo (IAT→LTP2),
+  // Z4 threshold (LTP2→OBLA 3.0), Z5 VO₂max (above OBLA 3.0).
+  const lt1  = numOrNull(thresholds.LTP1);
+  const iat  = numOrNull(thresholds.IAT);
+  const lt2  = numOrNull(thresholds.LTP2);
+  const ob30 = numOrNull(thresholds['OBLA 3.0']);
+  // Soft pastel fills — readable when printed, don't fight the data lines.
+  const palette = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2', '#ede9fe'];
+  const boundaries = [xMin, lt1, iat, lt2, ob30, xMax]
+    .filter((v, i, arr) => v != null && (i === 0 || v !== arr[i - 1]))
+    .sort((a, b) => a - b);
+  const bands = [];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    bands.push({ from: boundaries[i], to: boundaries[i + 1], fill: palette[Math.min(i, palette.length - 1)] });
+  }
+  return bands;
+}
+function numOrNull(v) { return Number.isFinite(Number(v)) ? Number(v) : null; }
+
 // ── Single-test Lactate Curve SVG ──────────────────────────────────────────────
 function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
   const isPace = sport !== 'bike' && inputMode === 'pace';
@@ -203,8 +302,19 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
   const laPath = pts.map((p, i) => `${i===0?'M':'L'} ${sx(p.x).toFixed(1)} ${sla(p.la).toFixed(1)}`).join(' ');
   const hrPath = hasHr ? hrPts.map((p, i) => `${i===0?'M':'L'} ${sx(p.x).toFixed(1)} ${shr(p.hr).toFixed(1)}`).join(' ') : '';
 
+  // Smooth polynomial-3 fit (log-space) — the same curve coaches see in the
+  // interactive LactateCurveCalculator. Renders as the primary curve;
+  // the raw zigzag connecting raw points is dropped because the smooth curve
+  // is what readers should focus on.
+  const polyFn = cubicFitLog(pts);
+  const polyPath = polyFn ? sampledPath(polyFn, xMin, xMax, 80, sx, sla) : '';
+
   const lt1 = thresholds?.['LTP1'];
   const lt2 = thresholds?.['LTP2'];
+
+  // Colored zone bands behind the curve. Same five-zone palette as the
+  // in-app chart so the printed report matches what the athlete sees.
+  const zoneBands = buildZoneBands(thresholds || {}, xMin, xMax);
 
   // Up to 6 X-axis ticks
   const xTicks = [...new Set([xMin, ...pts.map(p => p.x), xMax])];
@@ -212,6 +322,23 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
 
   return (
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+      {/* Zone bands — painted FIRST so they sit behind grid + curve. The Rect
+          spans the full plotting height; x/width are derived via sx() so the
+          band orientation works in both normal and reversed (pace) axes. */}
+      {zoneBands.map((b, i) => {
+        const a = sx(b.from);
+        const c = sx(b.to);
+        const x = Math.min(a, c);
+        const width = Math.abs(c - a);
+        if (width < 0.5) return null;
+        return (
+          <Rect key={i}
+            x={x.toFixed(1)} y={PAD.top.toFixed(1)}
+            width={width.toFixed(1)} height={ch.toFixed(1)}
+            fill={b.fill} opacity={0.55} />
+        );
+      })}
+
       {/* Grid */}
       {laGridLines.map(la => (
         <Line key={la}
@@ -247,8 +374,13 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
       {/* HR curve */}
       {hasHr && <Path d={hrPath} stroke={C.secondary} strokeWidth={1.5} fill="none" strokeLinejoin="round" />}
 
-      {/* Lactate curve */}
-      <Path d={laPath} stroke={C.red} strokeWidth={2} fill="none" strokeLinejoin="round" />
+      {/* Lactate curve — prefer the polynomial-3 smooth fit when we have
+          enough data; fall back to the raw zigzag (≤3 stages or singular fit)
+          so a sparse test still renders something useful. */}
+      {polyPath
+        ? <Path d={polyPath} stroke={C.red} strokeWidth={2} fill="none" strokeLinejoin="round" />
+        : <Path d={laPath}   stroke={C.red} strokeWidth={2} fill="none" strokeLinejoin="round" strokeDasharray="3,2" />
+      }
 
       {/* Data points */}
       {pts.map((p, i) => (
@@ -605,7 +737,15 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 ['Name',   athleteName],
                 ['Email',  athlete?.email || '—'],
                 ['Sport',  sportLabel(athlete?.sport || sport)],
-                ['Weight', athlete?.weight ? formatWeight(athlete.weight, getUserUnits(athlete).weight).formatted : '—'],
+                // Prefer the weight captured at test time (testers commonly weigh in
+                // before each lab session) and fall back to the athlete's profile.
+                // Height isn't recorded per-test, so it comes from the profile only.
+                ['Weight',
+                  (test?.weight != null && Number.isFinite(Number(test.weight)) && Number(test.weight) > 0)
+                    ? formatWeight(Number(test.weight), getUserUnits(athlete).weight).formatted
+                    : (athlete?.weight
+                        ? formatWeight(athlete.weight, getUserUnits(athlete).weight).formatted
+                        : '—')],
                 ['Height', athlete?.height ? formatHeight(athlete.height, resolveDistanceUnitSystem(athlete)) : '—'],
               ].map(([k,v]) => (
                 <View key={k} style={s.cardRow}>
@@ -660,10 +800,29 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             </View>
           </View>
 
-          {results.length >= 2
-            ? <LattateCurveSvg results={results} sport={sport} inputMode={inputMode} thresholds={thresholds} />
-            : <Text style={{ fontSize: 8.5, color: C.gray }}>Not enough data points to render curve.</Text>
-          }
+          {/* Zone band legend — explains what the colored backgrounds in the
+              chart represent. Mirrors the five-zone palette in buildZoneBands. */}
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+            {[
+              { fill: '#dcfce7', label: 'Recovery (<LT1)' },
+              { fill: '#dbeafe', label: 'Aerobic (LT1→IAT)' },
+              { fill: '#fef3c7', label: 'Tempo (IAT→LT2)' },
+              { fill: '#fee2e2', label: 'Threshold (LT2→3.0)' },
+              { fill: '#ede9fe', label: 'VO₂max (>3.0)' },
+            ].map((z) => (
+              <View key={z.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ width: 10, height: 8, backgroundColor: z.fill, borderRadius: 1 }} />
+                <Text style={{ fontSize: 6.5, color: C.gray }}>{z.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View wrap={false}>
+            {results.length >= 2
+              ? <LattateCurveSvg results={results} sport={sport} inputMode={inputMode} thresholds={thresholds} />
+              : <Text style={{ fontSize: 8.5, color: C.gray }}>Not enough data points to render curve.</Text>
+            }
+          </View>
 
           {/* Analysis paragraph */}
           <View wrap={false} style={{ marginTop: 10, padding: 12, backgroundColor: C.lightGray, borderRadius: 6 }}>
@@ -692,7 +851,11 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               ))}
             </View>
             {results.map((r, i) => (
-              <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+              // wrap={false} keeps each stage row on a single page — without it
+              // @react-pdf/renderer was splitting rows at the page break, which
+              // left a half-rendered red lactate cell ("červený cuclík") on
+              // page 2.
+              <View key={i} wrap={false} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
                 <Text style={s.tableCellB}>{r.interval ?? i + 1}</Text>
                 <Text style={s.tableCell}>{fmtIntensity(r.power, sport, inputMode)}</Text>
                 <Text style={s.tableCell}>{r.heartRate || '—'}</Text>
