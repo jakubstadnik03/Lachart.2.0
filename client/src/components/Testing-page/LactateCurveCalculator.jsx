@@ -3243,22 +3243,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </>
           )}
 
-          {/* Test-to-test comparison — overlay LT1/LT2 curves of up to 2
-              previous same-sport tests with this one, plus explicit Δ
-              table for power / lactate / HR at each threshold. Lives
-              under the lactate curve so the visual overlay sits right
-              next to the primary chart it's compared against. Hidden in
-              demo mode. */}
-          {!demoMode && (
-            <div className="mt-4">
-              <TestComparisonPanel
-                currentTest={mockDataWithOverrides}
-                allPrevTests={allPrevTests}
-                initialSelected={selectedCompareIds.slice(0, 2)}
-              />
-            </div>
-          )}
-
           {thresholds?.testAnalysis && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:p-4 text-sm space-y-3">
               <div className="font-semibold text-indigo-900 text-base">Test quality &amp; protocol analysis</div>
@@ -3354,8 +3338,24 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </div>
           )}
         </div>
+
+        {/* Test-to-test comparison — overlay LT1/LT2 curves of up to 2
+            previous same-sport tests with this one, plus explicit Δ
+            table for power / lactate / HR at each threshold. Sits BELOW
+            the chart + DataTable row (outside the flex container) so it
+            takes the full width and doesn't squeeze the side-by-side
+            layout above it. Hidden in demo mode. */}
+        {!demoMode && (
+          <div className="mt-4">
+            <TestComparisonPanel
+              currentTest={mockDataWithOverrides}
+              allPrevTests={allPrevTests}
+              initialSelected={selectedCompareIds.slice(0, 2)}
+            />
+          </div>
+        )}
       </div>
-      <TrainingGlossary 
+      <TrainingGlossary
         isOpen={showGlossary} 
         onClose={() => setShowGlossary(false)} 
         initialTerm="Lactate Curve"
