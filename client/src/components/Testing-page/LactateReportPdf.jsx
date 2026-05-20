@@ -272,8 +272,12 @@ function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
   // palette[0]=Recovery(green) … palette[4]=VO₂max(purple).
   const palette = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2', '#ede9fe'];
   const boundaries = [xMin, lt1, iat, lt2, ob30, xMax]
-    .filter((v, i, arr) => v != null && (i === 0 || v !== arr[i - 1]))
-    .sort((a, b) => a - b);
+    .filter(v => v != null)
+    // Clip thresholds to the domain so bands never render outside the chart.
+    .map(v => Math.max(xMin, Math.min(xMax, v)))
+    .sort((a, b) => a - b)
+    // Deduplicate AFTER sort (pre-sort dedup missed out-of-order duplicates).
+    .filter((v, i, arr) => i === 0 || v !== arr[i - 1]);
   const numBands = boundaries.length - 1;
   const bands = [];
   for (let i = 0; i < numBands; i++) {
@@ -313,7 +317,15 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
   const hrMin = hasHr ? Math.min(...hrPts.map(p => p.hr)) - 10 : 0;
   const hrMax = hasHr ? Math.max(...hrPts.map(p => p.hr)) + 10 : 200;
 
-  const sx  = makeSx(xMin, xMax, PAD.left, cw, isPace);
+  // Add a small margin (~5 % of the data range) on each side so the first and
+  // last measurement points are not flush against the axis edges — mirrors
+  // the default padding Chart.js applies in the interactive chart.
+  const xRange   = xMax - xMin || 1;
+  const xPad     = xRange * 0.05;
+  const domainMin = xMin - xPad;
+  const domainMax = xMax + xPad;
+
+  const sx  = makeSx(domainMin, domainMax, PAD.left, cw, isPace);
   const sla = (la) => PAD.top + ch - (la / laMax) * ch;
   const shr = (hr) => PAD.top + ch - ((hr - hrMin) / (hrMax - hrMin || 1)) * ch;
 
@@ -332,8 +344,10 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
 
   // Colored zone bands behind the curve. Same five-zone palette as the
   // in-app chart so the printed report matches what the athlete sees.
+  // Use the expanded domain so bands fill all the way to the chart edges
+  // (including the 5 % margin), and clip any threshold outside the domain.
   // isPace is forwarded so the palette is flipped for reversed axes.
-  const zoneBands = buildZoneBands(thresholds || {}, xMin, xMax, isPace);
+  const zoneBands = buildZoneBands(thresholds || {}, domainMin, domainMax, isPace);
 
   // Up to 6 X-axis ticks
   const xTicks = [...new Set([xMin, ...pts.map(p => p.x), xMax])];
