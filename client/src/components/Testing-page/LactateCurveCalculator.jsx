@@ -6,6 +6,7 @@ import { calculateZonesFromTest } from './zoneCalculator';
 import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
 import ThresholdMethodPicker from './ThresholdMethodPicker';
 import PreTestTrainingContext from './PreTestTrainingContext';
+import TestComparisonPanel from './TestComparisonPanel';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -2957,6 +2958,20 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             <PreTestTrainingContext
               athleteId={mockData?.athleteId || user?._id || user?.id}
               testDate={mockData?.date}
+            />
+          </div>
+        )}
+
+        {/* Test-to-test comparison — overlay LT1/LT2 curves of up to 2
+            previous same-sport tests with this one, plus explicit Δ
+            table for power / lactate / HR at each threshold. Hidden in
+            demo mode and when there are no previous tests on file. */}
+        {!demoMode && (
+          <div className="mt-4">
+            <TestComparisonPanel
+              currentTest={mockDataWithOverrides}
+              allPrevTests={allPrevTests}
+              initialSelected={selectedCompareIds.slice(0, 2)}
             />
           </div>
         )}
