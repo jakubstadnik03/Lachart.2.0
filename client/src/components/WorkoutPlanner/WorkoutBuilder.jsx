@@ -854,11 +854,20 @@ function QuickIntervalAdder({ context, onAdd }) {
       </div>
       <TargetRow label="Work" color="text-violet-600" dur={workDur} setDur={setWorkDur} target={workTarget} setTarget={setWorkTarget}/>
       <TargetRow label="Recovery" color="text-emerald-600" dur={recDur} setDur={setRecDur} target={recTarget} setTarget={setRecTarget}/>
-      {wSecs > 0 && (
-        <div className="text-[10px] text-violet-500 bg-violet-50 rounded-lg px-2 py-1.5">
-          {reps} x ({fmtDuration(wSecs)} work{rSecs>0?` + ${fmtDuration(rSecs)} recovery`:''}) = <strong>{fmtShort(reps*(wSecs+rSecs))}</strong> total
-        </div>
-      )}
+      {wSecs > 0 && (() => {
+        const wW = resolveTargetWatts(workTarget, context);
+        const rW = resolveTargetWatts(recTarget, context);
+        const totalSecs = wSecs + (rSecs > 0 ? rSecs : 0);
+        const avgW = totalSecs > 0 ? Math.round((wW * wSecs + (rSecs > 0 ? rW * rSecs : 0)) / totalSecs) : null;
+        return (
+          <div className="text-[10px] text-violet-500 bg-violet-50 rounded-lg px-2 py-1.5 flex items-center gap-2 flex-wrap">
+            <span>{reps} x ({fmtDuration(wSecs)} work{rSecs>0?` + ${fmtDuration(rSecs)} recovery`:''}) = <strong>{fmtShort(reps*(wSecs+(rSecs||0)))}</strong> total</span>
+            {avgW != null && avgW > 0 && (
+              <span className="ml-auto text-violet-600 font-semibold">~{avgW} W avg</span>
+            )}
+          </div>
+        );
+      })()}
       <div className="flex gap-2 justify-end pt-0.5">
         <button onClick={()=>setOpen(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
         <button onClick={handleAdd} disabled={!wSecs||reps<1}
