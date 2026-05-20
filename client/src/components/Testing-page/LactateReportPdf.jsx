@@ -875,29 +875,33 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             ) : null}
           </View>
 
-          {/* Stage results table */}
-          <SectionHeader title="Stage Results" />
-          <View style={s.table}>
-            <View style={s.tableHead}>
-              {['Stage', isBike ? 'Power (W)' : 'Pace', 'HR (bpm)', 'Lactate (mmol/L)', 'RPE'].map(h => (
-                <Text key={h} style={s.tableHeadT}>{h}</Text>
+          {/* Stage results table — wrap={false} on the outer View keeps the
+              section header + every row on the same page. If the table is too
+              tall for the remaining space on page 1 the renderer moves the
+              entire block to page 2 as a unit rather than orphaning the last
+              few rows. Individual rows still carry wrap={false} as a belt-and-
+              suspenders guard for unusually long tests (>~15 stages) where the
+              table itself may need to span pages. */}
+          <View wrap={false}>
+            <SectionHeader title="Stage Results" />
+            <View style={s.table}>
+              <View style={s.tableHead}>
+                {['Stage', isBike ? 'Power (W)' : 'Pace', 'HR (bpm)', 'Lactate (mmol/L)', 'RPE'].map(h => (
+                  <Text key={h} style={s.tableHeadT}>{h}</Text>
+                ))}
+              </View>
+              {results.map((r, i) => (
+                <View key={i} wrap={false} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                  <Text style={s.tableCellB}>{r.interval ?? i + 1}</Text>
+                  <Text style={s.tableCell}>{fmtIntensity(r.power, sport, inputMode)}</Text>
+                  <Text style={s.tableCell}>{r.heartRate || '—'}</Text>
+                  <Text style={[s.tableCell, { color: Number(r.lactate) >= 4 ? C.red : C.dark }]}>
+                    {r.lactate != null ? Number(r.lactate).toFixed(2) : '—'}
+                  </Text>
+                  <Text style={s.tableCell}>{r.RPE || '—'}</Text>
+                </View>
               ))}
             </View>
-            {results.map((r, i) => (
-              // wrap={false} keeps each stage row on a single page — without it
-              // @react-pdf/renderer was splitting rows at the page break, which
-              // left a half-rendered red lactate cell ("červený cuclík") on
-              // page 2.
-              <View key={i} wrap={false} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
-                <Text style={s.tableCellB}>{r.interval ?? i + 1}</Text>
-                <Text style={s.tableCell}>{fmtIntensity(r.power, sport, inputMode)}</Text>
-                <Text style={s.tableCell}>{r.heartRate || '—'}</Text>
-                <Text style={[s.tableCell, { color: Number(r.lactate) >= 4 ? C.red : C.dark }]}>
-                  {r.lactate != null ? Number(r.lactate).toFixed(2) : '—'}
-                </Text>
-                <Text style={s.tableCell}>{r.RPE || '—'}</Text>
-              </View>
-            ))}
           </View>
         </View>
 
