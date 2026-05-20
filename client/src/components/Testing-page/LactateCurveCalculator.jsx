@@ -3163,8 +3163,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           <div
             className={showDataTable ? "flex-1 min-w-0" : "w-full"}
             style={{
-              height: isMobile ? 'clamp(320px, 68vw, 460px)' : 'clamp(260px, 40vw, 400px)',
-              minHeight: isMobile ? '300px' : '220px',
+              // Taller default per user request — old desktop max of 400 px
+              // was cramped on big monitors. Mobile bumped slightly so the
+              // curve detail isn't squashed when the right-side legend is hidden.
+              height: isMobile ? 'clamp(360px, 75vw, 540px)' : 'clamp(360px, 50vw, 600px)',
+              minHeight: isMobile ? '340px' : '360px',
             }}
           >
             {showHRViewPlaceholder ? (

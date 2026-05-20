@@ -253,11 +253,21 @@ export default function ThresholdMethodPicker({
         lt2MethodKey: 'ensemble',
         isDefault: true,
       },
+      // Pairings: each row picks one LT1 method + one LT2 method that are
+      // both classically-defined upper-/lower-bound thresholds. We
+      // deliberately do NOT pair Mader with Log-log or IAT here:
+      //   • Log-log (Beaver 1985) is conceptually an LT1-equivalent
+      //     marker — the inflection-in-log-space falls in the aerobic
+      //     region, not the high-intensity region.
+      //   • IAT in this codebase returns the measured stage with
+      //     maximum lactate slope, which for pace tests often sits
+      //     below LT1. The sanity-check below also drops any row whose
+      //     LT2 value isn't actually harder than its LT1 value.
       { key: 'mader-obla4',    label: 'Mader (Bsln + 1.0)  /  OBLA 4.0', lt1: lt1Candidates['Bsln + 1.0'], lt2: lt2Candidates['OBLA 4.0'], lt1MethodKey: 'baseline', lt2MethodKey: 'obla' },
-      { key: 'mader-loglog',   label: 'Mader (Bsln + 1.0)  /  Log-log',  lt1: lt1Candidates['Bsln + 1.0'], lt2: lt2Candidates['Log-log'],  lt1MethodKey: 'baseline', lt2MethodKey: 'loglog' },
-      { key: 'mader-iat',      label: 'Mader (Bsln + 1.0)  /  Dickhuth IAT (LT1 + 1.5)', lt1: lt1Candidates['Bsln + 1.0'], lt2: lt2Candidates['IAT'], lt1MethodKey: 'baseline', lt2MethodKey: 'iat' },
       { key: 'mader-obla35',   label: 'Mader (Bsln + 1.0)  /  OBLA 3.5', lt1: lt1Candidates['Bsln + 1.0'], lt2: lt2Candidates['OBLA 3.5'], lt1MethodKey: 'baseline', lt2MethodKey: 'obla' },
+      { key: 'mader-bsln15',   label: 'Mader (Bsln + 1.0)  /  Bsln + 1.5', lt1: lt1Candidates['Bsln + 1.0'], lt2: lt2Candidates['Bsln + 1.5'], lt1MethodKey: 'baseline', lt2MethodKey: 'baseline' },
       { key: 'obla2-obla4',    label: 'OBLA 2.0  /  OBLA 4.0',           lt1: lt1Candidates['OBLA 2.0'],   lt2: lt2Candidates['OBLA 4.0'], lt1MethodKey: 'obla',     lt2MethodKey: 'obla' },
+      { key: 'obla2-obla35',   label: 'OBLA 2.0  /  OBLA 3.5',           lt1: lt1Candidates['OBLA 2.0'],   lt2: lt2Candidates['OBLA 3.5'], lt1MethodKey: 'obla',     lt2MethodKey: 'obla' },
       { key: 'bsln05-bsln15',  label: 'Bsln + 0.5  /  Bsln + 1.5',       lt1: lt1Candidates['Bsln + 0.5'], lt2: lt2Candidates['Bsln + 1.5'], lt1MethodKey: 'baseline', lt2MethodKey: 'baseline' },
     ];
     return out;
@@ -267,8 +277,26 @@ export default function ThresholdMethodPicker({
   // (and so users learn the feature exists).
   if (!rows || rows.length === 0) return null;
 
-  // Filter rows where both halves are null — nothing to show.
-  const visibleRows = rows.filter((r) => r.lt1 || r.lt2);
+  // Sanity-check each row before showing it:
+  //   • Drop rows with neither half populated (nothing to display).
+  //   • Drop rows where LT2 isn't actually a higher intensity than LT1.
+  //     For bike that means LT2_watts > LT1_watts; for pace it means
+  //     LT2_seconds < LT1_seconds (lower pace = faster = harder).
+  //     This silently hides nonsensical pairings — e.g. "Mader / Log-log"
+  //     for a pace test where Log-log + IAT happen to land in the
+  //     LT1 region (Beaver-style breakpoint, not OBLA-style high-end
+  //     marker). Better to show fewer correct rows than confuse the user
+  //     with rows that say "LT2 = 4:00/km" when LT1 is already 3:53/km.
+  const lt2HigherThanLt1 = (row) => {
+    if (row.isDefault) return true; // always trust the ensemble
+    if (!row.lt1 || !row.lt2) return true; // single-side rows pass through
+    const margin = isPace ? 1 : 1; // 1 second / 1 watt tolerance
+    if (isPace) return row.lt2.power < row.lt1.power - margin; // lower seconds = harder
+    return row.lt2.power > row.lt1.power + margin;
+  };
+  const visibleRows = rows
+    .filter((r) => r.lt1 || r.lt2)
+    .filter(lt2HigherThanLt1);
   if (visibleRows.length === 0) return null;
 
   const isPinned = currentOverride && (currentOverride.LTP1 != null || currentOverride.LTP2 != null);
