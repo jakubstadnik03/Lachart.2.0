@@ -2912,14 +2912,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         {/* Multi-method threshold picker — shows every LT1/LT2 candidate
             LaChart computes internally, with radio-button to pin a specific
             method (writes through the same thresholdOverrides mechanism
-            the manual panel below uses). */}
+            the manual panel below uses). Collapsed by default to keep
+            the test detail tidy; tap to expand and audit individual
+            methods. */}
         {!demoMode && (
           <div className="mt-4">
             <ThresholdMethodPicker
               mockData={mockData}
-              ensembleLT1={thresholds?.['LTP1'] ?? null}
-              ensembleLT2={thresholds?.['LTP2'] ?? null}
+              thresholds={thresholds}
               currentOverride={ltOverrides}
+              defaultExpanded={false}
               onPinMethod={async ({ LTP1, LTP2, LTP1_lactate, LTP2_lactate }) => {
                 const testId = mockData?._id;
                 if (!testId) return;
@@ -2945,7 +2947,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 }
               }}
               onClearOverride={handleClearLtOverrides}
-              unitLabel={isPaceSport ? 'pace' : 'W'}
             />
           </div>
         )}

@@ -152,9 +152,14 @@ export default function PreTestTrainingContext({ athleteId, testDate, days = 28 
       .then((res) => { if (!cancelled) setCtx(res.data); })
       .catch((e) => {
         if (cancelled) return;
-        if (e?.response?.status === 403) {
-          // Not authorised — coach trying to read someone else's data we
-          // don't have permission for. Hide the widget silently.
+        const status = e?.response?.status;
+        if (status === 403) {
+          // Not authorised — hide silently.
+          setError('hidden');
+        } else if (status === 404) {
+          // Endpoint not deployed yet (server is on an older build).
+          // Hide silently rather than showing a red banner — it'll just
+          // start working once the backend redeploys.
           setError('hidden');
         } else {
           setError(e?.response?.data?.error || e?.message || 'Failed to load');
