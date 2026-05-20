@@ -32,6 +32,19 @@ function fmtIntensity(v, isPace) {
   return `${Math.round(n)} W`;
 }
 
+// Short human-readable label for the anchor source. Used in the
+// collapsed header summary AND above the protocol table.
+function describeAnchor(source) {
+  return {
+    'measured':    'measured LT2 from this test',
+    'prior-test':  'previous test',
+    'best-20min':  'best 20-min effort in last 30 days',
+    'profile-ftp': 'FTP in athlete profile',
+    'best-10k':    'best 10 km in last 30 days',
+    'none':        'no usable data',
+  }[source] || source || 'unknown';
+}
+
 function ConfidencePill({ confidence }) {
   if (!confidence || confidence === 'none') return null;
   const map = {
@@ -225,7 +238,16 @@ export default function AiTestCoach({
   if (error === 'hidden' || !testId) return null;
 
   const isPace = data?.isPace ?? (String(sport || '').toLowerCase().includes('run') || String(sport || '').toLowerCase().includes('swim'));
-  const headline = data?.narrative?.headline || (loading ? 'Asking the AI coach…' : 'AI test coach');
+  // Short headline for the collapsed view. AI narrative is opt-in and
+  // off by default — when there's no headline from the LLM, we summarise
+  // the anchor and predicted LT2 directly.
+  const lt2Predicted = data?.protocol?.summary?.lt2Estimate;
+  const fallbackHeadline = lt2Predicted
+    ? `Suggested protocol from ${describeAnchor(data?.anchor?.source)}: LT2 ≈ ${fmtIntensity(lt2Predicted, isPace)}`
+    : data?.anchor?.source === 'none'
+      ? 'No training data yet — connect Strava to get a protocol'
+      : 'Test coach';
+  const headline = data?.narrative?.headline || (loading ? 'Crunching training data…' : fallbackHeadline);
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -237,13 +259,8 @@ export default function AiTestCoach({
       >
         <div className="min-w-0 flex-1">
           <div className="text-sm font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-            <span>AI test coach</span>
+            <span>Test coach</span>
             {!loading && data?.anchor && <ConfidencePill confidence={data.anchor.confidence} />}
-            {data?.narrativeError && (
-              <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                AI unavailable — protocol only
-              </span>
-            )}
           </div>
           <div className="text-[11px] text-gray-500 mt-0.5 leading-snug line-clamp-1">
             {loading ? 'Crunching training data…' : headline}
@@ -270,7 +287,9 @@ export default function AiTestCoach({
 
           {!loading && !error && data && (
             <>
-              {/* 1. AI narrative */}
+              {/* 1. Narrative block — only rendered when the LLM call
+                  actually produced text. Off by default (AI is opt-in
+                  via the AI_COACH_ENABLE_NARRATIVE server env). */}
               {data.narrative && (
                 <div className="mt-3 bg-violet-50 border border-violet-200 rounded-xl p-3">
                   {data.narrative.headline && (
@@ -284,11 +303,6 @@ export default function AiTestCoach({
                       → {data.narrative.recommendation}
                     </p>
                   )}
-                </div>
-              )}
-              {!data.narrative && data.narrativeError && (
-                <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  AI narrative skipped: {data.narrativeError}. Protocol + curve below are still computed locally.
                 </div>
               )}
 
@@ -337,17 +351,7 @@ export default function AiTestCoach({
                     <div>
                       <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Suggested test protocol</div>
                       <div className="text-[11px] text-gray-600 mt-0.5">
-                        Anchor:{' '}
-                        <span className="font-semibold">{
-                          {
-                            'measured':    'measured LT2 from this test',
-                            'prior-test':  'previous test LT2',
-                            'best-20min':  'best 20-min effort in last 30 days',
-                            'profile-ftp': 'FTP from athlete profile',
-                            'best-10k':    'best 10 km in last 30 days',
-                            'none':        'no usable data',
-                          }[data.anchor?.source] || data.anchor?.source
-                        }</span>
+                        Anchor: <span className="font-semibold">{describeAnchor(data.anchor?.source)}</span>
                         {data.anchor?.value && (
                           <> → LT2 ≈ <span className="font-bold tabular-nums">{fmtIntensity(data.anchor.value, isPace)}</span></>
                         )}
@@ -394,8 +398,8 @@ export default function AiTestCoach({
 
               <div className="mt-3 text-[10px] text-gray-400 leading-relaxed">
                 Protocol anchored on a single training data point (priority: measured &gt; prior test &gt; best
-                20-min &gt; profile FTP). Lactate curve is a piecewise model (flat &lt; LT1, quadratic LT1→LT2,
-                exponential &gt; LT2). AI narrative generated by Claude from a 30-day training summary.
+                20-min &gt; profile FTP). Predicted lactate curve uses a piecewise model (flat &lt; LT1,
+                quadratic LT1→LT2, exponential &gt; LT2).
               </div>
             </>
           )}

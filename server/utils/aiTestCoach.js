@@ -208,8 +208,18 @@ function summariseTraining(activities, userProfile) {
  * outputs in UI panels just get skimmed and ignored.
  */
 async function generateNarrative({ sport, anchor, protocol, training, measured, priorTest, language = 'en' }) {
+  // Two ways to turn the LLM off:
+  //   1. AI_COACH_ENABLE_NARRATIVE != 'true'  → explicitly disabled
+  //   2. ANTHROPIC_API_KEY missing            → no key configured
+  //
+  // In both cases we return { narrative: null, error: null } so the UI
+  // simply doesn't render the narrative block — no scary banner about
+  // "AI unavailable", because the AI side was never meant to run.
+  if (process.env.AI_COACH_ENABLE_NARRATIVE !== 'true') {
+    return { narrative: null, error: null };
+  }
   if (!ANTHROPIC_API_KEY) {
-    return { narrative: null, error: 'ANTHROPIC_API_KEY missing on server' };
+    return { narrative: null, error: null };
   }
 
   const measuredBlock = measured?.lt1 && measured?.lt2 ? `
