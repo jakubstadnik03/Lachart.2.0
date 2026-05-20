@@ -7,6 +7,7 @@ import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
 import ThresholdMethodPicker from './ThresholdMethodPicker';
 import PreTestTrainingContext from './PreTestTrainingContext';
 import TestComparisonPanel from './TestComparisonPanel';
+import PredictedLactateCurve from './PredictedLactateCurve';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -2959,6 +2960,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             <PreTestTrainingContext
               athleteId={mockData?.athleteId || user?._id || user?.id}
               testDate={mockData?.date}
+            />
+          </div>
+        )}
+
+        {/* Lactate-curve predictor — uses 90 days of training to predict
+            LT1/LT2 from power/pace profile + Critical Power, generates a
+            suggested incremental test protocol with expected lactate at
+            each stage, and (when this test already has measured values)
+            compares measured vs predicted. Collapsed by default. */}
+        {!demoMode && (
+          <div className="mt-4">
+            <PredictedLactateCurve
+              athleteId={mockData?.athleteId || user?._id || user?.id}
+              sport={mockData?.sport}
+              testId={mockData?._id}
             />
           </div>
         )}

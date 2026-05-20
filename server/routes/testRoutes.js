@@ -724,4 +724,132 @@ router.get('/:athleteId/training-context', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/test/:athleteId/protocol-suggestion?sport=bike|run|swim
+ *                                              &testId=<optional, for measured-vs-predicted>
+ *                                              &stages=<8>&stageDurationS=<240>
+ *
+ * The "lactate curve predictor" endpoint. Pulls the athlete's 90-day
+ * training history (Strava + FIT + manual Training docs), computes a
+ * power/pace profile + Critical Power + training distribution + CTL/
+ * ATL fitness state, then predicts LT1/LT2 and generates an
+ * individualised incremental test protocol with expected lactate at
+ * each stage.
+ *
+ * Used by the test detail page's "Predicted from training" panel, and
+ * by the new-test wizard to pre-fill stage targets so the operator
+ * doesn't have to guess.
+ *
+ * Coach scope: same rules as /test/list/:athleteId — owner reads own
+ * data; linked coach reads athlete; admin reads any.
+ */
+router.get('/:athleteId/protocol-suggestion', verifyToken, async (req, res) => {
+  try {
+    const { athleteId } = req.params;
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+    let isOwnerOrAuthorised = String(requester._id) === String(athleteId);
+    if (!isOwnerOrAuthorised && isCoachLike) {
+      const athlete = await User.findById(athleteId).select('coaches').lean();
+      if (athlete && Array.isArray(athlete.coaches) &&
+          athlete.coaches.some((c) => String(c) === String(requester._id))) {
+        isOwnerOrAuthorised = true;
+      } else if (role === 'admin') {
+        isOwnerOrAuthorised = true;
+      }
+    }
+    if (!isOwnerOrAuthorised) return res.status(403).json({ error: 'Not authorised' });
+
+    const sportRaw = String(req.query.sport || '').toLowerCase();
+    const sport = sportRaw.includes('ride') || sportRaw.includes('cycle') || sportRaw.includes('bike') || sportRaw === 'cycling' ? 'bike'
+      : sportRaw.includes('run') ? 'run'
+      : sportRaw.includes('swim') ? 'swim'
+      : 'bike';
+    const stages = clampInt(Number(req.query.stages) || 8, 5, 12);
+    const stageDurationS = clampInt(Number(req.query.stageDurationS) || 240, 120, 600);
+
+    // Pull the 90-day window of activities (slightly wider — 100 days —
+    // so CP best-effort detection has a buffer at the boundary).
+    const cutoff = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+    const StravaActivity = require('../models/StravaActivity');
+    const FitTraining = require('../models/fitTraining');
+    const Training = require('../models/training');
+
+    const [stravaActs, fitActs, trainingActs, athleteProfile, priorTests, currentTest] = await Promise.all([
+      StravaActivity.find({ userId: athleteId, startDate: { $gte: cutoff } })
+        .select('startDate sport elapsedTime movingTime distance averagePower weightedAveragePower averageHeartRate')
+        .lean(),
+      FitTraining.find({ athleteId, startTime: { $gte: cutoff } })
+        .select('startTime sport totalElapsedTime totalTimerTime totalDistance avgPower normalizedPower maxPower avgHeartRate maxHeartRate trainingStressScore')
+        .lean(),
+      Training.find({ athleteId: String(athleteId), date: { $gte: cutoff } })
+        .select('date sport duration distance')
+        .lean(),
+      User.findById(athleteId).select('powerZones runningZones maxHr restingHr ftp').lean(),
+      // Prior tests of the same sport for the "anchor" candidate.
+      (async () => {
+        const all = await require('../models/test').find({
+          $or: [{ athleteId }, { athleteId: String(athleteId) }],
+        }).select('date sport ltPower lt2Power ltPower2 ltPace lt2Pace baseLactate').lean().catch(() => []);
+        return Array.isArray(all) ? all.filter((t) => {
+          const ts = String(t.sport || '').toLowerCase();
+          if (sport === 'bike') return ts.includes('ride') || ts.includes('cycle') || ts.includes('bike') || ts === 'cycling';
+          if (sport === 'run') return ts.includes('run');
+          if (sport === 'swim') return ts.includes('swim');
+          return false;
+        }).sort((a, b) => new Date(b.date) - new Date(a.date)) : [];
+      })(),
+      // Current test (if testId given) — for measured-vs-predicted.
+      req.query.testId
+        ? require('../models/test').findById(req.query.testId).select('lt1Power ltPower lt2Power ltPace lt2Pace baseLactate thresholdOverrides').lean().catch(() => null)
+        : null,
+    ]);
+
+    const { predictLactateCurve, normalizeActivities } = require('../utils/lactateCurvePredictor');
+    const activities = normalizeActivities({ stravaActs, fitActs, trainingActs, userProfile: athleteProfile });
+
+    // Build priorTest shape (predictor expects lt2Power or lt2Pace + ctlAtTest).
+    const priorTest = priorTests[0] ? {
+      date: priorTests[0].date,
+      lt2Power: priorTests[0].lt2Power || priorTests[0].ltPower2 || null,
+      lt2Pace:  priorTests[0].lt2Pace  || null,
+      lt1Power: priorTests[0].ltPower  || null,
+      lt1Pace:  priorTests[0].ltPace   || null,
+      // ctlAtTest would require us to recompute CTL retroactively — skip for now,
+      // predictor falls back to no adjustment when null.
+    } : null;
+
+    // Build measured shape if testId given.
+    const measured = currentTest ? {
+      lt1: currentTest.thresholdOverrides?.LTP1 || currentTest.ltPower || currentTest.ltPace || null,
+      lt2: currentTest.thresholdOverrides?.LTP2 || currentTest.lt2Power || currentTest.lt2Pace || null,
+      baseLactate: currentTest.baseLactate || null,
+    } : null;
+
+    const result = predictLactateCurve({
+      activities,
+      userProfile: athleteProfile,
+      sport,
+      priorTest,
+      measured,
+      stages,
+      stageDurationS,
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[protocol-suggestion] error:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to generate protocol' });
+  }
+});
+
+function clampInt(v, lo, hi) {
+  const n = Math.round(Number(v));
+  return Math.max(lo, Math.min(hi, n));
+}
+
 module.exports = router;
