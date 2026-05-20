@@ -35,6 +35,19 @@ function MapInvalidator() {
   return null;
 }
 
+/** Auto-fits the Leaflet map viewport to show every GPS point. */
+function FitBoundsToRoute({ positions }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!positions || positions.length < 2) return;
+    try {
+      map.fitBounds(positions, { padding: [16, 16], maxZoom: 15 });
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);  // run once on mount — positions don't change after load
+  return null;
+}
+
 // ─── Planned workout helpers ──────────────────────────────────────────────────
 const SPORT_PLAN_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
 
@@ -1286,8 +1299,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         let data = null;
         if (id.startsWith('strava-')) {
           const { getStravaActivityDetail } = await import('../../services/api.js');
-          const raw = await getStravaActivityDetail(id.replace('strava-', ''));
-          data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual };
+          const raw = await getStravaActivityDetail(id.replace('strava-', ''), athleteId || null);
+          data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual, category: raw.category };
           if (!cancelled && raw.streams) setStreams(raw.streams);
         } else if (id.startsWith('fit-')) {
           const { getFitTraining } = await import('../../services/api.js');
@@ -1812,17 +1825,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {/* Route Map */}
             {gpsData.length > 0 && (
               <div className="border-b border-gray-50">
-                <div className="relative overflow-hidden" style={{ height: 200 }}>
+                <div className="relative overflow-hidden" style={{ height: 260 }}>
                   <MapContainer
                     key={`modal-map-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
                     center={gpsData[Math.floor(gpsData.length / 2)]}
-                    zoom={13}
+                    zoom={12}
                     style={{ height: '100%', width: '100%', zIndex: 0 }}
                     scrollWheelZoom={false}
                     zoomControl={true}
                     attributionControl={false}
                   >
                     <MapInvalidator />
+                    <FitBoundsToRoute positions={gpsData} />
                     <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
                     <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
                     <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
@@ -2299,17 +2313,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {/* ── Route Map ── */}
           {gpsData.length > 0 && (
             <div className="border-b border-gray-50">
-              <div className="relative overflow-hidden" style={{ height: 240 }}>
+              <div className="relative overflow-hidden" style={{ height: 320 }}>
                 <MapContainer
                   key={`modal-map-desktop-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
                   center={gpsData[Math.floor(gpsData.length / 2)]}
-                  zoom={13}
+                  zoom={12}
                   style={{ height: '100%', width: '100%', zIndex: 0 }}
                   scrollWheelZoom={false}
                   zoomControl={true}
                   attributionControl={false}
                 >
                   <MapInvalidator />
+                  <FitBoundsToRoute positions={gpsData} />
                   <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
                   <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
                   <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>

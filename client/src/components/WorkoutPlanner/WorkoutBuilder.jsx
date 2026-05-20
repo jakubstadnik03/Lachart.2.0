@@ -471,7 +471,7 @@ function TargetEditor({ value = {}, onChange, label = 'Power target' }) {
 }
 
 // ─── Workout Preview Chart – hover tooltips, power labels, drag-to-resize ────
-function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
+export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
   const svgRef = useRef(null);
   const [hoveredInfo, setHoveredInfo]   = useState(null);
   const [dragState,   setDragState]     = useState(null);  // { clientId, startX, startDur, initTotal, svgPxW }

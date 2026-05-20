@@ -3070,20 +3070,29 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       if (!wantsRefresh) {
         streamFromDb = await StravaStream.findOne({ userId: targetUser._id, stravaId }).lean();
       }
-      if (streamFromDb && streamFromDb.streams && Object.keys(streamFromDb.streams).length > 0) {
+      // Use cached streams only when they contain time-series data (time key).
+      // If the DB only has latlng (from the polyline fallback on a previous
+      // failed fetch), we still need to re-fetch the full streams so the
+      // TrainingChart (power/HR over time) can render.
+      const dbStreamsHaveTimeSeries = streamFromDb?.streams &&
+        Object.keys(streamFromDb.streams).length > 0 &&
+        Array.isArray(streamFromDb.streams.time?.data) &&
+        streamFromDb.streams.time.data.length > 0;
+
+      if (dbStreamsHaveTimeSeries) {
         streamsData = streamFromDb.streams;
-        // Heal old cached entries that pre-date the polyline fallback —
-        // if the cache has streams but no latlng, the fallback below will
-        // still kick in because we only check streamsData (not the cache
-        // source). No need to rewrite this branch.
       } else {
         try {
           streamsData = await fetchStravaActivityStreams(token, stravaId);
         } catch (streamErr) {
           console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
-          streamsData = {};
+          // Fall back to whatever the DB had (might just be latlng from polyline)
+          streamsData = streamFromDb?.streams || {};
         }
-        if (streamsData && Object.keys(streamsData).length > 0) {
+        if (streamsData && Object.keys(streamsData).length > 0 &&
+            Array.isArray(streamsData.time?.data) && streamsData.time.data.length > 0) {
+          // Only persist when we have proper time-series data so we don't
+          // permanently cache a latlng-only stub that blocks future fetches.
           StravaStream.updateOne(
             { userId: targetUser._id, stravaId },
             { $set: { streams: streamsData, fetchedAt: new Date() } },

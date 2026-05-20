@@ -90,25 +90,44 @@ function mean(arr) {
 function fitCriticalPower(bestEfforts) {
   const pts = Object.entries(bestEfforts)
     .map(([dur, power]) => ({ t: Number(dur), p: Number(power) }))
-    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.p) && p.p > 0 && p.t >= 60 && p.t <= 3600);
-  if (pts.length < 2) return null;
+    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.p) && p.p > 0 && p.t >= 180 && p.t <= 3600);
+
+  // Need ≥ 3 points to detect garbage; ≥ 5× duration spread between
+  // shortest and longest so the hyperbola has real curvature to fit.
+  // Without this guard, an athlete whose only "best efforts" are 20-min
+  // and 60-min from long rides produces a degenerate fit with W' near
+  // zero (no real anaerobic capacity inferable).
+  if (pts.length < 3) return null;
+  const durations = pts.map((p) => p.t);
+  const minT = Math.min(...durations), maxT = Math.max(...durations);
+  if (maxT / minT < 5) return null;
+
   // Use the linear form: power × time = CP × time + W'. Least squares.
   let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
   for (const { t, p } of pts) {
-    const x = t; // time
-    const y = p * t; // work done
+    const x = t; const y = p * t;
     sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
   }
   const n = pts.length;
   const cp = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
   const wPrime = (sumY - cp * sumX) / n;
-  if (!Number.isFinite(cp) || !Number.isFinite(wPrime) || cp <= 0 || cp > 800 || wPrime <= 0 || wPrime > 60000) {
-    return null;
-  }
-  // Compute residual SD as % of CP — quality indicator.
+
+  // Realistic bounds: typical adult cyclist CP 100–500 W, W' 5–35 kJ.
+  // 567 J of W' (the user's reported value) is physically impossible —
+  // means the fit collapsed because the best-effort points were too
+  // clustered. Reject.
+  if (!Number.isFinite(cp) || !Number.isFinite(wPrime)) return null;
+  if (cp <= 50 || cp > 600) return null;
+  if (wPrime < 5000 || wPrime > 40000) return null;
+
+  // Compute residual SD as % of CP — fit quality. Above 12 % means
+  // the hyperbola doesn't really describe the data; demote/discard.
   const residuals = pts.map(({ t, p }) => p - (cp + wPrime / t));
   const rmse = Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / residuals.length);
-  return { cp: Math.round(cp), wPrime: Math.round(wPrime), rmsePct: rmse / cp * 100, pointCount: pts.length };
+  const rmsePct = rmse / cp * 100;
+  if (rmsePct > 12) return null;
+
+  return { cp: Math.round(cp), wPrime: Math.round(wPrime), rmsePct, pointCount: pts.length };
 }
 
 // ─── Step 1: Pull + normalise activities ───────────────────────────────────
@@ -200,21 +219,51 @@ function extractCyclingPowerProfile(activities) {
   });
 
   const profile = {};
+
+  // For ≥ 5-min targets we can use NP as a reasonable proxy, but ONLY
+  // when the activity's total duration is close to the target. Reading
+  // a 4-hour endurance ride's NP as "best 20-min effort" is the classic
+  // way this estimator goes wrong — long rides have NP heavily weighted
+  // by aerobic intensity which is well below true 20-min capacity.
+  //
+  // Rule of thumb: only consider activities where total duration is
+  // between target and target × 2.5. So a 20-min target only looks at
+  // activities of 20–50 min duration (where the activity itself was a
+  // hard sub-1-hour effort, not a 4-hour cruise).
   for (const dur of CYCLING_DURATIONS) {
-    // Pick the highest power across activities that lasted at least `dur`.
-    // For NP we use weighted average; for shorter durations (5s, 30s, 1m)
-    // there's no good proxy in summary data — fall back to maxPower / avgPower.
-    let bestPower = 0;
-    for (const a of cyclingActs) {
-      if (a.durationS < dur) continue;
-      // For < 5min, prefer maxPower if recorded; otherwise avg×1.15 as a
-      // very loose proxy. For ≥ 5 min, NP is the better estimator.
-      const candidate = dur < 5 * 60
-        ? (a.maxPower > 0 ? a.maxPower : a.avgPower * 1.15)
-        : (a.normalizedPower > 0 ? a.normalizedPower : a.avgPower);
-      if (candidate > bestPower) bestPower = candidate;
+    if (dur < 5 * 60) {
+      // Short efforts (5 s, 30 s, 60 s, 1 min): we don't have reliable
+      // 1 Hz streams from summaries, so we can ONLY use maxPower when
+      // FIT files include it. Skip if absent — better to leave the
+      // duration out of the CP fit than feed it a bogus avg-power proxy.
+      let best = 0;
+      for (const a of cyclingActs) {
+        if (a.durationS < dur) continue;
+        if (a.maxPower > 0) best = Math.max(best, a.maxPower);
+      }
+      if (best > 0) profile[dur] = Math.round(best);
+      continue;
     }
-    if (bestPower > 0) profile[dur] = Math.round(bestPower);
+    // Longer targets (≥ 5 min): use NP from activities of roughly the
+    // right duration.
+    const upperBound = dur * 2.5;
+    let bestPower = 0;
+    let bestSourceDur = null;
+    for (const a of cyclingActs) {
+      if (a.durationS < dur || a.durationS > upperBound) continue;
+      const candidate = a.normalizedPower > 0 ? a.normalizedPower : a.avgPower;
+      if (candidate > bestPower) {
+        bestPower = candidate;
+        bestSourceDur = a.durationS;
+      }
+    }
+    if (bestPower > 0) {
+      profile[dur] = Math.round(bestPower);
+      // Track source duration for the longer durations so the predictor
+      // can flag estimates that came from substantially longer activities.
+      if (!profile._meta) profile._meta = {};
+      profile._meta[dur] = { sourceDurationS: bestSourceDur };
+    }
   }
   return profile;
 }
@@ -250,38 +299,112 @@ function extractRunningPaceProfile(activities) {
  */
 function computeTrainingDistribution(activities, userProfile) {
   const maxHr = userProfile?.maxHr || userProfile?.maxHeartRate || 0;
-  const restHr = userProfile?.restingHr || 60;
 
-  // 5-zone model based on %HRmax (or HR reserve if both maxHr+restHr known).
+  // Total hours across ALL activities — independent of whether HR data
+  // is available. The display widget always wants to show "97 h" even
+  // when zone breakdown is missing.
+  const totalHoursAll = activities.reduce((s, a) => s + (a.durationS || 0), 0) / 3600;
+
+  if (!maxHr) {
+    // No max HR set on athlete profile → can't compute zones, but still
+    // return the bare-minimum aggregate.
+    return { totalHours: totalHoursAll, polarisation: null, hasZoneData: false };
+  }
+
+  // 5-zone model based on %HRmax (Coggan-ish; coarser than 7-zone
+  // because we only have summary avgHr per activity, not 1 Hz streams).
   // Z1: < 75 %, Z2: 75-85 %, Z3: 85-90 %, Z4: 90-95 %, Z5: ≥ 95 %.
-  // These are coarse buckets; finer zones (Coggan 7-zone) need power data
-  // we don't reliably have across mixed Strava/FIT/manual sources.
   const zones = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
-  let totalSec = 0;
+  let zoneSec = 0;
   for (const a of activities) {
-    if (!a.durationS || !a.avgHr || !maxHr) continue;
+    if (!a.durationS || !a.avgHr) continue;
     const frac = a.avgHr / maxHr;
-    totalSec += a.durationS;
+    zoneSec += a.durationS;
     if (frac < 0.75) zones.z1 += a.durationS;
     else if (frac < 0.85) zones.z2 += a.durationS;
     else if (frac < 0.90) zones.z3 += a.durationS;
     else if (frac < 0.95) zones.z4 += a.durationS;
     else zones.z5 += a.durationS;
   }
-  if (totalSec === 0) return null;
-  const lowI = (zones.z1 + zones.z2) / totalSec;
+  if (zoneSec === 0) {
+    return { totalHours: totalHoursAll, polarisation: null, hasZoneData: false };
+  }
+  const lowI = (zones.z1 + zones.z2) / zoneSec;
   let polarisation;
   if (lowI >= POLARISED_LOW_INTENSITY_MIN) polarisation = 'polarised';
   else if (lowI >= PYRAMIDAL_LOW_INTENSITY_MIN) polarisation = 'pyramidal';
   else polarisation = 'threshold-heavy';
   return {
-    z1Pct: zones.z1 / totalSec * 100,
-    z2Pct: zones.z2 / totalSec * 100,
-    z3Pct: zones.z3 / totalSec * 100,
-    z4Pct: zones.z4 / totalSec * 100,
-    z5Pct: zones.z5 / totalSec * 100,
-    totalHours: totalSec / 3600,
+    z1Pct: zones.z1 / zoneSec * 100,
+    z2Pct: zones.z2 / zoneSec * 100,
+    z3Pct: zones.z3 / zoneSec * 100,
+    z4Pct: zones.z4 / zoneSec * 100,
+    z5Pct: zones.z5 / zoneSec * 100,
+    totalHours: totalHoursAll,
     polarisation,
+    hasZoneData: true,
+  };
+}
+
+/**
+ * Find activities where the athlete actually trained at LT2-region HR
+ * (88-92 % of HRmax) for ≥ 15 min — their AVERAGE power is a direct,
+ * very robust LT2 proxy. Same idea for LT1-region HR (78-83 %).
+ *
+ * This is the antidote to a noisy or stale CP fit / FTP profile: HR
+ * doesn't lie about which physiological zone the athlete was in, and
+ * power they sustained at that HR for ≥ 15 min is, by definition, in
+ * the LT-region.
+ *
+ * Returns { lt1PowerEst, lt2PowerEst, lt1Samples, lt2Samples } where
+ * the *Est fields are medians of the top-3 closest matches (rejects
+ * outliers from one freakish day).
+ */
+function extractHrAnchoredPowerEsts(activities, userProfile, sportFilter = 'bike') {
+  const maxHr = userProfile?.maxHr || userProfile?.maxHeartRate || 0;
+  if (!maxHr) return null;
+
+  const isBike = sportFilter === 'bike';
+  const filtered = activities.filter((a) => {
+    if (!a.avgHr || !a.durationS || a.durationS < 15 * 60) return false;
+    const p = isBike ? (a.normalizedPower || a.avgPower) : 0;
+    if (isBike && (!p || p <= 0)) return false;
+    const s = a.sport;
+    if (isBike) return s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling';
+    return s.includes('run');
+  });
+
+  const lt1Samples = []; // avgHr 78-83 % HRmax
+  const lt2Samples = []; // avgHr 88-92 % HRmax
+  for (const a of filtered) {
+    const frac = a.avgHr / maxHr;
+    const power = a.normalizedPower || a.avgPower;
+    if (frac >= 0.78 && frac <= 0.83) {
+      lt1Samples.push({ power, hr: a.avgHr, duration: a.durationS, hrPct: frac });
+    } else if (frac >= 0.88 && frac <= 0.92) {
+      lt2Samples.push({ power, hr: a.avgHr, duration: a.durationS, hrPct: frac });
+    }
+  }
+
+  // Sort by duration descending — longer sustained efforts are more
+  // reliable indicators than short ones. Take top 3, median.
+  const median = (xs) => {
+    if (!xs.length) return null;
+    const sorted = [...xs].map((s) => s.power).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  };
+
+  const lt1Top = [...lt1Samples].sort((a, b) => b.duration - a.duration).slice(0, 3);
+  const lt2Top = [...lt2Samples].sort((a, b) => b.duration - a.duration).slice(0, 3);
+
+  return {
+    lt1PowerEst: median(lt1Top),
+    lt2PowerEst: median(lt2Top),
+    lt1Samples: lt1Samples.length,
+    lt2Samples: lt2Samples.length,
+    lt1TopUsed: lt1Top.length,
+    lt2TopUsed: lt2Top.length,
   };
 }
 
@@ -329,37 +452,58 @@ function computeFitnessState(activities, referenceDate = new Date()) {
  * factor. Each input contributes a confidence point; the overall
  * confidence is the sum, clipped at 100.
  */
-function predictBikeThresholds({ powerProfile, cp, distribution, priorTest, fitnessState, userFtp }) {
+function predictBikeThresholds({ powerProfile, cp, distribution, priorTest, fitnessState, userFtp, hrEsts }) {
   const candidates = [];
   const confidenceBoosters = [];
+  const notes = [];
 
   // (a) Best 20-min × 0.93 (Allen-Coggan derivation of LT2 from FTP).
   if (powerProfile[20 * 60]) {
     const ftp = powerProfile[20 * 60] * FTP_FROM_20MIN;
     const lt2 = ftp * LT2_FROM_FTP;
-    candidates.push({ source: 'best-20min', lt2, weight: 0.4 });
+    candidates.push({ source: 'best-20min', lt2, weight: 0.45 });
     confidenceBoosters.push({ label: '20-min best effort available', points: 20 });
   }
 
-  // (b) Critical Power × 0.95.
+  // (b) Critical Power × 0.95. Quality filter (rmse + W' range) is now
+  // applied INSIDE fitCriticalPower(); if it survived, it's plausible.
   if (cp?.cp) {
-    candidates.push({ source: 'critical-power', lt2: cp.cp * 0.95, weight: 0.3 });
+    candidates.push({ source: 'critical-power', lt2: cp.cp * 0.95, weight: 0.35 });
     const fitPoints = cp.rmsePct < 5 ? 20 : cp.rmsePct < 10 ? 12 : 6;
-    confidenceBoosters.push({ label: `CP model fits ${cp.pointCount} points (RMSE ${cp.rmsePct.toFixed(1)} %)`, points: fitPoints });
+    confidenceBoosters.push({ label: `CP fit on ${cp.pointCount} points (RMSE ${cp.rmsePct.toFixed(1)} %)`, points: fitPoints });
   }
 
-  // (c) User-set FTP × 0.93.
+  // (c) HR-anchored LT2 — "what power did the athlete actually sustain
+  // at 88-92 % HRmax for ≥ 15 min?". This is the most physiologically
+  // direct estimate when HR data is good. Heavy weight when it has
+  // enough samples.
+  if (hrEsts?.lt2PowerEst) {
+    candidates.push({ source: 'hr-anchored-lt2', lt2: hrEsts.lt2PowerEst, weight: 0.55 });
+    confidenceBoosters.push({
+      label: `HR-anchored LT2 (${hrEsts.lt2Samples} efforts at 88-92 % HRmax, median of top ${hrEsts.lt2TopUsed})`,
+      points: 25,
+    });
+  }
+
+  // (d) User-set FTP × 0.93 — but ONLY if it's within sane range vs.
+  // best-20min. A stored FTP of 393 W when the athlete's actual best
+  // 20-min in training is 315 W is stale / aspirational; trusting it
+  // pulls the prediction wildly off.
   if (userFtp && userFtp > 0) {
-    candidates.push({ source: 'user-ftp', lt2: userFtp * LT2_FROM_FTP, weight: 0.25 });
-    confidenceBoosters.push({ label: 'FTP set in athlete profile', points: 10 });
+    const userFtpLt2 = userFtp * LT2_FROM_FTP;
+    const ref = powerProfile[20 * 60] ? powerProfile[20 * 60] * FTP_FROM_20MIN * LT2_FROM_FTP : null;
+    if (!ref || Math.abs(userFtpLt2 - ref) / ref < 0.15) {
+      candidates.push({ source: 'user-ftp', lt2: userFtpLt2, weight: 0.2 });
+      confidenceBoosters.push({ label: 'FTP from athlete profile (within 15 % of training data)', points: 10 });
+    } else {
+      notes.push(`Profile FTP (${userFtp} W) disagrees with training-data estimate by >15 % — likely stale; dropped from ensemble.`);
+    }
   }
 
-  // (d) Prior test LT2, adjusted by fitness trend.
-  // If the prior test is recent (< 8 weeks), trust it heavily; further out,
-  // adjust by relative CTL change (rough proxy for fitness shift).
+  // (e) Prior test LT2, adjusted by fitness trend.
   if (priorTest?.lt2Power) {
     const monthsAgo = priorTest?.date ? (Date.now() - new Date(priorTest.date).getTime()) / (30 * 24 * 60 * 60 * 1000) : 12;
-    const recency = clamp(1 - monthsAgo / 6, 0.1, 1); // full weight if same month, decays to 0.1 at 6 months
+    const recency = clamp(1 - monthsAgo / 6, 0.1, 1);
     const ctlAdjustment = priorTest?.ctlAtTest && fitnessState?.ctl
       ? clamp(fitnessState.ctl / priorTest.ctlAtTest, 0.85, 1.15)
       : 1;
@@ -372,38 +516,98 @@ function predictBikeThresholds({ powerProfile, cp, distribution, priorTest, fitn
   }
 
   if (candidates.length === 0) {
-    return { lt1: null, lt2: null, confidence: 0, sources: [], notes: ['No usable training data — need a power meter or HR data.'] };
+    return { lt1: null, lt2: null, confidence: 0, candidates: [], confidenceBoosters: [], notes: ['No usable training data — need power meter or HR data on cycling activities.'] };
   }
 
-  // Weighted average of candidates.
-  const wSum = candidates.reduce((s, c) => s + c.weight, 0);
-  const lt2 = candidates.reduce((s, c) => s + c.lt2 * c.weight, 0) / wSum;
+  // ── Outlier rejection ────────────────────────────────────────────
+  // After collecting candidates, drop any whose LT2 is > 18 % away from
+  // the weighted median. That catches a stale profile FTP, a noisy CP
+  // fit that slipped past the validator, or a prior test from a very
+  // different fitness era. The "median" used here is the simple median
+  // of LT2 values (not weighted), then we discard outliers and recompute
+  // the weighted average on what remains.
+  const lt2Values = candidates.map((c) => c.lt2).sort((a, b) => a - b);
+  const medianLt2 = lt2Values.length % 2 === 0
+    ? (lt2Values[lt2Values.length / 2 - 1] + lt2Values[lt2Values.length / 2]) / 2
+    : lt2Values[Math.floor(lt2Values.length / 2)];
+  const keptCandidates = candidates.filter((c) => {
+    if (candidates.length <= 2) return true; // not enough to do outlier rejection
+    const dev = Math.abs(c.lt2 - medianLt2) / medianLt2;
+    if (dev > 0.18) {
+      notes.push(`${c.source} (${Math.round(c.lt2)} W) deviates ${(dev * 100).toFixed(0)} % from median — excluded.`);
+      return false;
+    }
+    return true;
+  });
 
-  // LT1 / LT2 ratio from polarisation.
+  // Disagreement penalty: if even the kept candidates span > 10 % of
+  // their mean, the underlying data is noisy and the prediction is less
+  // certain. Knock confidence accordingly.
+  const keptValues = keptCandidates.map((c) => c.lt2);
+  const lt2Mean = keptValues.reduce((s, v) => s + v, 0) / keptValues.length;
+  const spread = (Math.max(...keptValues) - Math.min(...keptValues)) / lt2Mean;
+  if (spread > 0.10) {
+    confidenceBoosters.push({ label: `Methods disagree by ${(spread * 100).toFixed(0)} % — penalty`, points: -Math.round(spread * 50) });
+  }
+
+  const wSum = keptCandidates.reduce((s, c) => s + c.weight, 0);
+  const lt2 = keptCandidates.reduce((s, c) => s + c.lt2 * c.weight, 0) / wSum;
+
+  // ── LT1 ──────────────────────────────────────────────────────────
+  // Direct HR-anchored LT1 estimate (if HR samples in 78-83 % HRmax band)
+  // OR derive from LT2 × polarisation-adjusted ratio.
   let ratio = LT1_LT2_RATIO_PYRAMIDAL;
   if (distribution?.polarisation === 'polarised') ratio = LT1_LT2_RATIO_POLARISED;
   else if (distribution?.polarisation === 'threshold-heavy') ratio = LT1_LT2_RATIO_THRESHOLD;
-  const lt1 = lt2 * ratio;
-
-  if (distribution) {
+  let lt1 = lt2 * ratio;
+  let lt1Source = 'lt2-ratio';
+  if (hrEsts?.lt1PowerEst) {
+    // Blend HR-anchored LT1 with LT2-ratio LT1, favouring HR-anchored
+    // when there are several samples.
+    const w = clamp(hrEsts.lt1TopUsed / 3, 0.3, 0.8);
+    lt1 = hrEsts.lt1PowerEst * w + (lt2 * ratio) * (1 - w);
+    lt1Source = `hr-blended (${(w * 100).toFixed(0)} % HR / ${((1 - w) * 100).toFixed(0)} % ratio)`;
     confidenceBoosters.push({
-      label: `Training profile: ${distribution.polarisation} (Z1+Z2 = ${Math.round(distribution.z1Pct + distribution.z2Pct)} %)`,
+      label: `HR-anchored LT1 (${hrEsts.lt1Samples} efforts at 78-83 % HRmax)`,
       points: 15,
     });
   }
-  // Quantity-of-data boost.
-  if (Object.keys(powerProfile).length >= 6) confidenceBoosters.push({ label: 'Wide power profile (6+ best efforts)', points: 10 });
 
-  const confidence = Math.min(100, confidenceBoosters.reduce((s, b) => s + b.points, 0));
+  if (distribution?.polarisation) {
+    confidenceBoosters.push({
+      label: `Training profile: ${distribution.polarisation} (Z1+Z2 = ${Math.round((distribution.z1Pct || 0) + (distribution.z2Pct || 0))} %)`,
+      points: 15,
+    });
+  }
+  if (Object.keys(powerProfile).filter((k) => k !== '_meta').length >= 5) {
+    confidenceBoosters.push({ label: 'Wide power profile (5+ best efforts)', points: 10 });
+  }
+
+  // ── TSB-aware caveat ─────────────────────────────────────────────
+  // A heavily fatigued athlete (TSB < −20) will likely test BELOW their
+  // training-data prediction, even though the model's prediction reflects
+  // their true ceiling. Flag this so the interpretation block can
+  // adjust expectations.
+  if (fitnessState?.tsb < -20) {
+    notes.push(`Very negative TSB (${fitnessState.tsb}) — athlete is heavily fatigued. Expect measured LT2 to come in ~${Math.round(Math.abs(fitnessState.tsb) * 0.1)} W below this prediction; consider retest after recovery.`);
+  }
+
+  const confidence = Math.max(0, Math.min(100, confidenceBoosters.reduce((s, b) => s + b.points, 0)));
 
   return {
     lt1: Math.round(lt1),
     lt2: Math.round(lt2),
     confidence,
     ratio: Number(ratio.toFixed(3)),
-    candidates: candidates.map((c) => ({ source: c.source, lt2: Math.round(c.lt2), weight: c.weight })),
+    lt1Source,
+    candidates: candidates.map((c) => ({
+      source: c.source,
+      lt2: Math.round(c.lt2),
+      weight: c.weight,
+      excluded: !keptCandidates.includes(c),
+    })),
     confidenceBoosters,
-    notes: [],
+    notes,
   };
 }
 
@@ -651,11 +855,15 @@ function predictLactateCurve({
   const cp = sportKey === 'bike' ? fitCriticalPower(powerProfile) : null;
   const distribution = computeTrainingDistribution(recent, userProfile);
   const fitnessState = computeFitnessState(recent);
+  // HR-anchored direct estimates: power sustained at LT1 and LT2 HR
+  // bands across recent training. Most reliable signal when CP fit /
+  // FTP profile are unreliable.
+  const hrEsts = extractHrAnchoredPowerEsts(recent, userProfile, sportKey);
 
   const userFtp = userProfile?.powerZones?.cycling?.lt2 || userProfile?.powerZones?.cycling?.ftp || userProfile?.ftp || 0;
 
   const prediction = sportKey === 'bike'
-    ? predictBikeThresholds({ powerProfile, cp, distribution, priorTest, fitnessState, userFtp })
+    ? predictBikeThresholds({ powerProfile, cp, distribution, priorTest, fitnessState, userFtp, hrEsts })
     : predictRunThresholds({ paceProfile, distribution, priorTest, fitnessState });
 
   const protocol = generateProtocol({
@@ -684,6 +892,7 @@ function predictLactateCurve({
     powerProfile,
     paceProfile,
     criticalPower: cp,
+    hrEsts,
     prediction,
     protocol,
     interpretation,

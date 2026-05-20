@@ -223,20 +223,28 @@ export default function PredictedLactateCurve({ athleteId, sport, testId = null,
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Prediction inputs</div>
                   <ul className="text-xs text-gray-700 space-y-1">
                     {pred.candidates.map((c, i) => (
-                      <li key={i} className="flex items-center justify-between gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                      <li
+                        key={i}
+                        className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 ${
+                          c.excluded ? 'bg-rose-50 line-through opacity-60' : 'bg-gray-50'
+                        }`}
+                        title={c.excluded ? 'Excluded as outlier vs other candidates' : ''}
+                      >
                         <span className="font-semibold">
                           {{
-                            'best-20min':     'Best 20-min effort × 0.93',
-                            'critical-power': `Critical Power × 0.95 (CP = ${result.criticalPower?.cp ?? '?'} W, W' = ${result.criticalPower?.wPrime ?? '?'} J)`,
-                            'user-ftp':       'FTP from athlete profile × 0.93',
-                            'prior-test':     'Prior lactate test, CTL-adjusted',
-                            'best-10km':      'Best 10 km × 1.06',
-                            'best-5km':       'Best 5 km × 1.10',
-                            'best-half':      'Half-marathon × 1.01',
+                            'best-20min':       'Best 20-min effort × 0.93',
+                            'critical-power':   `Critical Power × 0.95 (CP = ${result.criticalPower?.cp ?? '?'} W, W' = ${(result.criticalPower?.wPrime / 1000).toFixed(1) ?? '?'} kJ)`,
+                            'user-ftp':         'FTP from athlete profile × 0.93',
+                            'prior-test':       'Prior lactate test, CTL-adjusted',
+                            'hr-anchored-lt2':  `HR-anchored LT2 — median power at 88-92 % HRmax (${result.hrEsts?.lt2Samples ?? 0} efforts)`,
+                            'best-10km':        'Best 10 km × 1.06',
+                            'best-5km':         'Best 5 km × 1.10',
+                            'best-half':        'Half-marathon × 1.01',
                           }[c.source] || c.source}
                         </span>
                         <span className="text-[11px] text-gray-500 tabular-nums">
                           → {fmtPowerOrPace(c.lt2, isPace)} ({Math.round(c.weight * 100)} % weight)
+                          {c.excluded && <span className="ml-1 text-rose-700 font-bold">(excluded)</span>}
                         </span>
                       </li>
                     ))}
@@ -244,8 +252,11 @@ export default function PredictedLactateCurve({ athleteId, sport, testId = null,
                 </div>
               )}
 
-              {/* 3. Training distribution */}
-              {result.distribution && (
+              {/* 3. Training distribution — only render the zone bar when we
+                  actually have HR data; otherwise show a hint message so the
+                  user knows what's missing. Total hours always shows in the
+                  stat tile above regardless. */}
+              {result.distribution?.hasZoneData ? (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Training distribution (last 90 d)</span>
@@ -269,6 +280,20 @@ export default function PredictedLactateCurve({ athleteId, sport, testId = null,
                     <span>Z4 {Math.round(result.distribution.z4Pct)}%</span>
                     <span>Z5 {Math.round(result.distribution.z5Pct)}%</span>
                   </div>
+                </div>
+              ) : (
+                <div className="mt-4 text-[10px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                  Set your <b>Max HR</b> in Settings → Profile to enable training-zone distribution and HR-anchored LT estimates.
+                </div>
+              )}
+
+              {/* 3a. Notes (outlier-rejection messages, fatigue caveats) —
+                  render only when there's something useful to say. */}
+              {pred?.notes?.length > 0 && (
+                <div className="mt-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                  {pred.notes.map((n, i) => (
+                    <div key={i} className="leading-snug">⚠️ {n}</div>
+                  ))}
                 </div>
               )}
 

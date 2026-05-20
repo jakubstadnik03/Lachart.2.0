@@ -7,7 +7,7 @@
  * Plus: create/edit planned workouts with WorkoutBuilder
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon,
          TrashIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
@@ -112,6 +112,7 @@ export default function WorkoutPlannerPage() {
   const { selectedAthleteId: globalAthleteId } = useAthleteSelection();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const urlAthleteId = searchParams.get('athleteId');
 
@@ -126,6 +127,17 @@ export default function WorkoutPlannerPage() {
   const [loading,   setLoading]   = useState(false);
   const [modal, setModal] = useState(null); // { date, workout? }
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
+
+  // Open the edit modal when navigated here with { editWorkout } state
+  // (e.g. from PlannedWorkoutEditor's "Edit in Planner" button)
+  useEffect(() => {
+    const editWorkout = location.state?.editWorkout;
+    if (!editWorkout) return;
+    setModal({ date: editWorkout.date ? new Date(editWorkout.date) : new Date(), workout: editWorkout });
+    // Clear the state so a back-nav doesn't re-open the modal
+    navigate(location.pathname + location.search, { replace: true, state: {} });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.editWorkout]);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 

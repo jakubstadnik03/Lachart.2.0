@@ -1685,6 +1685,17 @@ export default function NativeTrainingPage({
     const hasManualResults = Array.isArray(act?.results) && act.results.length > 0;
     const rich = hasManualResults ? null : findRelatedRichActivity(act);
     const target = rich || act;
+
+    // Navigate to the full training-calendar detail page (with map, zones,
+    // power charts, etc.) instead of the compact modal.
+    const { kind, id } = detectActivityKind(target);
+    if (id) {
+      const qs = athleteId ? `?athleteId=${athleteId}` : '';
+      navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${qs}`);
+      return;
+    }
+
+    // Fallback for activities without a resolvable ID — open the compact modal.
     setActivityModal({ activity: enrichForModal(target), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);

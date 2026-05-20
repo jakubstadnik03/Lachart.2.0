@@ -1509,7 +1509,23 @@ export default function DashboardPage() {
             selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}
             onSelectActivity={(activity) => {
-              console.log('Selected activity:', activity);
+              if (!activity) return;
+              // Determine kind + id (same logic as NativeTrainingPage / detectActivityKind)
+              let kind = 'regular';
+              let id = String(activity._id || activity.id || '');
+              if (activity.type === 'fit' || activity.source === 'fit' || id.startsWith('fit-')) {
+                kind = 'fit';
+                id = id.replace(/^fit-/, '');
+              } else if (activity.type === 'strava' || activity.source === 'strava' || activity.stravaId || id.startsWith('strava-')) {
+                kind = 'strava';
+                id = String(activity.stravaId || id.replace(/^strava-/, ''));
+              } else if (activity.type === 'regular') {
+                kind = 'regular';
+                id = id.replace(/^regular-/, '');
+              }
+              if (!id) return;
+              const qs = dashboardDataAthleteId ? `?athleteId=${dashboardDataAthleteId}` : '';
+              navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${qs}`);
             }}
             onActivityUpdate={(updatedActivity) => {
               setCalendarData(prev => {

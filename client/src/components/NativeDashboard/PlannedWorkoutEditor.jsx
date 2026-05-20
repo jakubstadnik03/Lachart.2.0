@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
 import { useCategories } from '../../context/CategoryContext';
+import { WorkoutChart } from '../WorkoutPlanner/WorkoutBuilder';
 
 // Local keyframes — sheet slides up, scrim fades in
 const SHEET_KEYFRAMES = `
@@ -89,6 +90,20 @@ export default function PlannedWorkoutEditor({
 
   const isCompleted = !!linkedActivity;
   const tint = SPORT_TINT[sport] || SPORT_TINT.other;
+
+  // Build a minimal context for the chart. Use FTP/LT values if stored on the
+  // planned workout, else fall back to safe defaults (250W FTP).
+  const chartContext = {
+    ftp:       plannedWorkout?.ftp       || plannedWorkout?.context?.ftp       || 250,
+    lt1Power:  plannedWorkout?.lt1Power  || plannedWorkout?.context?.lt1Power  || null,
+    lt2Power:  plannedWorkout?.lt2Power  || plannedWorkout?.context?.lt2Power  || null,
+    lt1Pace:   plannedWorkout?.lt1Pace   || plannedWorkout?.context?.lt1Pace   || null,
+    lt2Pace:   plannedWorkout?.lt2Pace   || plannedWorkout?.context?.lt2Pace   || null,
+    cyclingZones: plannedWorkout?.cyclingZones || plannedWorkout?.context?.cyclingZones || null,
+    runningZones: plannedWorkout?.runningZones || plannedWorkout?.context?.runningZones || null,
+  };
+
+  const hasSteps = Array.isArray(plannedWorkout?.steps) && plannedWorkout.steps.length > 0;
 
   // ── Save / Delete handlers ─────────────────────────────────────────────────
   const handleSave = async () => {
@@ -228,6 +243,31 @@ export default function PlannedWorkoutEditor({
               {title || 'Untitled'}
             </div>
           </div>
+          {/* Edit in Planner button */}
+          <button
+            onClick={() => {
+              onClose && onClose();
+              navigate('/workout-planner', { state: { editWorkout: plannedWorkout } });
+            }}
+            style={{
+              height: 32, borderRadius: 9999,
+              padding: '0 12px',
+              background: tint, border: 'none',
+              display: 'flex', alignItems: 'center', gap: 5,
+              color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+              WebkitTapHighlightColor: 'transparent',
+              boxShadow: `0 4px 10px -4px ${tint}99`,
+            }}
+            aria-label="Edit in Planner"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
+
           <button
             onClick={onClose}
             style={{
@@ -272,6 +312,28 @@ export default function PlannedWorkoutEditor({
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
+          </div>
+        )}
+
+        {/* Workout structure chart — shown when the plan has structured steps */}
+        {hasSteps && (
+          <div style={{ padding: '0 18px 4px' }}>
+            <div style={{
+              borderRadius: 14,
+              background: 'rgba(255,255,255,.7)',
+              border: '1px solid rgba(118,126,181,.15)',
+              padding: '10px 12px 6px',
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                fontSize: 9, fontWeight: 800, color: '#9CA3AF',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+                marginBottom: 6,
+              }}>
+                Workout structure
+              </div>
+              <WorkoutChart steps={plannedWorkout.steps} context={chartContext} />
+            </div>
           </div>
         )}
 
