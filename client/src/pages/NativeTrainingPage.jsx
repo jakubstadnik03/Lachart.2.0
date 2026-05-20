@@ -1679,8 +1679,11 @@ export default function NativeTrainingPage({
   }
 
   const openActivity = (act) => {
-    // Prefer the related rich activity (with GPS / streams / real laps)
-    const rich = findRelatedRichActivity(act);
+    // If the activity already has manually-logged intervals (results[]), open it
+    // directly — findRelatedRichActivity would replace it with a same-day Strava
+    // run that doesn't carry the lactate values from those results.
+    const hasManualResults = Array.isArray(act?.results) && act.results.length > 0;
+    const rich = hasManualResults ? null : findRelatedRichActivity(act);
     const target = rich || act;
     setActivityModal({ activity: enrichForModal(target), plannedWorkout: null });
   };
