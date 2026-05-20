@@ -21,6 +21,8 @@ import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { useAuth } from '../../context/AuthProvider';
+import { computeActivityTss } from '../../utils/computeTss';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
@@ -1450,10 +1452,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [onClose]);
 
   // ── Activity data (use merged = summary + full detail) ──
+  const { user: authUser } = useAuth() || {};
   const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
   const dur = Number(merged.duration || merged.elapsed_time || merged.movingTime || merged.moving_time || merged.totalTimerTime || merged.totalElapsedTime || merged.elapsedTime || 0);
   const dist = Number(merged.distance || merged.totalDistance || 0);
-  const tss  = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
+  // TSS — prefer the stored value (FIT uploads include it), fall back to
+  // a client-side calculation using the user's thresholds (FTP / threshold
+  // pace) so Strava activities — which never carry TSS — always show
+  // something instead of being hidden.
+  const explicitTss = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
+  const tss = explicitTss > 0 ? explicitTss : computeActivityTss(merged, authUser);
   const hrTss = Number(merged.hrTSS || merged.hrTss || 0);
   const power = Number(merged.normalizedPower || merged.avgPower || merged.averagePower || merged.average_watts || 0);
   const np    = Number(merged.normalizedPower || 0);
@@ -1776,7 +1784,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 ...(isBike && power > 0 ? [{ label: 'Avg Pwr', value: `${Math.round(power)} W` }] : []),
                 ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
                 ...(isBike && maxPower > 0 ? [{ label: 'Max Pwr', value: `${Math.round(maxPower)} W` }] : []),
-                ...(tss > 0 ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+                // TSS always shown — dashes only when even HR-fallback fails
+                { label: 'TSS', value: tss > 0 ? Math.round(tss) : '—' },
                 ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
                 ...(cadence > 0 ? [{ label: isSwim ? 'SPM' : 'Cad', value: Math.round(cadence) }] : []),
                 ...(calories > 0 ? [{ label: 'Calories', value: `${Math.round(calories)} kcal` }] : []),
@@ -2231,7 +2240,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {[
               { label: 'Duration', value: fmtDur(dur) },
               { label: 'Distance', value: dist > 0 ? fmtDist(dist) : null },
-              ...(tss > 0  ? [{ label: 'TSS', value: Math.round(tss) }] : []),
+              // TSS always rendered — dash when we genuinely couldn't compute
+              { label: 'TSS', value: tss > 0 ? Math.round(tss) : '—' },
               ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
               ...(paceStr  ? [{ label: 'Pace', value: paceStr }] : []),
               ...(isBike && power > 0 ? [{ label: 'Pwr', value: `${Math.round(power)}W` }] : []),

@@ -169,6 +169,11 @@ export default function DashboardPage() {
       const matches = buildMatcher(id);
       const patch = (t) => ({ ...t, category: category || null });
       setTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
+      // Also patch the calendarData list — that's what WeeklyCalendar /
+      // ActivityFullModal read from. Without this, closing + reopening
+      // the modal shows the activity with stale (pre-save) category, so
+      // the user thinks the save was lost even though server has it.
+      setCalendarData(prev => prev.map(t => matches(t) ? patch(t) : t));
       cachePatch(matches, patch);
     };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);

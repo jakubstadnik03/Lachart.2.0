@@ -3395,16 +3395,26 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       activity.description = (description && typeof description === 'string' && description.trim()) ? description.trim() : null;
     }
 
-    // Update category if provided
-    // Ensure category is either a valid enum value or null (empty string becomes null)
+    // Update category if provided.
+    //
+    // Originally this was a fixed enum of the seven built-in categories
+    // (endurance / lt1 / tempo / lt2 / zone2 / vo2max / hills). But the
+    // app lets users define their OWN categories via CategoryProvider
+    // (stored in localStorage, with arbitrary nanoid-style ids), and
+    // those don't match the enum — so picking a custom category in the
+    // mobile modal 400'd silently and the user thought the save was lost.
+    //
+    // The Category model is purely client-side metadata (color + label),
+    // and the activity.category field just stores a string tag. There's
+    // no security risk in accepting any string — we cap length so it
+    // can't be abused.
     if (category !== undefined) {
-      const validCategories = ['endurance', 'lt1', 'tempo', 'lt2', 'zone2', 'vo2max', 'hills'];
       if (category === null || category === '' || category === undefined) {
         activity.category = null;
-      } else if (validCategories.includes(category)) {
+      } else if (typeof category === 'string' && category.length > 0 && category.length <= 64) {
         activity.category = category;
       } else {
-        return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')} or null` });
+        return res.status(400).json({ error: 'Category must be a string up to 64 characters or null.' });
       }
     }
 
