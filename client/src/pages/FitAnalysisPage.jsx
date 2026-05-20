@@ -3246,6 +3246,19 @@ const FitAnalysisPage = () => {
     setCalendarPeriod(info);
   }, []);
 
+  // Stable no-op callback — CalendarView's "month changed" effect compares
+  // the function identity in its deps array, so if we passed an inline
+  // function (or worse, a `useCallback(...)` evaluated INSIDE JSX, which
+  // is a Rules-of-Hooks violation) the effect re-runs every render, calls
+  // setState in the parent, and spins into a "Maximum update depth
+  // exceeded" loop that breaks month navigation entirely. Defining this
+  // at component top means the identity is stable across renders.
+  const handleCalendarMonthChange = useCallback((info) => {
+    // Data is loaded for the whole period at once — no API call needed
+    // on month change; this is purely an info hook the calendar fires.
+    console.log('Month changed to:', info, '- data already loaded, no API call needed');
+  }, []);
+
   const handleCalendarActivitySelect = useCallback(
     (a) => {
       if (!a?.id) return;
@@ -4130,11 +4143,7 @@ const FitAnalysisPage = () => {
           onSelectActivity={handleCalendarActivitySelect}
           onAddLactate={handleCalendarAddLactate}
           onEditActivity={handleCalendarEditActivity}
-          onMonthChange={useCallback(({ year, month }) => {
-            // Note: API loads all trainings at once, so no need to reload when month changes
-            // Data is already loaded and calendar will filter by date client-side
-            console.log('Month changed to:', { year, month }, '- data already loaded, no API call needed');
-          }, [])}
+          onMonthChange={handleCalendarMonthChange}
           onVisiblePeriodChange={handleCalendarPeriodChange}
           user={user}
           commentCounts={commentCounts}
