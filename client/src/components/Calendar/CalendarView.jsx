@@ -3483,6 +3483,17 @@ export default function CalendarView({
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(act);
     });
+    // Sort each day's activities chronologically (earliest first) so that the
+    // pairing logic always claims the FIRST activity of the day for that sport,
+    // matching the user's expectation. Without this the API's newest-first order
+    // would cause the LATEST same-sport activity to be paired instead.
+    map.forEach(arr =>
+      arr.sort((a, b) => {
+        const ta = new Date(a.date || a.timestamp || a.startDate || a.start_time || 0).getTime();
+        const tb = new Date(b.date || b.timestamp || b.startDate || b.start_time || 0).getTime();
+        return ta - tb;
+      })
+    );
     return map;
   }, [filteredActivities]);
 
@@ -4273,17 +4284,13 @@ export default function CalendarView({
                     {hasItems ? (
                       <div className="px-2 pb-1.5 pt-1 flex flex-col gap-1">
                         {(() => {
-                          // Pair planned workouts with matching activities (same sport, same day)
-                          const claimedIds = new Set();
-                          const pairs = planned.map(pw => {
-                            const match = acts.find(a => {
-                              const id = String(a.id || a._id);
-                              return !claimedIds.has(id) && sportMatches(pw.sport, a.sport || a.type || '');
-                            });
-                            if (match) claimedIds.add(String(match.id || match._id));
-                            return { pw, act: match || null };
-                          });
-                          const unmatchedActs = acts.filter(a => !claimedIds.has(String(a.id || a._id)));
+                          // Use the shared pairPlannedWithActivities() so we get:
+                          // 1) completedTrainingId respected (explicit links win)
+                          // 2) greedy first-match on sport for the rest
+                          // 3) consistent key logic with the rest of the calendar
+                          const { pwToAct, claimed } = pairPlannedWithActivities(planned, acts);
+                          const pairs = planned.map(pw => ({ pw, act: pwToAct.get(String(pw._id)) || null }));
+                          const unmatchedActs = acts.filter(a => !claimed.has(String(a?.id ?? a?._id ?? '')));
 
                           return (
                             <>

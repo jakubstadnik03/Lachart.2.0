@@ -1160,21 +1160,30 @@ const WeeklyCalendar = ({
   const activitiesByDay = useMemo(() => {
     const map = new Map();
     if (effectiveActivities && Array.isArray(effectiveActivities)) {
-    effectiveActivities.forEach(act => {
+      effectiveActivities.forEach(act => {
         try {
-      const d = new Date(act.date || act.timestamp || act.startDate || Date.now());
+          const d = new Date(act.date || act.timestamp || act.startDate || Date.now());
           if (isNaN(d.getTime())) {
             console.warn('[WeeklyCalendar] Invalid date for activity:', act);
             return;
           }
-      const key = getLocalDateString(d);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(act);
+          const key = getLocalDateString(d);
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(act);
         } catch (e) {
           console.warn('[WeeklyCalendar] Error processing activity:', e, act);
         }
-    });
+      });
     }
+    // Sort each day's activities chronologically (earliest first) so that the
+    // pairing logic always claims the FIRST activity of the day for that sport.
+    map.forEach(arr =>
+      arr.sort((a, b) => {
+        const ta = new Date(a.date || a.timestamp || a.startDate || 0).getTime();
+        const tb = new Date(b.date || b.timestamp || b.startDate || 0).getTime();
+        return ta - tb;
+      })
+    );
     return map;
   }, [effectiveActivities]);
 

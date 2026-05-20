@@ -197,10 +197,16 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
 
-  // Activities and planned for this day
-  const dayActs = activities.filter(a =>
-    isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), date)
-  );
+  // Activities and planned for this day — sorted chronologically (earliest
+  // first) so the pairing always claims the FIRST activity of the day for
+  // that sport, not whichever happened to arrive first from the API.
+  const dayActs = activities
+    .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), date))
+    .sort((a, b) => {
+      const ta = new Date(a.date || a.startDate || a.timestamp || 0).getTime();
+      const tb = new Date(b.date || b.startDate || b.timestamp || 0).getTime();
+      return ta - tb;
+    });
   const dayPlanned = plannedWorkouts.filter(p =>
     String(p.date || '').slice(0, 10) === dateStr
   );
