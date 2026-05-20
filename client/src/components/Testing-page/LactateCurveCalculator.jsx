@@ -2963,20 +2963,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           </div>
         )}
 
-        {/* Test-to-test comparison — overlay LT1/LT2 curves of up to 2
-            previous same-sport tests with this one, plus explicit Δ
-            table for power / lactate / HR at each threshold. Hidden in
-            demo mode and when there are no previous tests on file. */}
-        {!demoMode && (
-          <div className="mt-4">
-            <TestComparisonPanel
-              currentTest={mockDataWithOverrides}
-              allPrevTests={allPrevTests}
-              initialSelected={selectedCompareIds.slice(0, 2)}
-            />
-          </div>
-        )}
-
         {/* LT1/LT2 manual override panel */}
         {showLtOverridePanel && !demoMode && (() => {
           // ── Curve-lookup helpers (closures over polyPointsRaw / hrPolyPoints) ──
@@ -3256,6 +3242,23 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               </div>
             </>
           )}
+
+          {/* Test-to-test comparison — overlay LT1/LT2 curves of up to 2
+              previous same-sport tests with this one, plus explicit Δ
+              table for power / lactate / HR at each threshold. Lives
+              under the lactate curve so the visual overlay sits right
+              next to the primary chart it's compared against. Hidden in
+              demo mode. */}
+          {!demoMode && (
+            <div className="mt-4">
+              <TestComparisonPanel
+                currentTest={mockDataWithOverrides}
+                allPrevTests={allPrevTests}
+                initialSelected={selectedCompareIds.slice(0, 2)}
+              />
+            </div>
+          )}
+
           {thresholds?.testAnalysis && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:p-4 text-sm space-y-3">
               <div className="font-semibold text-indigo-900 text-base">Test quality &amp; protocol analysis</div>
