@@ -107,6 +107,38 @@ function fmtHr(hr) {
   return `${Math.round(Number(hr))} bpm`;
 }
 
+/**
+ * Inverse interpolation: given a target lactate value, find the power
+ * (or pace seconds) on the measured curve where lactate hits that
+ * target. Used as a fallback for fixed-lactate methods (OBLA 4.0,
+ * Bsln + N) when DataTable's `thresholds` object doesn't include the
+ * named entry — DataTable only auto-computes targets up to OBLA 3.5,
+ * so OBLA 4.0 has to be reconstructed here when the athlete's curve
+ * actually crosses 4 mmol/L.
+ *
+ * Returns null if the curve never reaches the target (athlete didn't
+ * push past that lactate level).
+ */
+function interpolatePowerAtLactate(results, targetLa, isPace) {
+  if (!Array.isArray(results) || results.length < 2 || targetLa == null) return null;
+  const valid = results
+    .filter((r) => Number.isFinite(Number(r?.power)) && Number.isFinite(Number(r?.lactate)))
+    .map((r) => ({ power: Number(r.power), lactate: Number(r.lactate) }));
+  if (valid.length < 2) return null;
+  // Sort by hardness (ascending lactate generally follows ascending power
+  // for bike, descending pace seconds for run/swim).
+  const sorted = [...valid].sort((a, b) => isPace ? b.power - a.power : a.power - b.power);
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i + 1];
+    const lo = Math.min(a.lactate, b.lactate), hi = Math.max(a.lactate, b.lactate);
+    if (targetLa >= lo && targetLa <= hi && a.lactate !== b.lactate) {
+      const t = (targetLa - a.lactate) / (b.lactate - a.lactate);
+      return a.power + t * (b.power - a.power);
+    }
+  }
+  return null; // curve didn't cross the target
+}
+
 // Interpolate lactate at a given power from the raw test stages. Used
 // when `thresholds.lactates[methodName]` doesn't have the value (e.g.
 // log-log + IAT compute power directly without storing lactate).
@@ -229,11 +261,26 @@ export default function ThresholdMethodPicker({
       'OBLA 2.0':   pickMethodPoint(thresholds, 'OBLA 2.0',   results, isPace, 2.0),
       'OBLA 2.5':   pickMethodPoint(thresholds, 'OBLA 2.5',   results, isPace, 2.5),
     };
-    // LT2 candidates
+    // LT2 candidates. DataTable's auto-computed OBLA targets stop at 3.5,
+    // so OBLA 4.0 (the classical anaerobic threshold) typically isn't in
+    // the `thresholds` object. Fall back to direct inverse interpolation
+    // on the raw stages if the athlete's curve actually crosses 4 mmol/L.
+    const obla4Fallback = (() => {
+      const existing = pickMethodPoint(thresholds, 'OBLA 4.0', results, isPace, 4.0);
+      if (existing) return existing;
+      const power = interpolatePowerAtLactate(results, 4.0, isPace);
+      if (power == null) return null;
+      return {
+        power,
+        lactate: 4.0,
+        heartRate: interpolateHrAt(results, power, isPace),
+      };
+    })();
+
     const lt2Candidates = {
       'OBLA 3.0':   pickMethodPoint(thresholds, 'OBLA 3.0', results, isPace, 3.0),
       'OBLA 3.5':   pickMethodPoint(thresholds, 'OBLA 3.5', results, isPace, 3.5),
-      'OBLA 4.0':   pickMethodPoint(thresholds, 'OBLA 4.0', results, isPace, 4.0),
+      'OBLA 4.0':   obla4Fallback,
       'Bsln + 1.5': pickMethodPoint(thresholds, 'Bsln + 1.5', results, isPace, baseFB != null ? baseFB + 1.5 : null),
       'IAT':        pickMethodPoint(thresholds, 'IAT',      results, isPace),
       'Log-log':    pickMethodPoint(thresholds, 'Log-log',  results, isPace),
