@@ -253,8 +253,14 @@ function sampledPath(fn, xMin, xMax, samples, sx, sy) {
 }
 
 /** Build colored zone band specs from threshold keys.
- *  Returns ordered list of { from, to, fill } in numerical x order. */
-function buildZoneBands(thresholds = {}, xMin, xMax) {
+ *  Returns ordered list of { from, to, fill } in numerical x order.
+ *
+ *  isPace=true: the x-axis is REVERSED (high seconds = slow pace = LEFT side).
+ *  Palette[0]=Recovery(green) must appear on the LEFT, which is the band with
+ *  the highest numerical x values (last band in ascending sort).  We therefore
+ *  flip the palette index for pace so band N-1 (leftmost visually) gets
+ *  palette[0] and band 0 (rightmost visually) gets palette[N-1]. */
+function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
   // The five-zone scheme matches what the interactive coach chart uses:
   // Z1 recovery (below LTP1), Z2 aerobic (LTP1→IAT), Z3 tempo (IAT→LTP2),
   // Z4 threshold (LTP2→OBLA 3.0), Z5 VO₂max (above OBLA 3.0).
@@ -263,13 +269,25 @@ function buildZoneBands(thresholds = {}, xMin, xMax) {
   const lt2  = numOrNull(thresholds.LTP2);
   const ob30 = numOrNull(thresholds['OBLA 3.0']);
   // Soft pastel fills — readable when printed, don't fight the data lines.
+  // palette[0]=Recovery(green) … palette[4]=VO₂max(purple).
   const palette = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2', '#ede9fe'];
   const boundaries = [xMin, lt1, iat, lt2, ob30, xMax]
     .filter((v, i, arr) => v != null && (i === 0 || v !== arr[i - 1]))
     .sort((a, b) => a - b);
+  const numBands = boundaries.length - 1;
   const bands = [];
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    bands.push({ from: boundaries[i], to: boundaries[i + 1], fill: palette[Math.min(i, palette.length - 1)] });
+  for (let i = 0; i < numBands; i++) {
+    // For pace the axis is reversed: band 0 (numerically smallest x) sits on
+    // the RIGHT (fastest/hardest), so it should get the VO₂max colour.
+    // Flipping the index achieves this: band (numBands-1) (leftmost = easiest)
+    // gets palette[0] = Recovery green, band 0 (rightmost = hardest) gets
+    // palette[numBands-1].
+    const pi = isPace ? (numBands - 1 - i) : i;
+    bands.push({
+      from: boundaries[i],
+      to:   boundaries[i + 1],
+      fill: palette[Math.min(pi, palette.length - 1)],
+    });
   }
   return bands;
 }
@@ -314,7 +332,8 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
 
   // Colored zone bands behind the curve. Same five-zone palette as the
   // in-app chart so the printed report matches what the athlete sees.
-  const zoneBands = buildZoneBands(thresholds || {}, xMin, xMax);
+  // isPace is forwarded so the palette is flipped for reversed axes.
+  const zoneBands = buildZoneBands(thresholds || {}, xMin, xMax, isPace);
 
   // Up to 6 X-axis ticks
   const xTicks = [...new Set([xMin, ...pts.map(p => p.x), xMax])];
