@@ -5,9 +5,8 @@ import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
 import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
 import ThresholdMethodPicker from './ThresholdMethodPicker';
-import PreTestTrainingContext from './PreTestTrainingContext';
 import TestComparisonPanel from './TestComparisonPanel';
-import PredictedLactateCurve from './PredictedLactateCurve';
+import AiTestCoach from './AiTestCoach';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -2952,29 +2951,28 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           </div>
         )}
 
-        {/* Pre-test training context — 28 days of training load leading up
-            to this test. Helps explain the curve in light of what the
-            athlete actually did before walking into the lab. */}
+        {/* AI test coach — single panel that:
+              1. Generates a simple test protocol (start power + step +
+                 stages) from the athlete's training history,
+              2. Overlays a predicted lactate curve on the measured points,
+              3. Calls an LLM for a natural-language interpretation
+                 (1-2 paragraphs of what the test says + what to do next).
+            Replaces the older PreTestTrainingContext + PredictedLactateCurve
+            pair, both of which had too much UI surface for too little
+            actionable output. */}
         {!demoMode && (
           <div className="mt-4">
-            <PreTestTrainingContext
+            <AiTestCoach
               athleteId={mockData?.athleteId || user?._id || user?.id}
-              testDate={mockData?.date}
-            />
-          </div>
-        )}
-
-        {/* Lactate-curve predictor — uses 90 days of training to predict
-            LT1/LT2 from power/pace profile + Critical Power, generates a
-            suggested incremental test protocol with expected lactate at
-            each stage, and (when this test already has measured values)
-            compares measured vs predicted. Collapsed by default. */}
-        {!demoMode && (
-          <div className="mt-4">
-            <PredictedLactateCurve
-              athleteId={mockData?.athleteId || user?._id || user?.id}
-              sport={mockData?.sport}
               testId={mockData?._id}
+              testDate={mockData?.date}
+              sport={mockData?.sport}
+              measuredLt1={thresholds?.['LTP1']}
+              measuredLt2={thresholds?.['LTP2']}
+              measuredLt1Lactate={thresholds?.lactates?.['LTP1']}
+              measuredLt2Lactate={thresholds?.lactates?.['LTP2']}
+              results={mockData?.results}
+              baseLactate={mockData?.baseLactate}
             />
           </div>
         )}

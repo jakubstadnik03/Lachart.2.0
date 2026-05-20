@@ -3,16 +3,17 @@ import React, { useMemo, useRef, useEffect, useState } from 'react';
 /**
  * Strava-style laps bar chart.
  * Normal view: bars proportional to duration, all laps visible at once.
- * Zoomed view (lap selected): fixed-width bars in a horizontal scroll container,
- *   auto-scrolled to center the selected lap. Selected bar is taller + highlighted.
- * Double-click anywhere on the chart to reset zoom.
+ * Zoomed view (lap selected): bars STAY proportional to duration but the
+ *   container is scaled so the selected bar is ~90 px wide, then auto-scrolled
+ *   to centre on the selected lap. Double-click to reset zoom.
  */
 export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSelect, sport = '', disableZoom = false }) {
   const sportLower = (sport || '').toLowerCase();
   const isRun = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
   const isSwim = sportLower.includes('swim');
   const scrollRef = useRef(null);
-  const selectedBarRef = useRef(null);
+  const outerRef = useRef(null);           // wraps the scroll container — used for ResizeObserver
+  const [outerW, setOuterW] = useState(0); // measured width of the outer div
   const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
 
   const checkScrollEdges = () => {
@@ -98,32 +99,59 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     );
   }, [activeEntries, disableZoom]);
 
-  const ZOOM_BAR_W = 36; // px per bar in zoomed mode
-  const PAUSE_BAR_W = 8; // px for pause/rest bars in zoom mode
   const PAUSE_BAR_W_NORMAL = 5; // px for pause/rest bars in normal mode
+
+  // Measure outer container width so we can compute proportional zoom.
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setOuterW(entry.contentRect.width || el.clientWidth);
+    });
+    ro.observe(el);
+    setOuterW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  // Proportional zoom: when a lap is selected, expand the inner container so the
+  // selected bar fills ~TARGET_PX pixels, keeping all bars proportional to duration.
+  const TARGET_SELECTED_PX = 90;
+  const totalDuration = useMemo(() => entries.reduce((s, e) => s + e.duration, 0), [entries]);
+
+  const zoomedContainerW = useMemo(() => {
+    if (selectedLapNumber == null || skipZoom) return null;
+    const selEntry = entries.find(e => String(e.lapNumber) === String(selectedLapNumber) && !e.isPause);
+    if (!selEntry || selEntry.duration <= 0 || totalDuration <= 0) return null;
+    const needed = TARGET_SELECTED_PX * (totalDuration / selEntry.duration);
+    const base = outerW > 0 ? outerW : 400;
+    return needed > base ? needed : null; // only zoom if it would actually grow the container
+  }, [selectedLapNumber, entries, totalDuration, outerW, skipZoom]);
 
   // Re-check scroll edges after layout changes
   useEffect(() => {
     const raf = requestAnimationFrame(checkScrollEdges);
     return () => cancelAnimationFrame(raf);
-  }, [entries, selectedLapNumber]);
+  }, [entries, selectedLapNumber, zoomedContainerW]);
 
-  // Scroll selected bar into centre when zoomed — math-based, no DOM measurement.
-  // Skip entirely in skipZoom mode (bars stay at full proportional width, no scroll needed).
+  // Scroll selected bar into centre — duration-proportional offset based on zoomedContainerW.
   useEffect(() => {
-    if (selectedLapNumber == null || !scrollRef.current || skipZoom) return;
-    const container = scrollRef.current;
-    let leftOffset = 4; // px-1 padding
+    if (selectedLapNumber == null || !scrollRef.current || !zoomedContainerW) return;
+    const containerW = zoomedContainerW;
+    // Accumulate duration before the selected lap to find its left edge
+    let cumDur = 0;
     for (const entry of entries) {
       if (String(entry.lapNumber) === String(selectedLapNumber)) break;
-      leftOffset += entry.isPause ? PAUSE_BAR_W : ZOOM_BAR_W;
-      leftOffset += 2; // gap-0.5
+      cumDur += entry.duration;
     }
-    const scrollTarget = leftOffset + ZOOM_BAR_W / 2 - container.clientWidth / 2;
+    const selEntry = entries.find(e => String(e.lapNumber) === String(selectedLapNumber));
+    const selDur = selEntry?.duration || 0;
+    const barLeft = (cumDur / totalDuration) * containerW;
+    const barW = (selDur / totalDuration) * containerW;
+    const scrollTarget = barLeft + barW / 2 - scrollRef.current.clientWidth / 2;
     requestAnimationFrame(() => {
-      container.scrollTo({ left: Math.max(0, scrollTarget), behavior: 'smooth' });
+      scrollRef.current?.scrollTo({ left: Math.max(0, scrollTarget), behavior: 'smooth' });
     });
-  }, [selectedLapNumber, entries, skipZoom]);
+  }, [selectedLapNumber, entries, zoomedContainerW, totalDuration]);
 
   const barColor = (entry, isSelected) => {
     if (entry.isPause) return '#d1d5db';
@@ -208,10 +236,6 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
 
   if (entries.length === 0) return null;
 
-  // Don't switch to fixed-width zoomed layout when there are few laps or when one lap
-  // dominates the chart — the fixed 36 px bars would make a single bar appear tiny.
-  // Same heuristic as IntervalChart: ≤ 6 active bars, or the widest bar > 40 % of total duration.
-  const isZoomed = selectedLapNumber != null && !skipZoom;
   const firstActive = activeEntries[0];
 
   // Selected entry data for the info row
@@ -222,6 +246,13 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
   const handleDoubleClick = () => {
     if (onSelect) onSelect(null);
   };
+
+  // isZoomed: true when we're expanding the container proportionally (lap selected + not skipZoom)
+  const isZoomed = !!zoomedContainerW;
+  // Inner flex container width — expands when zoomed to make selected bar fill ~TARGET_SELECTED_PX
+  const innerStyle = zoomedContainerW
+    ? { minWidth: `${zoomedContainerW}px` }
+    : { minWidth: '100%' };
 
   return (
     <div className="w-full mb-3">
@@ -244,7 +275,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
         </div>
 
         {/* Bars + lap labels */}
-        <div className="flex-1 min-w-0 relative">
+        <div ref={outerRef} className="flex-1 min-w-0 relative">
           <div
             ref={scrollRef}
             onDoubleClick={handleDoubleClick}
@@ -252,68 +283,55 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
             className="rounded-lg overflow-x-auto"
             style={{ overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
           >
-            <div
-              className="flex items-end gap-0.5 h-32 px-1"
-              style={isZoomed
-                ? { minWidth: `${entries.reduce((s, e) => s + (e.isPause ? PAUSE_BAR_W : ZOOM_BAR_W) + 2, 8)}px` }
-                : { minWidth: '100%' }}
-            >
+            {/* Bars — always proportional to duration */}
+            <div className="flex items-end gap-0.5 h-32 px-1" style={innerStyle}>
               {entries.map((entry) => {
                 const isSelected = selectedLapNumber != null && String(entry.lapNumber) === String(selectedLapNumber);
 
                 if (entry.isPause) {
-                  const pw = isZoomed ? PAUSE_BAR_W : PAUSE_BAR_W_NORMAL;
                   return (
                     <div
                       key={entry.lapNumber}
                       className="flex flex-col items-center justify-end shrink-0"
-                      style={{ width: `${pw}px`, height: '100%' }}
+                      style={{ width: `${PAUSE_BAR_W_NORMAL}px`, height: '100%' }}
                     >
                       <div className="w-full rounded-t" style={{ height: '8%', minHeight: '3px', backgroundColor: '#d1d5db' }} />
                     </div>
                   );
                 }
+
                 const rawPct = Math.max((entry.value / maxVal) * 100, 8);
-                const heightPct = isZoomed
-                  ? (isSelected ? 100 : Math.max((entry.value / maxVal) * 82, 6))
-                  // skipZoom: give selected bar a subtle 8 % height boost so it stands out
-                  : (skipZoom && isSelected ? Math.min(rawPct * 1.08, 100) : rawPct);
+                // Selected bar gets a subtle height boost to stand out (cap at 100%)
+                const heightPct = isSelected ? Math.min(rawPct * 1.08, 100) : rawPct;
 
                 return (
                   <button
                     type="button"
                     key={entry.lapNumber}
-                    ref={isSelected ? selectedBarRef : null}
                     onClick={() => onSelect && onSelect(isSelected ? null : entry.lapNumber)}
                     title={`Lap ${entry.lapNumber}: ${fmtLabel(entry)}${entry.lactate != null ? ` · La ${entry.lactate.toFixed(1)}` : ''}`}
                     className="flex flex-col items-center justify-end group relative focus:outline-none"
-                    style={isZoomed
-                      ? { width: `${ZOOM_BAR_W}px`, minWidth: `${ZOOM_BAR_W}px`, height: '100%', flexShrink: 0 }
-                      : { flex: `${entry.duration} 1 0%`, minWidth: '2px', height: '100%' }}
+                    style={{ flex: `${entry.duration} 1 0%`, minWidth: '2px', height: '100%' }}
                   >
-                    {/* Bar — label + lactate dot live inside */}
+                    {/* Bar */}
                     <div
-                      className="w-full rounded-t relative overflow-hidden transition-[height] duration-200"
+                      className="w-full rounded-t relative overflow-hidden transition-[height,opacity] duration-200"
                       style={{
                         height: `${heightPct}%`,
                         backgroundColor: barColor(entry, isSelected),
-                        opacity: isZoomed
-                          ? (isSelected ? 1 : 0.55)
-                          : (selectedLapNumber != null ? (isSelected ? 1 : 0.60) : 0.75),
+                        opacity: selectedLapNumber != null ? (isSelected ? 1 : 0.55) : 0.78,
                         boxShadow: isSelected
                           ? `0 0 0 2px ${barColor(entry, true)}, 0 2px 8px ${barColor(entry, true)}60`
                           : 'none',
-                        transform: isSelected && isZoomed ? 'scaleX(0.85)' : undefined,
-                        transformOrigin: 'bottom',
                       }}
                     >
-                      {/* Value label inside bar at top — always show when selected */}
+                      {/* Value label inside bar — only when selected and wide enough */}
                       {isSelected && (
                         <span className="absolute inset-x-0 top-1 text-[8px] font-bold leading-none text-center truncate px-0.5 text-white">
                           {fmtLabel(entry)}
                         </span>
                       )}
-                      {/* Lactate dot — inside bar near top */}
+                      {/* Lactate dot */}
                       {entry.lactate != null && (
                         <div className="absolute left-1/2 -translate-x-1/2 top-1 w-2 h-2 rounded-full bg-violet-500 border-2 border-white shadow-sm" />
                       )}
@@ -323,13 +341,8 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
               })}
             </div>
 
-            {/* Lap number labels */}
-            <div
-              className="flex items-start gap-0.5 px-1 mt-0.5"
-              style={isZoomed
-                ? { minWidth: `${entries.reduce((s, e) => s + (e.isPause ? PAUSE_BAR_W : ZOOM_BAR_W) + 2, 8)}px` }
-                : { minWidth: '100%' }}
-            >
+            {/* Lap / distance labels below bars */}
+            <div className="flex items-start gap-0.5 px-1 mt-0.5" style={innerStyle}>
               {(() => {
                 const n = activeEntries.length;
                 const sparseSet = new Set([
@@ -340,29 +353,27 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                   activeEntries[n - 1]?.lapNumber,
                 ]);
                 return entries.map((entry) => {
-                if (entry.isPause) return (
-                  <div key={entry.lapNumber} style={{ width: isZoomed ? `${PAUSE_BAR_W}px` : `${PAUSE_BAR_W_NORMAL}px`, flexShrink: 0 }} />
-                );
-                const isSelected = String(entry.lapNumber) === String(selectedLapNumber);
-                const cumDist = cumulativeDistMap.get(entry.lapNumber) || 0;
-                const distLabel = fmtDist(cumDist);
-                const showLabel = isZoomed ? isSelected : (isSelected || sparseSet.has(entry.lapNumber));
-                return (
-                  <div
-                    key={entry.lapNumber}
-                    className="text-center overflow-visible relative"
-                    style={isZoomed
-                      ? { width: `${ZOOM_BAR_W}px`, flexShrink: 0 }
-                      : { flex: `${entry.duration} 1 0%`, minWidth: '2px' }}
-                  >
-                    {showLabel && (
-                      <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] leading-none font-medium ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
-                        {distLabel || entry.lapNumber}
-                      </span>
-                    )}
-                  </div>
-                );
-              });
+                  if (entry.isPause) return (
+                    <div key={entry.lapNumber} style={{ width: `${PAUSE_BAR_W_NORMAL}px`, flexShrink: 0 }} />
+                  );
+                  const isSelected = String(entry.lapNumber) === String(selectedLapNumber);
+                  const cumDist = cumulativeDistMap.get(entry.lapNumber) || 0;
+                  const distLabel = fmtDist(cumDist);
+                  const showLabel = isSelected || sparseSet.has(entry.lapNumber);
+                  return (
+                    <div
+                      key={entry.lapNumber}
+                      className="text-center overflow-visible relative"
+                      style={{ flex: `${entry.duration} 1 0%`, minWidth: '2px' }}
+                    >
+                      {showLabel && (
+                        <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] leading-none font-medium ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
+                          {distLabel || entry.lapNumber}
+                        </span>
+                      )}
+                    </div>
+                  );
+                });
               })()}
             </div>
           </div>
@@ -451,12 +462,12 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
           )}
           {isZoomed && (
             <>
-              <span className="text-[10px] text-gray-400">← →</span>
+              <span className="text-[10px] text-gray-400">scroll ← →</span>
               <button
                 type="button"
                 onClick={() => onSelect && onSelect(null)}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 font-semibold leading-none"
-              >✕</button>
+              >✕ reset</button>
             </>
           )}
         </div>

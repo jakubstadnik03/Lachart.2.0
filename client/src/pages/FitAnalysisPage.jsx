@@ -5179,6 +5179,7 @@ const FitAnalysisPage = () => {
                     selectedLapNumber={selectedLapNumber}
                     onSelectLapNumber={setSelectedLapNumber}
                     onOpenLactateForm={handleFitOpenLactateForm}
+                    hideChart={true}
                   />
                   </div>
 

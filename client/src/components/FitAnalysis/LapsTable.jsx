@@ -50,7 +50,7 @@ const LAPS_LIST_SCROLL_CLASS =
 const LAPS_LIST_FULL_CLASS =
   'overflow-x-auto';
 
-const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false }) => {
+const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false, hideChart = false }) => {
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
   const [initialLapIndex, setInitialLapIndex] = useState(null);
   const [lactateSaved, setLactateSaved] = useState(false);
@@ -231,15 +231,17 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
         </div>
 
         {/* Lap bar overview — sticky so it stays visible while scrolling laps */}
-        <div className="sticky top-0 z-10 bg-white pb-2 -mx-1 px-1">
-          <LapsBarChart
-            laps={uniqueLaps}
-            selectedLapNumber={effectiveSelectedLap}
-            onSelect={handleSelectLap}
-            sport={training?.sport}
-            disableZoom={disableZoom}
-          />
-        </div>
+        {!hideChart && (
+          <div className="sticky top-0 z-10 bg-white pb-2 -mx-1 px-1">
+            <LapsBarChart
+              laps={uniqueLaps}
+              selectedLapNumber={effectiveSelectedLap}
+              onSelect={handleSelectLap}
+              sport={training?.sport}
+              disableZoom={disableZoom}
+            />
+          </div>
+        )}
 
         <div ref={tableContainerRef} className={`${scrollClass} rounded-xl border border-gray-200 bg-white`}>
           <div className="divide-y divide-gray-100">

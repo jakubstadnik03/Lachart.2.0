@@ -1321,7 +1321,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     };
     load();
     return () => { cancelled = true; };
-  }, [a.id, a._id]);
+  }, [a.id, a._id, athleteId]);
 
   // Merge summary + full detail — detail wins for laps/stats, but preserve
   // the app-level `type` ('strava'|'fit'|'regular') from the original activity
