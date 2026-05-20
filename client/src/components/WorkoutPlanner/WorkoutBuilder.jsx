@@ -761,25 +761,30 @@ function QuickIntervalAdder({ context, onAdd }) {
     setOpen(false);
   };
 
-  const TargetRow = ({ label, color, dur, setDur, target, setTarget }) => (
+  const TargetRow = ({ label, color, dur, setDur, target, setTarget }) => {
+    // Types that resolve to a calculated watt/pace value the user may want to tweak
+    const showOverride = ['lt1', 'lt2', 'zone', 'percent_ftp', 'percent_lt1', 'percent_lt2'].includes(target.type);
+    const calcW = showOverride ? Math.round(resolveTargetWatts(target, context)) : null;
+    const hasOverride = target.override != null;
+    return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className={`text-xs font-semibold w-16 shrink-0 ${color}`}>{label}</span>
       <input type="text" value={dur} onChange={e=>setDur(e.target.value)}
         className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="mm:ss"/>
       <span className="text-xs text-slate-400">@</span>
-      <select value={target.type} onChange={e=>setTarget({type:e.target.value, value:target.value||4})}
+      <select value={target.type} onChange={e=>setTarget({type:e.target.value, value:target.value||4, override:undefined})}
         className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
         {TARGET_TYPES.filter(t=>t.value!=='open').map(tt=><option key={tt.value} value={tt.value}>{tt.label}</option>)}
       </select>
       {target.type==='zone' && (
-        <select value={target.value||4} onChange={e=>setTarget({...target,value:Number(e.target.value)})}
+        <select value={target.value||4} onChange={e=>setTarget({...target,value:Number(e.target.value),override:undefined})}
           className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
           {[1,2,3,4,5].map(z=><option key={z} value={z}>Z{z}</option>)}
         </select>
       )}
       {['percent_ftp','percent_lt1','percent_lt2'].includes(target.type) && (
         <div className="flex items-center gap-1">
-          <input type="number" value={target.value||90} onChange={e=>setTarget({...target,value:Number(e.target.value)})}
+          <input type="number" value={target.value||90} onChange={e=>setTarget({...target,value:Number(e.target.value),override:undefined})}
             className="w-14 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none bg-white" placeholder="%"/>
           <span className="text-xs text-slate-400">%</span>
         </div>
@@ -791,8 +796,36 @@ function QuickIntervalAdder({ context, onAdd }) {
           <span className="text-xs text-slate-400">W</span>
         </div>
       )}
+      {/* Editable exact-watts override for calculated targets */}
+      {showOverride && calcW != null && calcW > 0 && (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            value={hasOverride ? target.override : ''}
+            placeholder={String(calcW)}
+            onChange={e => {
+              const v = e.target.value;
+              setTarget({ ...target, override: v === '' ? undefined : Number(v) });
+            }}
+            className={`w-16 text-xs text-center rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-300 bg-white transition-colors ${
+              hasOverride
+                ? 'border-2 border-violet-400 font-semibold text-violet-700'
+                : 'border border-dashed border-slate-300 text-slate-400 placeholder:text-slate-300'
+            }`}
+          />
+          <span className="text-xs text-slate-400">W</span>
+          {hasOverride && (
+            <button
+              onClick={() => setTarget({ ...target, override: undefined })}
+              title="Reset to calculated value"
+              className="text-[10px] text-slate-400 hover:text-violet-600 leading-none"
+            >↺</button>
+          )}
+        </div>
+      )}
     </div>
-  );
+    );
+  };
 
   if (!open) return (
     <button onClick={()=>setOpen(true)}
