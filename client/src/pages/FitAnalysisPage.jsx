@@ -1507,7 +1507,10 @@ const FitAnalysisPage = () => {
       if (!id) return;
       const matches = buildMatcher(id);
       const patch = (t) => ({ ...t, category: category || null });
+      // Patch all three lists — calendarMergedActivities is derived from all of them.
       setTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
+      setRegularTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
+      setExternalActivities(prev => prev.map(t => matches(t) ? patch(t) : t));
       cachePatch(matches, patch);
     };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
