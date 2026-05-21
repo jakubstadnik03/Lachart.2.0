@@ -213,15 +213,57 @@ const TrainingHistory = () => {
         const stravaMatched = norm(stravaActs).filter(a => titleMatches(a) || (a.lactate != null && Number(a.lactate) > 0));
         const stravaTrainings = await Promise.all(stravaMatched.map(stravaToTraining));
 
-        // Merge & dedupe by _id, sort newest first.
+        // Merge & dedupe — three passes:
+        // 1. Exact _id dedup (cheapest).
+        // 2. sourceStravaActivityId dedup — same Strava activity exported twice
+        //    (planned + exported). Keep the one with more lap data / power.
+        // 3. title + date dedup — same training on the same day. Keep the richer one.
+        const scoreTraining = (t) => {
+          const results = Array.isArray(t.results) ? t.results : [];
+          const hasPower = results.some(r => r.power > 0);
+          const hasLact  = results.some(r => r.lactate > 0) || (t.lactate > 0);
+          return results.length * 10 + (hasPower ? 5 : 0) + (hasLact ? 3 : 0);
+        };
+
         const all = [...norm(regular), ...fitMatched, ...stravaTrainings];
-        const seen = new Set();
-        const merged = all.filter(t => {
+
+        // Pass 1: _id
+        const seenId = new Set();
+        const pass1 = all.filter(t => {
           const key = String(t._id || t.id || '');
-          if (!key || seen.has(key)) return false;
-          seen.add(key);
+          if (!key || seenId.has(key)) return false;
+          seenId.add(key);
           return true;
-        }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        });
+
+        // Pass 2: sourceStravaActivityId — keep highest-score entry per stravaId
+        const byStravaId = new Map();
+        pass1.forEach(t => {
+          const sid = t.sourceStravaActivityId
+            ? String(t.sourceStravaActivityId)
+            : null;
+          if (!sid) return;
+          const prev = byStravaId.get(sid);
+          if (!prev || scoreTraining(t) > scoreTraining(prev)) byStravaId.set(sid, t);
+        });
+        const stravaIdWinners = new Set([...byStravaId.values()].map(t => String(t._id || '')));
+        const pass2 = pass1.filter(t => {
+          const sid = t.sourceStravaActivityId ? String(t.sourceStravaActivityId) : null;
+          if (!sid) return true; // no stravaId — keep
+          return stravaIdWinners.has(String(t._id || ''));
+        });
+
+        // Pass 3: title + date (same calendar day) — keep highest-score entry
+        const byTitleDate = new Map();
+        pass2.forEach(t => {
+          const key = `${String(t.title || '').trim()}|${new Date(t.date || 0).toDateString()}`;
+          const prev = byTitleDate.get(key);
+          if (!prev || scoreTraining(t) > scoreTraining(prev)) byTitleDate.set(key, t);
+        });
+        const titleDateWinners = new Set([...byTitleDate.values()].map(t => String(t._id || '')));
+        const merged = pass2
+          .filter(t => titleDateWinners.has(String(t._id || '')))
+          .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
         if (merged.length > 0) {
           setTrainings(merged);

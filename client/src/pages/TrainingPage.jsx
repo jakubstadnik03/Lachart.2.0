@@ -201,7 +201,7 @@ export default function TrainingPage() {
         api.get(`/api/integrations/activities`, { params: { athleteId: targetId } }).catch(() => ({ data: [] }))
       ]);
       
-      const allTrainings = [
+      const rawTrainings = [
         ...response.data,
         ...(fitResponse.data || []).map(t => ({
           ...t,
@@ -225,7 +225,47 @@ export default function TrainingPage() {
           title: a.titleManual || a.name || a.title || null,
         }))
       ];
-      
+
+      // Deduplicate: prefer the entry with more data (results/power/lactate).
+      // Same sourceStravaActivityId → keep richer one.
+      // Same title + same calendar day → keep richer one.
+      const scoreT = (t) => {
+        const res = Array.isArray(t.results) ? t.results : [];
+        return res.length * 10
+          + (res.some(r => Number(r.power) > 0) ? 5 : 0)
+          + (res.some(r => Number(r.lactate) > 0) || Number(t.lactate) > 0 ? 3 : 0);
+      };
+      // Pass 1: exact _id
+      const seenId = new Set();
+      const p1 = rawTrainings.filter(t => {
+        const k = String(t._id || t.id || '');
+        if (!k || seenId.has(k)) return false;
+        seenId.add(k); return true;
+      });
+      // Pass 2: sourceStravaActivityId
+      const byStrava = new Map();
+      p1.forEach(t => {
+        const sid = t.sourceStravaActivityId ? String(t.sourceStravaActivityId) : null;
+        if (!sid) return;
+        const prev = byStrava.get(sid);
+        if (!prev || scoreT(t) > scoreT(prev)) byStrava.set(sid, t);
+      });
+      const stravaWinners = new Set([...byStrava.values()].map(t => String(t._id || t.id || '')));
+      const p2 = p1.filter(t => {
+        const sid = t.sourceStravaActivityId ? String(t.sourceStravaActivityId) : null;
+        if (!sid) return true;
+        return stravaWinners.has(String(t._id || t.id || ''));
+      });
+      // Pass 3: title + date
+      const byTD = new Map();
+      p2.forEach(t => {
+        const k = `${String(t.title || '').trim()}|${new Date(t.date || 0).toDateString()}`;
+        const prev = byTD.get(k);
+        if (!prev || scoreT(t) > scoreT(prev)) byTD.set(k, t);
+      });
+      const tdWinners = new Set([...byTD.values()].map(t => String(t._id || t.id || '')));
+      const allTrainings = p2.filter(t => tdWinners.has(String(t._id || t.id || '')));
+
       setTrainings(allTrainings);
 
       // Nastavení výchozího vybraného tréninku — preferuj nejnovější s intervaly,
