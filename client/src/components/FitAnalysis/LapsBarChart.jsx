@@ -291,26 +291,25 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
       {/* Chart area with Y-axis */}
       <div className="flex items-start" style={{ gap: isSwim ? 6 : 4 }}>
 
-        {/* Y-axis — SVG text so coordinates are always top-left, zero CSS ambiguity.
-            y = (1 - frac) * CHART_H_PX  →  frac=1 (max) at y=0 (top),
-                                             frac=0 (min) at y=CHART_H_PX (bottom). */}
+        {/* Y-axis — SVG. yTicks[0]=maxVal → y=0 (top), yTicks[4]=floor → y=CHART_H_PX (bottom).
+            We map directly by index: no derived frac, no CSS, nothing can flip it. */}
         <svg
           width={40}
           height={CHART_H_PX}
           style={{ flexShrink: 0, overflow: 'visible' }}
         >
           {yTicks.map((val, i) => {
-            const valRange = maxVal - chartFloor;
-            const frac = valRange > 0 ? (val - chartFloor) / valRange : 0.5;
-            // y=0 is the TOP in SVG — exactly matching position:absolute top:0
-            const y = Math.round((1 - frac) * CHART_H_PX);
-            // clamp so text doesn't overflow: first label baseline min 8, last max CHART_H_PX
-            const clampedY = Math.max(8, Math.min(y, CHART_H_PX));
+            // Direct linear mapping: index 0 → top of SVG, index 4 → bottom of SVG.
+            // yTicks is built as [maxVal … chartFloor] so label order is high→low top→bottom.
+            const n    = yTicks.length - 1; // 4
+            const y    = n > 0 ? Math.round((i / n) * CHART_H_PX) : 0;
+            // Keep labels inside the SVG viewbox
+            const yPos = i === 0 ? Math.max(y, 7) : Math.min(y, CHART_H_PX - 1);
             return (
               <text
                 key={i}
                 x={38}
-                y={clampedY}
+                y={yPos}
                 textAnchor="end"
                 dominantBaseline="middle"
                 fontSize={9}
