@@ -1289,6 +1289,168 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
 }
 
 // ─── CompareContent ───────────────────────────────────────────────────────────
+const COMPARE_STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
+const COMPARE_STEP_BG     = { warmup:'#fef3c7', work:'#eef0fa', recovery:'#d1fae5', cooldown:'#e0f2fe', rest:'#f3f4f6' };
+const COMPARE_STEP_TEXT   = { warmup:'#92400e', work:'#3730a3', recovery:'#065f46', cooldown:'#0369a1', rest:'#4b5563' };
+const COMPARE_TYPE_LABELS = { warmup:'Rozehřátí', work:'Interval', recovery:'Odpočinek', cooldown:'Zklidnění', rest:'Pauza' };
+
+function detectLapType(lap, index, total) {
+  // 1. Explicit interval type tag
+  const it = lap?.intervalType;
+  if (it && COMPARE_STEP_COLORS[it]) return it;
+  // 2. Name-based heuristics
+  const name = String(lap?.name || '').toLowerCase();
+  if (/warm.?up|rozeh/i.test(name)) return 'warmup';
+  if (/cool.?down|zklidn/i.test(name)) return 'cooldown';
+  if (/recov|odpoc|rest/i.test(name)) return 'recovery';
+  if (/interval|work|int\s*\d/i.test(name)) return 'work';
+  // 3. Position heuristic: first/last = warmup/cooldown, even alternating = recovery
+  if (index === 0 && total > 2) return 'warmup';
+  if (index === total - 1 && total > 2) return 'cooldown';
+  // Odd positions tend to be work, even recovery when alternating pattern
+  if (total >= 5) return index % 2 === 1 ? 'work' : 'recovery';
+  return 'work';
+}
+
+function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
+  if (!Array.isArray(laps) || laps.length === 0) return (
+    <div className="text-[10px] text-gray-400 italic px-1 py-2">Žádné lapy</div>
+  );
+  const fmtSec = s => {
+    if (!s || s <= 0) return '—';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+  };
+  const fmtPace = lap => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
+    const pow  = Number(lap.average_watts || lap.avgPower || 0);
+    if (isBike) return pow > 0 ? `${Math.round(pow)} W` : '—';
+    if ((isRun || isSwim) && dist > 0 && dur > 0) {
+      const pace = isSwim ? dur / (dist / 100) : dur / (dist / 1000);
+      const m = Math.floor(pace / 60), s = Math.round(pace % 60);
+      return `${m}:${String(s).padStart(2,'0')}${isSwim ? '/100m' : '/km'}`;
+    }
+    return '—';
+  };
+  const total = laps.length;
+  const rows = laps.map((lap, i) => {
+    const type = detectLapType(lap, i, total);
+    return { lap, i, type };
+  }).filter(({ type }) => !workOnly || type === 'work');
+
+  return (
+    <table className="w-full text-[10px] border-collapse">
+      <thead>
+        <tr className="border-b border-gray-100">
+          <th className="text-left font-bold text-gray-400 py-1 pr-1 w-5">#</th>
+          <th className="text-left font-bold text-gray-400 py-1 pr-1">Typ</th>
+          <th className="text-right font-bold text-gray-400 py-1 pr-1">Čas</th>
+          <th className="text-right font-bold text-gray-400 py-1 pr-1">{isBike ? 'Výkon' : 'Tempo'}</th>
+          <th className="text-right font-bold text-gray-400 py-1">♥</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ lap, i, type }) => {
+          const hr = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0);
+          const dur = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+          const color  = COMPARE_STEP_COLORS[type] || '#6b7280';
+          const bg     = COMPARE_STEP_BG[type]     || '#f9fafb';
+          const txtCol = COMPARE_STEP_TEXT[type]   || '#374151';
+          const label  = COMPARE_TYPE_LABELS[type] || type;
+          return (
+            <tr key={i} style={{ backgroundColor: bg }} className="border-b border-white">
+              <td className="py-0.5 pr-1 font-bold tabular-nums" style={{ color: txtCol }}>{i+1}</td>
+              <td className="py-0.5 pr-1">
+                <span className="inline-flex items-center gap-0.5 font-semibold" style={{ color: txtCol }}>
+                  <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: color }} />
+                  {label}
+                </span>
+              </td>
+              <td className="py-0.5 pr-1 text-right tabular-nums text-gray-700">{fmtSec(dur)}</td>
+              <td className="py-0.5 pr-1 text-right tabular-nums font-semibold" style={{ color: txtCol }}>{fmtPace(lap)}</td>
+              <td className="py-0.5 text-right tabular-nums text-gray-600">{hr > 0 ? hr : '—'}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
+  // Extract work laps (by type) from each session
+  const sessions = [
+    { label: 'Tento', laps: currentLaps, isRef: true },
+    ...results.map(r => ({ label: r.date ? (() => { const d = new Date(r.date); return `${d.getDate()}.${d.getMonth()+1}.${String(d.getFullYear()).slice(-2)}`; })() : '?', laps: Array.isArray(r.laps) ? r.laps : [], isRef: false, id: r.id })),
+  ];
+
+  const fmtPace = (lap, b, r, s) => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
+    const pow  = Number(lap.average_watts || lap.avgPower || 0);
+    if (b) return pow > 0 ? `${Math.round(pow)}W` : '—';
+    if ((r || s) && dist > 0 && dur > 0) {
+      const pace = s ? dur / (dist / 100) : dur / (dist / 1000);
+      const m = Math.floor(pace / 60), sec = Math.round(pace % 60);
+      return `${m}:${String(sec).padStart(2,'0')}`;
+    }
+    return '—';
+  };
+  const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : '—'; };
+
+  // For each session, get only work laps with original index
+  const sessWorkLaps = sessions.map(s => {
+    const total = s.laps.length;
+    return s.laps.map((lap, i) => ({ lap, origIdx: i, type: detectLapType(lap, i, total) }))
+                 .filter(({ type }) => type === 'work');
+  });
+  const maxWork = Math.max(...sessWorkLaps.map(w => w.length), 0);
+  if (maxWork === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-purple-100 bg-white overflow-hidden">
+      <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-[#767EB5]" />
+        <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">Porovnání work lapů</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[10px] border-collapse min-w-[320px]">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="text-center font-bold text-gray-400 py-1.5 px-2 w-6">W#</th>
+              {sessions.map((s, si) => (
+                <th key={si} className={`text-center font-bold py-1.5 px-2 ${s.isRef ? 'text-blue-600' : 'text-gray-500'}`}>
+                  {s.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: maxWork }, (_, wi) => (
+              <tr key={wi} className="border-b border-gray-50" style={{ backgroundColor: wi % 2 === 0 ? '#eef0fa' : '#f5f6fc' }}>
+                <td className="text-center font-bold text-[#767EB5] py-1 px-2">{wi + 1}</td>
+                {sessWorkLaps.map((workLaps, si) => {
+                  const entry = workLaps[wi];
+                  if (!entry) return <td key={si} className="text-center text-gray-300 py-1 px-2">—</td>;
+                  const pace = fmtPace(entry.lap, isBike, isRun, isSwim);
+                  const hr   = fmtHr(entry.lap);
+                  return (
+                    <td key={si} className="text-center py-1 px-2">
+                      <div className={`font-bold tabular-nums ${sessions[si].isRef ? 'text-blue-700' : 'text-gray-700'}`}>{pace}</div>
+                      {hr !== '—' && <div className="text-gray-400 tabular-nums">{hr}♥</div>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function CompareContent({ merged, athleteId, onOpen }) {
   const hasTitle    = !!(merged?.titleManual || (merged?.title && String(merged.title).trim()));
   const hasCategory = !!(merged?.category);
@@ -1308,6 +1470,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
+  const [workOnly, setWorkOnly] = useState(false);
+  const [expandedCards, setExpandedCards] = useState({});
 
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
@@ -1327,6 +1491,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   }, [activeFilters]);
 
   const toggleFilter = id => setActiveFilters(p => p.includes(id) ? p.filter(f => f !== id) : [...p, id]);
+  const toggleCard   = id => setExpandedCards(p => ({ ...p, [id]: !p[id] }));
 
   const fmtSec = s => {
     if (!s || s <= 0) return '—';
@@ -1336,7 +1501,6 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const fmtDist = m => (!m || m <= 0) ? '—' : m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
   const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
 
-  // Compute shared Y-scale across current + all compared activities
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const currentLaps = useMemo(() => Array.isArray(merged?.laps) ? merged.laps : [], [merged?.laps]);
 
@@ -1376,9 +1540,9 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const sportColor = isBike ? '#767EB5' : isRun ? '#f97316' : isSwim ? '#38bdf8' : '#6b7280';
 
   return (
-    <div className="space-y-4">
-      {/* Filter chips */}
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-3">
+      {/* Filter chips + work-only toggle */}
+      <div className="flex flex-wrap gap-2 items-center">
         {hasTitle && (
           <button onClick={() => toggleFilter('title')}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('title') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
@@ -1397,25 +1561,57 @@ function CompareContent({ merged, athleteId, onOpen }) {
             Podobný laktát
           </button>
         )}
+        {(currentLaps.length > 0 || results.some(r => r.laps?.length)) && (
+          <button onClick={() => setWorkOnly(w => !w)}
+            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1 ${workOnly ? 'bg-[#767EB5] text-white border-[#767EB5]' : 'bg-white text-gray-500 border-gray-200'}`}>
+            <span className="w-2 h-2 rounded-full bg-current inline-block" />
+            Jen work
+          </button>
+        )}
       </div>
 
-      {/* Current activity reference chart */}
+      {/* ── Current activity reference ── */}
       {currentLaps.length > 0 && (
         <div className="rounded-xl border-2 bg-white overflow-hidden" style={{ borderColor: sportColor }}>
+          {/* Header */}
           <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: sportColor }}>Tento trénink</span>
-            <span className="text-[10px] text-gray-400">{fmtDate(merged?.start_date || merged?.startDate || merged?.date)}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: sportColor }}>Tento trénink</span>
+              <span className="text-[10px] text-gray-400">{fmtDate(merged?.start_date || merged?.startDate || merged?.date)}</span>
+            </div>
+            <button onClick={() => toggleCard('__current')}
+              className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-0.5">
+              {expandedCards['__current'] ? 'skrýt' : 'lapy'}
+              <ChevronDownIcon className={`w-3 h-3 transition-transform ${expandedCards['__current'] ? 'rotate-180' : ''}`} />
+            </button>
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-2">
+          {/* Stats */}
+          <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-1.5">
             {Number(merged?.distance || merged?.totalDistance || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(Number(merged.distance || merged.totalDistance))}</span>}
             {Number(merged?.elapsed_time || merged?.totalElapsedTime || merged?.duration || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(Number(merged.elapsed_time || merged.totalElapsedTime || merged.duration))}</span>}
             {Number(merged?.average_watts || merged?.avgPower || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_watts || merged.avgPower)}W</span>}
             {Number(merged?.average_heartrate || merged?.avgHeartRate || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_heartrate || merged.avgHeartRate)} bpm</span>}
             {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
           </div>
+          {/* Bar chart */}
           <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim}
             selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
+          {/* Lap detail table — toggle */}
+          {expandedCards['__current'] && (
+            <div className="px-3 pb-3 border-t border-gray-50 pt-2">
+              <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} />
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Work lap comparison matrix */}
+      {!loading && !error && results.length > 0 && (
+        <WorkLapCompareTable
+          currentLaps={currentLaps}
+          results={results}
+          isBike={isBike} isRun={isRun} isSwim={isSwim}
+        />
       )}
 
       {/* Loading */}
@@ -1439,6 +1635,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
         const actIsSwim = /swim/i.test(act.sport || '');
         const actColor  = actIsBike ? '#767EB5' : actIsRun ? '#f97316' : actIsSwim ? '#38bdf8' : '#6b7280';
         const compLaps  = Array.isArray(act.laps) ? act.laps : [];
+        const isExpanded = !!expandedCards[act.id];
 
         return (
           <div key={act.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
@@ -1458,30 +1655,43 @@ function CompareContent({ merged, athleteId, onOpen }) {
                 </div>
                 <div className="text-sm font-bold text-gray-800 truncate mt-0.5">{act.title}</div>
               </div>
-              {onOpen && (
-                <button
-                  onClick={() => onOpen(act)}
-                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                >
-                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
-                  Otevřít
-                </button>
-              )}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {compLaps.length > 0 && (
+                  <button onClick={() => toggleCard(act.id)}
+                    className="flex items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+                    {isExpanded ? 'skrýt' : 'lapy'}
+                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+                {onOpen && (
+                  <button onClick={() => onOpen(act)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                    <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                    Otevřít
+                  </button>
+                )}
+              </div>
             </div>
             {/* Stats */}
-            <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-2">
+            <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-1.5">
               {act.distance > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(act.distance)}</span>}
               {act.duration > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(act.duration)}</span>}
               {act.avgPower > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(act.avgPower)}W</span>}
               {act.avgHr   > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(act.avgHr)} bpm</span>}
             </div>
-            {/* LapChart — shared Y-scale so bars are visually comparable */}
+            {/* LapChart — shared Y-scale */}
             {compLaps.length > 0 && (
               <LapChart laps={compLaps} color={actColor} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim}
                 selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
             )}
             {compLaps.length === 0 && (
               <div className="px-3 pb-3 text-[10px] text-gray-400 italic">Žádné lapy k dispozici</div>
+            )}
+            {/* Expandable lap detail */}
+            {isExpanded && compLaps.length > 0 && (
+              <div className="px-3 pb-3 border-t border-gray-50 pt-2">
+                <CompareLapTable laps={compLaps} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} workOnly={workOnly} />
+              </div>
             )}
           </div>
         );
