@@ -713,13 +713,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
+    const lactate = lap.lactate != null ? Number(lap.lactate) : null;
     let value = 0;
     if (isBike)                              value = pow;
     else if (isRun  && dist > 0 && dur > 0)  value = dur / (dist / 1000);
     else if (isSwim && dist > 0 && dur > 0)  value = dur / (dist / 100);
     // weight = dist for swim/run (proportional to distance), dur for bike
     const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
-    return { value, weight, dur, dist, isPause: !isBike && dist <= 0 };
+    return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
   });
 
   // In zoomed mode: scale weights so the largest non-pause bar is MAX_BAR_PX wide
@@ -992,6 +993,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               transition: 'width 0.25s ease, min-width 0.25s ease',
             }}
           >
+            {/* Horizontal grid lines — one per Y-axis tick, helps visual alignment */}
+            {yTicks.map((_, i) => (
+              <div key={i} style={{
+                position: 'absolute', left: 0, right: 0,
+                top: (i / 4) * CHART_H,
+                height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
+              }} />
+            ))}
             {/* Elevation outline */}
             {elevPathD && (
               <svg
@@ -1025,16 +1034,20 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 : rawBarH;
 
               // Intensity-based color shading
+              const hasLactate = ent.lactate != null && !isNaN(ent.lactate);
               let barBg;
               if (ent.isPause) {
                 barBg = isSelected ? color + '60' : '#E5E7EB';
+              } else if (hasLactate) {
+                // Bars with lactate measurement → violet, selected = deeper
+                barBg = isSelected ? '#7c3aed' : '#a78bfa';
               } else if (isSelected) {
                 barBg = color;
               } else {
                 const intensity = getIntensity(ent.value);
-                // Dim non-selected bars when something IS selected (both zoom modes)
                 const dimmed = selectedLap != null && !isSelected;
-                const alpha = Math.round((dimmed ? 0.25 : (0.3 + intensity * 0.6)) * 255).toString(16).padStart(2, '0');
+                // Wider alpha range (0.15 → 1.0) for bigger visual contrast between bars
+                const alpha = Math.round((dimmed ? 0.20 : (0.15 + intensity * 0.85)) * 255).toString(16).padStart(2, '0');
                 barBg = color + alpha;
               }
 
@@ -1060,17 +1073,32 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                   {ent.isPause ? (
                     <div style={{ width: isZoomed ? 4 : 3, height: isZoomed ? 4 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: X_LABEL_H }} />
                   ) : (
-                    <div style={{
-                      // Always 100% of the flex slot — slot itself handles
-                      // proportional sizing (see itemStyle).
-                      width: '100%',
-                      height: barH,
-                      backgroundColor: barBg,
-                      borderRadius: '3px 3px 0 0',
-                      marginBottom: X_LABEL_H,
-                      boxShadow: isSelected ? `0 0 0 2px ${color}, 0 2px 8px ${color}60` : undefined,
-                      transition: 'height 0.2s ease, opacity 0.15s ease',
-                    }} />
+                    <div style={{ position: 'relative', width: '100%', marginBottom: X_LABEL_H }}>
+                      {/* Lactate value label above the bar */}
+                      {hasLactate && (
+                        <div style={{
+                          position: 'absolute', bottom: barH + 2, left: 0, right: 0,
+                          textAlign: 'center', fontSize: 8, fontWeight: 800,
+                          color: '#7c3aed', lineHeight: 1, pointerEvents: 'none',
+                        }}>
+                          {ent.lactate.toFixed(1)}
+                        </div>
+                      )}
+                      <div style={{
+                        width: '100%',
+                        height: barH,
+                        backgroundColor: barBg,
+                        borderRadius: '3px 3px 0 0',
+                        boxShadow: isSelected ? `0 0 0 2px ${hasLactate ? '#7c3aed' : color}, 0 2px 8px ${hasLactate ? '#7c3aed' : color}60` : undefined,
+                        transition: 'height 0.2s ease, opacity 0.15s ease',
+                        position: 'relative', overflow: 'hidden',
+                      }}>
+                        {/* Violet cap stripe for lactate bars */}
+                        {hasLactate && (
+                          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#5b21b6', borderRadius: '3px 3px 0 0' }} />
+                        )}
+                      </div>
+                    </div>
                   )}
                   {/* X-axis selection indicator */}
                   <div className="relative w-full flex items-center justify-center" style={{ height: X_LABEL_H }}>
