@@ -16,6 +16,7 @@ import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { signInWithGoogleNative } from '../utils/nativeGoogleAuth';
 import { signInWithAppleNative } from '../utils/nativeAppleAuth';
+import { signInWithAppleWeb } from '../utils/webAppleAuth';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -161,6 +162,34 @@ const SignUpPage = () => {
         const detail = serverErr?.reason || serverErr?.error || err?.message;
         addNotification(detail || 'Apple sign-up failed', 'error');
         setError(detail || 'Apple sign-up failed');
+      }
+    }
+  };
+
+  // Web Apple Sign-Up (browser popup)
+  const handleWebAppleSignUp = async () => {
+    try {
+      const { identityToken, user: appleUser } = await signInWithAppleWeb();
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/apple-auth`, {
+        identityToken,
+        user: appleUser,
+      });
+      if (result.data.token) {
+        trackUserRegistration('apple_web', formData.role);
+        trackConversionFunnel('signup_complete', { method: 'apple_web', role: formData.role });
+        localStorage.setItem('token', result.data.token);
+        const { saveUserToStorage } = await import('../utils/userStorage');
+        saveUserToStorage(result.data.user);
+        api.defaults.headers.common['Authorization'] = `Bearer ${result.data.token}`;
+        await login(null, null, result.data.token, result.data.user);
+        addNotification('Signed up with Apple', 'success');
+        navigate('/dashboard', { replace: true });
+      }
+    } catch (err) {
+      if (!err?.cancelled) {
+        const serverErr = err?.response?.data;
+        const detail = serverErr?.reason || serverErr?.error || err?.message || 'Apple sign-up failed';
+        addNotification(detail, 'error');
       }
     }
   };
@@ -861,7 +890,7 @@ const SignUpPage = () => {
                 After Google sign-in you&apos;ll choose your role and accept the Terms &amp; Privacy Policy.
               </p>
 
-              <div className="mt-4 flex justify-center">
+              <div className="mt-4 flex flex-col items-center gap-3">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
                   onError={() => addNotification('Google authentication failed', 'error')}
@@ -879,6 +908,20 @@ const SignUpPage = () => {
                   ux_mode="popup"
                   context="signup"
                 />
+
+                {/* Apple Sign Up — web popup */}
+                <button
+                  type="button"
+                  onClick={handleWebAppleSignUp}
+                  style={{ width: 300 }}
+                  className="flex items-center justify-center gap-2.5 py-2.5 px-4 bg-black hover:bg-gray-900 active:bg-gray-800 rounded-md shadow-sm transition-colors text-white text-sm font-medium"
+                >
+                  <svg width="16" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.54 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09z"/>
+                    <path d="M15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/>
+                  </svg>
+                  <span>Sign up with Apple</span>
+                </button>
               </div>
             </motion.div>
             )}

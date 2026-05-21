@@ -17,6 +17,7 @@ import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { signInWithGoogleNative } from '../utils/nativeGoogleAuth';
 import { signInWithAppleNative } from '../utils/nativeAppleAuth';
+import { signInWithAppleWeb } from '../utils/webAppleAuth';
 
 /** Shown after Google sign-in errors so users can recover without Google (same email in LaChart). */
 function withGoogleLoginPasswordHint(message) {
@@ -424,6 +425,54 @@ const LoginPage = () => {
         const serverErr = err?.response?.data;
         const detail = serverErr?.reason || serverErr?.error || err?.message;
         addNotification(detail || 'Apple sign-in failed', 'error');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Web Apple Sign In (browser popup via Apple JS SDK)
+  const handleWebAppleSignIn = async () => {
+    if (isLoading) return;
+    try {
+      setIsLoading(true);
+      setGoogleAuthError(null);
+      const { identityToken, user: appleUser } = await signInWithAppleWeb();
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/apple-auth`, {
+        identityToken,
+        user: appleUser,
+      });
+      if (result.data.token) {
+        localStorage.setItem('token', result.data.token);
+        const { saveUserToStorage } = await import('../utils/userStorage');
+        saveUserToStorage(result.data.user);
+        api.defaults.headers.common['Authorization'] = `Bearer ${result.data.token}`;
+        await login(null, null, result.data.token, result.data.user);
+        trackEvent('login_success', { method: 'apple_web' });
+        addNotification('Signed in with Apple', 'success');
+
+        const user = result.data.user;
+        if (user.role === 'athlete') {
+          const isBasicProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
+          const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
+          const basicProfileDone = user.onboarding?.basicProfileDone || (user._id && localStorage.getItem(`basicProfileModalDone_${user._id}`) === 'true');
+          const unitsDone = user.onboarding?.unitsDone || (user._id && localStorage.getItem(`unitsPreferencesModalDone_${user._id}`) === 'true');
+          const trainingZonesDone = user.onboarding?.trainingZonesDone || (user._id && localStorage.getItem(`trainingZonesModalDone_${user._id}`) === 'true');
+          if (isBasicProfileIncomplete && !basicProfileDone) { setLoggedInUser(user); setTimeout(() => setShowBasicProfileModal(true), 3000); }
+          else if (!unitsDone) { setLoggedInUser(user); setTimeout(() => setShowUnitsPreferencesModal(true), 3000); }
+          else if (hasNoTrainingZones && !trainingZonesDone) { setLoggedInUser(user); setTimeout(() => setShowTrainingZonesModal(true), 3000); }
+          else if (!user.strava?.athleteId) { setLoggedInUser(user); setTimeout(() => setShowStravaModal(true), 3000); }
+          else { navigate(from, { replace: true }); }
+        } else {
+          navigate(from, { replace: true });
+        }
+      }
+    } catch (err) {
+      if (!err?.cancelled) {
+        const serverErr = err?.response?.data;
+        const detail = serverErr?.reason || serverErr?.error || err?.message || 'Apple sign-in failed';
+        addNotification(detail, 'error');
+        setGoogleAuthError(detail);
       }
     } finally {
       setIsLoading(false);
@@ -897,7 +946,7 @@ const LoginPage = () => {
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-col items-center">
+              <div className="mt-6 flex flex-col items-center gap-3">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
                   onError={handleGoogleError}
@@ -916,9 +965,25 @@ const LoginPage = () => {
                   context="signin"
                   disabled={isLoading}
                 />
+
+                {/* Apple Sign In — web popup flow */}
+                <button
+                  type="button"
+                  onClick={handleWebAppleSignIn}
+                  disabled={isLoading}
+                  style={{ width: 300 }}
+                  className="flex items-center justify-center gap-2.5 py-2.5 px-4 bg-black hover:bg-gray-900 active:bg-gray-800 rounded-md shadow-sm transition-colors disabled:opacity-50 text-white text-sm font-medium"
+                >
+                  <svg width="16" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.54 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09z"/>
+                    <path d="M15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/>
+                  </svg>
+                  <span>{isLoading ? 'Signing in...' : 'Sign in with Apple'}</span>
+                </button>
+
                 {googleAuthError && (
-                  <p className="mt-3 max-w-sm text-center text-sm text-gray-600">
-                    <span className="text-gray-700 font-medium">Can’t use Google?</span>{' '}
+                  <p className="mt-1 max-w-sm text-center text-sm text-gray-600">
+                    <span className="text-gray-700 font-medium">Can't use Google?</span>{' '}
                     <Link
                       to="/forgot-password"
                       className="text-primary font-semibold hover:text-primary-dark underline"

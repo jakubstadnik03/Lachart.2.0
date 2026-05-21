@@ -1094,6 +1094,36 @@ export default function WorkoutExecutionPage() {
               );
             })()}
 
+            {/* ── ERG active badge — shows when ERG is on so the athlete
+                can confirm the trainer is receiving power commands without
+                opening the settings sheet. Hidden when ERG is off or
+                there's no power target for the current step. */}
+            {ergMode && trainer.status === 'connected' && (() => {
+              const isFtms = trainer.protocol === 'ftms' || trainer.ergCapable;
+              if (!isFtms) {
+                return (
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-300 text-xs font-bold">
+                    <span>⚠</span>
+                    <span>ERG: CPS-only — reconnect for ERG support</span>
+                  </div>
+                );
+              }
+              if (effectiveErgWatts == null) {
+                return (
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-400/40 bg-amber-500/15 text-amber-300 text-xs font-bold">
+                    <BoltSolid className="w-3 h-3" />
+                    <span>ERG on · open step</span>
+                  </div>
+                );
+              }
+              return (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-violet-400/40 bg-violet-500/15 text-violet-300 text-xs font-bold">
+                  <BoltSolid className="w-3 h-3" />
+                  <span>ERG · {effectiveErgWatts} W</span>
+                </div>
+              );
+            })()}
+
             {/* ── Auto-pause indicator — small badge between the intensity
                 chip and the power gauge so it never blocks the gauge but
                 is impossible to miss. Disappears the moment power /
@@ -1603,6 +1633,7 @@ export default function WorkoutExecutionPage() {
         ergStep={ERG_BIAS_STEP}
         ergMin={ERG_BIAS_MIN}
         ergMax={ERG_BIAS_MAX}
+        effectiveErgWatts={effectiveErgWatts}
         showChart={showChart}
         setShowChart={setShowChart}
         showLapsSidebar={showLapsSidebar}

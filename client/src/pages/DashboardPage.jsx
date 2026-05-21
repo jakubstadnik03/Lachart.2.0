@@ -784,6 +784,70 @@ export default function DashboardPage() {
     return () => window.removeEventListener('activityUpdated', handleActivityUpdate);
   }, [selectedAthleteId, user?._id, user?.role, isCoachLikeRole, loadCalendarData]);
 
+  // ── React to Garmin auto-sync completing in the background (Layout.jsx) ────
+  // Layout dispatches 'garminSyncComplete' whenever its foreground-triggered
+  // Garmin sync actually imports/updates activities. Dashboard listens and
+  // immediately reloads the calendar so new activities appear without the
+  // user having to refresh or press Sync Now.
+  useEffect(() => {
+    if (!user?._id) return;
+    const targetId = isCoachLikeRole ? selectedAthleteId : user._id;
+    if (!targetId) return;
+
+    const onGarminSync = async (e) => {
+      console.log('[DashboardPage] garminSyncComplete event, reloading calendar', e.detail);
+      try {
+        const trainingsResult = await loadTrainings(targetId);
+        loadCalendarData(targetId, trainingsResult?.regularTrainings);
+      } catch (_) {}
+    };
+    window.addEventListener('garminSyncComplete', onGarminSync);
+    return () => window.removeEventListener('garminSyncComplete', onGarminSync);
+  }, [user?._id, selectedAthleteId, isCoachLikeRole, loadTrainings, loadCalendarData]);
+
+  // ── Reload calendar when app comes back to foreground ────────────────────
+  // On native (Capacitor) the app can be backgrounded while a Strava/Garmin
+  // activity uploads. On web, the user might switch tabs and come back.
+  // Neither case re-mounts the DashboardPage, so the initial auto-sync never
+  // re-runs. A foreground/visibility listener covers both: reload the calendar
+  // (not a full re-sync — just pull fresh data from the server's DB which the
+  // webhook / background scheduler has already updated).
+  useEffect(() => {
+    if (!user?._id) return;
+    const targetId = isCoachLikeRole ? selectedAthleteId : user._id;
+    if (!targetId) return;
+
+    // Throttle: reload at most once per 3 minutes on foreground.
+    const FOREGROUND_RELOAD_COOLDOWN = 3 * 60 * 1000;
+    const lastReloadKey = `dashboard_foreground_reload_${user._id}`;
+
+    const onForeground = async () => {
+      const last = parseInt(sessionStorage.getItem(lastReloadKey) || '0', 10);
+      if (Date.now() - last < FOREGROUND_RELOAD_COOLDOWN) return;
+      sessionStorage.setItem(lastReloadKey, Date.now().toString());
+      console.log('[DashboardPage] app foreground — refreshing calendar data');
+      try {
+        const trainingsResult = await loadTrainings(targetId);
+        loadCalendarData(targetId, trainingsResult?.regularTrainings);
+      } catch (_) {}
+    };
+
+    let cleanup = null;
+    if (isCapacitorNative()) {
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) onForeground();
+        }).then((handle) => { cleanup = handle; });
+      }).catch(() => {});
+    } else {
+      const onVisible = () => { if (document.visibilityState === 'visible') onForeground(); };
+      document.addEventListener('visibilitychange', onVisible);
+      cleanup = { remove: () => document.removeEventListener('visibilitychange', onVisible) };
+    }
+
+    return () => { cleanup?.remove?.(); };
+  }, [user?._id, selectedAthleteId, isCoachLikeRole, loadTrainings, loadCalendarData]);
+
   // Removed: cascade useEffect that re-triggered loadCalendarData on regularTrainings change.
   // The main loader now passes regularTrainings directly to loadCalendarData.
 
@@ -1007,18 +1071,23 @@ export default function DashboardPage() {
         addNotification(`Strava sync: ${result.error}`, 'error');
         return result;
       }
+      // Always reload calendar after a manual sync — the Strava webhook may
+      // have already stored the new activity in DB, so `imported` can be 0
+      // even though there IS new data waiting. The user tapped Sync Now and
+      // expects to see fresh data regardless of what the diff says.
+      const trainingsResult = await loadTrainings(user._id);
+      loadCalendarData(user._id, trainingsResult?.regularTrainings);
+
       if (result?.imported > 0 || result?.updated > 0) {
         maybeNotifyStravaActivitiesImported(result.imported, user?.notifications, result.latestActivityId);
         addNotification(
           `Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`,
           'success'
         );
-        const trainingsResult = await loadTrainings(user._id);
-        loadCalendarData(user._id, trainingsResult?.regularTrainings);
       } else if (result?.skipped) {
-        addNotification('Synced recently — please wait a few minutes before trying again.', 'info');
+        addNotification('Up to date — calendar refreshed.', 'info');
       } else {
-        addNotification('Strava: no new activities.', 'info');
+        addNotification('Strava: calendar refreshed.', 'info');
       }
       return result;
     } catch (e) {

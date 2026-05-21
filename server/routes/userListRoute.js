@@ -2318,7 +2318,11 @@ router.post("/apple-auth", async (req, res) => {
         }
 
         const appleSignin = require('apple-signin-auth');
-        const expectedAudience = process.env.APPLE_BUNDLE_ID || 'com.lachart.app';
+        // Accept both the iOS bundle ID and the web Service ID so the same
+        // endpoint works for native iOS and the browser popup flow.
+        const bundleId  = process.env.APPLE_BUNDLE_ID     || 'com.lachart.app';
+        const webSvcId  = process.env.APPLE_WEB_SERVICE_ID;          // e.g. net.lachart.web
+        const expectedAudience = webSvcId ? [bundleId, webSvcId] : bundleId;
         log('verifying token', { expectedAudience });
         let applePayload;
         try {

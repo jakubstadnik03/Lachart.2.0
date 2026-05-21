@@ -203,14 +203,73 @@ export function WorkoutSessionProvider({ children }) {
     return Math.max(0, Math.round(currentTargetWatts * ergBias));
   }, [currentTargetWatts, ergBias]);
 
-  // ── ERG send ───────────────────────────────────────────────────────────
+  // ── Auto-enable ERG when trainer supports it + workout has power targets ──
+  // Riders kept asking "why doesn't the trainer change resistance?" and the
+  // answer was always "you need to flip ERG on in Settings". Default that
+  // toggle to ON when the conditions are met: FTMS-capable trainer connected
+  // + workout has at least one power-target step. CPS-only trainers (no FTMS
+  // Control Point) can't accept setPower so we leave ergMode off there.
+  const ergAutoEnabledRef = useRef(false);
   useEffect(() => {
+    if (ergAutoEnabledRef.current) return;
+    if (trainer.status !== 'connected') return;
+    if (trainer.protocol !== 'ftms') return;
+    if (!Array.isArray(expandedSteps) || expandedSteps.length === 0) return;
+    const hasPowerTarget = expandedSteps.some((s) => s?.powerTarget && s.powerTarget.type !== 'open');
+    if (!hasPowerTarget) return;
+    ergAutoEnabledRef.current = true;
+    setErgMode(true);
+    console.log('[ERG] auto-enabled — FTMS trainer + workout has power targets');
+  }, [trainer.status, trainer.protocol, expandedSteps]);
+
+  // ── ERG send ───────────────────────────────────────────────────────────
+  // Fires when ergMode is on AND effectiveErgWatts changes. Also fires on
+  // ergMode 0→1 transition (we clear ergSentRef so the same wattage gets
+  // re-sent — needed because toggling ERG off mid-workout typically leaves
+  // the trainer in its last ERG state).
+  const prevErgModeRef = useRef(ergMode);
+  useEffect(() => {
+    // ergMode transitioned off→on: force resend the target.
+    if (ergMode && !prevErgModeRef.current) {
+      ergSentRef.current = null;
+    }
+    // ergMode transitioned on→off: release the trainer from ERG by sending
+    // setPower(0). Some trainers interpret 0 W as "free spin" (Wahoo Kickr,
+    // Saris H3 do); others stay in their last state but visibly drop the
+    // resistance. Better than leaving the rider stuck on the last target.
+    if (!ergMode && prevErgModeRef.current) {
+      if (trainer.status === 'connected' && trainer.protocol === 'ftms') {
+        trainer.setPower(0).catch(() => { /* swallow — trainer may be in fault */ });
+        console.log('[ERG] disabled — released trainer with setPower(0)');
+      }
+      ergSentRef.current = null;
+    }
+    prevErgModeRef.current = ergMode;
+
     if (!ergMode || trainer.status !== 'connected') return;
+    if (trainer.protocol !== 'ftms') {
+      // CPS-only — log once so the dev can see why ERG silently does nothing.
+      if (ergSentRef.current !== 'cps-noop') {
+        console.warn('[ERG] trainer is CPS-only (read-only power), ERG writes will be no-ops. Connect via FTMS for ERG support.');
+        ergSentRef.current = 'cps-noop';
+      }
+      return;
+    }
     if (effectiveErgWatts == null) return;
     if (ergSentRef.current === effectiveErgWatts) return;
     ergSentRef.current = effectiveErgWatts;
-    trainer.setPower(effectiveErgWatts);
-  }, [ergMode, effectiveErgWatts, trainer.status]); // eslint-disable-line
+    console.log(`[ERG] setPower(${effectiveErgWatts}) — bias ${Math.round(ergBias * 100)} %`);
+    trainer.setPower(effectiveErgWatts).then((ok) => {
+      if (!ok) {
+        console.warn('[ERG] setPower returned false — write may have failed; will retry on next target change.');
+        // Reset so a subsequent same-value change still tries to write.
+        ergSentRef.current = null;
+      }
+    }).catch((e) => {
+      console.warn('[ERG] setPower threw:', e?.message || e);
+      ergSentRef.current = null;
+    });
+  }, [ergMode, effectiveErgWatts, trainer.status, trainer.protocol]); // eslint-disable-line
 
   // ── Timer tick ─────────────────────────────────────────────────────────
   // Wall-clock based: each tick computes how many seconds elapsed since
@@ -381,6 +440,7 @@ export function WorkoutSessionProvider({ children }) {
     lactateLogRef.current = [];
     stallSecRef.current = 0;
     ergSentRef.current = null;
+    ergAutoEnabledRef.current = false; // allow auto-enable to re-fire on the new session
   }, []);
 
   const endSession = useCallback(() => {

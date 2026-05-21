@@ -87,6 +87,7 @@ export default function WorkoutSettingsSheet({
   ergStep = 0.05,
   ergMin = 0.5,
   ergMax = 1.5,
+  effectiveErgWatts = null,
   // Display toggles
   showChart,
   setShowChart,
@@ -220,6 +221,55 @@ export default function WorkoutSettingsSheet({
                     />
                   </button>
                 </div>
+
+                {/* ERG status feedback — shows why ERG may not be sending */}
+                {(() => {
+                  const trainerConnected = trainer.status === 'connected';
+                  const isFtms = trainer.protocol === 'ftms' || trainer.ergCapable;
+                  const isCpsOnly = trainerConnected && !isFtms && trainer.protocol;
+
+                  if (!trainerConnected) {
+                    return (
+                      <div className="flex items-center gap-2 text-[11px] text-amber-400 bg-amber-400/10 rounded-xl px-3 py-2 mb-1">
+                        <span className="text-base leading-none">⚡</span>
+                        <span>Connect a trainer to use ERG mode</span>
+                      </div>
+                    );
+                  }
+                  if (isCpsOnly) {
+                    return (
+                      <div className="flex items-center gap-2 text-[11px] text-rose-400 bg-rose-400/10 rounded-xl px-3 py-2 mb-1">
+                        <span className="text-base leading-none">⚠</span>
+                        <span>This trainer is read-only (CPS) — ERG control not supported. Reconnect via FTMS for ERG.</span>
+                      </div>
+                    );
+                  }
+                  if (isFtms && ergMode && effectiveErgWatts == null) {
+                    return (
+                      <div className="flex items-center gap-2 text-[11px] text-amber-400 bg-amber-400/10 rounded-xl px-3 py-2 mb-1">
+                        <span className="text-base leading-none">⚡</span>
+                        <span>ERG on — no power target for current step (open power)</span>
+                      </div>
+                    );
+                  }
+                  if (isFtms && ergMode && effectiveErgWatts != null) {
+                    return (
+                      <div className="flex items-center gap-2 text-[11px] text-emerald-400 bg-emerald-400/10 rounded-xl px-3 py-2 mb-1">
+                        <span className="text-base leading-none">✓</span>
+                        <span>ERG active — sending <strong>{effectiveErgWatts} W</strong> to trainer</span>
+                      </div>
+                    );
+                  }
+                  if (isFtms && !ergMode) {
+                    return (
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500 rounded-xl px-3 py-2 mb-1">
+                        <span className="text-base leading-none">⚡</span>
+                        <span>Trainer supports ERG — toggle on to enable auto power</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {ergMode && (
                   <div className="flex items-center justify-between gap-2 mt-2 p-1 rounded-xl bg-white/5">
                     <button
