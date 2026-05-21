@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
+import TrainingFormComponent from '../TrainingForm';
+import SessionProgressChart from '../training/SessionProgressChart';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -16,6 +18,7 @@ import {
   PencilIcon,
   ArrowTopRightOnSquareIcon,
   BeakerIcon,
+  HeartIcon,
 } from '@heroicons/react/24/outline';
 import { Bike, Dumbbell, Footprints, WavesLadder, Zap as ZapIcon } from 'lucide-react';
 import api, { getSimilarActivities } from '../../services/api';
@@ -1292,7 +1295,7 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
 const COMPARE_STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
 const COMPARE_STEP_BG     = { warmup:'#fef3c7', work:'#eef0fa', recovery:'#d1fae5', cooldown:'#e0f2fe', rest:'#f3f4f6' };
 const COMPARE_STEP_TEXT   = { warmup:'#92400e', work:'#3730a3', recovery:'#065f46', cooldown:'#0369a1', rest:'#4b5563' };
-const COMPARE_TYPE_LABELS = { warmup:'Rozehřátí', work:'Interval', recovery:'Odpočinek', cooldown:'Zklidnění', rest:'Pauza' };
+const COMPARE_TYPE_LABELS = { warmup:'Warm-up', work:'Work', recovery:'Recovery', cooldown:'Cool-down', rest:'Rest' };
 
 function detectLapType(lap, index, total) {
   // 1. Explicit interval type tag
@@ -1314,7 +1317,7 @@ function detectLapType(lap, index, total) {
 
 function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
   if (!Array.isArray(laps) || laps.length === 0) return (
-    <div className="text-[10px] text-gray-400 italic px-1 py-2">Žádné lapy</div>
+    <div className="text-[10px] text-gray-400 italic px-1 py-2">No laps</div>
   );
   const fmtSec = s => {
     if (!s || s <= 0) return '—';
@@ -1344,10 +1347,10 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
       <thead>
         <tr className="border-b border-gray-100">
           <th className="text-left font-bold text-gray-400 py-1 pr-1 w-5">#</th>
-          <th className="text-left font-bold text-gray-400 py-1 pr-1">Typ</th>
-          <th className="text-right font-bold text-gray-400 py-1 pr-1">Čas</th>
-          <th className="text-right font-bold text-gray-400 py-1 pr-1">{isBike ? 'Výkon' : 'Tempo'}</th>
-          <th className="text-right font-bold text-gray-400 py-1">♥</th>
+          <th className="text-left font-bold text-gray-400 py-1 pr-1">Type</th>
+          <th className="text-right font-bold text-gray-400 py-1 pr-1">Time</th>
+          <th className="text-right font-bold text-gray-400 py-1 pr-1">{isBike ? 'Power' : 'Pace'}</th>
+          <th className="text-right font-bold text-gray-400 py-1"><HeartIcon className="w-3 h-3 inline" /></th>
         </tr>
       </thead>
       <tbody>
@@ -1412,7 +1415,7 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
     <div className="mt-3 rounded-xl border border-purple-100 bg-white overflow-hidden">
       <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-[#767EB5]" />
-        <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">Porovnání work lapů</span>
+        <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">Work Lap Comparison</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[10px] border-collapse min-w-[320px]">
@@ -1421,7 +1424,7 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
               <th className="text-center font-bold text-gray-400 py-1.5 px-2 w-6">W#</th>
               {sessions.map((s, si) => (
                 <th key={si} className={`text-center font-bold py-1.5 px-2 ${s.isRef ? 'text-blue-600' : 'text-gray-500'}`}>
-                  {s.label}
+                  {s.isRef ? 'This' : s.label}
                 </th>
               ))}
             </tr>
@@ -1438,7 +1441,7 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
                   return (
                     <td key={si} className="text-center py-1 px-2">
                       <div className={`font-bold tabular-nums ${sessions[si].isRef ? 'text-blue-700' : 'text-gray-700'}`}>{pace}</div>
-                      {hr !== '—' && <div className="text-gray-400 tabular-nums">{hr}♥</div>}
+                      {hr !== '—' && <div className="text-gray-400 tabular-nums flex items-center justify-center gap-0.5">{hr}<HeartIcon className="w-2.5 h-2.5 inline" /></div>}
                     </td>
                   );
                 })}
@@ -1459,6 +1462,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const isBike = /bike|cycling|ride/i.test(sport);
   const isRun  = /run/i.test(sport);
   const isSwim = /swim/i.test(sport);
+  const normSport = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
 
   const [activeFilters, setActiveFilters] = useState(() => {
     const init = [];
@@ -1472,6 +1476,12 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [error,   setError]   = useState(null);
   const [workOnly, setWorkOnly] = useState(false);
   const [expandedCards, setExpandedCards] = useState({});
+  // Session-progress chart state
+  const [metric, setMetric]           = useState('power');
+  const [hideWarmCool, setHideWarmCool] = useState(false);
+  const [highlightId, setHighlightId]  = useState(null);
+  // Edit training form
+  const [editTarget, setEditTarget]   = useState(null); // training to open in form
 
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
@@ -1539,73 +1549,163 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
   const sportColor = isBike ? '#767EB5' : isRun ? '#f97316' : isSwim ? '#38bdf8' : '#6b7280';
 
+  // Build the "current training" as a session object for SessionProgressChart
+  const currentSession = useMemo(() => {
+    if (!merged) return null;
+    return {
+      ...merged,
+      id: String(merged.id || merged._id || '__current'),
+      laps: currentLaps,
+      results: Array.isArray(merged.results) ? merged.results : [],
+    };
+  }, [merged, currentLaps]);
+
+  // All sessions for the chart: current first, then compared (oldest → newest)
+  const allSessions = useMemo(() => {
+    const compared = [...results].sort((a, b) => new Date(a.date) - new Date(b.date));
+    return currentSession ? [currentSession, ...compared] : compared;
+  }, [currentSession, results]);
+
+  // Build edit target data shape for TrainingForm
+  const buildEditTarget = act => {
+    // Map normalized laps back to TrainingForm `results` format
+    const laps = Array.isArray(act.laps) ? act.laps : [];
+    const results = Array.isArray(act.results) ? act.results : laps.map(l => ({
+      intervalType: l.intervalType,
+      durationSeconds: Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0),
+      distance: Number(l.distance || l.totalDistance || 0),
+      power: Number(l.average_watts || l.avgPower || 0) || undefined,
+      heartRate: Number(l.average_heartrate || l.avgHeartRate || l.heartRate || 0) || undefined,
+      lactate: l.lactate != null ? Number(l.lactate) : undefined,
+    }));
+    return {
+      _id: act._id || act.id,
+      sport: act.sport || normSport,
+      title: act.title || act.titleManual,
+      titleManual: act.titleManual || act.title,
+      category: act.category,
+      lactate: act.lactate,
+      date: act.date,
+      results,
+    };
+  };
+
   return (
     <div className="space-y-3">
-      {/* Filter chips + work-only toggle */}
+      {/* TrainingForm edit modal */}
+      {editTarget && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.45)' }}>
+          <TrainingFormComponent
+            initialData={editTarget}
+            isEditing={true}
+            onClose={() => setEditTarget(null)}
+            onSubmit={async (data) => {
+              try {
+                const id = editTarget._id;
+                if (id) await api.put(`/api/users/athlete/${athleteId}/trainings/${id}`, data);
+                setEditTarget(null);
+                setResults(prev => prev.map(r => (String(r.id) === String(id) || String(r._id) === String(id)) ? { ...r, ...data } : r));
+              } catch (e) { console.warn('save training failed', e); }
+            }}
+          />
+        </div>,
+        document.body
+      )}
+
+      {/* ── Filter chips ── */}
       <div className="flex flex-wrap gap-2 items-center">
         {hasTitle && (
           <button onClick={() => toggleFilter('title')}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('title') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
-            Stejný název
+            Same name
           </button>
         )}
         {hasCategory && (
           <button onClick={() => toggleFilter('category')}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('category') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
-            Stejná kategorie
+            Same category
           </button>
         )}
         {hasLactate && (
           <button onClick={() => toggleFilter('lactate')}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('lactate') ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-500 border-gray-200'}`}>
-            Podobný laktát
+            Similar lactate
           </button>
         )}
         {(currentLaps.length > 0 || results.some(r => r.laps?.length)) && (
           <button onClick={() => setWorkOnly(w => !w)}
             className={`ml-auto px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1 ${workOnly ? 'bg-[#767EB5] text-white border-[#767EB5]' : 'bg-white text-gray-500 border-gray-200'}`}>
-            <span className="w-2 h-2 rounded-full bg-current inline-block" />
-            Jen work
+            <BoltIcon className="w-3 h-3" />
+            Work only
           </button>
         )}
       </div>
 
-      {/* ── Current activity reference ── */}
-      {currentLaps.length > 0 && (
-        <div className="rounded-xl border-2 bg-white overflow-hidden" style={{ borderColor: sportColor }}>
-          {/* Header */}
-          <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: sportColor }}>Tento trénink</span>
-              <span className="text-[10px] text-gray-400">{fmtDate(merged?.start_date || merged?.startDate || merged?.date)}</span>
+      {/* ── SessionProgressChart — all sessions overlaid ── */}
+      {allSessions.length >= 2 && (
+        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden shadow-sm">
+          {/* Metric selector */}
+          <div className="flex items-center gap-0 px-3 pt-2.5 pb-0 border-b border-gray-100">
+            {[
+              { id: 'power',     label: isBike ? 'Power' : 'Pace' },
+              { id: 'heartRate', label: 'HR' },
+              { id: 'lactate',   label: 'Lac' },
+              { id: 'RPE',       label: 'RPE' },
+            ].map(m => (
+              <button key={m.id} onClick={() => setMetric(m.id)}
+                className={`px-3 py-1.5 text-[11px] font-bold border-b-2 transition-colors -mb-px ${metric === m.id ? 'border-[#767EB5] text-[#767EB5]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                {m.label}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center gap-1 pr-1">
+              <button onClick={() => setHideWarmCool(h => !h)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-colors ${hideWarmCool ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-400 border-gray-200'}`}>
+                {hideWarmCool ? 'WU/CD off' : 'WU/CD'}
+              </button>
             </div>
-            <button onClick={() => toggleCard('__current')}
-              className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-0.5">
-              {expandedCards['__current'] ? 'skrýt' : 'lapy'}
-              <ChevronDownIcon className={`w-3 h-3 transition-transform ${expandedCards['__current'] ? 'rotate-180' : ''}`} />
-            </button>
           </div>
-          {/* Stats */}
-          <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-1.5">
-            {Number(merged?.distance || merged?.totalDistance || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(Number(merged.distance || merged.totalDistance))}</span>}
-            {Number(merged?.elapsed_time || merged?.totalElapsedTime || merged?.duration || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(Number(merged.elapsed_time || merged.totalElapsedTime || merged.duration))}</span>}
-            {Number(merged?.average_watts || merged?.avgPower || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_watts || merged.avgPower)}W</span>}
-            {Number(merged?.average_heartrate || merged?.avgHeartRate || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_heartrate || merged.avgHeartRate)} bpm</span>}
-            {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
+          {/* Chart */}
+          <div className="px-2 py-2">
+            <SessionProgressChart
+              sessions={allSessions}
+              metric={metric}
+              sport={normSport}
+              highlightId={highlightId}
+              onSessionTap={s => onOpen && onOpen(s)}
+              onEditSession={s => {
+                const id = String(s.id || s._id || '');
+                if (id.startsWith('strava-')) { onOpen && onOpen(s); return; }
+                setEditTarget(buildEditTarget(s));
+              }}
+              hideWarmCool={hideWarmCool}
+            />
           </div>
-          {/* Bar chart */}
-          <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim}
-            selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
-          {/* Lap detail table — toggle */}
-          {expandedCards['__current'] && (
-            <div className="px-3 pb-3 border-t border-gray-50 pt-2">
-              <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} />
-            </div>
-          )}
+          {/* Session legend pills */}
+          <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+            {allSessions.map((s, i) => {
+              const total = allSessions.length;
+              const t = total <= 1 ? 1 : i / (total - 1);
+              const lerp = (a, b) => Math.round(a + (b - a) * t);
+              const color = `rgb(${lerp(196,109)},${lerp(181,88)},${lerp(253,217)})`;
+              const isRef = String(s.id || s._id || '') === String(merged?.id || merged?._id || '__current');
+              const d = new Date(s.date || s.startDate || s.start_date || 0);
+              const label = isRef ? 'This session' : d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' });
+              return (
+                <button key={i}
+                  onClick={() => setHighlightId(h => h === String(s.id || s._id) ? null : String(s.id || s._id))}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all"
+                  style={{ borderColor: color, color: highlightId === String(s.id || s._id) ? '#fff' : color, background: highlightId === String(s.id || s._id) ? color : 'transparent' }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Work lap comparison matrix */}
+      {/* ── Work lap comparison matrix ── */}
       {!loading && !error && results.length > 0 && (
         <WorkLapCompareTable
           currentLaps={currentLaps}
@@ -1614,7 +1714,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
         />
       )}
 
-      {/* Loading */}
+      {/* ── Loading / error / empty ── */}
       {loading && (
         <div className="flex items-center justify-center py-8">
           <svg className="w-5 h-5 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
@@ -1625,10 +1725,41 @@ function CompareContent({ merged, athleteId, onOpen }) {
       )}
       {!loading && error && <div className="text-xs text-red-500 py-2">{error}</div>}
       {!loading && !error && results.length === 0 && activeFilters.length > 0 && (
-        <div className="text-xs text-gray-400 py-4 text-center">Žádné podobné aktivity nenalezeny.</div>
+        <div className="text-xs text-gray-400 py-4 text-center">No similar sessions found.</div>
       )}
 
-      {/* Compared activity cards */}
+      {/* ── Current activity reference card ── */}
+      {currentLaps.length > 0 && (
+        <div className="rounded-xl border-2 bg-white overflow-hidden" style={{ borderColor: sportColor }}>
+          <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: sportColor }}>This session</span>
+              <span className="text-[10px] text-gray-400">{fmtDate(merged?.start_date || merged?.startDate || merged?.date)}</span>
+            </div>
+            <button onClick={() => toggleCard('__current')}
+              className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-0.5">
+              {expandedCards['__current'] ? 'hide' : 'laps'}
+              <ChevronDownIcon className={`w-3 h-3 transition-transform ${expandedCards['__current'] ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-1.5">
+            {Number(merged?.distance || merged?.totalDistance || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(Number(merged.distance || merged.totalDistance))}</span>}
+            {Number(merged?.elapsed_time || merged?.totalElapsedTime || merged?.duration || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(Number(merged.elapsed_time || merged.totalElapsedTime || merged.duration))}</span>}
+            {Number(merged?.average_watts || merged?.avgPower || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_watts || merged.avgPower)}W</span>}
+            {Number(merged?.average_heartrate || merged?.avgHeartRate || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_heartrate || merged.avgHeartRate)} bpm</span>}
+            {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
+          </div>
+          <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim}
+            selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
+          {expandedCards['__current'] && (
+            <div className="px-3 pb-3 border-t border-gray-50 pt-2">
+              <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Compared session cards ── */}
       {!loading && !error && results.map(act => {
         const actIsBike = /bike|cycling|ride/i.test(act.sport || '');
         const actIsRun  = /run/i.test(act.sport || '');
@@ -1636,6 +1767,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
         const actColor  = actIsBike ? '#767EB5' : actIsRun ? '#f97316' : actIsSwim ? '#38bdf8' : '#6b7280';
         const compLaps  = Array.isArray(act.laps) ? act.laps : [];
         const isExpanded = !!expandedCards[act.id];
+        const isStrava  = String(act.id || '').startsWith('strava-') || act.type === 'strava';
 
         return (
           <div key={act.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
@@ -1659,15 +1791,23 @@ function CompareContent({ merged, athleteId, onOpen }) {
                 {compLaps.length > 0 && (
                   <button onClick={() => toggleCard(act.id)}
                     className="flex items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
-                    {isExpanded ? 'skrýt' : 'lapy'}
+                    {isExpanded ? 'hide' : 'laps'}
                     <ChevronDownIcon className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+                {/* Edit button — TrainingForm for regular trainings, full modal for Strava */}
+                {!isStrava && (
+                  <button onClick={() => setEditTarget(buildEditTarget(act))}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                    <PencilIcon className="w-3 h-3" />
+                    Edit
                   </button>
                 )}
                 {onOpen && (
                   <button onClick={() => onOpen(act)}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors">
                     <ArrowTopRightOnSquareIcon className="w-3 h-3" />
-                    Otevřít
+                    Open
                   </button>
                 )}
               </div>
@@ -1685,9 +1825,9 @@ function CompareContent({ merged, athleteId, onOpen }) {
                 selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
             )}
             {compLaps.length === 0 && (
-              <div className="px-3 pb-3 text-[10px] text-gray-400 italic">Žádné lapy k dispozici</div>
+              <div className="px-3 pb-3 text-[10px] text-gray-400 italic">No laps available</div>
             )}
-            {/* Expandable lap detail */}
+            {/* Expandable lap detail table */}
             {isExpanded && compLaps.length > 0 && (
               <div className="px-3 pb-3 border-t border-gray-50 pt-2">
                 <CompareLapTable laps={compLaps} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} workOnly={workOnly} />
