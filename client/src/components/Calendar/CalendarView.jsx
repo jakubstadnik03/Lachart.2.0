@@ -1856,8 +1856,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             )}
 
-            {/* Training Chart (power/HR/pace over time) */}
-            {chartTraining?.records?.length > 0 && (
+            {/* Training Overview — always shown:
+                • loading → skeleton pulse
+                • loaded + records → full TrainingChart (time-series)
+                • loaded + no records but has laps → LapChart bar overview */}
+            {detailLoading ? (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+                <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 120 }} />
+              </div>
+            ) : chartTraining?.records?.length > 0 ? (
               <div className="px-4 py-3 border-b border-gray-50">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
                 <TrainingChart
@@ -1868,7 +1876,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   onLeave={() => {}}
                 />
               </div>
-            )}
+            ) : laps.length > 0 ? (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+                <LapChart
+                  laps={laps}
+                  color={color}
+                  isBike={isBike}
+                  isRun={isRun}
+                  isSwim={isSwim}
+                  selectedLap={null}
+                  onSelectLap={() => {}}
+                  chartScrollRef={{ current: null }}
+                  onScrollCenter={() => {}}
+                />
+              </div>
+            ) : null}
 
             {/* Description / notes */}
             {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
@@ -2344,8 +2367,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
-          {/* ── Training Chart (power/HR/pace over time) ── */}
-          {chartTraining?.records?.length > 0 && (
+          {/* ── Training Overview (desktop) ── */}
+          {detailLoading ? (
+            <div className="px-5 py-3 border-b border-gray-50">
+              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+              <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 120 }} />
+            </div>
+          ) : chartTraining?.records?.length > 0 ? (
             <div className="px-5 py-3 border-b border-gray-50">
               <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
               <TrainingChart
@@ -2356,7 +2384,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 onLeave={() => {}}
               />
             </div>
-          )}
+          ) : null}
 
           {/* ── Lap chart — sticky on desktop so the bars stay visible
               while the user scrolls through the laps table below. Mobile
