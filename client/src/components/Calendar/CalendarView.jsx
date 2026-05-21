@@ -684,7 +684,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef, onScrollCenter }) {
+function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null }) {
   const CHART_H   = 160;
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
@@ -802,8 +802,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // stay in sync with bar heights.
   const dataRange = maxVal - minVal || maxVal * 0.1;
   const PAD = dataRange * 0.08;
-  const chartMin = Math.max(0, minVal - PAD);
-  const chartMax = maxVal + PAD;
+  const chartMin = scaleOverride ? scaleOverride.min : Math.max(0, minVal - PAD);
+  const chartMax = scaleOverride ? scaleOverride.max : maxVal + PAD;
   const range    = chartMax - chartMin || 1;
 
   const getBarH = (val) => {
@@ -1289,13 +1289,15 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
 }
 
 // ─── CompareContent ───────────────────────────────────────────────────────────
-// Shared inner component used by both mobile Compare tab and desktop panel.
-function CompareContent({ merged, athleteId }) {
+function CompareContent({ merged, athleteId, onOpen }) {
   const hasTitle    = !!(merged?.titleManual || (merged?.title && String(merged.title).trim()));
   const hasCategory = !!(merged?.category);
   const hasLactate  = Number(merged?.lactate) > 0;
+  const sport       = String(merged?.sport || '');
+  const isBike = /bike|cycling|ride/i.test(sport);
+  const isRun  = /run/i.test(sport);
+  const isSwim = /swim/i.test(sport);
 
-  // Active filter chips – pre-select all available
   const [activeFilters, setActiveFilters] = useState(() => {
     const init = [];
     if (hasTitle)    init.push('title');
@@ -1303,252 +1305,182 @@ function CompareContent({ merged, athleteId }) {
     if (hasLactate)  init.push('lactate');
     return init;
   });
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
 
-  const [results, setResults]   = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
-
-  // Re-fetch when active filters change
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    const params = { athleteId };
-    // Current activity id for exclusion
+    setLoading(true); setError(null);
+    const params = { athleteId, sport: sport || undefined };
     const rawId = merged?.id || merged?._id || merged?.stravaId;
     if (rawId) params.excludeId = String(rawId);
-    if (activeFilters.includes('title')) {
-      const t = merged?.titleManual || merged?.title || '';
-      if (t.trim()) params.title = t.trim();
-    }
-    if (activeFilters.includes('category') && merged?.category) {
-      params.category = merged.category;
-    }
-    if (activeFilters.includes('lactate') && Number(merged?.lactate) > 0) {
-      params.lactate = Number(merged.lactate);
-    }
-
+    if (activeFilters.includes('title')) { const t = merged?.titleManual || merged?.title || ''; if (t.trim()) params.title = t.trim(); }
+    if (activeFilters.includes('category') && merged?.category) params.category = merged.category;
+    if (activeFilters.includes('lactate') && Number(merged?.lactate) > 0) params.lactate = Number(merged.lactate);
     getSimilarActivities(params)
-      .then(data => { if (!cancelled) { setResults(data); setLoading(false); } })
-      .catch(err  => { if (!cancelled) { setError(err?.message || 'Failed to load'); setLoading(false); } });
-
+      .then(d => { if (!cancelled) { setResults(d); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(e?.message || 'Failed'); setLoading(false); } });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilters]);
 
-  const toggleFilter = (id) => {
-    setActiveFilters(prev =>
-      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
-    );
-  };
+  const toggleFilter = id => setActiveFilters(p => p.includes(id) ? p.filter(f => f !== id) : [...p, id]);
 
-  // Format helpers (mirrors the laps table logic)
-  const fmtSec = (s) => {
+  const fmtSec = s => {
     if (!s || s <= 0) return '—';
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.round(s % 60);
-    return h > 0
-      ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
-      : `${m}:${String(sec).padStart(2,'0')}`;
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
+  const fmtDist = m => (!m || m <= 0) ? '—' : m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
+  const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
 
-  const fmtDist = (m) => {
-    if (!m || m <= 0) return '—';
-    return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-  };
-
-  const fmtDate = (d) => {
-    if (!d) return '—';
-    const dt = new Date(d);
-    return `${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}`;
-  };
-
-  const sport = merged?.sport || '';
-  const isBike = /bike|cycling|ride/i.test(sport);
-  const isRun  = /run/i.test(sport);
-  const isSwim = /swim/i.test(sport);
-
-  const getLapPace = (lap, actIsBike, actIsRun, actIsSwim) => {
-    const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
-    const lapDist  = Number(lap.distance || lap.totalDistance || 0);
-    const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
-    const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
-    if (actIsSwim) {
-      const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
-      if (spd > 0) { const s = Math.round(100 / spd); return s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
-      return '—';
-    }
-    if (actIsRun && lapDist > 0 && lapDur > 0) {
-      const spk = lapDur / (lapDist / 1000);
-      return `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
-    }
-    if (actIsBike) return lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
-    return '—';
-  };
-
+  // Compute shared Y-scale across current + all compared activities
   const currentLaps = Array.isArray(merged?.laps) ? merged.laps : [];
 
+  const getLapValue = (lap, b, r, s) => {
+    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dist = Number(lap.distance || lap.totalDistance || 0);
+    const pow  = Number(lap.average_watts || lap.avgPower || 0);
+    if (b) return pow;
+    if (r && dist > 0 && dur > 0) return dur / (dist / 1000);
+    if (s && dist > 0 && dur > 0) return dur / (dist / 100);
+    return 0;
+  };
+
+  const allValues = useMemo(() => {
+    const vals = [];
+    [...currentLaps, ...results.flatMap(r => r.laps || [])].forEach(l => {
+      const v = getLapValue(l, isBike, isRun, isSwim);
+      if (v > 0) vals.push(v);
+    });
+    return vals;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLaps, results, isBike, isRun, isSwim]);
+
+  const sharedScale = useMemo(() => {
+    if (allValues.length < 2) return null;
+    const sorted = [...allValues].sort((a,b) => a-b);
+    const q1 = sorted[Math.floor(sorted.length*0.25)];
+    const q3 = sorted[Math.floor(sorted.length*0.75)];
+    const iqr = q3 - q1;
+    const filtered = allValues.filter(v => v >= q1-1.5*iqr && v <= q3+1.5*iqr);
+    const minV = Math.min(...(filtered.length >= 2 ? filtered : allValues));
+    const maxV = Math.max(...(filtered.length >= 2 ? filtered : allValues));
+    const pad  = (maxV - minV || maxV*0.1) * 0.08;
+    return { min: Math.max(0, minV - pad), max: maxV + pad };
+  }, [allValues]);
+
+  const sportColor = isBike ? '#767EB5' : isRun ? '#f97316' : isSwim ? '#38bdf8' : '#6b7280';
+
   return (
-    <div>
+    <div className="space-y-4">
       {/* Filter chips */}
-      <div className="flex flex-wrap gap-2 mb-3">
+      <div className="flex flex-wrap gap-2">
         {hasTitle && (
-          <button
-            onClick={() => toggleFilter('title')}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-              activeFilters.includes('title')
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300'
-            }`}
-          >
-            Same title
+          <button onClick={() => toggleFilter('title')}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('title') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+            Stejný název
           </button>
         )}
         {hasCategory && (
-          <button
-            onClick={() => toggleFilter('category')}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-              activeFilters.includes('category')
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300'
-            }`}
-          >
-            Same category
+          <button onClick={() => toggleFilter('category')}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('category') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+            Stejná kategorie
           </button>
         )}
         {hasLactate && (
-          <button
-            onClick={() => toggleFilter('lactate')}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-              activeFilters.includes('lactate')
-                ? 'bg-purple-600 text-white border-purple-600'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-purple-300'
-            }`}
-          >
-            Similar lactate
+          <button onClick={() => toggleFilter('lactate')}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('lactate') ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+            Podobný laktát
           </button>
         )}
       </div>
 
+      {/* Current activity reference chart */}
+      {currentLaps.length > 0 && (
+        <div className="rounded-xl border-2 bg-white overflow-hidden" style={{ borderColor: sportColor }}>
+          <div className="px-3 pt-2.5 pb-1 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: sportColor }}>Tento trénink</span>
+            <span className="text-[10px] text-gray-400">{fmtDate(merged?.start_date || merged?.startDate || merged?.date)}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-2">
+            {Number(merged?.distance || merged?.totalDistance || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(Number(merged.distance || merged.totalDistance))}</span>}
+            {Number(merged?.elapsed_time || merged?.totalElapsedTime || merged?.duration || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(Number(merged.elapsed_time || merged.totalElapsedTime || merged.duration))}</span>}
+            {Number(merged?.average_watts || merged?.avgPower || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_watts || merged.avgPower)}W</span>}
+            {Number(merged?.average_heartrate || merged?.avgHeartRate || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_heartrate || merged.avgHeartRate)} bpm</span>}
+            {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
+          </div>
+          <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim}
+            selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
+        </div>
+      )}
+
       {/* Loading */}
       {loading && (
-        <div className="flex items-center justify-center py-6">
+        <div className="flex items-center justify-center py-8">
           <svg className="w-5 h-5 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
           </svg>
         </div>
       )}
-
-      {/* Error */}
-      {!loading && error && (
-        <div className="text-xs text-red-500 py-2">{error}</div>
-      )}
-
-      {/* Empty state */}
+      {!loading && error && <div className="text-xs text-red-500 py-2">{error}</div>}
       {!loading && !error && results.length === 0 && activeFilters.length > 0 && (
-        <div className="text-xs text-gray-400 py-2">No similar activities found.</div>
+        <div className="text-xs text-gray-400 py-4 text-center">Žádné podobné aktivity nenalezeny.</div>
       )}
 
-      {/* Results list */}
+      {/* Compared activity cards */}
       {!loading && !error && results.map(act => {
         const actIsBike = /bike|cycling|ride/i.test(act.sport || '');
         const actIsRun  = /run/i.test(act.sport || '');
         const actIsSwim = /swim/i.test(act.sport || '');
-        const isExpanded = expandedId === act.id;
-        const compLaps = Array.isArray(act.laps) ? act.laps : [];
-        const maxLaps = Math.max(currentLaps.length, compLaps.length);
+        const actColor  = actIsBike ? '#767EB5' : actIsRun ? '#f97316' : actIsSwim ? '#38bdf8' : '#6b7280';
+        const compLaps  = Array.isArray(act.laps) ? act.laps : [];
 
         return (
-          <div key={act.id} className="rounded-xl bg-gray-50 border border-gray-100 mb-2 overflow-hidden">
+          <div key={act.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
             {/* Card header */}
-            <div className="px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-bold text-gray-400 tabular-nums">{fmtDate(act.date)}</span>
-                {act.category && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{act.category}</span>
-                )}
-                {act.lactate != null && act.lactate > 0 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}>
-                    {Number(act.lactate).toFixed(1)} mmol
-                  </span>
-                )}
+            <div className="px-3 pt-2.5 pb-1 flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-gray-400 tabular-nums">{fmtDate(act.date)}</span>
+                  {act.category && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{act.category}</span>
+                  )}
+                  {act.lactate > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor:'#f5f3ff', color:'#7c3aed' }}>
+                      {Number(act.lactate).toFixed(1)} mmol
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm font-bold text-gray-800 truncate mt-0.5">{act.title}</div>
               </div>
-              <div className="text-sm font-bold text-gray-800 truncate mt-0.5">{act.title}</div>
-              {/* Stats row */}
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
-                {act.distance > 0 && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-700">{fmtDist(act.distance)}</span></span>
-                )}
-                {act.duration > 0 && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-700">{fmtSec(act.duration)}</span></span>
-                )}
-                {act.avgPower > 0 && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-700">{Math.round(act.avgPower)}W</span></span>
-                )}
-                {act.avgHr > 0 && (
-                  <span className="text-[10px] text-gray-500"><span className="font-semibold text-gray-700">{Math.round(act.avgHr)} bpm</span></span>
-                )}
-              </div>
+              {onOpen && (
+                <button
+                  onClick={() => onOpen(act)}
+                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                  Otevřít
+                </button>
+              )}
             </div>
-
-            {/* Show laps toggle */}
-            {compLaps.length > 0 && currentLaps.length > 0 && (
-              <button
-                onClick={() => setExpandedId(isExpanded ? null : act.id)}
-                className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wide border-t border-gray-100 hover:bg-gray-100 transition-colors"
-              >
-                <span>Compare laps</span>
-                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-              </button>
+            {/* Stats */}
+            <div className="flex flex-wrap gap-x-3 gap-y-0 px-3 pb-2">
+              {act.distance > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtDist(act.distance)}</span>}
+              {act.duration > 0 && <span className="text-[10px] font-semibold text-gray-700">{fmtSec(act.duration)}</span>}
+              {act.avgPower > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(act.avgPower)}W</span>}
+              {act.avgHr   > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(act.avgHr)} bpm</span>}
+            </div>
+            {/* LapChart — shared Y-scale so bars are visually comparable */}
+            {compLaps.length > 0 && (
+              <LapChart laps={compLaps} color={actColor} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim}
+                selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
             )}
-
-            {/* Lap comparison table */}
-            {isExpanded && maxLaps > 0 && (
-              <div className="border-t border-gray-100 px-2 py-2 overflow-x-auto">
-                <table className="w-full" style={{ fontSize: 11 }}>
-                  <thead>
-                    <tr className="text-gray-400 font-bold uppercase tracking-wide">
-                      <td className="py-1 pr-1.5 w-5">#</td>
-                      <td className="py-1 pr-2 text-right">Current</td>
-                      <td className="py-1 text-right">Compared</td>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {Array.from({ length: maxLaps }).map((_, i) => {
-                      const cl = currentLaps[i];
-                      const al = compLaps[i];
-                      const clHr    = cl ? Number(cl.average_heartrate || cl.avgHeartRate || cl.averageHeartRate || 0) : 0;
-                      const alHr    = al ? Number(al.average_heartrate || al.avgHeartRate || al.averageHeartRate || 0) : 0;
-                      const clPace  = cl ? getLapPace(cl, isBike, isRun, isSwim)  : '—';
-                      const alPace  = al ? getLapPace(al, actIsBike, actIsRun, actIsSwim) : '—';
-                      return (
-                        <tr key={i} className="tabular-nums">
-                          <td className="py-0.5 pr-1.5 font-bold text-gray-400">{i + 1}</td>
-                          <td className="py-0.5 pr-2 text-right">
-                            {cl ? (
-                              <span className="text-blue-600 font-semibold">{clPace}</span>
-                            ) : <span className="text-gray-300">—</span>}
-                            {cl && clHr > 0 && (
-                              <span className="text-gray-400 ml-1">{Math.round(clHr)}</span>
-                            )}
-                          </td>
-                          <td className="py-0.5 text-right">
-                            {al ? (
-                              <span className="text-gray-700 font-semibold">{alPace}</span>
-                            ) : <span className="text-gray-300">—</span>}
-                            {al && alHr > 0 && (
-                              <span className="text-gray-400 ml-1">{Math.round(alHr)}</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {compLaps.length === 0 && (
+              <div className="px-3 pb-3 text-[10px] text-gray-400 italic">Žádné lapy k dispozici</div>
             )}
           </div>
         );
@@ -1889,6 +1821,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // Compare panel (desktop)
   const [showCompareDesktop, setShowCompareDesktop] = useState(false);
+  const [nestedActivity, setNestedActivity] = useState(null);
 
   // Escape to close
   useEffect(() => {
@@ -2163,7 +2096,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   if (isMobile) {
     const hasLaps = laps.length > 0;
 
-    return ReactDOM.createPortal(
+    const mobilePortal = ReactDOM.createPortal(
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: 'auto' }}>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
@@ -2594,7 +2527,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {mobileView === 'compare' && showCompare && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="px-4 py-4">
-              <CompareContent merged={merged} athleteId={athleteId} />
+              <CompareContent merged={merged} athleteId={athleteId} onOpen={act => setNestedActivity(act)} />
             </div>
           </div>
         )}
@@ -2669,9 +2602,25 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       </div>,
       document.getElementById('app-modal-root') || document.body
     );
+    return <>
+      {mobilePortal}
+      {nestedActivity && (() => {
+        const na = nestedActivity;
+        const fakeActivity = {
+          id: na.id, _id: na.id, type: na.type,
+          sport: na.sport || merged?.sport, date: na.date,
+          title: na.title, titleManual: na.title,
+          category: na.category, lactate: na.lactate,
+          distance: na.distance, elapsed_time: na.duration,
+          average_heartrate: na.avgHr, average_watts: na.avgPower,
+          laps: na.laps || [],
+        };
+        return <ActivityFullModal activity={fakeActivity} athleteId={athleteId} onClose={() => setNestedActivity(null)} />;
+      })()}
+    </>;
   }
 
-  return ReactDOM.createPortal(
+  const desktopPortal = ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
@@ -2987,7 +2936,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <span>Compare with past sessions</span>
                 <ChevronDownIcon className={`w-4 h-4 transition-transform ${showCompareDesktop ? 'rotate-180' : ''}`} />
               </button>
-              {showCompareDesktop && <CompareContent merged={merged} athleteId={athleteId} />}
+              {showCompareDesktop && <CompareContent merged={merged} athleteId={athleteId} onOpen={act => setNestedActivity(act)} />}
             </div>
           )}
 
@@ -3102,6 +3051,39 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     </div>,
     document.getElementById('app-modal-root') || document.body
   );
+
+  // ── Nested modal for opening a compared activity ──
+  // We render an ActivityFullModal on top when user clicks "Otevřít" in Compare
+  // tab, normalising the compare-result shape to the expected activity shape.
+  return <>
+    {desktopPortal}
+    {nestedActivity && (() => {
+      const na = nestedActivity;
+      const fakeActivity = {
+        id:    na.id,
+        _id:   na.id,
+        type:  na.type,
+        sport: na.sport || merged?.sport,
+        date:  na.date,
+        title: na.title,
+        titleManual: na.title,
+        category: na.category,
+        lactate:  na.lactate,
+        distance: na.distance,
+        elapsed_time: na.duration,
+        average_heartrate: na.avgHr,
+        average_watts: na.avgPower,
+        laps: na.laps || [],
+      };
+      return (
+        <ActivityFullModal
+          activity={fakeActivity}
+          athleteId={athleteId}
+          onClose={() => setNestedActivity(null)}
+        />
+      );
+    })()}
+  </>;
 }
 
 // ─── Activity Detail Popup ────────────────────────────────────────────────────
