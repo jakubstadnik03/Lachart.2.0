@@ -1337,7 +1337,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
 
   // Compute shared Y-scale across current + all compared activities
-  const currentLaps = Array.isArray(merged?.laps) ? merged.laps : [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentLaps = useMemo(() => Array.isArray(merged?.laps) ? merged.laps : [], [merged?.laps]);
 
   const getLapValue = (lap, b, r, s) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
