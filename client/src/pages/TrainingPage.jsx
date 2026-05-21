@@ -469,7 +469,27 @@ export default function TrainingPage() {
         if (formData._id) {
           await updateTraining(formData._id, trainingData);
         } else {
-          await addTraining(trainingData);
+          // Check for existing training by sourceStravaActivityId (primary) or title+date (fallback)
+          // to avoid creating duplicates when re-exporting / re-adding lactate.
+          let existingId = null;
+          try {
+            const resp = await api.get(`/user/athlete/${targetId}/trainings`);
+            const allTrainings = resp.data || [];
+            const existing = allTrainings.find(t =>
+              (formData.sourceStravaActivityId &&
+                t.sourceStravaActivityId &&
+                String(t.sourceStravaActivityId) === String(formData.sourceStravaActivityId)) ||
+              (t.title === formData.title &&
+               new Date(t.date).toDateString() === new Date(formData.date).toDateString())
+            );
+            existingId = existing?._id || null;
+          } catch (_) { /* non-blocking — fall through to addTraining */ }
+
+          if (existingId) {
+            await updateTraining(existingId, trainingData);
+          } else {
+            await addTraining(trainingData);
+          }
         }
 
         // Push lactate into the linked StravaActivity.laps so the calendar

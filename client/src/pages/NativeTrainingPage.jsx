@@ -20,6 +20,7 @@ import {
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
+import api from '../services/api';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
@@ -1572,7 +1573,27 @@ export default function NativeTrainingPage({
     if (formData?._id) {
       await updateTraining(formData._id, cleanedFormData);
     } else {
-      await addTraining({ ...cleanedFormData, athleteId: targetAthleteId });
+      // Check for existing training by sourceStravaActivityId (primary) or title+date (fallback)
+      // to avoid duplicates when re-exporting / re-adding lactate to an already-saved training.
+      let existingId = null;
+      try {
+        const resp = await api.get(`/user/athlete/${targetAthleteId}/trainings`);
+        const allTrainings = resp.data || [];
+        const existing = allTrainings.find(t =>
+          (formData.sourceStravaActivityId &&
+            t.sourceStravaActivityId &&
+            String(t.sourceStravaActivityId) === String(formData.sourceStravaActivityId)) ||
+          (t.title === formData.title &&
+           new Date(t.date).toDateString() === new Date(formData.date).toDateString())
+        );
+        existingId = existing?._id || null;
+      } catch (_) { /* non-blocking — fall through to addTraining */ }
+
+      if (existingId) {
+        await updateTraining(existingId, { ...cleanedFormData, athleteId: targetAthleteId });
+      } else {
+        await addTraining({ ...cleanedFormData, athleteId: targetAthleteId });
+      }
     }
 
     // Mirror lactate into the linked StravaActivity laps so the calendar
