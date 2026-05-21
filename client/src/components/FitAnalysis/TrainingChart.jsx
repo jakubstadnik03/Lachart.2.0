@@ -81,8 +81,9 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   const [showElevation, setShowElevation] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [cursorX, setCursorX] = useState(null);
-  const [clickedPoint, setClickedPoint] = useState(null); // For mobile click-to-show tooltip
-  const [clickedCursorX, setClickedCursorX] = useState(null); // For mobile click-to-show tooltip
+  const [clickedPoint, setClickedPoint] = useState(null); // For mobile touch tooltip
+  const [clickedCursorX, setClickedCursorX] = useState(null); // For mobile touch tooltip
+  const [touchActive, setTouchActive] = useState(false); // finger is currently on chart
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState(null);
   const [dragEnd, setDragEnd] = useState(null);
@@ -755,17 +756,41 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       }
     }
     
-    // Toggle tooltip on tap
-    if (closestPoint && clickedPoint === closestPoint) {
-      // If tapping the same point, hide tooltip
-      setClickedPoint(null);
-      setClickedCursorX(null);
-    } else if (closestPoint) {
-      // Show tooltip for tapped point
+    // Show top-bar info immediately on touch
+    if (closestPoint) {
+      setTouchActive(true);
       setClickedPoint(closestPoint);
       setClickedCursorX(x);
     }
-  }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale]);
+  }, [processedData, graphWidth, padding.left, isMobile, xScale]);
+
+  // Track finger movement — update top-bar data in real time
+  const handleTouchMove = useCallback((e) => {
+    if (!containerRef.current || !processedData || !isMobile) return;
+    if (e.touches.length > 1) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const relativeX = x - padding.left;
+    if (relativeX < 0 || relativeX > graphWidth) return;
+    let closestPoint = null, minDist = Infinity;
+    for (const point of processedData.points) {
+      const px = xScale(point.distance);
+      if (px === null || isNaN(px)) continue;
+      const d = Math.abs((px - padding.left) - relativeX);
+      if (d < minDist) { minDist = d; closestPoint = point; }
+    }
+    if (closestPoint) {
+      setClickedPoint(closestPoint);
+      setClickedCursorX(x);
+    }
+  }, [processedData, graphWidth, padding.left, isMobile, xScale]);
+
+  // Clear on lift
+  const handleTouchEnd = useCallback(() => {
+    setTouchActive(false);
+  }, []);
 
   // Handle mouse down for drag selection (desktop)
   const handleMouseDown = useCallback((e) => {
@@ -1157,6 +1182,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
           }
         }}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {/* Drag selection rectangle */}
         {isDragging && dragStart && dragEnd && (
@@ -1392,77 +1419,109 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
           })}
           
 
-          {/* Cursor line - only show when not dragging */}
-          {cursorX !== null && !isDragging && (() => {
-            // Convert container X position to SVG viewBox X position
-            // SVG has viewBox="0 0 1200 400" and preserveAspectRatio="none"
-            // So we need to scale the position
-            const containerWidth = containerRef.current?.offsetWidth || svgWidth;
-            const scaleX = svgWidth / containerWidth;
-            const svgX = cursorX * scaleX;
-            
+          {/* Cursor line - desktop hover OR mobile touch */}
+          {((cursorX !== null && !isDragging) || (isMobile && touchActive && clickedCursorX !== null)) && (() => {
+            const activeCX = isMobile ? clickedCursorX : cursorX;
+            if (activeCX === null) return null;
+            const cw = containerRef.current?.offsetWidth || svgWidth;
+            const scaleX = svgWidth / cw;
+            const svgX = activeCX * scaleX;
             return (
               <line
                 x1={svgX}
                 y1={padding.top}
                 x2={svgX}
                 y2={padding.top + graphHeight}
-                stroke="#000"
-                strokeWidth="1.5"
+                stroke={isMobile ? '#6366f1' : '#000'}
+                strokeWidth={isMobile ? '2' : '1.5'}
+                strokeDasharray={isMobile ? '4,3' : undefined}
               />
             );
           })()}
         </svg>
 
-        {/* Tooltip - show on hover (desktop) or click (mobile) */}
-        {((hoveredPoint && cursorX !== null && !isDragging) || (isMobile && clickedPoint && clickedCursorX !== null)) && (() => {
-          // Use clicked point on mobile, hovered point on desktop
-          const activePoint = isMobile ? clickedPoint : hoveredPoint;
-          const activeCursorX = isMobile ? clickedCursorX : cursorX;
-          
+        {/* ── MOBILE: fixed top-bar info strip ── */}
+        {isMobile && clickedPoint && (
+          <div
+            className="absolute left-0 right-0 z-50 pointer-events-none flex items-center gap-3 px-2 py-1 flex-wrap"
+            style={{
+              top: 0,
+              background: 'rgba(255,255,255,0.92)',
+              backdropFilter: 'blur(4px)',
+              borderBottom: '1px solid #e5e7eb',
+              borderRadius: '6px 6px 0 0',
+              minHeight: 28,
+            }}
+          >
+            <span className="text-[10px] font-semibold text-gray-800">
+              {formatDistance(clickedPoint.distance * 1000, unitSystem).formatted}
+            </span>
+            <span className="text-[10px] text-gray-500">
+              {formatDuration(clickedPoint.time)}
+            </span>
+            {processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && clickedPoint.power > 0 && (
+              <span className="text-[10px] font-semibold text-purple-600">
+                {Math.round(clickedPoint.power)} W
+              </span>
+            )}
+            {clickedPoint.heartRate > 0 && (
+              <span className="text-[10px] font-semibold text-red-500">
+                ♥ {Math.round(clickedPoint.heartRate)} bpm
+                {hrZones && (() => {
+                  const z = getHeartRateZone(clickedPoint.heartRate, hrZones);
+                  return z ? <span className="text-gray-400 font-normal"> Z{z}</span> : null;
+                })()}
+              </span>
+            )}
+            {clickedPoint.speed > 0 && (
+              <span className="text-[10px] font-semibold text-teal-600">
+                {unitSystem === 'imperial'
+                  ? `${(clickedPoint.speed * 0.621371).toFixed(1)} mph`
+                  : `${clickedPoint.speed.toFixed(1)} km/h`}
+              </span>
+            )}
+            {clickedPoint.cadence > 0 && (
+              <span className="text-[10px] text-gray-500">
+                {Math.round(clickedPoint.cadence)} rpm
+              </span>
+            )}
+            {clickedPoint.altitude != null && clickedPoint.altitude > 0 && (
+              <span className="text-[10px] text-orange-500">
+                ↑ {formatElevation(clickedPoint.altitude, unitSystem).formatted}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* ── DESKTOP: floating tooltip on hover ── */}
+        {!isMobile && hoveredPoint && cursorX !== null && !isDragging && (() => {
+          const activePoint = hoveredPoint;
+          const activeCursorX = cursorX;
+
           if (!activePoint || activeCursorX === null) return null;
-          // Calculate tooltip position - align with cursor line
-          const containerWidth = containerRef.current?.offsetWidth || svgWidth;
-          const tooltipWidth = isMobile ? 180 : 200;
+
+          const cw = containerRef.current?.offsetWidth || svgWidth;
+          const tooltipWidth = 200;
           const offset = 15;
-          let tooltipLeft = activeCursorX + offset; // Offset from cursor line
-          
-          // Keep tooltip within container bounds
-          if (tooltipLeft + tooltipWidth > containerWidth - 10) {
-            tooltipLeft = activeCursorX - tooltipWidth - offset; // Show on left side of cursor
-          }
-          if (tooltipLeft < 10) {
-            tooltipLeft = 10; // Minimum left margin
-          }
-          
-          // Calculate actual point X position for better alignment
           const pointX = xScale(activePoint.distance);
           const actualPointX = pointX !== null ? pointX : activeCursorX;
-          
-          // Use actual data point position for tooltip alignment
-          // This ensures tooltip is aligned with the data point, not just the cursor
-          tooltipLeft = actualPointX + offset;
-          if (tooltipLeft + tooltipWidth > containerWidth - 10) {
+
+          let tooltipLeft = actualPointX + offset;
+          if (tooltipLeft + tooltipWidth > cw - 10) {
             tooltipLeft = actualPointX - tooltipWidth - offset;
           }
-          if (tooltipLeft < 10) {
-            tooltipLeft = 10;
-          }
-          
-          const hrZone = hrZones && activePoint.heartRate > 0 
-            ? getHeartRateZone(activePoint.heartRate, hrZones) 
+          if (tooltipLeft < 10) tooltipLeft = 10;
+
+          const hrZone = hrZones && activePoint.heartRate > 0
+            ? getHeartRateZone(activePoint.heartRate, hrZones)
             : null;
-          
+
           return (
             <div
-              className={`absolute bg-white rounded-lg shadow-xl border border-gray-200 ${isMobile ? 'p-2' : 'p-3'} z-50 pointer-events-none`}
-              style={{
-                left: `${tooltipLeft}px`,
-                top: '10px',
-                minWidth: isMobile ? '140px' : '180px'
-              }}
+              className="absolute bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 pointer-events-none"
+              style={{ left: `${tooltipLeft}px`, top: '10px', minWidth: '180px' }}
             >
-              <div className={`space-y-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
+              <div className="space-y-1 text-xs">
                 <div className="font-semibold text-gray-900">
                   Distance: {formatDistance(activePoint.distance * 1000, unitSystem).formatted}
                 </div>
@@ -1482,12 +1541,9 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                 )}
                 {activePoint.speed > 0 && (
                   <div className="text-teal-600 font-medium">
-                    Speed: {(() => {
-                      const speedValue = unitSystem === 'imperial' 
-                        ? (activePoint.speed * 0.621371).toFixed(1)
-                        : activePoint.speed.toFixed(1);
-                      return `${speedValue} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
-                    })()}
+                    Speed: {unitSystem === 'imperial'
+                      ? `${(activePoint.speed * 0.621371).toFixed(1)} mph`
+                      : `${activePoint.speed.toFixed(1)} km/h`}
                   </div>
                 )}
                 {activePoint.cadence > 0 && (
@@ -1502,13 +1558,11 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                 )}
                 {/* Zone indicators */}
                 <div className="mt-2 pt-2 border-t border-gray-200 space-y-2">
-                  {/* For running: show pace zones, for cycling: show power zones */}
                   {isRunning && powerZones && activePoint.speed > 0 && (() => {
-                    // Convert speed (km/h) to pace (seconds per km or mile)
-                    const speedMps = activePoint.speed / 3.6; // Convert km/h to m/s
-                    const paceSeconds = unitSystem === 'imperial' 
-                      ? Math.round(1609.34 / speedMps) // seconds per mile
-                      : Math.round(1000 / speedMps); // seconds per km
+                    const speedMps = activePoint.speed / 3.6;
+                    const paceSeconds = unitSystem === 'imperial'
+                      ? Math.round(1609.34 / speedMps)
+                      : Math.round(1000 / speedMps);
                     const currentZone = getPaceZone(paceSeconds, powerZones, unitSystem);
                     return (
                       <div>
@@ -1518,19 +1572,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                             const zone = powerZones[`zone${i + 1}`];
                             let zoneMin = zone?.min || 0;
                             let zoneMax = zone?.max === Infinity || zone?.max === null || zone?.max === undefined ? Infinity : zone.max;
-                            
-                            // Convert zone boundaries to current unit system for display
                             if (unitSystem === 'imperial') {
-                              zoneMin = zoneMin * 1.60934; // Convert seconds/km to seconds/mile
+                              zoneMin = zoneMin * 1.60934;
                               zoneMax = zoneMax === Infinity ? Infinity : zoneMax * 1.60934;
                             }
-                            
                             return (
                               <div
                                 key={i}
-                                className={`w-3 h-3 rounded ${
-                                  currentZone === i + 1 ? 'bg-green-600 border-2 border-green-800' : 'bg-gray-200 border border-gray-300'
-                                }`}
+                                className={`w-3 h-3 rounded ${currentZone === i + 1 ? 'bg-green-600 border-2 border-green-800' : 'bg-gray-200 border border-gray-300'}`}
                                 title={`Zone ${i + 1}: ${formatPace(zoneMax, unitSystem)} - ${formatPace(zoneMin, unitSystem)}`}
                               />
                             );
@@ -1548,9 +1597,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                           return (
                             <div
                               key={i}
-                              className={`w-3 h-3 rounded ${
-                                zone === i + 1 ? 'bg-purple-600 border-2 border-purple-800' : 'bg-gray-200 border border-gray-300'
-                              }`}
+                              className={`w-3 h-3 rounded ${zone === i + 1 ? 'bg-purple-600 border-2 border-purple-800' : 'bg-gray-200 border border-gray-300'}`}
                               title={`Zone ${i + 1}: ${powerZones[`zone${i + 1}`]?.min || 0}-${powerZones[`zone${i + 1}`]?.max === Infinity ? '∞' : powerZones[`zone${i + 1}`]?.max || 0} W`}
                             />
                           );
@@ -1567,11 +1614,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                           return (
                             <div
                               key={`hr-zone-${i + 1}`}
-                              className={`w-3 h-3 rounded ${
-                                zone === i + 1
-                                  ? 'bg-red-500 border-2 border-red-700'
-                                  : 'bg-gray-200 border border-gray-300'
-                              }`}
+                              className={`w-3 h-3 rounded ${zone === i + 1 ? 'bg-red-500 border-2 border-red-700' : 'bg-gray-200 border border-gray-300'}`}
                               title={`Zone ${i + 1}: ${hrZones[`zone${i + 1}`]?.min || 0}-${hrZones[`zone${i + 1}`]?.max === Infinity ? '∞' : hrZones[`zone${i + 1}`]?.max || 0} bpm`}
                             />
                           );

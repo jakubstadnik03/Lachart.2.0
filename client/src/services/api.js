@@ -1418,8 +1418,9 @@ export const normalizeStravaActivityRouteId = (id) => {
   return Number.isFinite(n) && n >= 1 ? String(n) : stripped;
 };
 
-export const getStravaActivityDetail = async (stravaId, athleteId = null) => {
+export const getStravaActivityDetail = async (stravaId, athleteId = null, forceRefresh = false) => {
   const params = athleteId ? { athleteId } : {};
+  if (forceRefresh) params.refresh = '1';
   const id = normalizeStravaActivityRouteId(stravaId);
   const { data } = await api.get(`/api/integrations/strava/activities/${encodeURIComponent(id)}`, { params });
   return data; // { detail, streams, laps, titleManual, description }
@@ -1616,3 +1617,17 @@ export const getFieldLactateMeasurements = (athleteId = null, status = null) => 
 };
 export const deleteFieldLactateMeasurement = (id) => api.delete(`/api/field-lactate/${id}`).then(r => r.data);
 export const assignFieldLactateMeasurement = (id, assignment) => api.put(`/api/field-lactate/${id}/assign`, assignment).then(r => r.data);
+
+// Similar activities (for Compare tab in ActivityFullModal)
+export const getSimilarActivities = async ({ title, category, sport, lactate, excludeId, athleteId, limit = 30 } = {}) => {
+  const params = {};
+  if (title)     params.title = title;
+  if (category)  params.category = category;
+  if (sport)     params.sport = sport;
+  if (lactate != null) params.lactate = lactate;
+  if (excludeId) params.excludeId = excludeId;
+  if (athleteId) params.athleteId = athleteId;
+  params.limit = limit;
+  const { data } = await api.get('/api/integrations/activities/similar', { params });
+  return data; // array
+};

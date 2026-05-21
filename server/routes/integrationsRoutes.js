@@ -2488,6 +2488,146 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
   }
 });
 
+// ── Similar activities (for Compare tab) ─────────────────────────────────────
+// GET /api/integrations/activities/similar
+// Must be declared BEFORE /activities to avoid the :id wildcard catching it.
+router.get('/activities/similar', verifyToken, async (req, res) => {
+  try {
+    const { title, category, sport, lactate, excludeId, limit = 30 } = req.query;
+    const limitNum = Math.min(parseInt(limit, 10) || 30, 100);
+
+    // Resolve target user (supports coach athleteId param)
+    const resolved = await resolveIntegrationTargetUserId(req);
+    if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
+    const { targetUserId } = resolved;
+
+    // Build OR filter conditions based on provided params
+    const orConditions = [];
+    if (title) {
+      const titleRegex = new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      orConditions.push(
+        { titleManual: titleRegex },
+        { titleAuto: titleRegex },
+        { title: titleRegex },
+        { name: titleRegex }
+      );
+    }
+    if (category) {
+      orConditions.push({ category });
+    }
+    if (lactate != null && !isNaN(parseFloat(lactate))) {
+      const la = parseFloat(lactate);
+      orConditions.push({ lactate: { $gte: la - 1.5, $lte: la + 1.5, $gt: 0 } });
+    }
+
+    if (orConditions.length === 0) {
+      return res.json([]);
+    }
+
+    const FitTraining = require('../models/fitTraining');
+
+    // Build queries for each source
+    const stravaFilter = { userId: targetUserId.toString(), $or: orConditions };
+    if (sport) stravaFilter.sport = sport;
+    if (excludeId) {
+      const numId = parseInt(String(excludeId).replace(/^strava-/i, ''), 10);
+      if (!isNaN(numId)) stravaFilter.stravaId = { $ne: numId };
+    }
+
+    const fitFilter = { athleteId: targetUserId.toString(), $or: orConditions };
+    if (sport) fitFilter.sport = sport;
+    if (excludeId && String(excludeId).startsWith('fit-')) {
+      fitFilter._id = { $ne: String(excludeId).replace(/^fit-/, '') };
+    }
+
+    const trainingFilter = { athleteId: targetUserId.toString(), $or: orConditions.filter(c => c.title || c.category) };
+    if (sport) trainingFilter.sport = sport;
+    if (excludeId && String(excludeId).startsWith('regular-')) {
+      trainingFilter._id = { $ne: String(excludeId).replace(/^regular-/, '') };
+    }
+
+    const [stravaActs, fitActs, trainingActs] = await Promise.all([
+      StravaActivity.find(stravaFilter)
+        .sort({ startDate: -1 })
+        .limit(limitNum)
+        .select('stravaId titleManual category lactate sport startDate distance elapsed_time average_heartrate average_watts average_speed total_elevation_gain laps')
+        .lean(),
+      FitTraining.find(fitFilter)
+        .sort({ timestamp: -1 })
+        .limit(limitNum)
+        .select('_id titleManual titleAuto category lactate sport timestamp totalDistance totalElapsedTime avgHeartRate avgPower avgSpeed laps')
+        .lean(),
+      trainingFilter.$or && trainingFilter.$or.length > 0
+        ? Training.find(trainingFilter)
+            .sort({ date: -1 })
+            .limit(limitNum)
+            .select('_id title category sport date duration results')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+
+    // Normalize to unified shape
+    const unified = [
+      ...stravaActs.map(a => ({
+        id: `strava-${a.stravaId}`,
+        type: 'strava',
+        date: a.startDate,
+        title: a.titleManual || a.name || 'Activity',
+        category: a.category || null,
+        lactate: a.lactate != null ? Number(a.lactate) : null,
+        sport: a.sport || null,
+        distance: Number(a.distance || 0),
+        duration: Number(a.elapsed_time || 0),
+        avgHr: Number(a.average_heartrate || 0),
+        avgPower: Number(a.average_watts || 0),
+        avgSpeed: Number(a.average_speed || 0),
+        elevation: Number(a.total_elevation_gain || 0),
+        laps: Array.isArray(a.laps) ? a.laps : [],
+      })),
+      ...fitActs.map(a => ({
+        id: `fit-${a._id}`,
+        type: 'fit',
+        date: a.timestamp,
+        title: a.titleManual || a.titleAuto || 'FIT Activity',
+        category: a.category || null,
+        lactate: a.lactate != null ? Number(a.lactate) : null,
+        sport: a.sport || null,
+        distance: Number(a.totalDistance || 0),
+        duration: Number(a.totalElapsedTime || 0),
+        avgHr: Number(a.avgHeartRate || 0),
+        avgPower: Number(a.avgPower || 0),
+        avgSpeed: Number(a.avgSpeed || 0),
+        elevation: 0,
+        laps: Array.isArray(a.laps) ? a.laps : [],
+      })),
+      ...trainingActs.map(a => ({
+        id: `regular-${a._id}`,
+        type: 'regular',
+        date: a.date,
+        title: a.title || 'Training',
+        category: a.category || null,
+        lactate: null,
+        sport: a.sport || null,
+        distance: 0,
+        duration: 0,
+        avgHr: 0,
+        avgPower: 0,
+        avgSpeed: 0,
+        elevation: 0,
+        laps: [],
+      })),
+    ];
+
+    // Sort by date descending
+    unified.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return res.json(unified.slice(0, limitNum));
+  } catch (err) {
+    console.error('[integrations] similar activities:', err);
+    return res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
 // List normalized activities
 router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, res) => {
   try {
@@ -3079,7 +3219,16 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         Array.isArray(streamFromDb.streams.time?.data) &&
         streamFromDb.streams.time.data.length > 0;
 
-      if (dbStreamsHaveTimeSeries) {
+      // If the activity has heart-rate data (has_heartrate=true) but the cached
+      // streams don't include a non-empty heartrate array, the prewarm job likely
+      // ran before Strava finished processing the HR data. Treat the cache as
+      // stale so we re-fetch and get the full stream set including heartrate.
+      const activityHasHr = detailResp?.data?.has_heartrate === true;
+      const dbStreamsHaveHr = Array.isArray(streamFromDb?.streams?.heartrate?.data)
+        && streamFromDb.streams.heartrate.data.some(v => v > 0);
+      const dbStreamsMissingHr = dbStreamsHaveTimeSeries && activityHasHr && !dbStreamsHaveHr;
+
+      if (dbStreamsHaveTimeSeries && !dbStreamsMissingHr) {
         streamsData = streamFromDb.streams;
       } else {
         try {
