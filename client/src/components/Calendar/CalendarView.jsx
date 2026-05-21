@@ -814,7 +814,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
   const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
-  const yTicks    = Array.from({ length: 5 }, (_, i) => chartMin + (range * i) / 4);
+  // For bike (non-inverted): high value at top → start from chartMax and step DOWN.
+  // For run/swim (inverted): fast pace (low seconds) at top → start from chartMin and step UP.
+  const yTicks = Array.from({ length: 5 }, (_, i) =>
+    isInverted
+      ? chartMin + (range * i) / 4   // run/swim: chartMin (fastest) at top
+      : chartMax - (range * i) / 4   // bike:     chartMax (most power) at top
+  );
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
