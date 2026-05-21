@@ -291,27 +291,37 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
       {/* Chart area with Y-axis */}
       <div className="flex items-start" style={{ gap: isSwim ? 6 : 4 }}>
 
-        {/* Y-axis — absolute pixel positioning, tied to bar-height formula.
-            topPx = (1 - frac) * CHART_H_PX where frac = (val-floor)/(max-floor)
-            This mirrors bar heights exactly and is unambiguous on all platforms. */}
-        <div className="relative flex-shrink-0 w-10" style={{ height: CHART_H_PX }}>
+        {/* Y-axis — SVG text so coordinates are always top-left, zero CSS ambiguity.
+            y = (1 - frac) * CHART_H_PX  →  frac=1 (max) at y=0 (top),
+                                             frac=0 (min) at y=CHART_H_PX (bottom). */}
+        <svg
+          width={40}
+          height={CHART_H_PX}
+          style={{ flexShrink: 0, overflow: 'visible' }}
+        >
           {yTicks.map((val, i) => {
             const valRange = maxVal - chartFloor;
-            const frac   = valRange > 0 ? (val - chartFloor) / valRange : 0.5;
-            const topPx  = Math.round((1 - frac) * CHART_H_PX);
-            // Keep label inside container (label ≈ 10px tall)
-            const clampedTop = Math.max(0, Math.min(topPx - 5, CHART_H_PX - 10));
+            const frac = valRange > 0 ? (val - chartFloor) / valRange : 0.5;
+            // y=0 is the TOP in SVG — exactly matching position:absolute top:0
+            const y = Math.round((1 - frac) * CHART_H_PX);
+            // clamp so text doesn't overflow: first label baseline min 8, last max CHART_H_PX
+            const clampedY = Math.max(8, Math.min(y, CHART_H_PX));
             return (
-              <span
+              <text
                 key={i}
-                className="absolute right-0 text-[9px] text-gray-400 leading-none text-right tabular-nums"
-                style={{ top: clampedTop }}
+                x={38}
+                y={clampedY}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={9}
+                fill="#9ca3af"
+                fontFamily="system-ui, -apple-system, sans-serif"
               >
                 {fmtYValue(val)}
-              </span>
+              </text>
             );
           })}
-        </div>
+        </svg>
 
         {/* Scroll container */}
         <div ref={outerRef} className="flex-1 min-w-0 relative">
@@ -436,25 +446,31 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                 })}
               </div>
             ) : (
-              /* Non-swim: duration-proportional bars */
+              /* Non-swim: duration-proportional bars — all heights in px (no % inside flex,
+                 which has a known iOS WebKit resolution bug). Each bar uses
+                 position:absolute; bottom:0; height:Xpx so it grows upward from the
+                 bottom, exactly matching the Y-axis formula: barH = frac * CHART_H_PX. */
               <div
-                className="flex items-end gap-0.5 px-1"
-                style={{ ...innerStyle, height: CHART_H_PX }}
+                style={{ ...innerStyle, height: CHART_H_PX, display: 'flex', alignItems: 'stretch', gap: 2, padding: '0 4px' }}
               >
                 {entries.map((entry) => {
                   const isSelected = selectedLapNumber != null && String(entry.lapNumber) === String(selectedLapNumber);
 
                   if (entry.isPause) {
                     return (
-                      <div key={entry.lapNumber} className="flex flex-col items-center justify-end shrink-0" style={{ width: 5, height: '100%' }}>
-                        <div className="w-full rounded-t" style={{ height: '8%', minHeight: 3, backgroundColor: '#d1d5db' }} />
+                      <div key={entry.lapNumber} style={{ width: 5, flexShrink: 0, height: CHART_H_PX, position: 'relative' }}>
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, borderRadius: '2px 2px 0 0', backgroundColor: '#d1d5db' }} />
                       </div>
                     );
                   }
 
                   const range = maxVal - chartFloor;
-                  const rawPct = range > 0 ? Math.max((entry.value - chartFloor) / range * 100, 8) : 50;
-                  const heightPct = isSelected ? Math.min(rawPct * 1.08, 100) : rawPct;
+                  // frac: 0 = chartFloor (min visible height), 1 = maxVal (full height)
+                  const rawFrac = range > 0 ? Math.max((entry.value - chartFloor) / range, 0.08) : 0.5;
+                  const frac    = isSelected ? Math.min(rawFrac * 1.08, 1) : rawFrac;
+                  // barH in pixels — same formula as Y-axis: frac * CHART_H_PX
+                  const barH    = Math.round(frac * CHART_H_PX);
+                  const color   = barColor(entry, isSelected);
 
                   return (
                     <button
@@ -462,18 +478,25 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                       key={entry.lapNumber}
                       onClick={() => onSelect && onSelect(isSelected ? null : entry.lapNumber)}
                       title={`Lap ${entry.lapNumber}: ${fmtLabel(entry)}${entry.lactate != null ? ` · La ${entry.lactate.toFixed(1)}` : ''}`}
-                      className="flex flex-col items-center justify-end group relative focus:outline-none"
-                      style={{ flex: `${entry.duration} 1 0%`, minWidth: 2, height: '100%' }}
+                      className="group focus:outline-none"
+                      style={{ flex: `${entry.duration} 1 0%`, minWidth: 2, height: CHART_H_PX, position: 'relative' }}
                     >
+                      {/* Bar: anchored to bottom, grows upward — unambiguous on all platforms */}
                       <div
-                        className="w-full rounded-t relative overflow-hidden transition-[height,opacity] duration-200"
                         style={{
-                          height: `${heightPct}%`,
-                          backgroundColor: barColor(entry, isSelected),
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: barH,
+                          backgroundColor: color,
+                          borderRadius: '4px 4px 0 0',
                           opacity: selectedLapNumber != null ? (isSelected ? 1 : 0.55) : 0.82,
                           boxShadow: isSelected
                             ? `0 0 0 2px ${barColor(entry, true)}, 0 2px 8px ${barColor(entry, true)}60`
                             : 'none',
+                          transition: 'height 0.2s ease, opacity 0.15s ease, background-color 0.15s ease',
+                          overflow: 'hidden',
                         }}
                       >
                         {/* When selected: show metric label; when has lactate: show value */}
