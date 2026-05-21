@@ -15,17 +15,24 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
   const isRun  = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
   const isSwim = sportLower.includes('swim');
 
-  const scrollRef = useRef(null);
-  const outerRef  = useRef(null);
-  const [outerW,      setOuterW]      = useState(0);
-  const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
+  const scrollRef    = useRef(null);
+  const outerRef     = useRef(null);
+  const leftFadeRef  = useRef(null);
+  const rightFadeRef = useRef(null);
+  const rafRef       = useRef(null);
+  const [outerW, setOuterW] = useState(0);
 
+  // Update scroll-edge fades directly via DOM refs — no state → no re-render → smooth scroll
   const checkScrollEdges = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setScrollEdges({
-      left:  el.scrollLeft > 2,
-      right: el.scrollLeft < el.scrollWidth - el.clientWidth - 2,
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      const showLeft  = el.scrollLeft > 2;
+      const showRight = el.scrollLeft < el.scrollWidth - el.clientWidth - 2;
+      if (leftFadeRef.current)  leftFadeRef.current.style.opacity  = showLeft  ? '1' : '0';
+      if (rightFadeRef.current) rightFadeRef.current.style.opacity = showRight ? '1' : '0';
     });
   };
 
@@ -271,8 +278,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     : null;
 
   // ── Chart height: swim gets a taller canvas to better match Garmin ───────
-  const CHART_H_CLASS = isSwim ? 'h-48' : 'h-32'; // 192px vs 128px
-  const CHART_H_PX    = isSwim ? 192 : 128;
+  const CHART_H_PX = isSwim ? 192 : 128;
 
   // ── Swim bar width: fixed pixel width so bars are uniform ─────────────────
   // 28px bar + 2px gap looks close to the Garmin screenshot on a phone screen.
@@ -285,19 +291,26 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
       {/* Chart area with Y-axis */}
       <div className="flex items-start" style={{ gap: isSwim ? 6 : 4 }}>
 
-        {/* Y-axis — flex-col top→bottom so index 0 (max) is visually at top */}
-        <div
-          className="flex-shrink-0 w-10 flex flex-col justify-between"
-          style={{ height: CHART_H_PX }}
-        >
-          {yTicks.map((val, i) => (
-            <span
-              key={i}
-              className="text-[9px] text-gray-400 leading-none text-right tabular-nums block w-full"
-            >
-              {fmtYValue(val)}
-            </span>
-          ))}
+        {/* Y-axis — absolute pixel positioning, tied to bar-height formula.
+            topPx = (1 - frac) * CHART_H_PX where frac = (val-floor)/(max-floor)
+            This mirrors bar heights exactly and is unambiguous on all platforms. */}
+        <div className="relative flex-shrink-0 w-10" style={{ height: CHART_H_PX }}>
+          {yTicks.map((val, i) => {
+            const valRange = maxVal - chartFloor;
+            const frac   = valRange > 0 ? (val - chartFloor) / valRange : 0.5;
+            const topPx  = Math.round((1 - frac) * CHART_H_PX);
+            // Keep label inside container (label ≈ 10px tall)
+            const clampedTop = Math.max(0, Math.min(topPx - 5, CHART_H_PX - 10));
+            return (
+              <span
+                key={i}
+                className="absolute right-0 text-[9px] text-gray-400 leading-none text-right tabular-nums"
+                style={{ top: clampedTop }}
+              >
+                {fmtYValue(val)}
+              </span>
+            );
+          })}
         </div>
 
         {/* Scroll container */}
@@ -309,8 +322,9 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
             style={{
               overflowY: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              scrollbarWidth: 'none',       // Firefox
-              msOverflowStyle: 'none',      // IE
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              willChange: 'scroll-position',
             }}
           >
             {/* Swim: fixed-width equal bars */}
@@ -422,10 +436,10 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                 })}
               </div>
             ) : (
-              /* Non-swim: original duration-proportional bars */
+              /* Non-swim: duration-proportional bars */
               <div
-                className={`flex items-end gap-0.5 ${CHART_H_CLASS} px-1`}
-                style={innerStyle}
+                className="flex items-end gap-0.5 px-1"
+                style={{ ...innerStyle, height: CHART_H_PX }}
               >
                 {entries.map((entry) => {
                   const isSelected = selectedLapNumber != null && String(entry.lapNumber) === String(selectedLapNumber);
@@ -555,15 +569,19 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
             )}
           </div>
 
-          {/* Left / right fade scrolling hints */}
-          {scrollEdges.left && (
-            <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10" />
-          )}
-          {scrollEdges.right && (
-            <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 flex items-center justify-end pr-0.5">
-              <span className="text-gray-400 text-[11px] leading-none select-none">›</span>
-            </div>
-          )}
+          {/* Left / right fade scrolling hints — opacity toggled via DOM ref, no re-renders */}
+          <div
+            ref={leftFadeRef}
+            className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 transition-opacity duration-150"
+            style={{ opacity: 0 }}
+          />
+          <div
+            ref={rightFadeRef}
+            className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 flex items-center justify-end pr-0.5 transition-opacity duration-150"
+            style={{ opacity: 0 }}
+          >
+            <span className="text-gray-400 text-[11px] leading-none select-none">›</span>
+          </div>
         </div>
       </div>
 
