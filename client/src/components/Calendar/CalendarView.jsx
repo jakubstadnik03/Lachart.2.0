@@ -797,16 +797,23 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 
   const maxVal   = Math.max(...scaleValues);
   const minVal   = Math.min(...scaleValues);
-  // 8 % symmetric padding so:
-  //   • the tallest bar has visible space above it (not flush with the top edge)
-  //   • laps faster/stronger than scaleValues min/max don't clamp flush
-  //   • the slowest/weakest bar is a visible stub, not 3 px
-  // Y-axis ticks are generated from these padded extremes so grid lines
-  // stay in sync with bar heights.
-  const dataRange = maxVal - minVal || maxVal * 0.1;
-  const PAD = dataRange * 0.08;
-  const chartMin = scaleOverride ? scaleOverride.min : Math.max(0, minVal - PAD);
-  const chartMax = scaleOverride ? scaleOverride.max : maxVal + PAD;
+  // Centre the Y-axis around the average of the scale values so the "typical"
+  // bar sits in the middle of the chart and differences between laps are easy
+  // to read. We compute the max deviation from the average, add 30 % padding,
+  // and use that as a symmetric spread on both sides.
+  //   e.g. 8×800 m at 3:06–3:12/km  → avg ≈ 3:09, spread ≈ ±15 s
+  //        chart range 2:54 – 3:24  → all bars clearly differentiated
+  let chartMin, chartMax;
+  if (scaleOverride) {
+    chartMin = scaleOverride.min;
+    chartMax = scaleOverride.max;
+  } else {
+    const avg    = scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length;
+    const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - avg)));
+    const spread = (maxDev || avg * 0.08) * 1.3; // 30 % extra headroom
+    chartMin = Math.max(0, avg - spread);
+    chartMax = avg + spread;
+  }
   const range    = chartMax - chartMin || 1;
 
   const getBarH = (val) => {
