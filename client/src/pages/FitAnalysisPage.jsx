@@ -3711,13 +3711,18 @@ const FitAnalysisPage = () => {
         sourceFitTrainingId: formData?.sourceFitTrainingId || undefined
       };
       
-      // Check if training already exists (by title and date)
+      // Check if training already exists (by Strava activity ID first, then title+date)
       const existingTrainingsResponse = await api.get(`/user/athlete/${targetId}/trainings`);
       const allTrainings = existingTrainingsResponse.data || [];
-      
-      const existing = allTrainings.find(t => 
-        t.title === formData.title && 
-        new Date(t.date).toDateString() === new Date(formData.date).toDateString()
+
+      const existing = allTrainings.find(t =>
+        // Primary match: same source Strava activity → always overwrite (handles lactate re-export)
+        (formData.sourceStravaActivityId &&
+          t.sourceStravaActivityId &&
+          String(t.sourceStravaActivityId) === String(formData.sourceStravaActivityId)) ||
+        // Fallback: same title + same date
+        (t.title === formData.title &&
+         new Date(t.date).toDateString() === new Date(formData.date).toDateString())
       );
       
       // Calculate average power/pace for similarity detection
