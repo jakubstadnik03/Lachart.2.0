@@ -1307,10 +1307,20 @@ function detectLapType(lap, index, total) {
   if (/cool.?down|zklidn/i.test(name)) return 'cooldown';
   if (/recov|odpoc|rest/i.test(name)) return 'recovery';
   if (/interval|work|int\s*\d/i.test(name)) return 'work';
-  // 3. Position heuristic: first/last = warmup/cooldown, even alternating = recovery
+  // 3. Distance + pace heuristic: very short laps are clearly rest/recovery
+  //    (e.g. 31m in 0:57, 75m in 1:00 between 800m intervals)
+  const dist = Number(lap?.distance || lap?.totalDistance || 0);
+  const dur  = Number(lap?.elapsed_time || lap?.totalElapsedTime || lap?.duration || 0);
+  if (dist > 0 && dist < 200) return 'recovery'; // < 200m = clearly a rest/transition
+  // Very slow pace for a run lap (> 8:00/km) = walking / recovery jog
+  if (dist > 0 && dur > 0) {
+    const paceSecKm = dur / (dist / 1000);
+    if (paceSecKm > 480) return 'recovery'; // > 8:00/km
+  }
+  // 4. Position heuristic: first/last = warmup/cooldown, alternating = work/recovery
   if (index === 0 && total > 2) return 'warmup';
   if (index === total - 1 && total > 2) return 'cooldown';
-  // Odd positions tend to be work, even recovery when alternating pattern
+  // Odd-indexed laps in an alternating session → work, even → recovery
   if (total >= 5) return index % 2 === 1 ? 'work' : 'recovery';
   return 'work';
 }
@@ -2827,26 +2837,46 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
                           const lapLa = lap.lactate ?? lap.lactateValue;
                           const lapNum = lap.lapNumber ?? (i + 1);
+                          // Detect lap type for color-coding
+                          const lapType = detectLapType(lap, i, laps.length);
+                          const isRestLap = lapType === 'recovery' || lapType === 'rest';
+                          // Pace — suppress for rest/recovery laps with crazy values
                           let lapPaceStr = '—';
+                          let paceIsNormal = true;
                           if (isSwim) {
                             const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
                             if (spd > 0) { const s = Math.round(100 / spd); lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
                           } else if (isRun && lapDist > 0 && lapDur > 0) {
                             const spk = lapDur / (lapDist / 1000);
-                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            // Suppress pace for rest laps with >8:00/km (480 sec/km) — clearly not running
+                            if (isRestLap && spk > 480) { lapPaceStr = '—'; paceIsNormal = false; }
+                            else lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
                           } else if (isBike) {
                             lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                           }
                           const isSelected = selectedLap === i;
+                          // Type-based row styling
+                          const typeDot  = COMPARE_STEP_COLORS[lapType] || '#9ca3af';
+                          const typeRowBg = isSelected ? '#EFF6FF'
+                            : lapType === 'warmup'   ? '#fffbeb'
+                            : lapType === 'cooldown' ? '#f0f9ff'
+                            : lapType === 'recovery' || lapType === 'rest' ? '#f9fafb'
+                            : undefined; // work = default white
+                          const paceColor = isSelected ? '#2563EB'
+                            : !paceIsNormal ? '#9ca3af'
+                            : isRestLap ? '#9ca3af'
+                            : lapType === 'warmup' ? '#d97706'
+                            : lapType === 'cooldown' ? '#0284c7'
+                            : '#2563EB'; // work = blue
                           return (
                             <div key={i} ref={el => lapRowRefs.current[i] = el}
                               onClick={() => setSelectedLap(isSelected ? null : i)}
                               className="grid items-center px-3 py-2.5 text-xs cursor-pointer"
-                              style={{ gridTemplateColumns: cols, backgroundColor: isSelected ? '#EFF6FF' : undefined, borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent' }}>
-                              <span className="font-bold" style={{ color: isSelected ? '#2563EB' : '#9ca3af' }}>{lapNum}</span>
+                              style={{ gridTemplateColumns: cols, backgroundColor: typeRowBg, borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}` }}>
+                              <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
                               <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
                               <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
-                              {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
+                              {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                               {showLactate && (
@@ -3216,8 +3246,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
                         const lapLa    = lap.lactate ?? lap.lactateValue;
                         const lapNum   = lap.lapNumber ?? (i + 1);
+                        // Detect lap type for color-coding
+                        const lapType  = detectLapType(lap, i, laps.length);
+                        const isRestLap = lapType === 'recovery' || lapType === 'rest';
 
                         let lapPaceStr = '—';
+                        let paceIsNormal = true;
                         if (isSwim) {
                           const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
                           if (spd > 0) {
@@ -3227,13 +3261,26 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         } else if (isRun) {
                           if (lapDist > 0 && lapDur > 0) {
                             const spk = lapDur / (lapDist / 1000);
-                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            if (isRestLap && spk > 480) { lapPaceStr = '—'; paceIsNormal = false; }
+                            else lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
                           }
                         } else if (isBike) {
                           lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                         }
 
                         const isSelected = selectedLap === i;
+                        const typeDot  = COMPARE_STEP_COLORS[lapType] || '#9ca3af';
+                        const typeRowBg = isSelected ? '#EFF6FF'
+                          : lapType === 'warmup'   ? '#fffbeb'
+                          : lapType === 'cooldown' ? '#f0f9ff'
+                          : lapType === 'recovery' || lapType === 'rest' ? '#f9fafb'
+                          : undefined;
+                        const paceColor = isSelected ? '#2563EB'
+                          : !paceIsNormal ? '#9ca3af'
+                          : isRestLap ? '#9ca3af'
+                          : lapType === 'warmup' ? '#d97706'
+                          : lapType === 'cooldown' ? '#0284c7'
+                          : '#2563EB';
                         return (
                           <div
                             key={i}
@@ -3242,14 +3289,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             className="grid items-center px-3 py-2.5 text-[11px] cursor-pointer transition-colors"
                             style={{
                               gridTemplateColumns: cols,
-                              backgroundColor: isSelected ? '#EFF6FF' : undefined,
-                              borderLeft: isSelected ? '3px solid #2563EB' : '3px solid transparent',
+                              backgroundColor: typeRowBg,
+                              borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}`,
                             }}
                           >
-                            <span className="font-bold" style={{ color: isSelected ? '#2563EB' : '#9ca3af' }}>{lapNum}</span>
+                            <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
                             <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
                             <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
-                            {showPace && <span className="text-right tabular-nums font-semibold text-blue-600">{lapPaceStr}</span>}
+                            {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                             <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                             {showLactate && (
                               lapLa != null ? (
