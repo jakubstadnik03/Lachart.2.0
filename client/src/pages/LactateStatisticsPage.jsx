@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { useParams } from 'react-router-dom';
 import LactateStatistics from '../components/LactateStatistics/LactateStatistics';
+import LactateTrendPanel from '../components/LactateStatistics/LactateTrendPanel';
 
 const LactateStatisticsPage = () => {
   const { user } = useAuth();
@@ -32,6 +33,11 @@ const LactateStatisticsPage = () => {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">Lactate Statistics</h1>
         <LactateStatistics selectedAthleteId={selectedAthleteId} />
+        {selectedAthleteId && (
+          <div className="mt-6 md:mt-8">
+            <LactateTrendPanel athleteId={selectedAthleteId} days={120} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -282,7 +282,27 @@ function extractZones(training, thresholds) {
     return result;
   }
 
-  // ── 4. Threshold-based fallback (Strava / FIT without zone data) ──────────
+  // ── 4. Per-second records[] (FIT uploads — most accurate) ────────────────
+  // Iterates every recorded data point and classifies HR/power second-by-second.
+  if (thresholds && Array.isArray(training.records) && training.records.length > 1) {
+    const recResult = { ...empty };
+    let recAttributed = 0;
+    for (let i = 1; i < training.records.length; i++) {
+      const rec  = training.records[i];
+      const prev = training.records[i - 1];
+      // Time delta in seconds (default 1 s; ignore implausible gaps > 30 s)
+      let dt = 1;
+      if (rec.timestamp && prev.timestamp) {
+        const diff = (new Date(rec.timestamp).getTime() - new Date(prev.timestamp).getTime()) / 1000;
+        if (diff > 0 && diff <= 30) dt = diff;
+      }
+      const z = classifyByThreshold(Number(rec.heartRate || 0), Number(rec.power || 0), thresholds);
+      if (z) { recResult[z] += dt; recAttributed += dt; }
+    }
+    if (recAttributed > 0) return recResult;
+  }
+
+  // ── 5. Threshold-based fallback (Strava / FIT without zone data) ──────────
   // Uses the athlete's lactate test LT1/LT2 to classify each lap (or the whole
   // workout if no laps) by average HR or average power into a single zone.
   if (thresholds) {

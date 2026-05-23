@@ -3,15 +3,21 @@
 // the test is sent through the same `addTest` API and bubbled back via
 // `onCreated(test)` so the parent can refresh its list.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import NewTestingComponent from '../Testing-page/NewTestingComponent';
 import { addTest } from '../../services/api';
 
 const SHEET_KEYFRAMES = `
-@keyframes ndSheetIn  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes ndSheetIn  { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes ndSheetOut { from { transform: translateY(0);    opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
 @keyframes ndScrimIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ndScrimOut { from { opacity: 1; } to { opacity: 0; } }
 `;
+
+// Velocity threshold (px/s) above which a fast flick closes even if distance < SWIPE_THRESHOLD
+const SWIPE_THRESHOLD = 90;   // px down to trigger close on slow drag
+const SWIPE_VEL_THRESHOLD = 400; // px/s fast flick
 
 export default function NewTestSheet({
   open,
@@ -21,8 +27,18 @@ export default function NewTestSheet({
   athleteId,
   user,
 }) {
-  const [error, setError] = useState(null);
+  const [error, setError]   = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Close animation state
+  const [closing, setClosing] = useState(false);
+
+  // Swipe-down drag state
+  const [dragY, setDragY]       = useState(0);
+  const touchStartYRef          = useRef(0);
+  const touchStartTimeRef       = useRef(0);
+  const isDraggingRef           = useRef(false);
+  const sheetRef                = useRef(null);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -32,14 +48,54 @@ export default function NewTestSheet({
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  if (!open) return null;
+  // Reset close state when sheet re-opens
+  useEffect(() => {
+    if (open) { setClosing(false); setDragY(0); }
+  }, [open]);
 
-  // Submit handler — mirrors TestingPage.handleAddTest but trimmed to the
-  // bare essentials and adapted to native context.
+  // Trigger animated close → then notify parent
+  const triggerClose = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setDragY(0);
+    setTimeout(() => {
+      onClose && onClose();
+    }, 300);
+  }, [closing, onClose]);
+
+  // ── Touch handlers (drag handle + header only) ──────────────────────────
+  const handleTouchStart = (e) => {
+    touchStartYRef.current    = e.touches[0].clientY;
+    touchStartTimeRef.current = Date.now();
+    isDraggingRef.current     = true;
+    setDragY(0);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDraggingRef.current) return;
+    const dy = e.touches[0].clientY - touchStartYRef.current;
+    if (dy > 0) {
+      setDragY(dy);
+      e.preventDefault(); // prevent page scroll while dragging sheet
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    const dt  = (Date.now() - touchStartTimeRef.current) / 1000;
+    const vel = dt > 0 ? dragY / dt : 0;
+    if (dragY > SWIPE_THRESHOLD || vel > SWIPE_VEL_THRESHOLD) {
+      triggerClose();
+    } else {
+      setDragY(0);
+    }
+  };
+
+  // ── Submit handler ───────────────────────────────────────────────────────
   const handleSubmit = async (newTest) => {
     setSaving(true); setError(null);
     try {
-      // Resolve which athlete this test belongs to
       const role = String(user?.role || '').toLowerCase();
       let athleteIdForSave;
       if (role === 'athlete') athleteIdForSave = user?._id;
@@ -69,7 +125,7 @@ export default function NewTestSheet({
       const response = await addTest(processedTest);
       const created = response?.data;
       if (created) onCreated && onCreated(created);
-      onClose && onClose();
+      triggerClose();
       return created;
     } catch (e) {
       const msg = e?.response?.data?.error || e?.message || 'Failed to save test';
@@ -80,57 +136,88 @@ export default function NewTestSheet({
     }
   };
 
-  // Portal into #app-modal-root so the sheet sits above the native tab bar
-  // (otherwise zIndex 101 lost the stacking-context battle with the layout's
-  // bottom nav and the user couldn't see the bottom of the form).
-  const modalRoot = (typeof document !== 'undefined' && document.getElementById('app-modal-root')) || (typeof document !== 'undefined' ? document.body : null);
+  if (!open && !closing) return null;
+
+  const modalRoot = (typeof document !== 'undefined' && document.getElementById('app-modal-root'))
+    || (typeof document !== 'undefined' ? document.body : null);
   if (!modalRoot) return null;
+
+  // Interpolate scrim opacity while dragging
+  const scrimOpacity = dragY > 0
+    ? Math.max(0.05, 0.45 - dragY / 500)
+    : (closing ? 0 : 0.45);
+
+  const sheetAnimation = closing
+    ? 'ndSheetOut .30s cubic-bezier(.4,0,1,1) both'
+    : (dragY === 0 ? 'ndSheetIn .32s cubic-bezier(.22,1,.36,1) both' : 'none');
+
+  const sheetTransform  = dragY > 0 ? `translateY(${dragY}px)` : undefined;
+  const sheetTransition = dragY > 0 ? 'none' : (closing ? 'none' : 'transform .3s cubic-bezier(.22,1,.36,1)');
 
   const content = (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
       <style>{SHEET_KEYFRAMES}</style>
+
       {/* Scrim */}
       <div
-        onClick={onClose}
+        onClick={triggerClose}
         style={{
           position: 'absolute', inset: 0,
-          background: 'rgba(10,14,26,.45)',
+          background: `rgba(10,14,26,${scrimOpacity.toFixed(2)})`,
           backdropFilter: 'blur(2px)',
           WebkitBackdropFilter: 'blur(2px)',
-          animation: 'ndScrimIn .25s ease both',
+          animation: closing ? 'ndScrimOut .30s ease both' : 'ndScrimIn .25s ease both',
+          transition: dragY > 0 ? 'background .05s linear' : undefined,
         }}
       />
 
-      {/* Sheet — nearly full-screen so the form has room */}
+      {/* Sheet */}
       <div
+        ref={sheetRef}
         style={{
           position: 'absolute', left: 0, right: 0, bottom: 0,
-          top: 'env(safe-area-inset-top, 0px)',
-          background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(238,240,244,.99))',
+          top: 'env(safe-area-inset-top, 44px)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,.97), rgba(238,240,244,.99))',
           backdropFilter: 'blur(28px) saturate(170%)',
           WebkitBackdropFilter: 'blur(28px) saturate(170%)',
           borderTopLeftRadius: 22, borderTopRightRadius: 22,
           boxShadow: '0 -10px 32px -8px rgba(10,14,26,.18)',
           paddingBottom: 'env(safe-area-inset-bottom)',
           display: 'flex', flexDirection: 'column',
-          animation: 'ndSheetIn .32s cubic-bezier(.22,1,.36,1) both',
+          animation: sheetAnimation,
+          transform: sheetTransform,
+          transition: sheetTransition,
           fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif',
+          willChange: 'transform',
         }}
       >
-        {/* Drag handle */}
-        <div style={{
-          width: 44, height: 4, borderRadius: 9999,
-          background: 'rgba(118,126,181,.3)', margin: '8px auto 4px',
-          flexShrink: 0,
-        }} />
+        {/* Drag handle — touch target for swipe-down */}
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{ padding: '10px 0 6px', cursor: 'grab', flexShrink: 0, touchAction: 'none' }}
+        >
+          <div style={{
+            width: 44, height: 4, borderRadius: 9999,
+            background: 'rgba(118,126,181,.3)', margin: '0 auto',
+          }} />
+        </div>
 
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 18px 12px',
-          borderBottom: '1px solid rgba(118,126,181,.12)',
-          flexShrink: 0,
-        }}>
+        {/* Header — also acts as a drag zone */}
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '4px 18px 12px',
+            borderBottom: '1px solid rgba(118,126,181,.12)',
+            flexShrink: 0,
+            touchAction: 'none',
+            cursor: 'grab',
+          }}
+        >
           <div>
             <div style={{
               fontSize: 11, fontWeight: 800, color: '#7C3AED',
@@ -146,7 +233,8 @@ export default function NewTestSheet({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={triggerClose}
+            onTouchStart={(e) => e.stopPropagation()}
             style={{
               width: 34, height: 34, borderRadius: '50%',
               background: 'rgba(118,126,181,.12)', border: 'none',
@@ -175,7 +263,6 @@ export default function NewTestSheet({
           }}>
             {error ? (
               <>
-                {/* Alert-triangle SVG — replaces ⚠️ */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
@@ -184,7 +271,6 @@ export default function NewTestSheet({
               </>
             ) : (
               <>
-                {/* Spinner SVG — replaces ⏳ */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, animation: 'ndSpin 1s linear infinite' }}>
                   <line x1="12" y1="2"  x2="12" y2="6" />
                   <line x1="12" y1="18" x2="12" y2="22" />
@@ -206,7 +292,7 @@ export default function NewTestSheet({
           flex: 1, minHeight: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          padding: '6px 6px 14px',
+          padding: '4px 12px 16px',
         }}>
           <NewTestingComponent
             selectedSport={defaultSport}

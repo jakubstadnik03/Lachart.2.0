@@ -110,6 +110,18 @@ const s = StyleSheet.create({
   zoneVal:  { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark, flex: 2, textAlign: 'right' },
   zoneHr:   { fontSize: 8.5, color: C.gray, flex: 2, textAlign: 'right' },
 
+  // Pre-test summary chips
+  ptChipRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  ptChip:    { flex: 1, borderRadius: 6, padding: 8, alignItems: 'center' },
+  ptChipVal: { fontSize: 13, fontFamily: 'Helvetica-Bold', marginBottom: 2 },
+  ptChipLbl: { fontSize: 6.5, letterSpacing: 0.5 },
+  // Zone bar row
+  ptZoneRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  ptZoneLbl: { fontSize: 7, color: '#6B7280', width: 18 },
+  ptZoneBar: { flex: 1, height: 8, borderRadius: 4, backgroundColor: '#F3F4F6', overflow: 'hidden', marginHorizontal: 6 },
+  ptZoneFill:{ height: 8, borderRadius: 4 },
+  ptZonePct: { fontSize: 7, color: '#9CA3AF', width: 24, textAlign: 'right' },
+
   // Delta cards
   deltaPositive: { color: C.green, fontFamily: 'Helvetica-Bold' },
   deltaNegative: { color: C.red,   fontFamily: 'Helvetica-Bold' },
@@ -638,6 +650,77 @@ const Footer = ({ athlete, creatorEmail }) => (
   </View>
 );
 
+// ── Pre-test training summary section ──────────────────────────────────────────
+const PT_ZONE_COLORS = ['#60A5FA', '#34D399', '#FBBF24', '#F97316', '#F43F5E'];
+
+function fmtDurPdf(secs) {
+  if (!secs || secs <= 0) return '0m';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function PreTestSection({ preTestSummary }) {
+  if (!preTestSummary) return null;
+  const { totalTimeSecs, totalSessions, zonePcts, zoneDurs, aerobicPct, highIntensityPct, totalZoneSecs } = preTestSummary;
+  if (!totalTimeSecs && !totalSessions) return null;
+
+  const maxZoneSecs = Math.max(...Object.values(zoneDurs || {}), 1);
+
+  return (
+    <View wrap={false}>
+      {/* chips */}
+      <View style={s.ptChipRow}>
+        <View style={[s.ptChip, { backgroundColor: '#EFF6FF' }]}>
+          <Text style={[s.ptChipVal, { color: '#1D4ED8' }]}>{fmtDurPdf(totalTimeSecs)}</Text>
+          <Text style={[s.ptChipLbl, { color: '#3B82F6' }]}>Total time</Text>
+        </View>
+        <View style={[s.ptChip, { backgroundColor: '#F0FDF4' }]}>
+          <Text style={[s.ptChipVal, { color: '#15803D' }]}>{totalSessions}</Text>
+          <Text style={[s.ptChipLbl, { color: '#22C55E' }]}>Sessions</Text>
+        </View>
+        {totalZoneSecs > 0 && (
+          <View style={[s.ptChip, { backgroundColor: '#FFFBEB' }]}>
+            <Text style={[s.ptChipVal, { color: '#B45309' }]}>{aerobicPct}%</Text>
+            <Text style={[s.ptChipLbl, { color: '#F59E0B' }]}>Z1+Z2 aerobic</Text>
+          </View>
+        )}
+        {totalZoneSecs > 0 && (
+          <View style={[s.ptChip, { backgroundColor: '#FFF1F2' }]}>
+            <Text style={[s.ptChipVal, { color: '#B91C1C' }]}>{highIntensityPct}%</Text>
+            <Text style={[s.ptChipLbl, { color: '#F43F5E' }]}>High intensity</Text>
+          </View>
+        )}
+      </View>
+
+      {/* zone bars */}
+      {totalZoneSecs > 0 && (
+        <View>
+          {[1,2,3,4,5].map(z => {
+            const key  = `z${z}`;
+            const pct  = zonePcts?.[key] || 0;
+            const barW = Math.round((zoneDurs?.[key] || 0) / maxZoneSecs * 100);
+            return (
+              <View key={z} style={s.ptZoneRow}>
+                <Text style={s.ptZoneLbl}>Z{z}</Text>
+                <View style={s.ptZoneBar}>
+                  <View style={[s.ptZoneFill, { width: `${barW}%`, backgroundColor: PT_ZONE_COLORS[z-1] }]} />
+                </View>
+                <Text style={s.ptZonePct}>{pct}%</Text>
+                <Text style={{ fontSize: 7, color: '#9CA3AF', width: 28, textAlign: 'right' }}>
+                  {fmtDurPdf(zoneDurs?.[key])}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ── Section header ──────────────────────────────────────────────────────────────
 const SectionHeader = ({ title }) => (
   <View style={s.sectionHeader}>
@@ -647,7 +730,7 @@ const SectionHeader = ({ title }) => (
 );
 
 // ── Main Document ───────────────────────────────────────────────────────────────
-export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
+export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
   if (!test) return null;
 
   const sport       = test.sport || 'bike';
@@ -997,6 +1080,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             </View>
           </>}
 
+          {/* ── Pre-test training context ── */}
+          {preTestSummary && (
+            <>
+              <SectionHeader title="Pre-test Training · 8 weeks" />
+              <PreTestSection preTestSummary={preTestSummary} />
+            </>
+          )}
+
           {/* ── Comparison with previous test ── */}
           {hasPrev && <>
             <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} → ${prevDate} → ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} />
@@ -1087,7 +1178,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 }
 
 // ── Download helper ─────────────────────────────────────────────────────────────
-export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
+export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
   const doc = (
     <LactateReportPdf
       test={test}
@@ -1101,13 +1192,14 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       customNote={customNote}
       customAnalysis={customAnalysis}
       creatorEmail={creatorEmail}
+      preTestSummary={preTestSummary}
     />
   );
   return pdf(doc).toBlob();
 }
 
-export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail }) {
-  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail });
+export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
+  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary });
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
   const fileName = `lachart-report-${date}.pdf`;
 

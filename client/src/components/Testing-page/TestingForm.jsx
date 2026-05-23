@@ -362,10 +362,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
-  // Per-user preference: hide the Dur/Dist stage column when the user
-  // doesn't need it. Stored locally so it survives reloads.
+  // Per-user preference: show the Dur/Dist stage column.
+  // Defaults OFF — auto-shown when any row actually has stage data.
   const [showStageCol, setShowStageCol] = useState(() => {
-    try { return localStorage.getItem('testingForm_showStageCol') !== '0'; } catch { return true; }
+    try {
+      const stored = localStorage.getItem('testingForm_showStageCol');
+      // '1' = explicitly on, '0' = explicitly off, null = default (off)
+      return stored === '1';
+    } catch { return false; }
   });
   useEffect(() => {
     try { localStorage.setItem('testingForm_showStageCol', showStageCol ? '1' : '0'); } catch {}
@@ -1395,7 +1399,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <button
                     type="button"
                     onClick={() => setShowStageCol(v => !v)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showStageCol ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${(showStageCol) ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
                     title="Show or hide the Dur / Dist column on the intervals table"
                   >
                     {isDistanceMode ? 'Dist' : 'Dur'}
@@ -1876,6 +1880,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Data Table */}
       <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {(() => {
+            // Auto-show stage column if any row has actual duration/distance data
+            const hasStageData = rows.some(r =>
+              (r.duration       !== undefined && r.duration       !== null && String(r.duration).trim()       !== '') ||
+              (r.distanceMeters !== undefined && r.distanceMeters !== null && String(r.distanceMeters).trim() !== '')
+            );
+            // Show if user explicitly enabled it OR data already exists
+            const shouldShowStageCol = showStageCol || hasStageData;
+
             // Calculate columns: Int + Dur + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly
             // Header structure: Int | Dur | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
@@ -1883,7 +1895,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
             // Count flexible columns (all except Int and Del which are fixed)
             let flexibleColCount = 0;
-            if (showStageCol) flexibleColCount += 1; // Duration / Distance — togglable in settings
+            if (shouldShowStageCol) flexibleColCount += 1; // Duration / Distance — togglable in settings
             flexibleColCount += 1; // Power/Pace
             flexibleColCount += 1; // HR
             flexibleColCount += 1; // La
@@ -1911,7 +1923,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 <div className="w-full min-w-0 max-w-full flex-shrink-0 overflow-x-hidden touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
                   <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0" style={{ gridTemplateColumns }}>
                     <div className="text-center min-w-0 truncate">Int.</div>
-                    {showStageCol && ((isNewTest || isEditMode) ? (
+                    {shouldShowStageCol && ((isNewTest || isEditMode) ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -2025,9 +2037,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       )}
                       {/* Per-row stage duration (MM:SS) OR distance (meters)
                           depending on the column toggle in the header.
-                          Hidden entirely when the user has switched the
-                          stage column off in settings. */}
-                      {showStageCol && (isDistanceMode
+                          Hidden when no data and user hasn't enabled the column. */}
+                      {shouldShowStageCol && (isDistanceMode
                         ? renderInput(index, 'distanceMeters', row.distanceMeters,
                             formData.stageDurationSec || formData.stageDistance
                               ? String(formData.stageDistance || '')

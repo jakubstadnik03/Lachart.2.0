@@ -769,25 +769,103 @@ const { getValidStravaToken, stravaExpiresAtSeconds } = require('../utils/strava
 
 /**
  * Streams often fail with 400 for some activity types or stream key combos; detail still loads.
+ * Strava returns 400 (not 404) when any requested key is unsupported for the activity —
+ * this happens with older Garmin activities that don't expose `watts` or `velocity_smooth`.
+ * We retry with progressively narrower key sets to get as much data as possible.
  */
-async function fetchStravaActivityStreams(token, stravaId) {
-  // Single request with the full key list. Older code retried 6 fallback
-  // variants on 400/404, burning the rate-limit token bucket. Strava omits
-  // unsupported keys silently in the response so one shot is enough.
+async function fetchStravaActivityStreams(token, stravaId, { bypass = false } = {}) {
   const url = `https://www.strava.com/api/v3/activities/${stravaId}/streams`;
-  await stravaBudget.take();
-  try {
-    const r = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      timeout: 45000,
-      params: { keys: 'time,velocity_smooth,heartrate,watts,altitude,latlng,distance,cadence', key_by_type: true },
-    });
-    return r.data || {};
-  } catch (e) {
-    const st = e.response?.status;
-    if (st === 400 || st === 404) return {};
-    throw e;
+  const KEY_SETS = [
+    // With latlng (outdoor activities — GPS available)
+    'time,velocity_smooth,heartrate,watts,altitude,latlng,distance,cadence',
+    'time,velocity_smooth,heartrate,altitude,latlng,distance,cadence',
+    'time,heartrate,altitude,latlng,distance,cadence',
+    'time,heartrate,latlng,distance',
+    'time,latlng,distance',
+    // Without latlng (indoor / trainer activities — GPS absent causes 400)
+    'time,velocity_smooth,heartrate,watts,altitude,distance,cadence',
+    'time,velocity_smooth,heartrate,altitude,distance,cadence',
+    'time,heartrate,altitude,distance,cadence',
+    'time,heartrate,distance',
+    'time,heartrate',
+    // Absolute minimum fallbacks — Garmin / third-party edge cases
+    'time,watts',
+    'time,distance',
+    'time',
+  ];
+
+  // Helper: check whether a stream key has real array data
+  const hasArr = (obj, key) => {
+    if (!obj || !obj[key]) return false;
+    const arr = Array.isArray(obj[key].data) ? obj[key].data : (Array.isArray(obj[key]) ? obj[key] : null);
+    return arr && arr.length > 0;
+  };
+
+  let bestResult = null; // keep the richest partial result across retries
+
+  for (const keys of KEY_SETS) {
+    await stravaBudget.take({ bypass });
+    try {
+      const r = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 45000,
+        params: { keys, key_by_type: true },
+      });
+      let data = r.data || {};
+
+      // Strava should return an object when key_by_type=true, but some device
+      // uploads (Garmin, certain third-party apps) occasionally return an array
+      // even with that flag.  Normalise to object-keyed-by-type so the rest of
+      // the code can assume a consistent shape.
+      if (Array.isArray(data)) {
+        const normalised = {};
+        for (const stream of data) {
+          if (stream?.type) normalised[stream.type] = stream;
+        }
+        console.log(`[Strava] streams: array response normalised for ${stravaId} — keys: ${Object.keys(normalised).join(',')}`);
+        data = normalised;
+      }
+
+      console.log(`[Strava] streams: keys="${keys.split(',').slice(0,3).join(',')}…" response keys=[${Object.keys(data).join(',')}] hasTime=${hasArr(data,'time')} for ${stravaId}`);
+
+      // Prefer result that has time-series data
+      if (hasArr(data, 'time')) {
+        if (keys !== KEY_SETS[0]) {
+          console.log(`[Strava] streams: fell back to keys="${keys}" for activity ${stravaId}`);
+        }
+        return data;
+      }
+
+      // Some Apple Watch / HealthKit activities have distance-based streams (no time key).
+      // Keep the richest partial result so we can still return heartrate/speed/altitude/latlng.
+      const richness = ['heartrate','velocity_smooth','altitude','latlng','distance','watts'].filter(k => hasArr(data, k)).length;
+      if (richness > 0 && (!bestResult || richness > Object.keys(bestResult).length)) {
+        bestResult = data;
+      }
+      // Try narrower key set in case a specific key caused the missing time
+    } catch (e) {
+      const st = e.response?.status;
+      if (st === 400 || st === 500 || st === 502 || st === 503) {
+        // 400 = unsupported key — retry narrower
+        // 5xx = Strava transient error for this key set (common with Garmin uploads) — retry narrower
+        console.log(`[Strava] streams: ${st} for keys="${keys.split(',').slice(0,3).join(',')}…" activity ${stravaId} — retrying narrower`);
+        continue;
+      }
+      if (st === 404) return {};
+      // For 401 (expired token), 429 (rate limit) — don't hammer further; return best so far.
+      console.warn(`[Strava] streams: non-retryable error ${st} for activity ${stravaId} — returning best partial`);
+      return bestResult || {};
+    }
   }
+
+  // If we never got time data but have partial streams (e.g. latlng + heartrate),
+  // return the best partial result — the client will synthesise time from distance.
+  if (bestResult) {
+    console.log(`[Strava] streams: no time data for ${stravaId}, returning best partial (keys: ${Object.keys(bestResult).join(',')})`);
+    return bestResult;
+  }
+  console.warn(`[Strava] streams: all KEY_SETS exhausted with no data for activity ${stravaId}`);
+  return {};
 }
 
 // Helper function to delay requests to respect rate limits
@@ -3137,9 +3215,16 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     
     // ── Cache check (avoid hammering Strava: 100 req / 15 min limit) ──
     const cacheKey = `${targetUserId}:${stravaId}`;
-    const cached = getCachedStravaActivity(cacheKey);
+    const wantsRefreshEarly = String(req.query?.refresh || '') === '1';
+    // When the user force-refreshes, bust the in-memory cache so we go straight
+    // to Strava instead of returning a stale (possibly streams-empty) cached copy.
+    if (wantsRefreshEarly) invalidateStravaActivityCache(targetUserId, stravaId);
+    const cached = wantsRefreshEarly ? null : getCachedStravaActivity(cacheKey);
     let detailResp = cached ? { data: cached.detail } : null;
-    let streamsData = cached ? (cached.streams || {}) : {};
+    // Only use cached streams if they actually contain time-series data.
+    const cachedStreamsHaveData = cached?.streams &&
+      Array.isArray(cached.streams.time?.data) && cached.streams.time.data.length > 0;
+    let streamsData = cachedStreamsHaveData ? cached.streams : {};
     let laps = cached ? (cached.laps || []) : [];
 
     // Prefer the persisted Strava raw payload — activities are immutable once
@@ -3200,7 +3285,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
     }
 
-    if (!cached) {
+    if (!cached || !cachedStreamsHaveData) {
       // ── Streams: prefer persisted DB copy (Strava activities are immutable
       //    once recorded). Only call Strava when we don't have it yet, then
       //    write back to DB so future reads — even after a server restart —
@@ -3209,15 +3294,21 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       let streamFromDb = null;
       if (!wantsRefresh) {
         streamFromDb = await StravaStream.findOne({ userId: targetUser._id, stravaId }).lean();
+      } else {
+        // On force-refresh, wipe any previously cached latlng-only stub so the
+        // subsequent Strava fetch can write back a clean real-streams record.
+        StravaStream.deleteOne({ userId: targetUser._id, stravaId }).catch(() => {});
       }
       // Use cached streams only when they contain time-series data (time key).
       // If the DB only has latlng (from the polyline fallback on a previous
       // failed fetch), we still need to re-fetch the full streams so the
       // TrainingChart (power/HR over time) can render.
       const dbStreamsHaveTimeSeries = streamFromDb?.streams &&
-        Object.keys(streamFromDb.streams).length > 0 &&
-        Array.isArray(streamFromDb.streams.time?.data) &&
-        streamFromDb.streams.time.data.length > 0;
+        Object.keys(streamFromDb.streams).length > 0 && (
+          (Array.isArray(streamFromDb.streams.time?.data) && streamFromDb.streams.time.data.length > 0) ||
+          (Array.isArray(streamFromDb.streams.distance?.data) && streamFromDb.streams.distance.data.length > 0) ||
+          (Array.isArray(streamFromDb.streams.heartrate?.data) && streamFromDb.streams.heartrate.data.length > 0)
+        );
 
       // If the activity has heart-rate data (has_heartrate=true) but the cached
       // streams don't include a non-empty heartrate array, the prewarm job likely
@@ -3232,16 +3323,20 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         streamsData = streamFromDb.streams;
       } else {
         try {
-          streamsData = await fetchStravaActivityStreams(token, stravaId);
+          streamsData = await fetchStravaActivityStreams(token, stravaId, { bypass: wantsRefresh });
         } catch (streamErr) {
           console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
           // Fall back to whatever the DB had (might just be latlng from polyline)
           streamsData = streamFromDb?.streams || {};
         }
-        if (streamsData && Object.keys(streamsData).length > 0 &&
-            Array.isArray(streamsData.time?.data) && streamsData.time.data.length > 0) {
-          // Only persist when we have proper time-series data so we don't
-          // permanently cache a latlng-only stub that blocks future fetches.
+        const hasUsableStreams = streamsData && Object.keys(streamsData).length > 0 && (
+          (Array.isArray(streamsData.time?.data) && streamsData.time.data.length > 0) ||
+          (Array.isArray(streamsData.distance?.data) && streamsData.distance.data.length > 0) ||
+          (Array.isArray(streamsData.heartrate?.data) && streamsData.heartrate.data.length > 0)
+        );
+        if (hasUsableStreams) {
+          // Persist any streams that have at least one usable channel so future
+          // reads don't re-fetch from Strava unnecessarily.
           StravaStream.updateOne(
             { userId: targetUser._id, stravaId },
             { $set: { streams: streamsData, fetchedAt: new Date() } },

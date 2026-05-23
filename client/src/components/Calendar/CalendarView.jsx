@@ -808,11 +808,44 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
   } else {
-    const avg    = scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length;
-    const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - avg)));
-    const spread = (maxDev || avg * 0.08) * 1.3; // 30 % extra headroom
-    chartMin = Math.max(0, avg - spread);
-    chartMax = avg + spread;
+    // Center = distance/duration-weighted average pace of all non-trivial laps.
+    // Spread uses IQR (inter-quartile range) so outlier rest/warmup laps with
+    // extreme paces don't blow out the axis — work laps stay in the middle third.
+    const allValid = entries.filter(e =>
+      !e.isPause && e.value > 0 && (isBike || (e.dist || 0) >= 100)
+    );
+    const totalW = allValid.reduce((s, e) => s + e.weight, 0) || 1;
+    const center = allValid.length > 0
+      ? allValid.reduce((s, e) => s + e.value * e.weight, 0) / totalW
+      : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
+
+    // IQR-based spread: sort raw values, take Q1/Q3, spread = 2.0 * IQR.
+    // This naturally ignores outlier rest laps (10:35, 13:26 etc.) and keeps
+    // the axis centred on the main training pace cluster.
+    // Minimum spread: 8% of center so the chart isn't totally flat.
+    const vals = allValid.map(e => e.value).sort((a, b) => a - b);
+    let spread;
+    if (vals.length >= 4) {
+      const q1 = vals[Math.floor(vals.length * 0.25)];
+      const q3 = vals[Math.floor(vals.length * 0.75)];
+      const iqr = q3 - q1;
+      // Use 2.5× IQR so even the widest "normal" outlier stays in frame,
+      // but extreme rest laps beyond that get clipped (still visible as full-height bars).
+      const iqrSpread = Math.max(iqr * 2.5, center * 0.08);
+      // Never clip laps that are within 1.5× the work-pace deviation from center —
+      // this ensures warmup/cooldown (often 1-2 min off main pace) are visible.
+      const mainDevs = allValid.map(e => Math.abs(e.value - center));
+      const mainDevSorted = mainDevs.slice().sort((a, b) => a - b);
+      const p75dev = mainDevSorted[Math.floor(mainDevSorted.length * 0.75)] || 0;
+      spread = Math.max(iqrSpread, p75dev * 2.0, center * 0.08);
+    } else {
+      const maxDev = allValid.length > 0
+        ? Math.max(...allValid.map(e => Math.abs(e.value - center)))
+        : Math.max(...scaleValues.map(v => Math.abs(v - center)));
+      spread = (maxDev || center * 0.08) * 1.3;
+    }
+    chartMin = Math.max(0, center - spread);
+    chartMax = center + spread;
   }
   const range    = chartMax - chartMin || 1;
 
@@ -928,7 +961,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
         scrollSettleTimeoutRef.current = setTimeout(() => {
           scrollSettleTimeoutRef.current = null;
           onScrollCenter(found);
-        }, 80);
+        }, 150);
       }
     });
   };
@@ -993,7 +1026,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             // never leaves the chart parked between bars. Only meaningful
             // in zoom mode (where the inner canvas is wider than the
             // viewport); the proportional mode has nothing to scroll.
-            scrollSnapType: isZoomed ? 'x mandatory' : 'none',
+            scrollSnapType: isZoomed ? 'x proximity' : 'none',
             scrollPaddingLeft: '50%',
             scrollPaddingRight: '50%',
             // Hint the compositor to keep the scroller on its own layer —
@@ -1083,7 +1116,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // is wider than the viewport → horizontal scroll appears).
               // Outside zoom mode bars still use proportional flex-grow.
               const itemStyle = isZoomed
-                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease', scrollSnapAlign: 'center', scrollSnapStop: 'always' }
+                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease', scrollSnapAlign: 'center', scrollSnapStop: 'normal' }
                 : { flex: `${ent.weight} 0 2px`,  minWidth: 2,             height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
 
               return (
@@ -1497,6 +1530,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [metric, setMetric]           = useState('power');
   const [hideWarmCool, setHideWarmCool] = useState(false);
   const [highlightId, setHighlightId]  = useState(null);
+  const [hiddenSessions, setHiddenSessions] = useState(new Set());
   // Edit training form
   const [editTarget, setEditTarget]   = useState(null); // training to open in form
 
@@ -1583,18 +1617,64 @@ function CompareContent({ merged, athleteId, onOpen }) {
     return currentSession ? [currentSession, ...compared] : compared;
   }, [currentSession, results]);
 
+  // Sessions visible in the chart (excluding ones the user has closed)
+  const visibleSessions = useMemo(
+    () => allSessions.filter(s => !hiddenSessions.has(String(s.id || s._id || ''))),
+    [allSessions, hiddenSessions]
+  );
+
   // Build edit target data shape for TrainingForm
   const buildEditTarget = act => {
     // Map normalized laps back to TrainingForm `results` format
     const laps = Array.isArray(act.laps) ? act.laps : [];
-    const results = Array.isArray(act.results) ? act.results : laps.map(l => ({
-      intervalType: l.intervalType,
-      durationSeconds: Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0),
-      distance: Number(l.distance || l.totalDistance || 0),
-      power: Number(l.average_watts || l.avgPower || 0) || undefined,
-      heartRate: Number(l.average_heartrate || l.avgHeartRate || l.heartRate || 0) || undefined,
-      lactate: l.lactate != null ? Number(l.lactate) : undefined,
-    }));
+    const actSport = String(act.sport || normSport || '').toLowerCase();
+    const actIsRun  = /run/.test(actSport);
+    const actIsSwim = /swim/.test(actSport);
+
+    const results = Array.isArray(act.results) ? act.results : laps.map(l => {
+      const durSec  = Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0);
+      const distM   = Number(l.distance || l.totalDistance || l.distanceMeters || 0);
+
+      // For run/swim: derive pace (sec/km or sec/100m) from dist÷elapsed_dur.
+      // We use elapsed_time (same value stored in durationSeconds) so the pace
+      // shown in TrainingForm is always consistent with the displayed duration.
+      // average_speed (Strava) uses moving_time which can differ significantly
+      // for Garmin bike-computer activities with auto-pause — causing the form
+      // to show e.g. 8:07/km for a lap that elapsed in 2:59 over 921m.
+      // Never use average_watts for runs — Strava emits estimated power in watts
+      // which TrainingForm would misinterpret as pace seconds.
+      let powerValue;
+      if (actIsRun || actIsSwim) {
+        const unit = actIsSwim ? 100 : 1000; // sec per unit distance
+        let secPerUnit = null;
+        // 1. Prefer elapsed dist÷dur (consistent with durationSeconds field)
+        if (distM > 0 && durSec > 0) secPerUnit = (durSec / distM) * unit;
+        // 2. Fallback: from stored average_speed (m/s) when no dist/dur data
+        if (!secPerUnit) {
+          const spd = Number(l.average_speed || 0);
+          if (spd > 0) secPerUnit = unit / spd;
+        }
+        if (secPerUnit && secPerUnit >= 60 && secPerUnit <= 1800) {
+          const m = Math.floor(secPerUnit / 60);
+          const s = Math.round(secPerUnit % 60);
+          powerValue = `${m}:${String(s).padStart(2, '0')}`;
+        }
+      } else {
+        // Bike: use watts
+        const w = Number(l.average_watts || l.avgPower || 0);
+        if (w > 0) powerValue = w;
+      }
+
+      return {
+        intervalType: l.intervalType,
+        durationSeconds: durSec,
+        distanceMeters: distM || undefined,
+        distance: distM || undefined,
+        power: powerValue,
+        heartRate: Number(l.average_heartrate || l.avgHeartRate || l.heartRate || 0) || undefined,
+        lactate: l.lactate != null ? Number(l.lactate) : undefined,
+      };
+    });
     return {
       _id: act._id || act.id,
       sport: act.sport || normSport,
@@ -1609,9 +1689,10 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
   return (
     <div className="space-y-3">
-      {/* TrainingForm edit modal */}
+      {/* TrainingForm edit modal — portaled into app-modal-root (z:99999)
+          so it sits above the NativeLayout bottom tab bar */}
       {editTarget && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.45)' }}>
+        <div className="fixed inset-0 flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.45)', zIndex: 99999, pointerEvents: 'auto' }}>
           <TrainingFormComponent
             initialData={editTarget}
             isEditing={true}
@@ -1626,7 +1707,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
             }}
           />
         </div>,
-        document.body
+        document.getElementById('app-modal-root') || document.body
       )}
 
       {/* ── Filter chips ── */}
@@ -1659,7 +1740,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
       </div>
 
       {/* ── SessionProgressChart — all sessions overlaid ── */}
-      {allSessions.length >= 2 && (
+      {allSessions.length >= 2 && visibleSessions.length >= 1 && (
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden shadow-sm">
           {/* Metric selector */}
           <div className="flex items-center gap-0 px-3 pt-2.5 pb-0 border-b border-gray-100">
@@ -1684,7 +1765,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
           {/* Chart */}
           <div className="px-2 py-2">
             <SessionProgressChart
-              sessions={allSessions}
+              sessions={visibleSessions}
               metric={metric}
               sport={normSport}
               highlightId={highlightId}
@@ -1695,6 +1776,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
                 setEditTarget(buildEditTarget(s));
               }}
               hideWarmCool={hideWarmCool}
+              workOnly={workOnly}
             />
           </div>
           {/* Session legend pills */}
@@ -1704,20 +1786,74 @@ function CompareContent({ merged, athleteId, onOpen }) {
               const t = total <= 1 ? 1 : i / (total - 1);
               const lerp = (a, b) => Math.round(a + (b - a) * t);
               const color = `rgb(${lerp(196,109)},${lerp(181,88)},${lerp(253,217)})`;
-              const isRef = String(s.id || s._id || '') === String(merged?.id || merged?._id || '__current');
+              const sid = String(s.id || s._id || '');
+              const isRef = sid === String(merged?.id || merged?._id || '__current');
+              const isHidden = hiddenSessions.has(sid);
+              const isHighlighted = highlightId === sid;
               const d = new Date(s.date || s.startDate || s.start_date || 0);
               const label = isRef ? 'This session' : d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' });
               return (
-                <button key={i}
-                  onClick={() => setHighlightId(h => h === String(s.id || s._id) ? null : String(s.id || s._id))}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all"
-                  style={{ borderColor: color, color: highlightId === String(s.id || s._id) ? '#fff' : color, background: highlightId === String(s.id || s._id) ? color : 'transparent' }}
+                <span key={i} className="flex items-center rounded-full border text-[10px] font-bold transition-all overflow-hidden"
+                  style={{
+                    borderColor: color,
+                    opacity: isHidden ? 0.4 : 1,
+                    background: isHighlighted && !isHidden ? color : 'transparent',
+                  }}
                 >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-                  {label}
-                </button>
+                  {/* Highlight toggle */}
+                  <button
+                    onClick={() => {
+                      if (isHidden) return;
+                      setHighlightId(h => h === sid ? null : sid);
+                    }}
+                    className="flex items-center gap-1 px-2 py-0.5"
+                    style={{ color: isHighlighted && !isHidden ? '#fff' : color }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: isHighlighted && !isHidden ? '#fff' : color }} />
+                    {label}
+                  </button>
+                  {/* × close button (non-reference sessions only) */}
+                  {!isRef && (
+                    <button
+                      onClick={() => {
+                        setHiddenSessions(prev => {
+                          const next = new Set(prev);
+                          if (next.has(sid)) next.delete(sid);
+                          else next.add(sid);
+                          return next;
+                        });
+                        // Clear highlight if hiding
+                        if (!hiddenSessions.has(sid) && highlightId === sid) setHighlightId(null);
+                      }}
+                      className="pr-1.5 pl-0.5 py-0.5 flex items-center"
+                      style={{ color: isHighlighted && !isHidden ? '#fff' : color }}
+                      title={isHidden ? 'Show session' : 'Hide session'}
+                    >
+                      {isHidden ? (
+                        // Eye-slash → show again
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        // × close
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
+                </span>
               );
             })}
+            {/* Reset hidden if any are hidden */}
+            {hiddenSessions.size > 0 && (
+              <button onClick={() => setHiddenSessions(new Set())}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors">
+                Show all
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1912,6 +2048,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   useEffect(() => {
     let cancelled = false;
+    // Reset streams immediately so stale data from a previous activity
+    // doesn't bleed into the new one while the async fetch runs.
+    setStreams(null);
     const load = async () => {
       setDetailLoading(true);
       try {
@@ -1921,7 +2060,29 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           const { getStravaActivityDetail } = await import('../../services/api.js');
           const raw = await getStravaActivityDetail(id.replace('strava-', ''), athleteId || null);
           data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual, category: raw.category };
-          if (!cancelled && raw.streams) setStreams(raw.streams);
+          // Helper: any array regardless of whether it's {data:[...]} or a flat array
+          const arrLen = a => Array.isArray(a?.data) ? a.data.length : Array.isArray(a) ? a.length : 0;
+          // "chart data" = time/distance/heartrate that drives the Training Overview chart
+          const chartHasData = s => s && (arrLen(s.time) > 0 || arrLen(s.distance) > 0 || arrLen(s.heartrate) > 0);
+
+          // Always set whatever streams we received — even latlng-only gives the map its GPS track.
+          if (!cancelled && raw.streams && Object.keys(raw.streams).length > 0) {
+            setStreams(raw.streams);
+          }
+
+          // If the cached streams don't have chart data, background-fetch from Strava to get
+          // per-second time/power/HR. This runs even if we already set latlng-only streams above.
+          if (!cancelled && !chartHasData(raw.streams)) {
+            setStreamsRefreshing(true);
+            getStravaActivityDetail(id.replace('strava-', ''), athleteId || null, true)
+              .then(r => {
+                if (!cancelled && chartHasData(r.streams)) {
+                  setStreams(r.streams); // upgrade to full streams including latlng
+                }
+              })
+              .catch(e => console.warn('auto-fetch streams failed:', e))
+              .finally(() => { if (!cancelled) setStreamsRefreshing(false); });
+          }
         } else if (id.startsWith('fit-')) {
           const { getFitTraining } = await import('../../services/api.js');
           data = await getFitTraining(id.replace('fit-', ''));
@@ -1951,7 +2112,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     try {
       const { getStravaActivityDetail } = await import('../../services/api.js');
       const raw = await getStravaActivityDetail(id.replace('strava-', ''), athleteId || null, true);
-      if (raw.streams) setStreams(raw.streams);
+      // Always upgrade streams if we got anything — preserves latlng for map
+      if (raw.streams && Object.keys(raw.streams).length > 0) setStreams(raw.streams);
     } catch (e) {
       console.warn('refreshStreams failed:', e);
     } finally {
@@ -1992,16 +2154,53 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
     // Priority 2 — Strava streams with time-series data
     if (streams) {
-      const time = streams.time?.data || streams.time || [];
+      let time = streams.time?.data || streams.time || [];
+
+      // Apple Watch / HealthKit: no `time` key — synthesise from distance.
+      if (time.length === 0) {
+        const distArrRaw = streams.distance?.data || streams.distance || [];
+        const totalDurSec = Number(merged?.elapsed_time || merged?.elapsedTime || merged?.movingTime || 0);
+        const totalDistM  = Number(merged?.distance || 0);
+        if (distArrRaw.length > 0 && totalDurSec > 0 && totalDistM > 0) {
+          time = distArrRaw.map(d => Math.round((d / totalDistM) * totalDurSec));
+        }
+      }
+
+      // Garmin / partial streams: no `time` and no `distance`, but heartrate exists.
+      // Build a 1-second time array from activity total duration.
+      if (time.length === 0) {
+        const hrArr = streams.heartrate?.data || streams.heartrate || [];
+        const totalDurSec = Number(merged?.elapsed_time || merged?.elapsedTime || merged?.movingTime || 0);
+        if (hrArr.length > 0 && totalDurSec > 0) {
+          // Distribute samples evenly across the activity duration
+          const step = hrArr.length > 1 ? Math.round(totalDurSec / (hrArr.length - 1)) : 1;
+          time = hrArr.map((_, k) => k * step);
+        }
+      }
+
       if (time.length > 0) {
         const watts     = streams.watts?.data || streams.watts || [];
         const heartrate = streams.heartrate?.data || streams.heartrate || [];
-        const velocity  = streams.velocity_smooth?.data || streams.velocity_smooth || [];
+        let   velocity  = streams.velocity_smooth?.data || streams.velocity_smooth || [];
         const cadence   = streams.cadence?.data || streams.cadence || [];
         const altitude  = streams.altitude?.data || streams.altitude || [];
         const distArr   = streams.distance?.data || streams.distance || [];
         const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
         const startMs   = new Date(startDate).getTime();
+
+        // If velocity_smooth is absent (Garmin KEY_SET fallback returned time+heartrate+
+        // distance but not speed), derive it from consecutive distance+time samples.
+        // Result is in m/s, matching Strava's velocity_smooth unit so the chart
+        // conversion (× 3.6 in prepareTrainingChartData) will produce km/h.
+        if (velocity.length === 0 && distArr.length > 0 && distArr.length === time.length) {
+          velocity = new Array(time.length).fill(0);
+          for (let k = 1; k < time.length; k++) {
+            const dt = time[k] - time[k - 1];
+            const dd = distArr[k] - distArr[k - 1];
+            velocity[k] = dt > 0 ? Math.max(0, dd / dt) : 0;
+          }
+          velocity[0] = velocity[1] || 0; // first point = second point
+        }
         // Build a lookup: for each second offset → HR from laps (used as fallback
         // when heartrate stream is missing from cached DB copy).
         let lapHrBySecond = null;
@@ -2099,14 +2298,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Detect when we're showing synthetic (lap-average step-function) data
   // instead of real per-second Strava streams so we can offer a reload button.
   const isStravaActivity = String(a.id || a._id || '').startsWith('strava-');
-  const hasRealStreams = isStravaActivity && streams &&
-    (Array.isArray(streams.time?.data) ? streams.time.data.length > 0 : Array.isArray(streams.time) && streams.time.length > 0);
+  // "Real" streams = has chart data (time/distance/heartrate), not just latlng from polyline fallback.
+  const _arrLen = a => Array.isArray(a?.data) ? a.data.length : Array.isArray(a) ? a.length : 0;
+  const hasRealStreams = isStravaActivity && streams && (
+    _arrLen(streams.time) > 0 || _arrLen(streams.distance) > 0 || _arrLen(streams.heartrate) > 0
+  );
   const isSyntheticData = isStravaActivity && !hasRealStreams && chartTraining !== null && !merged?.records?.length;
+
 
   // Lap selection
   const [selectedLap, setSelectedLap] = useState(null);
   const lapRowRefs = useRef([]);
   const lapChartScrollRef = useRef(null);
+  const tableScrollingRef = useRef(false); // true while user is manually scrolling the table
+  const tableScrollTimerRef = useRef(null);
 
   // Mobile detection + view tabs (TrainingPeaks-style)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -2526,39 +2731,150 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {mobileView === 'summary' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-            {/* Stats grid */}
-            <div className="px-4 pt-4 pb-3 grid grid-cols-2 gap-2 border-b border-gray-50">
-              {[
-                { label: 'Duration', value: fmtDur(dur) },
-                ...(dist > 0 ? [{ label: 'Distance', value: fmtDist(dist) }] : []),
-                ...(paceStr ? [{ label: 'Pace', value: paceStr }] : []),
-                ...(isBike && avgSpeed > 0 ? [{ label: 'Speed', value: `${(avgSpeed * 3.6).toFixed(1)} km/h` }] : []),
-                ...(hr > 0 ? [{ label: 'Avg HR', value: `${Math.round(hr)} bpm` }] : []),
-                ...(maxHR > 0 ? [{ label: 'Max HR', value: `${Math.round(maxHR)} bpm` }] : []),
-                ...(isBike && power > 0 ? [{ label: 'Avg Pwr', value: `${Math.round(power)} W` }] : []),
-                ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
-                ...(isBike && maxPower > 0 ? [{ label: 'Max Pwr', value: `${Math.round(maxPower)} W` }] : []),
-                // TSS always shown — dashes only when even HR-fallback fails
-                { label: 'TSS', value: tss > 0 ? Math.round(tss) : '—' },
-                ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
-                ...(cadence > 0 ? [{ label: isSwim ? 'SPM' : 'Cad', value: Math.round(cadence) }] : []),
-                ...(calories > 0 ? [{ label: 'Calories', value: `${Math.round(calories)} kcal` }] : []),
-                ...(rpe > 0 ? [{ label: 'RPE', value: `${rpe} / 10` }] : []),
-                ...(sessionLactate != null ? [{ label: 'Lactate', value: `${sessionLactate.toFixed(1)} mmol` }] : []),
-              ].map(({ label, value }) => (
-                <div key={label} className="rounded-xl bg-gray-50 px-3 py-2.5">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
-                  <div className="text-base font-bold text-gray-800 tabular-nums mt-0.5">{value}</div>
+            {/* Stats grid — compact grouped layout */}
+            <div className="px-4 pt-3 pb-3 space-y-1.5 border-b border-gray-50">
+
+              {/* Row 1: Duration + Distance */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="rounded-xl bg-gray-50 px-3 py-2">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div>
+                  <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</div>
                 </div>
-              ))}
+                {dist > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2">
+                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div>
+                    <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Power + HR on same row */}
+              {(isBike && power > 0) || hr > 0 ? (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {/* Power card (bike) */}
+                  {isBike && power > 0 ? (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Power</div>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <div className="flex items-baseline gap-0.5">
+                          <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}</span>
+                          <span className="text-[10px] text-gray-400 font-semibold">W</span>
+                        </div>
+                        {np > 0 && Math.round(np) !== Math.round(power) && (
+                          <div className="flex items-baseline gap-0.5">
+                            <span className="text-xs font-bold text-gray-600 tabular-nums">{Math.round(np)}</span>
+                            <span className="text-[10px] text-gray-400 font-semibold">NP</span>
+                          </div>
+                        )}
+                        {maxPower > 0 && (
+                          <div className="flex items-baseline gap-0.5">
+                            <span className="text-xs font-bold text-gray-500 tabular-nums">{Math.round(maxPower)}</span>
+                            <span className="text-[10px] text-gray-400 font-semibold">max</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Pace card (run/swim) in left slot */
+                    (paceStr || (!isBike && avgSpeed > 0)) ? (
+                      <div className="rounded-xl bg-gray-50 px-3 py-2">
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Pace</div>
+                        <div className="text-sm font-bold text-gray-800 tabular-nums">{paceStr}</div>
+                      </div>
+                    ) : <div />
+                  )}
+                  {/* HR card */}
+                  {hr > 0 ? (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Heart Rate</div>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <div className="flex items-baseline gap-0.5">
+                          <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(hr)}</span>
+                          <span className="text-[10px] text-gray-400 font-semibold">bpm</span>
+                        </div>
+                        {maxHR > 0 && (
+                          <div className="flex items-baseline gap-0.5">
+                            <span className="text-xs font-bold text-gray-500 tabular-nums">{Math.round(maxHR)}</span>
+                            <span className="text-[10px] text-gray-400 font-semibold">max</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : <div />}
+                </div>
+              ) : null}
+
+              {/* Speed (bike) + TSS row */}
+              {(isBike && avgSpeed > 0) || tss > 0 ? (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {isBike && avgSpeed > 0 ? (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Speed</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{(avgSpeed * 3.6).toFixed(1)} km/h</div>
+                    </div>
+                  ) : <div />}
+                  {tss > 0 ? (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(tss)}</div>
+                    </div>
+                  ) : <div />}
+                </div>
+              ) : null}
+
+              {/* Secondary metrics: Elev · Cad · Calories in 3-col */}
+              {(elevation > 0 || cadence > 0 || calories > 0) && (
+                <div className={`grid gap-1.5 ${[elevation > 0, cadence > 0, calories > 0].filter(Boolean).length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {elevation > 0 && (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Elev</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(elevation)}m</div>
+                    </div>
+                  )}
+                  {cadence > 0 && (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{isSwim ? 'SPM' : 'Cad'}</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</div>
+                    </div>
+                  )}
+                  {calories > 0 && (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Cal</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(calories)} kcal</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* RPE + Lactate */}
+              {(rpe > 0 || sessionLactate != null) && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {rpe > 0 && (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">RPE</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{rpe} / 10</div>
+                    </div>
+                  )}
+                  {sessionLactate != null && (
+                    <div className="rounded-xl bg-gray-50 px-3 py-2">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Lactate</div>
+                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{sessionLactate.toFixed(1)} mmol</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Compliance badge */}
               {complianceRow && (
-                <div className="col-span-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
                   <span className="text-sm font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
                 </div>
               )}
-              <div className="col-span-2 flex items-center gap-2 px-1">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
+
+              {/* Category */}
+              <div className="flex items-center gap-2 px-1 pt-0.5">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
                 <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
               </div>
             </div>
@@ -2610,12 +2926,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       disabled={streamsRefreshing}
                       className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-60"
                     >
-                      {streamsRefreshing ? (
-                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                      ) : (
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      )}
-                      {streamsRefreshing ? 'Načítám…' : 'Načíst detailní data'}
+                      <svg className={`w-3 h-3 ${streamsRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      {streamsRefreshing ? 'Loading streams…' : 'Reload streams'}
                     </button>
                   )}
                 </div>
@@ -2786,22 +3098,27 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 chartScrollRef={lapChartScrollRef}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
-                  // Smooth scroll the selected lap row into view. (Scroll-spy
-                  // from chart-drag updates selectedLap silently without
-                  // calling onSelectLap, so this only fires on real taps.)
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }}
-                // Horizontal scroll on the zoomed chart only updates the
-                // highlighted lap — it no longer jumps the table. Auto-
-                // scrolling the table on every chart scroll-tick was causing
-                // the laps list to "fight" vertical finger scrolling.
                 onScrollCenter={(i) => {
                   setSelectedLap(i);
+                  // Scroll the table row into view after chart settle,
+                  // but only if the user isn't manually scrolling the table.
+                  if (!tableScrollingRef.current) {
+                    lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }
                 }}
               />
             </div>
             {/* Laps table — scrollable */}
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}
+              onScroll={() => {
+                // Mark that user is scrolling the table so chart settle doesn't fight back
+                tableScrollingRef.current = true;
+                clearTimeout(tableScrollTimerRef.current);
+                tableScrollTimerRef.current = setTimeout(() => { tableScrollingRef.current = false; }, 400);
+              }}
+            >
               <div className="px-4 py-3">
                 {(() => {
                   const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
@@ -2855,9 +3172,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             if (spd > 0) { const s = Math.round(100 / spd); lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
                           } else if (isRun && lapDist > 0 && lapDur > 0) {
                             const spk = lapDur / (lapDist / 1000);
-                            // Suppress pace for rest laps with >8:00/km (480 sec/km) — clearly not running
-                            if (isRestLap && spk > 480) { lapPaceStr = '—'; paceIsNormal = false; }
-                            else lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            // Show pace for rest/walk laps too, just style it gray
+                            if (isRestLap && spk > 480) paceIsNormal = false;
                           } else if (isBike) {
                             lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                           }
@@ -3074,26 +3391,78 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           }}
         >
 
-          {/* ── Stats row ── */}
-          <div className="px-5 pt-4 pb-3 flex flex-wrap gap-2 border-b border-gray-50">
-            {[
-              { label: 'Duration', value: fmtDur(dur) },
-              { label: 'Distance', value: dist > 0 ? fmtDist(dist) : null },
-              // TSS always rendered — dash when we genuinely couldn't compute
-              { label: 'TSS', value: tss > 0 ? Math.round(tss) : '—' },
-              ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
-              ...(paceStr  ? [{ label: 'Pace', value: paceStr }] : []),
-              ...(isBike && power > 0 ? [{ label: 'Pwr', value: `${Math.round(power)}W` }] : []),
-              ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)}W` }] : []),
-              ...(hr > 0   ? [{ label: 'HR', value: `${Math.round(hr)} bpm` }] : []),
-              ...(elevation > 0 ? [{ label: 'Elev', value: `${Math.round(elevation)}m` }] : []),
-              ...(cadence > 0   ? [{ label: isSwim ? 'SPM' : 'Cad', value: `${Math.round(cadence)}` }] : []),
-            ].filter(s => s.value != null).map(({ label, value }) => (
-              <div key={label} className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{label}</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{value}</span>
+          {/* ── Stats row — compact grouped ── */}
+          <div className="px-5 pt-3 pb-3 flex flex-wrap gap-1.5 items-start border-b border-gray-50">
+            {/* Duration */}
+            <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Duration</span>
+              <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</span>
+            </div>
+            {/* Distance */}
+            {dist > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Distance</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</span>
               </div>
-            ))}
+            )}
+            {/* TSS */}
+            <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">TSS</span>
+              <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{tss > 0 ? Math.round(tss) : '—'}</span>
+            </div>
+            {hrTss > 0 && hrTss !== tss && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">hrTSS</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(hrTss)}</span>
+              </div>
+            )}
+            {/* Pace/Speed */}
+            {paceStr && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Pace</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{paceStr}</span>
+              </div>
+            )}
+            {isBike && avgSpeed > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Speed</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{(avgSpeed * 3.6).toFixed(1)} km/h</span>
+              </div>
+            )}
+            {/* Power group — avg + NP + max in one pill */}
+            {isBike && power > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">Power</span>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">W avg</span></span>
+                  {np > 0 && np !== power && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(np)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">NP</span></span>}
+                  {maxPower > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxPower)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
+                </div>
+              </div>
+            )}
+            {/* HR group — avg + max in one pill */}
+            {hr > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">HR</span>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(hr)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">avg</span></span>
+                  {maxHR > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxHR)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
+                </div>
+              </div>
+            )}
+            {/* Elev / Cad */}
+            {elevation > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Elev</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(elevation)}m</span>
+              </div>
+            )}
+            {cadence > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{isSwim ? 'SPM' : 'Cad'}</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</span>
+              </div>
+            )}
             {/* Category picker + Compliance badge */}
             <div className="ml-auto flex items-center gap-2">
               <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
@@ -3174,18 +3543,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Training Overview</div>
                 {isSyntheticData && (
-                  <button
-                    onClick={refreshStreams}
-                    disabled={streamsRefreshing}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-60"
-                  >
-                    {streamsRefreshing ? (
+                  streamsRefreshing ? (
+                    <span className="flex items-center gap-1.5 text-xs text-gray-400">
                       <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                    ) : (
+                      Loading Strava data…
+                    </span>
+                  ) : (
+                    <button
+                      onClick={refreshStreams}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+                    >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    )}
-                    {streamsRefreshing ? 'Načítám…' : 'Načíst detailní data ze Stravy'}
-                  </button>
+                      Load detailed Strava data
+                    </button>
+                  )
                 )}
               </div>
               <TrainingChart
@@ -3268,8 +3639,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         } else if (isRun) {
                           if (lapDist > 0 && lapDur > 0) {
                             const spk = lapDur / (lapDist / 1000);
-                            if (isRestLap && spk > 480) { lapPaceStr = '—'; paceIsNormal = false; }
-                            else lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+                            // Show pace for rest/walk laps too, just style it gray
+                            if (isRestLap && spk > 480) paceIsNormal = false;
                           }
                         } else if (isBike) {
                           lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
@@ -4050,6 +4422,8 @@ export default function CalendarView({
   const mobileStickyHeaderRef = useRef(null);
   const selectedMobileDayRef = useRef(selectedMobileDay);
   const isAutoScrollingRef = useRef(false);
+  const monthSentinelBottomRef = useRef(null);
+  const monthSentinelTopRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
 
   // User profile data for TSS calculation
@@ -4115,6 +4489,37 @@ export default function CalendarView({
 
     scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     return () => scrollTarget.removeEventListener('scroll', onScroll);
+  }, [isMobile, mobileTab]);
+
+  // Scroll-to-bottom/top → advance to next/prev month using IntersectionObserver
+  useEffect(() => {
+    if (!isMobile || mobileTab !== 'calendar') return;
+    const bottomEl = monthSentinelBottomRef.current;
+    const topEl    = monthSentinelTopRef.current;
+    if (!bottomEl && !topEl) return;
+
+    let lastBottom = Date.now();
+    let lastTop    = Date.now();
+    const DEBOUNCE = 800; // ms between auto-advances
+
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting || isAutoScrollingRef.current) return;
+        const now = Date.now();
+        if (entry.target === bottomEl && now - lastBottom > DEBOUNCE) {
+          lastBottom = now;
+          setAnchorDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+        }
+        if (entry.target === topEl && now - lastTop > DEBOUNCE) {
+          lastTop = now;
+          setAnchorDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+        }
+      });
+    }, { threshold: 0.5 });
+
+    if (bottomEl) obs.observe(bottomEl);
+    if (topEl)    obs.observe(topEl);
+    return () => obs.disconnect();
   }, [isMobile, mobileTab]);
 
   // Scroll to a day or week-summary element accounting for the sticky header height
@@ -4588,6 +4993,22 @@ export default function CalendarView({
   };
   const today = () => setAnchorDate(new Date());
 
+  // Swipe left/right on the mini-calendar grid to navigate months
+  const calSwipeTouchRef = useRef({ x: 0, y: 0 });
+  const handleCalSwipeStart = (e) => {
+    const t = e.touches[0];
+    calSwipeTouchRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const handleCalSwipeEnd = (e) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - calSwipeTouchRef.current.x;
+    const dy = t.clientY - calSwipeTouchRef.current.y;
+    // Only fire if horizontal movement dominates and exceeds 40px threshold
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) next(); else prev();
+    }
+  };
+
   // Fullscreen infinite scroll: restore scroll position after prepending past weeks
   useLayoutEffect(() => {
     if (pendingScrollRestore.current && fullscreenScrollRef.current) {
@@ -4975,7 +5396,10 @@ export default function CalendarView({
 
               {/* ── Mini month grid (collapsible) ── */}
               {showMiniCal && (
-                <div className="px-3 pb-2">
+                <div className="px-3 pb-2"
+                  onTouchStart={handleCalSwipeStart}
+                  onTouchEnd={handleCalSwipeEnd}
+                >
                   <div className="grid grid-cols-7 mb-0.5">
                     {['M','T','W','T','F','S','S'].map((d, i) => (
                       <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
@@ -5004,6 +5428,10 @@ export default function CalendarView({
                         <button
                           key={key}
                           onClick={() => {
+                            // If tapping a day from an adjacent month, navigate there first
+                            if (!isCurrentMonth) {
+                              setAnchorDate(new Date(dayDate.getFullYear(), dayDate.getMonth(), 1));
+                            }
                             setSelectedMobileDay(key);
                             isAutoScrollingRef.current = true;
                             setTimeout(() => {
@@ -5013,7 +5441,7 @@ export default function CalendarView({
                                 : dayRefs.current[key];
                               scrollToEl(targetEl);
                               setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-                            }, 50);
+                            }, isCurrentMonth ? 50 : 150); // extra delay for month change to render
                           }}
                           className="flex flex-col items-center py-0.5 touch-manipulation"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -5022,7 +5450,7 @@ export default function CalendarView({
                             isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
                             isToday ? 'bg-primary text-white' :
                             isSelected ? 'bg-gray-200 text-gray-900' :
-                            isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                            isCurrentMonth ? 'text-gray-700' : 'text-gray-400'
                           }`}>
                             {dayDate.getDate()}
                           </span>
@@ -5070,7 +5498,10 @@ export default function CalendarView({
 
               {/* ── Mini month grid (collapsed by default in Charts) ── */}
               {showMiniCalCharts && (
-                <div className="px-3 pb-2">
+                <div className="px-3 pb-2"
+                  onTouchStart={handleCalSwipeStart}
+                  onTouchEnd={handleCalSwipeEnd}
+                >
                   <div className="grid grid-cols-7 mb-0.5">
                     {['M','T','W','T','F','S','S'].map((d, i) => (
                       <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
@@ -5097,9 +5528,10 @@ export default function CalendarView({
                         <button
                           key={key}
                           onClick={() => {
-                            // Tapping a day in Charts mode jumps back to the
-                            // Calendar view and scrolls to that day.
-                            setAnchorDate(dayDate);
+                            // Tapping a day in Charts mode jumps back to Calendar view.
+                            // If the day is from an adjacent month, navigate there first.
+                            const targetMonth = new Date(dayDate.getFullYear(), dayDate.getMonth(), 1);
+                            setAnchorDate(targetMonth);
                             setSelectedMobileDay(key);
                             setMobileTab('calendar');
                             setShowMiniCal(true);
@@ -5108,14 +5540,14 @@ export default function CalendarView({
                               const el = dayRefs.current[key];
                               if (el) scrollToEl(el);
                               setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-                            }, 80);
+                            }, 150);
                           }}
                           className="flex flex-col items-center py-0.5 touch-manipulation"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
                         >
                           <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
                             isToday ? 'bg-primary text-white' :
-                            isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                            isCurrentMonth ? 'text-gray-700' : 'text-gray-400'
                           }`}>
                             {dayDate.getDate()}
                           </span>
@@ -5547,6 +5979,12 @@ export default function CalendarView({
                 );
               })()}
               </>)}
+              {/* Sentinel: scrolling to the bottom advances to next month */}
+              <div ref={monthSentinelBottomRef} className="flex items-center justify-center py-4 gap-2 text-gray-300 text-xs select-none">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7"/></svg>
+                <span>{new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7"/></svg>
+              </div>
             </div>
           )}
         </div>

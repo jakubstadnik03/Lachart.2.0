@@ -7,6 +7,7 @@ import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
 import ThresholdMethodPicker from './ThresholdMethodPicker';
 import TestComparisonPanel from './TestComparisonPanel';
 import AiTestCoach from './AiTestCoach';
+import PreTestTrainingSummary, { buildPreTestSummaryForPdf } from './PreTestTrainingSummary';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -815,6 +816,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [showLtOverridePanel, setShowLtOverridePanel] = useState(false);
   const [savingLtOverride, setSavingLtOverride] = useState(false);
   const [ltOverrideStatus, setLtOverrideStatus] = useState(null); // {type:'success'|'error', msg}
+  const [preTestSummaryData, setPreTestSummaryData] = useState(null); // populated by PreTestTrainingSummary callback
   const [showDataTable, setShowDataTable] = useState(window.innerWidth >= 768); // Hidden by default on mobile
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
@@ -1112,6 +1114,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       customNote:      note,
       customAnalysis:  pdfCustomAnalysis,
       creatorEmail:    user?.email || null,
+      preTestSummary:  buildPreTestSummaryForPdf(preTestSummaryData),
     };
   };
 
@@ -2960,6 +2963,17 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             Replaces the older PreTestTrainingContext + PredictedLactateCurve
             pair, both of which had too much UI surface for too little
             actionable output. */}
+        {!demoMode && (
+          <div className="mt-4">
+            <PreTestTrainingSummary
+              athleteId={mockData?.athleteId || user?._id || user?.id}
+              testDate={mockData?.date}
+              sport={sportKey}
+              onData={setPreTestSummaryData}
+            />
+          </div>
+        )}
+
         {!demoMode && (
           <div className="mt-4">
             <AiTestCoach

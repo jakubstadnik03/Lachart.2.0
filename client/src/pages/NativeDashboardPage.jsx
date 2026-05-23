@@ -933,7 +933,7 @@ export default function NativeDashboardPage({
 
           {/* 5 · Zone distribution */}
           <div style={{ ...cardEntry(5), ...snapStyle }}>
-            <ZoneDistCard activities={activities} tests={tests} />
+            <ZoneDistCard athleteId={athleteId || null} />
           </div>
 
           {/* 6 · Last lab test — drop snap-align on the last card so its tail

@@ -349,19 +349,33 @@ const SignUpPage = () => {
             </div>
 
             {/* Role segmented control */}
-            <div className="bg-gray-100 rounded-2xl p-1 flex">
-              {['athlete', 'coach'].map((r) => (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">I am a...</p>
+              {[
+                { id: 'athlete', icon: '🏃', label: 'Athlete', desc: 'Track my own training & tests' },
+                { id: 'coach', icon: '📋', label: 'Coach', desc: 'Manage athletes & analyse training' },
+                { id: 'tester', icon: '🔬', label: 'Tester / Lab', desc: 'Run lactate tests & generate reports' },
+              ].map((r) => (
                 <button
-                  key={r}
+                  key={r.id}
                   type="button"
-                  onClick={() => setFormData({ ...formData, role: r })}
-                  className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all capitalize ${
-                    formData.role === r
-                      ? 'bg-white shadow text-gray-900'
-                      : 'text-gray-500'
+                  onClick={() => setFormData({ ...formData, role: r.id })}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2 text-left transition-all ${
+                    formData.role === r.id
+                      ? 'border-primary bg-primary/5 text-gray-900'
+                      : 'border-gray-200 bg-white text-gray-600'
                   }`}
                 >
-                  {r}
+                  <span className="text-xl shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">{r.label}</div>
+                    <div className="text-xs text-gray-500 truncate">{r.desc}</div>
+                  </div>
+                  {formData.role === r.id && (
+                    <svg className="w-4 h-4 text-primary ml-auto shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  )}
                 </button>
               ))}
             </div>
@@ -509,10 +523,18 @@ const SignUpPage = () => {
                 <h2 className="text-2xl font-bold mb-2 text-gray-900">Choose your role</h2>
                 <p className="text-sm text-gray-500 mb-5">How will you use LaChart? You can update this later.</p>
                 <div className="space-y-3 mb-5">
-                  {['athlete', 'coach'].map((r) => (
-                    <label key={r} className={`flex items-center gap-3 rounded-2xl border-2 p-4 cursor-pointer ${googleRoleChoice === r ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
-                      <input type="radio" name="nativeGoogleRole" value={r} checked={googleRoleChoice === r} onChange={() => setGoogleRoleChoice(r)} className="h-4 w-4 text-primary" />
-                      <span className="font-semibold capitalize text-gray-900">{r}</span>
+                  {[
+                    { id: 'athlete', icon: '🏃', label: 'Athlete', desc: 'Track my own training & tests' },
+                    { id: 'coach', icon: '📋', label: 'Coach', desc: 'Manage athletes & analyse training' },
+                    { id: 'tester', icon: '🔬', label: 'Tester / Lab', desc: 'Run lactate tests & generate reports' },
+                  ].map((r) => (
+                    <label key={r.id} className={`flex items-center gap-3 rounded-2xl border-2 p-4 cursor-pointer ${googleRoleChoice === r.id ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
+                      <input type="radio" name="nativeGoogleRole" value={r.id} checked={googleRoleChoice === r.id} onChange={() => setGoogleRoleChoice(r.id)} className="h-4 w-4 text-primary" />
+                      <span className="text-xl shrink-0">{r.icon}</span>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-gray-900">{r.label}</div>
+                        <div className="text-xs text-gray-500 truncate">{r.desc}</div>
+                      </div>
                     </label>
                   ))}
                 </div>

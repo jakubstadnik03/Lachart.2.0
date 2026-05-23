@@ -86,6 +86,34 @@ function isWarmupOrCooldown(iv, idx, total) {
   return false;
 }
 
+/**
+ * Detect if a lap is a non-work lap (warmup, cooldown, recovery, rest).
+ * Mirrors CalendarView's detectLapType() heuristic.
+ */
+function isNonWorkLap(iv, idx, total) {
+  const t = String(iv?.intervalType || '').toLowerCase();
+  if (t === 'warmup' || t === 'cooldown' || t === 'recovery' || t === 'rest') return true;
+  if (t === 'work') return false;
+  const name = String(iv?.name || '').toLowerCase();
+  if (/warm.?up|rozeh/i.test(name)) return true;
+  if (/cool.?down|zklidn/i.test(name)) return true;
+  if (/recov|odpoc|rest/i.test(name)) return true;
+  // distance-based: short laps (<200m) are likely recovery
+  const dist = Number(iv?.distanceMeters || iv?.distance || iv?.totalDistance || 0);
+  if (dist > 0 && dist < 200) return true;
+  // pace-based: very slow laps (>8:00/km) are likely recovery
+  const dur = Number(iv?.elapsed_time || iv?.totalElapsedTime || iv?.durationSeconds || iv?.duration || 0);
+  if (dist > 0 && dur > 0) {
+    const paceSecKm = dur / (dist / 1000);
+    if (paceSecKm > 480) return true;
+  }
+  // position-based
+  if (total >= 3 && (idx === 0 || idx === total - 1)) return true;
+  // alternating pattern (even = recovery between work intervals)
+  if (total >= 5 && idx % 2 === 0 && idx > 0 && idx < total - 1) return true;
+  return false;
+}
+
 function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false }) {
   const t = String(intervalType || '').toLowerCase();
   if (t === 'warmup')   return isSelected ? '#d97706' : '#fbbf24';
@@ -297,6 +325,7 @@ export default function SessionProgressChart({
   onSessionTap,
   onEditSession,
   hideWarmCool = false,
+  workOnly = false,
 }) {
   const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
   const sportIsPace = sport === 'run' || sport === 'swim';
@@ -308,9 +337,12 @@ export default function SessionProgressChart({
   const data = useMemo(() => {
     return sessions.map((s, i) => {
       let intervals = getIntervals(s);
-      if (hideWarmCool) {
-        const total = intervals.length;
-        intervals = intervals.filter((iv, idx) => !isWarmupOrCooldown(iv, idx, total));
+      const rawTotal = intervals.length;
+      if (workOnly) {
+        // Filter to work laps only (exclude warmup, cooldown, recovery, rest)
+        intervals = intervals.filter((iv, idx) => !isNonWorkLap(iv, idx, rawTotal));
+      } else if (hideWarmCool) {
+        intervals = intervals.filter((iv, idx) => !isWarmupOrCooldown(iv, idx, rawTotal));
       }
       const laps = intervals.map((iv, idx) => {
         let v = null;
@@ -326,7 +358,7 @@ export default function SessionProgressChart({
       }).filter(l => l.value != null && l.value > 0);
       return { id: activityKey(s), date: getDate(s), laps, color: sessionShade(i, sessions.length), meta: s };
     }).filter(s => s.laps.length > 0);
-  }, [sessions, metric, isPace, sport, hideWarmCool]);
+  }, [sessions, metric, isPace, sport, hideWarmCool, workOnly]);
 
   const fmtTooltipValue = (v) => {
     if (isPace) return fmtPace(v);
@@ -342,12 +374,15 @@ export default function SessionProgressChart({
     );
   }
 
+  // Avg-centered Y-axis across ALL visible laps so every bar type is in frame.
+  // When workOnly=true the data already only has work laps, so the scale
+  // stays tight automatically.
   const allVals = data.flatMap(s => s.laps.map(l => l.value));
-  const yMin = Math.min(...allVals);
-  const yMax = Math.max(...allVals);
-  const yPad = (yMax - yMin) * 0.1 || (isPace ? 5 : 1);
-  const yLo  = Math.max(0, yMin - yPad);
-  const yHi  = yMax + yPad;
+  const avg    = allVals.reduce((a, b) => a + b, 0) / allVals.length;
+  const maxDev = Math.max(...allVals.map(v => Math.abs(v - avg)));
+  const spread = (maxDev || avg * 0.08 || (isPace ? 10 : 2)) * 1.3;
+  const yLo = Math.max(0, avg - spread);
+  const yHi = avg + spread;
 
   const py = (v) => isPace
     ? padTop + ((v - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom)

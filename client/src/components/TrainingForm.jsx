@@ -166,17 +166,35 @@ function autoDetectIntervalTypes(results) {
   // Too few intervals to classify meaningfully → all work
   if (n <= 2) return migrated.map(r => ({ ...r, intervalType: r.intervalType || 'work' }));
 
+  // Helper: parse "MM:SS" pace string → seconds (returns 0 if not a valid pace)
+  function parsePaceSec(val) {
+    if (!val) return 0;
+    if (typeof val === 'number') return val > 0 ? val : 0;
+    const s = String(val);
+    if (!s.includes(':')) return parseFloat(s) || 0;
+    const parts = s.split(':');
+    if (parts.length === 2) return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
+    return 0;
+  }
+
   // Helper: extract per-interval metadata
   const meta = migrated.map(r => {
-    const dist = Number(r.distanceMeters ?? r.distance ?? 0);
-    const dur  = parseIntervalDurSec(r);
-    const hr   = Number(r.heartRate) || 0;
-    const pw   = Number(r.power)     || 0;
+    const dist  = Number(r.distanceMeters ?? r.distance ?? 0);
+    const dur   = parseIntervalDurSec(r);
+    const hr    = Number(r.heartRate) || 0;
+    const pw    = Number(r.power)     || 0;
+    // For run/swim, power is stored as a pace string "MM:SS".
+    // Convert to sec/unit so we can do intensity comparisons.
+    // Use inverted pace (1000/pace) so FASTER = higher value (like power).
+    const paceRaw = parsePaceSec(r.power);
+    const paceInv = paceRaw > 0 ? 1000 / paceRaw : 0; // higher = faster
     return {
-      dist:  dist > 0 ? dist : null,
-      dur:   dur  > 0 ? dur  : null,
-      hr:    hr   > 0 ? hr   : null,
-      power: pw   > 0 ? pw   : null,
+      dist:     dist > 0 ? dist : null,
+      dur:      dur  > 0 ? dur  : null,
+      hr:       hr   > 0 ? hr   : null,
+      power:    pw   > 0 ? pw   : null,
+      paceInv:  paceInv > 0 ? paceInv : null,
+      paceRaw:  paceRaw > 0 ? paceRaw : null, // sec/km, higher = slower
     };
   });
 
@@ -240,10 +258,11 @@ function autoDetectIntervalTypes(results) {
   // Step 2 — duration cluster (best signal for bike intervals)
   if (!workSet) workSet = findCluster(meta.map(m => m.dur), 0.25);
 
-  // Step 3 — intensity cluster (HR or power).
-  // Use preferHigh so the high-watt cluster wins over the low-watt cluster.
+  // Step 3 — intensity cluster (HR, power, or inverted pace for run/swim).
+  // Use preferHigh so the fast/high-watt cluster wins over the slow/low-watt cluster.
   if (!workSet) {
-    const intensities = meta.map(m => m.power || m.hr);
+    // For runs/swims: use inverted pace (higher = faster) as intensity proxy
+    const intensities = meta.map(m => m.power || m.hr || m.paceInv);
     if (intensities.filter(Boolean).length >= Math.ceil(n / 2)) {
       workSet = findCluster(intensities, 0.12, { preferHigh: true });
     }
@@ -278,10 +297,21 @@ function autoDetectIntervalTypes(results) {
   const workDurs = [...workSet].map(i => parseIntervalDurSec(migrated[i])).filter(d => d > 0);
   const avgWorkDur = workDurs.length ? workDurs.reduce((a, b) => a + b, 0) / workDurs.length : 0;
 
-  const workIntensities = [...workSet].map(i => meta[i].power || meta[i].hr || 0).filter(v => v > 0);
+  // For intensity: prefer pace (inverted) for run/swim, otherwise power or HR
+  const workIntensities = [...workSet].map(i =>
+    meta[i].power || meta[i].paceInv || meta[i].hr || 0
+  ).filter(v => v > 0);
   const avgWorkIntensity = workIntensities.length
     ? workIntensities.reduce((a, b) => a + b, 0) / workIntensities.length
     : 0;
+
+  // Average distance of work intervals (for small-distance recovery detection)
+  const workDists = [...workSet].map(i => meta[i].dist || 0).filter(d => d > 0);
+  const avgWorkDist = workDists.length ? workDists.reduce((a, b) => a + b, 0) / workDists.length : 0;
+
+  // Average pace of work intervals (sec/unit, lower = faster)
+  const workPaces = [...workSet].map(i => meta[i].paceRaw || 0).filter(p => p > 0);
+  const avgWorkPace = workPaces.length ? workPaces.reduce((a, b) => a + b, 0) / workPaces.length : 0;
 
   // Step 5 — assign final types
   return migrated.map((r, i) => {
@@ -292,18 +322,26 @@ function autoDetectIntervalTypes(results) {
 
     // Inside work range but not in the work cluster — decide work vs recovery.
     const dur       = parseIntervalDurSec(r);
-    const intensity = meta[i].power || meta[i].hr || 0;
+    const dist      = meta[i].dist || 0;
+    const intensity = meta[i].power || meta[i].paceInv || meta[i].hr || 0;
+    const paceRaw   = meta[i].paceRaw || 0;
 
-    // Safety guard: if this interval's intensity is >= 90 % of the work average,
-    // it must be work — prevents a high-watt lap from being mislabelled as rest.
+    // Guard 1: if pace/power/HR is >= 90% of work average → definitely work
     if (avgWorkIntensity > 0 && intensity >= avgWorkIntensity * 0.90) {
       return { ...r, intervalType: 'work' };
     }
 
-    const isShort        = avgWorkDur       > 0 && dur       > 0 && dur       < avgWorkDur       * 0.65;
+    // Guard 2: if pace is explicitly much slower than work pace → recovery
+    // e.g. rest at 13:40/km vs work at 3:21/km → paceRaw is 4× higher
+    const isSlowPace = avgWorkPace > 0 && paceRaw > 0 && paceRaw > avgWorkPace * 1.6;
+
+    // Guard 3: very small distance relative to work distance → recovery
+    const isSmallDist = avgWorkDist > 0 && dist > 0 && dist < avgWorkDist * 0.35;
+
+    const isShort        = avgWorkDur       > 0 && dur  > 0 && dur  < avgWorkDur  * 0.65;
     const isLowIntensity = avgWorkIntensity > 0 && intensity > 0 && intensity < avgWorkIntensity * 0.75;
 
-    return { ...r, intervalType: (isShort || isLowIntensity) ? 'recovery' : 'work' };
+    return { ...r, intervalType: (isShort || isSlowPace || isSmallDist || isLowIntensity) ? 'recovery' : 'work' };
   });
 }
 
@@ -456,6 +494,17 @@ function isDefaultTitle(title) {
 }
 
 /* ─── Smart title generator ─────────────────────────────────────────────────── */
+function fmtDist(d) {
+  if (!d) return null;
+  const s = String(d).trim().toLowerCase().replace(/\s/g, '');
+  if (s.endsWith('km')) return s;
+  if (s.endsWith('m') && !s.endsWith('km')) return s;
+  const n = parseFloat(s);
+  if (isNaN(n)) return null;
+  if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}km`;
+  return `${Math.round(n)}m`;
+}
+
 function generateTrainingTitle(sport, category, results) {
   const sportLabel = { bike: 'ride', run: 'run', swim: 'swim' }[sport] || 'workout';
 
@@ -475,17 +524,7 @@ function generateTrainingTitle(sport, category, results) {
   };
   const zoneLabel = CAT_ZONE[category] || null;
 
-  // Format interval distance
-  const fmtDist = (d) => {
-    if (!d) return null;
-    const s = String(d).trim().toLowerCase().replace(/\s/g, '');
-    if (s.endsWith('km')) return s;
-    if (s.endsWith('m') && !s.endsWith('km')) return s;
-    const n = parseFloat(s);
-    if (isNaN(n)) return null;
-    if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}km`;
-    return `${Math.round(n)}m`;
-  };
+
 
   // Format duration rounded to whole minutes: "5min" / "30s"
   const fmtDurLabel = (dur) => {
@@ -985,13 +1024,16 @@ const TrainingForm = ({
         const totalSec = (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
         if (totalSec > 0) average_speed = isSwim ? 100 / totalSec : 1000 / totalSec;
       }
-      // Fallback: compute speed from distance / duration if pace field empty
+      // Fallback: compute speed from distance / duration if pace field empty.
+      // Use parseIntervalDurSec so MM:SS duration strings and durationSeconds
+      // are both handled (manually-created intervals only have duration MM:SS).
       if (average_speed === 0 && (isRun || isSwim)) {
         const dist = parseFloat(interval.distanceMeters) || 0;
-        const dur = parseFloat(interval.durationSeconds) || 0;
+        const dur = parseIntervalDurSec(interval);
         if (dist > 0 && dur > 0) average_speed = dist / dur;
       }
     }
+    const durSec = parseIntervalDurSec(interval);
     return {
       lapNumber: idx + 1,
       average_watts,
@@ -999,8 +1041,8 @@ const TrainingForm = ({
       average_heartrate: parseFloat(interval.heartRate) || 0,
       lactate: interval.lactate ? parseFloat(interval.lactate) : null,
       distance: interval.distanceMeters || 0,
-      moving_time: interval.durationSeconds || 0,
-      elapsed_time: interval.durationSeconds || 0,
+      moving_time: durSec,
+      elapsed_time: durSec,
       intervalType: interval.intervalType || (interval.isRecovery ? 'recovery' : 'work'),
     };
   });
@@ -1690,11 +1732,11 @@ const TrainingForm = ({
                         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
                           <span className="flex-1 text-xs font-semibold text-gray-700">
                             Interval {index + 1}
-                            {interval.durationSeconds > 0 && (
-                              <span className="text-gray-400 font-normal ml-1.5">{fmtDur(interval.durationSeconds)}</span>
+                            {parseIntervalDurSec(interval) > 0 && (
+                              <span className="text-gray-400 font-normal ml-1.5">{fmtDur(parseIntervalDurSec(interval))}</span>
                             )}
                             {interval.distanceMeters > 0 && (
-                              <span className="text-gray-400 font-normal ml-1.5">· {interval.distanceMeters}m</span>
+                              <span className="text-gray-400 font-normal ml-1.5">· {fmtDist(interval.distanceMeters)}</span>
                             )}
                           </span>
                           <TypePicker />
