@@ -20,7 +20,6 @@ import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalN
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
-import LactateStatistics from "../components/LactateStatistics/LactateStatistics";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout } from '../services/workoutPlannerApi';
@@ -1700,7 +1699,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.34 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
-          <ZoneDistributionChart trainings={trainings} tests={tests} period="90d" />
+          <ZoneDistributionChart key={`zdc-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
         </motion.div>
 
         <motion.div
@@ -1804,9 +1803,6 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2 overflow-visible min-h-0"
         >
           <div className="space-y-6 overflow-visible">
-            {/* Lactate Statistics Component */}
-            <LactateStatistics key={`ls-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
-            
             {filteredTests && filteredTests.length > 0 ? (
               <>
                 <DateSelector

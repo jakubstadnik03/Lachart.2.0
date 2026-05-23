@@ -131,6 +131,8 @@ const SettingsPage = () => {
     }
   }, [stravaRetryUntil, stravaSecondsLeft]);
   const [garminLogoError, setGarminLogoError] = useState(false);
+  // Strava backfill progress — polled every 10s while backfill is running
+  const [stravaBackfill, setStravaBackfill] = useState(null); // { state, startedAt, cursorDate }
   const [polarConnected] = useState(false);
   const [corosConnected] = useState(false);
   const [files, setFiles] = useState([]);
@@ -541,6 +543,32 @@ const SettingsPage = () => {
       setStravaAutoSync(false);
     }
   }, [user?.strava?.autoSync, user?.strava]);
+
+  // Poll backfill progress every 10s while a historical import is running.
+  // Stops automatically once state turns 'done' or user disconnects.
+  useEffect(() => {
+    if (!user?.strava?.accessToken) { setStravaBackfill(null); return; }
+    let timer = null;
+    const poll = async () => {
+      try {
+        const { fetchStravaStatus } = await import('../services/api');
+        const s = await fetchStravaStatus();
+        if (!s) return;
+        const state = s.backfillState || null;
+        // Estimate the date we've reached based on cursor (Unix timestamp)
+        const cursorDate = s.backfillCursorBefore
+          ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('cs', { year: 'numeric', month: 'short' })
+          : null;
+        setStravaBackfill(state ? { state, startedAt: s.backfillStartedAt, cursorDate } : null);
+        // Keep polling while running
+        if (state === 'running') {
+          timer = setTimeout(poll, 10000);
+        }
+      } catch (_) { /* swallow */ }
+    };
+    poll();
+    return () => { if (timer) clearTimeout(timer); };
+  }, [user?.strava?.accessToken]);
 
   // Load Garmin auto-sync setting from user profile
   useEffect(() => {
@@ -2875,6 +2903,28 @@ const SettingsPage = () => {
                     </>
                   )}
                   
+                  {/* Historical backfill progress banner */}
+                  {stravaBackfill?.state === 'running' && (
+                    <div className={`${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-xs'} flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-orange-700`}>
+                      <svg className="animate-spin shrink-0 w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                      </svg>
+                      <span>
+                        <span className="font-semibold">Importing history from Strava…</span>
+                        {stravaBackfill.cursorDate && (
+                          <span className="ml-1 text-orange-500">reached {stravaBackfill.cursorDate}</span>
+                        )}
+                        <span className="block text-orange-400 mt-0.5">Running in background — new activities appear automatically.</span>
+                      </span>
+                    </div>
+                  )}
+                  {stravaBackfill?.state === 'done' && (
+                    <div className={`${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-xs'} flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-medium`}>
+                      ✓ Full history imported from Strava
+                    </div>
+                  )}
+
                   <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
                     <button
                       onClick={handleConnectStrava}

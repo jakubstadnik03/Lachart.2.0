@@ -1,431 +1,429 @@
-import React, { useMemo, useState } from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
+import { Bike, WavesLadder } from 'lucide-react';
+import { RunnerSvg } from '../shared/SportIcon';
+import { getMonthlyPowerAnalysis } from '../../services/api';
+import { useAuth } from '../../context/AuthProvider';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const PERIODS = [
-  { label: '30d', value: '30d', days: 30 },
-  { label: '90d', value: '90d', days: 90 },
-  { label: '6m',  value: '6m',  days: 180 },
-  { label: '12m', value: '12m', days: 365 },
+  { label: '1m', months: 1 },
+  { label: '3m', months: 3 },
+  { label: '6m', months: 6 },
+  { label: '12m', months: 12 },
 ];
 
 const ZONES = [
-  { key: 'z1', label: 'Z1', name: 'Recovery',  color: '#60A5FA' },
-  { key: 'z2', label: 'Z2', name: 'Aerobic',   color: '#34D399' },
-  { key: 'z3', label: 'Z3', name: 'Tempo',     color: '#FBBF24' },
-  { key: 'z4', label: 'Z4', name: 'Threshold', color: '#F97316' },
-  { key: 'z5', label: 'Z5', name: 'VO2max',    color: '#F87171' },
+  { zone: 1, label: 'Z1', name: 'Recovery',  color: '#60A5FA' },
+  { zone: 2, label: 'Z2', name: 'Aerobic',   color: '#34D399' },
+  { zone: 3, label: 'Z3', name: 'Tempo',     color: '#FBBF24' },
+  { zone: 4, label: 'Z4', name: 'Threshold', color: '#F97316' },
+  { zone: 5, label: 'Z5', name: 'VO2max',    color: '#F43F5E' },
 ];
 
-// Map an intensity string to a zone key
-const INTENSITY_MAP = {
-  // Z1
-  recovery: 'z1', 'very easy': 'z1', 'very_easy': 'z1', warmup: 'z1', cooldown: 'z1',
-  // Z2
-  easy: 'z2', base: 'z2', aerobic: 'z2', endurance: 'z2', long: 'z2', low: 'z2',
-  moderate: 'z2', steady: 'z2', zone2: 'z2', z2: 'z2',
-  // Z3
-  tempo: 'z3', 'steady state': 'z3', medium: 'z3', zone3: 'z3', z3: 'z3',
-  // Z4
-  threshold: 'z4', hard: 'z4', lt: 'z4', lt2: 'z4', 'lactate threshold': 'z4',
-  zone4: 'z4', z4: 'z4',
-  // Z5 (note: do NOT map workout `type: "interval"` here — that is structural, not intensity)
-  race: 'z5', sprint: 'z5', 'very hard': 'z5', very_hard: 'z5',
-  max: 'z5', vo2: 'z5', vo2max: 'z5', zone5: 'z5', z5: 'z5', high: 'z5',
-  anaerobic: 'z5',
-  // Mixed / terrain — approximate mid zone
-  hills: 'z3',
-};
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-function intensityToZone(str) {
-  if (!str) return null;
-  const key = str.toLowerCase().trim();
-  return INTENSITY_MAP[key] || null;
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Parse duration string or number → seconds
-function parseDuration(val) {
-  if (!val) return 0;
-  if (typeof val === 'number') return val;
-  const str = String(val).trim();
-  // HH:MM:SS or MM:SS
-  if (str.includes(':')) {
-    const parts = str.split(':').map(Number);
-    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    if (parts.length === 2) return parts[0] * 60 + parts[1];
+/** Return YYYY-MM keys for the last N months, newest first. */
+function lastNMonthKeys(n) {
+  const keys = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
-  // Plain number (assume minutes if < 600, seconds otherwise)
-  const n = parseFloat(str);
-  if (!Number.isNaN(n)) return n < 600 ? n * 60 : n;
-  return 0;
+  return keys;
 }
 
-/** Total workout length in seconds (Strava/FIT use numeric seconds; DB trainings often use duration string). */
-function totalTrainingSeconds(training) {
-  const fromNumeric = Number(
-    training.movingTime
-    ?? training.elapsedTime
-    ?? training.totalElapsedTime
-    ?? training.totalTimerTime
-    ?? training.totalTime
-    ?? 0
+/** Pick a zone bucket by numeric or string key. */
+function pickBucket(map, num) {
+  if (!map) return null;
+  return map[num] ?? map[String(num)] ?? null;
+}
+
+/** Sum zone times (field: "time") across multiple month objects. */
+function aggregateZoneTimes(months, accessor) {
+  const totals = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const m of months) {
+    const zoneMap = accessor(m);
+    if (!zoneMap) continue;
+    for (let z = 1; z <= 5; z++) {
+      const b = pickBucket(zoneMap, z);
+      totals[z] += Number(b?.time) || 0;
+    }
+  }
+  return totals;
+}
+
+/**
+ * Compute per-zone weighted average across months.
+ * The server already finalises averages before sending (avgPace = Σ/count),
+ * so we must re-weight per month: weightedSum += avg × count, then divide.
+ *
+ * valueField – field holding the finalised average  (e.g. "avgPace", "avgPower")
+ * countField – field holding the total time weight  (e.g. "paceCount", "powerCount")
+ */
+function aggregateZoneAvgs(months, accessor, valueField, countField) {
+  const weightedSums = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  const totalCounts  = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const m of months) {
+    const zoneMap = accessor(m);
+    if (!zoneMap) continue;
+    for (let z = 1; z <= 5; z++) {
+      const b = pickBucket(zoneMap, z);
+      if (!b) continue;
+      const avg = Number(b[valueField]) || 0;
+      const cnt = Number(b[countField]) || 0;
+      if (cnt > 0 && avg > 0) {
+        weightedSums[z] += avg * cnt;   // re-weight: avg × time = partial sum
+        totalCounts[z]  += cnt;
+      }
+    }
+  }
+  const result = {};
+  for (let z = 1; z <= 5; z++) {
+    result[z] = totalCounts[z] > 0 ? weightedSums[z] / totalCounts[z] : null;
+  }
+  return result;
+}
+
+/** Return zone boundary definitions from the first month that has them. */
+function getZoneBoundaries(months, accessor) {
+  for (const m of months) {
+    const defs = accessor(m);
+    if (!defs) continue;
+    if (pickBucket(defs, 1)) return defs;
+  }
+  return null;
+}
+
+/** Classify pcts into a training-type label. */
+function getDistLabel(pcts) {
+  const z1 = pcts[1] || 0, z2 = pcts[2] || 0, z3 = pcts[3] || 0, z4 = pcts[4] || 0, z5 = pcts[5] || 0;
+  if (z1 + z5 >= 75) return { label: 'Polarized',       cls: 'text-indigo-600 bg-indigo-50' };
+  if (z2 >= 55)       return { label: 'Zone 2 Focus',    cls: 'text-green-600 bg-green-50' };
+  if (z1 > z2 && z2 > z3 && z3 > 0)
+                      return { label: 'Pyramidal',       cls: 'text-amber-600 bg-amber-50' };
+  if (z3 + z4 >= 45)  return { label: 'Threshold-heavy', cls: 'text-orange-600 bg-orange-50' };
+  return null;
+}
+
+/** Format seconds → "2h 14m" or "45m". */
+function fmtDur(secs) {
+  if (!secs || secs <= 0) return '—';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+/** Format seconds/km → "4:32" pace string. */
+function fmtPace(sPerKm) {
+  if (!sPerKm || sPerKm <= 0 || !isFinite(sPerKm)) return '∞';
+  const mn = Math.floor(sPerKm / 60);
+  const sc = Math.round(sPerKm % 60);
+  return `${mn}:${String(sc).padStart(2, '0')}`;
+}
+
+// ─── Tooltip (Portal) ─────────────────────────────────────────────────────────
+
+function ZoneTooltip({ data }) {
+  if (!data) return null;
+  const style = {
+    position: 'fixed',
+    left: data.x + 14,
+    top: data.y - 12,
+    zIndex: 9999,
+    pointerEvents: 'none',
+  };
+  return ReactDOM.createPortal(
+    <div style={style} className="bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 text-xs min-w-[160px]">
+      {data.content}
+    </div>,
+    document.body
   );
-  if (Number.isFinite(fromNumeric) && fromNumeric > 0) return fromNumeric;
-  return parseDuration(training.duration || training.durationSeconds);
 }
 
-// ─── Threshold helpers ────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
-/** Normalize training sport string → 'run' | 'bike' | 'swim' | null */
-function normalizeSport(training) {
-  const s = (training.sport || training.sport_type || training.type || '').toLowerCase();
-  if (s.includes('run')) return 'run';
-  if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
-  if (s.includes('swim')) return 'swim';
-  return null;
-}
+export default function ZoneDistributionChart({ selectedAthleteId = null }) {
+  const { user } = useAuth();
+  const [period, setPeriod]           = useState('3m');
+  const [sport, setSport]             = useState('bike'); // 'bike' | 'run' | 'swim' | 'all'
+  const [metric, setMetric]           = useState('power'); // 'power' | 'hr' | 'pace'
+  const [expandedZone, setExpandedZone] = useState(null); // zone number | null
+  const [loadedMonths, setLoadedMonths] = useState(new Map());
+  const [loading, setLoading]         = useState(false);
+  const [tooltip, setTooltip]         = useState(null);
 
-/**
- * Estimate LT1 / LT2 from a single test's results array.
- * Returns { lt1Hr, lt2Hr, lt1Power, lt2Power } — any value may be null.
- */
-function estimateTestThresholds(test) {
-  // Use manual overrides first
-  const ov = test.thresholdOverrides || {};
-  const ovLt1Hr    = ov.LTP1_hr    != null ? Number(ov.LTP1_hr)    : null;
-  const ovLt2Hr    = ov.LTP2_hr    != null ? Number(ov.LTP2_hr)    : null;
-  const ovLt1Pow   = ov.LTP1       != null ? Number(ov.LTP1)       : null;
-  const ovLt2Pow   = ov.LTP2       != null ? Number(ov.LTP2)       : null;
+  // Ref to track what's been fetched — avoids re-fetching mid-render cycles
+  const loadedRef = useRef(new Map());
 
-  let lt1Hr = ovLt1Hr, lt2Hr = ovLt2Hr;
-  let lt1Power = ovLt1Pow, lt2Power = ovLt2Pow;
+  // ── Athlete ID ─────────────────────────────────────────────────────────────
+  const athleteId = user?.role === 'athlete'
+    ? null
+    : (selectedAthleteId ?? (user?.role === 'coach' ? user._id : null));
 
-  // Auto-estimate from staged results when overrides are missing
-  const stages = Array.isArray(test.results)
-    ? test.results.filter(r => r.lactate != null && !Number.isNaN(Number(r.lactate)))
-    : [];
+  const cachePrefix = `zdc_${athleteId || 'self'}_`;
 
-  if (stages.length >= 2 && (lt2Hr == null || lt2Power == null)) {
-    const minLac = Math.min(...stages.map(s => Number(s.lactate)));
+  // Reset cache when athleteId changes
+  useEffect(() => {
+    loadedRef.current = new Map();
+    setLoadedMonths(new Map());
+  }, [athleteId]);
 
-    // LT2: OBLA (≥4 mmol) or 50% rise
-    for (const stage of stages) {
-      const lac = Number(stage.lactate);
-      if (lac >= 4.0) {
-        if (lt2Hr == null)    lt2Hr    = Number(stage.heartRate) || null;
-        if (lt2Power == null) lt2Power = Number(stage.power) || Number(stage.interval) || null;
-        break;
-      }
-    }
-    if (lt2Hr == null && lt2Power == null) {
-      for (let i = 1; i < stages.length; i++) {
-        const prev = Number(stages[i - 1].lactate);
-        const curr = Number(stages[i].lactate);
-        if (prev > 0 && (curr - prev) / prev > 0.5) {
-          if (lt2Hr == null)    lt2Hr    = Number(stages[i].heartRate) || null;
-          if (lt2Power == null) lt2Power = Number(stages[i].power) || Number(stages[i].interval) || null;
-          break;
+  // ── Month keys for the selected period ────────────────────────────────────
+  const monthKeys = useMemo(() => {
+    const months = PERIODS.find(p => p.label === period)?.months ?? 3;
+    return lastNMonthKeys(months);
+  }, [period]);
+
+  // ── Load a single month (localStorage → API) ───────────────────────────────
+  const loadMonth = useCallback(async (monthKey) => {
+    if (loadedRef.current.has(monthKey)) return;
+    loadedRef.current.set(monthKey, 'loading');
+
+    // Try localStorage cache
+    const lsKey = `${cachePrefix}${monthKey}`;
+    try {
+      const raw = localStorage.getItem(lsKey);
+      if (raw) {
+        const { data, ts } = JSON.parse(raw);
+        if (Date.now() - ts < CACHE_TTL && data?.monthKey === monthKey) {
+          loadedRef.current.set(monthKey, 'done');
+          setLoadedMonths(p => new Map(p).set(monthKey, data));
+          return;
         }
       }
-    }
+    } catch (_) { /* ignore */ }
 
-    // LT1: first stage where lactate > baseline + 1.0 mmol
-    for (const stage of stages) {
-      const lac = Number(stage.lactate);
-      if (lac > minLac + 1.0) {
-        if (lt1Hr == null)    lt1Hr    = Number(stage.heartRate) || null;
-        if (lt1Power == null) lt1Power = Number(stage.power) || Number(stage.interval) || null;
-        break;
+    // Fetch from API
+    try {
+      const result = await getMonthlyPowerAnalysis(athleteId, monthKey);
+      const mData = Array.isArray(result) ? result[0] : null;
+      if (mData?.monthKey === monthKey) {
+        loadedRef.current.set(monthKey, 'done');
+        setLoadedMonths(p => new Map(p).set(monthKey, mData));
+        try { localStorage.setItem(lsKey, JSON.stringify({ data: mData, ts: Date.now() })); } catch (_) { /* ignore */ }
+      } else {
+        // No data for this month — store placeholder to avoid re-fetching
+        loadedRef.current.set(monthKey, 'done');
+        setLoadedMonths(p => new Map(p).set(monthKey, null));
       }
+    } catch (err) {
+      console.warn('[ZoneDist] load failed:', monthKey, err?.message);
+      loadedRef.current.set(monthKey, 'done');
+      setLoadedMonths(p => new Map(p).set(monthKey, null));
     }
-  }
+  }, [athleteId, cachePrefix]);
 
-  return { lt1Hr, lt2Hr, lt1Power, lt2Power };
-}
+  // Load all months needed for the current period
+  useEffect(() => {
+    const missing = monthKeys.filter(k => !loadedRef.current.has(k));
+    if (!missing.length) return;
+    setLoading(true);
+    Promise.all(missing.map(k => loadMonth(k))).finally(() => setLoading(false));
+  }, [monthKeys, loadMonth]);
 
-/**
- * Get LT1/LT2 thresholds for a given sport from the athlete's most recent test.
- * Returns { lt1Hr, lt2Hr, lt1Power, lt2Power } or null.
- */
-function computeThresholds(tests, sport) {
-  if (!Array.isArray(tests) || tests.length === 0 || !sport) return null;
-  const matching = tests
-    .filter(t => t.sport === sport)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  if (matching.length === 0) return null;
-  const thresholds = estimateTestThresholds(matching[0]);
-  // Need at least one HR or power reference
-  if (!thresholds.lt2Hr && !thresholds.lt2Power) return null;
-  return thresholds;
-}
-
-/**
- * Classify average HR (or power) into a zone key using LT thresholds.
- * Returns 'z1'–'z5' or null.
- */
-function classifyByThreshold(hr, power, thresholds) {
-  const { lt1Hr, lt2Hr, lt1Power, lt2Power } = thresholds;
-
-  // Prefer HR if we have LT2 reference
-  if (hr > 30 && lt2Hr > 0) {
-    if (hr >= lt2Hr * 1.03) return 'z5';
-    if (hr >= lt2Hr * 0.97) return 'z4';
-    if (lt1Hr > 0 && hr >= lt1Hr) return 'z3';
-    if (lt1Hr > 0 && hr >= lt1Hr * 0.88) return 'z2';
-    return 'z1';
-  }
-
-  // Fall back to power
-  if (power > 10 && lt2Power > 0) {
-    if (power >= lt2Power * 1.10) return 'z5';
-    if (power >= lt2Power * 0.95) return 'z4';
-    if (lt1Power > 0 && power >= lt1Power) return 'z3';
-    if (lt1Power > 0 && power >= lt1Power * 0.88) return 'z2';
-    return 'z1';
-  }
-
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Extract zone seconds from a single training.
- * Priority:
- *   1. Structured zone fields (zones[], heartRateZones, powerZones)
- *   2. Per-interval intensity × duration from results[]
- *   3. Top-level explicit intensity × total duration
- *   4. Threshold-based: classify avg HR/power per lap (or whole workout) using LT data
- */
-function extractZones(training, thresholds) {
-  const empty = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
-
-  // ── 1. Structured zone fields ──────────────────────────────────────────────
-  for (const zonesField of ['zones', 'timeInZone', 'timeInZones', 'zoneTimes']) {
-    const zones = training?.[zonesField];
-    if (Array.isArray(zones) && zones.length > 0) {
-      const result = { ...empty };
-      // Garmin-style arrays often use zone 0–4 → LaChart Z1–Z5
-      const zeroBased = zones.some((z) => {
-        const r = Number(z.zone ?? z.zoneNumber ?? z.id);
-        return Number.isFinite(r) && r === 0;
-      });
-      zones.forEach((z) => {
-        let idx = Number(z.zone ?? z.zoneNumber ?? z.id);
-        if (!Number.isFinite(idx)) return;
-        if (zeroBased && idx >= 0 && idx <= 4) idx += 1;
-        const t = Number(z.time || z.seconds || z.duration || z.value || 0);
-        if (idx >= 1 && idx <= 5) result[`z${idx}`] += t;
-      });
-      const total = Object.values(result).reduce((a, b) => a + b, 0);
-      if (total > 0) return result;
-    }
-  }
-
-  for (const fieldName of ['heartRateZones', 'powerZones']) {
-    const zoneObj = training[fieldName];
-    if (zoneObj && typeof zoneObj === 'object' && !Array.isArray(zoneObj)) {
-      const result = { ...empty };
-      for (let i = 1; i <= 5; i++) {
-        const t = Number(zoneObj[`zone${i}`] || zoneObj[`z${i}`] || zoneObj[`Zone${i}`] || zoneObj[i] || 0);
-        result[`z${i}`] += t;
-      }
-      const total = Object.values(result).reduce((a, b) => a + b, 0);
-      if (total > 0) return result;
-    }
-  }
-
-  // ── 2. Per-interval data from results[] ───────────────────────────────────
-  if (Array.isArray(training.results) && training.results.length > 0) {
-    const result = { ...empty };
-    let attributed = 0;
-
-    // Map intervalType → zone (LaChart training form auto-detects these)
-    const INTERVAL_TYPE_ZONE = {
-      warmup:   'z1',
-      cooldown: 'z1',
-      recovery: 'z1',
-      work:     'z4', // best-effort: work intervals are threshold-range by default
+  // ── Invalidate current month on training events ───────────────────────────
+  useEffect(() => {
+    const now = new Date();
+    const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const invalidate = () => {
+      try { localStorage.removeItem(`${cachePrefix}${curKey}`); } catch (_) { /* ignore */ }
+      loadedRef.current.delete(curKey);
+      setLoadedMonths(p => { const n = new Map(p); n.delete(curKey); return n; });
     };
+    window.addEventListener('trainingAdded', invalidate);
+    window.addEventListener('trainingUpdated', invalidate);
+    window.addEventListener('stravaSyncComplete', invalidate);
+    return () => {
+      window.removeEventListener('trainingAdded', invalidate);
+      window.removeEventListener('trainingUpdated', invalidate);
+      window.removeEventListener('stravaSyncComplete', invalidate);
+    };
+  }, [cachePrefix]);
 
-    training.results.forEach((interval) => {
-      // Prefer explicit intensity/category; fall back to intervalType
-      const zone =
-        intensityToZone(interval.intensity || interval.category) ||
-        INTERVAL_TYPE_ZONE[interval.intervalType] ||
-        null;
-      const secs = parseDuration(interval.duration || interval.durationSeconds);
-      if (zone && secs > 0) {
-        result[zone] += secs;
-        attributed += secs;
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const periodMonths = useMemo(
+    () => monthKeys.map(k => loadedMonths.get(k)).filter(Boolean),
+    [monthKeys, loadedMonths]
+  );
+
+  const hasBike = periodMonths.some(m => Number(m.bikeTime) > 0 || m.zones || Number(m.bikeTrainings) > 0);
+  const hasRun  = periodMonths.some(m => Number(m.runningTime) > 0 || m.runningZoneTimes || Number(m.runningTrainings) > 0);
+  const hasSwim = periodMonths.some(m => Number(m.swimmingTime) > 0 || m.swimmingZoneTimes || Number(m.swimmingTrainings) > 0);
+  const sportCount = Number(hasBike) + Number(hasRun) + Number(hasSwim);
+
+  // Auto-switch to a sport that has data
+  useEffect(() => {
+    if (!periodMonths.length) return;
+    const sportOk =
+      (sport === 'all'  && sportCount > 1) ||
+      (sport === 'bike' && hasBike)        ||
+      (sport === 'run'  && hasRun)         ||
+      (sport === 'swim' && hasSwim);
+    if (!sportOk) {
+      if (hasBike) setSport('bike');
+      else if (hasRun) setSport('run');
+      else if (hasSwim) setSport('swim');
+    }
+  }, [hasBike, hasRun, hasSwim, sportCount, periodMonths.length, sport]);
+
+  // Auto-select default metric when sport changes; collapse expanded zone
+  const prevSportRef = useRef(null);
+  useEffect(() => {
+    setExpandedZone(null);
+    if (prevSportRef.current === sport) return;
+    prevSportRef.current = sport;
+    if (sport === 'bike')       setMetric('power');
+    else if (sport === 'run')   setMetric('pace');
+    else if (sport === 'swim')  setMetric('pace');
+    else /* 'all' */            setMetric('hr');
+  }, [sport]);
+
+  // Collapse expanded zone when metric changes
+  useEffect(() => { setExpandedZone(null); }, [metric]);
+
+  // ── Build zone data for current sport + metric ────────────────────────────
+  const { zoneTimes, zoneAvgs, zoneDefs, totalSecs, sessions } = useMemo(() => {
+    if (!periodMonths.length) {
+      return { zoneTimes: { 1:0,2:0,3:0,4:0,5:0 }, zoneAvgs: {}, zoneDefs: null, totalSecs: 0, sessions: 0 };
+    }
+    let zt, za, zd, totalSecs, sessions;
+
+    if (sport === 'bike') {
+      totalSecs = periodMonths.reduce((s, m) => s + (Number(m.bikeTime) || 0), 0);
+      sessions  = periodMonths.reduce((s, m) => s + (Number(m.bikeTrainings) || 0), 0);
+      if (metric === 'power') {
+        zt = aggregateZoneTimes(periodMonths, m => m.zones);
+        za = aggregateZoneAvgs(periodMonths, m => m.zones, 'avgPower', 'powerCount');
+        zd = getZoneBoundaries(periodMonths, m => m.powerZones);
+      } else {
+        zt = aggregateZoneTimes(periodMonths, m => m.bikeHrZones || m.hrZones);
+        za = aggregateZoneAvgs(periodMonths, m => m.bikeHrZones || m.hrZones, 'avgHeartRate', 'heartRateCount');
+        zd = getZoneBoundaries(periodMonths, m => m.bikeHeartRateZones || m.heartRateZones);
       }
-    });
-    if (attributed > 0) return result;
-  }
-
-  // ── 3. Top-level explicit intensity × total duration ──────────────────────
-  // NOTE: do NOT use training.category here — "threshold", "endurance" etc.
-  // describe the workout TYPE, not "100% of time was spent in that zone".
-  // Only use training.intensity which users set specifically to indicate zone.
-  const zone = intensityToZone(training.intensity);
-  const totalSecs = totalTrainingSeconds(training);
-  if (zone && totalSecs > 0) {
-    const result = { ...empty };
-    result[zone] = totalSecs;
-    return result;
-  }
-
-  // ── 4. Per-second records[] (FIT uploads — most accurate) ────────────────
-  // Iterates every recorded data point and classifies HR/power second-by-second.
-  if (thresholds && Array.isArray(training.records) && training.records.length > 1) {
-    const recResult = { ...empty };
-    let recAttributed = 0;
-    for (let i = 1; i < training.records.length; i++) {
-      const rec  = training.records[i];
-      const prev = training.records[i - 1];
-      // Time delta in seconds (default 1 s; ignore implausible gaps > 30 s)
-      let dt = 1;
-      if (rec.timestamp && prev.timestamp) {
-        const diff = (new Date(rec.timestamp).getTime() - new Date(prev.timestamp).getTime()) / 1000;
-        if (diff > 0 && diff <= 30) dt = diff;
+    } else if (sport === 'run') {
+      totalSecs = periodMonths.reduce((s, m) => s + (Number(m.runningTime) || 0), 0);
+      sessions  = periodMonths.reduce((s, m) => s + (Number(m.runningTrainings) || 0), 0);
+      if (metric === 'pace') {
+        zt = aggregateZoneTimes(periodMonths, m => m.runningZoneTimes);
+        za = aggregateZoneAvgs(periodMonths, m => m.runningZoneTimes, 'avgPace', 'paceCount');
+        zd = getZoneBoundaries(periodMonths, m => m.runningZones);
+      } else {
+        zt = aggregateZoneTimes(periodMonths, m => m.runningHrZones);
+        za = aggregateZoneAvgs(periodMonths, m => m.runningHrZones, 'avgHeartRate', 'heartRateCount');
+        zd = getZoneBoundaries(periodMonths, m => m.runningHeartRateZones || m.heartRateZones);
       }
-      const z = classifyByThreshold(Number(rec.heartRate || 0), Number(rec.power || 0), thresholds);
-      if (z) { recResult[z] += dt; recAttributed += dt; }
+    } else if (sport === 'swim') {
+      totalSecs = periodMonths.reduce((s, m) => s + (Number(m.swimmingTime) || 0), 0);
+      sessions  = periodMonths.reduce((s, m) => s + (Number(m.swimmingTrainings) || 0), 0);
+      if (metric === 'pace') {
+        zt = aggregateZoneTimes(periodMonths, m => m.swimmingZoneTimes);
+        za = aggregateZoneAvgs(periodMonths, m => m.swimmingZoneTimes, 'avgPace', 'paceCount');
+        zd = getZoneBoundaries(periodMonths, m => m.swimmingZones);
+      } else {
+        zt = aggregateZoneTimes(periodMonths, m => m.swimmingHrZones);
+        za = aggregateZoneAvgs(periodMonths, m => m.swimmingHrZones, 'avgHeartRate', 'heartRateCount');
+        zd = getZoneBoundaries(periodMonths, m => m.swimmingHeartRateZones || m.heartRateZones);
+      }
+    } else {
+      // 'all' — aggregate HR zones from all sports
+      totalSecs = periodMonths.reduce((s, m) => s + (Number(m.totalTime) || 0), 0);
+      sessions  = periodMonths.reduce((s, m) => s + (Number(m.trainings) || 0), 0);
+      const bhr = aggregateZoneTimes(periodMonths, m => m.bikeHrZones || m.hrZones);
+      const rhr = aggregateZoneTimes(periodMonths, m => m.runningHrZones);
+      zt = { 1:0, 2:0, 3:0, 4:0, 5:0 };
+      for (let z = 1; z <= 5; z++) zt[z] = (bhr[z] || 0) + (rhr[z] || 0);
+      // Weighted avg across bike+run HR — compute sums/counts manually
+      const bha = aggregateZoneAvgs(periodMonths, m => m.bikeHrZones || m.hrZones, 'avgHeartRate', 'heartRateCount');
+      const rha = aggregateZoneAvgs(periodMonths, m => m.runningHrZones, 'avgHeartRate', 'heartRateCount');
+      za = {};
+      for (let z = 1; z <= 5; z++) {
+        const bt = bhr[z] || 0, rt = rhr[z] || 0;
+        const ba = bha[z] ?? 0,  ra = rha[z] ?? 0;
+        const total = bt + rt;
+        za[z] = total > 0 ? (bt * ba + rt * ra) / total : null;
+      }
+      zd = getZoneBoundaries(periodMonths, m => m.heartRateZones || m.bikeHeartRateZones);
     }
-    if (recAttributed > 0) return recResult;
+
+    return { zoneTimes: zt, zoneAvgs: za || {}, zoneDefs: zd, totalSecs, sessions };
+  }, [periodMonths, sport, metric]);
+
+  // Zone percentages
+  const grandTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
+  const zonePcts   = {};
+  for (let z = 1; z <= 5; z++) {
+    zonePcts[z] = grandTotal > 0 ? ((zoneTimes[z] || 0) / grandTotal) * 100 : 0;
   }
 
-  // ── 5. Threshold-based fallback (Strava / FIT without zone data) ──────────
-  // Uses the athlete's lactate test LT1/LT2 to classify each lap (or the whole
-  // workout if no laps) by average HR or average power into a single zone.
-  if (thresholds) {
-    const lapResult = { ...empty };
-    let lapAttributed = 0;
+  const hasData    = grandTotal > 0;
+  const aerobicPct = (zonePcts[1] || 0) + (zonePcts[2] || 0);
+  const highIntPct = (zonePcts[4] || 0) + (zonePcts[5] || 0);
+  const distLabel  = hasData ? getDistLabel(zonePcts) : null;
+  const allLoaded  = monthKeys.every(k => loadedRef.current.get(k) === 'done');
 
-    if (Array.isArray(training.laps) && training.laps.length > 1) {
-      training.laps.forEach((lap) => {
-        const secs = Number(lap.moving_time || lap.elapsed_time || 0);
-        if (secs <= 0) return;
-        const avgHr  = Number(lap.average_heartrate || 0);
-        const avgPwr = Number(lap.average_watts || 0);
-        const lapZone = classifyByThreshold(avgHr, avgPwr, thresholds);
-        if (lapZone) {
-          lapResult[lapZone] += secs;
-          lapAttributed += secs;
-        }
-      });
+  // ── Zone boundary range string ─────────────────────────────────────────────
+  const getZoneRange = (zoneNum) => {
+    const def = pickBucket(zoneDefs, zoneNum);
+    if (!def) return '';
+    const minVal = def.min;
+    const maxVal = def.max;
+    const maxStr = (maxVal === Infinity || maxVal === null || maxVal === undefined)
+      ? '∞'
+      : Math.round(maxVal);
+    const minStr = Math.round(minVal) || 0;
+
+    if (metric === 'power') return `${minStr}–${maxStr} W`;
+    if (metric === 'hr')    return `${minStr}–${maxStr} bpm`;
+    if (metric === 'pace') {
+      // Pace zones: higher number = slower; display fast end → slow end
+      const fastStr = maxVal === Infinity || !maxVal ? '∞' : fmtPace(maxVal);
+      const slowStr = fmtPace(minVal);
+      return `${fastStr}–${slowStr}/km`;
     }
-
-    if (lapAttributed > 0) return lapResult;
-
-    // No usable laps — classify whole workout by top-level averages
-    const avgHr  = Number(training.averageHeartRate || training.average_heartrate || 0);
-    const avgPwr = Number(
-      training.weightedAveragePower || training.averagePower ||
-      training.average_watts || training.normalizedPower || 0
-    );
-    const workoutZone = classifyByThreshold(avgHr, avgPwr, thresholds);
-    const workoutSecs = totalTrainingSeconds(training);
-    if (workoutZone && workoutSecs > 0) {
-      const result = { ...empty };
-      result[workoutZone] = workoutSecs;
-      return result;
-    }
-  }
-
-  return null;
-}
-
-function filterByPeriod(trainings, days) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  return trainings.filter((t) => {
-    const d = new Date(t.date || t.startDate || t.timestamp);
-    return !Number.isNaN(d.getTime()) && d >= cutoff;
-  });
-}
-
-function aggregateZones(trainings, tests) {
-  const totals = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
-  let hasData = false;
-
-  // Pre-compute per-sport thresholds (only once per aggregation)
-  const thresholdCache = {};
-  const getThresholds = (sport) => {
-    if (sport == null) return null;
-    if (!(sport in thresholdCache)) {
-      thresholdCache[sport] = computeThresholds(tests, sport);
-    }
-    return thresholdCache[sport];
+    return '';
   };
 
-  trainings.forEach((t) => {
-    const sport = normalizeSport(t);
-    const thresholds = getThresholds(sport);
-    const z = extractZones(t, thresholds);
-    if (z) {
-      hasData = true;
-      Object.keys(totals).forEach((k) => { totals[k] += z[k] || 0; });
-    }
-  });
-  return { ...totals, hasData };
-}
+  // ── Average value formatter ───────────────────────────────────────────────
+  const formatAvg = (avg) => {
+    if (avg == null || !isFinite(avg)) return '—';
+    if (metric === 'power') return `${Math.round(avg)} W`;
+    if (metric === 'hr')    return `${Math.round(avg)} bpm`;
+    if (metric === 'pace')  return `${fmtPace(avg)}/km`;
+    return String(Math.round(avg));
+  };
 
-function getDistributionLabel(pcts) {
-  const { z1, z2, z3, z4, z5 } = pcts;
-  if (z1 + z5 >= 80) return { label: 'Polarized',       color: 'text-indigo-600 bg-indigo-50' };
-  if (z2 >= 60)       return { label: 'Zone 2 Focus',    color: 'text-green-600 bg-green-50' };
-  if (z1 > z2 && z2 > z3) return { label: 'Pyramidal',  color: 'text-amber-600 bg-amber-50' };
-  if (z3 + z4 >= 50)  return { label: 'Threshold-heavy', color: 'text-orange-600 bg-orange-50' };
-  return null;
-}
+  // ── Tooltip ───────────────────────────────────────────────────────────────
+  const metricLabel = metric === 'power' ? 'Power' : metric === 'pace' ? 'Pace' : 'HR';
 
-const CustomTooltip = ({ active, payload }) => {
-  if (!active || !payload?.length) return null;
-  const item = payload[0]?.payload;
-  return (
-    <div className="bg-white border border-gray-100 rounded-lg shadow-md px-3 py-2 text-xs space-y-1">
-      {ZONES.map((z) => (
-        <div key={z.key} className="flex items-center gap-2">
-          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: z.color }} />
-          <span className="text-gray-500 w-20">{z.label} {z.name}:</span>
-          <span className="font-semibold text-gray-800">{item?.[z.key] != null ? `${item[z.key].toFixed(1)}%` : '0%'}</span>
+  const buildTooltipContent = (zone) => {
+    const t   = zoneTimes[zone.zone] || 0;
+    const pct = zonePcts[zone.zone]  || 0;
+    const rng = getZoneRange(zone.zone);
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zone.color }} />
+          <span className="font-semibold text-gray-900">{zone.label} · {zone.name}</span>
         </div>
-      ))}
-    </div>
-  );
-};
+        {rng && <div className="text-gray-500 text-[11px]">{metricLabel}: {rng}</div>}
+        <div className="text-gray-800 font-medium">Time: {fmtDur(t)}</div>
+        <div className="text-gray-500">Share: {pct.toFixed(1)}%</div>
+      </div>
+    );
+  };
 
-export default function ZoneDistributionChart({ trainings = [], tests = [], period = '90d' }) {
-  const [activePeriod, setActivePeriod] = useState(period);
+  const onHover = (e, zone) => setTooltip({ x: e.clientX, y: e.clientY, content: buildTooltipContent(zone) });
+  const onMove  = (e, zone) => setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY, content: buildTooltipContent(zone) } : null);
+  const onLeave = ()        => setTooltip(null);
 
-  const { chartData, pcts, hasData, usingThresholds } = useMemo(() => {
-    const def = PERIODS.find((p) => p.value === activePeriod) || PERIODS[1];
-    const filtered = filterByPeriod(trainings, def.days);
-    const { hasData, ...totals } = aggregateZones(filtered, tests);
-    if (!hasData) return { chartData: [], pcts: null, hasData: false, usingThresholds: false };
-
-    const grand = Object.values(totals).reduce((a, b) => a + b, 0);
-    if (grand === 0) return { chartData: [], pcts: null, hasData: false, usingThresholds: false };
-
-    const pcts = {};
-    ZONES.forEach((z) => { pcts[z.key] = (totals[z.key] / grand) * 100; });
-
-    // Check if any sport has thresholds available (to show subtle indicator)
-    const hasSomeThreshold = ['run', 'bike', 'swim'].some(s => computeThresholds(tests, s) != null);
-
-    return { chartData: [{ name: 'dist', ...pcts }], pcts, hasData: true, usingThresholds: hasSomeThreshold };
-  }, [trainings, tests, activePeriod]);
-
-  const distLabel = hasData && pcts ? getDistributionLabel(pcts) : null;
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -434,23 +432,29 @@ export default function ZoneDistributionChart({ trainings = [], tests = [], peri
       transition={{ duration: 0.4, delay: 0.05 }}
       className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm flex flex-col h-full"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-800">Zone Distribution</h3>
+      <ZoneTooltip data={tooltip} />
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-gray-800 shrink-0">Zone Distribution</h3>
           {distLabel && (
-            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${distLabel.color}`}>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${distLabel.cls}`}>
               {distLabel.label}
             </span>
           )}
         </div>
-        <div className="flex items-center rounded-lg bg-gray-50 p-0.5 gap-0.5">
-          {PERIODS.map((p) => (
+
+        {/* Period selector */}
+        <div className="flex items-center rounded-lg bg-gray-50 p-0.5 gap-0.5 flex-shrink-0 ml-2">
+          {PERIODS.map(p => (
             <button
-              key={p.value}
-              onClick={() => setActivePeriod(p.value)}
+              key={p.label}
+              onClick={() => setPeriod(p.label)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                activePeriod === p.value ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                period === p.label
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               {p.label}
@@ -459,66 +463,224 @@ export default function ZoneDistributionChart({ trainings = [], tests = [], peri
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex flex-col flex-1 justify-center">
-        {!hasData ? (
+      {/* ── Sport tabs ── */}
+      <div className="flex gap-1.5 mb-2 flex-shrink-0 flex-wrap">
+        {sportCount > 1 && (
+          <button
+            onClick={() => setSport('all')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sport === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {/* All sports — 2×2 grid */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/>
+              <rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>
+            </svg>
+            All
+          </button>
+        )}
+        {hasBike && (
+          <button
+            onClick={() => setSport('bike')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sport === 'bike' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Bike className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+            Bike
+          </button>
+        )}
+        {hasRun && (
+          <button
+            onClick={() => setSport('run')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sport === 'run' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <RunnerSvg className="w-3.5 h-3.5 flex-shrink-0" />
+            Run
+          </button>
+        )}
+        {hasSwim && (
+          <button
+            onClick={() => setSport('swim')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sport === 'swim' ? 'bg-cyan-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <WavesLadder className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+            Swim
+          </button>
+        )}
+      </div>
+
+      {/* ── Metric sub-tabs ── */}
+      {sport !== 'all' && (
+        <div className="flex gap-1 mb-3 flex-shrink-0">
+          {sport === 'bike' && (
+            <button
+              onClick={() => setMetric('power')}
+              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                metric === 'power'
+                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              Power
+            </button>
+          )}
+          {(sport === 'run' || sport === 'swim') && (
+            <button
+              onClick={() => setMetric('pace')}
+              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                metric === 'pace'
+                  ? 'bg-green-100 text-green-700 border border-green-200'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              Pace
+            </button>
+          )}
+          <button
+            onClick={() => setMetric('hr')}
+            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+              metric === 'hr'
+                ? 'bg-red-100 text-red-700 border border-red-200'
+                : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            HR
+          </button>
+        </div>
+      )}
+
+      {/* ── Summary chips ── */}
+      {hasData && (
+        <div className="flex flex-wrap gap-1.5 mb-3 flex-shrink-0">
+          <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">{fmtDur(totalSecs)}</span> total
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">{sessions}</span> sessions
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs text-green-700">
+            <span className="font-semibold">{Math.round(aerobicPct)}%</span> Z1+Z2
+          </span>
+          {highIntPct > 4 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-xs text-orange-700">
+              <span className="font-semibold">{Math.round(highIntPct)}%</span> Z4+Z5
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Zone bars / empty state ── */}
+      <div className="flex flex-col flex-1 justify-center min-h-0">
+        {loading && !hasData ? (
+          /* Loading spinner */
+          <div className="flex items-center justify-center py-10">
+            <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+          </div>
+
+        ) : !hasData ? (
+          /* Empty state */
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center mb-3">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M7 16l4-5 4 4 4-6" />
               </svg>
             </div>
-            <p className="text-xs font-medium text-gray-600 mb-1">No zone data yet</p>
+            <p className="text-xs font-medium text-gray-600 mb-1">No zone data for this period</p>
             <p className="text-xs text-gray-400 max-w-[200px]">
-              Add workouts with intensity levels to see zone distribution
+              {!allLoaded
+                ? 'Loading…'
+                : sport === 'bike'
+                  ? 'Upload FIT files with power data to see bike zones.'
+                  : 'Record sessions with HR data to see zone distribution.'}
             </p>
           </div>
-        ) : (
-          <>
-            {/* Stacked horizontal bar */}
-            <ResponsiveContainer width="100%" height={48}>
-              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barCategoryGap={0}>
-                <XAxis type="number" domain={[0, 100]} hide />
-                <YAxis type="category" dataKey="name" hide />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
-                {ZONES.map((z, i) => (
-                  <Bar
-                    key={z.key}
-                    dataKey={z.key}
-                    stackId="zones"
-                    fill={z.color}
-                    radius={i === 0 ? [4, 0, 0, 4] : i === ZONES.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]}
-                    isAnimationActive
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
 
-            {/* Zone legend */}
-            <div className="mt-4 grid grid-cols-5 gap-1">
-              {ZONES.map((z) => (
-                <div key={z.key} className="flex flex-col items-center gap-1">
-                  <div className="w-full h-1.5 rounded-full" style={{ background: z.color }} />
-                  <span className="text-[11px] font-semibold text-gray-700">
-                    {pcts?.[z.key] != null ? `${Math.round(pcts[z.key])}%` : '0%'}
-                  </span>
-                  <span className="text-[10px] text-gray-400">{z.label}</span>
+        ) : (
+          /* Zone bars */
+          <div className="space-y-1">
+            {ZONES.map(zone => {
+              const t          = zoneTimes[zone.zone] || 0;
+              const pct        = zonePcts[zone.zone]  || 0;
+              const rng        = getZoneRange(zone.zone);
+              const avg        = zoneAvgs?.[zone.zone] ?? null;
+              const isExpanded = expandedZone === zone.zone;
+              const hasAvg     = avg != null && isFinite(avg);
+              return (
+                <div key={zone.zone}>
+                  <div
+                    className={`flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors ${
+                      t > 0 ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'
+                    } ${isExpanded ? 'bg-gray-50' : ''}`}
+                    onClick={() => t > 0 && setExpandedZone(isExpanded ? null : zone.zone)}
+                  >
+                    {/* Label + range */}
+                    <div className="w-[88px] flex-shrink-0">
+                      <div className="text-[11px] font-semibold text-gray-700 leading-tight flex items-center gap-1">
+                        {zone.label} · {zone.name}
+                        {t > 0 && (
+                          <svg
+                            className={`w-2.5 h-2.5 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                            fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        )}
+                      </div>
+                      {rng && (
+                        <div className="text-[10px] text-gray-400 truncate leading-tight">{rng}</div>
+                      )}
+                    </div>
+
+                    {/* Progress bar */}
+                    <div
+                      className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden"
+                      onMouseEnter={e => onHover(e, zone)}
+                      onMouseMove={e  => onMove(e, zone)}
+                      onMouseLeave={onLeave}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: zone.color }}
+                      />
+                    </div>
+
+                    {/* Time + percentage */}
+                    <div className="w-[52px] text-right flex-shrink-0">
+                      <div className="text-[11px] font-semibold text-gray-800 leading-tight">{fmtDur(t)}</div>
+                      <div className="text-[10px] text-gray-400 leading-tight">{Math.round(pct)}%</div>
+                    </div>
+                  </div>
+
+                  {/* Expanded average row */}
+                  {isExpanded && (
+                    <div className="ml-[96px] mr-[60px] mb-1 flex items-center gap-2 text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ background: zone.color }}
+                      />
+                      <span className="text-gray-500">Avg {metricLabel}:</span>
+                      <span className="font-semibold text-gray-800">
+                        {hasAvg ? formatAvg(avg) : '—'}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            <div className="mt-1 grid grid-cols-5 gap-1">
-              {ZONES.map((z) => (
-                <p key={z.key} className="text-[9px] text-center text-gray-400 truncate">{z.name}</p>
-              ))}
-            </div>
-            {usingThresholds && (
-              <p className="mt-2 text-[9px] text-center text-gray-400">
-                ✦ Estimated from your lactate test thresholds
-              </p>
-            )}
-          </>
+              );
+            })}
+          </div>
         )}
       </div>
+
+      {/* Subtle updating indicator */}
+      {loading && hasData && (
+        <div className="mt-2 text-center text-[10px] text-gray-400">Updating…</div>
+      )}
     </motion.div>
   );
 }

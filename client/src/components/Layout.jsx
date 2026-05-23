@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import api, { autoSyncGarminActivities } from "../services/api";
+import api, { autoSyncGarminActivities, autoSyncStravaActivities } from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
@@ -372,6 +372,70 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?._id,
     user?.garmin?.autoSync,
     user?.garmin?.accessToken,
+  ]);
+
+  // ── Strava: frontend polling fallback ────────────────────────────────────
+  // Webhooks deliver new activities in real-time, but they can go stale
+  // (missing SERVER_PUBLIC_URL, Strava delivery failure, dev environment).
+  // This polls autoSync on app open / tab focus as a safety net — same
+  // pattern as Garmin. Cooldown is 15 min so it never burns quota.
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
+    if (!hasStrava) return undefined;
+
+    let cancelled = false;
+
+    const runStrava = async (cooldownMs = 15 * 60 * 1000) => {
+      const syncKey = `strava_auto_sync_${user._id}`;
+      const now = Date.now();
+      const lastSync = localStorage.getItem(syncKey);
+      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
+      try {
+        const result = await autoSyncStravaActivities({ force: false });
+        localStorage.setItem(syncKey, now.toString());
+        if (result?.imported > 0 || result?.updated > 0) {
+          console.log(`Strava auto-sync: ${result.imported} imported, ${result.updated} updated`);
+          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
+        }
+      } catch (err) {
+        console.log('Strava auto-sync failed:', err?.message || err);
+      }
+    };
+
+    const run = async () => {
+      await new Promise((r) => setTimeout(r, 5000)); // slight delay after mount
+      if (cancelled) return;
+      await runStrava(15 * 60 * 1000);
+    };
+
+    const onForeground = async () => {
+      if (cancelled) return;
+      await runStrava(15 * 60 * 1000);
+    };
+
+    let capacitorCleanup = null;
+    if (isCapacitorNative()) {
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) onForeground();
+        }).then((handle) => { capacitorCleanup = handle; });
+      }).catch(() => {});
+    } else {
+      const onVisible = () => { if (document.visibilityState === 'visible') onForeground(); };
+      document.addEventListener('visibilitychange', onVisible);
+      capacitorCleanup = { remove: () => document.removeEventListener('visibilitychange', onVisible) };
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+      capacitorCleanup?.remove?.();
+    };
+  }, [
+    user?._id,
+    user?.strava?.autoSync,
+    user?.strava?.accessToken,
   ]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)
