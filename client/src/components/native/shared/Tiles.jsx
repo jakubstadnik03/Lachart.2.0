@@ -17,7 +17,8 @@ export const SPORT_TINT = {
   run:   '#f97316',
   swim:  '#06b6d4',
   walk:  '#22c55e',
-  other: '#8b5cf6',
+  gym:   '#8b5cf6',
+  other: '#9ca3af',
 };
 
 export const SPORT_BG = {
@@ -25,7 +26,8 @@ export const SPORT_BG = {
   run:   '#FFF7ED',
   swim:  '#ECFEFF',
   walk:  '#F0FDF4',
-  other: '#F5F3FF',
+  gym:   '#F5F3FF',
+  other: '#F9FAFB',
 };
 
 export function normSport(sport) {
@@ -34,6 +36,9 @@ export function normSport(sport) {
   if (s.includes('run'))  return 'run';
   if (s.includes('swim')) return 'swim';
   if (s.includes('walk')) return 'walk';
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') ||
+      s.includes('crossfit') || s.includes('yoga') || s.includes('elliptical') || s.includes('fitness'))
+    return 'gym';
   return 'other';
 }
 
@@ -66,8 +71,15 @@ export function SportTile({ sport, size = 32, style }) {
           WebkitMaskSize: 'contain',
           maskSize: 'contain',
         }} />
+      ) : key === 'gym' ? (
+        // Dumbbell icon for gym / workout
+        <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none" stroke={tint} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 5v14M18 5v14"/>
+          <path d="M3 8h3M3 16h3M18 8h3M18 16h3"/>
+          <line x1="6" y1="12" x2="18" y2="12"/>
+        </svg>
       ) : (
-        // Lightning-bolt SVG fallback for unknown sport — replaces ⚡ emoji
+        // Lightning-bolt SVG fallback for unknown sport
         <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill={tint} stroke="none">
           <path d="M13 2L4.5 13h6L9 22l9-12h-6z" />
         </svg>

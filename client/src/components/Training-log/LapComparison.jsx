@@ -208,14 +208,19 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
   const yTicks = Array.from({ length: 5 }, (_, i) => minV + ((maxV - minV) * (4 - i)) / 4);
   const fmtTick = (v) => {
     if (!Number.isFinite(v) || v <= 0) return '';
-    if (metric === 'pace') return fmtPaceLabel(v, sport).replace(/\s.*$/, '');
+    if (metric === 'pace') {
+      // Strip the "/km" or "/100m" suffix — unitLabel below the axis already shows it.
+      const full = fmtPaceLabel(v, sport);
+      return full.replace(/\/\S+$/, '').trim();
+    }
     if (metric === 'hr')   return `${Math.round(v)}`;
     return `${Math.round(v)}`;
   };
   const unitLabel = metric === 'pace'
     ? (String(sport || '').toLowerCase().includes('swim') ? '/100m' : '/km')
     : (metric === 'hr' ? 'bpm' : 'W');
-  const Y_AXIS_W = 42;
+  // Pace ticks are "M:SS" (e.g. "5:13") — 4 chars. HR/power are 3 digits max.
+  const Y_AXIS_W = metric === 'pace' ? 44 : 32;
   const CHART_H = 140;
 
   return (
@@ -590,7 +595,11 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
 
   // Y-axis formatter (pace is inverted for display)
   const yAxisTickFmt = useCallback((val) => {
-    if (metric === 'pace') return fmtPaceLabel(val, sport);
+    if (metric === 'pace') {
+      // Strip "/km"/"/100m" suffix so the tick fits within the axis width.
+      const full = fmtPaceLabel(val, sport);
+      return full.replace(/\/\S+$/, '').trim();
+    }
     if (metric === 'hr')   return `${Math.round(val)}`;
     if (metric === 'power') return `${Math.round(val)}`;
     return val;
@@ -835,7 +844,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                 <div className="w-full overflow-x-auto">
                   <div style={{ minWidth: Math.max(300, chartData.length * 52), height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 4, bottom: 4 }}>
+                      <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis
                           dataKey="lap"
@@ -847,7 +856,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                           tickFormatter={yAxisTickFmt}
                           tick={{ fontSize: 10, fill: '#9ca3af' }}
                           axisLine={false} tickLine={false}
-                          width={metric === 'pace' ? 52 : 36}
+                          width={metric === 'pace' ? 44 : 36}
                           reversed={metric === 'pace'} // lower pace = faster = better → show at top
                           domain={[
                             sharedRangeRef.current.min != null ? sharedRangeRef.current.min : 'auto',

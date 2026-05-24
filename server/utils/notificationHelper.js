@@ -26,7 +26,7 @@ async function sendNotification(recipientIds, opts = {}) {
 
   if (!ids.length) return;
 
-  const { type, title, body, resourceId, resourceType, fromName, pushData = {} } = opts;
+  const { type, title, body, resourceId, resourceType, sport, fromName, pushData = {} } = opts;
 
   // 1. Create in-app Notification documents
   try {
@@ -37,6 +37,7 @@ async function sendNotification(recipientIds, opts = {}) {
       body,
       resourceId: resourceId || null,
       resourceType: resourceType || null,
+      sport: sport || null,
       fromName: fromName || null,
       read: false,
     }));

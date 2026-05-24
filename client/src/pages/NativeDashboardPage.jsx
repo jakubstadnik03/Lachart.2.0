@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
+import SharedSportIcon from '../components/shared/SportIcon';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
@@ -11,6 +12,7 @@ import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEd
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
+import { useCategories, hexToRgba } from '../context/CategoryContext';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -56,13 +58,6 @@ const SPORT_COLORS = {
   other: '#8b5cf6',
 };
 
-// Sport icon paths — same as CalendarView
-const SPORT_ICONS = {
-  bike: '/icon/bike.svg',
-  run:  '/icon/run.svg',
-  swim: '/icon/swim.svg',
-};
-
 function normSport(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
@@ -76,42 +71,10 @@ function getSportColor(sport) {
   return SPORT_COLORS[normSport(sport)] || SPORT_COLORS.other;
 }
 
-function SportIcon({ sport, size = 22, color }) {
-  const key = normSport(sport);
-  const src = SPORT_ICONS[key];
-  const tint = color || getSportColor(sport);
-  if (src) {
-    // Tint SVG by using it as a CSS mask + colored background
-    return (
-      <span
-        aria-label={key}
-        style={{
-          width: size, height: size, display: 'block', flexShrink: 0,
-          background: tint,
-          WebkitMaskImage: `url(${src})`,
-          maskImage:       `url(${src})`,
-          WebkitMaskRepeat: 'no-repeat',
-          maskRepeat: 'no-repeat',
-          WebkitMaskPosition: 'center',
-          maskPosition: 'center',
-          WebkitMaskSize: 'contain',
-          maskSize: 'contain',
-        }}
-      />
-    );
-  }
-  // Fallback coloured circle for unknown sports — small lightning bolt SVG
-  return (
-    <span style={{
-      width: size, height: size, borderRadius: '50%', display: 'flex',
-      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      background: tint + '22',
-    }}>
-      <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill={tint} stroke="none">
-        <path d="M13 2L4.5 13h6L9 22l9-12h-6z" />
-      </svg>
-    </span>
-  );
+function SportIcon({ sport, size = 22 }) {
+  // size is always 22 in practice; map to closest Tailwind size
+  const cls = size <= 16 ? 'w-4 h-4' : size <= 20 ? 'w-5 h-5' : 'w-[22px] h-[22px]';
+  return <SharedSportIcon sport={sport} className={cls} />;
 }
 
 // Mirror of CalendarView's sportMatches
@@ -196,6 +159,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
+
+  const { getCategory } = useCategories();
+  const catStyle = (catId) => {
+    const cat = getCategory(catId);
+    if (!cat) return null;
+    return {
+      background: hexToRgba(cat.color, 0.14),
+      color: cat.color,
+      border: `1px solid ${hexToRgba(cat.color, 0.32)}`,
+    };
+  };
+  const catLabel = (catId) => {
+    const cat = getCategory(catId);
+    return cat ? cat.label : (catId ? catId.charAt(0).toUpperCase() + catId.slice(1) : null);
+  };
 
   // Activities and planned for this day — sorted chronologically (earliest
   // first) so the pairing always claims the FIRST activity of the day for
@@ -306,9 +284,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
 
             {/* Info column */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Title */}
-              <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {actTitle || pwTitle}
+              {/* Title + category */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {actTitle || pwTitle}
+                </div>
+                {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                    flexShrink: 0, whiteSpace: 'nowrap',
+                    ...catStyle(linkedAct?.category || pw.category),
+                  }}>
+                    {catLabel(linkedAct?.category || pw.category)}
+                  </span>
+                )}
               </div>
 
               {/* Stats row */}
@@ -413,8 +403,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
           >
             <SportIcon sport={sport} size={22} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {title}
+              {/* Title + category badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {title}
+                </div>
+                {act.category && catStyle(act.category) && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                    flexShrink: 0, whiteSpace: 'nowrap',
+                    ...catStyle(act.category),
+                  }}>
+                    {catLabel(act.category)}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
                 {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null].filter(Boolean).join(' · ') || 'Completed'}
@@ -1037,9 +1040,9 @@ export default function NativeDashboardPage({
         <div
           className="bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           style={{
-            position: 'absolute',
+            position: 'fixed',
             inset: 0,
-            zIndex: 1,
+            zIndex: 9999,
             // app-modal-root sets pointerEvents:none on its root so taps fall
             // through when no modal is open. Re-enable for our overlay,
             // otherwise the NativeLayout scroller behind eats every touch

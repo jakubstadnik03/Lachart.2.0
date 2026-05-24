@@ -26,7 +26,7 @@ const SportIcon = ({ sport, className = 'w-4 h-4' }) => {
     return <Bike className={`${className} text-blue-500 flex-shrink-0`} strokeWidth={2} />;
   if (s.includes('swim'))
     return <WavesLadder className={`${className} text-cyan-500 flex-shrink-0`} strokeWidth={2} />;
-  if (s.includes('gym') || s.includes('weight') || s.includes('strength'))
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') || s.includes('crossfit') || s.includes('yoga') || s.includes('elliptical') || s.includes('fitness'))
     return <Dumbbell className={`${className} text-purple-500 flex-shrink-0`} strokeWidth={2} />;
   return <ZapIcon className={`${className} text-gray-400 flex-shrink-0`} strokeWidth={2} />;
 };

@@ -1615,12 +1615,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
           <div className="relative min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Date</label>
-        <input 
+        <input
               ref={el => inputRefs.current['date'] = el}
-          type="date" 
+          type="date"
           value={formData.date}
-          onChange={(e) => handleFormDataChange('date', e.target.value)} 
-              className={`w-full p-1 border rounded-lg text-sm ${
+          onChange={(e) => handleFormDataChange('date', e.target.value)}
+              className={`w-full p-1 border rounded-lg text-sm appearance-none h-[30px] ${
                 currentTutorialStep === 0 ? 'ring-2 ring-primary border-primary' : ''
               }`}
               disabled={!isNewTest && !isEditMode}
@@ -2189,7 +2189,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       {/* Step-test wizard — generates an evenly-spaced ladder of intervals. */}
       {stepWizardOpen && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/50 p-4"
+          style={{ pointerEvents: 'auto' }}
           onClick={() => setStepWizardOpen(false)}
         >
           <div
@@ -2358,7 +2359,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </div>
           </div>
         </div>,
-        document.body,
+        document.getElementById('app-modal-root') || document.body,
       )}
     </div>
   );

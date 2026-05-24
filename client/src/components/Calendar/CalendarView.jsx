@@ -4388,6 +4388,8 @@ export default function CalendarView({
   // Mobile-specific state
   const [mobileTab, setMobileTab] = useState('calendar');
   const [showMiniCal, setShowMiniCal] = useState(true);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
   // In Charts mode the mini-cal is collapsed by default so the chart gets full
   // viewport height; user can pull it open to jump to a date.
   const [showMiniCalCharts, setShowMiniCalCharts] = useState(false);
@@ -5353,8 +5355,13 @@ export default function CalendarView({
                 <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
                   <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
                 </button>
-                <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <button
+                  onClick={() => { setPickerYear(anchorDate.getFullYear()); setShowMonthPicker(true); }}
+                  className="flex items-center gap-1 text-sm font-bold text-primary uppercase tracking-wide touch-manipulation active:opacity-70"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
                   {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                  <ChevronDownIcon className="w-3.5 h-3.5 text-primary/60" />
                 </button>
                 <div className="flex items-center gap-1">
                   <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
@@ -5455,8 +5462,13 @@ export default function CalendarView({
                 <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
                   <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
                 </button>
-                <button onClick={today} className="text-sm font-bold text-primary uppercase tracking-wide touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <button
+                  onClick={() => { setPickerYear(anchorDate.getFullYear()); setShowMonthPicker(true); }}
+                  className="flex items-center gap-1 text-sm font-bold text-primary uppercase tracking-wide touch-manipulation active:opacity-70"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
                   {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                  <ChevronDownIcon className="w-3.5 h-3.5 text-primary/60" />
                 </button>
                 <div className="flex items-center gap-1">
                   <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
@@ -5695,21 +5707,33 @@ export default function CalendarView({
                                   );
                                 }
 
-                                // Planned only — no matching activity yet (ghost style)
+                                // Planned only — no matching activity yet
+                                const isMissed = !isSkipped && !isToday && dayDate < new Date();
                                 return (
                                   <button key={`pw-${pi}`}
                                     onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
                                     className="w-full text-left flex flex-col gap-1 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70"
-                                    style={{ borderStyle: 'dashed', borderColor: planColor + '55', borderLeftColor: planColor, borderLeftWidth: 3, borderLeftStyle: 'solid', backgroundColor: planColor + '10', WebkitTapHighlightColor: 'transparent' }}>
+                                    style={{
+                                      borderStyle: isMissed ? 'solid' : 'dashed',
+                                      borderColor: isMissed ? '#fca5a5' : planColor + '55',
+                                      borderLeftColor: isMissed ? '#ef4444' : planColor,
+                                      borderLeftWidth: 3,
+                                      borderLeftStyle: 'solid',
+                                      backgroundColor: isMissed ? '#fef2f2' : planColor + '10',
+                                      WebkitTapHighlightColor: 'transparent'
+                                    }}>
                                     {/* Title row */}
                                     <div className="flex items-center gap-2 min-w-0">
-                                      <SportIcon sport={pwSport} className="w-3.5 h-3.5 flex-shrink-0 opacity-80" style={{ color: planColor }} />
-                                      <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : planColor }}>{pw.title || 'Planned workout'}</span>
-                                      {pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={36} height={12} />}
+                                      <SportIcon sport={pwSport} className="w-3.5 h-3.5 flex-shrink-0 opacity-80" style={{ color: isMissed ? '#ef4444' : planColor }} />
+                                      <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : isMissed ? '#991b1b' : planColor }}>{pw.title || 'Planned workout'}</span>
+                                      {isMissed && (
+                                        <span className="text-[10px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
+                                      )}
+                                      {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={36} height={12} />}
                                     </div>
                                     {/* Stats row */}
                                     {(duration > 0 || plannedDistKmMobile > 0 || pw.targetTss > 0) && (
-                                      <div className="flex items-center gap-1.5 text-[10px] pl-0.5" style={{ color: planColor + 'bb' }}>
+                                      <div className="flex items-center gap-1.5 text-[10px] pl-0.5" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
                                         {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
                                         {plannedDistKmMobile > 0 && <><span className="opacity-40">·</span><span>{plannedDistKmMobile >= 1 ? `${plannedDistKmMobile % 1 === 0 ? plannedDistKmMobile : plannedDistKmMobile.toFixed(1)} km` : `${Math.round(plannedDistKmMobile * 1000)} m`}</span></>}
                                         {pw.targetTss > 0 && <><span className="opacity-40">·</span><span>{pw.targetTss} TSS</span></>}
@@ -5749,6 +5773,15 @@ export default function CalendarView({
                                     <div className="flex items-center gap-2 min-w-0">
                                       <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
                                       <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                                      {a.category && (
+                                        <span
+                                          className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md flex-shrink-0 font-bold border leading-tight"
+                                          style={catBadgeStyle(a.category)}
+                                          title={catLabel(a.category)}
+                                        >
+                                          {catLabel(a.category)}
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-1 text-[10px] text-gray-500 pl-6 flex-wrap">
                                       {durStr && <span>{durStr}</span>}
@@ -6410,6 +6443,74 @@ export default function CalendarView({
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
           onDeleted={onActivityDeleted}
         />
+      )}
+
+      {/* ── Month / Year picker modal (mobile) ── */}
+      {showMonthPicker && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[10001] flex items-end justify-center"
+          style={{ pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.35)' }}
+          onClick={() => setShowMonthPicker(false)}
+        >
+          <div
+            className="w-full bg-white rounded-t-2xl pb-safe"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Handle bar */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-gray-300" />
+            </div>
+
+            {/* Year row */}
+            <div className="flex items-center justify-between px-6 py-3">
+              <button
+                className="p-2 rounded-full active:bg-gray-100 touch-manipulation"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+                onClick={() => setPickerYear(y => y - 1)}
+              >
+                <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+              </button>
+              <span className="text-base font-bold text-gray-800">{pickerYear}</span>
+              <button
+                className="p-2 rounded-full active:bg-gray-100 touch-manipulation"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+                onClick={() => setPickerYear(y => y + 1)}
+              >
+                <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            {/* Month grid */}
+            <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+              {Array.from({ length: 12 }, (_, i) => {
+                const isSelected = pickerYear === anchorDate.getFullYear() && i === anchorDate.getMonth();
+                const isCurrentMonth = pickerYear === new Date().getFullYear() && i === new Date().getMonth();
+                const label = new Date(pickerYear, i, 1).toLocaleString(undefined, { month: 'short' });
+                return (
+                  <button
+                    key={i}
+                    className={`py-2.5 rounded-xl text-sm font-semibold touch-manipulation active:scale-95 transition-all ${
+                      isSelected
+                        ? 'bg-primary text-white shadow-sm'
+                        : isCurrentMonth
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-gray-50 text-gray-700 active:bg-gray-100'
+                    }`}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    onClick={() => {
+                      setAnchorDate(new Date(pickerYear, i, 1));
+                      setShowMonthPicker(false);
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>,
+        document.getElementById('app-modal-root') || document.body
       )}
     </motion.div>
   );

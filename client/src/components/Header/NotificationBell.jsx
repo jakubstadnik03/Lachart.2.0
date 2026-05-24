@@ -155,7 +155,7 @@ export default function NotificationBell() {
                 className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors group ${!n.read ? 'bg-primary/5' : ''}`}
               >
                 <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
-                  <NotifIcon type={n.type} size={16} />
+                  <NotifIcon type={n.type} sport={n.sport} size={16} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-gray-900 truncate">{n.title}</p>

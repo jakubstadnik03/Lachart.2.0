@@ -193,6 +193,149 @@ function CurveOverlay({ measured, predicted, isPace }) {
   );
 }
 
+// ─── Client-side next-test protocol generator ────────────────────────────────
+// Used as fallback when server returns anchor.source === 'none' but we
+// already have the test's measured LT1/LT2 from props.
+
+function generateClientProtocol(lt2, lt1, sport, baseLac) {
+  const isPace = sport === 'run' || sport === 'swim';
+  const base = Number(baseLac) || 1.0;
+  const stages = [];
+
+  if (isPace) {
+    // Run/swim: start 75 s/km slower than LT2, step −15 s/km (faster each stage)
+    const start = lt2 + 75;
+    const step  = -15;
+    for (let i = 0; i < 8; i++) {
+      const intensity = start + i * step;
+      const fracOfLt2 = lt2 / intensity; // >1 means faster than LT2
+      // Simple lactate model: flat below LT1, quadratic LT1→LT2, exponential above
+      let la;
+      if (lt1 && intensity > lt1) {
+        la = base + (4.0 - base) * Math.pow((intensity - lt1) / Math.max(1, lt2 - lt1), 1.5);
+      } else {
+        la = base + (2.0 - base) * Math.max(0, 1 - (intensity - lt2 * 1.2) / (lt2 * 0.2));
+      }
+      la = Math.max(base, Math.min(12, la));
+      const rpe = Math.round(4 + fracOfLt2 * 4);
+      stages.push({
+        stage: i + 1,
+        intensity,
+        intensityLabel: fmtIntensity(intensity, true),
+        lactatePredicted: parseFloat(la.toFixed(2)),
+        rpePredicted: Math.min(10, Math.max(3, rpe)),
+        durationS: 3 * 60,
+      });
+    }
+  } else {
+    // Bike: start at 55% LT2, step +25W
+    const start = Math.round((lt2 * 0.55) / 25) * 25;
+    const step  = 25;
+    for (let i = 0; i < 8; i++) {
+      const intensity = start + i * step;
+      const fracOfLt2 = intensity / lt2;
+      let la;
+      if (lt1 && intensity > lt1) {
+        la = base + (4.0 - base) * Math.pow((intensity - lt1) / Math.max(1, lt2 - lt1), 1.8);
+      } else {
+        la = base + (2.0 - base) * Math.min(1, intensity / (lt1 || lt2 * 0.72));
+      }
+      la = Math.max(base, Math.min(12, la));
+      const rpe = Math.round(3 + fracOfLt2 * 6);
+      stages.push({
+        stage: i + 1,
+        intensity,
+        intensityLabel: fmtIntensity(intensity, false),
+        lactatePredicted: parseFloat(la.toFixed(2)),
+        rpePredicted: Math.min(10, Math.max(2, rpe)),
+        durationS: 4 * 60,
+      });
+    }
+  }
+
+  return { stages, stageDurationS: isPace ? 3 * 60 : 4 * 60, isPace };
+}
+
+// ─── Protocol table ───────────────────────────────────────────────────────────
+
+function ProtocolTable({ stages, stageDurationS, isPace }) {
+  if (!stages?.length) return null;
+  const totalMin = Math.round(stages.length * stageDurationS / 60);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
+          Suggested next test protocol
+        </div>
+        <span className="text-[10px] text-gray-500 font-semibold whitespace-nowrap">
+          {stages.length} × {Math.round(stageDurationS / 60)} min · {totalMin} min total
+        </span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-gray-100">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Stage</th>
+              <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Target</th>
+              <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Est. lactate</th>
+              <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">RPE</th>
+              <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map((s) => (
+              <tr key={s.stage} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50">
+                <td className="py-1.5 px-2 font-bold text-gray-700">{s.stage}</td>
+                <td className="py-1.5 px-2 tabular-nums font-semibold text-gray-900">{s.intensityLabel}</td>
+                <td className="py-1.5 px-2 tabular-nums">
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                    s.lactatePredicted < 2   ? 'bg-emerald-50 text-emerald-700' :
+                    s.lactatePredicted < 4   ? 'bg-amber-50 text-amber-700' :
+                    'bg-rose-50 text-rose-700'
+                  }`}>
+                    {s.lactatePredicted.toFixed(2)} mmol/L
+                  </span>
+                </td>
+                <td className="py-1.5 px-2 tabular-nums text-gray-600">{s.rpePredicted}/10</td>
+                <td className="py-1.5 px-2 tabular-nums text-gray-600">{Math.round(s.durationS / 60)} min</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Training tiles ───────────────────────────────────────────────────────────
+
+function TrainingTiles({ training }) {
+  if (!training) return null;
+  const tiles = [
+    { label: 'Sessions (30d)', value: training.sessions ?? '—' },
+    { label: 'Hours',          value: training.totalHours ?? '—' },
+    { label: 'TSS',            value: training.totalTss ?? '—' },
+    {
+      label: 'Avg HR % max',
+      value: training.avgHrFractionOfMax != null
+        ? `${Math.round(training.avgHrFractionOfMax * 100)}%`
+        : '—',
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {tiles.map(({ label, value }) => (
+        <div key={label} className="rounded-xl bg-gray-50 px-3 py-2.5">
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{label}</div>
+          <div className="text-base font-bold tabular-nums mt-1 text-gray-900">{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function AiTestCoach({
   athleteId,
   testId,
@@ -205,9 +348,9 @@ export default function AiTestCoach({
   results,
   baseLactate,
 }) {
-  const [data, setData] = useState(null);
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError]     = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -227,7 +370,7 @@ export default function AiTestCoach({
     return () => { cancelled = true; };
   }, [testId, sport]);
 
-  // Build "measured points" for the overlay chart from the test results.
+  // Measured points for the overlay chart
   const measuredPoints = useMemo(() => {
     if (!Array.isArray(results)) return [];
     return results
@@ -235,23 +378,55 @@ export default function AiTestCoach({
       .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x > 0 && p.y >= 0);
   }, [results]);
 
+  // ── Determine whether server found a usable anchor ──────────────────────────
+  const serverHasProtocol = !!(data?.protocol?.stages?.length);
+
+  // ── Client-side fallback protocol (from this test's own measured LT2) ────────
+  // Must be declared before any early return so hook order is stable.
+  const clientProtocol = useMemo(() => {
+    if (serverHasProtocol) return null;           // server already has one
+    if (!measuredLt2 || !Number.isFinite(Number(measuredLt2))) return null;
+    return generateClientProtocol(
+      Number(measuredLt2),
+      measuredLt1 ? Number(measuredLt1) : null,
+      sport,
+      baseLactate
+    );
+  }, [serverHasProtocol, measuredLt2, measuredLt1, sport, baseLactate]);
+
   if (error === 'hidden' || !testId) return null;
 
-  const isPace = data?.isPace ?? (String(sport || '').toLowerCase().includes('run') || String(sport || '').toLowerCase().includes('swim'));
-  // Short headline for the collapsed view. AI narrative is opt-in and
-  // off by default — when there's no headline from the LLM, we summarise
-  // the anchor and predicted LT2 directly.
+  const isPace = data?.isPace ?? (
+    String(sport || '').toLowerCase().includes('run') ||
+    String(sport || '').toLowerCase().includes('swim')
+  );
+
+  const serverAnchorNone = !loading && data?.anchor?.source === 'none';
+
+  const effectiveProtocol = data?.protocol ?? (clientProtocol ? { ...clientProtocol } : null);
+  const usingClientFallback = !serverHasProtocol && !!clientProtocol;
+
+  // ── Collapsed headline ───────────────────────────────────────────────────────
   const lt2Predicted = data?.protocol?.summary?.lt2Estimate;
-  const fallbackHeadline = lt2Predicted
-    ? `Suggested protocol from ${describeAnchor(data?.anchor?.source)}: LT2 ≈ ${fmtIntensity(lt2Predicted, isPace)}`
-    : data?.anchor?.source === 'none'
-      ? 'No training data yet — connect Strava to get a protocol'
-      : 'Test coach';
-  const headline = data?.narrative?.headline || (loading ? 'Crunching training data…' : fallbackHeadline);
+  let headline;
+  if (loading) {
+    headline = 'Analysing training data…';
+  } else if (data?.narrative?.headline) {
+    headline = data.narrative.headline;
+  } else if (serverHasProtocol && lt2Predicted) {
+    headline = `Next test: LT2 ≈ ${fmtIntensity(lt2Predicted, isPace)} · based on ${describeAnchor(data?.anchor?.source)}`;
+  } else if (usingClientFallback) {
+    headline = `Next test protocol · based on measured LT2 (${fmtIntensity(measuredLt2, isPace)})`;
+  } else if (serverAnchorNone && !clientProtocol) {
+    headline = 'No FTP / LT2 reference — set profile zones or connect Strava';
+  } else {
+    headline = 'Test coach';
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-      {/* Collapsed header */}
+
+      {/* ── Always-visible header ────────────────────────────────────────── */}
       <button
         type="button"
         onClick={() => setExpanded((x) => !x)}
@@ -261,37 +436,54 @@ export default function AiTestCoach({
           <div className="text-sm font-bold text-gray-900 flex items-center gap-2 flex-wrap">
             <span>Test coach</span>
             {!loading && data?.anchor && <ConfidencePill confidence={data.anchor.confidence} />}
+            {usingClientFallback && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                From this test
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-gray-500 mt-0.5 leading-snug line-clamp-1">
-            {loading ? 'Crunching training data…' : headline}
+            {headline}
           </div>
         </div>
-        <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+        <svg
+          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+        >
           <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
+      {/* ── Always-visible training tiles (no longer hidden behind expand) ── */}
+      {!loading && data?.training && (
+        <div className="px-4 sm:px-5 pb-3 border-t border-gray-100">
+          <div className="pt-3">
+            <TrainingTiles training={data.training} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Expandable detail ─────────────────────────────────────────────── */}
       {expanded && (
-        <div className="px-4 sm:px-5 pb-4 border-t border-gray-100">
+        <div className="px-4 sm:px-5 pb-4 border-t border-gray-100 space-y-4 pt-3">
+
           {loading && (
-            <div className="h-32 flex items-center justify-center">
+            <div className="h-20 flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-gray-200 border-t-violet-500 rounded-full animate-spin" />
             </div>
           )}
 
           {!loading && error && error !== 'hidden' && (
-            <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mt-3">
+            <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
               {error}
             </div>
           )}
 
-          {!loading && !error && data && (
+          {!loading && (
             <>
-              {/* 1. Narrative block — only rendered when the LLM call
-                  actually produced text. Off by default (AI is opt-in
-                  via the AI_COACH_ENABLE_NARRATIVE server env). */}
-              {data.narrative && (
-                <div className="mt-3 bg-violet-50 border border-violet-200 rounded-xl p-3">
+              {/* AI narrative */}
+              {data?.narrative && (
+                <div className="bg-violet-50 border border-violet-200 rounded-xl p-3">
                   {data.narrative.headline && (
                     <div className="text-sm font-bold text-violet-900 mb-1">{data.narrative.headline}</div>
                   )}
@@ -306,9 +498,9 @@ export default function AiTestCoach({
                 </div>
               )}
 
-              {/* 2. Predicted vs measured curve overlay */}
-              {data.protocol && (
-                <div className="mt-4 bg-gray-50 rounded-xl p-3">
+              {/* Measured vs predicted curve */}
+              {data?.protocol && (
+                <div className="bg-gray-50 rounded-xl p-3">
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">
                     Measured vs predicted lactate curve
                   </div>
@@ -320,86 +512,46 @@ export default function AiTestCoach({
                 </div>
               )}
 
-              {/* 3. Quick training summary tiles */}
-              {data.training && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Sessions (30d)</div>
-                    <div className="text-base font-bold tabular-nums mt-1">{data.training.sessions}</div>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Hours</div>
-                    <div className="text-base font-bold tabular-nums mt-1">{data.training.totalHours}</div>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">TSS</div>
-                    <div className="text-base font-bold tabular-nums mt-1">{data.training.totalTss}</div>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Avg HR % max</div>
-                    <div className="text-base font-bold tabular-nums mt-1">
-                      {data.training.avgHrFractionOfMax != null ? `${Math.round(data.training.avgHrFractionOfMax * 100)}%` : '—'}
+              {/* Protocol table — server or client fallback */}
+              {effectiveProtocol?.stages && (
+                <>
+                  {usingClientFallback && (
+                    <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                      <span className="font-semibold">Protocol based on this test's measured LT2</span>
+                      {' '}({fmtIntensity(measuredLt2, isPace)}).
+                      Connect Strava or set profile zones to get a server-computed protocol with training load context.
                     </div>
-                  </div>
+                  )}
+                  {serverHasProtocol && data?.anchor?.value && (
+                    <div className="text-[11px] text-gray-600">
+                      Anchor: <span className="font-semibold">{describeAnchor(data.anchor.source)}</span>
+                      {' '}→ LT2 ≈ <span className="font-bold tabular-nums">{fmtIntensity(data.anchor.value, isPace)}</span>
+                    </div>
+                  )}
+                  <ProtocolTable
+                    stages={effectiveProtocol.stages}
+                    stageDurationS={effectiveProtocol.stageDurationS}
+                    isPace={effectiveProtocol.isPace ?? isPace}
+                  />
+                </>
+              )}
+
+              {/* No data at all */}
+              {!effectiveProtocol?.stages && serverAnchorNone && !usingClientFallback && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded-xl px-4 py-3 leading-relaxed">
+                  <div className="font-semibold text-gray-700 mb-1">No protocol reference found</div>
+                  To generate a personalised test protocol, do one of:
+                  <ul className="mt-1.5 space-y-0.5 list-disc list-inside text-gray-500">
+                    <li>Set your FTP / threshold pace in <strong>Profile → Zones</strong></li>
+                    <li>Connect Strava — best 20-min power effort is used automatically</li>
+                    <li>Complete at least one previous lactate test for the same sport</li>
+                  </ul>
                 </div>
               )}
 
-              {/* 4. Protocol table */}
-              {data.protocol?.stages && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Suggested test protocol</div>
-                      <div className="text-[11px] text-gray-600 mt-0.5">
-                        Anchor: <span className="font-semibold">{describeAnchor(data.anchor?.source)}</span>
-                        {data.anchor?.value && (
-                          <> → LT2 ≈ <span className="font-bold tabular-nums">{fmtIntensity(data.anchor.value, isPace)}</span></>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-gray-500 font-semibold whitespace-nowrap">
-                      {data.protocol.stages.length} × {Math.round(data.protocol.stageDurationS / 60)} min · {data.protocol.summary?.totalDurationMin} min total
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-1.5 pr-2 text-[10px] font-bold text-gray-500 uppercase">Stage</th>
-                          <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Target</th>
-                          <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Pred. La</th>
-                          <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">RPE</th>
-                          <th className="text-left py-1.5 px-2 text-[10px] font-bold text-gray-500 uppercase">Duration</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.protocol.stages.map((s) => (
-                          <tr key={s.stage} className="border-b border-gray-100 last:border-b-0">
-                            <td className="py-1.5 pr-2 font-bold text-gray-700">{s.stage}</td>
-                            <td className="py-1.5 px-2 tabular-nums font-semibold text-gray-900">{s.intensityLabel}</td>
-                            <td className="py-1.5 px-2 tabular-nums">
-                              <span className={`px-1.5 py-0.5 rounded ${
-                                s.lactatePredicted < 2 ? 'bg-emerald-50 text-emerald-700' :
-                                s.lactatePredicted < 4 ? 'bg-amber-50 text-amber-700' :
-                                'bg-rose-50 text-rose-700'
-                              }`}>
-                                {s.lactatePredicted.toFixed(2)} mmol/L
-                              </span>
-                            </td>
-                            <td className="py-1.5 px-2 tabular-nums text-gray-600">{s.rpePredicted}/10</td>
-                            <td className="py-1.5 px-2 tabular-nums text-gray-600">{Math.round(s.durationS / 60)} min</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-3 text-[10px] text-gray-400 leading-relaxed">
-                Protocol anchored on a single training data point (priority: measured &gt; prior test &gt; best
-                20-min &gt; profile FTP). Predicted lactate curve uses a piecewise model (flat &lt; LT1,
-                quadratic LT1→LT2, exponential &gt; LT2).
+              <div className="text-[10px] text-gray-400 leading-relaxed">
+                Protocol anchored on a single reference point (priority: measured LT2 → prior test → best 20-min → profile FTP).
+                Estimated lactate uses a piecewise model: flat below LT1, quadratic LT1→LT2, exponential above LT2.
               </div>
             </>
           )}

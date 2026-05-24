@@ -13,6 +13,16 @@ const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { sendNotification } = require('../utils/notificationHelper');
 
+// Maps raw sport string → 'bike' | 'run' | 'swim' | null
+function normalizeSportForNotif(sport) {
+  if (!sport) return null;
+  const s = String(sport).toLowerCase();
+  if (/ride|bike|cycl|velo|virtual/.test(s)) return 'bike';
+  if (/run|trail|treadmill/.test(s))          return 'run';
+  if (/swim/.test(s))                          return 'swim';
+  return null;
+}
+
 // GET /api/comments/test/:testId
 // Get all comments for a test (auth required, only coach or the athlete who owns the test)
 router.get('/test/:testId', verifyToken, async (req, res) => {
@@ -243,9 +253,26 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
     // ── Create in-app notifications (fire-and-forget – never block the response) ──
     (async () => {
       try {
-        const notifTitle = 'New comment on your training';
         const notifBody = text.trim().slice(0, 100);
 
+        // ── Resolve training doc → sport + athleteId + normalised resourceType ──
+        // 'fitTraining' → 'fit' so handleNotifClick can build the correct target.
+        let trainingDoc  = null;
+        let resourceType = trainingType; // default: keep as-is (e.g. 'strava')
+        if (trainingType === 'fitTraining' || trainingType === 'fit') {
+          if (mongoose.Types.ObjectId.isValid(trainingId)) {
+            trainingDoc = await FitTraining.findById(trainingId).select('sport athleteId').lean();
+          }
+          resourceType = 'fit';
+        } else if (trainingType === 'training') {
+          if (mongoose.Types.ObjectId.isValid(trainingId)) {
+            trainingDoc = await Training.findById(trainingId).select('sport athleteId').lean();
+          }
+        }
+        const rawSport   = trainingDoc?.sport || null;
+        const notifSport = normalizeSportForNotif(rawSport);
+
+        // ── Build recipient list ──────────────────────────────────────────────
         let recipientIds = [];
 
         if (user.role === 'athlete') {
@@ -256,36 +283,9 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
           if (coachIdList.length > 0) recipientIds = coachIdList;
         } else {
           // Coach/admin commenting → notify the athlete who owns the training
-          let athleteId = null;
+          let athleteId = trainingDoc ? String(trainingDoc.athleteId || '') : null;
 
-          if (mongoose.Types.ObjectId.isValid(trainingId)) {
-            try {
-              const training = await Training.findById(trainingId).select('athleteId');
-              if (training) athleteId = String(training.athleteId);
-            } catch {}
-          }
-
-          if (!athleteId && mongoose.Types.ObjectId.isValid(trainingId)) {
-            try {
-              const fitT = await FitTraining.findById(trainingId).select('athleteId');
-              if (fitT) athleteId = String(fitT.athleteId);
-            } catch {}
-          }
-
-          // For Strava IDs (non-ObjectId numeric strings) try finding the athlete
-          // who has this strava activity by looking up the requester's athletes list.
-          // If commenter is a coach, we can search for the athlete among their athletes.
-          if (!athleteId && !mongoose.Types.ObjectId.isValid(trainingId)) {
-            try {
-              // Find the athlete whose stravaActivityId matches (stored as string)
-              const athleteUser = await User.findOne({
-                coachIds: userId,
-                // No direct strava field – skip for now, rely on alternative approach
-              }).select('_id').lean();
-              // Fallback: can't reliably determine athlete from Strava-only ID without scanning
-            } catch {}
-          }
-
+          // Strava/unknown IDs — no ObjectId lookup available, skip silently
           if (athleteId && mongoose.Types.ObjectId.isValid(athleteId)) {
             recipientIds = [athleteId];
           }
@@ -293,14 +293,21 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
 
         if (recipientIds.length === 0) return;
 
+        // ── Notification title — personalise by recipient role ────────────────
+        const isAthleteCommenting = user.role === 'athlete';
+        const notifTitle = isAthleteCommenting
+          ? `${authorName} commented on their training`
+          : `${authorName} left a comment on your training`;
+
         // In-app notification + Expo push (handled together by sendNotification)
         await sendNotification(recipientIds, {
           type: 'training_comment',
           title: notifTitle,
           body: notifBody,
           resourceId: trainingId,
-          resourceType: trainingType,
+          resourceType,
           fromName: authorName,
+          sport: notifSport,
           pushData: { trainingId, trainingType },
         });
 

@@ -22,6 +22,7 @@ import {
 } from '../components/NativeDashboard/animations';
 import api from '../services/api';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
+import { useCategories, hexToRgba } from '../context/CategoryContext';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
@@ -2713,10 +2714,11 @@ export default function NativeTrainingPage({
         <div
           onClick={closeTrainingForm}
           style={{
-            position: 'fixed', inset: 0, zIndex: 200,
+            position: 'fixed', inset: 0, zIndex: 9999,
             background: 'rgba(10,14,26,.5)',
             display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
             animation: 'ndFadeIn .2s ease both',
+            pointerEvents: 'auto',
           }}
         >
           <div
@@ -2764,6 +2766,20 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
   const t = activity;
   const sport = normSport(t.sport);
   const tint = SPORT_TINT[sport] || SPORT_TINT.other;
+
+  const { getCategory } = useCategories();
+  const catInfo = t.category ? getCategory(t.category) : null;
+  const catBadge = catInfo ? {
+    label: catInfo.label,
+    style: {
+      fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+      letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+      flexShrink: 0, whiteSpace: 'nowrap',
+      background: hexToRgba(catInfo.color, 0.14),
+      color: catInfo.color,
+      border: `1px solid ${hexToRgba(catInfo.color, 0.32)}`,
+    },
+  } : null;
   const date = getDate(t);
   const secs = getSecs(t);
   const dist = getDist(t);
@@ -2807,11 +2823,15 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
     >
       <SportTile sport={sport} size={32} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12.5, fontWeight: 700, color: '#0A0E1A',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {title}
+        {/* Title + category badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 700, color: '#0A0E1A',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+          }}>
+            {title}
+          </div>
+          {catBadge && <span style={catBadge.style}>{catBadge.label}</span>}
         </div>
         <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
           {fmtRelativeDate(date)} · {fmtDuration(secs)}

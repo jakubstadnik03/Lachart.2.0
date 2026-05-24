@@ -377,8 +377,10 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // ── Strava: frontend polling fallback ────────────────────────────────────
   // Webhooks deliver new activities in real-time, but they can go stale
   // (missing SERVER_PUBLIC_URL, Strava delivery failure, dev environment).
-  // This polls autoSync on app open / tab focus as a safety net — same
-  // pattern as Garmin. Cooldown is 15 min so it never burns quota.
+  // Strava auto-sync — fires on every login/session start, then on tab focus.
+  // sessionStorage key → syncs on every new login/page load regardless of when
+  // the last localStorage sync happened.  Within the same session visibility
+  // events use a 15-min cooldown so quota isn't burned on rapid tab switches.
   useEffect(() => {
     if (!user?._id) return undefined;
     const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
@@ -386,29 +388,36 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
     let cancelled = false;
 
-    const runStrava = async (cooldownMs = 15 * 60 * 1000) => {
-      const syncKey = `strava_auto_sync_${user._id}`;
-      const now = Date.now();
-      const lastSync = localStorage.getItem(syncKey);
-      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
+    const runStrava = async (cooldownMs) => {
+      const lsKey  = `strava_auto_sync_${user._id}`;
+      const now    = Date.now();
+      const last   = localStorage.getItem(lsKey);
+      if (cooldownMs != null && last && now - parseInt(last, 10) < cooldownMs) return;
       try {
         const result = await autoSyncStravaActivities({ force: false });
-        localStorage.setItem(syncKey, now.toString());
+        localStorage.setItem(lsKey, now.toString());
         if (result?.imported > 0 || result?.updated > 0) {
-          console.log(`Strava auto-sync: ${result.imported} imported, ${result.updated} updated`);
+          console.log(`[Strava] auto-sync: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
         }
       } catch (err) {
-        console.log('Strava auto-sync failed:', err?.message || err);
+        console.log('[Strava] auto-sync failed:', err?.message || err);
       }
     };
 
+    // On login / session start: sync immediately (only 2-min safety guard so a
+    // hard-refresh doesn't double-fire; sessionStorage resets on every new login).
+    const sessionKey = `strava_session_synced_${user._id}`;
     const run = async () => {
-      await new Promise((r) => setTimeout(r, 5000)); // slight delay after mount
+      await new Promise((r) => setTimeout(r, 3000));
       if (cancelled) return;
-      await runStrava(15 * 60 * 1000);
+      const alreadyThisSession = sessionStorage.getItem(sessionKey);
+      sessionStorage.setItem(sessionKey, '1');
+      // First mount this session → 2-min cooldown; subsequent mounts → 15-min
+      await runStrava(alreadyThisSession ? 15 * 60 * 1000 : 2 * 60 * 1000);
     };
 
+    // Tab becomes visible again — use 15-min cooldown to avoid hammering
     const onForeground = async () => {
       if (cancelled) return;
       await runStrava(15 * 60 * 1000);

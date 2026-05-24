@@ -130,7 +130,7 @@ export default function DashboardPage() {
     const cachePatch = (matcher, patcher) => {
       try {
         Object.keys(localStorage).forEach(key => {
-          if (!key.startsWith('athleteTrainings_v3_')) return;
+          if (!key.startsWith('athleteTrainings_v3_') && !key.startsWith('calendarData_')) return;
           const raw = localStorage.getItem(key);
           if (!raw) return;
           try {
@@ -1129,6 +1129,25 @@ export default function DashboardPage() {
     if (!isCapacitorNative()) return;
     loadFormFitness(dashboardDataAthleteId);
   }, [dashboardDataAthleteId, loadFormFitness]);
+
+  // ── Strava webhook → live dashboard refresh ───────────────────────────────
+  // When the server receives a Strava webhook and saves a new activity it:
+  //   (native) sends a push notification → NativeLayout dispatches stravaSyncComplete
+  //   (web)    the notification poller in Layout dispatches stravaSyncComplete
+  // Both paths land here and trigger a full reload of activities so the
+  // dashboard calendar and zone charts update without the user pulling-to-refresh.
+  useEffect(() => {
+    if (!dashboardDataAthleteId) return;
+    const onSync = async () => {
+      try {
+        const trainingsResult = await loadTrainings(dashboardDataAthleteId);
+        loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
+        if (isCapacitorNative()) loadFormFitness(dashboardDataAthleteId);
+      } catch (_) {}
+    };
+    window.addEventListener('stravaSyncComplete', onSync);
+    return () => window.removeEventListener('stravaSyncComplete', onSync);
+  }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness]);
 
   const handleDashboardPlanSave = useCallback(async (data) => {
     try {

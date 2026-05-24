@@ -17,7 +17,7 @@ import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
-import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../services/api';
+import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import NotifIcon from '../Notifications/NotifIcon';
 
@@ -164,9 +164,9 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   className={`w-full flex items-start gap-3 px-5 py-3.5 border-b border-gray-50 active:bg-gray-50 text-left ${!n.read ? 'bg-primary/[0.03]' : ''}`}
                 >
-                  {/* Icon circle — SVG per type, replaces emoji */}
+                  {/* Icon circle — SVG per type/sport, replaces emoji */}
                   <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
-                    <NotifIcon type={n.type} size={18} />
+                    <NotifIcon type={n.type} sport={n.sport} size={18} />
                   </div>
 
                   {/* Text */}
@@ -666,6 +666,11 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       } else if (title) {
         addNotification(title, 'info');
       }
+      // Strava import push → tell dashboard to reload activities
+      const notifType = notif?.data?.type || notif?.type;
+      if (notifType === 'strava_import' || notifType === 'strava') {
+        window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'push' } }));
+      }
     };
     window.addEventListener('pushNotificationReceived', onPush);
     return () => { clearInterval(t); window.removeEventListener('pushNotificationReceived', onPush); };
@@ -690,14 +695,17 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
     }
     setShowNotifs(false);
-    if (!n.resourceId) { navigate('/training-calendar'); return; }
+    if (!n.resourceId) return; // no resource — just close the sheet
     const rt = String(n.resourceType || '').toLowerCase();
     let target;
     if (rt === 'strava' || rt === 'strava_import') target = `strava-${n.resourceId}`;
     else if (rt === 'fit') target = `fit-${n.resourceId}`;
     else if (rt === 'training') target = `training-${n.resourceId}`;
     else target = String(n.resourceId);
-    navigate(`/training-calendar/${encodeURIComponent(target)}`);
+    // Navigate to /dashboard?openActivity=… so the native dashboard opens the
+    // activity sheet — avoids pushing the web FitAnalysisPage (which uses the
+    // non-native Layout and breaks the native tab bar).
+    navigate(`/dashboard?openActivity=${encodeURIComponent(target)}`);
   };
 
   const handleNotifDelete = async (id) => {
@@ -729,6 +737,59 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       body.style.width = '';
     };
   }, []);
+
+  // ── Strava auto-sync on app open / foreground ──────────────────────────
+  // Fires on every new session (login / app launch) using sessionStorage so
+  // the 15-min localStorage cooldown doesn't block it after a fresh login.
+  // Subsequent foreground events within the same session use 15-min cooldown.
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
+    if (!hasStrava) return undefined;
+
+    let cancelled = false;
+
+    const runStrava = async (cooldownMs) => {
+      const lsKey = `strava_auto_sync_${user._id}`;
+      const now   = Date.now();
+      const last  = localStorage.getItem(lsKey);
+      if (cooldownMs != null && last && now - parseInt(last, 10) < cooldownMs) return;
+      try {
+        const result = await autoSyncStravaActivities({ force: false });
+        localStorage.setItem(lsKey, now.toString());
+        if (result?.imported > 0 || result?.updated > 0) {
+          console.log(`[Strava] auto-sync: ${result.imported} imported, ${result.updated} updated`);
+          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
+        }
+      } catch (err) {
+        console.log('[NativeLayout] Strava auto-sync failed:', err?.message || err);
+      }
+    };
+
+    // On app launch / login: sessionStorage resets each new session so this
+    // fires on every login regardless of when the last sync was.
+    const sessionKey = `strava_session_synced_${user._id}`;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      const alreadyThisSession = sessionStorage.getItem(sessionKey);
+      sessionStorage.setItem(sessionKey, '1');
+      runStrava(alreadyThisSession ? 15 * 60 * 1000 : 2 * 60 * 1000);
+    }, 3000);
+
+    // App comes back to foreground — 15-min cooldown
+    let capacitorHandle = null;
+    import('@capacitor/app').then(({ App }) => {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive && !cancelled) runStrava(15 * 60 * 1000);
+      }).then(h => { capacitorHandle = h; });
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      capacitorHandle?.remove?.();
+    };
+  }, [user?._id, user?.strava?.autoSync, user?.strava?.accessToken]);
 
   // Create modal portal root as a sibling of the NativeLayout container so it
   // sits in the same stacking context as body and above the bottom tab bar.

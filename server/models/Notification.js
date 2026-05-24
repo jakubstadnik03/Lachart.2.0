@@ -6,6 +6,7 @@ const NotificationSchema = new mongoose.Schema({
   body:          { type: String, required: true },
   resourceId:    { type: String },
   resourceType:  { type: String },
+  sport:         { type: String }, // 'bike' | 'run' | 'swim' — for sport-specific icon
   fromName:      { type: String },
   read:          { type: Boolean, default: false },
 }, { timestamps: true });

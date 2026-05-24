@@ -11,7 +11,7 @@ const ZONES = [
   { key: 'z5', zNum: 5, label: 'Z5', name: 'VO2max',    color: '#F43F5E', desc: 'Maximum effort. Increases VO₂max and neuromuscular power. Short bouts only — very high recovery cost.' },
 ];
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDuration(secs) {
   if (!secs) return '0m';
@@ -22,83 +22,141 @@ function fmtDuration(secs) {
   return `${h}h ${m}m`;
 }
 
-/** Returns the list of "YYYY-MM" month keys that fall inside the selected range. */
-function monthKeysForRange(range) {
-  const now = new Date();
-  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  if (range === 'week' || range === 'month') return [fmt(now)];
-  // 4w → current month + previous month
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return [fmt(now), fmt(prev)];
+/** Format seconds/km → "4:32" */
+function fmtPace(sPerKm) {
+  if (!sPerKm || sPerKm <= 0 || !isFinite(sPerKm)) return '∞';
+  const mn = Math.floor(sPerKm / 60);
+  const sc = Math.round(sPerKm % 60);
+  return `${mn}:${String(sc).padStart(2, '0')}`;
 }
 
-/** Pick zone times from a month object depending on sport filter. */
-function pickZoneTimes(month, sport) {
+/** Returns the YYYY-MM key for the current or previous month. */
+function monthKey(offset = 0) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Returns { startDate, endDate } for a given week offset (0 = this week, -1 = last week). */
+function weekBounds(offset = 0) {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { startDate: monday, endDate: sunday };
+}
+
+/**
+ * Pick zone times from a month object depending on sport + metric.
+ * Returns { z1, z2, z3, z4, z5 } in seconds, or null if no data.
+ */
+function pickZoneTimes(month, sport, metric) {
   if (!month) return null;
+
+  const zOut = (src) => {
+    if (!src) return null;
+    const out = {};
+    for (let z = 1; z <= 5; z++) {
+      const b = src[z] ?? src[String(z)];
+      out[`z${z}`] = Number(b?.time) || 0;
+    }
+    return out;
+  };
+
   if (sport === 'bike') {
-    // Prefer power zones (most accurate for bike); fall back to bike HR zones
-    const src = month.zones || month.bikeHrZones;
-    if (!src) return null;
-    const out = {};
-    for (let z = 1; z <= 5; z++) {
-      const b = src[z] ?? src[String(z)];
-      out[`z${z}`] = Number(b?.time) || 0;
-    }
-    return out;
+    return metric === 'hr'
+      ? zOut(month.bikeHrZones || month.hrZones)
+      : zOut(month.zones); // power
   }
+
   if (sport === 'run') {
-    const src = month.runningHrZones || month.runningZoneTimes;
-    if (!src) return null;
-    const out = {};
-    for (let z = 1; z <= 5; z++) {
-      const b = src[z] ?? src[String(z)];
-      out[`z${z}`] = Number(b?.time) || 0;
-    }
-    return out;
+    return metric === 'hr'
+      ? zOut(month.runningHrZones)
+      : zOut(month.runningZoneTimes); // pace
   }
+
   if (sport === 'swim') {
-    const src = month.swimmingZoneTimes;
-    if (!src) return null;
-    const out = {};
-    for (let z = 1; z <= 5; z++) {
-      const b = src[z] ?? src[String(z)];
-      out[`z${z}`] = Number(b?.time) || 0;
-    }
-    return out;
+    return zOut(month.swimmingZoneTimes);
   }
-  // "all" — use combined HR zones
-  const src = month.hrZones;
-  if (!src) return null;
+
+  // "all" — aggregate bike + run HR zones
+  const bikeHr = month.bikeHrZones || month.hrZones;
+  const runHr  = month.runningHrZones;
+  if (!bikeHr && !runHr) return null;
   const out = {};
   for (let z = 1; z <= 5; z++) {
-    const b = src[z] ?? src[String(z)];
-    out[`z${z}`] = Number(b?.time) || 0;
+    const bk = bikeHr ? (bikeHr[z] ?? bikeHr[String(z)]) : null;
+    const rn = runHr  ? (runHr[z]  ?? runHr[String(z)])  : null;
+    out[`z${z}`] = (Number(bk?.time) || 0) + (Number(rn?.time) || 0);
   }
   return out;
 }
 
-/** Pick zone boundary definitions from a month for tooltip display. */
-function pickZoneDefs(month, sport) {
+/**
+ * Pick zone boundary definitions for tooltip display.
+ * Returns { defs, type: 'power'|'hr'|'pace' } or null.
+ */
+function pickZoneDefs(month, sport, metric) {
   if (!month) return null;
-  // Power zones for bike
-  if (sport === 'bike' && month.powerZones) return month.powerZones;
-  // HR zones
-  if (month.heartRateZones) return month.heartRateZones;
-  if (sport === 'run' && month.runningHeartRateZones) return month.runningHeartRateZones;
+
+  if (sport === 'bike') {
+    if (metric === 'power' && month.powerZones)
+      return { defs: month.powerZones, type: 'power' };
+    const hrDefs = month.bikeHeartRateZones || month.heartRateZones;
+    if (metric === 'hr' && hrDefs)
+      return { defs: hrDefs, type: 'hr' };
+    return null;
+  }
+
+  if (sport === 'run') {
+    if (metric === 'pace' && month.runningZones)
+      return { defs: month.runningZones, type: 'pace' };
+    const hrDefs = month.runningHeartRateZones || month.heartRateZones;
+    if (metric === 'hr' && hrDefs)
+      return { defs: hrDefs, type: 'hr' };
+    return null;
+  }
+
+  if (sport === 'swim') {
+    if (month.swimmingZones) return { defs: month.swimmingZones, type: 'pace' };
+    return null;
+  }
+
+  // "all" — use generic HR zones
+  const hrDefs = month.heartRateZones || month.bikeHeartRateZones;
+  if (hrDefs) return { defs: hrDefs, type: 'hr' };
   return null;
 }
 
-/** Format a zone range label (hr or power) from zone def boundaries. */
-function zoneRangeLabel(zoneDef, unit) {
+/** Format a zone boundary range string from a def object. */
+function zoneRangeLabel(zoneDef, type) {
   if (!zoneDef) return null;
+
+  if (type === 'pace') {
+    // Pace zones: min/max in seconds/km. Faster = lower number.
+    // min = fastest (harder), max = slowest (easier)
+    const fastStr = (zoneDef.max != null && zoneDef.max !== Infinity) ? fmtPace(zoneDef.max) : null;
+    const slowStr = zoneDef.min != null ? fmtPace(zoneDef.min) : null;
+    if (fastStr && slowStr) return `${fastStr}–${slowStr}/km`;
+    if (fastStr)             return `faster than ${fastStr}/km`;
+    if (slowStr)             return `slower than ${slowStr}/km`;
+    return null;
+  }
+
+  const unit = type === 'hr' ? 'bpm' : 'W';
   const lo = zoneDef.min != null ? Math.round(zoneDef.min) : null;
-  const hi = zoneDef.max != null && zoneDef.max !== Infinity ? Math.round(zoneDef.max) : null;
+  const hi = (zoneDef.max != null && zoneDef.max !== Infinity) ? Math.round(zoneDef.max) : null;
   if (lo == null && hi == null) return null;
   if (hi == null) return `> ${lo} ${unit}`;
   if (lo == null || lo === 0) return `< ${hi} ${unit}`;
   return `${lo}–${hi} ${unit}`;
 }
 
+// ─── Sport icon config ────────────────────────────────────────────────────────
 
 const SPORT_ICONS = {
   bike: '/icon/bike.svg',
@@ -111,64 +169,98 @@ const SPORT_TINT = {
   swim: '#06b6d4',
 };
 
-// ─── component ────────────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ZoneDistCard({ athleteId = null }) {
-  const [range, setRange] = useState('week');
-  const [sport, setSport] = useState('all');
+  const [range, setRange]           = useState('week');
+  const [sport, setSport]           = useState('all');
+  const [metric, setMetric]         = useState('hr'); // 'power' | 'hr' | 'pace'
   const [selectedZone, setSelectedZone] = useState(null);
 
-  // Cache fetched months: { "2025-05": monthData, ... }
+  // weekData: { week: [...entries], lastweek: [...entries] }
+  // monthsData: { 'YYYY-MM': entry }
+  const [weekData, setWeekData]     = useState({});   // keyed by 'week' | 'lastweek'
   const [monthsData, setMonthsData] = useState({});
   const [loading, setLoading]       = useState(false);
-  const fetchedKeys = useRef(new Set());
+  const fetchedKeys  = useRef(new Set()); // month keys + 'week' + 'lastweek'
+  const prevSportRef = useRef(sport);
 
   const toggleZone = useCallback((key) => {
     setSelectedZone(prev => prev === key ? null : key);
   }, []);
 
-  // Fetch any months not yet in cache
+  // Auto-select a sensible default metric when sport changes
   useEffect(() => {
-    const keys = monthKeysForRange(range);
-    const missing = keys.filter(k => !fetchedKeys.current.has(k));
-    if (missing.length === 0) return;
+    if (prevSportRef.current === sport) return;
+    prevSportRef.current = sport;
+    setSelectedZone(null);
+    if (sport === 'bike')       setMetric('power');
+    else if (sport === 'run')   setMetric('pace');
+    else if (sport === 'swim')  setMetric('pace');
+    else /* 'all' */            setMetric('hr');
+  }, [sport]);
 
+  // Reset cached data when athleteId changes
+  useEffect(() => {
+    fetchedKeys.current = new Set();
+    setWeekData({});
+    setMonthsData({});
+  }, [athleteId]);
+
+  // Fetch data for the current range
+  useEffect(() => {
     let cancelled = false;
-    setLoading(true);
 
-    Promise.all(missing.map(k => getMonthlyPowerAnalysis(athleteId || null, k).catch(() => null)))
-      .then(results => {
-        if (cancelled) return;
-        setMonthsData(prev => {
-          const next = { ...prev };
-          missing.forEach((k, i) => {
-            fetchedKeys.current.add(k);
-            // API returns an array (one entry per month) or a single object
-            const raw = results[i];
-            const entry = Array.isArray(raw) ? raw.find(m => m.monthKey === k) : raw;
-            if (entry) next[k] = entry;
-            else next[k] = null; // mark as fetched but empty
-          });
-          return next;
-        });
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    if (range === 'week' || range === 'lastweek') {
+      if (fetchedKeys.current.has(range)) return;
+      setLoading(true);
+      const offset = range === 'lastweek' ? -1 : 0;
+      const { startDate, endDate } = weekBounds(offset);
+      getMonthlyPowerAnalysis(athleteId || null, null, { startDate, endDate })
+        .then(raw => {
+          if (cancelled) return;
+          fetchedKeys.current.add(range);
+          const entries = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+          setWeekData(prev => ({ ...prev, [range]: entries }));
+        })
+        .catch(() => { if (!cancelled) { fetchedKeys.current.add(range); setWeekData(prev => ({ ...prev, [range]: [] })); } })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    } else {
+      // thismonth / lastmonth — fetch by monthKey
+      const mk = range === 'thismonth' ? monthKey(0) : monthKey(-1);
+      if (fetchedKeys.current.has(mk)) return;
+      setLoading(true);
+      getMonthlyPowerAnalysis(athleteId || null, mk)
+        .then(raw => {
+          if (cancelled) return;
+          fetchedKeys.current.add(mk);
+          const entry = Array.isArray(raw) ? raw.find(m => m.monthKey === mk) : raw;
+          setMonthsData(prev => ({ ...prev, [mk]: entry || null }));
+        })
+        .catch(() => { if (!cancelled) fetchedKeys.current.add(mk); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }
 
     return () => { cancelled = true; };
   }, [range, athleteId]);
 
-  // Aggregate totals from cached months for the selected range + sport
-  const keys = monthKeysForRange(range);
-  const totals = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
-  let hasData = false;
+  // ── Aggregate zone totals ──────────────────────────────────────────────────
+  const activeEntries = (() => {
+    if (range === 'week' || range === 'lastweek') {
+      return weekData[range] || [];
+    }
+    const mk = range === 'thismonth' ? monthKey(0) : monthKey(-1);
+    return [monthsData[mk]].filter(Boolean);
+  })();
 
-  // Representative month for zone defs (tooltip boundaries) — use latest available
-  let repMonth = null;
-  for (const k of keys) {
-    const m = monthsData[k];
+  const totals  = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+  let hasData   = false;
+  let repMonth  = null; // most-recent entry that has data (for zone defs)
+
+  for (const m of activeEntries) {
     if (!m) continue;
-    repMonth = m;
-    const zt = pickZoneTimes(m, sport);
+    repMonth = repMonth ?? m;
+    const zt = pickZoneTimes(m, sport, metric);
     if (zt) {
       let anyNonZero = false;
       Object.keys(totals).forEach(z => {
@@ -183,28 +275,29 @@ export default function ZoneDistCard({ athleteId = null }) {
   const totalSecs = Object.values(totals).reduce((s, v) => s + v, 0);
   const maxSecs   = Math.max(...Object.values(totals), 1);
 
-  // Zone boundary defs for tooltip
-  const zoneDefs = pickZoneDefs(repMonth, sport);
+  // Zone boundary defs for expandable tooltip
+  const zoneBoundaries = repMonth ? pickZoneDefs(repMonth, sport, metric) : null;
 
   // Distribution label
   let distLabel = null;
   if (totalSecs > 0) {
     const pct = {};
     Object.keys(totals).forEach(k => { pct[k] = (totals[k] / totalSecs) * 100; });
-    if (pct.z1 + pct.z5 >= 80)         distLabel = { text: 'Polarized',       color: '#6366f1' };
-    else if (pct.z2 >= 60)              distLabel = { text: 'Zone 2 Focus',    color: '#22c55e' };
-    else if (pct.z3 + pct.z4 >= 50)    distLabel = { text: 'Threshold-heavy', color: '#f97316' };
-    else if (pct.z1 > pct.z2 && pct.z2 > pct.z3) distLabel = { text: 'Pyramidal', color: '#f59e0b' };
+    if      (pct.z1 + pct.z5 >= 80)            distLabel = { text: 'Polarized',       color: '#6366f1' };
+    else if (pct.z2 >= 60)                      distLabel = { text: 'Zone 2 Focus',    color: '#22c55e' };
+    else if (pct.z3 + pct.z4 >= 50)            distLabel = { text: 'Threshold-heavy', color: '#f97316' };
+    else if (pct.z1 > pct.z2 && pct.z2 > pct.z3) distLabel = { text: 'Pyramidal',   color: '#f59e0b' };
   }
 
-  // Sport toggles — only show sports that have data in any cached month
+  // ── Available sports ───────────────────────────────────────────────────────
   const sportsWithData = new Set();
-  for (const m of Object.values(monthsData)) {
+  for (const m of activeEntries) {
     if (!m) continue;
-    if (m.bikeTime > 0 || m.bikeTrainings > 0) sportsWithData.add('bike');
-    if (m.runningTime > 0 || m.runningTrainings > 0) sportsWithData.add('run');
-    if (m.swimmingTime > 0 || m.swimmingTrainings > 0) sportsWithData.add('swim');
+    if (m.bikeTime > 0 || m.bikeTrainings > 0 || m.zones) sportsWithData.add('bike');
+    if (m.runningTime > 0 || m.runningTrainings > 0)       sportsWithData.add('run');
+    if (m.swimmingTime > 0 || m.swimmingTrainings > 0)     sportsWithData.add('swim');
   }
+
   const sportToggles = [
     { key: 'all',  label: 'All',  icon: null },
     { key: 'bike', label: 'Bike', icon: SPORT_ICONS.bike },
@@ -212,8 +305,32 @@ export default function ZoneDistCard({ athleteId = null }) {
     { key: 'swim', label: 'Swim', icon: SPORT_ICONS.swim },
   ].filter(t => t.key === 'all' || sportsWithData.has(t.key));
 
+  // ── Available metrics for the current sport ────────────────────────────────
+  const metricOptions = (() => {
+    if (sport === 'bike') {
+      const hasPower = activeEntries.some(m => m?.zones);
+      const hasHr    = activeEntries.some(m => m?.bikeHrZones || m?.hrZones);
+      const opts = [];
+      if (hasPower) opts.push({ key: 'power', label: '⚡ Power' });
+      if (hasHr)    opts.push({ key: 'hr',    label: '♥ HR'    });
+      return opts;
+    }
+    if (sport === 'run') {
+      const hasPace = activeEntries.some(m => m?.runningZoneTimes);
+      const hasHr   = activeEntries.some(m => m?.runningHrZones);
+      const opts = [];
+      if (hasPace) opts.push({ key: 'pace', label: '🏃 Pace' });
+      if (hasHr)   opts.push({ key: 'hr',   label: '♥ HR'   });
+      return opts;
+    }
+    // swim → pace only, all → hr only — no toggle needed
+    return [];
+  })();
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.card}>
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -234,7 +351,7 @@ export default function ZoneDistCard({ athleteId = null }) {
           )}
         </div>
         <div style={styles.seg}>
-          {[['week', 'Wk'], ['4w', '4w'], ['month', 'Mo']].map(([val, lbl]) => (
+          {[['week', 'Week'], ['lastweek', 'Last wk'], ['thismonth', 'Month'], ['lastmonth', 'Last mo']].map(([val, lbl]) => (
             <button
               key={val}
               style={{
@@ -243,11 +360,11 @@ export default function ZoneDistCard({ athleteId = null }) {
                 transition: 'background .25s ease, color .25s ease, box-shadow .25s ease, transform .12s ease',
               }}
               onClick={() => { setRange(val); setSelectedZone(null); }}
-              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
-              onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
-              onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
-              onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
-              onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+              onMouseDown={e => { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onMouseUp={e   => { e.currentTarget.style.transform = ''; }}
+              onMouseLeave={e=> { e.currentTarget.style.transform = ''; }}
+              onTouchStart={e=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+              onTouchEnd={e  => { e.currentTarget.style.transform = ''; }}
             >
               {lbl}
             </button>
@@ -257,18 +374,18 @@ export default function ZoneDistCard({ athleteId = null }) {
 
       {/* Sport toggle row */}
       {sportToggles.length > 1 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 11, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: metricOptions.length > 1 ? 7 : 11, flexWrap: 'wrap' }}>
           {sportToggles.map(({ key, label, icon }, idx) => {
             const on = sport === key;
             return (
               <button
                 key={key}
-                onClick={() => { setSport(key); setSelectedZone(null); }}
-                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
-                onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
-                onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
-                onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
-                onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
+                onClick={() => setSport(key)}
+                onMouseDown={e => { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onMouseUp={e   => { e.currentTarget.style.transform = ''; }}
+                onMouseLeave={e=> { e.currentTarget.style.transform = ''; }}
+                onTouchStart={e=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onTouchEnd={e  => { e.currentTarget.style.transform = ''; }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
                   padding: icon ? '4px 9px 4px 6px' : '4px 10px',
@@ -303,6 +420,43 @@ export default function ZoneDistCard({ athleteId = null }) {
         </div>
       )}
 
+      {/* Metric toggle row — only when multiple options exist */}
+      {metricOptions.length > 1 && (
+        <div style={{ display: 'flex', gap: 5, marginBottom: 11, flexWrap: 'wrap' }}>
+          {metricOptions.map(({ key, label }) => {
+            const on = metric === key;
+            return (
+              <button
+                key={key}
+                onClick={() => { setMetric(key); setSelectedZone(null); }}
+                onMouseDown={e => { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onMouseUp={e   => { e.currentTarget.style.transform = ''; }}
+                onMouseLeave={e=> { e.currentTarget.style.transform = ''; }}
+                onTouchStart={e=> { e.currentTarget.style.transform = 'scale(.94)'; }}
+                onTouchEnd={e  => { e.currentTarget.style.transform = ''; }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  padding: '3px 10px',
+                  borderRadius: 9999,
+                  border: on
+                    ? '1px solid rgba(94,101,144,.5)'
+                    : '1px solid rgba(118,126,181,.12)',
+                  background: on
+                    ? 'rgba(94,101,144,.12)'
+                    : 'rgba(255,255,255,.35)',
+                  color: on ? '#5E6590' : '#9CA3AF',
+                  fontFamily: 'inherit', fontSize: 10, fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'background .2s ease, color .2s ease, border-color .2s ease, transform .12s ease',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Loading skeleton */}
       {loading && !hasData && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
@@ -327,9 +481,11 @@ export default function ZoneDistCard({ athleteId = null }) {
           </svg>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>No zone data</div>
           <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>
-            {sport === 'all'
-              ? 'Upload FIT files or complete a lactate test to enable zone tracking'
-              : `No ${sport} data for this period`}
+            {sport === 'bike' && metric === 'power'
+              ? 'Upload FIT files with power data to see power zones'
+              : sport === 'all'
+                ? 'Upload FIT files or complete a lactate test to enable zone tracking'
+                : `No ${sport} zone data for this period`}
           </div>
         </div>
       )}
@@ -338,7 +494,7 @@ export default function ZoneDistCard({ athleteId = null }) {
       {hasData && (
         <>
           <div
-            key={`zones-${range}-${sport}`}
+            key={`zones-${range}-${sport}-${metric}`}
             style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
           >
             {ZONES.map(({ key, zNum, name, color, desc }, idx) => {
@@ -348,14 +504,39 @@ export default function ZoneDistCard({ athleteId = null }) {
               const barDelay = idx * 60;
               const isOpen   = selectedZone === key;
 
-              // Zone boundary label from server-provided defs
-              const def = zoneDefs ? (zoneDefs[zNum] ?? zoneDefs[String(zNum)]) : null;
-              const isHrDef   = sport !== 'bike' || !repMonth?.powerZones;
-              const boundLabel = zoneRangeLabel(def, isHrDef ? 'bpm' : 'W');
+              // Zone boundary from server
+              const def = zoneBoundaries
+                ? (zoneBoundaries.defs[zNum] ?? zoneBoundaries.defs[String(zNum)])
+                : null;
+              const boundLabel = def ? zoneRangeLabel(def, zoneBoundaries.type) : null;
+
+              // Icon in expanded panel
+              const BoundIcon = () => {
+                if (!zoneBoundaries) return null;
+                if (zoneBoundaries.type === 'power')
+                  return (
+                    <svg width="10" height="11" viewBox="0 0 24 24" fill={color} stroke="none">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                  );
+                if (zoneBoundaries.type === 'pace')
+                  return (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  );
+                // HR (heart)
+                return (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill={color} stroke="none">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                  </svg>
+                );
+              };
 
               return (
                 <div key={key} style={{ animation: `ndFadeIn .4s ${barDelay}ms cubic-bezier(.22,1,.36,1) both` }}>
-                  {/* ── Clickable row ── */}
+                  {/* Clickable row */}
                   <div
                     onClick={() => toggleZone(key)}
                     style={{
@@ -414,7 +595,7 @@ export default function ZoneDistCard({ athleteId = null }) {
                     </div>
                   </div>
 
-                  {/* ── Expandable info panel ── */}
+                  {/* Expandable info panel */}
                   {isOpen && (
                     <div style={{
                       margin: '2px 6px 4px',
@@ -428,28 +609,22 @@ export default function ZoneDistCard({ athleteId = null }) {
                         {desc}
                       </p>
 
-                      {/* Server-provided zone boundary */}
+                      {/* Zone boundary chip */}
                       {boundLabel && (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <div style={{
                             display: 'flex', alignItems: 'center', gap: 5,
                             background: 'rgba(255,255,255,.7)', borderRadius: 7, padding: '4px 8px',
                           }}>
-                            {isHrDef ? (
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill={color} stroke="none">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                              </svg>
-                            ) : (
-                              <svg width="10" height="11" viewBox="0 0 24 24" fill={color} stroke="none">
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                              </svg>
-                            )}
-                            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#374151', fontVariantNumeric: 'tabular-nums' }}>{boundLabel}</span>
+                            <BoundIcon />
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#374151', fontVariantNumeric: 'tabular-nums' }}>
+                              {boundLabel}
+                            </span>
                           </div>
                         </div>
                       )}
 
-                      {/* Avg stats */}
+                      {/* Time + share stats */}
                       {secs > 0 && (
                         <div style={{ marginTop: 8, paddingTop: 7, borderTop: `1px solid ${color}20`, display: 'flex', gap: 12 }}>
                           <div>
@@ -492,6 +667,6 @@ const styles = {
   },
   sectionLabel: { fontSize: 10.5, fontWeight: 700, color: '#0A0E1A', textTransform: 'uppercase', letterSpacing: '0.06em' },
   seg:      { display: 'inline-flex', padding: 2, borderRadius: 9, background: 'rgba(118,126,181,.12)' },
-  segBtn:   { border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: '#6B7280', padding: '3px 7px', borderRadius: 7, cursor: 'pointer' },
+  segBtn:   { border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 9, fontWeight: 700, color: '#6B7280', padding: '3px 5px', borderRadius: 7, cursor: 'pointer' },
   segBtnOn: { background: '#5E6590', color: '#fff', boxShadow: '0 2px 6px -2px rgba(94,101,144,.5)' },
 };

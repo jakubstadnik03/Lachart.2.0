@@ -1020,11 +1020,13 @@ export const getTrainingsWithLactate = async (athleteId = null) => {
   }
 };
 
-export const getMonthlyPowerAnalysis = async (athleteId = null, monthKey = null) => {
+export const getMonthlyPowerAnalysis = async (athleteId = null, monthKey = null, options = {}) => {
   try {
     const params = {};
     if (athleteId) params.athleteId = String(athleteId);
-    if (monthKey) params.monthKey = monthKey;
+    if (monthKey)  params.monthKey  = monthKey;
+    if (options.startDate) params.startDate = options.startDate instanceof Date ? options.startDate.toISOString() : options.startDate;
+    if (options.endDate)   params.endDate   = options.endDate   instanceof Date ? options.endDate.toISOString()   : options.endDate;
     const response = await api.get('/api/fit/trainings/monthly-analysis', { params });
     return response.data;
   } catch (error) {

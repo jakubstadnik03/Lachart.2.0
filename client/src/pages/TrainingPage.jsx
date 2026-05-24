@@ -54,7 +54,7 @@ export default function TrainingPage() {
     const cachePatch = (matcher, patcher) => {
       try {
         Object.keys(localStorage).forEach(key => {
-          if (!key.startsWith('athleteTrainings_v3_')) return;
+          if (!key.startsWith('athleteTrainings_v3_') && !key.startsWith('calendarData_')) return;
           const raw = localStorage.getItem(key);
           if (!raw) return;
           try {

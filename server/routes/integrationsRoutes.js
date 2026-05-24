@@ -898,7 +898,17 @@ function invalidateStravaActivityCache(userId, stravaId) {
   if (userId && stravaId) stravaActivityCache.delete(`${userId}:${stravaId}`);
 }
 
-function notifyStravaImportedPush(userId, imported, latestStravaId = null) {
+/** Normalize Strava / Garmin sport type → 'bike' | 'run' | 'swim' | null */
+function normalizeSportForNotif(sport) {
+  if (!sport) return null;
+  const s = String(sport).toLowerCase();
+  if (/ride|bike|cycl|velo/.test(s)) return 'bike';
+  if (/run|trail|treadmill|walk|hike/.test(s)) return 'run';
+  if (/swim/.test(s)) return 'swim';
+  return null;
+}
+
+function notifyStravaImportedPush(userId, imported, latestStravaId = null, latestSport = null) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
 
@@ -924,6 +934,7 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null) {
     title: 'Strava sync',
     body,
     resourceType: 'strava',
+    sport: normalizeSportForNotif(latestSport),
     ...(latestStravaId ? { resourceId: String(latestStravaId) } : {}),
   }).catch((e) => console.error('[Strava sync notification]', e.message || e));
 }
@@ -1094,7 +1105,7 @@ router.post('/strava/webhook', async (req, res) => {
     }
 
     if (aspect_type === 'create' || aspect_type === 'update') {
-      const { isNew } = await fetchAndSaveStravaActivity(user, object_id);
+      const { activity, isNew } = await fetchAndSaveStravaActivity(user, object_id);
       // Update lastSyncDate so the scheduler doesn't redundantly re-fetch this
       // activity on its next tick (the webhook already handled it).
       // Also stamp webhookLastEventAt so the UI / /strava/status endpoint can
@@ -1105,7 +1116,7 @@ router.post('/strava/webhook', async (req, res) => {
         'strava.webhookLastEventAt': eventStamp,
       });
       if (aspect_type === 'create' && isNew) {
-        notifyStravaImportedPush(user._id, 1, object_id);
+        notifyStravaImportedPush(user._id, 1, object_id, activity?.sport);
       }
       console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
     } else if (aspect_type === 'delete') {
