@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, getBulkCampaignStatus, stopBulkCampaign, listBulkCampaigns, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -54,6 +54,24 @@ const AdminDashboard = () => {
   const [composeSending, setComposeSending] = useState(false);
   const [composePreviewSending, setComposePreviewSending] = useState(false);
   const [copiedContactId, setCopiedContactId] = useState(null);
+
+  // ── Bulk outreach campaign state ─────────────────────────────────────────────
+  const [csvImportFile, setCsvImportFile] = useState(null);
+  const [csvImportPreview, setCsvImportPreview] = useState(null); // { leads, withEmail }
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvImportResult, setCsvImportResult] = useState(null); // { inserted, skipped }
+  const [bulkCampaigns, setBulkCampaigns] = useState([]);
+  const [bulkCampaignsLoading, setBulkCampaignsLoading] = useState(false);
+  const [bulkFilterTypes, setBulkFilterTypes] = useState([]);
+  const [bulkFilterCountries, setBulkFilterCountries] = useState([]);
+  const [bulkNotContacted, setBulkNotContacted] = useState(true);
+  const [bulkOnlyWithEmail, setBulkOnlyWithEmail] = useState(true);
+  const [bulkBatchSize, setBulkBatchSize] = useState(10);
+  const [bulkInterval, setBulkInterval] = useState(120); // minutes
+  const [bulkSubject, setBulkSubject] = useState('Free tool for lactate testing coaches - LaChart');
+  const [bulkTemplate, setBulkTemplate] = useState('');
+  const [bulkStarting, setBulkStarting] = useState(false);
+  const [bulkCampaignError, setBulkCampaignError] = useState('');
 
   // ── Retention email preview ──────────────────────────────────────────────────
   const [retentionSearch,    setRetentionSearch]    = useState('');
@@ -805,6 +823,143 @@ const AdminDashboard = () => {
       setComposeSending(false);
     }
   };
+
+  // ── Bulk campaign handlers ───────────────────────────────────────────────────
+
+  const handleCsvFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvImportFile(file);
+    setCsvImportResult(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) { setCsvImportPreview({ leads: [], withEmail: 0 }); return; }
+
+        // Auto-detect delimiter
+        const header = lines[0];
+        const delim = header.includes('\t') ? '\t' : ',';
+        const cols = header.split(delim).map(c => c.trim().replace(/^"|"$/g, '').toLowerCase());
+
+        const idx = (names) => {
+          for (const n of names) {
+            const i = cols.findIndex(c => c.includes(n));
+            if (i >= 0) return i;
+          }
+          return -1;
+        };
+
+        const iName = idx(['název', 'name', 'club', 'nazev']);
+        const iEmail = idx(['email', 'e-mail']);
+        const iCity = idx(['město', 'mesto', 'city']);
+        const iCountry = idx(['země', 'zeme', 'country', 'land']);
+        const iType = idx(['typ', 'type', 'kategorie']);
+        const iWebsite = idx(['web url', 'website', 'web', 'url']);
+        const iPhone = idx(['telefon', 'phone', 'tel']);
+        const iPriority = idx(['priorita', 'priority']);
+
+        const leads = lines.slice(1).map(line => {
+          const parts = line.split(delim).map(p => p.trim().replace(/^"|"$/g, ''));
+          const get = (i) => (i >= 0 ? (parts[i] || '') : '');
+          return {
+            name: get(iName),
+            email: get(iEmail).toLowerCase(),
+            city: get(iCity),
+            country: get(iCountry),
+            type: get(iType),
+            website: get(iWebsite),
+            phone: get(iPhone),
+            priority: parseFloat(get(iPriority)) || 0,
+          };
+        }).filter(l => l.name || l.email);
+
+        const withEmail = leads.filter(l => l.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(l.email)).length;
+        setCsvImportPreview({ leads, withEmail });
+      } catch (err) {
+        console.error('CSV parse error:', err);
+        setCsvImportPreview({ leads: [], withEmail: 0 });
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvImportPreview?.leads?.length || csvImporting) return;
+    try {
+      setCsvImporting(true);
+      const result = await importCoachOutreachLeads(csvImportPreview.leads);
+      setCsvImportResult(result);
+      addNotification(`Imported ${result.inserted} leads (${result.skipped} duplicates skipped)`, 'success');
+      // Refresh leads list
+      const leads = await getCoachOutreachLeads();
+      setOutreachLeads(Array.isArray(leads) ? leads : []);
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Failed to import leads';
+      addNotification(msg, 'error');
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
+  const handleStartBulkCampaign = async () => {
+    if (bulkStarting) return;
+    setBulkCampaignError('');
+    try {
+      setBulkStarting(true);
+      const result = await startBulkOutreachCampaign({
+        filter: {
+          types: bulkFilterTypes,
+          countries: bulkFilterCountries,
+          notContacted: bulkNotContacted,
+          onlyWithEmail: bulkOnlyWithEmail,
+        },
+        batchSize: bulkBatchSize,
+        intervalMinutes: bulkInterval,
+        subject: bulkSubject,
+        template: bulkTemplate,
+      });
+      addNotification(`Bulk campaign started — ${result.total} leads, ${result.batchSize} per batch`, 'success');
+      // Refresh campaign list
+      const campaigns = await listBulkCampaigns();
+      setBulkCampaigns(Array.isArray(campaigns) ? campaigns : []);
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Failed to start campaign';
+      setBulkCampaignError(msg);
+      addNotification(msg, 'error');
+    } finally {
+      setBulkStarting(false);
+    }
+  };
+
+  const handleStopBulkCampaign = async (campaignId) => {
+    try {
+      await stopBulkCampaign(campaignId);
+      addNotification('Campaign stopped', 'success');
+      const campaigns = await listBulkCampaigns();
+      setBulkCampaigns(Array.isArray(campaigns) ? campaigns : []);
+    } catch (err) {
+      addNotification('Failed to stop campaign', 'error');
+    }
+  };
+
+  const handleRefreshCampaigns = async () => {
+    try {
+      setBulkCampaignsLoading(true);
+      const campaigns = await listBulkCampaigns();
+      setBulkCampaigns(Array.isArray(campaigns) ? campaigns : []);
+    } catch (err) {
+      console.error('Failed to refresh campaigns:', err);
+    } finally {
+      setBulkCampaignsLoading(false);
+    }
+  };
+
+  const CLUB_TYPES = [
+    'triathlon club', 'cycling club', 'running club', 'swimming club',
+    'sports performance center', 'athletic club', 'endurance coach', 'sports clinic',
+  ];
 
   // Build filtered contacts list (merge static data with DB lead status)
   const filteredContacts = useMemo(() => {
@@ -2682,6 +2837,263 @@ const AdminDashboard = () => {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* ── Section A: Import CSV leads ──────────────────────────────── */}
+            <div className="bg-white rounded-xl shadow p-4 sm:p-6 space-y-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Import Leads from CSV</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Upload a CSV (or TSV) file with columns: Název/Name, Email, Město/City, Země/Country, Typ/Type, Web URL/Website, Telefon/Phone, Priorita/Priority.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="cursor-pointer px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                  Choose CSV file
+                  <input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={handleCsvFileChange} />
+                </label>
+                {csvImportFile && <span className="text-xs text-gray-500">{csvImportFile.name}</span>}
+              </div>
+
+              {csvImportPreview && (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                  <p className="text-sm text-blue-800 font-medium">
+                    Found {csvImportPreview.leads.length} rows — {csvImportPreview.withEmail} with valid email
+                  </p>
+                  {csvImportPreview.leads.length > 0 && (
+                    <button
+                      onClick={handleCsvImport}
+                      disabled={csvImporting || csvImportPreview.withEmail === 0}
+                      className={`mt-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        csvImporting || csvImportPreview.withEmail === 0
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-primary text-white hover:bg-primary-dark'
+                      }`}
+                    >
+                      {csvImporting ? 'Importing…' : `Import ${csvImportPreview.leads.length} leads`}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {csvImportResult && (
+                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                  Imported <strong>{csvImportResult.inserted}</strong> new leads.
+                  {csvImportResult.skipped > 0 && ` Skipped ${csvImportResult.skipped} duplicates.`}
+                </div>
+              )}
+            </div>
+
+            {/* ── Section B: Bulk Campaign ─────────────────────────────────── */}
+            <div className="bg-white rounded-xl shadow p-4 sm:p-6 space-y-5">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Bulk Outreach Campaign</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Send templated emails to imported leads in scheduled batches.
+                </p>
+                <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  <strong>Zoho limit:</strong> ~200 emails/day. Recommended: 10 emails every 2 hours = 120/day.
+                  Default settings are already configured for safe sending.
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">Filters</h4>
+
+                <div>
+                  <p className="text-xs text-gray-500 mb-1.5">Club / organization types (leave empty for all)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CLUB_TYPES.map(t => (
+                      <label key={t} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bulkFilterTypes.includes(t)}
+                          onChange={e => {
+                            if (e.target.checked) setBulkFilterTypes(prev => [...prev, t]);
+                            else setBulkFilterTypes(prev => prev.filter(x => x !== t));
+                          }}
+                          className="rounded border-gray-300 text-primary"
+                        />
+                        <span className="capitalize">{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Countries (comma-separated, empty = all)</label>
+                    <input
+                      type="text"
+                      placeholder="CZ, UK, DE…"
+                      value={bulkFilterCountries.join(', ')}
+                      onChange={e => setBulkFilterCountries(
+                        e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                      )}
+                      className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-48"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end">
+                    <input
+                      type="checkbox"
+                      checked={bulkNotContacted}
+                      onChange={e => setBulkNotContacted(e.target.checked)}
+                      className="rounded border-gray-300 text-primary"
+                    />
+                    Only not-contacted
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end">
+                    <input
+                      type="checkbox"
+                      checked={bulkOnlyWithEmail}
+                      onChange={e => setBulkOnlyWithEmail(e.target.checked)}
+                      className="rounded border-gray-300 text-primary"
+                    />
+                    Only with email
+                  </label>
+                </div>
+              </div>
+
+              {/* Batch settings */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-gray-700">Batch Settings</h4>
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Emails per batch (max 50)</label>
+                    <input
+                      type="number"
+                      min={1} max={50}
+                      value={bulkBatchSize}
+                      onChange={e => setBulkBatchSize(Math.min(50, Math.max(1, Number(e.target.value) || 10)))}
+                      className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-28"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Interval between batches</label>
+                    <select
+                      value={bulkInterval}
+                      onChange={e => setBulkInterval(Number(e.target.value))}
+                      className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value={30}>30 minutes</option>
+                      <option value={60}>1 hour</option>
+                      <option value={120}>2 hours (recommended)</option>
+                      <option value={240}>4 hours</option>
+                      <option value={480}>8 hours</option>
+                      <option value={1440}>24 hours</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  At current settings: ~{Math.round(bulkBatchSize * (1440 / bulkInterval))} emails/day
+                </p>
+              </div>
+
+              {/* Email template */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-gray-700">Email Template</h4>
+                <input
+                  type="text"
+                  placeholder="Subject line…"
+                  value={bulkSubject}
+                  onChange={e => setBulkSubject(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <textarea
+                  placeholder="Email body (HTML or plain text). Use {{name}} for contact name. Leave empty to use the default LaChart template."
+                  value={bulkTemplate}
+                  onChange={e => setBulkTemplate(e.target.value)}
+                  rows={6}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono resize-y"
+                />
+                <p className="text-xs text-gray-400">Leave body empty to use the default LaChart outreach template.</p>
+              </div>
+
+              {bulkCampaignError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                  {bulkCampaignError}
+                </div>
+              )}
+
+              <button
+                onClick={handleStartBulkCampaign}
+                disabled={bulkStarting}
+                className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  bulkStarting ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-primary-dark'
+                }`}
+              >
+                {bulkStarting ? 'Starting…' : 'Start Campaign'}
+              </button>
+
+              {/* Active campaigns */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-700">Active Campaigns</h4>
+                  <button
+                    onClick={handleRefreshCampaigns}
+                    disabled={bulkCampaignsLoading}
+                    className="text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    {bulkCampaignsLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                </div>
+
+                {bulkCampaigns.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-3 text-center">No campaigns yet. Start one above.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {bulkCampaigns.map(c => {
+                      const pct = c.total > 0 ? Math.round((c.sent / c.total) * 100) : 0;
+                      const statusColor = {
+                        running: 'text-blue-600', scheduled: 'text-indigo-600',
+                        completed: 'text-green-600', stopped: 'text-gray-500',
+                        error: 'text-red-600', starting: 'text-yellow-600',
+                      }[c.status] || 'text-gray-600';
+                      return (
+                        <div key={c.campaignId} className="rounded-lg border border-gray-200 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <span className={`text-xs font-semibold uppercase ${statusColor}`}>{c.status}</span>
+                              <span className="text-xs text-gray-400 ml-2">{new Date(c.startedAt).toLocaleString()}</span>
+                            </div>
+                            {(c.status === 'running' || c.status === 'scheduled' || c.status === 'starting') && (
+                              <button
+                                onClick={() => handleStopBulkCampaign(c.campaignId)}
+                                className="px-3 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                              >
+                                Stop
+                              </button>
+                            )}
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div
+                              className="bg-primary h-1.5 rounded-full transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                            <span>Sent: <strong>{c.sent}</strong></span>
+                            <span>Failed: <strong className="text-red-600">{c.failed}</strong></span>
+                            <span>Remaining: <strong>{c.remaining}</strong></span>
+                            <span>Total: <strong>{c.total}</strong></span>
+                            <span>{c.batchSize} per batch / every {c.intervalMinutes} min</span>
+                          </div>
+                          {c.nextBatchAt && c.status === 'scheduled' && (
+                            <p className="text-xs text-gray-400">Next batch: {new Date(c.nextBatchAt).toLocaleString()}</p>
+                          )}
+                          {c.errorMessage && (
+                            <p className="text-xs text-red-600">{c.errorMessage}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
         )}

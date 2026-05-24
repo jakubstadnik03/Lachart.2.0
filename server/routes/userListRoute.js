@@ -4058,6 +4058,342 @@ router.patch("/admin/coach-outreach-leads/:leadId", verifyToken, async (req, res
     }
 });
 
+// ── Bulk outreach: import CSV leads ──────────────────────────────────────────
+// POST /user/admin/coach-outreach-leads/import
+// Body: { leads: [{name, email, city, country, type, website, phone, priority}] }
+router.post("/admin/coach-outreach-leads/import", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const rawLeads = Array.isArray(req.body?.leads) ? req.body.leads : [];
+        if (rawLeads.length === 0) {
+            return res.status(400).json({ error: "No leads provided." });
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const docs = rawLeads
+            .filter(l => l.email && emailRegex.test(l.email.toString().trim().toLowerCase()))
+            .map(l => ({
+                name: (l.name || "").toString().trim(),
+                email: l.email.toString().trim().toLowerCase(),
+                city: (l.city || "").toString().trim(),
+                country: (l.country || "").toString().trim(),
+                type: (l.type || "").toString().trim(),
+                website: (l.website || "").toString().trim(),
+                phone: (l.phone || "").toString().trim(),
+                priority: Number(l.priority) || 0,
+                source: "csv",
+                createdBy: currentUser._id,
+                lastUpdatedBy: currentUser._id,
+            }));
+
+        if (docs.length === 0) {
+            return res.status(400).json({ error: "No leads with valid email addresses found." });
+        }
+
+        let inserted = 0;
+        let skipped = 0;
+        try {
+            const result = await CoachOutreachLead.insertMany(docs, { ordered: false });
+            inserted = result.length;
+            skipped = docs.length - inserted;
+        } catch (bulkErr) {
+            // insertMany with ordered:false throws but still inserts non-duplicate docs
+            if (bulkErr.writeErrors) {
+                inserted = docs.length - bulkErr.writeErrors.length;
+                skipped = bulkErr.writeErrors.length;
+            } else {
+                throw bulkErr;
+            }
+        }
+
+        return res.status(200).json({ inserted, skipped, total: docs.length });
+    } catch (error) {
+        console.error("[coach-outreach-leads/import] error:", error);
+        return res.status(500).json({ error: "Failed to import leads.", detail: error.message });
+    }
+});
+
+// ── Bulk campaign in-memory store ─────────────────────────────────────────────
+const bulkCampaigns = new Map(); // campaignId -> campaign object
+
+function generateCampaignId() {
+    return `bc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function processCampaignBatch(campaignId) {
+    const campaign = bulkCampaigns.get(campaignId);
+    if (!campaign || campaign.status === 'stopped' || campaign.status === 'completed') return;
+
+    const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+    const clientUrl = getClientUrl() || 'https://lachart.net';
+    const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+
+    // Build mongo filter from campaign.filter
+    const mongoFilter = { unsubscribed: { $ne: true } };
+    if (campaign.filter.notContacted) mongoFilter.sentCount = 0;
+    if (campaign.filter.onlyWithEmail) {
+        mongoFilter.email = { $exists: true, $ne: "" };
+    }
+    if (Array.isArray(campaign.filter.types) && campaign.filter.types.length > 0) {
+        mongoFilter.type = { $in: campaign.filter.types };
+    }
+    if (Array.isArray(campaign.filter.countries) && campaign.filter.countries.length > 0) {
+        mongoFilter.country = { $in: campaign.filter.countries };
+    }
+
+    // Exclude already-processed leads in this campaign
+    if (campaign.processedIds.size > 0) {
+        mongoFilter._id = { $nin: Array.from(campaign.processedIds) };
+    }
+
+    const batch = await CoachOutreachLead.find(mongoFilter)
+        .sort({ priority: -1, createdAt: 1 })
+        .limit(campaign.batchSize)
+        .lean();
+
+    if (batch.length === 0) {
+        campaign.status = 'completed';
+        if (campaign.intervalHandle) clearTimeout(campaign.intervalHandle);
+        console.log(`[bulk-campaign] ${campaignId} completed — no more leads to contact.`);
+        return;
+    }
+
+    campaign.status = 'running';
+
+    const transporter = createEmailTransporter();
+    if (!transporter) {
+        campaign.status = 'error';
+        campaign.errorMessage = 'Email transporter not configured';
+        return;
+    }
+
+    for (const lead of batch) {
+        campaign.processedIds.add(lead._id.toString());
+        try {
+            const contactName = lead.name || "";
+            const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
+            let subject = campaign.subject || "Free tool for lactate testing coaches - LaChart";
+            let content;
+
+            if (campaign.template) {
+                // Custom template — replace {{name}} placeholder
+                const bodyText = campaign.template.replace(/\{\{name\}\}/g, contactName);
+                const htmlParagraphs = bodyText
+                    .split(/\n{2,}/)
+                    .map(block => `<p style="margin-top:14px;line-height:1.6;">${block.replace(/\n/g, '<br/>')}</p>`)
+                    .join('\n');
+                content = `${htmlParagraphs}
+                    <p style="margin-top: 20px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                    </p>`;
+            } else {
+                content = `
+                    <p>${greeting}</p>
+                    <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
+                    <p style="margin-top: 20px;">LaChart helps you:</p>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>log lactate step tests quickly,</li>
+                        <li>auto-calculate <strong>LT1 / LT2</strong> and training zones,</li>
+                        <li>generate and send a clear <strong>PDF report</strong>,</li>
+                        <li>manage athletes and keep test history in one place.</li>
+                    </ul>
+                    <p style="margin-top: 20px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                    </p>
+                    <p style="margin-top: 20px;">If this could be useful for your coaching/testing workflow, I would love your feedback.</p>
+                    <p style="margin-top: 20px;">You can try it here: <a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                    <p style="margin-top: 26px;">Best regards,</p>
+                    <p><strong>Jakub Stadnik</strong><br/>Creator of LaChart</p>
+                `;
+            }
+
+            await transporter.sendMail({
+                from: { name: 'Jakub - LaChart', address: process.env.EMAIL_USER },
+                to: lead.email,
+                subject,
+                html: generateEmailTemplate({
+                    title: 'LaChart — Lactate Analysis Tool',
+                    content,
+                    buttonText: 'Open LaChart',
+                    buttonUrl: 'https://lachart.net',
+                    footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
+                })
+            });
+
+            await CoachOutreachLead.findByIdAndUpdate(lead._id, {
+                $set: { lastSentAt: new Date(), bulkCampaignId: campaignId },
+                $inc: { sentCount: 1 }
+            });
+
+            campaign.sent++;
+        } catch (sendErr) {
+            console.error(`[bulk-campaign] Failed to send to ${lead.email}:`, sendErr.message);
+            campaign.failed++;
+        }
+
+        // 2-3 second delay between individual sends within a batch
+        if (batch.indexOf(lead) < batch.length - 1) {
+            await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+        }
+    }
+
+    // Count remaining
+    const remainingFilter = { ...mongoFilter, _id: { $nin: Array.from(campaign.processedIds) } };
+    campaign.remaining = await CoachOutreachLead.countDocuments(remainingFilter);
+
+    if (campaign.remaining === 0) {
+        campaign.status = 'completed';
+        console.log(`[bulk-campaign] ${campaignId} completed.`);
+        return;
+    }
+
+    // Schedule next batch
+    if (campaign.status !== 'stopped') {
+        campaign.status = 'scheduled';
+        const intervalMs = campaign.intervalMinutes * 60 * 1000;
+        campaign.intervalHandle = setTimeout(() => processCampaignBatch(campaignId), intervalMs);
+        campaign.nextBatchAt = new Date(Date.now() + intervalMs).toISOString();
+    }
+}
+
+// POST /user/admin/coach-outreach-leads/bulk-campaign — start a bulk campaign
+router.post("/admin/coach-outreach-leads/bulk-campaign", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const {
+            filter = {},
+            batchSize = 10,
+            intervalMinutes = 120,
+            subject = "",
+            template = "",
+        } = req.body || {};
+
+        const safeBatchSize = Math.min(Math.max(1, Number(batchSize) || 10), 50);
+        const safeInterval = Math.max(30, Number(intervalMinutes) || 120);
+
+        // Count total matching leads
+        const mongoFilter = { unsubscribed: { $ne: true } };
+        if (filter.notContacted) mongoFilter.sentCount = 0;
+        if (filter.onlyWithEmail !== false) mongoFilter.email = { $exists: true, $ne: "" };
+        if (Array.isArray(filter.types) && filter.types.length > 0) mongoFilter.type = { $in: filter.types };
+        if (Array.isArray(filter.countries) && filter.countries.length > 0) mongoFilter.country = { $in: filter.countries };
+
+        const total = await CoachOutreachLead.countDocuments(mongoFilter);
+        if (total === 0) {
+            return res.status(400).json({ error: "No leads match the selected filters." });
+        }
+
+        const campaignId = generateCampaignId();
+        const campaign = {
+            campaignId,
+            status: 'starting',
+            sent: 0,
+            failed: 0,
+            remaining: total,
+            total,
+            batchSize: safeBatchSize,
+            intervalMinutes: safeInterval,
+            subject,
+            template,
+            filter: {
+                types: filter.types || [],
+                countries: filter.countries || [],
+                notContacted: filter.notContacted !== false,
+                onlyWithEmail: filter.onlyWithEmail !== false,
+            },
+            processedIds: new Set(),
+            startedAt: new Date().toISOString(),
+            nextBatchAt: null,
+            intervalHandle: null,
+            createdBy: currentUser._id.toString(),
+        };
+
+        bulkCampaigns.set(campaignId, campaign);
+
+        // Start processing first batch async (don't await)
+        processCampaignBatch(campaignId).catch(err => {
+            console.error(`[bulk-campaign] Unhandled error in ${campaignId}:`, err);
+            const c = bulkCampaigns.get(campaignId);
+            if (c) { c.status = 'error'; c.errorMessage = err.message; }
+        });
+
+        return res.status(200).json({
+            campaignId,
+            status: campaign.status,
+            total,
+            batchSize: safeBatchSize,
+            intervalMinutes: safeInterval,
+            startedAt: campaign.startedAt,
+        });
+    } catch (error) {
+        console.error("[bulk-campaign] start error:", error);
+        return res.status(500).json({ error: "Failed to start bulk campaign.", detail: error.message });
+    }
+});
+
+// GET /user/admin/coach-outreach-leads/bulk-campaign/:campaignId
+router.get("/admin/coach-outreach-leads/bulk-campaign/:campaignId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const campaign = bulkCampaigns.get(req.params.campaignId);
+        if (!campaign) return res.status(404).json({ error: "Campaign not found." });
+        const { intervalHandle, processedIds, template, filter, ...safe } = campaign;
+        return res.status(200).json({ ...safe, filter, processedCount: processedIds.size });
+    } catch (error) {
+        console.error("[bulk-campaign/status] error:", error);
+        return res.status(500).json({ error: "Failed to get campaign status." });
+    }
+});
+
+// DELETE /user/admin/coach-outreach-leads/bulk-campaign/:campaignId — stop campaign
+router.delete("/admin/coach-outreach-leads/bulk-campaign/:campaignId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const campaign = bulkCampaigns.get(req.params.campaignId);
+        if (!campaign) return res.status(404).json({ error: "Campaign not found." });
+        if (campaign.intervalHandle) clearTimeout(campaign.intervalHandle);
+        campaign.status = 'stopped';
+        campaign.intervalHandle = null;
+        const { intervalHandle, processedIds, template, filter, ...safe } = campaign;
+        return res.status(200).json({ ...safe, filter, processedCount: processedIds.size, message: "Campaign stopped." });
+    } catch (error) {
+        console.error("[bulk-campaign/stop] error:", error);
+        return res.status(500).json({ error: "Failed to stop campaign." });
+    }
+});
+
+// GET /user/admin/coach-outreach-leads/bulk-campaigns — list all campaigns
+router.get("/admin/coach-outreach-leads/bulk-campaigns", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const list = Array.from(bulkCampaigns.values()).map(c => {
+            const { intervalHandle, processedIds, template, filter, ...safe } = c;
+            return { ...safe, filter, processedCount: processedIds.size };
+        }).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+        return res.status(200).json(list);
+    } catch (error) {
+        console.error("[bulk-campaigns/list] error:", error);
+        return res.status(500).json({ error: "Failed to list campaigns." });
+    }
+});
+
 // ── Retention email test-send (admin only) ────────────────────────────────────
 // POST /user/admin/send-retention-email/:userId
 // Body: { type: 'weekly' | 'monthly' | 'testReminder' | 'reEngagement' |

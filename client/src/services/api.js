@@ -844,6 +844,56 @@ export const updateCoachOutreachLead = async (leadId, payload) => {
   }
 };
 
+export const importCoachOutreachLeads = async (leads) => {
+  try {
+    const response = await api.post('/user/admin/coach-outreach-leads/import', { leads });
+    return response.data;
+  } catch (error) {
+    console.error('Error importing coach outreach leads:', error);
+    throw error;
+  }
+};
+
+export const startBulkOutreachCampaign = async (config) => {
+  try {
+    const response = await api.post('/user/admin/coach-outreach-leads/bulk-campaign', config);
+    return response.data;
+  } catch (error) {
+    console.error('Error starting bulk outreach campaign:', error);
+    throw error;
+  }
+};
+
+export const getBulkCampaignStatus = async (id) => {
+  try {
+    const response = await api.get(`/user/admin/coach-outreach-leads/bulk-campaign/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error getting bulk campaign status:', error);
+    throw error;
+  }
+};
+
+export const stopBulkCampaign = async (id) => {
+  try {
+    const response = await api.delete(`/user/admin/coach-outreach-leads/bulk-campaign/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error stopping bulk campaign:', error);
+    throw error;
+  }
+};
+
+export const listBulkCampaigns = async () => {
+  try {
+    const response = await api.get('/user/admin/coach-outreach-leads/bulk-campaigns');
+    return response.data;
+  } catch (error) {
+    console.error('Error listing bulk campaigns:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);

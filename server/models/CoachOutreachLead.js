@@ -9,6 +9,16 @@ const coachOutreachLeadSchema = new mongoose.Schema(
     responded: { type: Boolean, default: false },
     registered: { type: Boolean, default: false },
     notes: { type: String, default: "" },
+    // Extended fields for bulk import / campaigns
+    city: { type: String, default: "" },
+    country: { type: String, default: "" },
+    type: { type: String, default: "" },
+    website: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    priority: { type: Number, default: 0 },
+    source: { type: String, default: "manual" }, // 'manual' | 'csv'
+    bulkCampaignId: { type: String, default: null },
+    unsubscribed: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
