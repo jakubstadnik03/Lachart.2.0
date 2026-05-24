@@ -50,7 +50,12 @@ const LAPS_LIST_SCROLL_CLASS =
 const LAPS_LIST_FULL_CLASS =
   'overflow-x-auto';
 
-const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false, hideChart = false }) => {
+const METRIC_LABELS = {
+  sprint5s: '5s', attack1min: '1min', vo2max5min: '5min',
+  threshold20min: '20min', endurance60min: '60min',
+};
+
+const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false, hideChart = false, highlightMetric = null, radarWatts = null }) => {
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
   const [initialLapIndex, setInitialLapIndex] = useState(null);
   const [lactateSaved, setLactateSaved] = useState(false);
@@ -324,6 +329,12 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                       {!isSwim && power > 0 && (
                         <span className="text-xs font-medium text-purple-600">{Math.round(power)} W</span>
                       )}
+                      {!isSwim && isSelected && highlightMetric && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold leading-none">
+                          ⚡ Best {METRIC_LABELS[highlightMetric] || ''}
+                          {radarWatts > 0 && ` · ${radarWatts}W`}
+                        </span>
+                      )}
                       {isSwim && cadence > 0 && (
                         <span className="text-xs font-medium text-gray-600">{Math.round(cadence)} rpm</span>
                       )}
@@ -498,7 +509,15 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{hr > 0 ? `${Math.round(hr)} bpm` : '-'}</td>
                 {!isSwim && (
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{power > 0 ? `${Math.round(power)} W` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
+                    {power > 0 ? `${Math.round(power)} W` : '-'}
+                    {isSelected && highlightMetric && (
+                      <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold leading-none">
+                        ⚡ Best {METRIC_LABELS[highlightMetric] || ''}
+                        {radarWatts > 0 && ` · ${radarWatts}W`}
+                      </span>
+                    )}
+                  </td>
                 )}
                 {isSwim && (
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{cadence > 0 ? `${Math.round(cadence)} rpm` : '-'}</td>

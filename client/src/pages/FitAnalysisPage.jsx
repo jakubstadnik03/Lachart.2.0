@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PencilIcon, CheckIcon, XMarkIcon, ChevronLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import AutoClassifyModal from '../components/FitAnalysis/AutoClassifyModal';
@@ -1474,7 +1475,7 @@ const FitAnalysisPage = () => {
     const cachePatch = (matcher, patcher) => {
       try {
         Object.keys(localStorage).forEach(key => {
-          if (!key.startsWith('athleteTrainings_v3_')) return;
+          if (!key.startsWith('athleteTrainings_v3_') && !key.startsWith('calendarData_')) return;
           const raw = localStorage.getItem(key);
           if (!raw) return;
           try {
@@ -5194,6 +5195,8 @@ const FitAnalysisPage = () => {
                     onSelectLapNumber={setSelectedLapNumber}
                     onOpenLactateForm={handleFitOpenLactateForm}
                     hideChart={true}
+                    highlightMetric={highlightMetric}
+                    radarWatts={radarWatts}
                   />
                   </div>
 
@@ -6353,10 +6356,11 @@ const FitAnalysisPage = () => {
           </div>
 
       {/* Manual Add / Edit Training Modal */}
-      {showManualForm && (
+      {showManualForm && ReactDOM.createPortal(
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4"
+          style={{ pointerEvents: 'auto' }}
         >
           <div className="w-full sm:max-w-2xl">
             {manualFormError && (
@@ -6373,14 +6377,16 @@ const FitAnalysisPage = () => {
               isLoading={manualFormSubmitting}
             />
           </div>
-        </motion.div>
+        </motion.div>,
+        document.getElementById('app-modal-root') || document.body
       )}
 
       {/* Training Form Modal - Export to training */}
-      {showTrainingForm && trainingFormData && (
+      {showTrainingForm && trainingFormData && ReactDOM.createPortal(
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[1001] p-0 sm:p-4"
+          style={{ pointerEvents: 'auto' }}
         >
           <div className="w-full sm:max-w-2xl">
             <TrainingForm
@@ -6395,7 +6401,8 @@ const FitAnalysisPage = () => {
               initialSelectedLap={trainingFormData?._initialSelectedLap ?? null}
             />
           </div>
-        </motion.div>
+        </motion.div>,
+        document.getElementById('app-modal-root') || document.body
       )}
 
       {/* Calendar "Add Lactate" loading indicator */}

@@ -7,6 +7,16 @@ const TrainingAbl = require('../abl/trainingAbl');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
 
+/** Normalize any sport string → 'bike' | 'run' | 'swim' | null for notification icons. */
+function normalizeSportForNotif(sport) {
+  if (!sport) return null;
+  const s = String(sport).toLowerCase();
+  if (/ride|bike|cycl|velo/.test(s)) return 'bike';
+  if (/run|trail|treadmill/.test(s)) return 'run';
+  if (/swim/.test(s)) return 'swim';
+  return null;
+}
+
 /**
  * Parse FIT file and extract training data
  */
@@ -358,12 +368,14 @@ async function uploadFitFile(req, res) {
     const durationStr = durationMin ? ` · ${durationMin} min` : '';
     const notifBody = `FIT file uploaded${sportLabel}${durationStr}.`;
 
+    const notifSport = normalizeSportForNotif(trainingData.sport);
     notifyAthlete(String(userId), {
       type: 'fit_uploaded',
       title: 'Training uploaded',
       body: notifBody,
       resourceId: String(fitTraining._id),
       resourceType: 'fit',
+      sport: notifSport,
     }).catch(() => {});
 
     notifyCoachesOfAthlete(String(userId), {
@@ -372,6 +384,7 @@ async function uploadFitFile(req, res) {
       body: notifBody,
       resourceId: String(fitTraining._id),
       resourceType: 'fit',
+      sport: notifSport,
     }).catch(() => {});
 
     // Bust the server-side route cache so subsequent GET /api/fit/trainings returns fresh data
@@ -432,11 +445,16 @@ async function getFitTrainings(req, res) {
         if (String(athleteIdParam) === String(userId)) {
           targetAthleteId = String(userId);
         } else {
-          const athlete = await User.findById(athleteIdParam);
+          const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || String(athlete.coachId) !== String(userId)) {
+          // Support both coachId (singular) and coachIds (array)
+          const athleteCoachIds = [
+            ...(Array.isArray(athlete.coachIds) ? athlete.coachIds.map(String) : []),
+            ...(athlete.coachId ? [String(athlete.coachId)] : []),
+          ];
+          if (!athleteCoachIds.includes(String(userId))) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetAthleteId = String(athleteIdParam);
@@ -1046,15 +1064,20 @@ async function analyzeTrainingsByMonth(req, res) {
         String(athleteIdParam).trim() !== '' &&
         athleteIdParam !== null &&
         athleteIdParam !== undefined) {
-      if (user.role === 'coach') {
+      if (user.role === 'coach' || user.role === 'admin') {
         if (String(athleteIdParam) === String(userId)) {
           targetAthleteId = String(userId);
         } else {
-          const athlete = await User.findById(athleteIdParam);
+          const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || String(athlete.coachId) !== String(userId)) {
+          // Support both coachId (singular) and coachIds (array)
+          const athleteCoachIds = [
+            ...(Array.isArray(athlete.coachIds) ? athlete.coachIds.map(String) : []),
+            ...(athlete.coachId ? [String(athlete.coachId)] : []),
+          ];
+          if (!athleteCoachIds.includes(String(userId))) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetAthleteId = String(athleteIdParam);
@@ -1070,9 +1093,12 @@ async function analyzeTrainingsByMonth(req, res) {
     console.log('Target athlete ID:', targetAthleteIdStr);
     
     const monthKeyParam = req.query.monthKey;
-    const onlyMetadata = !monthKeyParam; // If no monthKey, return only metadata (list of months)
-    
-    console.log('Request params:', { monthKey: monthKeyParam, onlyMetadata });
+    const startDateParam = req.query.startDate;
+    const endDateParam   = req.query.endDate;
+    const hasDateRange   = !!(startDateParam && endDateParam);
+    const onlyMetadata   = !monthKeyParam && !hasDateRange; // If no month/range, return only metadata (list of months)
+
+    console.log('Request params:', { monthKey: monthKeyParam, startDate: startDateParam, endDate: endDateParam, onlyMetadata });
     
     // Zones must come from the athlete whose trainings we analyze (not the coach's profile).
     // Skip DB load for metadata-only requests (no monthKey).
@@ -1099,7 +1125,7 @@ async function analyzeTrainingsByMonth(req, res) {
     try {
       const FitTraining = require('../models/fitTraining');
       
-      // Pokud máme monthKey, vytvoříme date range pro daný měsíc
+      // Pokud máme monthKey nebo date range, vytvoříme date filter pro DB dotaz
       let dateFilter = {};
       if (monthKeyParam) {
         const [year, month] = monthKeyParam.split('-').map(Number);
@@ -1112,6 +1138,14 @@ async function analyzeTrainingsByMonth(req, res) {
           }
         };
         console.log(`Filtering FIT trainings for month ${monthKeyParam}: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      } else if (hasDateRange) {
+        dateFilter = {
+          timestamp: {
+            $gte: new Date(startDateParam),
+            $lte: new Date(endDateParam)
+          }
+        };
+        console.log(`Filtering FIT trainings for date range: ${startDateParam} to ${endDateParam}`);
       }
       
       const query = {
@@ -2790,6 +2824,24 @@ async function analyzeTrainingsByMonth(req, res) {
  * Includes zero-power samples so averages match standard MMP (mean maximal power) calculation.
  * Gaps > 5 s between consecutive records are treated as pauses (window resets).
  */
+/**
+ * Best power over `durationSeconds` from a lap array.
+ * Used as fallback when per-second records don't carry power data.
+ * Only considers laps whose duration is at least 80% of the target window.
+ */
+function maxPowerFromLaps(laps, durationSeconds) {
+  if (!laps || laps.length === 0) return 0;
+  let best = 0;
+  for (const lap of laps) {
+    const dur = Number(lap.totalTimerTime || lap.totalElapsedTime || 0);
+    const avg = Number(lap.avgPower || 0);
+    if (avg > 0 && dur >= durationSeconds * 0.8) {
+      best = Math.max(best, avg);
+    }
+  }
+  return Math.round(best);
+}
+
 function calculateMaxPowerForDuration(records, durationSeconds) {
   if (!records || records.length === 0) return 0;
 
@@ -2874,12 +2926,12 @@ async function getPowerMetrics(req, res) {
       }
     }
     
-    // Load FIT trainings with records
+    // Load FIT trainings with records + lap/session summary for fallback power
     const fitTrainings = await FitTraining.find({
       athleteId: athleteId,
-      sport: 'cycling'
+      sport: 'cycling',
     })
-      .select('_id timestamp records sport')
+      .select('_id timestamp sport records laps avgPower maxPower normalizedPower totalElapsedTime totalTimerTime')
       .lean();
     
     // Load Strava activities with power data
@@ -2914,13 +2966,20 @@ async function getPowerMetrics(req, res) {
         .lean();
     }
     
-    // Process FIT trainings
+    // Process FIT trainings — include any that have EITHER per-second power records
+    // OR session/lap-level avgPower (some devices/parsers store power only at the lap level).
     const fitTrainingsProcessed = fitTrainings
-      .filter(t => t.records && t.records.length > 0 && t.records.some(r => r.power && r.power > 0))
+      .filter(t => {
+        if (!t.timestamp) return false;
+        const hasRecordPower = t.records && t.records.length > 0 && t.records.some(r => r.power && r.power > 0);
+        const hasSessionPower = t.avgPower && t.avgPower > 0;
+        const hasLapPower = t.laps && t.laps.some(l => l.avgPower && l.avgPower > 0);
+        return hasRecordPower || hasSessionPower || hasLapPower;
+      })
       .map(t => ({
         ...t,
         timestamp: t.timestamp ? new Date(t.timestamp).getTime() : null,
-        records: t.records
+        records: t.records || [],
       }));
     
     if (process.env.NODE_ENV !== 'production') {
@@ -3141,12 +3200,16 @@ async function getPowerMetrics(req, res) {
     const allMetrics = allTrainings
       .filter(t => t.timestamp && t.timestamp > 0)
       .map(training => {
+        const fromRecords = (dur) => calculateMaxPowerForDuration(training.records, dur);
+        const fromLaps    = (dur) => maxPowerFromLaps(training.laps, dur);
+        const totalTime   = Number(training.totalTimerTime || training.totalElapsedTime || 0);
         const metrics = {
-          sprint5s: calculateMaxPowerForDuration(training.records, 5),
-          attack1min: calculateMaxPowerForDuration(training.records, 60),
-          vo2max5min: calculateMaxPowerForDuration(training.records, 300),
-          threshold20min: calculateMaxPowerForDuration(training.records, 1200),
-          endurance60min: calculateMaxPowerForDuration(training.records, 3600)
+          sprint5s:       fromRecords(5)    || Math.round(Number(training.maxPower || 0)),
+          attack1min:     fromRecords(60)   || fromLaps(60),
+          vo2max5min:     fromRecords(300)  || fromLaps(300),
+          threshold20min: fromRecords(1200) || fromLaps(1200),
+          endurance60min: fromRecords(3600) || fromLaps(3600) ||
+            (totalTime >= 3200 ? Math.round(Number(training.avgPower || 0)) : 0),
         };
         return {
           ...metrics,
@@ -3338,13 +3401,19 @@ async function getPowerMetrics(req, res) {
         });
         
         if (monthTrainings.length > 0) {
-          const monthAllMetrics = monthTrainings.map(training => ({
-            sprint5s: calculateMaxPowerForDuration(training.records, 5),
-            attack1min: calculateMaxPowerForDuration(training.records, 60),
-            vo2max5min: calculateMaxPowerForDuration(training.records, 300),
-            threshold20min: calculateMaxPowerForDuration(training.records, 1200),
-            endurance60min: calculateMaxPowerForDuration(training.records, 3600)
-          }));
+          const monthAllMetrics = monthTrainings.map(training => {
+            const fromRecords = (dur) => calculateMaxPowerForDuration(training.records, dur);
+            const fromLaps    = (dur) => maxPowerFromLaps(training.laps, dur);
+            const totalTime   = Number(training.totalTimerTime || training.totalElapsedTime || 0);
+            return {
+              sprint5s:       fromRecords(5)    || Math.round(Number(training.maxPower || 0)),
+              attack1min:     fromRecords(60)   || fromLaps(60),
+              vo2max5min:     fromRecords(300)  || fromLaps(300),
+              threshold20min: fromRecords(1200) || fromLaps(1200),
+              endurance60min: fromRecords(3600) || fromLaps(3600) ||
+                (totalTime >= 3200 ? Math.round(Number(training.avgPower || 0)) : 0),
+            };
+          });
           
           monthlyMetrics[monthKey] = {
             sprint5s: Math.max(...monthAllMetrics.map(m => m.sprint5s || 0), 0),
@@ -3387,6 +3456,191 @@ async function getPowerMetrics(req, res) {
   }
 }
 
+// ── Run Metrics (Pace Radar) ─────────────────────────────────────────────────
+// Distance category definitions (metres) — must match RUN_AXES in SpiderChart
+const RUN_AXES = [
+  { id: 'run400m',  minDist: 200,   maxDist: 700   },
+  { id: 'run1km',   minDist: 700,   maxDist: 2500  },
+  { id: 'run5km',   minDist: 2500,  maxDist: 9000  },
+  { id: 'run10km',  minDist: 9000,  maxDist: 18000 },
+  { id: 'runHalf',  minDist: 18000, maxDist: null  },
+];
+
+function lapToInterval(dist, dur, avgSpeed, date, trainingId, type) {
+  const distM = Number(dist || 0);
+  const durS  = Number(dur  || 0);
+  let pace = 0;
+  const spd = Number(avgSpeed || 0);
+  if (spd > 0) {
+    pace = 1000 / spd; // sec / km
+  } else if (distM > 0 && durS > 0) {
+    pace = (durS / distM) * 1000;
+  }
+  // Sanity: 2:00–15:00 /km = 120–900 sec/km, distance > 100m
+  if (pace < 120 || pace > 900 || distM < 100) return null;
+  return { pace, distM, date, trainingId, type };
+}
+
+async function getRunMetrics(req, res) {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    let athleteId = userId;
+    if (req.query.athleteId) {
+      const isCoach = ['coach', 'tester', 'testing', 'admin'].includes(req.user?.role) || req.user?.admin;
+      if (isCoach) athleteId = req.query.athleteId;
+    }
+    const athleteIdStr = String(athleteId);
+
+    const comparePeriod = req.query.comparePeriod || '90days';
+    let selectedMonths = req.query.selectedMonths
+      ? (Array.isArray(req.query.selectedMonths) ? req.query.selectedMonths : [req.query.selectedMonths])
+      : [];
+
+    // ── 1. FIT running activities ─────────────────────────────────────────────
+    const fitRuns = await FitTraining.find({ athleteId: athleteIdStr, sport: { $in: ['running', 'run'] } })
+      .select('_id timestamp sport laps avgSpeed totalDistance totalElapsedTime totalTimerTime')
+      .lean();
+
+    const intervals = []; // { pace, distM, date, trainingId, type }
+
+    for (const t of fitRuns) {
+      if (!t.timestamp) continue;
+      const date = new Date(t.timestamp);
+      const id = t._id.toString();
+
+      if (t.laps && t.laps.length > 0) {
+        for (const lap of t.laps) {
+          const iv = lapToInterval(
+            lap.totalDistance || lap.distance,
+            lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time,
+            lap.avgSpeed || lap.averageSpeed,
+            date, id, 'fit'
+          );
+          if (iv) intervals.push(iv);
+        }
+      } else {
+        // No laps — use overall session summary
+        const iv = lapToInterval(
+          t.totalDistance, t.totalTimerTime || t.totalElapsedTime, t.avgSpeed,
+          date, id, 'fit'
+        );
+        if (iv) intervals.push(iv);
+      }
+    }
+
+    // ── 2. Strava running activities ──────────────────────────────────────────
+    const StravaActivity = require('../models/StravaActivity');
+    const stravaRuns = await StravaActivity.find({
+      userId: athleteIdStr,
+      sport: { $in: ['Run', 'running', 'run', 'VirtualRun'] },
+    })
+      .select('stravaId startDate sport distance averageSpeed elapsedTime movingTime laps')
+      .lean();
+
+    for (const a of stravaRuns) {
+      if (!a.startDate) continue;
+      const date = new Date(a.startDate);
+      const id = String(a.stravaId || a._id);
+
+      if (a.laps && a.laps.length > 0) {
+        for (const lap of a.laps) {
+          const iv = lapToInterval(
+            lap.distance, lap.elapsed_time || lap.moving_time, lap.average_speed,
+            date, id, 'strava'
+          );
+          if (iv) intervals.push(iv);
+        }
+      } else {
+        // Use overall activity
+        const iv = lapToInterval(
+          a.distance, a.elapsedTime || a.movingTime, a.averageSpeed,
+          date, id, 'strava'
+        );
+        if (iv) intervals.push(iv);
+      }
+    }
+
+    if (intervals.length === 0) {
+      return res.json({ allTime: {}, compare: {}, monthlyMetrics: {}, trainingsCount: 0 });
+    }
+
+    // ── 3. Helpers ────────────────────────────────────────────────────────────
+    // "Best" for pace = lowest sec/km (fastest)
+    const bestInList = (list) => {
+      if (!list.length) return null;
+      return list.reduce((a, b) => b.pace < a.pace ? b : a);
+    };
+
+    const now = Date.now();
+    let compareFrom;
+    if (comparePeriod === '30days') compareFrom = now - 30 * 86400000;
+    else if (comparePeriod === '90days') compareFrom = now - 90 * 86400000;
+    else compareFrom = 0;
+
+    // ── 4. Compute allTime, compare, monthly ──────────────────────────────────
+    const allTime = {};
+    const compare = {};
+    const monthlyMetrics = {};
+
+    for (const axis of RUN_AXES) {
+      const forAxis = intervals.filter(iv =>
+        iv.distM >= axis.minDist && (axis.maxDist === null || iv.distM <= axis.maxDist)
+      );
+      const b = bestInList(forAxis);
+      allTime[axis.id] = b ? { value: Math.round(b.pace), date: b.date, trainingId: b.trainingId, trainingType: b.type } : null;
+
+      const forPeriod = forAxis.filter(iv => iv.date.getTime() >= compareFrom);
+      const bc = bestInList(forPeriod);
+      compare[axis.id] = bc ? { value: Math.round(bc.pace), trainingId: bc.trainingId, trainingType: bc.type } : null;
+    }
+
+    // Always compute the set of months that have ANY interval — so client can
+    // populate the month picker even before the user selects months.
+    const allMonthKeysSet = new Set();
+    intervals.forEach(iv => {
+      const d = iv.date;
+      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      allMonthKeysSet.add(mk);
+    });
+    const allMonthKeys = [...allMonthKeysSet].sort();
+
+    // Monthly per-axis bests — compute for requested months (or all if none specified)
+    const monthsToCompute = (comparePeriod === 'monthly' && selectedMonths.length > 0)
+      ? selectedMonths
+      : (comparePeriod === 'monthly' ? allMonthKeys : []);
+
+    for (const mk of monthsToCompute) {
+      const [yr, mo] = mk.split('-').map(Number);
+      const start = new Date(yr, mo - 1, 1).getTime();
+      const end   = new Date(yr, mo,     0, 23, 59, 59, 999).getTime();
+      const monthIntervals = intervals.filter(iv => {
+        const t = iv.date.getTime();
+        return t >= start && t <= end;
+      });
+      if (!monthIntervals.length) continue;
+      monthlyMetrics[mk] = {};
+      for (const axis of RUN_AXES) {
+        const forAxis = monthIntervals.filter(iv =>
+          iv.distM >= axis.minDist && (axis.maxDist === null || iv.distM <= axis.maxDist)
+        );
+        const b = bestInList(forAxis);
+        monthlyMetrics[mk][axis.id] = b ? Math.round(b.pace) : null;
+      }
+    }
+
+    return res.json({
+      allTime,
+      compare,
+      allMonthKeys,
+      monthlyMetrics: Object.keys(monthlyMetrics).length ? monthlyMetrics : undefined,
+      trainingsCount: fitRuns.length + stravaRuns.length,
+    });
+  } catch (err) {
+    console.error('[RunMetrics]', err);
+    return res.status(500).json({ error: 'Failed to compute run metrics' });
+  }
+}
+
 module.exports = {
   uploadFitFile,
   getFitTrainings,
@@ -3398,6 +3652,7 @@ module.exports = {
   createLap,
   getTrainingsWithLactate,
   analyzeTrainingsByMonth,
-  getPowerMetrics
+  getPowerMetrics,
+  getRunMetrics,
 };
 

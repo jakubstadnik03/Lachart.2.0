@@ -36,6 +36,41 @@ const RUN_AXES = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Parse "YYYY-MM" key into a LOCAL-timezone Date (1st of month).
+ * Avoids the UTC-midnight bug: new Date('2024-03-01') is interpreted as
+ * midnight UTC and renders as Feb 29 in UTC+1/+2 timezones.
+ */
+function mkToLocalDate(mk) {
+  const [y, m] = mk.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
+/**
+ * Format a date string / Date object without timezone shift.
+ * ISO date-only strings ('2024-03-15') must not be passed to new Date()
+ * directly — they parse as UTC midnight which shifts a day backwards in EU.
+ */
+function fmtDate(dateVal, opts = { month: 'short', day: 'numeric', year: 'numeric' }) {
+  if (!dateVal) return '—';
+  let d;
+  if (dateVal instanceof Date) {
+    d = dateVal;
+  } else {
+    const s = String(dateVal);
+    // Full ISO with time-zone info → safe to pass directly
+    if (s.includes('T') || s.includes('Z')) {
+      d = new Date(s);
+    } else {
+      // Date-only 'YYYY-MM-DD' → parse as local midnight to avoid day shift
+      const [y, mo, day] = s.split('-').map(Number);
+      d = new Date(y, (mo || 1) - 1, day || 1);
+    }
+  }
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', opts);
+}
+
 function parseDurSec(v) {
   if (!v && v !== 0) return 0;
   if (typeof v === 'number') return v;
@@ -51,6 +86,13 @@ function fmtPace(secPerKm) {
   const m = Math.floor(secPerKm / 60);
   const s = Math.round(secPerKm % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Extract numeric value from allTime / compare entry (may be object or number). */
+function extractVal(v) {
+  if (v == null) return 0;
+  if (typeof v === 'object') return Number(v.value || 0);
+  return Number(v || 0);
 }
 
 /** Compute run pace metrics from training objects (manual training form data). */
@@ -191,6 +233,8 @@ export default function SpiderChart({
   // bikeReady: true once we've received real bike data (cache or API).
   // Prevents the chart from flashing with all-zero data on first render.
   const [bikeReady, setBikeReady] = useState(false);
+  // refreshKey: bump to force-reload both allTime and compare effects.
+  const [refreshKey, setRefreshKey] = useState(0);
   const [, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -200,8 +244,94 @@ export default function SpiderChart({
   useEffect(() => { try { localStorage.setItem('powerRadar_comparePeriod', comparePeriod); } catch {} }, [comparePeriod]);
   useEffect(() => { try { localStorage.setItem('powerRadar_selectedMonths', JSON.stringify(selectedMonths)); } catch {} }, [selectedMonths]);
 
-  // ── Run metrics (client-side) ─────────────────────────────────────────────
-  const runMetrics = useMemo(() => computeRunMetrics(trainings), [trainings]);
+  // ── Run metrics (client-side fallback for manual trainings) ─────────────────
+  const manualRunMetrics = useMemo(() => computeRunMetrics(trainings), [trainings]);
+
+  // ── Run metrics (server-side: FIT + Strava runs) ──────────────────────────
+  const RUN_KEYS = ['run400m', 'run1km', 'run5km', 'run10km', 'runHalf'];
+  const [serverRunMetrics, setServerRunMetrics] = useState(null);
+  const [runReady, setRunReady] = useState(false);
+  const runReqRef = useRef(0);
+  useEffect(() => {
+    if (sport !== 'run') return;
+    const load = async () => {
+      const reqId = ++runReqRef.current;
+      const athletePart = targetAthleteId ? `_${targetAthleteId}` : '';
+      const cacheKey = `runRadar_metrics_v1_${comparePeriod}_${selectedMonths.join(',')}${athletePart}`;
+      const cacheTsKey = cacheKey + '_ts';
+      const CACHE_TTL = 600000; // 10 min
+      try {
+        const now = Date.now();
+        const cached = localStorage.getItem(cacheKey);
+        const ts = Number(localStorage.getItem(cacheTsKey) || 0);
+        if (cached && (now - ts) < CACHE_TTL) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed && parsed.allTime) {
+              setServerRunMetrics(parsed);
+              setRunReady(true);
+              return;
+            }
+          } catch {}
+        }
+        const params = new URLSearchParams();
+        if (comparePeriod) params.append('comparePeriod', comparePeriod);
+        selectedMonths.forEach(m => params.append('selectedMonths', m));
+        if (targetAthleteId) params.append('athleteId', targetAthleteId);
+        const resp = await api.get(`/api/fit/run-metrics?${params}`);
+        if (reqId !== runReqRef.current) return;
+        const data = resp.data;
+        if (data && data.allTime) {
+          setServerRunMetrics(data);
+          setRunReady(true);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(data));
+            localStorage.setItem(cacheTsKey, String(Date.now()));
+          } catch {}
+        }
+      } catch {}
+    };
+    load();
+  }, [sport, comparePeriod, selectedMonths, targetAthleteId, refreshKey]);
+
+  // Merge server run metrics with manual run metrics (prefer server for FIT/Strava, add manual)
+  const runMetrics = useMemo(() => {
+    if (!serverRunMetrics && !manualRunMetrics?.hasData) return manualRunMetrics;
+    if (!serverRunMetrics) return manualRunMetrics;
+
+    // Build merged allTimeBest: for each axis, use server pace if available, else manual
+    const merged = {
+      allTimeBest: {},
+      compareBest: { [comparePeriod]: {} },
+      monthlyBests: {},
+      hasData: false,
+    };
+
+    RUN_AXES.forEach(axis => {
+      // allTime: prefer server (lower = faster)
+      const srv = serverRunMetrics.allTime?.[axis.id]?.value || null;
+      const man = manualRunMetrics?.allTimeBest?.[axis.id] || null;
+      merged.allTimeBest[axis.id] = srv && man ? Math.min(srv, man) : (srv || man);
+
+      // compare
+      const srvC = serverRunMetrics.compare?.[axis.id]?.value || null;
+      const manC = manualRunMetrics?.compareBest?.[comparePeriod]?.[axis.id]
+        || manualRunMetrics?.compareBest?.['90days']?.[axis.id] || null;
+      merged.compareBest[comparePeriod] = merged.compareBest[comparePeriod] || {};
+      merged.compareBest[comparePeriod][axis.id] = srvC && manC ? Math.min(srvC, manC) : (srvC || manC);
+
+      // monthly
+      Object.keys(serverRunMetrics.monthlyMetrics || {}).forEach(mk => {
+        if (!merged.monthlyBests[mk]) merged.monthlyBests[mk] = {};
+        const srvM = serverRunMetrics.monthlyMetrics[mk]?.[axis.id] || null;
+        const manM = manualRunMetrics?.monthlyBests?.[mk]?.[axis.id] || null;
+        merged.monthlyBests[mk][axis.id] = srvM && manM ? Math.min(srvM, manM) : (srvM || manM);
+      });
+    });
+
+    merged.hasData = Object.values(merged.allTimeBest).some(v => v !== null && v > 0);
+    return merged;
+  }, [serverRunMetrics, manualRunMetrics, comparePeriod]);
 
   // Reset bikeReady when athlete changes so we don't flash stale data
   useEffect(() => {
@@ -209,15 +339,17 @@ export default function SpiderChart({
   }, [targetAthleteId]);
 
   // ── Bike: all-time reference load ─────────────────────────────────────────
+  // NOTE: do NOT call setBikeAllTimeRef(null) at the top — that would briefly
+  // use bikeMetrics as the normalization fallback, which could have a different
+  // allTime value and make the radar flash with wrong maxima.
   const allTimeReqRef = useRef(0);
   useEffect(() => {
     if (sport !== 'bike') return;
-    setBikeAllTimeRef(null);
     const load = async () => {
       const reqId = ++allTimeReqRef.current;
-      const cacheKey = `powerRadar_allTimeRef_v2${targetAthleteId ? `_${targetAthleteId}` : ''}`;
+      const cacheKey = `powerRadar_allTimeRef_v3${targetAthleteId ? `_${targetAthleteId}` : ''}`;
       const cacheTsKey = cacheKey + '_ts';
-      const CACHE_TTL = 3600000; // 1 hour
+      const CACHE_TTL = 900000; // 15 min (reduced from 1h so fresh PRs appear quickly)
       try {
         const now = Date.now();
         const cached = localStorage.getItem(cacheKey);
@@ -240,12 +372,15 @@ export default function SpiderChart({
         if (isBikePayload(resp.data)) {
           setBikeAllTimeRef(resp.data);
           setBikeReady(true);
-          try { localStorage.setItem(cacheKey, JSON.stringify(resp.data)); localStorage.setItem(cacheTsKey, String(Date.now())); } catch {}
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(resp.data));
+            localStorage.setItem(cacheTsKey, String(Date.now()));
+          } catch {}
         }
       } catch {}
     };
     load();
-  }, [sport, targetAthleteId]);
+  }, [sport, targetAthleteId, refreshKey]);
 
   // ── Bike: compare metrics load ────────────────────────────────────────────
   const metricsReqRef = useRef(0);
@@ -318,33 +453,44 @@ export default function SpiderChart({
       }
     };
     load();
-  }, [sport, comparePeriod, selectedMonths, targetAthleteId, bikeReady]);
+  }, [sport, comparePeriod, selectedMonths, targetAthleteId, refreshKey]);
 
   // ── Derived: bike all-time best (stable normalisation) ────────────────────
+  // Takes the maximum across every available source so compare values can
+  // never exceed 100% in the radar (which would happen if the all-time cache
+  // is stale but compare data has fresh uploads).
   const bikeAllTimeBest = useMemo(() => {
-    const src = bikeAllTimeRef || bikeMetrics;
     const best = {};
     BIKE_KEYS.forEach(k => {
-      const atVal = typeof src?.allTime?.[k] === 'object' ? Number(src.allTime[k]?.value || 0) : Number(src?.allTime?.[k] || 0);
-      const prVal = Number(src?.personalRecords?.[k]?.value || 0);
-      best[k] = Math.max(atVal, prVal, 0);
+      const v1 = extractVal(bikeAllTimeRef?.allTime?.[k]);
+      const v2 = extractVal(bikeMetrics?.allTime?.[k]);
+      const v3 = extractVal(bikeMetrics?.compare?.[k]);         // compare ≤ allTime but use as safety net
+      const pr = Number(bikeMetrics?.personalRecords?.[k]?.value || 0);
+      best[k] = Math.max(v1, v2, v3, pr, 0);
     });
     return best;
   }, [bikeMetrics, bikeAllTimeRef]);
 
   // ── Available months (bike or run) ────────────────────────────────────────
+  // Use mkToLocalDate() instead of new Date(mk+'-01') to avoid the UTC-midnight
+  // timezone bug that shifts months back by one in UTC+ timezones.
   const availableMonths = useMemo(() => {
+    const toEntry = mk => {
+      const d = mkToLocalDate(mk); // local-timezone 1st of month
+      return { key: mk, label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), date: d };
+    };
+    let keys;
     if (sport === 'bike') {
-      return Object.keys(bikeMetrics.monthlyMetrics || {})
-        .map(mk => { const d = new Date(mk + '-01'); return { key: mk, label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), date: d }; })
-        .filter(m => !isNaN(m.date))
-        .sort((a, b) => b.date - a.date);
+      keys = Object.keys(bikeMetrics.monthlyMetrics || {});
+    } else {
+      // Use allMonthKeys from server (all months with any run data), fall back to
+      // monthlyBests keys from combined metrics (manual trainings).
+      const srvKeys = serverRunMetrics?.allMonthKeys || Object.keys(serverRunMetrics?.monthlyMetrics || {});
+      const manKeys = Object.keys(manualRunMetrics?.monthlyBests || {});
+      keys = [...new Set([...srvKeys, ...manKeys])];
     }
-    return Object.keys(runMetrics?.monthlyBests || {})
-      .map(mk => { const d = new Date(mk + '-01'); return { key: mk, label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), date: d }; })
-      .filter(m => !isNaN(m.date))
-      .sort((a, b) => b.date - a.date);
-  }, [sport, bikeMetrics, runMetrics]);
+    return keys.map(toEntry).filter(m => !isNaN(m.date)).sort((a, b) => b.date - a.date);
+  }, [sport, bikeMetrics, runMetrics, serverRunMetrics, manualRunMetrics]);
 
   // Auto-select all months when switching to monthly
   useEffect(() => {
@@ -360,8 +506,10 @@ export default function SpiderChart({
       const labels = BIKE_AXES.map(a => a.label);
       const normBike = (val, k) => {
         const max = bikeAllTimeBest[k] || 0;
-        const v = typeof val === 'object' ? Number(val?.value || 0) : Number(val || 0);
-        return max > 0 ? (v / max) * 100 : 0;
+        const v = extractVal(val);
+        // Cap at 100 — compare can't exceed all-time by definition, but stale
+        // cache + fresh compare upload could cause it to briefly exceed the stored max.
+        return max > 0 ? Math.min(100, (v / max) * 100) : 0;
       };
 
       if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
@@ -508,10 +656,8 @@ export default function SpiderChart({
               const k = axis.id;
               let raw = 0;
               if (kind === 'alltime') raw = bikeAllTimeBest[k] || 0;
-              else if (kind === 'compare') {
-                const cm = bikeMetrics?.compare?.[k];
-                raw = typeof cm === 'object' ? Number(cm?.value || 0) : Number(cm || 0);
-              } else if (kind === 'month') raw = Number(bikeMetrics.monthlyMetrics?.[mk]?.[k] || 0);
+              else if (kind === 'compare') raw = extractVal(bikeMetrics?.compare?.[k]);
+              else if (kind === 'month') raw = Number(bikeMetrics.monthlyMetrics?.[mk]?.[k] || 0);
               return `${lbl}: ${Math.round(raw)} W`;
             } else {
               const id = axis.id;
@@ -532,9 +678,8 @@ export default function SpiderChart({
             if (sport === 'bike') {
               const k = axis.id;
               const allV = bikeAllTimeBest[k] || 0;
-              const cm = bikeMetrics?.compare?.[k];
-              const cmpV = typeof cm === 'object' ? Number(cm?.value || 0) : Number(cm || 0);
-              if (cmpV > 0 && allV > 0) return [`${Math.round((cmpV / allV) * 100)}% of All Time`];
+              const cmpV = extractVal(bikeMetrics?.compare?.[k]);
+              if (cmpV > 0 && allV > 0) return [`${Math.min(100, Math.round((cmpV / allV) * 100))}% of All Time`];
             }
             return [];
           },
@@ -546,27 +691,34 @@ export default function SpiderChart({
   // ── Table data ────────────────────────────────────────────────────────────
   const tableRows = useMemo(() => {
     if (sport === 'bike') {
-      const at = bikeAllTimeRef?.allTime || bikeMetrics?.allTime || {};
+      // Prefer bikeAllTimeRef for all-time values (loaded with comparePeriod=alltime).
+      // Fall back to bikeMetrics if ref hasn't loaded yet.
+      const atSrc = bikeAllTimeRef?.allTime || bikeMetrics?.allTime || {};
       return BIKE_AXES.map(ax => {
         const k = ax.id;
+        const atEntry  = atSrc[k];
+        const cmpEntry = bikeMetrics?.compare?.[k];
         const allTimeVal = bikeAllTimeBest[k] || 0;
-        const cmpMetric = bikeMetrics?.compare?.[k];
-        const cmpVal = typeof cmpMetric === 'object' ? Number(cmpMetric?.value || 0) : Number(cmpMetric || 0);
-        const pct = allTimeVal > 0 ? Math.round((cmpVal / allTimeVal) * 100) : 0;
-        const delta = cmpVal - allTimeVal;
+        const cmpVal     = extractVal(cmpEntry);
+        // For the PR date, prefer personalRecords (has explicit date); fall back to allTime date
+        const prEntry  = bikeMetrics?.personalRecords?.[k] || null;
+        const atDate   = typeof atEntry === 'object' ? atEntry?.date : null;
+        const pct      = allTimeVal > 0 ? Math.min(100, Math.round((cmpVal / allTimeVal) * 100)) : 0;
+        const delta    = allTimeVal > 0 ? cmpVal - allTimeVal : null;
         return {
           ...ax,
           allTimeVal,
           compareVal: cmpVal,
           pct,
           delta,
-          allTimeTrainingId: typeof at[k] === 'object' ? at[k]?.trainingId : null,
-          allTimeTrainingType: typeof at[k] === 'object' ? at[k]?.trainingType : null,
-          allTimeStravaId: typeof at[k] === 'object' ? at[k]?.stravaId : null,
-          cmpTrainingId: typeof cmpMetric === 'object' ? cmpMetric?.trainingId : null,
-          cmpTrainingType: typeof cmpMetric === 'object' ? cmpMetric?.trainingType : null,
-          cmpStravaId: typeof cmpMetric === 'object' ? cmpMetric?.stravaId : null,
-          pr: bikeMetrics?.personalRecords?.[k] || null,
+          allTimeDate: prEntry?.date || atDate || null,
+          allTimeTrainingId:   typeof atEntry === 'object' ? atEntry?.trainingId  : null,
+          allTimeTrainingType: typeof atEntry === 'object' ? atEntry?.trainingType : null,
+          allTimeStravaId:     typeof atEntry === 'object' ? atEntry?.stravaId     : null,
+          cmpTrainingId:   typeof cmpEntry === 'object' ? cmpEntry?.trainingId  : null,
+          cmpTrainingType: typeof cmpEntry === 'object' ? cmpEntry?.trainingType : null,
+          cmpStravaId:     typeof cmpEntry === 'object' ? cmpEntry?.stravaId     : null,
+          pr: prEntry,
         };
       });
     }
@@ -622,7 +774,8 @@ export default function SpiderChart({
   // This prevents the chart from flashing with all-zero placeholder values
   // before the first API response or cache read arrives.
   const isLoadingBike = sport === 'bike' && !bikeReady;
-  const isEmpty = sport === 'run' ? !runHasData : (!bikeReady || !chartData);
+  const isLoadingRun  = sport === 'run'  && !runReady && !manualRunMetrics?.hasData;
+  const isEmpty = sport === 'run' ? (!runHasData && !isLoadingRun) : (!bikeReady || !chartData);
 
   return (
     <div className="w-full h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -679,7 +832,38 @@ export default function SpiderChart({
             </button>
           ))}
           {refreshing && (
-            <span className="text-[10px] text-gray-400 ml-1">↻</span>
+            <span className="text-[10px] text-gray-400 ml-1 animate-spin inline-block">↻</span>
+          )}
+          {/* Force-refresh: clears all local caches and re-fetches */}
+          {!refreshing && (
+            <button
+              title="Force refresh — clears cache and re-fetches all bests"
+              onClick={() => {
+                try {
+                  Object.keys(localStorage)
+                    .filter(k => k.startsWith('powerRadar_') || k.startsWith('runRadar_'))
+                    .forEach(k => localStorage.removeItem(k));
+                } catch {}
+                if (sport === 'bike') {
+                  setBikeAllTimeRef(null);
+                  setBikeReady(false);
+                  setBikeMetrics({
+                    allTime: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: 0 }), {}),
+                    compare: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: { value: 0, trainingId: null, trainingType: null, stravaId: null } }), {}),
+                    personalRecords: {},
+                    improvements: {},
+                    monthlyMetrics: {},
+                  });
+                } else {
+                  setServerRunMetrics(null);
+                  setRunReady(false);
+                }
+                setRefreshKey(k => k + 1);
+              }}
+              className="ml-1 text-[10px] text-gray-400 hover:text-primary transition-colors"
+            >
+              ↻
+            </button>
           )}
         </div>
       </div>
@@ -730,7 +914,7 @@ export default function SpiderChart({
         )}
 
         {/* Loading skeleton */}
-        {isLoadingBike && (
+        {(isLoadingBike || isLoadingRun) && (
           <div className="mt-4 flex items-center justify-center h-56 text-gray-400 text-sm">
             <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -741,7 +925,7 @@ export default function SpiderChart({
         )}
 
         {/* Empty state */}
-        {!isLoadingBike && isEmpty && (
+        {!isLoadingBike && !isLoadingRun && isEmpty && (
           <div className="mt-4 flex flex-col items-center justify-center h-48 text-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -758,7 +942,7 @@ export default function SpiderChart({
         )}
 
         {/* Radar chart */}
-        {!isLoadingBike && !isEmpty && (
+        {!isLoadingBike && !isLoadingRun && !isEmpty && (
           <>
             <div className="w-full relative mt-2" style={{ height: '280px' }}>
               {chartData && (
@@ -891,11 +1075,11 @@ export default function SpiderChart({
                           </div>
                         )}
 
-                        {/* PR info (bike only) */}
-                        {sport === 'bike' && row.pr?.value > 0 && row.pr?.date && (
+                        {/* All-time date (bike only) — use fmtDate to avoid UTC-midnight shift */}
+                        {sport === 'bike' && hasAllTime && row.allTimeDate && (
                           <div className="mt-1.5 text-[10px] text-gray-400">
                             <span className="font-semibold text-amber-600">PR</span>{' '}
-                            {row.pr.value} W · {new Date(row.pr.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {Math.round(row.allTimeVal)} W · {fmtDate(row.allTimeDate)}
                           </div>
                         )}
                       </div>

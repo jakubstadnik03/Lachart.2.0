@@ -817,6 +817,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [savingLtOverride, setSavingLtOverride] = useState(false);
   const [ltOverrideStatus, setLtOverrideStatus] = useState(null); // {type:'success'|'error', msg}
   const [preTestSummaryData, setPreTestSummaryData] = useState(null); // populated by PreTestTrainingSummary callback
+  const [showPreTest, setShowPreTest] = useState(true);   // collapse Pre-test training panel
+  const [showCoach, setShowCoach]     = useState(true);   // collapse Test coach panel
   const [showDataTable, setShowDataTable] = useState(window.innerWidth >= 768); // Hidden by default on mobile
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
@@ -2954,40 +2956,70 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           </div>
         )}
 
-        {/* AI test coach — single panel that:
-              1. Generates a simple test protocol (start power + step +
-                 stages) from the athlete's training history,
-              2. Overlays a predicted lactate curve on the measured points,
-              3. Calls an LLM for a natural-language interpretation
-                 (1-2 paragraphs of what the test says + what to do next).
-            Replaces the older PreTestTrainingContext + PredictedLactateCurve
-            pair, both of which had too much UI surface for too little
-            actionable output. */}
+        {/* ── Pre-test training + Test coach ─────────────────────────────────
+             Both panels are collapsible and sit side-by-side on desktop (lg+). */}
         {!demoMode && (
-          <div className="mt-4">
-            <PreTestTrainingSummary
-              athleteId={mockData?.athleteId || user?._id || user?.id}
-              testDate={mockData?.date}
-              sport={sportKey}
-              onData={setPreTestSummaryData}
-            />
-          </div>
-        )}
+          <div className="mt-4 space-y-3">
 
-        {!demoMode && (
-          <div className="mt-4">
-            <AiTestCoach
-              athleteId={mockData?.athleteId || user?._id || user?.id}
-              testId={mockData?._id}
-              testDate={mockData?.date}
-              sport={mockData?.sport}
-              measuredLt1={thresholds?.['LTP1']}
-              measuredLt2={thresholds?.['LTP2']}
-              measuredLt1Lactate={thresholds?.lactates?.['LTP1']}
-              measuredLt2Lactate={thresholds?.lactates?.['LTP2']}
-              results={mockData?.results}
-              baseLactate={mockData?.baseLactate}
-            />
+            {/* Toggle row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowPreTest(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  showPreTest
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                <svg className={`w-3 h-3 transition-transform ${showPreTest ? '' : '-rotate-90'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Pre-test training
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCoach(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  showCoach
+                    ? 'bg-violet-50 text-violet-700 border-violet-200'
+                    : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                <svg className={`w-3 h-3 transition-transform ${showCoach ? '' : '-rotate-90'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Test coach
+              </button>
+            </div>
+
+            {/* Content — side-by-side on lg when both visible */}
+            {(showPreTest || showCoach) && (
+              <div className={`grid gap-3 ${showPreTest && showCoach ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+                {showPreTest && (
+                  <PreTestTrainingSummary
+                    athleteId={mockData?.athleteId || user?._id || user?.id}
+                    testDate={mockData?.date}
+                    sport={sportKey}
+                    onData={setPreTestSummaryData}
+                  />
+                )}
+                {showCoach && (
+                  <AiTestCoach
+                    athleteId={mockData?.athleteId || user?._id || user?.id}
+                    testId={mockData?._id}
+                    testDate={mockData?.date}
+                    sport={mockData?.sport}
+                    measuredLt1={thresholds?.['LTP1']}
+                    measuredLt2={thresholds?.['LTP2']}
+                    measuredLt1Lactate={thresholds?.lactates?.['LTP1']}
+                    measuredLt2Lactate={thresholds?.lactates?.['LTP2']}
+                    results={mockData?.results}
+                    baseLactate={mockData?.baseLactate}
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
 

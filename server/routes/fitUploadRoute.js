@@ -240,6 +240,7 @@ router.get('/trainings/monthly-analysis', verifyToken, routeCacheMiddleware, fit
  *         description: Unauthorized
  */
 router.get('/power-metrics', verifyToken, routeCacheMiddleware, fitUploadController.getPowerMetrics);
+router.get('/run-metrics',   verifyToken, routeCacheMiddleware, fitUploadController.getRunMetrics);
 
 /**
  * @swagger
