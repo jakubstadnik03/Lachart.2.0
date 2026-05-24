@@ -223,7 +223,10 @@ export default function ZoneDistCard({ athleteId = null }) {
           const entries = Array.isArray(raw) ? raw : (raw ? [raw] : []);
           setWeekData(prev => ({ ...prev, [range]: entries }));
         })
-        .catch(() => { if (!cancelled) { fetchedKeys.current.add(range); setWeekData(prev => ({ ...prev, [range]: [] })); } })
+        .catch(() => {
+          // Don't cache failed requests — let the user switch away and back to retry
+          if (!cancelled) setWeekData(prev => ({ ...prev, [range]: [] }));
+        })
         .finally(() => { if (!cancelled) setLoading(false); });
     } else {
       // thismonth / lastmonth — fetch by monthKey

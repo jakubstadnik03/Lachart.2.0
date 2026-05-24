@@ -59,6 +59,7 @@ export default function NewTestSheet({
     setClosing(true);
     setDragY(0);
     setTimeout(() => {
+      setClosing(false); // reset so the guard `!open && !closing` evaluates to null
       onClose && onClose();
     }, 300);
   }, [closing, onClose]);

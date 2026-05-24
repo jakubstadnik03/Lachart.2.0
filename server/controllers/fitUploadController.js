@@ -1848,10 +1848,21 @@ async function analyzeTrainingsByMonth(req, res) {
         console.log('Strava: Using string format:', targetAthleteIdStr);
       }
       
-      const query = userIdObj 
-        ? { userId: userIdObj, sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] } }
-        : { userId: targetAthleteIdStr, sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] } };
-      
+      // Build date filter — for monthKey or date-range requests, limit to that window.
+      // Without this, we'd fetch ALL activities from all time, processing potentially
+      // hundreds of streams and timing out for week-range queries.
+      let stravaDateFilter = {};
+      if (monthKeyParam) {
+        const [y, m] = monthKeyParam.split('-').map(Number);
+        stravaDateFilter = { startDate: { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) } };
+      } else if (hasDateRange) {
+        stravaDateFilter = { startDate: { $gte: new Date(startDateParam), $lte: new Date(endDateParam) } };
+      }
+
+      const query = userIdObj
+        ? { userId: userIdObj, sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] }, ...stravaDateFilter }
+        : { userId: targetAthleteIdStr, sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] }, ...stravaDateFilter };
+
       stravaActivities = await StravaActivity.find(query)
         .select('startDate stravaId averagePower averageHeartRate averageSpeed average_speed movingTime elapsedTime distance sport name raw')
         .lean();

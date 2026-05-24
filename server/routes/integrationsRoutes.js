@@ -908,30 +908,33 @@ function normalizeSportForNotif(sport) {
   return null;
 }
 
-function notifyStravaImportedPush(userId, imported, latestStravaId = null, latestSport = null) {
+function notifyStravaImportedPush(userId, imported, latestStravaId = null, latestSport = null, activityDoc = null) {
   const n = Number(imported);
   if (!userId || !Number.isFinite(n) || n < 1) return;
 
-  // Expo push (mobile). The helper signature is (userId, count, opts) where
-  // opts.latestActivityId is what becomes data.activityId on the push payload
-  // — without that, tapping the notification on iPhone opens the app but
-  // can't deep-link into the new activity. Earlier code passed the id as the
-  // 3rd positional arg so it was silently dropped by the helper.
+  // Expo push (mobile) — pass full activity doc so the helper can build a
+  // rich "You logged a 10.2 km run!" message.
   const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-  notifyUserStravaActivitiesImported(userId, n, { latestActivityId: latestStravaId }).catch((e) =>
-    console.error('[Strava sync push]', e.message || e)
-  );
+  notifyUserStravaActivitiesImported(userId, n, {
+    latestActivityId: latestStravaId,
+    activity: activityDoc || null,
+  }).catch((e) => console.error('[Strava sync push]', e.message || e));
 
-  // In-app notification (bell in header). Carry the latest Strava activity id
-  // so a tap can deep-link into the activity modal — otherwise the
-  // notification was an inert "1 new activity imported" with no target.
+  // In-app notification (bell) — show sport + distance when available.
   const { sendNotification } = require('../utils/notificationHelper');
-  const body = n === 1
-    ? '1 new activity imported from Strava.'
-    : `${n} new activities imported from Strava.`;
+  let body;
+  if (n === 1 && activityDoc) {
+    const dist = activityDoc.distance >= 1000
+      ? `${(activityDoc.distance / 1000).toFixed(1)} km`
+      : activityDoc.distance > 0 ? `${Math.round(activityDoc.distance)} m` : null;
+    const sport = normalizeSportForNotif(activityDoc.sport) || 'activity';
+    body = dist ? `New ${sport} logged — ${dist}.` : `New ${sport} logged.`;
+  } else {
+    body = n === 1 ? '1 new activity imported from Strava.' : `${n} new activities imported from Strava.`;
+  }
   sendNotification(String(userId), {
     type: 'strava_import',
-    title: 'Strava sync',
+    title: 'New training synced',
     body,
     resourceType: 'strava',
     sport: normalizeSportForNotif(latestSport),
@@ -1116,7 +1119,7 @@ router.post('/strava/webhook', async (req, res) => {
         'strava.webhookLastEventAt': eventStamp,
       });
       if (aspect_type === 'create' && isNew) {
-        notifyStravaImportedPush(user._id, 1, object_id, activity?.sport);
+        notifyStravaImportedPush(user._id, 1, object_id, activity?.sport, activity);
       }
       console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
     } else if (aspect_type === 'delete') {

@@ -641,12 +641,50 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const unreadCount = notifs.filter(n => !n.read).length;
 
   // Fetch notifications
+  // Track the IDs of strava_import notifications we've already acted on so
+  // that the 60-second polling loop doesn't fire stravaSyncComplete repeatedly
+  // for the same notification.
+  const seenStravaNotifIds = useRef(new Set());
+  // true after the first loadNotifs call — prevents treating old notifications as "new"
+  const notifsInitialized = useRef(false);
+
   const loadNotifs = useCallback(async () => {
     if (!isAuthenticated) return;
     setNotifsLoading(true);
     try {
       const r = await getNotifications();
-      setNotifs(r.data || []);
+      const fresh = r.data || [];
+      setNotifs(fresh);
+
+      if (!notifsInitialized.current) {
+        // First load — just seed the seen-set with existing notifications so
+        // the next poll can detect truly new ones without false-firing.
+        fresh.forEach(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          if (rt === 'strava_import' || rt === 'strava') {
+            seenStravaNotifIds.current.add(String(n._id));
+          }
+        });
+        notifsInitialized.current = true;
+      } else {
+        // Subsequent polls — detect newly-arrived strava_import notifications.
+        // This covers the background-webhook path: webhook saved the activity
+        // while app was backgrounded, user reopens → poll finds unread notif.
+        const newStravaNotif = fresh.find(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          return (rt === 'strava_import' || rt === 'strava') &&
+                 !seenStravaNotifIds.current.has(String(n._id));
+        });
+        if (newStravaNotif) {
+          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'notif_poll' } }));
+        }
+        fresh.forEach(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          if (rt === 'strava_import' || rt === 'strava') {
+            seenStravaNotifIds.current.add(String(n._id));
+          }
+        });
+      }
     } catch {}
     setNotifsLoading(false);
   }, [isAuthenticated]);
@@ -776,11 +814,17 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       runStrava(alreadyThisSession ? 15 * 60 * 1000 : 2 * 60 * 1000);
     }, 3000);
 
-    // App comes back to foreground — 15-min cooldown
+    // App comes back to foreground:
+    //  • Always refresh the calendar from our DB (cheap — no Strava API call)
+    //  • Strava API sync uses the 15-min cooldown so we don't burn quota
     let capacitorHandle = null;
     import('@capacitor/app').then(({ App }) => {
       App.addListener('appStateChange', ({ isActive }) => {
-        if (isActive && !cancelled) runStrava(15 * 60 * 1000);
+        if (!isActive || cancelled) return;
+        // Reload calendar immediately — server already has any webhook-saved activity
+        window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'foreground' } }));
+        // Also run Strava API sync (with cooldown) to catch anything missed
+        runStrava(15 * 60 * 1000);
       }).then(h => { capacitorHandle = h; });
     }).catch(() => {});
 

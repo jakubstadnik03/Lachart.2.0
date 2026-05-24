@@ -44,8 +44,28 @@ async function sendExpoPushToTokens(tokens, { title, body, data = {} }) {
   return { sent };
 }
 
+/** Format metres → "10.2 km" or "800 m" */
+function fmtDistance(metres) {
+  if (!metres || metres <= 0) return null;
+  if (metres >= 1000) return `${(metres / 1000).toFixed(1)} km`;
+  return `${Math.round(metres)} m`;
+}
+
+/** Human-readable sport label from Strava sport_type */
+function fmtSport(sport) {
+  if (!sport) return 'activity';
+  const s = String(sport).toLowerCase();
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('velo')) return 'ride';
+  if (s.includes('run') || s.includes('trail')) return 'run';
+  if (s.includes('walk') || s.includes('hike')) return 'walk';
+  if (s.includes('swim')) return 'swim';
+  if (s.includes('weight') || s.includes('strength') || s.includes('gym') || s.includes('workout')) return 'workout';
+  return 'activity';
+}
+
 /**
  * Notify user when new Strava activities were imported (Expo mobile app with registered token).
+ * opts.activity — the raw saved activity doc (name, sport, distance) for richer push text.
  */
 async function notifyUserStravaActivitiesImported(userId, importedCount, opts = {}) {
   try {
@@ -60,12 +80,19 @@ async function notifyUserStravaActivitiesImported(userId, importedCount, opts = 
     const tokens = Array.isArray(user.expoPushTokens) ? user.expoPushTokens : [];
     if (tokens.length === 0) return;
 
-    // When exactly one activity was imported, encourage the "add lactate" flow
-    // and include the activity id so the app can deep-link to it.
-    const body =
-      n === 1
-        ? '1 new activity imported — tap to add lactate.'
-        : `${n} new activities imported from Strava.`;
+    let body;
+    if (n === 1 && opts.activity) {
+      // Rich single-activity message: "You logged a 10.2 km run! Open your training."
+      const act      = opts.activity;
+      const sport    = fmtSport(act.sport);
+      const dist     = fmtDistance(act.distance);
+      const distPart = dist ? ` ${dist}` : '';
+      body = `You logged a${distPart} ${sport}! Open your training.`;
+    } else if (n === 1) {
+      body = 'New activity imported — open your training.';
+    } else {
+      body = `${n} new activities imported from Strava.`;
+    }
 
     const data = { type: 'strava_import', count: n };
     if (opts.latestActivityId) {
@@ -74,7 +101,7 @@ async function notifyUserStravaActivitiesImported(userId, importedCount, opts = 
     }
 
     await sendExpoPushToTokens(tokens, {
-      title: 'LaChart — Strava',
+      title: 'New training synced 🎉',
       body,
       data,
     });

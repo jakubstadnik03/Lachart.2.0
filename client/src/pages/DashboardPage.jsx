@@ -1140,6 +1140,10 @@ export default function DashboardPage() {
     if (!dashboardDataAthleteId) return;
     const onSync = async () => {
       try {
+        // Bust the 24-hour localStorage cache so loadCalendarData fetches fresh
+        // data from the API instead of returning stale cached activities.
+        localStorage.removeItem(`calendarData_${dashboardDataAthleteId}`);
+        localStorage.removeItem(`calendarData_timestamp_${dashboardDataAthleteId}`);
         const trainingsResult = await loadTrainings(dashboardDataAthleteId);
         loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
         if (isCapacitorNative()) loadFormFitness(dashboardDataAthleteId);

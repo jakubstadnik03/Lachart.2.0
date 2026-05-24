@@ -117,14 +117,22 @@ router.post('/test/:testId', verifyToken, async (req, res) => {
         }
 
         if (recipientIds.length > 0) {
+          // Build a title that includes the test date/sport if available
+          const testLabel = test.date
+            ? `lactate test (${new Date(test.date).toLocaleDateString('en', { day: 'numeric', month: 'short' })})`
+            : 'lactate test';
+          const notifTitle = user.role === 'athlete'
+            ? `${authorName} commented on their ${testLabel}`
+            : `${authorName} commented on your ${testLabel}`;
+
           await sendNotification(recipientIds, {
             type: 'test_comment',
-            title: '💬 New comment on your lactate test',
-            body: `${authorName}: ${notifBody}`,
+            title: notifTitle,
+            body: text.trim().slice(0, 120),
             resourceId: testId,
             resourceType: 'test',
             fromName: authorName,
-            pushData: { testId },
+            pushData: { testId, commentId: String(comment._id) },
           });
         }
       } catch (e) {
@@ -255,22 +263,32 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
       try {
         const notifBody = text.trim().slice(0, 100);
 
-        // ── Resolve training doc → sport + athleteId + normalised resourceType ──
+        // ── Resolve training doc → title + sport + athleteId + resourceType ──
         // 'fitTraining' → 'fit' so handleNotifClick can build the correct target.
         let trainingDoc  = null;
         let resourceType = trainingType; // default: keep as-is (e.g. 'strava')
         if (trainingType === 'fitTraining' || trainingType === 'fit') {
           if (mongoose.Types.ObjectId.isValid(trainingId)) {
-            trainingDoc = await FitTraining.findById(trainingId).select('sport athleteId').lean();
+            trainingDoc = await FitTraining.findById(trainingId)
+              .select('sport athleteId titleManual titleAuto originalFileName').lean();
           }
           resourceType = 'fit';
         } else if (trainingType === 'training') {
           if (mongoose.Types.ObjectId.isValid(trainingId)) {
-            trainingDoc = await Training.findById(trainingId).select('sport athleteId').lean();
+            trainingDoc = await Training.findById(trainingId)
+              .select('sport athleteId title').lean();
           }
         }
         const rawSport   = trainingDoc?.sport || null;
         const notifSport = normalizeSportForNotif(rawSport);
+
+        // Resolve training title — prefer manual > auto > filename > fallback
+        const trainingTitle =
+          trainingDoc?.titleManual ||
+          trainingDoc?.title ||
+          trainingDoc?.titleAuto ||
+          trainingDoc?.originalFileName ||
+          null;
 
         // ── Build recipient list ──────────────────────────────────────────────
         let recipientIds = [];
@@ -293,22 +311,28 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
 
         if (recipientIds.length === 0) return;
 
-        // ── Notification title — personalise by recipient role ────────────────
+        // ── Notification texts ────────────────────────────────────────────────
+        // Title: "Coach Name commented on Morning Run" (or generic fallback)
         const isAthleteCommenting = user.role === 'athlete';
+        const trainingLabel = trainingTitle ? `"${trainingTitle}"` : 'your training';
         const notifTitle = isAthleteCommenting
           ? `${authorName} commented on their training`
-          : `${authorName} left a comment on your training`;
+          : `${authorName} commented on ${trainingLabel}`;
+
+        // Body: first 120 chars of the comment text
+        const notifBodyText = text.trim().slice(0, 120);
 
         // In-app notification + Expo push (handled together by sendNotification)
         await sendNotification(recipientIds, {
           type: 'training_comment',
           title: notifTitle,
-          body: notifBody,
+          body: notifBodyText,
           resourceId: trainingId,
           resourceType,
           fromName: authorName,
           sport: notifSport,
-          pushData: { trainingId, trainingType },
+          // commentId lets the app scroll to / highlight the specific comment
+          pushData: { trainingId, trainingType, commentId: String(comment._id) },
         });
 
         // ── Send email notifications ────────────────────────────────────────
