@@ -141,6 +141,7 @@ function getContextSentence(pcts, sport) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ZoneBars({ zoneTotals, totalZoneSecs, pcts, showDescriptions }) {
+  // eslint-disable-next-line no-unused-vars
   const [tooltip, setTooltip] = useState(null);
 
   return (

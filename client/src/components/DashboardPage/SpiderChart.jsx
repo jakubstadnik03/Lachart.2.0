@@ -248,7 +248,6 @@ export default function SpiderChart({
   const manualRunMetrics = useMemo(() => computeRunMetrics(trainings), [trainings]);
 
   // ── Run metrics (server-side: FIT + Strava runs) ──────────────────────────
-  const RUN_KEYS = ['run400m', 'run1km', 'run5km', 'run10km', 'runHalf'];
   const [serverRunMetrics, setServerRunMetrics] = useState(null);
   const [runReady, setRunReady] = useState(false);
   const runReqRef = useRef(0);
@@ -453,6 +452,7 @@ export default function SpiderChart({
       }
     };
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sport, comparePeriod, selectedMonths, targetAthleteId, refreshKey]);
 
   // ── Derived: bike all-time best (stable normalisation) ────────────────────
@@ -490,7 +490,7 @@ export default function SpiderChart({
       keys = [...new Set([...srvKeys, ...manKeys])];
     }
     return keys.map(toEntry).filter(m => !isNaN(m.date)).sort((a, b) => b.date - a.date);
-  }, [sport, bikeMetrics, runMetrics, serverRunMetrics, manualRunMetrics]);
+  }, [sport, bikeMetrics, serverRunMetrics, manualRunMetrics]);
 
   // Auto-select all months when switching to monthly
   useEffect(() => {
