@@ -20,6 +20,7 @@ import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import NotifIcon from '../Notifications/NotifIcon';
+import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -885,6 +886,11 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           onNavigateManage={() => navigate('/athletes')}
         />
       )}
+
+      {/* Active workout banner — appears on any non-execution route while
+          a workout session is live. Inline (not fixed) so it shifts the
+          content area down naturally inside the fixed shell. */}
+      {!isImmersiveRoute && <ActiveWorkoutBar />}
 
       {/* Scrollable page content — flex-1 fills remaining space exactly.
           On immersive routes, drop overflow so the page can position-fixed

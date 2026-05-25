@@ -54,6 +54,9 @@ export class CapacitorBleAdapter {
 
   // ─── TrainerAdapter interface ──────────────────────────────────
 
+  /** Expose internal state so useTrainer.js can read adapterRef.current.state */
+  get state() { return this._state; }
+
   async scan() {
     const BleClient = await getBleClient();
 
@@ -110,6 +113,25 @@ export class CapacitorBleAdapter {
       );
       hasFTMS = true;
       console.log('[CapacitorBLE] FTMS Indoor Bike Data notifications started');
+
+      // Subscribe to FTMS Control Point indications so the trainer will
+      // accept control commands (many trainers silently reject CP writes
+      // unless the CCCD is enabled first).
+      try {
+        await BleClient.startNotifications(
+          deviceId, FTMS_SERVICE, FTMS_CTRL,
+          (value) => {
+            if (value.byteLength >= 3 && value.getUint8(0) === 0x80) {
+              const requestOpcode = value.getUint8(1);
+              const resultCode    = value.getUint8(2);
+              console.log(`[CapacitorBLE] FTMS CP response: req=0x${requestOpcode.toString(16)} result=${resultCode}`);
+            }
+          },
+        );
+        console.log('[CapacitorBLE] FTMS Control Point indications subscribed');
+      } catch (e) {
+        console.warn('[CapacitorBLE] FTMS CP indication subscribe failed (non-fatal):', e.message);
+      }
     } catch (e) {
       console.warn('[CapacitorBLE] FTMS IBD not available:', e.message);
     }
@@ -145,11 +167,53 @@ export class CapacitorBleAdapter {
       throw new Error('No supported BLE services found on this trainer (FTMS, CPS, or CSC required).');
     }
 
-    // Determine ERG control route
+    // Determine ERG control route.
+    // Many trainers (Wahoo Kickr, Saris H3, Stages SB20) advertise CPS in their
+    // advertisement packet but expose the FTMS Control Point post-connect.
+    // When IBD subscription failed (hasFTMS=false) probe the FTMS Control Point
+    // independently — if it accepts OP_REQUEST_CONTROL (0x00) we have full ERG.
     if (hasFTMS) {
       this._ctrlServiceUUID = FTMS_SERVICE;
       this._ctrlCharUUID    = FTMS_CTRL;
       this._ctrlType        = 'ftms';
+    } else if (hasCPS) {
+      // Probe FTMS Control Point even though IBD was unavailable.
+      // We only probe write-ability — do NOT set _ctrlRequested here so that
+      // requestControl() will still run the full RESET + REQUEST_CONTROL sequence.
+      let ftmsErgCapable = false;
+      try {
+        const reqCtrl = new DataView(new ArrayBuffer(1));
+        reqCtrl.setUint8(0, 0x00); // OP_REQUEST_CONTROL (probe only)
+        await BleClient.writeWithResponse(deviceId, FTMS_SERVICE, FTMS_CTRL, reqCtrl);
+        ftmsErgCapable = true;
+        console.log('[CapacitorBLE] FTMS Control Point writable — ERG enabled on CPS data path.');
+
+        // Also subscribe to FTMS CP indications so trainer accepts future commands.
+        try {
+          await BleClient.startNotifications(
+            deviceId, FTMS_SERVICE, FTMS_CTRL,
+            (value) => {
+              if (value.byteLength >= 3 && value.getUint8(0) === 0x80) {
+                const requestOpcode = value.getUint8(1);
+                const resultCode    = value.getUint8(2);
+                console.log(`[CapacitorBLE] FTMS CP response: req=0x${requestOpcode.toString(16)} result=${resultCode}`);
+              }
+            },
+          );
+          console.log('[CapacitorBLE] FTMS Control Point indications subscribed (CPS path)');
+        } catch (e) {
+          console.warn('[CapacitorBLE] FTMS CP indication subscribe failed (non-fatal):', e.message);
+        }
+      } catch (e) {
+        console.log('[CapacitorBLE] FTMS Control Point not writable — CPS read-only mode.', e.message);
+      }
+
+      if (ftmsErgCapable) {
+        this._ctrlServiceUUID = FTMS_SERVICE;
+        this._ctrlCharUUID    = FTMS_CTRL;
+        this._ctrlType        = 'ftms';
+      }
+      // else: _ctrlServiceUUID stays null → truly read-only CPS
     } else if (hasCSC) {
       this._ctrlServiceUUID = CSC_SERVICE;
       this._ctrlCharUUID    = SC_CTRL;
@@ -237,7 +301,17 @@ export class CapacitorBleAdapter {
   }
 
   async start() {
-    // Native trainers start responding to power commands automatically — no explicit start needed
+    // Send START_RESUME (opcode 0x07) to FTMS trainers that require it
+    // before they accept SET_TARGET_POWER commands.
+    if (!this._deviceId || this._ctrlType !== 'ftms' || !this._ctrlServiceUUID) return;
+    try {
+      const BleClient = await getBleClient();
+      const cmd = new DataView(new Uint8Array([0x07]).buffer);
+      await BleClient.write(this._deviceId, this._ctrlServiceUUID, this._ctrlCharUUID, cmd);
+      console.log('[CapacitorBLE] FTMS START_RESUME sent');
+    } catch (e) {
+      console.warn('[CapacitorBLE] START_RESUME failed (non-fatal):', e.message);
+    }
   }
 
   async setErgWatts(watts) {

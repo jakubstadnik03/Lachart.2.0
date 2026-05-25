@@ -246,119 +246,89 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-4"
+      className="space-y-2"
     >
-      {/* Status Indicator */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-          <span className="text-sm font-medium text-gray-700">
+      {/* Status + Metric Pills — compact single row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <span className="text-xs font-medium text-gray-600">
             {isActive ? 'Recording' : 'Stopped'}
           </span>
         </div>
-        <div className="text-xs text-gray-500">
-          {historicalData.length} data points
-        </div>
+        {metricCards.map((metric) => (
+          <span
+            key={metric.label}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/70 border border-gray-200 text-xs"
+          >
+            <span className="font-bold text-gray-900">{metric.value}</span>
+            <span className="text-gray-400">{metric.unit}</span>
+            <span className="text-gray-400 text-[10px]">{metric.label}</span>
+          </span>
+        ))}
+        {additionalMetrics.map((metric) => (
+          <span
+            key={metric.label}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/70 border border-gray-200 text-xs"
+          >
+            <span className="font-bold text-gray-900">{metric.value}</span>
+            <span className="text-gray-400">{metric.unit}</span>
+            <span className="text-gray-400 text-[10px]">{metric.label}</span>
+          </span>
+        ))}
       </div>
 
-      {/* Metric Cards */}
-      {metricCards.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {metricCards.map((metric) => {
-            const Icon = metric.icon;
-            return (
-              <motion.div
-                key={metric.label}
-                className="bg-white/80 backdrop-blur rounded-xl border border-gray-200 p-4"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <Icon className={`w-5 h-5 text-${metric.color}-500`} />
-                  <span className="text-xs text-gray-500">{metric.label}</span>
-                </div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {metric.value} <span className="text-sm text-gray-500">{metric.unit}</span>
-                </div>
-              </motion.div>
-            );
-          })}
+      {/* Chart header: layout toggle + metric chips */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex gap-0.5 bg-white/70 border border-gray-200 rounded-lg p-0.5">
+          {['single', 'grid'].map((layout) => (
+            <button
+              key={layout}
+              onClick={() => setChartLayout(layout)}
+              className={`px-2 py-0.5 rounded-md text-xs font-semibold transition ${
+                chartLayout === layout
+                  ? 'bg-primary text-white shadow'
+                  : 'text-gray-600 hover:bg-white'
+              }`}
+            >
+              {layout === 'single' ? 'Combined' : 'Grid'}
+            </button>
+          ))}
         </div>
-      )}
+        {Object.entries(METRIC_CONFIGS).map(([key, cfg]) => {
+          const available = metricAvailability[key];
+          const selected = visibleMetrics[key] && available;
+          return (
+            <button
+              key={key}
+              disabled={!available}
+              onClick={() => handleMetricToggle(key)}
+              className={`px-2 py-0.5 rounded-full border text-[11px] font-medium transition ${
+                !available
+                  ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                  : selected
+                  ? 'border-primary text-primary bg-primary/10'
+                  : 'border-gray-200 text-gray-600 hover:bg-white'
+              }`}
+            >
+              {cfg.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Additional Metrics */}
-      {additionalMetrics.length > 0 && (
-        <div className="p-4 bg-white/60 backdrop-blur rounded-2xl border border-white/40">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Additional Metrics</h3>
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
-            {additionalMetrics.map((metric) => (
-              <div key={metric.label}>
-                <div className="text-xs text-gray-600">{metric.label}</div>
-                <div className="text-sm font-semibold text-gray-900">
-                  {metric.value} {metric.unit}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Live Chart */}
-      <div className="mt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">
-            Real-Time Chart - Full Training
-          </h3>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="flex gap-1 bg-white/70 border border-gray-200 rounded-xl p-1">
-              {['single', 'grid'].map((layout) => (
-                <button
-                  key={layout}
-                  onClick={() => setChartLayout(layout)}
-                  className={`px-3 py-1 rounded-lg font-semibold transition ${
-                    chartLayout === layout
-                      ? 'bg-primary text-white shadow'
-                      : 'text-gray-600 hover:bg-white'
-                  }`}
-                >
-                  {layout === 'single' ? 'Combined' : 'Grid'}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {Object.entries(METRIC_CONFIGS).map(([key, cfg]) => {
-                const available = metricAvailability[key];
-                const selected = visibleMetrics[key] && available;
-                return (
-                  <button
-                    key={key}
-                    disabled={!available}
-                    onClick={() => handleMetricToggle(key)}
-                    className={`px-3 py-1 rounded-full border text-xs font-medium transition ${
-                      !available
-                        ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                        : selected
-                        ? 'border-primary text-primary bg-primary/10'
-                        : 'border-gray-200 text-gray-600 hover:bg-white'
-                    }`}
-                  >
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-4">
-          {chartData.length > 0 ? (
+      {/* Live Chart — no extra inner wrapper, parent card provides background */}
+      <div>
+        {chartData.length > 0 ? (
             chartLayout === 'single' ? (
-              <ResponsiveContainer width="100%" height={400} key={`chart-${chartKeyRef.current}`}>
-                <LineChart 
-                  data={chartData} 
-                  margin={{ top: 5, right: 20, left: 10, bottom: 30 }}
+              <ResponsiveContainer width="100%" height={280} key={`chart-${chartKeyRef.current}`}>
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 4, right: 8, left: 0, bottom: 16 }}
                   syncId="live-dashboard-chart"
                 >
-                  <XAxis 
-                    dataKey="time" 
+                  <XAxis
+                    dataKey="time"
                     stroke="#666"
                     strokeWidth={1}
                     type="number"
@@ -367,19 +337,23 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
                     allowDuplicatedCategory={false}
                     ticks={getTickPositions()}
                     tickFormatter={formatTimeLabel}
-                    tick={{ fill: '#666', fontSize: 12 }}
+                    tick={{ fill: '#666', fontSize: 10 }}
                   />
-                  <YAxis 
+                  {/* No rotated label — it eats ~40px of chart width on phones.
+                      The legend + metric filter chips identify the data. */}
+                  <YAxis
                     yAxisId="left"
-                    label={{ value: selectedMetricKeys.filter(key => METRIC_CONFIGS[key].axis === 'left').map(key => METRIC_CONFIGS[key].label).join(' / ') || 'Metrics', angle: -90, position: 'insideLeft' }}
                     stroke="#666"
+                    tick={{ fontSize: 10 }}
+                    width={32}
                   />
                   {selectedMetricKeys.some(key => METRIC_CONFIGS[key].axis === 'right') && (
-                    <YAxis 
+                    <YAxis
                       yAxisId="right"
                       orientation="right"
-                      label={{ value: selectedMetricKeys.filter(key => METRIC_CONFIGS[key].axis === 'right').map(key => METRIC_CONFIGS[key].label).join(' / ') || 'Secondary', angle: 90, position: 'insideRight' }}
                       stroke="#666"
+                      tick={{ fontSize: 10 }}
+                      width={32}
                     />
                   )}
                   <Tooltip 
@@ -412,17 +386,17 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                 {selectedMetricKeys.map((metricKey) => {
                   const cfg = METRIC_CONFIGS[metricKey];
                   return (
-                    <div key={`panel-${metricKey}`} className="bg-white/80 border border-white/50 rounded-2xl p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-800">{cfg.label}</span>
+                    <div key={`panel-${metricKey}`} className="bg-white/80 border border-white/50 rounded-2xl p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-gray-800">{cfg.label}</span>
                         <span className="text-xs text-gray-500">{cfg.unit}</span>
                       </div>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart data={chartData} margin={{ top: 4, right: 6, left: 0, bottom: 16 }}>
                           <XAxis
                             dataKey="time"
                             stroke="#999"
@@ -431,10 +405,13 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
                             domain={['dataMin', 'dataMax']}
                             ticks={getTickPositions()}
                             tickFormatter={formatTimeLabel}
+                            tick={{ fontSize: 10 }}
                           />
                           <YAxis
                             stroke="#999"
                             allowDecimals={false}
+                            tick={{ fontSize: 10 }}
+                            width={28}
                           />
                           <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #eee' }}
@@ -460,15 +437,14 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
               </div>
             )
           ) : (
-            <div className="flex items-center justify-center h-96 text-gray-500">
+            <div className="flex items-center justify-center py-10 text-gray-500">
               <div className="text-center">
-                <ChartBarIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>Waiting for data...</p>
-                <p className="text-xs mt-1">Start the test to begin recording</p>
+                <ChartBarIcon className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">Waiting for data…</p>
+                <p className="text-xs mt-0.5 text-gray-400">Start the test to begin recording</p>
               </div>
             </div>
           )}
-        </div>
       </div>
     </motion.div>
   );

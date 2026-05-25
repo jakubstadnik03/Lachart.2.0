@@ -268,7 +268,7 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
         if (latest) {
           ctx = {
             ftp: Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250,
-            lt1Power: latest.lt1Power || null,
+            lt1Power: latest.ltPower || latest.lt1Power || null,
             lt2Power: latest.lt2Power || latest.ltPower || null,
           };
         }

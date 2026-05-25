@@ -151,9 +151,16 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     window.requestAnimationFrame(() => safeResizeChart());
   }, [isMobile, mockData?.results?.length, safeResizeChart]);
   
-  // Get unit system and input mode from user profile, mockData, or default to metric/pace
+  // Get unit system and input mode from user profile, mockData, or default to metric/pace.
+  // User's live trainingPreferences.paceDisplay takes priority so switching the setting
+  // immediately updates every chart without re-saving each test.
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
-  const inputMode = mockData?.inputMode || 'pace';
+  const inputMode = (() => {
+    const pd = user?.trainingPreferences?.paceDisplay;
+    if (pd === 'kmh')    return 'speed';
+    if (pd === 'minpkm') return 'pace';
+    return mockData?.inputMode || 'pace';
+  })();
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (

@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom';
-import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
+import UpgradeModal from '../components/UpgradeModal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, updateStravaLactateValues, assignFieldLactateMeasurement } from '../services/api';
@@ -102,6 +103,7 @@ export default function TrainingPage() {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingTraining, setEditingTraining] = useState(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,6 +129,17 @@ export default function TrainingPage() {
   const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
   const [quickLactateOpen, setQuickLactateOpen] = useState(false);
   const [showRecordLactate, setShowRecordLactate] = useState(false);
+
+  // ── Subscription gate ─────────────────────────────────────────────────────
+  // Native (Capacitor/iOS) builds must never show subscription gates — App Store
+  // guideline 3.1.1 forbids any reference to paid content outside of IAP.
+  const isFreePlan = !isCapacitorNative() && (!user?.subscription?.plan || user?.subscription?.plan === 'free');
+  const [upgradeModalFeature, setUpgradeModalFeature] = useState('');
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const openUpgradeModal = useCallback((feature) => {
+    setUpgradeModalFeature(feature);
+    setUpgradeModalOpen(true);
+  }, []);
   // Set when the user picks "Chart" inside AssignLactateModal — the
   // pending FieldLactateMeasurement is stashed so handleStravaLactateFormSubmit
   // can reassign it to whichever lap the user filled in.
@@ -727,6 +740,33 @@ export default function TrainingPage() {
   };
 
 
+  // Open TrainingForm pre-filled for editing an existing training
+  const handleOpenEditTraining = useCallback((training) => {
+    setEditingTraining(training);
+    setIsFormOpen(true);
+  }, []);
+
+  // Submit handler that handles both create and update
+  const handleAddOrUpdateTraining = useCallback(async (formData) => {
+    if (formData._id) {
+      // Edit mode — update existing
+      try {
+        setIsSubmitting(true);
+        const targetId = selectedAthleteId || user._id;
+        await updateTraining(formData._id, { ...formData, athleteId: targetId, coachId: user._id });
+        await loadTrainings(targetId);
+        setIsFormOpen(false);
+        setEditingTraining(null);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Failed to update training');
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      await handleAddTraining(formData);
+    }
+  }, [selectedAthleteId, user, loadTrainings, handleAddTraining]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Apply sport & category filters for all visual components.
   // Excludes raw external activities (Strava `source==='strava'`, FIT `source==='fit'`,
   // ids prefixed with strava-/fit-) — Training History/Graph should only show
@@ -754,6 +794,42 @@ export default function TrainingPage() {
     }
     return data;
   }, [trainings, selectedSport, selectedCategory]);
+
+  // ── Locked feature overlay wrapper ───────────────────────────────────────
+  const LockedFeatureOverlay = useCallback(({ feature, children, minHeight = 220 }) => (
+    <div className="relative overflow-hidden rounded-2xl" style={{ minHeight }}>
+      {/* Blurred preview */}
+      <div className="pointer-events-none select-none" style={{ filter: 'blur(4px)', opacity: 0.45 }}>
+        {children}
+      </div>
+      {/* Lock overlay */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer rounded-2xl"
+        style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(2px)' }}
+        onClick={() => openUpgradeModal(feature)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && openUpgradeModal(feature)}
+      >
+        <div className="flex flex-col items-center gap-3 px-6 py-5 rounded-2xl bg-white border border-gray-100 shadow-lg max-w-xs text-center">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <LockClosedIcon className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-900">{feature}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Available on Pro plan</p>
+          </div>
+          <button
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-sm"
+            onClick={(e) => { e.stopPropagation(); openUpgradeModal(feature); }}
+          >
+            <SparklesIcon className="w-3.5 h-3.5" />
+            Upgrade to Pro
+          </button>
+        </div>
+      </div>
+    </div>
+  ), [openUpgradeModal]);
 
   if (error) return (
     <motion.div
@@ -912,6 +988,30 @@ export default function TrainingPage() {
             })()}
           </div>
 
+          {/* Export all trainings (locked for free plan) */}
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => {
+              if (isFreePlan) { openUpgradeModal('Export All Trainings'); return; }
+              // Pro+: export filtered trainings as JSON
+              const blob = new Blob([JSON.stringify(filteredTrainings, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `trainings_${new Date().toISOString().slice(0,10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-1 h-8 px-2.5 bg-white border border-gray-200 text-gray-500 text-xs font-semibold rounded-lg hover:border-gray-400 transition-all shadow-sm relative"
+            title={isFreePlan ? 'Export trainings — Pro feature' : 'Export all trainings as JSON'}
+          >
+            {isFreePlan && <LockClosedIcon className="w-3 h-3 text-gray-400 absolute -top-1 -right-1" />}
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span className="hidden sm:inline">Export</span>
+          </motion.button>
+
           {/* Add Lactate — icon + label on sm+, icon-only on mobile */}
           <motion.button
             whileTap={{ scale: 0.96 }}
@@ -939,6 +1039,27 @@ export default function TrainingPage() {
           </motion.button>
         </div>
       </motion.div>
+
+      {/* Free plan banner */}
+      {isFreePlan && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900"
+        >
+          <span className="flex items-center gap-2 text-xs font-medium">
+            <LockClosedIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            Training Load, LT2 Trend, Training History, and export are locked on the Free plan.
+          </span>
+          <button
+            onClick={() => openUpgradeModal('Training Analytics')}
+            className="shrink-0 flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            <SparklesIcon className="w-3.5 h-3.5" />
+            Upgrade to Pro
+          </button>
+        </motion.div>
+      )}
 
       {/* Error banner */}
       {stravaLactateFormError && (
@@ -982,14 +1103,27 @@ export default function TrainingPage() {
               transition={{ delay: 0.2 }}
               className="lg:col-span-3 md:col-span-2 min-w-0 flex flex-col"
             >
-              <TrainingStats
-                trainings={filteredTrainings}
-                selectedSport={selectedSport}
-                onSportChange={setSelectedSport}
-                isFullWidth={true}
-                user={user}
-                integrationAthleteId={integrationAthleteId}
-              />
+              {isFreePlan ? (
+                <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
+                  <TrainingStats
+                    trainings={filteredTrainings}
+                    selectedSport={selectedSport}
+                    onSportChange={setSelectedSport}
+                    isFullWidth={true}
+                    user={user}
+                    integrationAthleteId={integrationAthleteId}
+                  />
+                </LockedFeatureOverlay>
+              ) : (
+                <TrainingStats
+                  trainings={filteredTrainings}
+                  selectedSport={selectedSport}
+                  onSportChange={setSelectedSport}
+                  isFullWidth={true}
+                  user={user}
+                  integrationAthleteId={integrationAthleteId}
+                />
+              )}
             </motion.div>
           </>
         ) : (
@@ -1000,14 +1134,27 @@ export default function TrainingPage() {
             transition={{ delay: 0.15 }}
             className="lg:col-span-5 md:col-span-2 min-w-0"
           >
-            <TrainingStats
-              trainings={filteredTrainings}
-              selectedSport={selectedSport}
-              onSportChange={setSelectedSport}
-              isFullWidth={true}
-              user={user}
-              integrationAthleteId={integrationAthleteId}
-            />
+            {isFreePlan ? (
+              <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
+                <TrainingStats
+                  trainings={filteredTrainings}
+                  selectedSport={selectedSport}
+                  onSportChange={setSelectedSport}
+                  isFullWidth={true}
+                  user={user}
+                  integrationAthleteId={integrationAthleteId}
+                />
+              </LockedFeatureOverlay>
+            ) : (
+              <TrainingStats
+                trainings={filteredTrainings}
+                selectedSport={selectedSport}
+                onSportChange={setSelectedSport}
+                isFullWidth={true}
+                user={user}
+                integrationAthleteId={integrationAthleteId}
+              />
+            )}
           </motion.div>
         )}
 
@@ -1018,7 +1165,13 @@ export default function TrainingPage() {
           transition={{ delay: 0.25 }}
           className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <UserTrainingsTable trainings={filteredTrainings} />
+          {isFreePlan ? (
+            <LockedFeatureOverlay feature="Training History & Export" minHeight={300}>
+              <UserTrainingsTable trainings={filteredTrainings} />
+            </LockedFeatureOverlay>
+          ) : (
+            <UserTrainingsTable trainings={filteredTrainings} />
+          )}
         </motion.div>
 
         {/* Row 3: Training Comparison — full width */}
@@ -1028,13 +1181,21 @@ export default function TrainingPage() {
           transition={{ delay: 0.3 }}
           className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <Suspense fallback={
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
-              <p className="text-sm text-gray-400">Loading comparison…</p>
-            </div>
-          }>
-            <TrainingComparison trainings={filteredTrainings} />
-          </Suspense>
+          {isFreePlan ? (
+            <LockedFeatureOverlay feature="Training Comparison" minHeight={240}>
+              <Suspense fallback={<div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12"><p className="text-sm text-gray-400">Loading…</p></div>}>
+                <TrainingComparison trainings={filteredTrainings} />
+              </Suspense>
+            </LockedFeatureOverlay>
+          ) : (
+            <Suspense fallback={
+              <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
+                <p className="text-sm text-gray-400">Loading comparison…</p>
+              </div>
+            }>
+              <TrainingComparison trainings={filteredTrainings} />
+            </Suspense>
+          )}
         </motion.div>
 
         {/* Row 4: Lap Comparison — full width */}
@@ -1044,17 +1205,26 @@ export default function TrainingPage() {
           transition={{ delay: 0.35 }}
           className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <Suspense fallback={
-            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
-              <p className="text-sm text-gray-400">Loading lap comparison…</p>
-            </div>
-          }>
-            <LapComparison
-              trainings={filteredTrainings}
-              selectedTitle={selectedTitle}
-              setSelectedTitle={setSelectedTitle}
-            />
-          </Suspense>
+          {isFreePlan ? (
+            <LockedFeatureOverlay feature="Lap Comparison" minHeight={240}>
+              <Suspense fallback={<div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12"><p className="text-sm text-gray-400">Loading…</p></div>}>
+                <LapComparison trainings={filteredTrainings} selectedTitle={selectedTitle} setSelectedTitle={setSelectedTitle} onEditTraining={handleOpenEditTraining} />
+              </Suspense>
+            </LockedFeatureOverlay>
+          ) : (
+            <Suspense fallback={
+              <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
+                <p className="text-sm text-gray-400">Loading lap comparison…</p>
+              </div>
+            }>
+              <LapComparison
+                trainings={filteredTrainings}
+                selectedTitle={selectedTitle}
+                setSelectedTitle={setSelectedTitle}
+                onEditTraining={handleOpenEditTraining}
+              />
+            </Suspense>
+          )}
         </motion.div>
 
       </div>
@@ -1088,8 +1258,9 @@ export default function TrainingPage() {
               className="w-full sm:max-w-2xl"
             >
               <TrainingForm
-                onClose={() => setIsFormOpen(false)}
-                onSubmit={handleAddTraining}
+                onClose={() => { setIsFormOpen(false); setEditingTraining(null); }}
+                onSubmit={handleAddOrUpdateTraining}
+                initialData={editingTraining}
               />
             </motion.div>
           </motion.div>,
@@ -1115,6 +1286,14 @@ export default function TrainingPage() {
           document.getElementById('app-modal-root') || document.body
         )}
       </AnimatePresence>
+
+      {/* Upgrade modal for subscription-gated features */}
+      <UpgradeModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        feature={upgradeModalFeature}
+        requiredPlan="pro"
+      />
 
       <AnimatePresence>
         {stravaLactateModal.isOpen && stravaLactateModal.initialData && ReactDOM.createPortal(

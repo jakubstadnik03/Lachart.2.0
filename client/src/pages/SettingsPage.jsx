@@ -4,12 +4,12 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity, Info, AlertTriangle, BarChart2, Target, MessageCircle, TrendingUp } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity, Info, AlertTriangle, BarChart2, Target, MessageCircle, TrendingUp, Sparkles } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -73,7 +73,7 @@ const SettingsPage = () => {
   const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
-  const { gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
+  const { isPremium, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
@@ -194,6 +194,14 @@ const SettingsPage = () => {
   const [subActionLoading, setSubActionLoading] = useState(false);
   const [subError, setSubError] = useState(null);
 
+  // Coach branding state
+  const [coachBranding, setCoachBranding] = useState({
+    logoUrl: user?.coachBranding?.logoUrl || '',
+    title: user?.coachBranding?.title || '',
+    trademark: user?.coachBranding?.trademark || '',
+  });
+  const [brandingSaving, setBrandingSaving] = useState(false);
+
   // App Store guideline 3.1.1: native iOS builds must not surface external
   // subscription / payment flows. Subscription management stays on the web.
   const tabs = [
@@ -201,6 +209,7 @@ const SettingsPage = () => {
     { id: 'training', name: 'Preferences', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     ...(isCapacitorNative() ? [] : [{ id: 'subscription', name: 'Subscription', icon: CreditCard }]),
+    ...(['coach','team','enterprise'].includes(user?.subscription?.plan) || isPremium ? [{ id: 'branding', name: 'Branding', icon: Sparkles }] : []),
     { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },
@@ -677,6 +686,16 @@ const SettingsPage = () => {
     load();
     return () => { cancelled = true; };
   }, [activeTab]);
+
+  useEffect(() => {
+    if (user?.coachBranding) {
+      setCoachBranding({
+        logoUrl: user.coachBranding.logoUrl || '',
+        title: user.coachBranding.title || '',
+        trademark: user.coachBranding.trademark || '',
+      });
+    }
+  }, [user?.coachBranding]);
 
   // Handle upgrade / checkout
   const handleUpgrade = async (planId) => {
@@ -1303,6 +1322,18 @@ const SettingsPage = () => {
       addNotification('Failed to update profile picture from Strava', 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveBranding = async () => {
+    setBrandingSaving(true);
+    try {
+      await updateUserProfile({ coachBranding });
+      addNotification('Branding saved successfully', 'success');
+    } catch (e) {
+      addNotification('Failed to save branding', 'error');
+    } finally {
+      setBrandingSaving(false);
     }
   };
 
@@ -3262,6 +3293,82 @@ const SettingsPage = () => {
                     onUpload={handleUpload}
                     onSyncComplete={handleSyncComplete}
                   />
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'branding':
+        return (
+          <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900`}>PDF Report Branding</h3>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-500`}>
+                    Customise the logo, title and trademark shown on exported PDF reports.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                {/* Logo URL */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Logo URL</label>
+                  <p className="text-xs text-gray-400 mb-2">Paste a direct URL to your logo image (PNG/SVG, max 512×512 px recommended).</p>
+                  <input
+                    type="url"
+                    value={coachBranding.logoUrl}
+                    onChange={(e) => setCoachBranding(prev => ({ ...prev, logoUrl: e.target.value }))}
+                    placeholder="https://yoursite.com/logo.png"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  {coachBranding.logoUrl && (
+                    <div className="mt-2 flex items-center gap-3">
+                      <img src={coachBranding.logoUrl} alt="Logo preview" className="h-10 w-auto object-contain rounded border border-gray-200 bg-gray-50 p-1" onError={(e) => { e.target.style.display = 'none'; }} />
+                      <span className="text-xs text-gray-400">Preview</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Title */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Organisation / Club Title</label>
+                  <p className="text-xs text-gray-400 mb-2">Shown in the header of the PDF (e.g. "Elite Triathlon Academy").</p>
+                  <input
+                    type="text"
+                    value={coachBranding.title}
+                    onChange={(e) => setCoachBranding(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="e.g. Elite Triathlon Academy"
+                    maxLength={60}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+
+                {/* Trademark */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Trademark / Copyright line</label>
+                  <p className="text-xs text-gray-400 mb-2">Shown in the footer of the PDF (e.g. "© 2025 John Smith Coaching").</p>
+                  <input
+                    type="text"
+                    value={coachBranding.trademark}
+                    onChange={(e) => setCoachBranding(prev => ({ ...prev, trademark: e.target.value }))}
+                    placeholder="e.g. © 2025 John Smith Coaching"
+                    maxLength={80}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+
+                <button
+                  onClick={handleSaveBranding}
+                  disabled={brandingSaving}
+                  className="px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  {brandingSaving ? 'Saving…' : 'Save Branding'}
+                </button>
               </div>
             </div>
           </div>

@@ -33,6 +33,8 @@ import MetricTile from '../components/WorkoutExecution/MetricTile';
 import PreStartHero from '../components/WorkoutExecution/PreStartHero';
 import WorkoutSettingsSheet from '../components/WorkoutExecution/WorkoutSettingsSheet';
 import MobileSwipeViews from '../components/WorkoutExecution/MobileSwipeViews';
+import WorkoutStatsPanel, { getPowerZoneIdx, getHrZoneIdx, POWER_ZONE_DEFS, HR_ZONE_DEFS } from '../components/WorkoutExecution/WorkoutStatsPanel';
+import { Swiper, SwiperSlide } from 'swiper/react';
 import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import api from '../services/api';
@@ -59,9 +61,15 @@ function fmtTime(secs) {
   return `${sign}${m}:${String(s).padStart(2,'0')}`;
 }
 
+function zoneMid(z) {
+  if (!z) return null;
+  if (z.min != null && z.max != null && isFinite(z.max)) return (z.min + z.max) / 2;
+  return z.min ?? null;
+}
+
 function resolveTargetWatts(target, ctx) {
   if (!target || target.type === 'open') return null;
-  const { ftp = 250, lt1Power = null, lt2Power = null } = ctx;
+  const { ftp = 250, lt1Power = null, lt2Power = null, cyclingZones = null } = ctx;
   if (target.type === 'watts')       return target.useRange ? Math.round((target.rangeMin+target.rangeMax)/2) : (target.value || 0);
   if (target.type === 'percent_ftp') return Math.round(ftp * ((target.value || 80) / 100));
   if (target.type === 'percent_lt1') return Math.round((lt1Power || ftp * 0.75) * ((target.value || 95) / 100));
@@ -69,9 +77,13 @@ function resolveTargetWatts(target, ctx) {
   if (target.type === 'lt1')         return Math.round(lt1Power || ftp * 0.75);
   if (target.type === 'lt2')         return Math.round(lt2Power || ftp);
   if (target.type === 'zone') {
-    const zoneIdx = Math.max(0, Math.min(4, (target.value || 1) - 1));
-    const zonePcts = [0.55, 0.68, 0.83, 0.97, 1.10];
-    return Math.round(ftp * zonePcts[zoneIdx]);
+    const z = Math.max(1, Math.min(5, target.value || 1));
+    // Use actual profile zone midpoint when available — matches Training Zones screen
+    const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
+    if (profileMid != null) return Math.round(profileMid);
+    const lt2 = lt2Power || ftp;
+    const lt1 = lt1Power || ftp * 0.75;
+    return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
   }
   return null;
 }
@@ -190,9 +202,15 @@ export default function WorkoutExecutionPage() {
   const [isMobileLayout, setIsMobileLayout] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   ));
+  const [isLandscape, setIsLandscape] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
+  ));
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onResize = () => setIsMobileLayout(window.innerWidth < 1024);
+    const onResize = () => {
+      setIsMobileLayout(window.innerWidth < 1024);
+      setIsLandscape(window.innerWidth > window.innerHeight);
+    };
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
     return () => {
@@ -313,22 +331,52 @@ export default function WorkoutExecutionPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const [wRes, profileRes] = await Promise.all([
+        const uid = athleteId || null;
+        const [wRes, testRes, profileRes] = await Promise.all([
           getPlannedWorkout(plannedWorkoutId),
-          api.get(athleteId ? `/test/list/${athleteId}` : '/test').catch(() => ({ data: [] })),
+          api.get(uid ? `/test/list/${uid}` : '/test').catch(() => ({ data: [] })),
+          api.get(uid ? `/user/athlete/${uid}/profile` : '/user/profile').catch(() => ({ data: null })),
         ]);
         const w = wRes.data || wRes;
         const steps = expandSteps(w.steps || []);
 
-        // Find latest test with power data
-        const tests = Array.isArray(profileRes.data) ? profileRes.data : [];
+        // ── Profile zone ranges (primary source for zone targets) ──────────
+        const pz = profileRes.data?.powerZones || {};
+        const hz = profileRes.data?.heartRateZones || {};
+        const cyclingZones    = pz.cycling  || null;
+        const runningZones    = pz.running  || null;
+        const swimmingZones   = pz.swimming || null;
+        const cyclingHrZones  = hz.cycling  || null;
+        const maxHrCycling    = cyclingHrZones?.maxHeartRate
+          || profileRes.data?.maxHeartRate
+          || null;
+
+        // ── Latest test thresholds (fallback when no profile zones) ────────
+        // Test model stores:  LT1 → ltPower,  LT2 → lt2Power
+        const tests = Array.isArray(testRes.data) ? testRes.data : [];
         const sorted = [...tests].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const latest = sorted.find(t => t.lt2Power || t.ltPower || t.ftp);
-        const ctx = latest ? {
-          ftp: latest.lt2Power || latest.ltPower || latest.ftp || 250,
-          lt1Power: latest.lt1Power || null,
-          lt2Power: latest.lt2Power || latest.ltPower || null,
-        } : { ftp: 250, lt1Power: null, lt2Power: null };
+        const latest = sorted.find(t =>
+          t.lt2Power || t.ltPower || t.lt2?.power || t.thresholdOverrides?.LTP2 || t.ftp
+        );
+
+        const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min
+          || latest?.lt2Power || latest?.lt2?.power || latest?.thresholdOverrides?.LTP2 || null;
+        const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min
+          || latest?.ltPower  || latest?.lt1Power   || latest?.lt1?.power
+          || latest?.thresholdOverrides?.LTP1 || null;
+
+        const ctx = {
+          lt2Power,
+          lt1Power,
+          ftp: lt2Power || latest?.ftp || latest?.ltPower || 250,
+          lt2Pace:  runningZones?.lt2  || runningZones?.zone4?.min  || null,
+          lt1Pace:  runningZones?.lt1  || runningZones?.zone3?.min  || null,
+          cyclingZones,
+          runningZones,
+          swimmingZones,
+          cyclingHrZones,
+          maxHrCycling,
+        };
 
         startSession({
           plannedWorkoutId,
@@ -520,6 +568,32 @@ export default function WorkoutExecutionPage() {
 
   const col = STEP_COLORS[currentStep?.stepType] || STEP_COLORS.work;
   const upcomingStep = expandedSteps[currentStepIdx + 1] || null;
+
+  // ── Live zone labels ────────────────────────────────────────────────────────
+  const livePowerZoneLabel = (() => {
+    const w = trainer.data.power;
+    if (w == null || w <= 0) return null;
+    const zi = getPowerZoneIdx(w, context);
+    if (zi < 0) return null;
+    return POWER_ZONE_DEFS[zi] ? `${POWER_ZONE_DEFS[zi].id} · ${POWER_ZONE_DEFS[zi].label}` : null;
+  })();
+  const livePowerZoneColor = (() => {
+    const w = trainer.data.power;
+    if (w == null) return '#a78bfa';
+    const zi = getPowerZoneIdx(w, context);
+    return POWER_ZONE_DEFS[zi]?.color || '#a78bfa';
+  })();
+  const liveHrZoneLabel = (() => {
+    if (liveHr == null || liveHr <= 0) return null;
+    const zi = getHrZoneIdx(liveHr, context);
+    if (zi < 0) return null;
+    return HR_ZONE_DEFS[zi] ? `${HR_ZONE_DEFS[zi].id} · ${HR_ZONE_DEFS[zi].label}` : null;
+  })();
+  const liveHrZoneColor = (() => {
+    if (liveHr == null) return '#fb7185';
+    const zi = getHrZoneIdx(liveHr, context);
+    return HR_ZONE_DEFS[zi]?.color || '#fb7185';
+  })();
   const powerDiff = (trainer.data.power != null && currentTargetWatts != null)
     ? trainer.data.power - currentTargetWatts : null;
 
@@ -546,10 +620,50 @@ export default function WorkoutExecutionPage() {
         >
           <ArrowLeftIcon className="w-6 h-6" />
         </button>
-        <div className="flex-1 text-center min-w-0">
-          <h1 className="text-sm font-bold truncate px-2">{workout.title || 'Workout'}</h1>
-          <p className="text-xs text-gray-400 tabular-nums">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
-        </div>
+        {/* In landscape + active: show live metric chips instead of centred title */}
+        {isMobileLayout && isLandscape && hasStarted && !isFinished ? (
+          <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-1">
+            {/* Compact title + timer */}
+            <div className="text-center min-w-0 flex-shrink-0 max-w-[120px]">
+              <p className="text-[11px] font-bold truncate text-white leading-tight">{workout.title || 'Workout'}</p>
+              <p className="text-[10px] text-gray-400 tabular-nums">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
+            </div>
+            {/* Live metric chips */}
+            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+              {/* Power */}
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-500/15 border border-violet-500/30">
+                <BoltSolid className="w-3 h-3 text-violet-400" />
+                <span className="text-sm font-black tabular-nums text-violet-200 leading-none">
+                  {trainer.data.power != null ? Math.round(trainer.data.power) : '—'}
+                </span>
+                <span className="text-[9px] text-violet-400 font-semibold">W</span>
+              </div>
+              {/* HR */}
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30">
+                <span className="text-rose-400 text-xs leading-none">♥</span>
+                <span className="text-sm font-black tabular-nums text-rose-200 leading-none">
+                  {liveHr != null ? Math.round(liveHr) : '—'}
+                </span>
+                <span className="text-[9px] text-rose-400 font-semibold">bpm</span>
+              </div>
+              {/* Cadence */}
+              {trainer.status === 'connected' && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30">
+                  <span className="text-sky-400 text-[10px] leading-none font-bold">↻</span>
+                  <span className="text-sm font-black tabular-nums text-sky-200 leading-none">
+                    {trainer.data.cadence != null ? Math.round(trainer.data.cadence) : '—'}
+                  </span>
+                  <span className="text-[9px] text-sky-400 font-semibold">rpm</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 text-center min-w-0">
+            <h1 className="text-sm font-bold truncate px-2">{workout.title || 'Workout'}</h1>
+            <p className="text-xs text-gray-400 tabular-nums">{fmtTime(totalElapsed)} / {fmtTime(totalDuration)}</p>
+          </div>
+        )}
         <div className="flex items-center gap-0.5">
           {/* Chart toggle — 44 × 44 tap target on phones */}
           {!isFinished && (
@@ -639,7 +753,7 @@ export default function WorkoutExecutionPage() {
           — so the user instantly sees the workout shape (warm-up ramp,
           sprint blocks, cool-down) and where they are in it.
           Hidden on the finished screen — the summary chart below covers that. */}
-      {!isFinished && (
+      {!isFinished && !(isMobileLayout && isLandscape && hasStarted) && (
       <div className="px-3 sm:px-4 pt-1.5 pb-2">
         <StepBarChart
           steps={expandedSteps}
@@ -664,7 +778,11 @@ export default function WorkoutExecutionPage() {
           true two-column grid that would over-engineer the small-screen
           case. */}
       <div
-        className="flex-1 flex flex-col items-center justify-start lg:justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto py-3 sm:py-4"
+        className={`flex-1 flex flex-col min-h-0 ${
+          isMobileLayout && isLandscape && hasStarted && !isFinished
+            ? 'overflow-hidden'
+            : 'items-center justify-start lg:justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto py-3 sm:py-4'
+        }`}
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {isFinished ? (
@@ -755,6 +873,363 @@ export default function WorkoutExecutionPage() {
               </div>
             )}
           />
+        ) : isMobileLayout && isLandscape ? (
+          /* ── MOBILE LANDSCAPE: side-by-side layout ───────────────────────
+              Left column (~175px): step bar chart + countdown + target + controls
+              Right column (flex-1): big power number + HR + cadence overview */
+          <div className="w-full flex-1 flex flex-row min-h-0">
+            {/* ── LEFT: chart, step info, playback controls ── */}
+            <div className="flex flex-col gap-1.5 px-3 py-2 border-r border-white/10 min-h-0" style={{ width: 212, flexShrink: 0 }}>
+              {/* Step bar chart */}
+              <StepBarChart
+                steps={expandedSteps}
+                currentIdx={currentStepIdx}
+                stepElapsed={stepElapsed}
+                resolveTargetWatts={resolveTargetWatts}
+                context={context}
+                stepPowerRef={stepPowerRef}
+                lactateLogRef={lactateLogRef}
+                onStepTap={(i) => jumpToStep(i)}
+                height={44}
+              />
+
+              {/* Current step badge + countdown */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentStepIdx}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="text-center"
+                >
+                  <div
+                    className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1"
+                    style={{ backgroundColor: col.bg + '33', color: col.bg, border: `1.5px solid ${col.bg}40` }}
+                  >
+                    {currentStep?.label || currentStep?.stepType || 'Step'}
+                    {currentStep?._repeatIdx && (
+                      <span className="ml-1 opacity-60">{currentStep._repeatIdx}/{currentStep._totalReps}</span>
+                    )}
+                  </div>
+                  <div
+                    className="text-[42px] font-black tabular-nums leading-none"
+                    style={{ color: stepRemaining <= 10 && stepRemaining > 0 ? '#ef4444' : col.bg }}
+                  >
+                    {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
+                  </div>
+                  {stepDuration > 0 && (
+                    <p className="text-gray-600 text-[10px] mt-0.5">of {fmtTime(stepDuration)}</p>
+                  )}
+                  {currentTargetWatts != null && (
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <BoltSolid className="w-3.5 h-3.5" style={{ color: col.bg }} />
+                      <span className="text-sm font-bold tabular-nums" style={{ color: col.bg }}>
+                        {effectiveErgWatts ?? currentTargetWatts} W
+                      </span>
+                      <span className="text-[10px] text-gray-500 truncate max-w-[60px]">
+                        {resolveTargetLabel(currentStep?.powerTarget, context)}
+                      </span>
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Auto-pause */}
+              {autoPausedAt && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-xl border border-amber-400/50 bg-amber-500/15 text-amber-200">
+                  <span className="text-xs">⏸</span>
+                  <span className="text-[10px] font-bold">Auto-paused</span>
+                </div>
+              )}
+
+              {/* ERG badge */}
+              {ergMode && trainer.status === 'connected' && effectiveErgWatts != null && (
+                <div className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full border border-violet-400/40 bg-violet-500/15 text-violet-300 text-[10px] font-bold">
+                  <BoltSolid className="w-2.5 h-2.5" />
+                  <span>ERG · {effectiveErgWatts} W</span>
+                </div>
+              )}
+
+              <div className="flex-1" />
+
+              {/* Playback controls */}
+              <div className="flex items-center justify-center gap-2.5">
+                <button
+                  onClick={handlePrevStep}
+                  disabled={currentStepIdx === 0 && stepElapsed === 0}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 transition-colors"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <BackwardIcon className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handlePlayPause}
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-lg transition-all active:scale-95"
+                  style={{ backgroundColor: col.bg, boxShadow: `0 0 20px ${col.bg}55`, WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {isRunning
+                    ? <PauseIcon className="w-6 h-6" />
+                    : <PlayIcon className="w-6 h-6 ml-0.5" />
+                  }
+                </button>
+                <button
+                  onClick={handleNextStep}
+                  disabled={currentStepIdx >= expandedSteps.length - 1}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 transition-colors"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <ForwardIcon className="w-5 h-5" />
+                </button>
+                {!isRunning && (
+                  <button
+                    onClick={() => setShowSaveModal(true)}
+                    className="p-2 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 transition-colors"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Device status pills */}
+              <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                {trainer.status === 'connected' ? (
+                  <button
+                    onClick={() => setShowSettingsSheet(true)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px]"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <SignalIcon className="w-3 h-3" /> Trainer
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowSettingsSheet(true)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-full border border-white/15 bg-white/[0.04] text-gray-400 text-[10px]"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <SignalIcon className="w-3 h-3" /> Connect
+                  </button>
+                )}
+                {hrStrap.status === 'connected' && liveHr != null && (
+                  <button
+                    onClick={() => setShowSettingsSheet(true)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-300 text-[10px]"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    ♥ {Math.round(liveHr)}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ── RIGHT: swipeable pages (Numbers · Chart · Steps · Stats) ── */}
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
+              {/* Page dots */}
+              {(() => {
+                const LS_PAGES = [
+                  { key: 'numbers', label: 'Numbers' },
+                  { key: 'chart',   label: 'Chart'   },
+                  { key: 'steps',   label: 'Steps'   },
+                  { key: 'stats',   label: 'Stats'   },
+                ];
+                return (
+                  <div className="flex items-center justify-center gap-1.5 py-1.5 flex-shrink-0">
+                    {LS_PAGES.map((p, i) => (
+                      <button
+                        key={p.key}
+                        onClick={() => setMobilePageIdx(i)}
+                        className="flex flex-col items-center gap-0.5 px-2 py-0.5 rounded"
+                        style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                      >
+                        <span
+                          className="rounded-full transition-all"
+                          style={{
+                            width: mobilePageIdx === i ? 18 : 5,
+                            height: 5,
+                            background: mobilePageIdx === i ? '#a78bfa' : 'rgba(255,255,255,0.25)',
+                          }}
+                        />
+                        {mobilePageIdx === i && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-primary">
+                            {p.label}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Swiper */}
+              <div className="flex-1 min-h-0">
+                <Swiper
+                  slidesPerView={1}
+                  initialSlide={mobilePageIdx < 3 ? mobilePageIdx : 0}
+                  onSlideChange={(sw) => setMobilePageIdx(sw.activeIndex)}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  {/* Page 0 — Numbers */}
+                  <SwiperSlide style={{ overflowY: 'auto' }}>
+                    <div className="h-full flex flex-col items-center justify-center px-4 py-2 gap-3">
+                      {/* Big power */}
+                      <div className="text-center">
+                        <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-0.5">Power</div>
+                        <div
+                          className="font-black tabular-nums leading-none"
+                          style={{
+                            fontSize: 'clamp(60px, 15vw, 104px)',
+                            letterSpacing: '-0.04em',
+                            color: (() => {
+                              const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
+                              if (!denom || trainer.data.power == null) return 'white';
+                              const off = Math.abs(trainer.data.power / denom - 1);
+                              return off <= 0.05 ? '#34d399' : off <= 0.15 ? '#fbbf24' : '#fb7185';
+                            })(),
+                          }}
+                        >
+                          {trainer.data.power != null ? Math.round(trainer.data.power) : '—'}
+                        </div>
+                        {/* Live power zone label */}
+                        {livePowerZoneLabel && (
+                          <div className="text-xs font-bold tabular-nums mt-0.5" style={{ color: livePowerZoneColor }}>
+                            {livePowerZoneLabel}
+                          </div>
+                        )}
+                        {currentTargetWatts != null && (
+                          <div className="text-sm text-gray-400 tabular-nums mt-0.5">
+                            target {effectiveErgWatts ?? currentTargetWatts} W
+                            <span className="ml-1.5 text-gray-500 text-xs">
+                              {resolveTargetLabel(currentStep?.powerTarget, context)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {/* HR + Cadence */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Heart Rate</div>
+                          <div className="text-[44px] font-black tabular-nums leading-none mt-0.5" style={{ color: liveHrZoneColor }}>
+                            {liveHr != null ? Math.round(liveHr) : '—'}
+                          </div>
+                          <div className="text-[10px] text-gray-600">bpm</div>
+                          {liveHrZoneLabel && (
+                            <div className="text-[10px] font-bold mt-0.5" style={{ color: liveHrZoneColor }}>
+                              {liveHrZoneLabel}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Cadence</div>
+                          <div className="text-[44px] font-black text-sky-400 tabular-nums leading-none mt-0.5">
+                            {trainer.data.cadence != null ? Math.round(trainer.data.cadence) : '—'}
+                          </div>
+                          <div className="text-[10px] text-gray-600">rpm</div>
+                        </div>
+                      </div>
+                      {/* Intensity chip */}
+                      {trainer.status === 'connected' && trainer.data.power != null && currentTargetWatts != null && currentTargetWatts > 0 && (() => {
+                        const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
+                        const pct = Math.round((trainer.data.power / denom) * 100);
+                        const off = Math.abs(pct - 100);
+                        const tone = off <= 5
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                          : off <= 15
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                            : 'bg-rose-500/25 text-rose-300 border-rose-400/40';
+                        return (
+                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold tabular-nums ${tone}`}>
+                            <span>{pct}%</span>
+                            <span className="opacity-60">of target</span>
+                          </div>
+                        );
+                      })()}
+                      {/* Next step */}
+                      {upcomingStep && (
+                        <div className="text-center text-[11px] text-gray-500">
+                          Next: <span className="text-gray-300 font-medium">{upcomingStep.label || upcomingStep.stepType}</span>
+                          {upcomingStep.durationSeconds > 0 && <span className="ml-1">· {fmtTime(upcomingStep.durationSeconds)}</span>}
+                          {upcomingStep.powerTarget && resolveTargetWatts(upcomingStep.powerTarget, context) != null && (
+                            <span className="ml-1 text-gray-400 tabular-nums">@ {resolveTargetWatts(upcomingStep.powerTarget, context)} W</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </SwiperSlide>
+
+                  {/* Page 1 — Live chart */}
+                  <SwiperSlide>
+                    <div className="h-full flex flex-col px-2 py-2 gap-1.5">
+                      <div className="flex-1 min-h-0 rounded-2xl border border-white/5 bg-white/[0.02] px-1 py-1" data-tick={chartTick}>
+                        {samplesRef.current.length > 0 ? (
+                          <LiveWorkoutChart
+                            samples={samplesRef.current}
+                            currentT={totalElapsed}
+                            stepBoundaries={stepBoundaries}
+                            lactateMarks={lactateMarks}
+                            currentStepTarget={currentTargetRange}
+                            windowSec={300}
+                            height={300}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center text-xs text-gray-500 h-full">
+                            Chart starts after the first second of data.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </SwiperSlide>
+
+                  {/* Page 2 — Steps list */}
+                  <SwiperSlide style={{ overflowY: 'auto' }}>
+                    <div className="h-full overflow-y-auto px-2 py-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      {expandedSteps.map((s, i) => {
+                        const c = STEP_COLORS[s.stepType] || STEP_COLORS.work;
+                        const isCur = i === currentStepIdx;
+                        const isPast = i < currentStepIdx;
+                        const t = s.powerTarget ? resolveTargetWatts(s.powerTarget, context) : null;
+                        const p = stepPowerRef.current[i];
+                        const avgP = p && p.count > 0 ? Math.round(p.sum / p.count) : null;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => jumpToStep(i)}
+                            className={`w-full text-left rounded-xl px-3 py-2 border transition-colors flex flex-col gap-0.5 ${
+                              isCur ? 'bg-white/10 border-white/30' : isPast ? 'bg-white/[0.02] border-white/5 opacity-60' : 'border-white/10'
+                            }`}
+                            style={{ borderLeftColor: c.bg, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-gray-500 tabular-nums w-4 text-right">{i + 1}</span>
+                              <span className="text-xs font-bold text-white truncate flex-1">{s.label || s.stepType}</span>
+                              {isCur && <span className="text-[9px] font-bold uppercase tracking-wider text-primary">Now</span>}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-400 tabular-nums pl-6">
+                              <span>{fmtTime(s.durationSeconds)}</span>
+                              {t != null && <><span className="text-gray-600">·</span><span className="font-semibold" style={{ color: c.bg }}>{t}W</span></>}
+                              {avgP != null && <><span className="text-gray-600">·</span><span className="font-bold text-emerald-400">⌀{avgP}W</span></>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </SwiperSlide>
+
+                  {/* Page 3 — Stats */}
+                  <SwiperSlide style={{ overflowY: 'auto' }}>
+                    <WorkoutStatsPanel
+                      samplesRef={samplesRef}
+                      context={context}
+                      totalElapsed={totalElapsed}
+                      tick={chartTick}
+                    />
+                  </SwiperSlide>
+                </Swiper>
+              </div>
+            </div>
+          </div>
+
         ) : isMobileLayout ? (
           /* ── MOBILE: 4-page swipeable layout ────────────────────────────
               On phones / portrait tablets the screen is too narrow to show
@@ -767,12 +1242,18 @@ export default function WorkoutExecutionPage() {
             renderNumbers={() => (
               <div className="h-full flex flex-col justify-center items-center px-6 py-4">
                 {/* Huge live power — read at arm's length */}
-                <div className="text-center mb-6">
+                <div className="text-center mb-4">
                   <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Power</div>
-                  <div className="text-[120px] font-black text-white tabular-nums leading-none" style={{ letterSpacing: '-0.04em' }}>
+                  <div className="font-black text-white tabular-nums leading-none" style={{ letterSpacing: '-0.04em', fontSize: 'clamp(80px, 25vw, 120px)' }}>
                     {trainer.data.power != null ? Math.round(trainer.data.power) : '—'}
                   </div>
-                  <div className="text-sm text-gray-400 tabular-nums">
+                  {/* Live power zone */}
+                  {livePowerZoneLabel && (
+                    <div className="text-sm font-bold mt-0.5" style={{ color: livePowerZoneColor }}>
+                      {livePowerZoneLabel}
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-400 tabular-nums mt-0.5">
                     {currentTargetWatts != null && (
                       <>target {effectiveErgWatts ?? currentTargetWatts} W</>
                     )}
@@ -782,15 +1263,22 @@ export default function WorkoutExecutionPage() {
                 <div className="grid grid-cols-2 gap-3 w-full max-w-xs mb-4">
                   <div className="text-center">
                     <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Heart Rate</div>
-                    <div className="text-5xl font-black text-rose-400 tabular-nums leading-none mt-1">
+                    <div className="text-5xl font-black tabular-nums leading-none mt-1" style={{ color: liveHrZoneColor }}>
                       {liveHr != null ? Math.round(liveHr) : '—'}
                     </div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">bpm</div>
+                    {liveHrZoneLabel && (
+                      <div className="text-[11px] font-bold mt-0.5" style={{ color: liveHrZoneColor }}>
+                        {liveHrZoneLabel}
+                      </div>
+                    )}
                   </div>
                   <div className="text-center">
                     <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Cadence</div>
                     <div className="text-5xl font-black text-sky-400 tabular-nums leading-none mt-1">
                       {trainer.data.cadence != null ? Math.round(trainer.data.cadence) : '—'}
                     </div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">rpm</div>
                   </div>
                 </div>
                 {/* Step + countdown small */}
@@ -916,6 +1404,14 @@ export default function WorkoutExecutionPage() {
                   );
                 })}
               </div>
+            )}
+            renderStats={() => (
+              <WorkoutStatsPanel
+                samplesRef={samplesRef}
+                context={context}
+                totalElapsed={totalElapsed}
+                tick={chartTick}
+              />
             )}
           />
         ) : (
@@ -1238,7 +1734,7 @@ export default function WorkoutExecutionPage() {
           Hidden on the pre-start screen because the hero card already has its
           own big Start Now / Exit / Settings cluster. Reappears once the
           athlete is in active or paused mode. */}
-      {!isFinished && hasStarted && (
+      {!isFinished && hasStarted && !(isMobileLayout && isLandscape) && (
         <div className={`px-4 sm:px-6 ${isNative ? 'pb-4 pt-3' : 'pb-6 pt-4'} border-t border-white/10`}>
           <div className="flex items-center justify-center gap-5 sm:gap-6">
             {/* Prev step */}

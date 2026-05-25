@@ -3,7 +3,7 @@
  * Shows after registration or whenever setup is incomplete.
  * Works on desktop (centered modal) and mobile / Capacitor (full-screen).
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
@@ -11,6 +11,7 @@ import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1008,27 +1009,64 @@ const INTRO_SLIDES = [
 
 export const INTRO_SEEN_KEY = (uid) => `lachart:introSlidesSeen:${uid}`;
 
+// ─── slide animation variants ─────────────────────────────────────────────────
+
+const SLIDE_VARIANTS = {
+  enter:  (dir) => ({ x: dir >= 0 ? 48 : -48, opacity: 0 }),
+  center: { x: 0, opacity: 1, transition: { duration: 0.26, ease: [0.4, 0, 0.2, 1] } },
+  exit:   (dir) => ({ x: dir >= 0 ? -48 : 48, opacity: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } }),
+};
+
+const SETUP_STEPS = [
+  { id: 'profile',     label: 'Your Profile'    },
+  { id: 'preferences', label: 'Preferences'     },
+  { id: 'zones',       label: 'Training Zones'  },
+  { id: 'strava',      label: 'Connect Data'    },
+];
+
 // Unified full-screen tutorial: intro slides → setup steps
 export function IntroSlides({ user, onDone, startAtSetup = false }) {
-  const [phase, setPhase] = useState(startAtSetup ? 'setup' : 'slides'); // 'slides' | 'setup'
-  const [slide, setSlide] = useState(0);
-  const [setupStep, setSetupStep] = useState(0); // 0=profile, 1=preferences, 2=strava
-  const [saving, setSaving] = useState(false);
-  const [exiting, setExiting] = useState(false);
-  const total = INTRO_SLIDES.length;
-  const current = INTRO_SLIDES[slide];
+  const [phase, setPhase]       = useState(startAtSetup ? 'setup' : 'slides');
+  const [slide, setSlide]       = useState(0);
+  const [direction, setDir]     = useState(1);   // 1 = forward, -1 = backward
+  const [setupStep, setSetupStep] = useState(0);
+  const [saving, setSaving]     = useState(false);
+  const [exiting, setExiting]   = useState(false);
 
-  // Swipe
-  const touchStart = React.useRef(null);
+  const total   = INTRO_SLIDES.length;
+  const current = INTRO_SLIDES[Math.min(slide, total - 1)];
+
+  const globalStep  = phase === 'slides' ? slide : total + setupStep;
+  const globalTotal = total + SETUP_STEPS.length;
+
+  // Unique key so AnimatePresence knows when to swap panels
+  const animKey = `${phase}-${phase === 'slides' ? slide : setupStep}`;
+
+  // ── Swipe ──────────────────────────────────────────────────────────────────
+  const touchStart = useRef(null);
   const onTouchStart = (e) => { touchStart.current = e.touches[0].clientX; };
-  const onTouchEnd = (e) => {
+  const onTouchEnd   = (e) => {
     if (touchStart.current === null) return;
     const diff = touchStart.current - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40 && phase === 'slides') {
-      if (diff > 0) { slide < total - 1 ? setSlide(s => s + 1) : setPhase('setup'); }
-      else if (slide > 0) { setSlide(s => s - 1); }
+      if (diff > 0) goNextSlide(); else if (slide > 0) goPrevSlide();
     }
     touchStart.current = null;
+  };
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  const goNextSlide = () => {
+    setDir(1);
+    if (slide < total - 1) setSlide(s => s + 1);
+    else setPhase('setup');
+  };
+  const goPrevSlide = () => { setDir(-1); setSlide(s => s - 1); };
+
+  const goNextSetup = () => { setDir(1);  setSetupStep(s => s + 1); };
+  const goPrevSetup = () => {
+    setDir(-1);
+    if (setupStep > 0) setSetupStep(s => s - 1);
+    else { setDir(-1); setPhase('slides'); }
   };
 
   const handleFinish = () => {
@@ -1042,112 +1080,203 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
     try {
       const resp = await updateUserProfile(data);
       if (resp?.data) window.dispatchEvent(new CustomEvent('userUpdated', { detail: resp.data }));
-      setSetupStep(s => s + 1);
+      goNextSetup();
     } catch (e) { console.error(e); }
     finally { setSaving(false); }
   };
 
-  const SETUP_STEPS = [
-    { id: 'profile',     label: 'Your Profile' },
-    { id: 'preferences', label: 'Preferences'  },
-    { id: 'zones',       label: 'Training Zones' },
-    { id: 'strava',      label: 'Connect Data'  },
-  ];
-  const globalStep = phase === 'slides' ? slide : total + setupStep;
-  const globalTotal = total + SETUP_STEPS.length;
-
+  // ── Content ────────────────────────────────────────────────────────────────
   const content = (
     <div
-      className={`fixed inset-0 transition-opacity duration-300 sm:bg-black/50 sm:backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-6 ${exiting ? 'opacity-0' : 'opacity-100'}`}
+      className={`fixed inset-0 transition-opacity duration-300 sm:bg-black/50 sm:backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-4 ${exiting ? 'opacity-0' : 'opacity-100'}`}
       style={{ zIndex: 99999 }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-    <div
-      className="bg-white flex flex-col w-full h-full sm:w-[560px] sm:max-w-[92vw] sm:h-auto sm:max-h-[88vh] sm:rounded-2xl sm:shadow-2xl sm:border sm:border-gray-100 sm:overflow-hidden relative"
-    >
-      {/* Progress bar — full safe-area top on mobile, just a small inset
-          on desktop where we're inside a modal card. */}
-      <div
-        className="flex-shrink-0 pt-[max(44px,env(safe-area-inset-top,44px))] sm:!pt-4"
-      >
-        <div className="flex gap-1 px-5 pb-3">
-          {Array.from({ length: globalTotal }).map((_, i) => (
-            <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-gray-100">
-              <div
-                className="h-full rounded-full transition-all duration-300"
-                style={{ width: i <= globalStep ? '100%' : '0%', backgroundColor: phase === 'slides' ? current.accentColor : '#767EB5' }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Modal card — fixed height so every slide is identical size */}
+      <div className="bg-white flex flex-col w-full h-full sm:w-[520px] sm:max-w-[94vw] sm:h-[700px] sm:max-h-[96vh] sm:rounded-2xl sm:shadow-2xl sm:border sm:border-gray-100 overflow-hidden">
 
-      {/* Slide phase */}
-      {phase === 'slides' && (
-        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-hidden">
-          <div className="mb-3 flex-shrink-0">
-            <span className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border"
-              style={{ color: current.accentColor, borderColor: `${current.accentColor}30`, backgroundColor: `${current.accentColor}0f` }}>
-              {current.label}
-            </span>
-          </div>
-          <h2 className="text-[22px] sm:text-[30px] leading-[1.15] font-black text-gray-900 mb-2 sm:mb-3 flex-shrink-0 whitespace-pre-line">{current.title}</h2>
-          <p className="text-[13px] sm:text-[15px] text-gray-400 leading-relaxed mb-3 sm:mb-5 flex-shrink-0 line-clamp-3">{current.subtitle}</p>
-          {/* Visual */}
-          <div className="flex-1 overflow-hidden min-h-0 max-h-[38vh] sm:max-h-none">
-            <div className="w-full h-full">
-              {current.visual}
+        {/* ── TOP BAR: progress + close ─────────────────────────────────── */}
+        <div
+          className="flex-shrink-0 px-5 pb-3"
+          style={{ paddingTop: 'max(16px, env(safe-area-inset-top, 16px))' }}
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex gap-[3px]">
+              {Array.from({ length: globalTotal }).map((_, i) => (
+                <div key={i} className="flex-1 h-[3px] rounded-full overflow-hidden bg-gray-100">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: i <= globalStep ? '100%' : '0%',
+                      backgroundColor: phase === 'slides' ? current.accentColor : '#767EB5',
+                    }}
+                  />
+                </div>
+              ))}
             </div>
-          </div>
-          <div className="flex items-center gap-3 pt-2 sm:pt-4 flex-shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}>
-            {slide > 0 ? (
-              <button onClick={() => setSlide(s => s - 1)} className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all">
-                <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </button>
-            ) : (
-              <button onClick={handleFinish} className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-semibold text-gray-300">Skip</span>
-              </button>
-            )}
+            {/* Close / Skip — always visible */}
             <button
-              onClick={() => slide < total - 1 ? setSlide(s => s + 1) : setPhase('setup')}
-              className="flex-1 h-12 rounded-2xl font-semibold text-sm text-white flex items-center justify-center gap-2 active:scale-[0.97] transition-all"
-              style={{ backgroundColor: current.accentColor }}
+              onClick={handleFinish}
+              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-all flex-shrink-0 ml-1.5"
+              title="Skip"
             >
-              <span>{slide < total - 1 ? 'Continue' : 'Set Up Account'}</span>
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <XMarkIcon className="w-4 h-4" />
             </button>
           </div>
         </div>
-      )}
 
-      {/* Setup phase */}
-      {phase === 'setup' && (
-        <div className="flex-1 flex flex-col w-full max-w-lg mx-auto px-6 overflow-hidden min-h-0">
-          {/* Step header */}
-          <div className="flex items-center gap-3 mb-4 flex-shrink-0 pt-2">
-            <button onClick={() => setupStep > 0 ? setSetupStep(s => s - 1) : setPhase('slides')} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider">Step {setupStep + 1} of {SETUP_STEPS.length}</p>
-              <p className="text-base font-bold text-gray-900">{SETUP_STEPS[setupStep]?.label}</p>
-            </div>
-          </div>
+        {/* ── ANIMATED CONTENT ──────────────────────────────────────────── */}
+        {/* overflow-hidden clips the slide-in animation */}
+        <div className="flex-1 overflow-hidden min-h-0 relative">
+          <AnimatePresence custom={direction} mode="wait">
+            <motion.div
+              key={animKey}
+              custom={direction}
+              variants={SLIDE_VARIANTS}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              className="absolute inset-0 flex flex-col"
+            >
 
-          {setupStep === 0 && <ProfileStep user={user} onSave={saveAndNext} saving={saving} />}
-          {setupStep === 1 && <UnitsStep user={user} onSave={saveAndNext} saving={saving} />}
-          {setupStep === 2 && <ZonesStep onSkip={() => setSetupStep(s => s + 1)} onSave={saveAndNext} saving={saving} />}
-          {setupStep === 3 && (
-            <div className="space-y-5 pb-10">
-              <StravaStep user={user} onSkip={handleFinish} />
-              <button onClick={handleFinish} className={BTN_GHOST}>Skip for now</button>
-            </div>
-          )}
+              {/* ── SLIDE PHASE ─────────────────────────────────────────── */}
+              {phase === 'slides' && (
+                <div className="flex-1 flex flex-col px-6 min-h-0">
+                  {/* Badge */}
+                  <div className="flex-shrink-0 mt-3 mb-3">
+                    <span
+                      className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border"
+                      style={{
+                        color: current.accentColor,
+                        borderColor: `${current.accentColor}30`,
+                        backgroundColor: `${current.accentColor}0f`,
+                      }}
+                    >
+                      {current.label}
+                    </span>
+                  </div>
+
+                  {/* Title */}
+                  <h2 className="text-[22px] sm:text-[26px] leading-[1.15] font-black text-gray-900 mb-2 flex-shrink-0 whitespace-pre-line">
+                    {current.title}
+                  </h2>
+
+                  {/* Subtitle */}
+                  <p className="text-[13px] text-gray-400 leading-relaxed mb-4 flex-shrink-0 line-clamp-3">
+                    {current.subtitle}
+                  </p>
+
+                  {/* Visual — fills remaining height */}
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    {current.visual}
+                  </div>
+
+                  {/* Bottom nav: back ← · dots · → forward */}
+                  <div
+                    className="flex items-center gap-3 pt-4 flex-shrink-0"
+                    style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+                  >
+                    {/* Back */}
+                    <button
+                      onClick={goPrevSlide}
+                      disabled={slide === 0}
+                      className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all disabled:opacity-0 disabled:pointer-events-none"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+
+                    {/* Dot indicators */}
+                    <div className="flex-1 flex items-center justify-center gap-1.5">
+                      {Array.from({ length: total }).map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { setDir(i > slide ? 1 : -1); setSlide(i); }}
+                          className="rounded-full transition-all duration-300"
+                          style={{
+                            width: i === slide ? 20 : 6,
+                            height: 6,
+                            backgroundColor: i === slide ? current.accentColor : '#e5e7eb',
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Next / Start Setup */}
+                    <button
+                      onClick={goNextSlide}
+                      className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 active:scale-95 transition-all"
+                      style={{ backgroundColor: current.accentColor }}
+                    >
+                      {slide < total - 1 ? (
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      ) : (
+                        <CheckIcon className="w-4 h-4 text-white" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SETUP PHASE ─────────────────────────────────────────── */}
+              {phase === 'setup' && (
+                <div className="flex-1 flex flex-col px-6 min-h-0">
+
+                  {/* Step header */}
+                  <div className="flex items-center gap-3 mt-3 mb-4 flex-shrink-0">
+                    <button
+                      onClick={goPrevSetup}
+                      className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    <div className="flex-1">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                        Step {setupStep + 1} of {SETUP_STEPS.length}
+                      </p>
+                      <p className="text-base font-bold text-gray-900 leading-tight">
+                        {SETUP_STEPS[setupStep]?.label}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Step body — flex column so each step component can fill + scroll internally */}
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    {setupStep === 0 && (
+                      <ProfileStep user={user} onSave={saveAndNext} saving={saving} />
+                    )}
+                    {setupStep === 1 && (
+                      <UnitsStep user={user} onSave={saveAndNext} saving={saving} />
+                    )}
+                    {setupStep === 2 && (
+                      <ZonesStep
+                        onSkip={goNextSetup}
+                        onSave={saveAndNext}
+                        saving={saving}
+                      />
+                    )}
+                    {setupStep === 3 && (
+                      <div className="flex flex-col gap-3 pb-8">
+                        <StravaStep user={user} onSkip={handleFinish} />
+                        <button onClick={handleFinish} className={BTN_GHOST}>Skip for now</button>
+                      </div>
+                    )}
+                    {setupStep >= SETUP_STEPS.length && handleFinish()}
+                  </div>
+                </div>
+              )}
+
+            </motion.div>
+          </AnimatePresence>
         </div>
-      )}
-    </div>
+
+      </div>
     </div>
   );
 

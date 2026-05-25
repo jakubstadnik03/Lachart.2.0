@@ -141,25 +141,51 @@ export default function WorkoutPlannerPage() {
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
-  // ── Load athlete context (FTP / LT thresholds from latest test) ───────────
+  // ── Load athlete context: latest test thresholds + profile zone ranges ──────
+  // The WorkoutBuilder uses `cyclingZones` (from the profile) as the primary
+  // source for zone wattage so targets match what the athlete sees on their
+  // Training Zones screen. Test-derived lt1Power/lt2Power are a fallback.
   useEffect(() => {
     if (!athleteId) return;
     const load = async () => {
       try {
-        const res = await api.get(`/test/list/${athleteId}`);
-        const tests = Array.isArray(res.data) ? res.data : [];
-        // Latest test with power data
+        const [testRes, profileRes] = await Promise.all([
+          api.get(`/test/list/${athleteId}`).catch(() => ({ data: [] })),
+          api.get(`/user/athlete/${athleteId}/profile`).catch(() => ({ data: null })),
+        ]);
+
+        // ── Test-derived thresholds ───────────────────────────────────────────
+        const tests = Array.isArray(testRes.data) ? testRes.data : [];
         const withPower = tests
-          .filter(t => t.lt2?.power || t.thresholds?.lt2Power)
-          .sort((a,b) => new Date(b.date) - new Date(a.date));
-        if (withPower.length > 0) {
-          const t = withPower[0];
-          setContext({
-            ftp:      t.ftp || t.thresholds?.ftp || t.lt2?.power || 250,
-            lt2Power: t.lt2?.power || t.thresholds?.lt2Power || null,
-            lt1Power: t.lt1?.power || t.thresholds?.lt1Power || null,
-          });
-        }
+          .filter(t => t.lt2Power || t.ltPower || t.lt2?.power || t.thresholds?.lt2Power || t.ftp)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        const latestTest = withPower[0];
+
+        // ── Profile zone ranges ───────────────────────────────────────────────
+        const pz = profileRes.data?.powerZones || {};
+        const cyclingZones  = pz.cycling  || null;
+        const runningZones  = pz.running  || null;
+        const swimmingZones = pz.swimming || null;
+
+        // LT2/LT1: prefer profile fields, fall back to test
+        const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min
+          || latestTest?.lt2Power || latestTest?.lt2?.power || null;
+        const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min
+          || latestTest?.ltPower  || latestTest?.lt1Power   || latestTest?.lt1?.power || null;
+        const lt2Pace  = runningZones?.lt2  || runningZones?.zone4?.min  || null;
+        const lt1Pace  = runningZones?.lt1  || runningZones?.zone3?.min  || null;
+
+        setContext({
+          ftp: lt2Power || latestTest?.ftp || 250,
+          lt2Power,
+          lt1Power,
+          lt2Pace,
+          lt1Pace,
+          cyclingZones,
+          runningZones,
+          swimmingZones,
+          athleteId,
+        });
       } catch { /* ignore */ }
     };
     load();

@@ -7,12 +7,23 @@ import LiveDashboard from '../components/LactateTesting/LiveDashboard';
 import ProtocolEditModal from '../components/LactateTesting/ProtocolEditModal';
 import {
   saveLactateSession, getLactateSessions, getLactateSessionById,
-  completeLactateSession, downloadLactateSessionFit,
+  completeLactateSession, downloadLactateSessionFit, addTest,
 } from '../services/api';
 import deviceConnectivity from '../services/deviceConnectivity';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { useTrainer } from '../trainer/react/useTrainer.js';
 import { TrainerConnectModal } from '../trainer/react/TrainerConnectModal.jsx';
+import useWakeLock from '../hooks/useWakeLock';
+import {
+  unlockAudio,
+  playIntervalEnd,
+  playRecoveryEnd,
+  playCountdownTick,
+  playCountdownGo,
+  playWarmupComplete,
+  playTestComplete,
+  playLactateSaved,
+} from '../utils/testAudio';
 import {
   PlayIcon, PauseIcon, StopIcon, ChartBarIcon,
   ArrowDownTrayIcon as DownloadIcon, TrashIcon, HeartIcon,
@@ -23,6 +34,7 @@ import {
   SignalIcon, SunIcon, SparklesIcon, ForwardIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid, BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
+import UpgradeModal from '../components/UpgradeModal';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -113,6 +125,7 @@ const LactateTestingPage = () => {
   const trainer = useTrainer();
   const [showTrainerModal, setShowTrainerModal] = useState(false);
   const [showProtocolEdit, setShowProtocolEdit] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // ── Test state ────────────────────────────────────────────
   const [testState,     setTestState]     = useState('idle');
@@ -222,22 +235,40 @@ const LactateTestingPage = () => {
   // training UI gets the full viewport. Auto-enters when the user rotates to
   // landscape (typical "watch the chart" pose); a button in the header lets
   // the user toggle it manually too.
-  const [fullscreen, setFullscreen] = useState(false);
-  // Auto-flip on orientation change without losing manual override during the same orientation.
+  // eslint-disable-next-line no-unused-vars
   const lastOrientationRef = useRef(isLandscape);
+  // (fullscreen body class removed — design uses scrollable layout)
+
+  // ── Screen keep-awake ──────────────────────────────────────
+  // Prevents the screen from dimming or locking while a test is active.
+  // Uses the WakeLock API (Chrome / Safari 16.4+ / Capacitor WKWebView).
+  const isTestActive = testState === 'running' || testState === 'paused';
+  useWakeLock(isTestActive);
+
+  // ── Background guard (Capacitor only) ─────────────────────
+  // When the user switches away and comes back, local timers keep
+  // running in the JS engine (Capacitor does NOT freeze JS like a
+  // Safari tab does). We still listen for the appStateChange event
+  // so we can reschedule if needed in the future, and to resume the
+  // AudioContext (iOS mutes audio when backgrounded).
   useEffect(() => {
-    if (isLandscape !== lastOrientationRef.current) {
-      setFullscreen(isLandscape);
-      lastOrientationRef.current = isLandscape;
-    }
-  }, [isLandscape]);
-  // Apply / remove the body class that hides the native bars.
-  useEffect(() => {
-    const cls = 'lactate-fullscreen';
-    if (fullscreen) document.body.classList.add(cls);
-    else document.body.classList.remove(cls);
-    return () => document.body.classList.remove(cls);
-  }, [fullscreen]);
+    if (!isCapacitorNative()) return;
+    let sub;
+    (async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        sub = await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            // App came back to foreground — resume AudioContext so beeps work again
+            try {
+              unlockAudio();
+            } catch (_) {}
+          }
+        });
+      } catch (_) {}
+    })();
+    return () => { sub?.remove?.(); };
+  }, []);
 
   // Keep refs in sync
   useEffect(() => { liveDataRef.current       = liveData;      }, [liveData]);
@@ -360,6 +391,7 @@ const LactateTestingPage = () => {
         if (prev + 1 >= dur) {
           clearInterval(recoveryTimerRef.current);
           recoveryTimerRef.current = null;
+          playRecoveryEnd();
           setTimeout(() => handleStartIntervalRef.current?.(), 100);
           return dur;
         }
@@ -387,6 +419,7 @@ const LactateTestingPage = () => {
         // Transition to recovery outside of state updater
         setIntervalTimer(0);
         setPhase('recovery');
+        playIntervalEnd();
         // Send 0W to trainer — adapter keeps its own state, no React status check needed
         setTimeout(() => Promise.resolve(trainerRef.current?.setErgWatts?.(0)).catch(e => console.warn('ERG 0W failed:', e)), 100);
       } else {
@@ -417,6 +450,7 @@ const LactateTestingPage = () => {
             testStateRef.current = 'completed';
             setTestState('completed');
             setPhase('work');
+            playTestComplete();
             const t = trainerRef.current;
             if (t?.setErgWatts) Promise.resolve(t.setErgWatts(0)).catch(console.error);
             addNotification('Cooldown complete. Test finished', 'success');
@@ -436,6 +470,7 @@ const LactateTestingPage = () => {
     if (nextStep >= wu.stepCount) {
       // All warmup steps done
       if (warmupTimerRef.current) { clearInterval(warmupTimerRef.current); warmupTimerRef.current = null; }
+      playWarmupComplete();
       addNotification('Warmup complete! Starting main test…', 'success');
       setTimeout(() => startMainTestRef.current?.(), 500);
       return;
@@ -490,6 +525,7 @@ const LactateTestingPage = () => {
         testStateRef.current = 'completed';
         setTestState('completed');
         setPhase('work');
+        playTestComplete();
         const t = trainerRef.current;
         if (t?.setErgWatts) Promise.resolve(t.setErgWatts(0)).catch(console.error);
         addNotification('Test complete', 'success');
@@ -512,6 +548,7 @@ const LactateTestingPage = () => {
 
     setPhase('countdown');
     setCountdown(3);
+    playCountdownTick(); // first tick at countdown start
 
     let tick = 3;
     countdownRef.current = setInterval(() => {
@@ -522,6 +559,7 @@ const LactateTestingPage = () => {
         setCountdown(0);
         setPhase('work');
         setIntervalTimer(0);
+        playCountdownGo(); // GO beep — interval starts
         startIntervalTimer();
 
         // Set ERG power for the new step — use ref so we always get the latest trainer
@@ -534,6 +572,7 @@ const LactateTestingPage = () => {
         }
       } else {
         setCountdown(tick);
+        playCountdownTick(); // tick for each second of countdown
       }
     }, 1000);
 
@@ -541,6 +580,31 @@ const LactateTestingPage = () => {
   }, [startIntervalTimer, addNotification]);
 
   useEffect(() => { handleStartIntervalRef.current = handleStartInterval; }, [handleStartInterval]);
+
+  // ── Reactive ERG sync — safety net on top of imperative callbacks ──────
+  // The setInterval callbacks already call setErgWatts imperatively, but if
+  // the trainer connects AFTER a step has already started, or if the callback
+  // fires before the trainerRef updates, the ERG is never sent. This effect
+  // picks up those cases by watching (currentStep, phase, trainerStatus).
+  useEffect(() => {
+    const t = trainerRef.current;
+    if (!t?.setErgWatts) return;
+    const state = testStateRef.current;
+    if (state !== 'running') return; // don't send during idle / completed
+
+    if (phase === 'work') {
+      const targetPower = protocolRef.current.steps[currentStepRef.current]?.targetPower;
+      if (targetPower != null) {
+        const effective = targetPower + (wattOffsetRef.current || 0);
+        console.log('[LactateTest] reactive ERG sync → work phase', { step: currentStep + 1, watts: effective });
+        Promise.resolve(t.setErgWatts(Math.max(0, effective))).catch(e => console.warn('ERG sync failed:', e));
+      }
+    } else if (phase === 'recovery' || phase === 'countdown') {
+      // During recovery (blood sampling) and countdown, release resistance
+      console.log('[LactateTest] reactive ERG sync → rest/countdown phase, sending 0W');
+      Promise.resolve(t.setErgWatts(0)).catch(e => console.warn('ERG rest sync failed:', e));
+    }
+  }, [currentStep, phase, trainer.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live watt adjustment ───────────────────────────────────
   const adjustWatts = useCallback((delta) => {
@@ -557,6 +621,7 @@ const LactateTestingPage = () => {
 
   // ── Start test ─────────────────────────────────────────────
   const handleStartTest = () => {
+    unlockAudio(); // must be called inside user gesture so iOS allows audio
     setCurrentStep(0); currentStepRef.current = 0;
     setIntervalTimer(0); intervalTimerRef2.current = 0;
     setTotalTestTime(0); totalTestTimeRef.current = 0;
@@ -599,6 +664,7 @@ const LactateTestingPage = () => {
             if (prev + 1 >= dur) {
               clearInterval(warmupTimerRef.current);
               warmupTimerRef.current = null;
+              playWarmupComplete();
               addNotification('Warmup complete! Starting main test…', 'success');
               setTimeout(() => startMainTestRef.current?.(), 500);
               return dur;
@@ -728,6 +794,7 @@ const LactateTestingPage = () => {
     [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current,
      countdownRef.current, recoveryTimerRef.current, warmupTimerRef.current, cooldownTimerRef.current]
       .forEach(r => { if (r) clearInterval(r); });
+    playTestComplete();
     if (trainer.setErgWatts) Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
     setTimeout(() => addNotification('Test complete', 'success'), 0);
   };
@@ -738,6 +805,7 @@ const LactateTestingPage = () => {
     if (intervalTimerRef.current) { clearInterval(intervalTimerRef.current); intervalTimerRef.current = null; }
     setIntervalTimer(0);
     setPhase('recovery');
+    playIntervalEnd();
     if (trainer.setErgWatts) {
       Promise.resolve(trainer.setErgWatts(0)).catch(console.error);
     }
@@ -759,6 +827,7 @@ const LactateTestingPage = () => {
       borg:    borgInput ? parseFloat(borgInput) : null,
       time:    totalTestTime,
     }]);
+    playLactateSaved();
     setTimeout(() => addNotification('Lactate recorded', 'success'), 0);
   };
 
@@ -828,7 +897,49 @@ const LactateTestingPage = () => {
         };
         await completeLactateSession(sessionId, { fitFileData: fitData });
         setSavedSessionId(sessionId);
-        addNotification('Test saved', 'success');
+
+        // ── Also save into Testing DB so the lactate curve is visible in /testing ──
+        if (lactateValues.length > 0) {
+          try {
+            const testResults = lactateValues.map((lv) => {
+              const stepData = historicalData.filter(d => d.step === lv.step - 1);
+              const hrVals   = stepData.map(d => d.heartRate).filter(v => v > 0);
+              const avgHR    = hrVals.length ? Math.round(hrVals.reduce((a, b) => a + b, 0) / hrVals.length) : null;
+              const vo2Vals  = stepData.map(d => d.vo2).filter(v => v > 0);
+              const avgVo2   = vo2Vals.length ? +(vo2Vals.reduce((a, b) => a + b, 0) / vo2Vals.length).toFixed(1) : null;
+              return {
+                interval:      lv.step,
+                power:         lv.power,
+                heartRate:     avgHR,
+                lactate:       lv.lactate,
+                vo2:           avgVo2,
+                RPE:           lv.borg   ?? null,
+                duration:      protocol.workDuration ?? 360,
+                intervalType:  'work',
+              };
+            });
+            await addTest({
+              athleteId: user._id,
+              sport:     (protocol.sport || 'bike').toLowerCase(),
+              title:     `Lactate Test – ${new Date(startTime).toLocaleDateString()}`,
+              date:      startTime.toISOString(),
+              description: `Auto-saved from Lactate Testing session. Duration: ${Math.round(totalTestTime / 60)} min, ${lactateValues.length} samples.`,
+              results:   testResults,
+              lactateSessionId: sessionId,   // link back to raw session
+            });
+            addNotification('Test saved & added to Testing', 'success');
+          } catch (testErr) {
+            console.warn('[LactateTest] addTest failed (non-critical):', testErr?.message || testErr);
+            if (testErr?.response?.status === 403 && testErr?.response?.data?.error === 'FREE_PLAN_LIMIT') {
+              addNotification('Free plan limit reached — upgrade to Pro to save unlimited tests', 'error');
+              setShowUpgradeModal(true);
+            } else {
+              addNotification('Test saved (Testing DB link failed)', 'warning');
+            }
+          }
+        } else {
+          addNotification('Test saved', 'success');
+        }
       }
     } catch (err) {
       console.error('Save error:', err);
@@ -913,6 +1024,7 @@ const LactateTestingPage = () => {
   const avgStepPower         = stepHistorical.length
     ? Math.round(stepHistorical.reduce((s, d) => s + (d.power || 0), 0) / stepHistorical.length) : null;
   const hrPoints             = stepHistorical.filter(d => d.heartRate && d.heartRate > 0);
+  // eslint-disable-next-line no-unused-vars
   const avgStepHR            = hrPoints.length
     ? Math.round(hrPoints.reduce((s, d) => s + d.heartRate, 0) / hrPoints.length) : null;
   const isLastStep           = currentStep + 1 >= protocol.steps.length;
@@ -933,13 +1045,6 @@ const LactateTestingPage = () => {
   // ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 pb-20">
-      {/* Fullscreen mode CSS — hides the NativeLayout top & bottom bars so the
-          training UI gets the whole viewport. Triggered by toggling the
-          `lactate-fullscreen` class on document.body (see useEffect above). */}
-      <style>{`
-        body.lactate-fullscreen .nl-top-bar,
-        body.lactate-fullscreen .nl-bottom-bar { display: none !important; }
-      `}</style>
 
       {/* ── Modals ─────────────────────────────────────────── */}
       {showTrainerModal && (
@@ -955,29 +1060,516 @@ const LactateTestingPage = () => {
           currentStep={currentStep}
         />
       )}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="Unlimited Tests"
+        requiredPlan="pro"
+      />
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/* ACTIVE TEST VIEW (scrollable white-card)                  */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      {(testState === 'running' || testState === 'paused') && (
+        <div className="w-full px-2 sm:px-4 py-3 space-y-3">
 
-        {/* ── Page header ─────────────────────────────────── */}
+          {/* Sticky header bar */}
+          <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-lg rounded-2xl shadow-md border border-gray-200 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${
+                    phase === 'work'      ? (testState === 'paused' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700') :
+                    phase === 'recovery'  ? 'bg-sky-100 text-sky-700' :
+                    phase === 'warmup'    ? 'bg-amber-100 text-amber-700' :
+                    phase === 'cooldown'  ? 'bg-teal-100 text-teal-700' :
+                    phase === 'countdown' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {phase === 'work'
+                      ? (testState === 'paused' ? '⏸ Paused' : `Step ${currentStep + 1} / ${protocol.steps.length}`)
+                      : phase === 'recovery'  ? `Recovery · Step ${currentStep + 1}`
+                      : phase === 'warmup'    ? `Warmup${warmup.type === 'steps' ? ` ${warmupStep + 1}/${warmup.stepCount}` : ''}`
+                      : phase === 'cooldown'  ? 'Cooldown'
+                      : phase === 'countdown' ? 'Get Ready'
+                      : phase}
+                  </span>
+                  <span className="text-sm text-gray-400 tabular-nums font-semibold">{fmtTime(totalTestTime)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {testState === 'running' ? (
+                  <button onClick={handlePauseTest}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-200 active:bg-amber-100 transition-colors">
+                    <PauseIcon className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <button onClick={handleResumeTest}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 active:bg-emerald-100 transition-colors">
+                    <PlayIcon className="w-5 h-5" />
+                  </button>
+                )}
+                {phase === 'work' && testState === 'running' && (
+                  <button onClick={handleSkipInterval}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-orange-50 text-orange-600 border border-orange-200 active:bg-orange-100 transition-colors">
+                    <ForwardIcon className="w-5 h-5" />
+                  </button>
+                )}
+                <button onClick={handleStopTest}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-600 border border-red-200 active:bg-red-100 transition-colors">
+                  <StopIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Step progress dots */}
+            {phase !== 'warmup' && phase !== 'cooldown' && (
+              <div className="mt-3">
+                <StepProgressBar steps={protocol.steps} currentStep={currentStep} lactateValues={lactateValues} />
+              </div>
+            )}
+          </div>
+
+          {/* Phase content */}
+          <AnimatePresence mode="wait">
+
+            {/* WORK */}
+            {phase === 'work' && (
+              <motion.div key="work"
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-4"
+              >
+                {/* ── Live metric strip ── */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-3">
+                  <div className="flex items-stretch gap-3 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+
+                    {/* WATTS — actual (+ target as small badge) */}
+                    {trainerConnected && (
+                      <div className={`flex-shrink-0 flex flex-col items-center justify-center min-w-[90px] px-4 py-3 rounded-xl border transition-colors ${
+                        Math.abs(powerDelta) <= 15 ? 'border-emerald-200 bg-emerald-50/60' :
+                        Math.abs(powerDelta) <= 30 ? 'border-amber-200 bg-amber-50/60' : 'border-red-200 bg-red-50/60'
+                      }`}>
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5 flex items-center gap-0.5">
+                          <BoltIcon className="w-3 h-3" /> Watts
+                        </div>
+                        <div className={`text-5xl font-black tabular-nums leading-none ${
+                          Math.abs(powerDelta) <= 15 ? 'text-emerald-700' :
+                          Math.abs(powerDelta) <= 30 ? 'text-amber-700' : 'text-red-700'
+                        }`}>{actualPower}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {effectiveTargetPower != null && (
+                            <span className="text-[10px] text-indigo-500 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                              target {effectiveTargetPower}W
+                            </span>
+                          )}
+                          {Math.abs(powerDelta) > 5 && (
+                            <span className={`text-[10px] font-bold ${powerDelta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {powerDelta > 0 ? `+${powerDelta}` : powerDelta}W
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* HR */}
+                    {devices.heartRate?.connected && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-rose-100 bg-rose-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-rose-400 mb-0.5 flex items-center gap-0.5">
+                          <HeartIcon className="w-3 h-3" /> HR
+                        </div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-rose-700">
+                          {liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
+                        </div>
+                        <div className="text-[10px] text-rose-300 mt-1">bpm</div>
+                      </div>
+                    )}
+
+                    {/* Cadence */}
+                    {trainerConnected && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-sky-100 bg-sky-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-sky-400 mb-0.5">CAD</div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-sky-700">
+                          {liveData.cadence > 0 ? Math.round(liveData.cadence) : '—'}
+                        </div>
+                        <div className="text-[10px] text-sky-300 mt-1">rpm</div>
+                      </div>
+                    )}
+
+                    {/* Speed (non-trainer or when no power) */}
+                    {devices.bikeTrainer?.connected && !trainerConnected && liveData.speed > 0 && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-orange-100 bg-orange-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-orange-400 mb-0.5">SPEED</div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-orange-700">
+                          {liveData.speed.toFixed(1)}
+                        </div>
+                        <div className="text-[10px] text-orange-300 mt-1">km/h</div>
+                      </div>
+                    )}
+
+                    {/* SmO₂ */}
+                    {devices.moxy?.connected && liveData.smo2 > 0 && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-yellow-100 bg-yellow-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-yellow-500 mb-0.5">SmO₂</div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-yellow-700">
+                          {liveData.smo2.toFixed(0)}
+                        </div>
+                        <div className="text-[10px] text-yellow-400 mt-1">%</div>
+                      </div>
+                    )}
+
+                    {/* THb */}
+                    {devices.moxy?.connected && liveData.thb > 0 && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-orange-100 bg-orange-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-orange-400 mb-0.5">THb</div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-orange-700">
+                          {liveData.thb.toFixed(1)}
+                        </div>
+                        <div className="text-[10px] text-orange-300 mt-1">μM</div>
+                      </div>
+                    )}
+
+                    {/* VO₂ */}
+                    {devices.vo2master?.connected && liveData.vo2 > 0 && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-purple-100 bg-purple-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-purple-400 mb-0.5">VO₂</div>
+                        <div className="text-4xl font-black tabular-nums leading-none text-purple-700">
+                          {liveData.vo2.toFixed(1)}
+                        </div>
+                        <div className="text-[10px] text-purple-300 mt-1">ml/min/kg</div>
+                      </div>
+                    )}
+
+                    {/* Core Temp */}
+                    {devices.coreTemp?.connected && liveData.coreTemp > 0 && (
+                      <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[80px] px-4 py-3 rounded-xl border border-red-100 bg-red-50/50">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-red-400 mb-0.5">TEMP</div>
+                        <div className="text-5xl font-black tabular-nums leading-none text-red-700">
+                          {liveData.coreTemp.toFixed(1)}
+                        </div>
+                        <div className="text-[10px] text-red-300 mt-1">°C</div>
+                      </div>
+                    )}
+
+                    {/* No devices connected placeholder */}
+                    {!trainerConnected && !devices.heartRate?.connected && (
+                      <div className="flex-1 flex flex-col items-center justify-center py-4 text-gray-300">
+                        <div className="text-sm font-semibold">No devices</div>
+                        <div className="text-xs">Connect trainer or HR monitor</div>
+                      </div>
+                    )}
+
+                    {/* Spacer push + ERG status chip at end */}
+                    <div className="flex-1" />
+                    <div className="flex-shrink-0 flex flex-col items-center justify-center px-3 py-2 rounded-xl border border-gray-100 bg-white/60 min-w-[64px]">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">ERG</div>
+                      <div className={`text-sm font-black ${ergActive ? 'text-emerald-600' : 'text-gray-300'}`}>
+                        {ergActive ? 'ON' : 'OFF'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Timer progress */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                  <div className="flex justify-between text-sm text-gray-500 mb-2 tabular-nums">
+                    <span className="font-semibold text-gray-700">{fmtTime(intervalTimer)}</span>
+                    <span>{fmtTime(currentStepData.duration || 360)}</span>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <motion.div className="h-full bg-indigo-500 rounded-full"
+                      animate={{ width: `${stepProgress * 100}%` }}
+                      transition={{ duration: 0.8, ease: 'linear' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Watt adjust */}
+                {ergActive && testState === 'running' && (
+                  <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                    <div className="text-xs font-semibold text-gray-400 mb-3 text-center uppercase tracking-wide">Adjust Target</div>
+                    <div className="flex gap-2">
+                      {[-20, -10, -5].map(d => (
+                        <button key={d} onClick={() => adjustWatts(d)}
+                          className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl text-sm font-black active:scale-95 transition-all border border-red-100 hover:bg-red-100">
+                          {d}
+                        </button>
+                      ))}
+                      {[5, 10, 20].map(d => (
+                        <button key={d} onClick={() => adjustWatts(d)}
+                          className="flex-1 py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-black active:scale-95 transition-all border border-emerald-100 hover:bg-emerald-100">
+                          +{d}
+                        </button>
+                      ))}
+                      {wattOffset !== 0 && (
+                        <button onClick={() => adjustWatts(-wattOffset)}
+                          className="flex-shrink-0 px-3 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold active:scale-95">
+                          ↺
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* RECOVERY */}
+            {phase === 'recovery' && (
+              <motion.div key="recovery"
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-4"
+              >
+                {/* Recovery timer */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-sky-100 p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-bold text-sky-600">
+                      Interval {currentStep + 1} complete
+                      {avgStepPower != null && <span className="text-gray-400 font-normal"> · avg {avgStepPower}W</span>}
+                    </div>
+                    <div className="text-sm font-black text-sky-700 tabular-nums">
+                      {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
+                    </div>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <motion.div className="h-full bg-sky-400 rounded-full"
+                      animate={{ width: `${recoveryProgress * 100}%` }}
+                      transition={{ duration: 0.8, ease: 'linear' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Lactate input */}
+                {!stepLactateEntered ? (
+                  <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5 space-y-4">
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wide text-center">Enter Lactate Value</div>
+                    <div className="flex items-center gap-2 justify-center">
+                      <input
+                        ref={lactateInputRef}
+                        type="number" step="0.1" min="0.1" max="25"
+                        value={lactateInput}
+                        onChange={e => setLactateInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
+                        placeholder="0.0"
+                        className="w-40 text-center text-5xl font-black text-primary tabular-nums outline-none border-b-2 border-primary/30 pb-2 focus:border-primary transition-colors bg-transparent"
+                      />
+                      <span className="text-sm font-bold text-gray-400">mmol/L</span>
+                    </div>
+                    {/* BORG selector */}
+                    <div>
+                      <div className="text-xs font-semibold text-gray-400 mb-2 text-center">BORG (optional)</div>
+                      <div className="flex gap-1.5 flex-wrap justify-center">
+                        {[6, 9, 11, 13, 15, 17, 19, 20].map(b => (
+                          <button key={b}
+                            onClick={() => setBorgInput(String(borgInput) === String(b) ? '' : String(b))}
+                            className={`px-3 py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                              String(borgInput) === String(b)
+                                ? 'bg-primary text-white'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}
+                          >{b}</button>
+                        ))}
+                      </div>
+                      {borgInput && BORG_LABELS[borgInput] && (
+                        <div className="text-center text-xs text-gray-500 mt-1">{BORG_LABELS[borgInput]}</div>
+                      )}
+                    </div>
+                    <button onClick={handleAddLactate} disabled={!lactateInput}
+                      className="w-full py-4 bg-primary text-white rounded-2xl text-base font-black disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-sm shadow-primary/20 flex items-center justify-center gap-2">
+                      <CheckCircleIcon className="w-5 h-5" /> Save Lactate
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-emerald-100 p-5 flex flex-col items-center gap-3">
+                    <CheckCircleSolid className="w-10 h-10 text-emerald-500" />
+                    <div className="text-center">
+                      <div className="text-4xl font-black text-emerald-700 tabular-nums">
+                        {lactateValues.find(l => l.step === currentStep + 1)?.lactate.toFixed(1)}
+                        <span className="text-base font-bold text-emerald-400 ml-1">mmol/L</span>
+                      </div>
+                      {lactateValues.find(l => l.step === currentStep + 1)?.borg && (
+                        <div className="text-sm text-gray-400 mt-1">
+                          BORG {lactateValues.find(l => l.step === currentStep + 1)?.borg}
+                          {BORG_LABELS[lactateValues.find(l => l.step === currentStep + 1)?.borg] && (
+                            <span className="ml-1">· {BORG_LABELS[lactateValues.find(l => l.step === currentStep + 1)?.borg]}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Next interval button */}
+                <button onClick={handleStartInterval}
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-base font-black active:scale-[0.98] transition-all shadow-sm shadow-emerald-600/20 flex items-center justify-center gap-2">
+                  {isLastStep
+                    ? cooldown.enabled
+                      ? <><SparklesIcon className="w-5 h-5" /> Start Cooldown</>
+                      : <><FlagIcon className="w-5 h-5" /> Finish Test</>
+                    : <><PlayIcon className="w-5 h-5" /> Next Interval</>
+                  }
+                </button>
+              </motion.div>
+            )}
+
+            {/* WARMUP */}
+            {phase === 'warmup' && (
+              <motion.div key="warmup"
+                initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-4"
+              >
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-amber-100 p-5">
+                  <div className="text-center mb-4">
+                    <div className="text-xs font-bold text-amber-500 uppercase tracking-wide mb-2">Warmup Target</div>
+                    <div className="text-8xl font-black text-amber-700 tabular-nums leading-none">{currentWarmupPower}</div>
+                    <div className="text-sm text-amber-500 font-semibold mt-1">watts</div>
+                    {trainerConnected && (
+                      <div className="text-2xl font-black text-gray-400 tabular-nums mt-2">
+                        {actualPower}<span className="text-sm ml-1 font-normal">actual</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5 tabular-nums">
+                    <span>{fmtTime(warmupTimer)}</span>
+                    <span>{fmtTime(warmup.type === 'fixed' ? warmup.duration : warmup.stepDuration)}</span>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden mb-4">
+                    <motion.div className="h-full bg-amber-400 rounded-full"
+                      animate={{ width: `${warmupProgress * 100}%` }}
+                      transition={{ duration: 0.8, ease: 'linear' }}
+                    />
+                  </div>
+                  <button onClick={handleSkipWarmup}
+                    className="w-full py-3 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold border border-amber-200 active:scale-[0.98] transition-all">
+                    Skip Warmup →
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* COOLDOWN */}
+            {phase === 'cooldown' && (
+              <motion.div key="cooldown"
+                initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-4"
+              >
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-teal-100 p-5">
+                  <div className="text-center mb-4">
+                    <div className="text-xs font-bold text-teal-500 uppercase tracking-wide mb-2">Cooldown Target</div>
+                    <div className="text-8xl font-black text-teal-700 tabular-nums leading-none">{cooldown.power}</div>
+                    <div className="text-sm text-teal-500 font-semibold mt-1">watts</div>
+                    {trainerConnected && (
+                      <div className="text-2xl font-black text-gray-400 tabular-nums mt-2">
+                        {actualPower}<span className="text-sm ml-1 font-normal">actual</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5 tabular-nums">
+                    <span>{fmtTime(cooldownTimer)}</span>
+                    <span>{fmtTime(cooldown.duration)}</span>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden mb-4">
+                    <motion.div className="h-full bg-teal-400 rounded-full"
+                      animate={{ width: `${cooldownProgress * 100}%` }}
+                      transition={{ duration: 0.8, ease: 'linear' }}
+                    />
+                  </div>
+                  <button onClick={handleStopTest}
+                    className="w-full py-3 bg-teal-50 text-teal-700 rounded-xl text-sm font-bold border border-teal-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                    <FlagIcon className="w-4 h-4" /> Finish Now
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* COUNTDOWN */}
+            {phase === 'countdown' && (
+              <motion.div key="countdown"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex flex-col items-center justify-center py-12"
+              >
+                <AnimatePresence mode="wait">
+                  <motion.div key={countdown}
+                    initial={{ scale: 1.4, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.7, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+                    className="text-[8rem] font-black text-primary leading-none tabular-nums"
+                  >
+                    {countdown}
+                  </motion.div>
+                </AnimatePresence>
+                <div className="text-base font-bold text-gray-500 mt-4">Next interval starting…</div>
+                <div className="text-sm text-gray-400 mt-1">
+                  Step {currentStep + 1}: <span className="text-primary font-bold">{protocol.steps[currentStep]?.targetPower}W</span>
+                </div>
+              </motion.div>
+            )}
+
+          </AnimatePresence>
+
+          {/* ── CHARTS ROW: Session Metrics + Lactate Curve side-by-side on wide screens ── */}
+          {(historicalData.length > 0 || lactateValues.length > 0) && (
+            <div className={`grid gap-3 ${
+              historicalData.length > 0 && lactateValues.length > 0
+                ? 'grid-cols-1 lg:grid-cols-2'
+                : 'grid-cols-1'
+            }`}>
+
+              {/* Session Metrics (LiveDashboard) */}
+              {historicalData.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-2">
+                  <h3 className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5 px-1">
+                    <ChartBarIcon className="w-3.5 h-3.5 text-primary" /> Session Metrics
+                  </h3>
+                  <LiveDashboard
+                    liveData={liveData}
+                    devices={devices}
+                    testState={testState}
+                    historicalData={historicalData}
+                    intervalTimer={intervalTimer}
+                    protocol={protocol}
+                    currentStep={currentStep}
+                  />
+                </div>
+              )}
+
+              {/* Lactate Curve (live, updates after each entry) */}
+              {lactateValues.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <BeakerIcon className="w-4 h-4 text-primary" /> Lactate Curve
+                  </h3>
+                  <LactateChart lactateValues={lactateValues} historicalData={historicalData} embedded />
+                </div>
+              )}
+
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/* SETUP + COMPLETED VIEWS (normal page flow)               */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      {(testState === 'idle' || testState === 'completed') && (
+      <div className="w-full px-2 sm:px-4 py-4 space-y-4">
+
+        {/* Page header */}
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-              <BeakerIcon className="inline w-7 h-7 mr-2 text-primary align-middle" />Lactate Threshold Testing
+              <BeakerIcon className="inline w-7 h-7 mr-2 text-primary align-middle" />Lactate Testing
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {testState === 'idle'
                 ? 'Configure your step protocol and connect devices'
-                : testState === 'completed'
-                ? `Test complete · ${fmtTime(totalTestTime)} · ${lactateValues.length} lactate samples`
-                : `Running · ${fmtTime(totalTestTime)} elapsed`}
+                : `Test complete · ${fmtTime(totalTestTime)} · ${lactateValues.length} lactate samples`}
             </p>
           </div>
-          {testState === 'running' && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs font-semibold text-red-600">REC</span>
-            </div>
-          )}
         </div>
 
         {/* ══════════════════════════════════════════════════ */}
@@ -1315,683 +1907,6 @@ const LactateTestingPage = () => {
         )}
 
         {/* ══════════════════════════════════════════════════ */}
-        {/* ACTIVE TEST VIEW                                  */}
-        {/* ══════════════════════════════════════════════════ */}
-        {(testState === 'running' || testState === 'paused') && (
-          <div className="space-y-4">
-
-            {/* ── Fixed mobile control header ───────────────────
-                Pinned to the very top of the viewport (above the
-                NativeLayout LaChart header) via inline styles to
-                avoid any Tailwind purge / class-collision issues.
-                z-index 9999 keeps it above the layout header but
-                below modal scrims (which use position: fixed too
-                but render later in the DOM tree). */}
-            <div
-              className="px-4 sm:px-6 pb-2 bg-white/95 border-b border-gray-200/70 shadow-sm"
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                zIndex: 9999,
-                paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
-                backdropFilter: 'blur(16px) saturate(160%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(160%)',
-              }}
-            >
-              <div className="max-w-5xl mx-auto flex items-center gap-2 sm:gap-3">
-                {/* Phase + lap timer */}
-                <div className="flex flex-col min-w-0 flex-shrink-0">
-                  <span className={`text-[10px] font-black uppercase tracking-wider leading-none ${
-                    phase === 'work' ? (testState === 'paused' ? 'text-amber-600' : 'text-red-600') :
-                    phase === 'recovery' ? 'text-sky-600' :
-                    phase === 'warmup' ? 'text-amber-600' :
-                    phase === 'cooldown' ? 'text-teal-600' : 'text-gray-500'
-                  }`}>
-                    {phase === 'work' ? `Step ${currentStep + 1}/${protocol.steps.length}` :
-                     phase === 'recovery' ? 'Recovery' :
-                     phase === 'warmup' ? `Warmup${warmup.type === 'steps' ? ` ${warmupStep + 1}/${warmup.stepCount}` : ''}` :
-                     phase === 'cooldown' ? 'Cooldown' : phase}
-                  </span>
-                  <span className="text-base sm:text-lg font-black tabular-nums leading-tight text-gray-900">
-                    {phase === 'work' ? `${fmtTime(intervalTimer)}/${fmtTime(currentStepData.duration || 360)}` :
-                     phase === 'recovery' ? `${fmtTime(recoveryTimer)}/${fmtTime(protocol.recoveryDuration)}` :
-                     phase === 'warmup' ? `${fmtTime(warmupTimer)}/${fmtTime(warmupDuration)}` :
-                     phase === 'cooldown' ? `${fmtTime(cooldownTimer)}/${fmtTime(cooldown.duration)}` :
-                     fmtTime(totalTestTime)}
-                  </span>
-                </div>
-
-                {/* Power */}
-                {(phase === 'work' || phase === 'warmup' || phase === 'cooldown') && (
-                  <div className="flex flex-col items-center px-2 border-l border-gray-200/70 min-w-0">
-                    <span className="text-[9px] font-bold uppercase text-gray-400 leading-none">PWR</span>
-                    <span className="text-base sm:text-lg font-black text-primary tabular-nums leading-tight whitespace-nowrap">
-                      {trainerConnected ? actualPower : '—'}
-                      <span className="text-[10px] text-gray-400 ml-0.5 font-bold">
-                        /{phase === 'work' ? effectiveTargetPower : phase === 'warmup' ? currentWarmupPower : cooldown.power}
-                      </span>
-                    </span>
-                  </div>
-                )}
-
-                {/* Heart rate */}
-                <div className="flex flex-col items-center px-2 border-l border-gray-200/70 min-w-0">
-                  <span className="text-[9px] font-bold uppercase text-gray-400 leading-none">HR</span>
-                  <span className="text-base sm:text-lg font-black text-rose-600 tabular-nums leading-tight">
-                    {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
-                  </span>
-                </div>
-
-                {/* Controls */}
-                <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-                  {testState === 'running' ? (
-                    <button
-                      onClick={handlePauseTest}
-                      className="flex items-center justify-center w-9 h-9 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 active:scale-95 transition-all"
-                      aria-label="Pause"
-                    >
-                      <PauseIcon className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleResumeTest}
-                      className="flex items-center justify-center w-9 h-9 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 active:scale-95 transition-all shadow-sm"
-                      aria-label="Resume"
-                    >
-                      <PlayIcon className="w-4 h-4" />
-                    </button>
-                  )}
-                  {phase === 'work' && (
-                    <button
-                      onClick={handleSkipInterval}
-                      className="flex items-center justify-center w-9 h-9 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 active:scale-95 transition-all"
-                      aria-label="Skip interval"
-                    >
-                      <ForwardIcon className="w-4 h-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={handleStopTest}
-                    className="flex items-center justify-center w-9 h-9 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200 active:scale-95 transition-all"
-                    aria-label="Stop test"
-                  >
-                    <StopIcon className="w-4 h-4" />
-                  </button>
-                  {/* Fullscreen toggle — hides NativeLayout's top + bottom bars
-                      so the chart and controls fill the whole screen. Auto-on
-                      when the user rotates to landscape. */}
-                  <button
-                    onClick={() => setFullscreen(v => !v)}
-                    className="flex items-center justify-center w-9 h-9 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 active:scale-95 transition-all"
-                    aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                    title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                  >
-                    {fullscreen ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Mini progress bar — shows progress of current phase */}
-              <div className="mt-1.5 h-0.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    phase === 'work' ? 'bg-red-500' :
-                    phase === 'recovery' ? 'bg-sky-400' :
-                    phase === 'warmup' ? 'bg-amber-400' :
-                    phase === 'cooldown' ? 'bg-teal-400' : 'bg-gray-400'
-                  }`}
-                  style={{ width: `${(
-                    phase === 'work' ? stepProgress :
-                    phase === 'recovery' ? recoveryProgress :
-                    phase === 'warmup' ? warmupProgress :
-                    phase === 'cooldown' ? cooldownProgress : 0
-                  ) * 100}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Spacer below the fixed header so subsequent content doesn't
-                slide under it. ~64px = lap timer row + mini progress bar +
-                safe-area top, matching the fixed header's rendered height. */}
-            <div
-              aria-hidden="true"
-              style={{ height: 'calc(env(safe-area-inset-top, 0px) + 56px)' }}
-            />
-
-            {/* Step progress — hide during warmup */}
-            {phase !== 'warmup' && (
-              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 px-4 pt-3 pb-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {phase === 'cooldown' ? 'Cooldown' : `Step ${currentStep + 1} / ${protocol.steps.length}`}
-                  </span>
-                  <div className="flex items-center gap-3 text-xs">
-                    {ergActive && phase !== 'cooldown' && (
-                      <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-                        <BoltSolid className="w-3 h-3" /> ERG {effectiveTargetPower}W
-                      </span>
-                    )}
-                    <span className="text-gray-400">{fmtTime(totalTestTime)} elapsed</span>
-                  </div>
-                </div>
-                {phase !== 'cooldown' && (
-                  <StepProgressBar steps={protocol.steps} currentStep={currentStep} lactateValues={lactateValues} />
-                )}
-              </div>
-            )}
-
-            {/* Phase panels */}
-            <AnimatePresence mode="wait">
-
-              {/* WARMUP */}
-              {phase === 'warmup' && (
-                <motion.div key="warmup"
-                  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.2 }}
-                  className="bg-amber-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-amber-200 p-5 space-y-4"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
-                    <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Warmup</span>
-                    {warmup.type === 'steps' && (
-                      <span className="text-xs text-amber-600 font-semibold ml-1">
-                        Step {warmupStep + 1} / {warmup.stepCount}
-                      </span>
-                    )}
-                    <span className="ml-auto text-xs text-amber-600">{fmtTime(totalTestTime)} elapsed</span>
-                  </div>
-
-                  {/* Warmup step indicators (step-type only) */}
-                  {warmup.type === 'steps' && (
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                      {Array.from({ length: warmup.stepCount }, (_, i) => {
-                        const p = getWarmupStepPower(i, warmup);
-                        const done   = i < warmupStep;
-                        const active = i === warmupStep;
-                        return (
-                          <React.Fragment key={i}>
-                            <div className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl text-center transition-all ${
-                              active ? 'bg-amber-500 text-white shadow-md scale-105' :
-                              done   ? 'bg-amber-100 text-amber-600' :
-                                       'bg-white/60 text-gray-400 border border-gray-100'
-                            }`}>
-                              {done
-                                ? <CheckCircleSolid className="w-3.5 h-3.5 text-amber-500" />
-                                : <span className={`text-xs font-bold ${active ? 'text-white' : 'text-gray-400'}`}>{i + 1}</span>
-                              }
-                              <span className={`text-[11px] font-semibold ${active ? 'text-white' : done ? 'text-amber-600' : 'text-gray-400'}`}>{p}W</span>
-                            </div>
-                            {i < warmup.stepCount - 1 && (
-                              <div className={`flex-shrink-0 w-3 h-px mb-3 ${i < warmupStep ? 'bg-amber-300' : 'bg-gray-200'}`} />
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Power display */}
-                  <div className="flex items-center justify-center gap-4">
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Target</div>
-                      <div className="text-6xl font-black text-amber-600 tabular-nums leading-none">{currentWarmupPower}</div>
-                      <div className="text-xs text-amber-400 mt-1.5">watts</div>
-                    </div>
-                    {trainerConnected && (
-                      <div className="text-center">
-                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
-                        <div className="text-4xl font-black text-gray-600 tabular-nums leading-none">{actualPower}</div>
-                        <div className="text-xs text-gray-400 mt-1.5">watts</div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Timer bar */}
-                  <div>
-                    <div className="flex justify-between text-xs text-amber-600 mb-1.5">
-                      <span className="font-medium">{warmup.type === 'fixed' ? 'Warmup progress' : `Step ${warmupStep + 1} progress`}</span>
-                      <span className="font-bold tabular-nums">
-                        {fmtTime(warmupTimer)} / {fmtTime(warmup.type === 'fixed' ? warmup.duration : warmup.stepDuration)}
-                      </span>
-                    </div>
-                    <div className="h-2.5 bg-amber-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-amber-400 rounded-full"
-                        animate={{ width: `${warmupProgress * 100}%` }}
-                        transition={{ duration: 0.8, ease: 'linear' }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Controls */}
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {testState === 'running' ? (
-                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-200 text-amber-800 rounded-xl text-sm font-bold hover:bg-amber-300 transition-colors">
-                        <PauseIcon className="w-4 h-4" /> Pause
-                      </button>
-                    ) : (
-                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                        <PlayIcon className="w-4 h-4" /> Resume
-                      </button>
-                    )}
-                    <button onClick={handleSkipWarmup} className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors">
-                      Skip Warmup →
-                    </button>
-                    <button onClick={handleStopTest} className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> Stop Test
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* WORK */}
-              {phase === 'work' && (
-                <motion.div key="work"
-                  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.2 }}
-                  className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4 space-y-3"
-                >
-                  {/* Header row */}
-                  <div className="flex items-center gap-2">
-                    {testState === 'running'
-                      ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-                      : <span className="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0" />
-                    }
-                    <span className={`text-xs font-black uppercase tracking-widest ${testState === 'running' ? 'text-red-600' : 'text-amber-600'}`}>
-                      {testState === 'running' ? 'Work Interval' : 'Paused'}
-                    </span>
-                    <span className="ml-auto text-xs text-gray-400">
-                      Next: {protocol.steps[currentStep + 1]?.targetPower
-                        ? `${protocol.steps[currentStep + 1].targetPower}W`
-                        : cooldown.enabled ? 'Cooldown' : 'Last step'}
-                    </span>
-                  </div>
-
-                  {/* Landscape: left=power, right=HR+cadence+controls; Portrait: stacked */}
-                  <div className={isLandscape ? 'flex gap-3' : 'space-y-3'}>
-
-                    {/* LEFT: power + progress + watt adjust */}
-                    <div className={`${isLandscape ? 'flex-1 min-w-0 flex flex-col gap-2' : 'space-y-3'}`}>
-
-                      {/* Big power metrics */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Target */}
-                        <div className="bg-primary/8 border border-primary/20 rounded-2xl p-3 text-center">
-                          <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-0.5">Target</div>
-                          <div className={`${isLandscape ? 'text-4xl' : 'text-5xl'} font-black text-primary tabular-nums leading-none`}>{effectiveTargetPower}</div>
-                          {wattOffset !== 0 && (
-                            <div className={`text-[10px] font-semibold mt-0.5 ${wattOffset > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {wattOffset > 0 ? `+${wattOffset}` : wattOffset}W
-                            </div>
-                          )}
-                          {wattOffset === 0 && <div className="text-[10px] text-primary/50 mt-0.5">watts</div>}
-                        </div>
-                        {/* Actual */}
-                        <div className={`rounded-2xl p-3 text-center border transition-colors ${
-                          !trainerConnected                  ? 'bg-gray-50 border-gray-100' :
-                          Math.abs(powerDelta) <= 15         ? 'bg-emerald-50 border-emerald-200' :
-                          Math.abs(powerDelta) <= 30         ? 'bg-amber-50 border-amber-200' :
-                                                               'bg-red-50 border-red-200'
-                        }`}>
-                          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Actual</div>
-                          <div className={`${isLandscape ? 'text-4xl' : 'text-5xl'} font-black tabular-nums leading-none ${
-                            !trainerConnected          ? 'text-gray-300' :
-                            Math.abs(powerDelta) <= 15 ? 'text-emerald-600' :
-                            Math.abs(powerDelta) <= 30 ? 'text-amber-600' : 'text-red-500'
-                          }`}>{trainerConnected ? actualPower : '—'}</div>
-                          {trainerConnected && (
-                            <div className={`text-[10px] mt-0.5 font-bold ${
-                              Math.abs(powerDelta) <= 5 ? 'text-gray-400' :
-                              powerDelta > 0            ? 'text-emerald-600' : 'text-red-500'
-                            }`}>
-                              {powerDelta > 0 ? `+${powerDelta}W` : powerDelta < 0 ? `${powerDelta}W` : '±0W'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Progress bar */}
-                      <div>
-                        <div className="flex justify-between text-xs text-gray-400 mb-1">
-                          <span className="font-medium">Interval progress</span>
-                          <span className="font-bold text-gray-600 tabular-nums">
-                            {fmtTime(intervalTimer)} / {fmtTime(currentStepData.duration || 360)}
-                          </span>
-                        </div>
-                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <motion.div
-                            className="h-full bg-primary rounded-full"
-                            animate={{ width: `${stepProgress * 100}%` }}
-                            transition={{ duration: 0.8, ease: 'linear' }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Watt adjust */}
-                      {ergActive && testState === 'running' && (
-                        <div className="flex items-center gap-1.5 p-2 bg-gray-50 rounded-xl border border-gray-100">
-                          <div className="flex gap-1 flex-1">
-                            {[-20, -10, -5].map(d => (
-                              <button key={d} onClick={() => adjustWatts(d)}
-                                className="flex-1 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-bold active:scale-95 transition-all">
-                                {d}
-                              </button>
-                            ))}
-                            {[5, 10, 20].map(d => (
-                              <button key={d} onClick={() => adjustWatts(d)}
-                                className="flex-1 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold active:scale-95 transition-all">
-                                +{d}
-                              </button>
-                            ))}
-                          </div>
-                          {wattOffset !== 0 && (
-                            <button onClick={() => adjustWatts(-wattOffset)}
-                              className="flex-shrink-0 px-2.5 py-2 bg-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-300 transition-colors">
-                              Reset
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>{/* end left column */}
-
-                    {/* RIGHT: HR + cadence + controls */}
-                    <div className={isLandscape ? 'w-44 flex-shrink-0 flex flex-col gap-2' : 'space-y-3'}>
-                      <div className={`grid gap-2 ${isLandscape ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-3 text-center">
-                          <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-0.5">
-                            <HeartIcon className="w-3 h-3" /> HR
-                          </div>
-                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black text-rose-600 tabular-nums leading-none`}>
-                            {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
-                          </div>
-                          <div className="text-xs text-rose-300 mt-1">bpm</div>
-                        </div>
-                        <div className="bg-sky-50 border border-sky-100 rounded-2xl p-3 text-center">
-                          <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Cadence</div>
-                          <div className={`${isLandscape ? 'text-3xl' : 'text-4xl sm:text-5xl'} font-black text-sky-600 tabular-nums leading-none`}>
-                            {trainerConnected && liveData.cadence > 0 ? Math.round(liveData.cadence) : '—'}
-                          </div>
-                          <div className="text-xs text-sky-300 mt-1">rpm</div>
-                        </div>
-                      </div>
-                      <div className={`flex gap-2 ${isLandscape ? 'flex-col' : 'flex-wrap pt-1'}`}>
-                        {testState === 'running' ? (
-                          <button onClick={handlePauseTest}
-                            className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-200 transition-colors${isLandscape ? ' w-full' : ''}`}>
-                            <PauseIcon className="w-4 h-4" /> Pause
-                          </button>
-                        ) : (
-                          <button onClick={handleResumeTest}
-                            className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm${isLandscape ? ' w-full' : ''}`}>
-                            <PlayIcon className="w-4 h-4" /> Resume
-                          </button>
-                        )}
-                        <button onClick={handleSkipInterval}
-                          className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors${isLandscape ? ' w-full' : ''}`}>
-                          <StopIcon className="w-4 h-4" /> End Early
-                        </button>
-                        <button onClick={handleStopTest}
-                          className={`flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors${isLandscape ? ' w-full' : ' ml-auto'}`}>
-                          <StopIcon className="w-4 h-4" /> Stop Test
-                        </button>
-                      </div>
-                    </div>
-                  </div>{/* end landscape flex */}
-                </motion.div>
-              )}
-
-              {/* COUNTDOWN */}
-              {phase === 'countdown' && (
-                <motion.div key="countdown"
-                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="bg-primary/8 backdrop-blur-lg rounded-2xl shadow-sm border border-primary/20 py-12 text-center"
-                >
-                  <div className="text-9xl font-black text-primary leading-none mb-3">{countdown}</div>
-                  <div className="text-sm font-bold text-primary/70">Next interval starting…</div>
-                  <div className="text-xs text-gray-500 mt-1.5">
-                    Step {currentStep + 1}: <span className="font-bold">{protocol.steps[currentStep]?.targetPower}W</span>
-                    {' · '}{fmtTime(protocol.workDuration)}
-                  </div>
-                </motion.div>
-              )}
-
-              {/* RECOVERY */}
-              {phase === 'recovery' && (
-                <motion.div key="recovery"
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.25 }}
-                  className="bg-sky-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-sky-200 p-5 space-y-4"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
-                    <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
-                    {isLastStep && (
-                      <span className="ml-2 text-xs font-semibold text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full">
-                        {cooldown.enabled
-                          ? <><SparklesIcon className="inline w-3.5 h-3.5 mr-0.5" />Cooldown next</>
-                          : <><FlagIcon className="inline w-3.5 h-3.5 mr-0.5" />Last step</>
-                        }
-                      </span>
-                    )}
-                    <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
-                      {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
-                    </span>
-                  </div>
-
-                  <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
-                    <motion.div className="h-full bg-sky-400 rounded-full"
-                      animate={{ width: `${recoveryProgress * 100}%` }}
-                      transition={{ duration: 0.8, ease: 'linear' }}
-                    />
-                  </div>
-
-                  {/* Interval summary */}
-                  <div className="flex items-center gap-4 p-3 bg-white/70 rounded-xl text-sm flex-wrap">
-                    <span className="text-gray-500 font-medium">Interval {currentStep + 1} complete</span>
-                    {avgStepPower != null && <span className="font-bold text-gray-800 flex items-center gap-1"><BoltIcon className="w-3.5 h-3.5 text-amber-500" />{avgStepPower}W avg</span>}
-                    {avgStepHR   != null && <span className="font-bold text-rose-600 flex items-center gap-1"><HeartIcon className="w-3.5 h-3.5" />{avgStepHR} bpm</span>}
-                  </div>
-
-                  {/* Lactate entry */}
-                  {!stepLactateEntered ? (
-                    <div className="space-y-3">
-                      <div className="text-sm font-bold text-gray-700">Enter Lactate Value</div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Lactate <span className="text-gray-400">(mmol/L)</span>
-                          </label>
-                          <input
-                            ref={lactateInputRef}
-                            type="number" step="0.1" min="0.1" max="25"
-                            value={lactateInput}
-                            onChange={e => setLactateInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
-                            placeholder="e.g. 2.4"
-                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            BORG <span className="text-gray-400">(6–20, optional)</span>
-                          </label>
-                          <input
-                            type="number" min="6" max="20" step="1"
-                            value={borgInput}
-                            onChange={e => setBorgInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
-                            placeholder="6–20"
-                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
-                          />
-                          {borgInput && BORG_LABELS[borgInput] && (
-                            <p className="text-xs text-gray-400 mt-1 truncate">{BORG_LABELS[borgInput]}</p>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleAddLactate}
-                        disabled={!lactateInput}
-                        className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-sm shadow-primary/20"
-                      >
-                        <CheckCircleIcon className="w-4 h-4" /> Save Lactate Value
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                      <CheckCircleSolid className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                      <span className="text-sm text-emerald-700">
-                        Recorded: <strong>{lactateValues.find(l => l.step === currentStep + 1)?.lactate.toFixed(1)} mmol/L</strong>
-                        {lactateValues.find(l => l.step === currentStep + 1)?.borg && (
-                          <span className="text-emerald-600"> · BORG {lactateValues.find(l => l.step === currentStep + 1)?.borg}</span>
-                        )}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={handleStartInterval}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                      {isLastStep
-                        ? cooldown.enabled
-                          ? <><SparklesIcon className="w-4 h-4" /> Start Cooldown</>
-                          : <><FlagIcon className="w-4 h-4" /> Finish Test</>
-                        : <><PlayIcon className="w-4 h-4" /> Start Next Interval</>
-                      }
-                    </button>
-                    <button onClick={handleStopTest}
-                      className="flex items-center gap-1.5 px-3 py-2.5 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> Finish Test
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* COOLDOWN */}
-              {phase === 'cooldown' && (
-                <motion.div key="cooldown"
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.25 }}
-                  className="bg-teal-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-teal-200 p-5 space-y-4"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse flex-shrink-0" />
-                    <span className="text-xs font-black text-teal-700 uppercase tracking-widest">Cooldown</span>
-                    <span className="ml-auto text-sm font-black text-teal-700 tabular-nums">
-                      {fmtTime(cooldownTimer)} / {fmtTime(cooldown.duration)}
-                    </span>
-                  </div>
-
-                  {/* Power display */}
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-1">Target</div>
-                      <div className="text-6xl font-black text-teal-600 tabular-nums leading-none">{cooldown.power}</div>
-                      <div className="text-xs text-teal-400 mt-1.5">watts</div>
-                    </div>
-                    {trainerConnected && (
-                      <div className="text-center">
-                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
-                        <div className="text-4xl font-black text-gray-600 tabular-nums leading-none">{actualPower}</div>
-                        <div className="text-xs text-gray-400 mt-1.5">watts</div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Progress bar */}
-                  <div>
-                    <div className="flex justify-between text-xs text-teal-600 mb-1.5">
-                      <span className="font-medium">Cooldown progress</span>
-                      <span className="font-bold tabular-nums">{fmtTime(cooldownTimer)} / {fmtTime(cooldown.duration)}</span>
-                    </div>
-                    <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-teal-400 rounded-full"
-                        animate={{ width: `${cooldownProgress * 100}%` }}
-                        transition={{ duration: 0.8, ease: 'linear' }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Controls */}
-                  <div className="flex gap-2 pt-1">
-                    {testState === 'running' ? (
-                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-200 text-teal-800 rounded-xl text-sm font-bold hover:bg-teal-300 transition-colors">
-                        <PauseIcon className="w-4 h-4" /> Pause
-                      </button>
-                    ) : (
-                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-                        <PlayIcon className="w-4 h-4" /> Resume
-                      </button>
-                    )}
-                    <button onClick={handleStopTest}
-                      className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
-                      <StopIcon className="w-4 h-4" /> Finish Now
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Device status chips */}
-            <div className="flex flex-wrap gap-2">
-              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${trainerConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                <CpuChipIcon className="w-3.5 h-3.5" /> {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
-                {ergActive && <span className="ml-1">· ERG</span>}
-              </div>
-              {devices.heartRate?.connected && liveData.heartRate > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-700">
-                  <HeartIcon className="w-3.5 h-3.5" /> {Math.round(liveData.heartRate)} bpm
-                </div>
-              )}
-              {devices.moxy?.connected && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-100 text-blue-700">
-                  <ChartBarIcon className="w-3.5 h-3.5" /> SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
-                </div>
-              )}
-              {devices.coreTemp?.connected && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700">
-                  <SunIcon className="w-3.5 h-3.5" /> {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
-                </div>
-              )}
-            </div>
-
-            {/* Live dashboard chart */}
-            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
-              <LiveDashboard
-                liveData={liveData}
-                devices={devices}
-                testState={testState}
-                historicalData={historicalData}
-                intervalTimer={intervalTimer}
-                protocol={protocol}
-                currentStep={currentStep}
-              />
-            </div>
-
-            {/* Live lactate curve */}
-            {lactateValues.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
-                <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve (Live)
-                </div>
-                <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════ */}
         {/* COMPLETED VIEW                                    */}
         {/* ══════════════════════════════════════════════════ */}
         {testState === 'completed' && (
@@ -2101,29 +2016,35 @@ const LactateTestingPage = () => {
               </div>
             )}
 
-            {/* Lactate curve */}
-            {lactateValues.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve Analysis
-                </h3>
-                <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
-              </div>
-            )}
-
-            {/* Full session metrics */}
-            {historicalData.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Session Metrics</h3>
-                <LiveDashboard
-                  liveData={liveData}
-                  devices={devices}
-                  testState="completed"
-                  historicalData={historicalData}
-                  intervalTimer={0}
-                  protocol={protocol}
-                  currentStep={currentStep}
-                />
+            {/* Lactate curve + Full session metrics — side by side on wide screens */}
+            {(lactateValues.length > 0 || historicalData.length > 0) && (
+              <div className={`grid gap-3 ${
+                lactateValues.length > 0 && historicalData.length > 0
+                  ? 'grid-cols-1 lg:grid-cols-2'
+                  : 'grid-cols-1'
+              }`}>
+                {lactateValues.length > 0 && (
+                  <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-3">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                      <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve Analysis
+                    </h3>
+                    <LactateChart lactateValues={lactateValues} historicalData={historicalData} embedded />
+                  </div>
+                )}
+                {historicalData.length > 0 && (
+                  <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-3">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Session Metrics</h3>
+                    <LiveDashboard
+                      liveData={liveData}
+                      devices={devices}
+                      testState="completed"
+                      historicalData={historicalData}
+                      intervalTimer={0}
+                      protocol={protocol}
+                      currentStep={currentStep}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2132,8 +2053,8 @@ const LactateTestingPage = () => {
         {/* ══════════════════════════════════════════════════ */}
         {/* PREVIOUS SESSIONS                                 */}
         {/* ══════════════════════════════════════════════════ */}
-        <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
-          <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
               <span className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center"><FolderIcon className="w-4 h-4 text-gray-500" /></span>
               Previous Sessions
@@ -2224,13 +2145,14 @@ const LactateTestingPage = () => {
                   lvs  = Array.isArray(selectedSession.lactateValues) ? selectedSession.lactateValues : [];
                 }
                 if (!lvs.length && !hist.length) return null;
-                return <LactateChart lactateValues={lvs} historicalData={hist} />;
+                return <LactateChart lactateValues={lvs} historicalData={hist} embedded />;
               })()}
             </div>
           )}
         </div>
 
       </div>
+      )}
     </div>
   );
 };

@@ -72,31 +72,39 @@ export default function StepBarChart({
     return <div style={{ height }} className="rounded-lg bg-white/[0.02]" />;
   }
 
-  // Reserve top space for the current-step floating label.
-  const labelBand = 18;
-  const barAreaHeight = Math.max(20, height - labelBand);
+  const barAreaHeight = Math.max(20, height);
 
   const currentMeta = meta.rows[currentIdx];
 
   return (
-    <div className="relative w-full" style={{ height }}>
-      {/* Floating label for the CURRENT step — sits above the bars and
-          shows the target wattage + remaining time. Positioned over the
-          current bar horizontally. */}
+    <div className="relative w-full" style={{ height, overflowX: 'hidden' }}>
+      {/* Floating label for the CURRENT step — anchored to the TOP EDGE of
+          the bar so it always touches the interval regardless of chart height. */}
       {currentMeta && (() => {
-        // Compute the left/width pct so the label sits ABOVE the current bar.
         const before = meta.rows.slice(0, currentIdx).reduce((sum, r) => sum + r.durationSeconds, 0);
         const leftPct = (before / meta.totalDur) * 100;
         const widthPct = (currentMeta.durationSeconds / meta.totalDur) * 100;
         const remaining = Math.max(0, currentMeta.durationSeconds - Math.round(stepElapsed));
+
+        // Compute where the bar top is (in px from chart bottom) so the label
+        // can sit right on top of it with a 2 px gap.
+        const heightPct = currentMeta.target > 0
+          ? Math.max(8, (currentMeta.target / meta.maxTarget) * 100)
+          : 8;
+        const barTopFromBottom = (heightPct / 100) * barAreaHeight + 2;
+
+        // Center the label over the bar, but clamp so it never overflows the
+        // chart edges (e.g. when the current step is the very first bar).
+        const barCenterPct = leftPct + widthPct / 2;
+        const clampedCenterPct = Math.max(4, Math.min(96, barCenterPct));
+
         return (
           <div
-            className="absolute flex justify-center pointer-events-none"
+            className="absolute pointer-events-none"
             style={{
-              left: `${leftPct}%`,
-              width: `${widthPct}%`,
-              top: 0,
-              height: labelBand,
+              left: `${clampedCenterPct}%`,
+              transform: 'translateX(-50%)',
+              bottom: barTopFromBottom,
             }}
           >
             <span
@@ -104,7 +112,6 @@ export default function StepBarChart({
               style={{
                 color: '#fff',
                 background: (STEP_COLORS[currentMeta.step.stepType] || STEP_COLORS.work).edge + 'cc',
-                // Allow horizontal overflow so labels on edge steps stay readable.
                 maxWidth: 'none',
               }}
             >
@@ -118,7 +125,12 @@ export default function StepBarChart({
       {/* Baseline */}
       <div className="absolute left-0 right-0 h-px bg-white/10" style={{ bottom: 0 }} />
 
-      <div className="flex w-full items-end gap-[1.5px] absolute left-0 right-0 bottom-0" style={{ height: barAreaHeight }}>
+      {/* Gap scales down for step-dense workouts so all bars always fit
+          within the container width without overflowing. */}
+      <div
+        className="flex w-full items-end absolute left-0 right-0 bottom-0"
+        style={{ height: barAreaHeight, gap: meta.rows.length > 20 ? 0.5 : 1.5 }}
+      >
         {meta.rows.map((m, i) => {
           const col = STEP_COLORS[m.step.stepType] || STEP_COLORS.work;
           const widthPct = (m.durationSeconds / meta.totalDur) * 100;
@@ -149,10 +161,16 @@ export default function StepBarChart({
             <button
               key={i}
               onClick={() => onStepTap && onStepTap(i)}
-              className="relative h-full flex-shrink-0 group"
+              className="relative h-full group"
               style={{
+                // flex-shrink: 0 is intentionally removed — with percentage
+                // widths driven by duration ratios the bars sum to 100% of
+                // the container width, so no bar needs to shrink further.
+                // For very dense workouts this keeps everything within bounds.
+                flexShrink: 0,
                 width: `${widthPct}%`,
-                minWidth: 8,
+                // No minWidth — percentage layout means all bars always fit.
+                // A tiny step at 0.5% width is still tappable via the title.
                 background: 'transparent',
                 border: 'none',
                 padding: 0,

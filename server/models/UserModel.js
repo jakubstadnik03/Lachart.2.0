@@ -76,6 +76,11 @@ const userSchema = new mongoose.Schema({
     default: 'male'
   },
   bio: String,
+  coachBranding: {
+    logoUrl: { type: String, default: null },      // URL of coach's uploaded logo
+    title: { type: String, default: null },         // e.g. "Elite Triathlon Club"
+    trademark: { type: String, default: null },     // e.g. "© 2025 Coach John"
+  },
   avatar: {
     type: String,
     default: null

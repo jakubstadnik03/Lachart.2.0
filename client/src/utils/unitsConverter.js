@@ -311,3 +311,39 @@ export const paceUnitForUser = (user, sport = 'running') => {
   return paceUnit(sys, sport);
 };
 
+/**
+ * Get the user's running pace display preference.
+ * @param {Object} user - User object from AuthProvider
+ * @returns {'minpkm'|'kmh'} - 'minpkm' (min/km pace format) or 'kmh' (speed format)
+ */
+export const getPaceDisplay = (user) =>
+  user?.trainingPreferences?.paceDisplay || 'minpkm';
+
+/**
+ * Format a running pace (stored as seconds per km) using the user's display preference.
+ * If paceDisplay === 'kmh'  → "XX.X km/h"
+ * If paceDisplay === 'minpkm' (default) → "MM:SS/km"
+ *
+ * @param {number} secPerKm - Pace in seconds per km (e.g. 240 = 4:00/km)
+ * @param {Object} user     - User object from AuthProvider (for preference)
+ * @returns {string}
+ */
+export const formatRunPace = (secPerKm, user) => {
+  if (!secPerKm || secPerKm <= 0) return '—';
+  if (getPaceDisplay(user) === 'kmh') {
+    const kmh = 3600 / secPerKm;
+    return `${kmh.toFixed(1)} km/h`;
+  }
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2, '0')}/km`;
+};
+
+/**
+ * Returns the unit label for the user's running pace display preference.
+ * @param {Object} user
+ * @returns {string} e.g. "min/km" or "km/h"
+ */
+export const runPaceUnit = (user) =>
+  getPaceDisplay(user) === 'kmh' ? 'km/h' : 'min/km';
+

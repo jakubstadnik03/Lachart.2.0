@@ -2400,8 +2400,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const explicitTss = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
   const tss = explicitTss > 0 ? explicitTss : computeActivityTss(merged, authUser);
   const hrTss = Number(merged.hrTSS || merged.hrTss || 0);
-  const power = Number(merged.normalizedPower || merged.avgPower || merged.averagePower || merged.average_watts || 0);
-  const np    = Number(merged.normalizedPower || 0);
+  // Use actual average power for `power` — don't fall through to NP, otherwise
+  // np === power and the NP label is never shown (the condition below checks ≠).
+  const power = Number(merged.avgPower || merged.averagePower || merged.average_watts || 0);
+  const np    = Number(merged.normalizedPower || merged.weightedAveragePower || merged.weighted_average_watts || 0);
   const hr    = Number(merged.averageHeartRate || merged.average_heartrate || merged.avgHR || merged.avgHeartRate || 0);
   const maxHR = Number(merged.maxHeartRate || merged.max_heartrate || merged.maxHr || 0);
   const maxPower = Number(merged.maxPower || merged.max_watts || merged.maxWatts || 0);
@@ -2745,7 +2747,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}</span>
                           <span className="text-[10px] text-gray-400 font-semibold">W</span>
                         </div>
-                        {np > 0 && Math.round(np) !== Math.round(power) && (
+                        {np > 0 && (
                           <div className="flex items-baseline gap-0.5">
                             <span className="text-xs font-bold text-gray-600 tabular-nums">{Math.round(np)}</span>
                             <span className="text-[10px] text-gray-400 font-semibold">NP</span>
@@ -3951,8 +3953,8 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
   const tss  = Number(a.tss || a.trainingLoad || 0);
   const hrTss = Number(a.hrTSS || a.hrTss || 0);
-  const power = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
-  const np    = Number(a.normalizedPower || 0);
+  const power = Number(a.avgPower || a.averagePower || a.average_watts || 0);
+  const np    = Number(a.normalizedPower || a.weightedAveragePower || a.weighted_average_watts || 0);
   const hr    = Number(a.averageHeartRate || a.average_heartrate || a.avgHR || 0);
   const elevation = Number(a.totalElevationGain || a.elevationGain || a.total_elevation_gain || 0);
   const cadence   = Number(a.averageCadence || a.average_cadence || a.avgCadence || 0);
@@ -3984,7 +3986,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
     ...(hrTss > 0 && hrTss !== tss ? [{ label: 'hrTSS', value: Math.round(hrTss) }] : []),
     ...(paceStr  ? [{ label: 'Avg Pace', value: paceStr }]  : []),
     ...(isBike && power > 0 ? [{ label: 'Avg Power', value: `${Math.round(power)} W` }] : []),
-    ...(isBike && np > 0 && np !== power ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
+    ...(isBike && np > 0 ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
     ...(hr > 0   ? [{ label: 'Avg HR',   value: `${Math.round(hr)} bpm` }] : []),
     ...(elevation > 0 ? [{ label: 'Elevation', value: `${Math.round(elevation)} m` }] : []),
     ...(cadence > 0   ? [{ label: isSwim ? 'Strokes/min' : 'Cadence', value: `${Math.round(cadence)}` }] : []),

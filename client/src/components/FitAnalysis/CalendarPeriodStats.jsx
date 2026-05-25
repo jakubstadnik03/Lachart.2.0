@@ -29,8 +29,30 @@ function getLocalDateString(date) {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Parse a duration value that might be:
+ *  • a plain number (seconds)                   → return as-is
+ *  • a "HH:MM:SS" or "MM:SS" string             → parse to seconds
+ *  • null / undefined / NaN                      → return 0
+ *
+ * The Training model stores duration as a String (e.g. "1:23:45"), while
+ * FIT files and Strava supply numeric seconds. This helper handles both.
+ */
+function parseDurationSec(val) {
+  if (val == null) return 0;
+  const n = Number(val);
+  if (!isNaN(n)) return n; // already numeric seconds
+  // "H:MM:SS" or "MM:SS"
+  const str = String(val).trim();
+  const parts = str.split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
 function actDurationSec(act) {
-  return Number(
+  return parseDurationSec(
     act.totalTimerTime ||
       act.moving_time ||
       act.movingTime ||

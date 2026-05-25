@@ -17,7 +17,7 @@ import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus } from '../services/api';
 import { logTestCreated } from '../utils/eventLogger';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
-import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, PlusIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, PlusIcon, InformationCircleIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
 import { usePremium } from '../hooks/usePremium';
@@ -78,6 +78,7 @@ const TestingPage = () => {
   const [coachAthleteCount, setCoachAthleteCount] = useState(0);
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [mobileTab, setMobileTab] = useState('tests');
+  const [planLimitModal, setPlanLimitModal] = useState({ isOpen: false, feature: '' });
   const navigate = useNavigate();
   const lastLoadedTestIdFromUrlRef = useRef(null);
   const lastLoadedTestsForAthleteRef = useRef(null);
@@ -1244,6 +1245,10 @@ const TestingPage = () => {
       }
     } catch (err) {
       console.error('Error adding test:', err);
+      if (err?.response?.status === 403 && err?.response?.data?.error === 'FREE_PLAN_LIMIT') {
+        setPlanLimitModal({ isOpen: true, feature: 'Unlimited Tests' });
+        return;
+      }
       // Must rethrow so TestingForm does not show a false "saved successfully" toast after a failed POST
       throw err;
     }
@@ -1430,6 +1435,19 @@ const TestingPage = () => {
                 </motion.div>
               )}
 
+              {/* Free-plan usage banner */}
+              {!isCoachLikeRole && tests.length >= 1 && (!user?.subscription || user?.subscription?.plan === 'free' || !user?.subscription?.plan) && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                  <span>{tests.length}/1 tests on the free plan.</span>
+                  <button
+                    onClick={() => navigate('/settings?tab=subscription')}
+                    className="shrink-0 px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Upgrade to Pro
+                  </button>
+                </div>
+              )}
+
               {/* Tests list — wrapped in ErrorBoundary so a single bad
                   test (NaN, weird lactate sequence, etc.) can't freeze
                   the whole page like Federico's did. */}
@@ -1479,51 +1497,71 @@ const TestingPage = () => {
                 </div>
               ) : (
                 <>
-                  {/* Threshold progression */}
-                  <div style={sectionSnap}>
-                    <ThresholdHistory
-                      tests={tests}
-                      onSelectTestId={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
-                      externalActivities={externalActivities}
-                      bikePowerMetrics={bikePowerMetrics}
-                      onClose={null}
-                    />
-                  </div>
-
-                  {/* Desktop: two-column for protocol + insights */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={sectionSnap}>
-                    {recommendationsEligible && (
-                      <TestRecommendationCard
-                        sportsWithPastTests={sportsWithPastTests}
-                        latestBySport={latestBySport}
-                        advisor={advisor}
-                        hrTestPlan={hrTestPlan}
-                        hrTestPlanLoading={hrTestPlanLoading}
-                        bikePowerMetrics={bikePowerMetrics}
-                        externalActivities={externalActivities}
-                        advisorLoading={advisorLoading}
-                        onStartTest={(sport) => {
-                          setSelectedSport(sport === 'bike' ? 'bike' : sport === 'run' ? 'run' : 'swim');
-                          setShowNewTesting(true);
-                          setActiveTab('tests');
-                        }}
-                        onClose={null}
-                      />
-                    )}
-
-                    {athleteProfile && selectedSport !== 'all' && (
-                      <PopulationInsights
-                        athleteProfile={athleteProfile}
-                        selectedSport={selectedSport}
-                      />
-                    )}
-                  </div>
-
-                  {/* Prompt if no insights available */}
-                  {(!recommendationsEligible && (!athleteProfile || selectedSport === 'all')) && (
-                    <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
-                      Select a specific sport above to see protocol recommendations and population insights.
+                  {!isPremium ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                        <LockClosedIcon className="w-6 h-6 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-base font-bold text-gray-900">Threshold History &amp; Insights</p>
+                        <p className="text-sm text-gray-500 mt-1 max-w-sm">Upgrade to Pro to see your LT1/LT2 progression, test recommendations and population benchmarks.</p>
+                      </div>
+                      <button
+                        onClick={() => gate('Threshold History & Insights', 'pro')}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-sm"
+                      >
+                        <SparklesIcon className="w-4 h-4" /> Upgrade to Pro
+                      </button>
                     </div>
+                  ) : (
+                    <>
+                      {/* Threshold progression */}
+                      <div style={sectionSnap}>
+                        <ThresholdHistory
+                          tests={tests}
+                          onSelectTestId={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
+                          externalActivities={externalActivities}
+                          bikePowerMetrics={bikePowerMetrics}
+                          onClose={null}
+                        />
+                      </div>
+
+                      {/* Desktop: two-column for protocol + insights */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={sectionSnap}>
+                        {recommendationsEligible && (
+                          <TestRecommendationCard
+                            sportsWithPastTests={sportsWithPastTests}
+                            latestBySport={latestBySport}
+                            advisor={advisor}
+                            hrTestPlan={hrTestPlan}
+                            hrTestPlanLoading={hrTestPlanLoading}
+                            bikePowerMetrics={bikePowerMetrics}
+                            externalActivities={externalActivities}
+                            advisorLoading={advisorLoading}
+                            onStartTest={(sport) => {
+                              setSelectedSport(sport === 'bike' ? 'bike' : sport === 'run' ? 'run' : 'swim');
+                              setShowNewTesting(true);
+                              setActiveTab('tests');
+                            }}
+                            onClose={null}
+                          />
+                        )}
+
+                        {athleteProfile && selectedSport !== 'all' && (
+                          <PopulationInsights
+                            athleteProfile={athleteProfile}
+                            selectedSport={selectedSport}
+                          />
+                        )}
+                      </div>
+
+                      {/* Prompt if no insights available */}
+                      {(!recommendationsEligible && (!athleteProfile || selectedSport === 'all')) && (
+                        <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                          Select a specific sport above to see protocol recommendations and population insights.
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1593,6 +1631,12 @@ const TestingPage = () => {
         />
       )}
       <UpgradeModal {...UpgradeModalProps} />
+      <UpgradeModal
+        isOpen={planLimitModal.isOpen}
+        onClose={() => setPlanLimitModal(s => ({ ...s, isOpen: false }))}
+        feature={planLimitModal.feature}
+        requiredPlan="pro"
+      />
       <StravaIntegrationModal
         isOpen={showStravaModal}
         onClose={handleStravaModalClose}

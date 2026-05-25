@@ -49,27 +49,72 @@ export default function PreStartHero({
   const stepName = firstStep?.label || firstStep?.stepType || 'Warming Up';
   const stepDur = firstStep?.durationSeconds || 0;
 
+  // Shared action buttons (Exit / Start Now / Settings)
+  const actionButtons = (
+    <>
+      {onExit && (
+        <button
+          type="button"
+          onClick={onExit}
+          className="flex flex-col items-center gap-1 group"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+        >
+          <span className="w-12 h-12 landscape:w-10 landscape:h-10 rounded-full bg-rose-600 group-hover:bg-rose-500 group-active:scale-95 flex items-center justify-center shadow-lg transition-all">
+            <XMarkIcon className="w-6 h-6 text-white" strokeWidth={2.5} />
+          </span>
+          <span className="text-[10px] text-gray-400 font-semibold">Exit</span>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onStart}
+        className="flex flex-col items-center gap-1 group"
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+      >
+        <span
+          className="w-16 h-16 landscape:w-14 landscape:h-14 rounded-full bg-sky-500 group-hover:bg-sky-400 group-active:scale-95 flex items-center justify-center shadow-2xl transition-all"
+          style={{ boxShadow: '0 0 32px rgba(14,165,233,0.55)' }}
+        >
+          <PlayIcon className="w-9 h-9 text-white ml-1" strokeWidth={2.2} />
+        </span>
+        <span className="text-xs text-white font-bold tracking-wide">Start Now</span>
+      </button>
+      {onSettings && (
+        <button
+          type="button"
+          onClick={onSettings}
+          className="flex flex-col items-center gap-1 group"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+        >
+          <span className="w-12 h-12 landscape:w-10 landscape:h-10 rounded-full bg-gray-700 group-hover:bg-gray-600 group-active:scale-95 flex items-center justify-center shadow-lg transition-all">
+            <Cog6ToothIcon className="w-6 h-6 text-gray-200" strokeWidth={2} />
+          </span>
+          <span className="text-[10px] text-gray-400 font-semibold">Settings</span>
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="w-full flex-1 flex flex-col min-h-0">
-      {/* Top row: hero card + metric tiles ─────────────────────────────── */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-3 sm:gap-4 min-h-0">
-        {/* Hero — zone-coloured card with the first step preview */}
+      {/* ── LANDSCAPE: side-by-side hero + controls ─────────────────────── */}
+      {/* Hero left, action buttons right — everything fits in < 420 px height */}
+      <div
+        className="hidden landscape:flex flex-row gap-3 flex-1 min-h-0"
+        style={{ alignItems: 'stretch' }}
+      >
+        {/* Hero card — flex-1 in landscape, no min-height constraint */}
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="relative rounded-3xl overflow-hidden flex flex-col justify-between p-6"
-          style={{
-            background: `linear-gradient(135deg, ${col.bar} 0%, ${col.edge} 100%)`,
-            minHeight: 200,
-          }}
+          className="flex-1 relative rounded-2xl overflow-hidden flex flex-col justify-between p-4"
+          style={{ background: `linear-gradient(135deg, ${col.bar} 0%, ${col.edge} 100%)` }}
         >
           <div className="flex items-center justify-between text-white/90">
-            <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold">
-              {stepName}
-            </span>
+            <span className="text-[10px] uppercase tracking-[0.2em] font-bold">{stepName}</span>
             {targetWatts != null && (
-              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/25 text-white text-xs font-bold tabular-nums">
-                <BoltSolid className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/25 text-white text-xs font-bold tabular-nums">
+                <BoltSolid className="w-3 h-3" />
                 <span>{targetWatts} W</span>
                 {targetLabel && targetLabel !== 'Open' && (
                   <span className="opacity-75 ml-0.5">· {targetLabel}</span>
@@ -77,73 +122,77 @@ export default function PreStartHero({
               </div>
             )}
           </div>
-
-          <div className="flex items-end justify-between text-white">
+          <div className="flex items-end text-white">
             <div>
-              <BoltSolid className="w-14 h-14 sm:w-20 sm:h-20 text-white opacity-90 mb-2 -ml-1" />
-              <div className="text-3xl sm:text-4xl font-black leading-none truncate" style={{ maxWidth: '70vw' }}>
+              <BoltSolid className="w-10 h-10 text-white opacity-90 mb-1 -ml-0.5" />
+              <div className="text-2xl font-black leading-none truncate" style={{ maxWidth: '55vw' }}>
                 {workoutTitle || 'Workout'}
               </div>
-              <div className="mt-1 text-sm sm:text-base text-white/80 tabular-nums">
+              <div className="mt-0.5 text-xs text-white/80 tabular-nums">
                 {fmtTime(workoutDuration)} total
-                {stepDur > 0 && (
-                  <span className="ml-2 opacity-75">· first step {fmtTime(stepDur)}</span>
-                )}
+                {stepDur > 0 && <span className="ml-1.5 opacity-75">· first step {fmtTime(stepDur)}</span>}
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Metric tiles slot — placeholders before BLE devices stream data */}
-        {metricsSlot && (
-          <div className="min-h-0">
-            {metricsSlot}
+        {/* Right column: metric tiles + action buttons */}
+        <div className="flex flex-col gap-2 justify-between" style={{ width: 160 }}>
+          {/* Metric tiles — compact 2×2 grid */}
+          {metricsSlot && <div className="flex-1 min-h-0">{metricsSlot}</div>}
+          {/* Action buttons — row in landscape */}
+          <div className="flex items-center justify-center gap-4 py-1">
+            {actionButtons}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Bottom action row: Exit / Start Now / Settings ──────────────────── */}
-      <div className="flex items-center justify-center gap-8 sm:gap-12 pt-5 pb-2">
-        {onExit && (
-          <button
-            type="button"
-            onClick={onExit}
-            className="flex flex-col items-center gap-1.5 group"
-            style={{ WebkitTapHighlightColor: 'transparent' }}
+      {/* ── PORTRAIT: original vertical layout ──────────────────────────── */}
+      <div className="flex landscape:hidden flex-col flex-1 min-h-0 gap-3">
+        {/* Hero + metric tiles side by side on md+ */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-3 min-h-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative rounded-3xl overflow-hidden flex flex-col justify-between p-6"
+            style={{
+              background: `linear-gradient(135deg, ${col.bar} 0%, ${col.edge} 100%)`,
+              minHeight: 200,
+            }}
           >
-            <span className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-rose-600 group-hover:bg-rose-500 group-active:scale-95 flex items-center justify-center shadow-lg transition-all">
-              <XMarkIcon className="w-7 h-7 text-white" strokeWidth={2.5} />
-            </span>
-            <span className="text-[11px] text-gray-400 font-semibold">Exit</span>
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onStart}
-          className="flex flex-col items-center gap-1.5 group"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-        >
-          <span
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-sky-500 group-hover:bg-sky-400 group-active:scale-95 flex items-center justify-center shadow-2xl transition-all"
-            style={{ boxShadow: '0 0 40px rgba(14,165,233,0.55)' }}
-          >
-            <PlayIcon className="w-11 h-11 sm:w-12 sm:h-12 text-white ml-1" strokeWidth={2.2} />
-          </span>
-          <span className="text-xs text-white font-bold tracking-wide">Start Now</span>
-        </button>
-        {onSettings && (
-          <button
-            type="button"
-            onClick={onSettings}
-            className="flex flex-col items-center gap-1.5 group"
-            style={{ WebkitTapHighlightColor: 'transparent' }}
-          >
-            <span className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gray-700 group-hover:bg-gray-600 group-active:scale-95 flex items-center justify-center shadow-lg transition-all">
-              <Cog6ToothIcon className="w-7 h-7 text-gray-200" strokeWidth={2} />
-            </span>
-            <span className="text-[11px] text-gray-400 font-semibold">Settings</span>
-          </button>
-        )}
+            <div className="flex items-center justify-between text-white/90">
+              <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold">{stepName}</span>
+              {targetWatts != null && (
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/25 text-white text-xs font-bold tabular-nums">
+                  <BoltSolid className="w-3.5 h-3.5" />
+                  <span>{targetWatts} W</span>
+                  {targetLabel && targetLabel !== 'Open' && (
+                    <span className="opacity-75 ml-0.5">· {targetLabel}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-end justify-between text-white">
+              <div>
+                <BoltSolid className="w-14 h-14 sm:w-20 sm:h-20 text-white opacity-90 mb-2 -ml-1" />
+                <div className="text-3xl sm:text-4xl font-black leading-none truncate" style={{ maxWidth: '70vw' }}>
+                  {workoutTitle || 'Workout'}
+                </div>
+                <div className="mt-1 text-sm sm:text-base text-white/80 tabular-nums">
+                  {fmtTime(workoutDuration)} total
+                  {stepDur > 0 && <span className="ml-2 opacity-75">· first step {fmtTime(stepDur)}</span>}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {metricsSlot && <div className="min-h-0">{metricsSlot}</div>}
+        </div>
+
+        {/* Bottom action row */}
+        <div className="flex items-center justify-center gap-8 sm:gap-12 pt-3 pb-2">
+          {actionButtons}
+        </div>
       </div>
     </div>
   );

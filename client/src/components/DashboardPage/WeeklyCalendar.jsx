@@ -32,6 +32,58 @@ import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 
+// ─── Planned workout helpers (mirrors CalendarView) ──────────────────────────
+
+const SPORT_PLAN_COLORS = { bike: '#767EB5', cycling: '#767EB5', run: '#f97316', swim: '#38bdf8' };
+
+function planSportColor(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run') || s.includes('walk') || s.includes('trail')) return '#f97316';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '#767EB5';
+  if (s.includes('swim')) return '#38bdf8';
+  return SPORT_PLAN_COLORS[s] || '#767EB5';
+}
+
+/** Tiny inline SVG power/step profile for planned workout cards */
+function PlanMiniChart({ steps, color, width = 80, height = 14 }) {
+  if (!steps?.length) return null;
+  const STEP_COLORS = { warmup: '#fbbf24', work: '#767EB5', recovery: '#6ee7b7', cooldown: '#38bdf8', rest: '#d1d5db' };
+  const expanded = [];
+  const visited = new Set();
+  steps.forEach(s => {
+    if (!s.groupId) { expanded.push(s); return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter(x => x.groupId === s.groupId);
+    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
+    group.filter(x => !x.isGroupHeader).forEach(gs => {
+      for (let r = 0; r < reps; r++) expanded.push(gs);
+    });
+  });
+  const total = expanded.reduce((s, st) => s + (st.durationSeconds || 30), 0);
+  if (!total) return null;
+  const FLOOR = 0.12;
+  let cx = 0;
+  return (
+    <svg width={width} height={height} style={{ display: 'block', flexShrink: 0 }}>
+      {expanded.map((step, i) => {
+        const w = Math.max(1, ((step.durationSeconds || 30) / total) * width);
+        const intensity = step.stepType === 'work' ? 1 : step.stepType === 'warmup' ? 0.55 : step.stepType === 'cooldown' ? 0.4 : step.stepType === 'recovery' ? 0.3 : 0.15;
+        const bh = Math.max(FLOOR * height, intensity * height);
+        const bw = Math.max(1, w - 0.5);
+        const fill = STEP_COLORS[step.stepType] || color || '#767EB5';
+        const sx = cx; cx += w;
+        if (step.isRamp && step.stepType === 'warmup') {
+          return <polygon key={i} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
+        } else if (step.isRamp && step.stepType === 'cooldown') {
+          return <polygon key={i} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
+        }
+        return <rect key={i} x={sx} y={height - bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85} />;
+      })}
+    </svg>
+  );
+}
+
 function startOfWeek(date) {
   const d = new Date(date);
   const day = (d.getDay() + 6) % 7; // Monday=0
@@ -551,6 +603,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
   const isCompletedPair = pw.status === 'completed' || pairingState === 'completed';
   const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
+  const isPurelyPlanned = !isCompletedPair && !isMissedPair && !linkedActivity;
   const isCompleted = isCompletedPair; // keeps existing menu logic working
 
   // When merged with an actual activity, prefer real time/distance/sport
@@ -563,6 +616,23 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const displaySport = linkedActivity ? actSport : pw.sport;
   const displayDurStr = linkedActivity && actSecs > 0 ? secsToHMShort(actSecs) : secsToHMShort(plannedSecs);
   const displayDistStr = linkedActivity && actDistMeters > 0 ? fmtDist(actDistMeters) : '';
+
+  // Sport-tinted color for ghost (purely planned) style
+  const planColor = planSportColor(displaySport);
+
+  // Card appearance — mirrors CalendarView PlannedWorkoutCard logic
+  let cardBg, cardBorderColor, cardBorderStyle;
+  if (isCompletedPair) {
+    cardBg = '#f0fdf4'; cardBorderColor = '#bbf7d0'; cardBorderStyle = 'solid';
+  } else if (isMissedPair) {
+    cardBg = '#fef2f2'; cardBorderColor = '#fecaca'; cardBorderStyle = 'solid';
+  } else if (isPurelyPlanned) {
+    cardBg = planColor + '10';        // ~6% opacity tint
+    cardBorderColor = planColor + '55'; // ~33% opacity
+    cardBorderStyle = 'dashed';
+  } else {
+    cardBg = '#ffffff'; cardBorderColor = '#e5e7eb'; cardBorderStyle = 'solid';
+  }
 
   const dropdown = menuOpen ? ReactDOM.createPortal(
     <div
@@ -644,9 +714,6 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
     document.body
   ) : null;
 
-  // Sport-color left border (matches WeekActCard / CalendarView style)
-  const sportBorderColor = actSportColor(displaySport);
-
   return (
     <div className="relative group">
       <button
@@ -670,38 +737,40 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           e.preventDefault();
           openMenu(e);
         }}
-        className={`w-full text-left rounded-xl border transition-colors p-2 flex flex-col gap-1 ${
-          isCompletedPair
-            ? 'bg-green-50 border-green-200 hover:bg-green-100'
-            : isMissedPair
-              ? 'bg-red-50 border-red-200 hover:bg-red-100'
-              : 'bg-white border-gray-200 hover:bg-gray-50 shadow-sm'
-        }`}
+        className="w-full text-left rounded-xl border transition-colors p-2 flex flex-col gap-1"
         style={{
-          borderLeftColor: sportBorderColor,
+          backgroundColor: cardBg,
+          borderColor: cardBorderColor,
+          borderStyle: cardBorderStyle,
+          borderLeftColor: planColor,
           borderLeftWidth: 3,
-          WebkitTouchCallout: 'none',  // suppress iOS image preview popup
+          borderLeftStyle: 'solid',
+          WebkitTouchCallout: 'none',
         }}
         title={pw.title}
       >
-        {/* Title row — sport icon (with tiny check overlay when completed) + title */}
+        {/* Title row — sport icon (with tiny check overlay when completed) + chart */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="relative flex-shrink-0">
-            <SportIcon sport={displaySport} className="w-3.5 h-3.5" />
+            <SportIcon sport={displaySport} className="w-3.5 h-3.5" style={{ color: isPurelyPlanned ? planColor : undefined }} />
             {isCompletedPair && (
               <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
             )}
           </span>
           <span
             className="text-[11px] font-bold truncate flex-1"
-            style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : '#1e293b' }}
+            style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
           >
             {pw.title || 'Planned workout'}
           </span>
+          {/* Mini step chart — right-aligned in title row */}
+          {isPurelyPlanned && pw.steps?.length > 0 && (
+            <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
+          )}
         </div>
         {/* Category + stats row */}
         {(pw.category || displayDurStr || displayDistStr) && (
-          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#6b7280' }}>
+          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: isPurelyPlanned ? planColor + 'cc' : '#6b7280' }}>
             {pw.category && getCategory(pw.category) && (
               <span
                 className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"

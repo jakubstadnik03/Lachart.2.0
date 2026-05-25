@@ -1655,8 +1655,12 @@ export default function DashboardPage() {
               localStorage.removeItem(cacheTimestampKey);
             }}
             plannedWorkouts={plannedWorkouts}
-            onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
+            onPlanWorkout={(date) => {
+              if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+              setPlanModal({ date, workout: null });
+            }}
             onSelectPlannedWorkout={(pw) => {
+              if (!isPremium) { gate('Workout Planning', 'pro'); return; }
               // pw.date may be a full ISO datetime ('2026-05-04T00:00:00.000Z')
               // or a date-only 'YYYY-MM-DD' — slice to date-only first.
               const dateOnly = String(pw.date || '').slice(0, 10);
@@ -1678,10 +1682,18 @@ export default function DashboardPage() {
           transition={{ delay: 0.25 }}
           className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
-          <FormFitnessChart
-            key={`ffc-${dashboardDataAthleteId}`}
-            athleteId={dashboardDataAthleteId}
-          />
+          {isPremium ? (
+            <FormFitnessChart
+              key={`ffc-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+            />
+          ) : (
+            <PremiumLockedCard
+              title="Form & Fitness"
+              description="Track your fitness, fatigue and form trends over time."
+              onUpgrade={() => gate('Form & Fitness', 'pro')}
+            />
+          )}
         </motion.div>
 
         <motion.div
@@ -1690,10 +1702,18 @@ export default function DashboardPage() {
           transition={{ delay: 0.27 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
-          <WeeklyTrainingLoad
-            key={`wtl-${dashboardDataAthleteId}`}
-            athleteId={dashboardDataAthleteId}
-          />
+          {isPremium ? (
+            <WeeklyTrainingLoad
+              key={`wtl-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+            />
+          ) : (
+            <PremiumLockedCard
+              title="Weekly Training Load"
+              description="See your weekly TSS trend and training consistency."
+              onUpgrade={() => gate('Weekly Training Load', 'pro')}
+            />
+          )}
         </motion.div>
 
         {/* Intensity distribution */}
@@ -1703,7 +1723,15 @@ export default function DashboardPage() {
           transition={{ delay: 0.29 }}
           className="lg:col-span-5 md:col-span-2"
         >
-          <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
+          {isPremium ? (
+            <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
+          ) : (
+            <PremiumLockedCard
+              title="Intensity Distribution"
+              description="Analyse your training zone distribution across all sessions."
+              onUpgrade={() => gate('Intensity Distribution', 'pro')}
+            />
+          )}
         </motion.div>
 
         {/* LT2 Trend Sparkline + Zone Distribution — side by side on large screens */}
@@ -1713,7 +1741,15 @@ export default function DashboardPage() {
           transition={{ delay: 0.32 }}
           className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
-          <LT2TrendSparkline tests={tests} sport={selectedSport} />
+          {isPremium ? (
+            <LT2TrendSparkline tests={tests} sport={selectedSport} />
+          ) : (
+            <PremiumLockedCard
+              title="LT2 Trend"
+              description="Track your lactate threshold progression across tests."
+              onUpgrade={() => gate('LT2 Trend', 'pro')}
+            />
+          )}
         </motion.div>
 
         <motion.div
@@ -1722,7 +1758,15 @@ export default function DashboardPage() {
           transition={{ delay: 0.34 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
-          <ZoneDistributionChart key={`zdc-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
+          {isPremium ? (
+            <ZoneDistributionChart key={`zdc-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
+          ) : (
+            <PremiumLockedCard
+              title="Zone Distribution"
+              description="See how your training time is split across HR and power zones."
+              onUpgrade={() => gate('Zone Distribution', 'pro')}
+            />
+          )}
         </motion.div>
 
         <motion.div
@@ -1731,10 +1775,18 @@ export default function DashboardPage() {
           transition={{ delay: 0.3 }}
           className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
-          <TrainingLoadHeatmap
-            calendarData={calendarData}
-            trainings={recentTrainings}
-          />
+          {isPremium ? (
+            <TrainingLoadHeatmap
+              calendarData={calendarData}
+              trainings={recentTrainings}
+            />
+          ) : (
+            <PremiumLockedCard
+              title="Training Load Heatmap"
+              description="Visualise your yearly training distribution at a glance."
+              onUpgrade={() => gate('Training Load Heatmap', 'pro')}
+            />
+          )}
         </motion.div>
 
         <motion.div 

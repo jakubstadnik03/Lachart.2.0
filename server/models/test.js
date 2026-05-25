@@ -100,6 +100,9 @@ const testSchema = new mongoose.Schema({
       source: { type: String, default: 'set-zones' },
       updatedAt: { type: Date, default: null }
     },
+    // Link to the raw LactateSession that generated this test (auto-saved from Lactate Testing page)
+    lactateSessionId: { type: String, default: null },
+
     // Manual LT1/LT2 override — set by coach/athlete to pin thresholds (overrides auto-calculation)
     thresholdOverrides: {
       LTP1:         { type: Number, default: null },

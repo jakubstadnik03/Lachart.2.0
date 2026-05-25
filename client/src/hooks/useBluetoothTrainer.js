@@ -151,6 +151,11 @@ export default function useBluetoothTrainer() {
   const nativeDeviceIdRef = useRef(null);
 
   const controlGranted = useRef(false);
+  const startSentRef   = useRef(false);
+
+  // Expose protocol as React state so WorkoutSettingsSheet re-renders when
+  // ERG capability is determined post-connect (refs don't trigger re-renders).
+  const [protocol, setProtocol] = useState(null);
 
   useEffect(() => {
     const native = isCapacitorNative();
@@ -162,10 +167,12 @@ export default function useBluetoothTrainer() {
     setStatus('disconnected');
     setDeviceName(null);
     controlGranted.current = false;
+    startSentRef.current = false;
     controlPointRef.current = null;
     deviceRef.current = null;
     nativeDeviceIdRef.current = null;
     setData({ power: null, cadence: null, speed: null, heartRate: null });
+    setProtocol(null);
   }, []);
 
   // ── Capacitor native connect path ─────────────────────────────────────────
@@ -197,6 +204,12 @@ export default function useBluetoothTrainer() {
 
       await BleClient.connect(device.deviceId, () => handleDisconnected());
 
+      // Give the device time to complete GATT service discovery.
+      // Without this pause, startNotifications often throws "service not found"
+      // on Tacx, Garmin, and some Wahoo trainers even though the service IS
+      // present — the BLE stack just hasn't enumerated it yet.
+      await new Promise(r => setTimeout(r, 700));
+
       // Try FTMS first — full Indoor Bike Data + ERG control point.
       let gotFtms = false;
       try {
@@ -211,13 +224,36 @@ export default function useBluetoothTrainer() {
         );
         gotFtms = true;
         controlPointRef.current = { kind: 'native', protocol: 'ftms' };
+        setProtocol('ftms');
+
+        // Subscribe to FTMS Control Point indications (CCCD) so the trainer
+        // will accept ERG control writes. Many trainers silently reject
+        // Control Point writes if the client has not enabled indications first.
+        try {
+          await BleClient.startNotifications(
+            device.deviceId,
+            FTMS_SERVICE_UUID,
+            CONTROL_POINT_UUID,
+            (value) => {
+              if (value.byteLength >= 3 && value.getUint8(0) === 0x80) {
+                const req = value.getUint8(1);
+                const res = value.getUint8(2);
+                console.log(`[trainer/native] FTMS CP indication: req=0x${req.toString(16)} result=${res}`);
+              }
+            },
+          );
+          console.log('[trainer/native] FTMS Control Point indications subscribed');
+        } catch (e) {
+          console.warn('[trainer/native] FTMS CP indication subscribe failed (non-fatal):', e?.message || e);
+        }
       } catch (e) {
         console.warn('[trainer/native] FTMS not available, falling back to CPS:', e?.message || e);
       }
 
       // Fallback: subscribe to the Cycling Power Measurement characteristic
-      // for live power. No ERG control with CPS-only — the user can still
-      // see their power but `setPower()` becomes a no-op (warns in console).
+      // for live power. Many trainers advertise CPS but expose FTMS post-connect;
+      // we therefore probe the FTMS Control Point separately to determine if ERG
+      // is available even when IBD subscription failed.
       if (!gotFtms) {
         try {
           await BleClient.startNotifications(
@@ -229,12 +265,84 @@ export default function useBluetoothTrainer() {
               setData((prev) => ({ ...prev, ...parsed }));
             },
           );
-          controlPointRef.current = { kind: 'native', protocol: 'cps-readonly' };
         } catch (e) {
           console.warn('[trainer/native] CPS subscribe failed too:', e?.message || e);
           // Last-resort connection still succeeds — caller will see status
           // 'connected' with no live data and can disconnect/retry.
         }
+
+        // Probe the FTMS Control Point independently. Trainers that advertise
+        // only CPS in their advertisement packet (Wahoo Kickr, Saris H3, etc.)
+        // still expose the FTMS service and its writable Control Point once
+        // connected — IBD subscription just sometimes fails on those devices.
+        // Subscribe to indications FIRST (CCCD), then probe writability.
+        let hasErgControl = false;
+        try {
+          // Step 1: Subscribe to FTMS CP indications — required by many trainers
+          // before they accept any Control Point writes.
+          await BleClient.startNotifications(
+            device.deviceId,
+            FTMS_SERVICE_UUID,
+            CONTROL_POINT_UUID,
+            (value) => {
+              if (value.byteLength >= 3 && value.getUint8(0) === 0x80) {
+                const req = value.getUint8(1);
+                const res = value.getUint8(2);
+                console.log(`[trainer/native] FTMS CP indication: req=0x${req.toString(16)} result=${res}`);
+                // If we got a success response for REQUEST_CONTROL, mark as granted
+                if (req === OP_REQUEST_CONTROL && res === 0x01) {
+                  controlGranted.current = true;
+                }
+              }
+            },
+          );
+          console.log('[trainer/native] FTMS CP indications subscribed (CPS path)');
+
+          // Step 2: Probe with RESET then REQUEST_CONTROL (write-only check).
+          // We only check if the write is accepted — formal control handshake
+          // happens later in requestControl() before the first setPower() call.
+          const resetBuf = new DataView(new ArrayBuffer(1));
+          resetBuf.setUint8(0, OP_RESET);
+          await BleClient.writeWithResponse(device.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, resetBuf);
+          await new Promise(r => setTimeout(r, 200));
+
+          const reqCtrlBuf = new DataView(new ArrayBuffer(1));
+          reqCtrlBuf.setUint8(0, OP_REQUEST_CONTROL);
+          await BleClient.writeWithResponse(device.deviceId, FTMS_SERVICE_UUID, CONTROL_POINT_UUID, reqCtrlBuf);
+          hasErgControl = true;
+          // Don't set controlGranted yet — wait for the indication response,
+          // or let requestControl() confirm it before the first power write.
+          console.log('[trainer/native] FTMS Control Point writable — ERG enabled on CPS data path.');
+        } catch (e) {
+          console.log('[trainer/native] FTMS Control Point not writable — CPS read-only mode.', e?.message);
+        }
+
+        // If the FTMS Control Point IS writable (FTMS service exists), retry
+        // the Indoor Bike Data subscription — the first attempt likely failed
+        // only because service discovery wasn't complete yet. IBD gives us
+        // richer data (cadence, speed) that CPS doesn't provide.
+        if (hasErgControl) {
+          try {
+            await BleClient.startNotifications(
+              device.deviceId,
+              FTMS_SERVICE_UUID,
+              INDOOR_BIKE_DATA_UUID,
+              (value) => {
+                const parsed = parseIndoorBikeData(value);
+                setData((prev) => ({ ...prev, ...parsed }));
+              },
+            );
+            console.log('[trainer/native] IBD subscription succeeded on retry — switching to full FTMS data.');
+          } catch (e) {
+            console.warn('[trainer/native] IBD retry failed; will keep CPS data + FTMS ERG control:', e?.message || e);
+          }
+        }
+
+        controlPointRef.current = {
+          kind: 'native',
+          protocol: hasErgControl ? 'ftms' : 'cps-readonly',
+        };
+        setProtocol(hasErgControl ? 'ftms' : 'cps-readonly');
       }
 
       setStatus('connected');
@@ -277,12 +385,25 @@ export default function useBluetoothTrainer() {
 
       const server = await device.gatt.connect();
 
+      // Give Windows / macOS BLE stack time to enumerate GATT services.
+      // Without this, getPrimaryService(FTMS) often throws NotFoundError on
+      // the first call even though the trainer definitely exposes FTMS —
+      // the service list just isn't ready yet.
+      await new Promise(r => setTimeout(r, 700));
+
       // Try FTMS first — it gives us the richer Indoor Bike Data
       // characteristic + a Control Point for ERG. CPS-only trainers fall
       // back to the simpler cycling-power-measurement characteristic.
+      // Retry up to 3× with increasing delays in case service discovery is slow.
       let ftmsService = null;
-      try { ftmsService = await server.getPrimaryService(FTMS_SERVICE_16); }
-      catch (_) { /* trainer doesn't expose FTMS — fall through to CPS */ }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          ftmsService = await server.getPrimaryService(FTMS_SERVICE_16);
+          break; // success
+        } catch (_) {
+          if (attempt < 2) await new Promise(r => setTimeout(r, attempt === 0 ? 300 : 600));
+        }
+      }
 
       if (ftmsService) {
         try {
@@ -298,13 +419,16 @@ export default function useBluetoothTrainer() {
         try {
           const cp = await ftmsService.getCharacteristic(CONTROL_POINT_CHAR_16);
           controlPointRef.current = { kind: 'web', char: cp, protocol: 'ftms' };
+          setProtocol('ftms');
           await cp.startNotifications();
           cp.addEventListener('characteristicvaluechanged', () => {});
         } catch (e) {
           console.warn('[trainer/web] Control Point not available:', e.message);
         }
       } else {
-        // CPS fallback — live power but no ERG.
+        // CPS fallback — live power. Probe FTMS Control Point anyway; some
+        // devices don't expose the full FTMS IBD characteristic but still
+        // support ERG writes via the Control Point.
         try {
           const cps = await server.getPrimaryService(CPS_SERVICE_16);
           const meas = await cps.getCharacteristic(CPS_MEASUREMENT_16);
@@ -313,9 +437,37 @@ export default function useBluetoothTrainer() {
             const parsed = parseCyclingPowerMeasurement(event.target.value);
             setData((prev) => ({ ...prev, ...parsed }));
           });
-          controlPointRef.current = { kind: 'web', protocol: 'cps-readonly' };
         } catch (e) {
           console.warn('[trainer/web] CPS subscribe failed too:', e.message);
+        }
+
+        // Try to get FTMS service + control point even though IBD was absent.
+        // Retry up to 3× — BLE service discovery may still be finishing.
+        let webErgCapable = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const ftmsFallback = await server.getPrimaryService(FTMS_SERVICE_16);
+            const cp = await ftmsFallback.getCharacteristic(CONTROL_POINT_CHAR_16);
+            controlPointRef.current = { kind: 'web', char: cp, protocol: 'ftms' };
+            await cp.startNotifications();
+            cp.addEventListener('characteristicvaluechanged', () => {});
+            webErgCapable = true;
+            setProtocol('ftms');
+            console.log('[trainer/web] FTMS Control Point found on CPS data path — ERG enabled.');
+            break; // success
+          } catch (e) {
+            if (attempt < 2) {
+              console.log(`[trainer/web] FTMS CP probe attempt ${attempt + 1} failed, retrying…`);
+              await new Promise(r => setTimeout(r, attempt === 0 ? 400 : 700));
+            } else {
+              console.log('[trainer/web] FTMS Control Point not available — CPS read-only mode.', e?.message || e);
+            }
+          }
+        }
+
+        if (!webErgCapable) {
+          controlPointRef.current = { kind: 'web', protocol: 'cps-readonly' };
+          setProtocol('cps-readonly');
         }
       }
 
@@ -376,8 +528,26 @@ export default function useBluetoothTrainer() {
 
   const requestControl = useCallback(async () => {
     if (controlGranted.current) return true;
+    // Many trainers require RESET (0x01) before they accept REQUEST_CONTROL (0x00).
+    // Send RESET first, wait briefly, then REQUEST_CONTROL.
+    try {
+      await writeControl(new Uint8Array([OP_RESET]));
+      await new Promise(r => setTimeout(r, 200));
+    } catch (_) { /* RESET failure is non-fatal */ }
     const ok = await writeControl(new Uint8Array([OP_REQUEST_CONTROL]));
-    if (ok) controlGranted.current = true;
+    if (ok) {
+      controlGranted.current = true;
+      await new Promise(r => setTimeout(r, 300));
+      // Send START_RESUME after gaining control — some trainers (Tacx, Saris)
+      // require this before they accept SET_TARGET_POWER commands.
+      if (!startSentRef.current) {
+        try {
+          await writeControl(new Uint8Array([OP_START_RESUME]));
+          startSentRef.current = true;
+          console.log('[trainer] START_RESUME sent after requestControl');
+        } catch (_) { /* non-fatal */ }
+      }
+    }
     return ok;
   }, [writeControl]);
 
@@ -433,9 +603,9 @@ export default function useBluetoothTrainer() {
     supported,
     /** Negotiated protocol after connect: 'ftms' (full ERG) or
      *  'cps-readonly' (live power but no ERG control) or null. */
-    protocol: controlPointRef.current?.protocol || null,
+    protocol,
     /** Convenience flag — true when the trainer supports setPower(). */
-    ergCapable: controlPointRef.current?.protocol === 'ftms',
+    ergCapable: protocol === 'ftms',
     connect,
     disconnect,
     setPower,

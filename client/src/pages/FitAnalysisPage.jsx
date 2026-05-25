@@ -1451,7 +1451,7 @@ const FitAnalysisPage = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
   const { categories, getCategoryStyle } = useCategories();
-  const { gate, UpgradeModalProps } = usePremium();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const location = useLocation();
   const navigate = useNavigate();
   const { activityId, athleteId: athleteIdParam } = useParams();
@@ -3310,7 +3310,9 @@ const FitAnalysisPage = () => {
         category: t.category || null,
         type: 'fit',
         distance: t.totalDistance || t.distance,
-        totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+        // FIT files store time as numeric seconds; convert any string fallback just in case.
+        totalElapsedTime: t.totalElapsedTime || t.totalTimerTime
+          || parseDurationToSeconds(t.duration) || 0,
         tss: t.tss || t.totalTSS,
         avgPower: t.avgPower || t.averagePower || null,
         avgSpeed: t.avgSpeed || t.averageSpeed || null,
@@ -3326,7 +3328,10 @@ const FitAnalysisPage = () => {
           category: t.category || null,
           type: 'regular',
           distance: t.totalDistance || t.distance,
-          totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+          // Training model stores duration as a String ("H:MM:SS") — parse to seconds
+          // so CalendarPeriodStats can sum it correctly.
+          totalElapsedTime: t.totalElapsedTime || t.totalTimerTime
+            || parseDurationToSeconds(t.duration) || 0,
           tss: t.tss || t.totalTSS,
           avgPower: t.avgPower || t.averagePower || null,
           avgSpeed: t.avgSpeed || t.averageSpeed || null,
@@ -4067,7 +4072,7 @@ const FitAnalysisPage = () => {
                 Auto-categorize
               </button>
               <button
-                onClick={() => setPlanModal({ date: new Date(), workout: null })}
+                onClick={() => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date: new Date(), workout: null }); }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-primary/30 text-primary text-sm font-semibold rounded-xl hover:bg-primary/5 transition-all shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -4095,7 +4100,7 @@ const FitAnalysisPage = () => {
                 <SparklesIcon className="w-3.5 h-3.5 text-primary" />
               </button>
               <button
-                onClick={() => setPlanModal({ date: new Date(), workout: null })}
+                onClick={() => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date: new Date(), workout: null }); }}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
                 title="Plan workout"
               >
@@ -4171,6 +4176,7 @@ const FitAnalysisPage = () => {
             }));
           }}
           onSelectPlannedWorkout={(pw) => {
+            if (!isPremium) { gate('Workout Planning', 'pro'); return; }
             if (pw.status === 'completed' && pw.executionData) {
               setCompareModal(pw);
             } else {
@@ -4183,7 +4189,7 @@ const FitAnalysisPage = () => {
             }
           }}
           onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
-          onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
+          onPlanWorkout={(date) => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date, workout: null }); }}
           onMovePlannedWorkout={handleMovePlannedWorkout}
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onDeletePlannedWorkout={handlePlanDelete}
@@ -5238,6 +5244,7 @@ const FitAnalysisPage = () => {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!isPremium) { gate('Workout Planning', 'pro'); return; }
                         const dateStr = selectedStrava?.start_date_local || selectedStrava?.start_date || selectedStrava?.startDate;
                         const d = dateStr ? new Date(dateStr) : new Date();
                         const sportRaw = (selectedStrava?.sport_type || selectedStrava?.type || selectedStrava?.sport || '').toLowerCase();

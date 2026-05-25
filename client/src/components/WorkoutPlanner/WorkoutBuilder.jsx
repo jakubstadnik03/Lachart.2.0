@@ -557,7 +557,18 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
             <g
               key={i}
               style={{ cursor: onStepClick ? 'pointer' : 'default' }}
-              onMouseEnter={() => { if (!dragState) setHoveredInfo({ xPct: (xc/W)*100, s, watts, powerLabel, dur: fmtDuration(dur) }); }}
+              onMouseEnter={() => { if (!dragState) setHoveredInfo({ xPct: (xc/W)*100, s, watts, powerLabel, dur: fmtDuration(dur), barH }); }}
+              onTouchStart={(e) => {
+                // Show tooltip on tap (mobile)
+                e.preventDefault();
+                setHoveredInfo({ xPct: (xc/W)*100, s, watts, powerLabel, dur: fmtDuration(dur), barH });
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                // Brief delay so tooltip is visible, then dismiss
+                setTimeout(() => setHoveredInfo(null), 1800);
+                if (!dragState && onStepClick) onStepClick(s.clientId);
+              }}
               onClick={() => { if (!dragState && onStepClick) onStepClick(s.clientId); }}
             >
               {shape}
@@ -627,8 +638,14 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
         const stepCol = STEP_COLORS[hoveredInfo.s.stepType] || STEP_COLORS.work;
         return (
           <div
-            className="absolute bottom-full mb-3 pointer-events-none z-20"
-            style={{ left:`${Math.min(Math.max(hoveredInfo.xPct,8),92)}%`, transform:'translateX(-50%)', whiteSpace:'nowrap' }}
+            className="absolute pointer-events-none z-20"
+            style={{
+              left: `${Math.min(Math.max(hoveredInfo.xPct, 8), 92)}%`,
+              transform: 'translateX(-50%)',
+              whiteSpace: 'nowrap',
+              // Anchor to the bar's top edge: barH px from bottom of SVG (120px tall) + 6px gap
+              bottom: `${(hoveredInfo.barH ?? 40) + 6}px`,
+            }}
           >
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden min-w-[120px]"
               style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)' }}>

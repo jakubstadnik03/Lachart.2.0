@@ -345,20 +345,28 @@ router.post("/", verifyToken, async (req, res) => {
             const d = new Date(payload.date);
             if (!isNaN(d.getTime())) payload.date = d;
         }
-        // ── Free-plan test limit ───────────────────────────────────────────
+        // ── Subscription-plan test limit ──────────────────────────────────
         if (process.env.SUBSCRIPTION_ENABLED === 'true') {
-            const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
-            const fullUser = await User.findById(req.user.userId);
-            const { isPremium } = await resolvePremiumForUserDocument(fullUser);
-            if (!isPremium) {
-                const targetAthleteId = payload.athleteId || String(req.user.userId);
-                const existingCount = await Test.countDocuments({ athleteId: String(targetAthleteId) });
-                if (existingCount >= 1) {
-                    return res.status(403).json({
-                        error: 'FREE_PLAN_LIMIT',
-                        feature: 'tests',
-                        message: 'Free plan allows only 1 test. Upgrade to Pro for unlimited tests.'
-                    });
+            const fullUser = await User.findById(req.user.userId).populate('subscriptionId');
+            const userRole = String(fullUser?.role || '').toLowerCase();
+            const isAdmin  = userRole === 'admin' || fullUser?.admin === true;
+
+            if (!isAdmin) {
+                const plan = fullUser?.subscriptionId?.plan || 'free';
+                // Coach plan and above have unlimited tests; pro has unlimited; free has 1
+                const unlimitedPlans = ['pro', 'coach', 'team', 'enterprise'];
+                if (!unlimitedPlans.includes(plan)) {
+                    // free plan: 1 test total per athlete
+                    const targetAthleteId = payload.athleteId || String(req.user.userId);
+                    const existingCount = await Test.countDocuments({ athleteId: String(targetAthleteId) });
+                    if (existingCount >= 1) {
+                        return res.status(403).json({
+                            error: 'FREE_PLAN_LIMIT',
+                            feature: 'tests',
+                            message: 'Free plan allows only 1 test. Upgrade to Pro for unlimited tests.',
+                            upgradeUrl: '/settings?tab=subscription'
+                        });
+                    }
                 }
             }
         }

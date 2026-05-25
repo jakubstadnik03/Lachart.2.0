@@ -594,8 +594,20 @@ export class FTMSAdapter implements TrainerAdapter {
     try {
       // Use FTMS control point if available
       if (this.useFTMS && this.controlPointChar) {
+        // Auto-request control if not yet controlled — catches cases where requestControl()
+        // was skipped, failed silently, or the trainer silently re-entered 'ready' state.
         if (this.state !== 'controlled' && this.state !== 'erg_active') {
-          throw new Error('Control not granted. Call requestControl() first.');
+          if (this.state === 'disconnected' || this.state === 'error' || this.state === 'connecting') {
+            throw new Error('Trainer not connected.');
+          }
+          // state is 'ready' — request control inline before the write
+          logger.info('setErgWatts: state is ready, requesting control inline');
+          try { await this.requestControl(); } catch (e) {
+            logger.warn('setErgWatts: inline requestControl failed, attempting ERG write anyway:', e);
+            // Continue — some trainers accept power writes without a formal control grant
+            this.controlRequested = true;
+            this.state = 'controlled';
+          }
         }
 
         // Set up the response promise BEFORE writing
@@ -603,9 +615,10 @@ export class FTMSAdapter implements TrainerAdapter {
           const timer = setTimeout(() => {
             this.pendingErgResolve = null;
             this.pendingErgReject = null;
-            // Treat as success on timeout — trainer may not send a response for every power update
+            // Treat as success on timeout — many trainers don't send a response for every
+            // power update. Use a short 1s window so step transitions aren't delayed.
             resolve();
-          }, 3000);
+          }, 1000);
 
           this.pendingErgResolve = () => {
             clearTimeout(timer);
@@ -778,13 +791,13 @@ export class FTMSAdapter implements TrainerAdapter {
           const timer = setTimeout(() => {
             this.pendingControlResolve = null;
             this.pendingControlReject = null;
-            // If we timed out but controlRequested is already set (response arrived just
-            // before the timer fired), treat it as success.
-            if (this.controlRequested) {
-              resolve();
-            } else {
-              reject(new Error('Timeout waiting for FTMS control response (5 s)'));
-            }
+            // Treat timeout as success — many trainers (Elite, some Wahoo, older Tacx)
+            // accept ERG writes without ever sending an FTMS control-point indication.
+            // Rejecting here causes the entire ERG chain to fail silently.
+            this.controlRequested = true;
+            this.state = 'controlled';
+            logger.info('requestControl: no response from trainer within 5 s — assuming control granted');
+            resolve();
           }, 5000);
 
           this.pendingControlResolve = () => {

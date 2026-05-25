@@ -24,6 +24,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useHasActiveSession } from '../../context/WorkoutSessionContext';
 import { PlayIcon, PauseIcon, XMarkIcon, BoltIcon, HeartIcon } from '@heroicons/react/24/solid';
+import { isCapacitorNative } from '../../utils/isNativeApp';
 
 function fmtTime(s) {
   const sec = Math.max(0, Math.round(s || 0));
@@ -38,6 +39,9 @@ export default function WorkoutResumeBanner() {
   const location = useLocation();
   const [confirmQuit, setConfirmQuit] = useState(false);
 
+  // On Capacitor native the inline ActiveWorkoutBar inside NativeLayout
+  // handles this — don't render the floating overlay pill there.
+  if (isCapacitorNative()) return null;
   // Hide on the execution page itself — we're already there.
   if (!session) return null;
   if (/^\/workout-execution(\/|$)/.test(location.pathname)) return null;

@@ -4,6 +4,8 @@
  * from every available data source: FIT files, Strava activities, previous tests, HR streams.
  */
 import React, { useState, useMemo } from 'react';
+import { useAuth } from '../../context/AuthProvider';
+import { formatRunPace } from '../../utils/unitsConverter';
 import {
   ClipboardDocumentListIcon,
   BeakerIcon,
@@ -30,7 +32,9 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPace(sec) {
+// Default pace formatter — used as fallback before user context is available.
+// Components that have access to the user object should call formatRunPace(sec, user) instead.
+function fmtPaceFallback(sec) {
   if (!sec || sec <= 0) return '—';
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
@@ -105,7 +109,7 @@ function generateBikeProtocol({ ftpEst, hrMax, lt1Hr, lt2Hr, lt1Power, lt2Power 
   return { stages, totalMin: stages.length * 5, note: '4 min effort · 1 min rest · blood sample last 30 sec' };
 }
 
-function generateRunProtocol({ lt2Sec, hrMax, lt1Hr, lt2Hr }) {
+function generateRunProtocol({ lt2Sec, hrMax, lt1Hr, lt2Hr }, fmt = fmtPaceFallback) {
   if (!lt2Sec || lt2Sec < 120) return null;
   const step  = 15; // sec/km
   const start = lt2Sec + 75; // slower end
@@ -120,7 +124,7 @@ function generateRunProtocol({ lt2Sec, hrMax, lt1Hr, lt2Hr }) {
     const zone = zoneLabel(pct);
     const tag  = Math.abs(s - lt1Sec) < step * 0.6 ? 'LT1' :
                  Math.abs(s - lt2Sec) < step * 0.6 ? 'LT2' : null;
-    stages.push({ intensity: fmtPace(s), pct: Math.round(pct * 100), hr, zone, tag, duration: 3, rest: 1 });
+    stages.push({ intensity: fmt(s), pct: Math.round(pct * 100), hr, zone, tag, duration: 3, rest: 1 });
   }
   return { stages, totalMin: stages.length * 4, note: '3 min effort · 1 min rest · blood sample last 30 sec' };
 }
@@ -158,8 +162,10 @@ function UrgencyBadge({ days }) {
   );
 }
 
-function ProtocolTable({ protocol, isPace }) {
+function ProtocolTable({ protocol, isPace, paceDisplay }) {
   if (!protocol?.stages?.length) return null;
+  const intensityHeader = !isPace ? 'Power'
+    : paceDisplay === 'kmh' ? 'Speed' : 'Pace';
   return (
     <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: '#E5E7EB' }}>
       <table className="w-full text-xs min-w-[380px]">
@@ -167,7 +173,7 @@ function ProtocolTable({ protocol, isPace }) {
           <tr style={{ background: `${C.primary}0A` }}>
             <th className="px-3 py-2 text-left font-semibold" style={{ color: C.lighter }}>#</th>
             <th className="px-3 py-2 text-left font-semibold" style={{ color: C.lighter }}>
-              {isPace ? 'Pace' : 'Power'}
+              {intensityHeader}
             </th>
             <th className="px-2 py-2 text-center font-semibold" style={{ color: C.lighter }}>%</th>
             <th className="px-3 py-2 text-left font-semibold" style={{ color: C.lighter }}>
@@ -243,10 +249,14 @@ export default function TestRecommendationCard({
   onStartTest,
   onClose,
 }) {
+  const { user } = useAuth();
   const available = sportsWithPastTests.filter(s => ['bike', 'run', 'swim'].includes(s));
   const [sport, setSport] = useState(() =>
     available.includes('bike') ? 'bike' : available[0] || 'bike'
   );
+
+  // Pace formatter that respects the user's paceDisplay setting
+  const fmtPace = (sec) => formatRunPace(sec, user);
 
   // ── Build data inputs ──────────────────────────────────────────────────────
   const inputs = useMemo(() => {
@@ -313,18 +323,21 @@ export default function TestRecommendationCard({
         hr:     hrMax   ? `HRmax: ${hrMax} bpm${lt1Hr ? ` · LT1: ${lt1Hr}` : ''}${lt2Hr ? ` · LT2: ${lt2Hr}` : ''} bpm` : null,
       };
 
-      return { isPace: true, lt2Sec, hrMax, lt1Hr, lt2Hr, days, sources, lastTest };
+      return { isPace: sport !== 'bike', lt2Sec, hrMax, lt1Hr, lt2Hr, days, sources, lastTest };
     }
 
     return { isPace: false, days: daysSince(latestBySport.swim?.date), sources: {}, lastTest: latestBySport.swim };
-  }, [sport, latestBySport, advisor, hrTestPlan, bikePowerMetrics, externalActivities]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sport, latestBySport, advisor, hrTestPlan, bikePowerMetrics, externalActivities, user?.trainingPreferences?.paceDisplay]);
 
   // ── Generate protocol ──────────────────────────────────────────────────────
   const protocol = useMemo(() => {
     if (sport === 'bike') return generateBikeProtocol(inputs);
-    if (sport === 'run')  return generateRunProtocol(inputs);
+    // Pass fmtPace so stage intensities use the user's pace/speed preference
+    if (sport === 'run')  return generateRunProtocol(inputs, fmtPace);
     return null;
-  }, [sport, inputs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sport, inputs, user?.trainingPreferences?.paceDisplay]);
 
   const loading = advisorLoading || hrTestPlanLoading;
 
@@ -431,7 +444,7 @@ export default function TestRecommendationCard({
 
         {/* ── Protocol table ─────────────────────────────────────────────── */}
         {protocol ? (
-          <ProtocolTable protocol={protocol} isPace={inputs.isPace} />
+          <ProtocolTable protocol={protocol} isPace={inputs.isPace} paceDisplay={user?.trainingPreferences?.paceDisplay || 'minpkm'} />
         ) : sport === 'swim' ? (
           <div className="rounded-2xl border p-4 text-sm" style={{ borderColor: '#E5E7EB', color: C.lighter }}>
             <p className="font-semibold mb-1" style={{ color: C.text }}>Swimming Protocol</p>

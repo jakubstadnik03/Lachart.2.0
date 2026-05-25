@@ -1,18 +1,37 @@
 // Bottom-sheet modal for viewing / editing / deleting a single PlannedWorkout.
 // Opens when the user taps a planned (or paired) workout row on NativeDashboardPage.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
 import { useCategories } from '../../context/CategoryContext';
 import { WorkoutChart } from '../WorkoutPlanner/WorkoutBuilder';
+import api from '../../services/api';
+
+/** Total seconds across all steps, respecting repeat groups. */
+function planStepSecs(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) return 0;
+  const visited = new Set();
+  let total = 0;
+  for (const s of steps) {
+    if (!s.groupId) { total += s.durationSeconds || 0; continue; }
+    if (visited.has(s.groupId)) continue;
+    visited.add(s.groupId);
+    const group = steps.filter(x => x.groupId === s.groupId);
+    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
+    for (const gs of group) total += (gs.durationSeconds || 0) * reps;
+  }
+  return total;
+}
 
 // Local keyframes — sheet slides up, scrim fades in
 const SHEET_KEYFRAMES = `
 @keyframes ndSheetIn  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes ndSheetOut { from { transform: translateY(0); }    to { transform: translateY(100%); } }
 @keyframes ndScrimIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ndScrimOut { from { opacity: 1; } to { opacity: 0; } }
 `;
 
 function toLocalDateInput(d) {
@@ -61,6 +80,45 @@ export default function PlannedWorkoutEditor({
   const [deleting, setDeleting] = useState(false);
   const [error, setError]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [closing, setClosing]   = useState(false);
+
+  // Athlete power context: profile zone ranges (primary) + latest test (fallback).
+  // WorkoutChart uses cyclingZones to show the same wattage as the Training Zones screen.
+  const [athleteCtx, setAthleteCtx] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
+  useEffect(() => {
+    if (!athleteId) return;
+    Promise.all([
+      api.get(`/test/list/${athleteId}`).catch(() => ({ data: [] })),
+      api.get(`/user/athlete/${athleteId}/profile`).catch(() => ({ data: null })),
+    ]).then(([testRes, profileRes]) => {
+      // Test-derived thresholds
+      const tests = Array.isArray(testRes.data) ? testRes.data : [];
+      const sorted = [...tests].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const latest = sorted.find(t => t.lt2Power || t.ltPower || t.lt2?.power || t.ftp);
+
+      // Profile zone ranges
+      const pz = profileRes.data?.powerZones || {};
+      const cyclingZones  = pz.cycling  || null;
+      const runningZones  = pz.running  || null;
+      const swimmingZones = pz.swimming || null;
+
+      const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min
+        || latest?.lt2Power || latest?.lt2?.power || null;
+      const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min
+        || latest?.ltPower  || latest?.lt1Power   || latest?.lt1?.power || null;
+
+      setAthleteCtx({
+        ftp:  lt2Power || latest?.ftp || 250,
+        lt2Power,
+        lt1Power,
+        lt2Pace:  runningZones?.lt2  || runningZones?.zone4?.min  || null,
+        lt1Pace:  runningZones?.lt1  || runningZones?.zone3?.min  || null,
+        cyclingZones,
+        runningZones,
+        swimmingZones,
+      });
+    }).catch(() => {});
+  }, [athleteId]);
 
   // Hydrate fields whenever a new workout opens
   useEffect(() => {
@@ -68,7 +126,9 @@ export default function PlannedWorkoutEditor({
     setTitle(plannedWorkout.title || plannedWorkout.name || '');
     setSport(normSport(plannedWorkout.sport || 'bike'));
     setDate(toLocalDateInput(plannedWorkout.date));
-    const { h, m } = secsToHM(Number(plannedWorkout.plannedDuration) || 0);
+    // Prefer explicit plannedDuration; fall back to computing from steps
+    const durSecs = Number(plannedWorkout.plannedDuration) || planStepSecs(plannedWorkout.steps);
+    const { h, m } = secsToHM(durSecs);
     setDurH(h);
     setDurM(m);
     setTargetTss(plannedWorkout.targetTss != null ? String(plannedWorkout.targetTss) : '');
@@ -86,21 +146,86 @@ export default function PlannedWorkoutEditor({
     return () => { document.body.style.overflow = prev; };
   }, [isOpen]);
 
+  // ── Animated close ─────────────────────────────────────────────────────────
+  // doClose() plays the slide-out animation, then calls onClose after 300ms.
+  const doClose = useRef(null);
+  doClose.current = () => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(() => { onClose && onClose(); }, 300);
+  };
+
+  // ── Swipe-down-to-close ────────────────────────────────────────────────────
+  const sheetRef = useRef(null);
+  const swipeRef = useRef({ startY: 0, currentY: 0, active: false });
+
+  // Wire non-passive touch listeners directly on the sheet element so we can
+  // call preventDefault() to block scroll while the swipe-to-close is active.
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+
+    const onStart = (e) => {
+      const atTop = sheet.scrollTop <= 0;
+      const touchY = e.touches[0].clientY;
+      const sheetRect = sheet.getBoundingClientRect();
+      const nearTop = (touchY - sheetRect.top) < 60;
+      if (!atTop && !nearTop) return;
+      swipeRef.current = { startY: touchY, currentY: touchY, active: true };
+    };
+
+    const onMove = (e) => {
+      if (!swipeRef.current.active) return;
+      const dy = e.touches[0].clientY - swipeRef.current.startY;
+      if (dy < 0) { swipeRef.current.active = false; return; }
+      if (dy < 5) return; // tiny movement — don't commit yet
+      swipeRef.current.currentY = e.touches[0].clientY;
+      e.preventDefault(); // block iOS rubber-band scroll while sheet is dragging
+      sheet.style.transform = `translateY(${Math.min(dy, 300)}px)`;
+      sheet.style.transition = 'none';
+    };
+
+    const onEnd = () => {
+      if (!swipeRef.current.active) return;
+      const dy = swipeRef.current.currentY - swipeRef.current.startY;
+      swipeRef.current.active = false;
+      // Reset inline transform so CSS animation can take over
+      sheet.style.transform = '';
+      sheet.style.transition = '';
+      if (dy > 100) {
+        doClose.current();
+      }
+    };
+
+    sheet.addEventListener('touchstart', onStart, { passive: true });
+    sheet.addEventListener('touchmove', onMove, { passive: false });
+    sheet.addEventListener('touchend', onEnd, { passive: true });
+    sheet.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      sheet.removeEventListener('touchstart', onStart);
+      sheet.removeEventListener('touchmove', onMove);
+      sheet.removeEventListener('touchend', onEnd);
+      sheet.removeEventListener('touchcancel', onEnd);
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const isCompleted = !!linkedActivity;
   const tint = SPORT_TINT[sport] || SPORT_TINT.other;
 
-  // Build a minimal context for the chart. Use FTP/LT values if stored on the
-  // planned workout, else fall back to safe defaults (250W FTP).
+  // Build chart context: prefer freshly-fetched profile zones + test thresholds
+  // so the wattage labels exactly match what the athlete sees on their Training
+  // Zones screen. Legacy values stored on the planned workout doc are a fallback.
   const chartContext = {
-    ftp:       plannedWorkout?.ftp       || plannedWorkout?.context?.ftp       || 250,
-    lt1Power:  plannedWorkout?.lt1Power  || plannedWorkout?.context?.lt1Power  || null,
-    lt2Power:  plannedWorkout?.lt2Power  || plannedWorkout?.context?.lt2Power  || null,
-    lt1Pace:   plannedWorkout?.lt1Pace   || plannedWorkout?.context?.lt1Pace   || null,
-    lt2Pace:   plannedWorkout?.lt2Pace   || plannedWorkout?.context?.lt2Pace   || null,
-    cyclingZones: plannedWorkout?.cyclingZones || plannedWorkout?.context?.cyclingZones || null,
-    runningZones: plannedWorkout?.runningZones || plannedWorkout?.context?.runningZones || null,
+    ftp:          athleteCtx.ftp          || plannedWorkout?.ftp  || plannedWorkout?.context?.ftp  || 250,
+    lt1Power:     athleteCtx.lt1Power     || plannedWorkout?.lt1Power || plannedWorkout?.context?.lt1Power || null,
+    lt2Power:     athleteCtx.lt2Power     || plannedWorkout?.lt2Power || plannedWorkout?.context?.lt2Power || null,
+    lt1Pace:      athleteCtx.lt1Pace      || plannedWorkout?.lt1Pace  || plannedWorkout?.context?.lt1Pace  || null,
+    lt2Pace:      athleteCtx.lt2Pace      || plannedWorkout?.lt2Pace  || plannedWorkout?.context?.lt2Pace  || null,
+    cyclingZones: athleteCtx.cyclingZones || plannedWorkout?.cyclingZones || plannedWorkout?.context?.cyclingZones || null,
+    runningZones: athleteCtx.runningZones || plannedWorkout?.runningZones || plannedWorkout?.context?.runningZones || null,
+    swimmingZones: athleteCtx.swimmingZones || null,
   };
 
   const hasSteps = Array.isArray(plannedWorkout?.steps) && plannedWorkout.steps.length > 0;
@@ -193,20 +318,23 @@ export default function PlannedWorkoutEditor({
   const content = (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
       <style>{SHEET_KEYFRAMES}</style>
-      {/* Scrim */}
+      {/* Scrim — fades out during close */}
       <div
-        onClick={onClose}
+        onClick={() => doClose.current()}
         style={{
           position: 'absolute', inset: 0,
           background: 'rgba(10,14,26,.45)',
           backdropFilter: 'blur(2px)',
           WebkitBackdropFilter: 'blur(2px)',
-          animation: 'ndScrimIn .25s ease both',
+          animation: closing
+            ? 'ndScrimOut .3s ease forwards'
+            : 'ndScrimIn .25s ease both',
         }}
       />
 
-      {/* Bottom sheet */}
+      {/* Bottom sheet — slides out during close */}
       <div
+        ref={sheetRef}
         style={{
           position: 'absolute', left: 0, right: 0, bottom: 0,
           background: 'linear-gradient(180deg, rgba(255,255,255,.95), rgba(238,240,244,.98))',
@@ -218,15 +346,20 @@ export default function PlannedWorkoutEditor({
           maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 12px)',
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          animation: 'ndSheetIn .32s cubic-bezier(.22,1,.36,1) both',
+          animation: closing
+            ? 'ndSheetOut .3s cubic-bezier(.4,0,1,1) forwards'
+            : 'ndSheetIn .32s cubic-bezier(.22,1,.36,1) both',
           fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif',
+          willChange: 'transform',
         }}
       >
-        {/* Drag handle */}
-        <div style={{
-          width: 44, height: 4, borderRadius: 9999,
-          background: 'rgba(118,126,181,.3)', margin: '8px auto 4px',
-        }} />
+        {/* Drag handle pill — visual indicator */}
+        <div style={{ padding: '10px 0 4px', cursor: 'grab' }}>
+          <div style={{
+            width: 44, height: 4, borderRadius: 9999,
+            background: 'rgba(118,126,181,.3)', margin: '0 auto',
+          }} />
+        </div>
 
         {/* Header */}
         <div style={{
@@ -246,8 +379,8 @@ export default function PlannedWorkoutEditor({
           {/* Edit in Planner button */}
           <button
             onClick={() => {
-              onClose && onClose();
-              navigate('/workout-planner', { state: { editWorkout: plannedWorkout } });
+              doClose.current();
+              setTimeout(() => navigate('/workout-planner', { state: { editWorkout: plannedWorkout } }), 310);
             }}
             style={{
               height: 32, borderRadius: 9999,
@@ -269,7 +402,7 @@ export default function PlannedWorkoutEditor({
           </button>
 
           <button
-            onClick={onClose}
+            onClick={() => doClose.current()}
             style={{
               width: 32, height: 32, borderRadius: '50%',
               background: 'rgba(118,126,181,.12)', border: 'none',
@@ -323,7 +456,8 @@ export default function PlannedWorkoutEditor({
               background: 'rgba(255,255,255,.7)',
               border: '1px solid rgba(118,126,181,.15)',
               padding: '10px 12px 6px',
-              overflow: 'hidden',
+              /* overflow must be visible so the hover/tap tooltip can appear above the bars */
+              overflow: 'visible',
             }}>
               <div style={{
                 fontSize: 9, fontWeight: 800, color: '#9CA3AF',

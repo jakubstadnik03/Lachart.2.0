@@ -4,7 +4,7 @@ import {
   Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChartBarIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowTopRightOnSquareIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail, getFitTraining } from '../../services/api';
 import { SearchableSelect } from '../SearchableSelect';
@@ -310,7 +310,7 @@ function isAnnotatedExport(t) {
   return hasTitle && (hasResults || hasLaps);
 }
 
-export default function LapComparison({ trainings: rawTrainings, selectedTitle: externalTitle, setSelectedTitle: setExternalTitle }) {
+export default function LapComparison({ trainings: rawTrainings, selectedTitle: externalTitle, setSelectedTitle: setExternalTitle, onEditTraining }) {
   const trainings = useMemo(
     () => (Array.isArray(rawTrainings) ? rawTrainings.filter(isAnnotatedExport) : []),
     [rawTrainings]
@@ -343,7 +343,8 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   const [selectedIds, setSelectedIds]   = useState([]);
   const [lapsCache, setLapsCache]       = useState({}); // id -> laps[] | 'loading' | 'error'
   const [metric, setMetric]             = useState('pace');
-  const [filterWork, setFilterWork]     = useState(true);
+  // Work laps are always filtered — rest/warmup/cooldown laps are hidden.
+  const filterWork = true;
   const [collapsed, setCollapsed]       = useState(false);
   const loadingRef = useRef(new Set());
   // Filled by the per-card bar block; the line chart below reads it so both
@@ -629,11 +630,6 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
               </button>
             ))}
           </div>
-          {/* Work-only toggle */}
-          <button onClick={() => setFilterWork(v => !v)}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${filterWork ? 'bg-primary/10 text-primary border-primary/30' : 'bg-white text-gray-400 border-gray-200'}`}>
-            Work laps
-          </button>
           {/* Collapse */}
           <button onClick={() => setCollapsed(v => !v)}
             className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 transition-colors">
@@ -812,7 +808,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToSession(s.session); } }}
                         className="rounded-xl border border-gray-100 bg-white px-4 py-3 cursor-pointer hover:border-gray-200 hover:shadow-sm transition-all group"
                       >
-                        {/* Header row: date + sport + open button */}
+                        {/* Header row: date + sport + action buttons */}
                         <div className="flex items-center justify-between mb-2 gap-3">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
@@ -820,7 +816,19 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                             {s.session.sport && <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">{String(s.session.sport).toLowerCase()}</span>}
                             <span className="text-[10px] text-gray-400">· {laps.length} {laps.length === 1 ? 'lap' : 'laps'}</span>
                           </div>
-                          <ArrowTopRightOnSquareIcon className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0" />
+                          <div className="flex items-center gap-1.5">
+                            {/* Edit button — only for manual (non-strava, non-fit) trainings */}
+                            {onEditTraining && !s.session.stravaId && !s.session.stravaActivityId && s.session.type !== 'strava' && s.session.type !== 'fit' && s.session.source !== 'strava' && s.session.source !== 'fit' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onEditTraining(s.session); }}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-primary hover:bg-primary/10 transition-colors"
+                                title="Edit training"
+                              >
+                                <PencilSquareIcon className="w-4 h-4" />
+                              </button>
+                            )}
+                            <ArrowTopRightOnSquareIcon className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0" />
+                          </div>
                         </div>
 
                         {/* Totals row */}

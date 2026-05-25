@@ -16,8 +16,8 @@ const PLANS = {
     interval: 'month',
     features: ['basic_testing', 'basic_analytics'],
     limits: {
-      testsPerMonth: 5,
-      athletes: 0
+      tests: 1,
+      athletes: 1
     }
   },
   pro: {
@@ -28,7 +28,7 @@ const PLANS = {
     stripePriceId: process.env.STRIPE_PRICE_ID_PRO, // Set in .env
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync'],
     limits: {
-      testsPerMonth: -1, // unlimited
+      tests: -1, // unlimited
       athletes: 0
     }
   },
@@ -40,8 +40,8 @@ const PLANS = {
     stripePriceId: process.env.STRIPE_PRICE_ID_COACH,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes'],
     limits: {
-      testsPerMonth: -1,
-      athletes: 10
+      tests: -1,
+      athletes: -1
     }
   },
   team: {
@@ -52,7 +52,7 @@ const PLANS = {
     stripePriceId: process.env.STRIPE_PRICE_ID_TEAM,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes', 'team_branding', 'csv_export'],
     limits: {
-      testsPerMonth: -1,
+      tests: -1,
       athletes: 25
     }
   },
@@ -64,7 +64,7 @@ const PLANS = {
     stripePriceId: process.env.STRIPE_PRICE_ID_ENTERPRISE,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes', 'team_branding', 'csv_export', 'white_label', 'priority_support', 'custom_onboarding'],
     limits: {
-      testsPerMonth: -1,
+      tests: -1,
       athletes: 60
     }
   }

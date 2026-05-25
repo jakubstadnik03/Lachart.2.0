@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { BeakerIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { BeakerIcon } from '@heroicons/react/24/outline';
+import BottomSheet from '../shared/BottomSheet';
 
 export default function RecordLactateModal({ onClose, onSave }) {
   const now = new Date();
@@ -32,29 +33,20 @@ export default function RecordLactateModal({ onClose, onSave }) {
   };
 
   return (
-    <div className="absolute inset-0 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 16px) + 16px, 32px)' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f5f3ff' }}>
-              <BeakerIcon className="w-4 h-4" style={{ color: '#7c3aed' }} />
-            </div>
-            <span className="text-sm font-bold text-gray-900">Record Lactate</span>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
-            <XMarkIcon className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
+    <BottomSheet
+      open
+      onClose={onClose}
+      title="Record Lactate"
+      icon={<BeakerIcon className="w-4 h-4 text-violet-600" />}
+      maxWidth="sm:max-w-sm"
+    >
+      <div className="px-5 pt-4 pb-2 space-y-4">
         {/* Value input — big and prominent */}
-        <div className="mb-4">
+        <div>
           <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">
             Blood Lactate (mmol/L)
           </label>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1.5">
             <input
               autoFocus
               type="number"
@@ -65,49 +57,46 @@ export default function RecordLactateModal({ onClose, onSave }) {
               value={value}
               onChange={e => setValue(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSave()}
-              className="flex-1 text-3xl font-bold text-center rounded-xl border border-gray-200 py-3 px-4 focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ '--tw-ring-color': '#7c3aed' }}
+              className="flex-1 text-3xl font-bold text-center rounded-2xl border border-gray-200 bg-white py-3 px-4 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
             />
-            <span className="text-lg font-semibold text-gray-400 flex-shrink-0">mmol/L</span>
+            <span className="text-base font-semibold text-gray-400 flex-shrink-0">mmol/L</span>
           </div>
         </div>
 
         {/* Time */}
-        <div className="mb-3">
+        <div>
           <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Time</label>
           <input
             type="datetime-local"
             value={recordedAt}
             onChange={e => setRecordedAt(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-            style={{ '--tw-ring-color': '#7c3aed' }}
+            className="mt-1.5 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
           />
         </div>
 
         {/* Notes */}
-        <div className="mb-4">
+        <div>
           <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Notes (optional)</label>
           <input
             type="text"
             placeholder="e.g. after interval 3, feeling good"
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-            style={{ '--tw-ring-color': '#7c3aed' }}
+            className="mt-1.5 w-full rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
           />
         </div>
 
-        {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-xs text-red-500">{error}</p>}
 
         <button
           onClick={handleSave}
           disabled={saving || !value}
-          className="w-full py-3 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+          className="w-full py-3.5 rounded-2xl text-sm font-bold text-white transition-all disabled:opacity-50 active:scale-[0.98]"
           style={{ backgroundColor: '#7c3aed' }}
         >
           {saving ? 'Saving…' : 'Save Measurement'}
         </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 }

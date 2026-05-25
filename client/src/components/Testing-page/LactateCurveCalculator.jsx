@@ -1117,6 +1117,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       customAnalysis:  pdfCustomAnalysis,
       creatorEmail:    user?.email || null,
       preTestSummary:  buildPreTestSummaryForPdf(preTestSummaryData),
+      coachBranding:   user?.coachBranding || null,
     };
   };
 

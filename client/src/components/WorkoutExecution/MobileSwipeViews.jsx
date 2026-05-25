@@ -1,7 +1,7 @@
 /**
  * MobileSwipeViews
  * ────────────────
- * 4 horizontally-swipeable pages of the live workout — designed for
+ * 5 horizontally-swipeable pages of the live workout — designed for
  * one-handed phone use on a bike. The user can flick left / right to
  * switch view without taking their eyes off the road for more than a
  * fraction of a second.
@@ -14,6 +14,8 @@
  *   3. CHART      Full-screen live power+HR chart.
  *   4. STEPS      Scrollable list of all steps with averages + lactate
  *                 markers — same content the desktop sidebar shows.
+ *   5. STATS      Live stats: avg power/HR/cadence/speed, NP, IF, TSS,
+ *                 power zone distribution, HR zone distribution.
  *
  * Uses the existing `swiper` package (already in dependencies). Page
  * dots render below the swiper. The wrapper exposes the active page
@@ -33,6 +35,7 @@ const PAGES = [
   { key: 'workout', label: 'Workout' },
   { key: 'chart',   label: 'Chart'   },
   { key: 'steps',   label: 'Steps'   },
+  { key: 'stats',   label: 'Stats'   },
 ];
 
 export default function MobileSwipeViews({
@@ -42,6 +45,7 @@ export default function MobileSwipeViews({
   renderWorkout,
   renderChart,
   renderSteps,
+  renderStats,
 }) {
   const [active, setActive] = useState(initialIndex);
   const handleSlide = (i) => {
@@ -88,8 +92,9 @@ export default function MobileSwipeViews({
         >
           <SwiperSlide style={{ overflowY: 'auto' }}>{renderNumbers && renderNumbers()}</SwiperSlide>
           <SwiperSlide style={{ overflowY: 'auto' }}>{renderWorkout && renderWorkout()}</SwiperSlide>
-          <SwiperSlide style={{ overflowY: 'auto' }}>{renderChart && renderChart()}</SwiperSlide>
-          <SwiperSlide style={{ overflowY: 'auto' }}>{renderSteps && renderSteps()}</SwiperSlide>
+          <SwiperSlide style={{ overflowY: 'auto' }}>{renderChart   && renderChart()}</SwiperSlide>
+          <SwiperSlide style={{ overflowY: 'auto' }}>{renderSteps   && renderSteps()}</SwiperSlide>
+          <SwiperSlide style={{ overflowY: 'auto' }}>{renderStats   && renderStats()}</SwiperSlide>
         </Swiper>
       </div>
     </div>

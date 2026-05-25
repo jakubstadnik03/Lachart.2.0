@@ -17,7 +17,7 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
@@ -189,6 +189,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const isEdit = Boolean(workout?._id);
   const navigate = useNavigate();
   const { categories } = useCategories();
+  const dragControls = useDragControls();
   // 'pick' = sport selector (new workouts only), 'build' = full builder
   const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
@@ -278,11 +279,28 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     >
       <motion.div
         initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-        exit={{ y: '100%', opacity: 0 }}
+        exit={{ y: '110%', opacity: 0 }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="w-full sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ maxHeight: '92vh' }}
+        drag="y"
+        dragControls={dragControls}
+        dragListener={false}
+        dragConstraints={{ top: 0 }}
+        dragElastic={{ top: 0, bottom: 0.35 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 90 || info.velocity.y > 450) onClose?.();
+        }}
       >
+        {/* ── Drag handle — swipe down to close ─────────────────────────── */}
+        <div
+          className="flex-shrink-0 pt-3 pb-1 flex justify-center cursor-grab active:cursor-grabbing select-none sm:hidden"
+          style={{ touchAction: 'none' }}
+          onPointerDown={e => dragControls.start(e)}
+        >
+          <div className="w-10 h-[5px] rounded-full bg-gray-300" />
+        </div>
+
         {/* ─── Lactate saved notification screen ─── */}
         {lactateSaved ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
@@ -317,10 +335,14 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
           </div>
         ) : (<>
 
-        {/* ─── Shared header ─── */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0">
+        {/* ─── Shared header — also acts as extended swipe-down zone ─── */}
+        <div
+          className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 sm:touch-auto"
+          style={{ touchAction: 'none' }}
+          onPointerDown={e => dragControls.start(e)}
+        >
           {step === 'build' && !isEdit && (
-            <button onClick={() => setStep('pick')} className="p-1.5 -ml-1 rounded-xl hover:bg-slate-100 text-slate-400">
+            <button onClick={() => setStep('pick')} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-slate-400 hover:bg-gray-200 transition-all flex-shrink-0">
               <ArrowLeftIcon className="w-4 h-4" />
             </button>
           )}
@@ -334,13 +356,13 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               <p className="text-[11px] text-slate-400 font-medium">
                 {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
               </p>
-              <h2 className="text-base font-bold text-slate-900 leading-tight">
+              <h2 className="text-[15px] font-bold text-slate-900 leading-tight">
                 {step === 'pick' ? 'Add a workout' : isEdit ? 'Edit planned workout' : `Plan a ${selectedSportMeta?.label || sport} workout`}
               </h2>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400">
-            <XMarkIcon className="w-5 h-5" />
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-slate-400 hover:bg-gray-200 active:scale-95 transition-all flex-shrink-0">
+            <XMarkIcon className="w-4 h-4" />
           </button>
         </div>
 

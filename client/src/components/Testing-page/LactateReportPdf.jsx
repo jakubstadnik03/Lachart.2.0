@@ -623,12 +623,12 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
 }
 
 // ── Header ─────────────────────────────────────────────────────────────────────
-const Header = ({ title, date }) => (
+const Header = ({ title, date, branding }) => (
   <View style={s.header} fixed>
     <View style={s.headerBrand}>
-      <Image src={LOGO_URL} style={s.headerLogo} />
+      <Image src={branding?.logoUrl || LOGO_URL} style={s.headerLogo} />
       <View>
-        <Text style={s.headerName}>LaChart</Text>
+        <Text style={s.headerName}>{branding?.title || 'LaChart'}</Text>
         <Text style={s.headerSub}>LACTATE ANALYSIS PLATFORM</Text>
       </View>
     </View>
@@ -637,12 +637,15 @@ const Header = ({ title, date }) => (
 );
 
 // ── Footer ─────────────────────────────────────────────────────────────────────
-const Footer = ({ athlete, creatorEmail }) => (
+const Footer = ({ athlete, creatorEmail, branding }) => (
   <View style={s.footer} fixed>
     <View style={s.footerBrand}>
-      <Image src={LOGO_URL} style={s.footerLogo} />
-      <Text style={s.footerName}>LaChart</Text>
-      <Text style={s.footerText}> · lachart.net</Text>
+      <Image src={branding?.logoUrl || LOGO_URL} style={s.footerLogo} />
+      <Text style={s.footerName}>{branding?.title || 'LaChart'}</Text>
+      {branding?.trademark
+        ? <Text style={s.footerText}> · {branding.trademark}</Text>
+        : <Text style={s.footerText}> · lachart.net</Text>
+      }
       {creatorEmail ? <Text style={s.footerText}> · Contact: {creatorEmail}</Text> : null}
     </View>
     <Text style={s.footerText}
@@ -730,7 +733,7 @@ const SectionHeader = ({ title }) => (
 );
 
 // ── Main Document ───────────────────────────────────────────────────────────────
-export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
+export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
   if (!test) return null;
 
   const sport       = test.sport || 'bike';
@@ -816,9 +819,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
         <View style={s.coverBand}>
           <View style={s.coverTopRow}>
             <View style={s.coverBrandWrap}>
-              <Image src={LOGO_URL} style={s.coverLogo} />
+              <Image src={coachBranding?.logoUrl || LOGO_URL} style={s.coverLogo} />
               <View>
-                <Text style={s.coverBrandName}>LaChart</Text>
+                <Text style={s.coverBrandName}>{coachBranding?.title || 'LaChart'}</Text>
                 <Text style={s.coverBrandSub}>LACTATE ANALYSIS PLATFORM</Text>
               </View>
             </View>
@@ -988,12 +991,12 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </View>
         </View>
 
-        <Footer athlete={athleteName} creatorEmail={creatorEmail} />
+        <Footer athlete={athleteName} creatorEmail={creatorEmail} branding={coachBranding} />
       </Page>
 
       {/* ── PAGE 2: Thresholds + Zones + Comparison ── */}
       <Page size="A4" style={s.page}>
-        <Header title={`${sportLabel(sport)} · Lactate Report`} date={testDate} />
+        <Header title={`${sportLabel(sport)} · Lactate Report`} date={testDate} branding={coachBranding} />
 
         <View style={s.body}>
           {/* Key threshold highlight cards — now include lactate value */}
@@ -1171,14 +1174,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </>}
         </View>
 
-        <Footer athlete={athleteName} creatorEmail={creatorEmail} />
+        <Footer athlete={athleteName} creatorEmail={creatorEmail} branding={coachBranding} />
       </Page>
     </Document>
   );
 }
 
 // ── Download helper ─────────────────────────────────────────────────────────────
-export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
+export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
   const doc = (
     <LactateReportPdf
       test={test}
@@ -1193,13 +1196,14 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       customAnalysis={customAnalysis}
       creatorEmail={creatorEmail}
       preTestSummary={preTestSummary}
+      coachBranding={coachBranding}
     />
   );
   return pdf(doc).toBlob();
 }
 
-export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary }) {
-  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary });
+export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
+  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding });
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
   const fileName = `lachart-report-${date}.pdf`;
 

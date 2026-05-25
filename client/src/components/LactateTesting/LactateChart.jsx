@@ -21,7 +21,11 @@ const formatValue = (value, unit = '') => {
   return `${Math.round(value)}${unit}`;
 };
 
-const LactateChart = ({ lactateValues, historicalData, laps }) => {
+/**
+ * embedded={true} — skip the outer card shell + duplicate title; use when
+ * the parent already provides its own card wrapper (e.g. LactateTestingPage).
+ */
+const LactateChart = ({ lactateValues, historicalData, laps, embedded = false }) => {
   const chartData = useMemo(() => {
     if (!lactateValues.length) return { labels: [], datasets: [] };
 
@@ -162,10 +166,12 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
       },
       scales: {
         y: {
-          title: { display: true, text: "Lactate (mmol/L)" },
+          // Hide the rotated axis title — it eats ~30px of chart width on phones.
+          // The legend already labels the data clearly.
+          title: { display: false },
           min: 0,
           max: Math.ceil(Math.max(...lactateData, 0) + 1),
-          ticks: { display: true },
+          ticks: { display: true, font: { size: 11 }, maxTicksLimit: 6 },
           border: { dash: [6, 6] },
           grid: {
             color: "rgba(0, 0, 0, 0.15)",
@@ -174,11 +180,11 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
           },
         },
         y1: {
-          title: { display: true, text: "Heart Rate (BPM)" },
+          title: { display: false },
           min: 100,
           max: Math.max(...heartRateData, 0) + 10 || 200,
           position: "right",
-          ticks: { display: true },
+          ticks: { display: true, font: { size: 11 }, maxTicksLimit: 6 },
           grid: {
             drawOnChartArea: true,
             color: "rgba(0, 0, 0, 0)",
@@ -186,13 +192,14 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
           },
         },
         x: {
-          title: { display: true, text: "Power (W)" },
+          title: { display: false },
           border: { dash: [6, 6] },
           grid: {
             color: "rgba(0, 0, 0, 0.15)",
             borderDash: [4, 4],
           },
           ticks: {
+            font: { size: 11 },
             callback: function(value, index) {
               const sortedValues = [...lactateValues].sort((a, b) => (a.power || 0) - (b.power || 0));
               if (sortedValues[index]) {
@@ -206,37 +213,29 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
     };
   }, [lactateValues, historicalData]);
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
-    >
-      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <ChartBarIcon className="w-6 h-6" />
-        Lactate Curve Analysis
-      </h2>
-
+  const inner = (
+    <>
       {!hasData ? (
-        <div className="text-center py-12 text-gray-500 bg-white/60 border border-white/40 rounded-2xl">
+        <div className="text-center py-8 text-gray-500 bg-white/60 border border-white/40 rounded-2xl text-sm">
           <p>No lactate values entered yet.</p>
-          <p className="text-sm mt-2">Add lactate values after each work interval to see the curve.</p>
+          <p className="mt-1 text-xs">Add lactate values after each work interval to see the curve.</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Lactate vs Power</h3>
-            <div className="relative w-full max-w-full overflow-x-auto p-2 md:p-4 bg-white/60 backdrop-blur rounded-2xl border border-white/40">
-              <div style={{ width: '100%', minWidth: 0, maxWidth: '100vw', height: '400px' }}>
-                <Line data={chartData} options={chartOptions} />
-              </div>
+            {!embedded && (
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Lactate vs Power</h3>
+            )}
+            {/* No extra padding here — let the parent card provide it */}
+            <div style={{ width: '100%', height: 280 }}>
+              <Line data={chartData} options={chartOptions} />
             </div>
           </div>
 
           {/* Session Metrics Chart with bars for intervals */}
           {historicalData && historicalData.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-white/40">
-              <SessionMetricsChart 
+            <div className="pt-4 border-t border-white/40">
+              <SessionMetricsChart
                 historical={historicalData}
                 lactateValues={lactateValues}
                 laps={laps || []}
@@ -244,25 +243,25 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
             </div>
           )}
 
-          <div className="mt-4 pt-4 border-t border-white/40">
+          <div className="pt-4 border-t border-white/40">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Test Summary</h3>
-            <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-3 gap-3 text-sm">
               <div>
-                <div className="text-gray-600">Lactate Values</div>
+                <div className="text-gray-500 text-xs">Lactate Values</div>
                 <div className="font-semibold text-gray-900">{lactateValues.length}</div>
               </div>
               <div>
-                <div className="text-gray-600">Power Range</div>
+                <div className="text-gray-500 text-xs">Power Range</div>
                 <div className="font-semibold text-gray-900">
                   {(() => {
                     const sortedValues = [...lactateValues].sort((a, b) => (a.power || 0) - (b.power || 0));
                     if (sortedValues.length === 0) return '—';
-                    return `${formatValue(sortedValues[0]?.power, ' W')} - ${formatValue(sortedValues[sortedValues.length - 1]?.power, ' W')}`;
+                    return `${formatValue(sortedValues[0]?.power, 'W')}–${formatValue(sortedValues[sortedValues.length - 1]?.power, 'W')}`;
                   })()}
                 </div>
               </div>
               <div>
-                <div className="text-gray-600">Max Lactate</div>
+                <div className="text-gray-500 text-xs">Max Lactate</div>
                 <div className="font-semibold text-gray-900">
                   {Math.max(...lactateValues.map((lv) => lv.lactate)).toFixed(2)} mmol/L
                 </div>
@@ -271,6 +270,24 @@ const LactateChart = ({ lactateValues, historicalData, laps }) => {
           </div>
         </div>
       )}
+    </>
+  );
+
+  // When embedded, skip the standalone card shell so the parent card's
+  // padding is the only padding — prevents double-wrapping on phones.
+  if (embedded) return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{inner}</motion.div>;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 sm:p-6"
+    >
+      <h2 className="text-base font-bold mb-3 flex items-center gap-2">
+        <ChartBarIcon className="w-5 h-5" />
+        Lactate Curve Analysis
+      </h2>
+      {inner}
     </motion.div>
   );
 };

@@ -396,21 +396,36 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
-        // ── Free-plan athlete limit ───────────────────────────────────────
+        // ── Subscription-plan athlete limit ──────────────────────────────
         if (process.env.SUBSCRIPTION_ENABLED === 'true') {
-            const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
-            const fullCoach = await userDao.findById(req.user.userId);
-            const { isPremium } = await resolvePremiumForUserDocument(fullCoach);
-            if (!isPremium) {
-                // Count athletes already assigned to this coach
+            const coachRole = String(coach?.role || '').toLowerCase();
+            const isAdminRole = coachRole === 'admin' || coach?.admin === true;
+            if (!isAdminRole) {
                 const User = require('../models/UserModel');
-                const athleteCount = await User.countDocuments({ coachId: String(req.user.userId) });
-                if (athleteCount >= 1) {
+                const fullCoach = await User.findById(req.user.userId).populate('subscriptionId');
+                const plan = fullCoach?.subscriptionId?.plan || 'free';
+                const ATHLETE_LIMITS = { free: 1, pro: 0, coach: 10, team: 25, enterprise: 60 };
+                const limit = ATHLETE_LIMITS[plan] !== undefined ? ATHLETE_LIMITS[plan] : 1;
+                if (limit === 0) {
                     return res.status(403).json({
                         error: 'FREE_PLAN_LIMIT',
                         feature: 'athletes',
-                        message: 'Free plan allows only 1 athlete. Upgrade to Coach plan to manage more athletes.'
+                        message: 'Your plan does not include athlete management. Upgrade to Coach plan.',
+                        limit: 0, current: coach.athletes?.length || 0,
+                        upgradeUrl: '/settings?tab=subscription'
                     });
+                }
+                if (limit !== -1) {
+                    const athleteCount = coach.athletes?.length || 0;
+                    if (athleteCount >= limit) {
+                        return res.status(403).json({
+                            error: 'FREE_PLAN_LIMIT',
+                            feature: 'athletes',
+                            message: `Your plan allows only ${limit} athlete(s). Upgrade to Coach plan for more.`,
+                            limit, current: athleteCount,
+                            upgradeUrl: '/settings?tab=subscription'
+                        });
+                    }
                 }
             }
         }
@@ -674,6 +689,15 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
+
+        // Coach branding (logo URL, title, trademark)
+        if (req.body.coachBranding !== undefined) {
+          updateData.coachBranding = {
+            logoUrl: req.body.coachBranding.logoUrl ?? null,
+            title: req.body.coachBranding.title ?? null,
+            trademark: req.body.coachBranding.trademark ?? null,
+          };
+        }
 
         // Load current user to snapshot previous zones into history before updating
         const existingUser = await userDao.findById(userId);
@@ -1395,6 +1419,40 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
+
+        // ── Subscription-plan athlete limit ──────────────────────────────
+        if (process.env.SUBSCRIPTION_ENABLED === 'true') {
+            const inviteCoachRole = String(coach?.role || '').toLowerCase();
+            const isAdminInvite = inviteCoachRole === 'admin' || coach?.admin === true;
+            if (!isAdminInvite) {
+                const fullCoach = await User.findById(coachId).populate('subscriptionId');
+                const plan = fullCoach?.subscriptionId?.plan || 'free';
+                const ATHLETE_LIMITS = { free: 1, pro: 0, coach: 10, team: 25, enterprise: 60 };
+                const limit = ATHLETE_LIMITS[plan] !== undefined ? ATHLETE_LIMITS[plan] : 1;
+                if (limit === 0) {
+                    return res.status(403).json({
+                        error: 'FREE_PLAN_LIMIT',
+                        feature: 'athletes',
+                        message: 'Your plan does not include athlete management. Upgrade to Coach plan.',
+                        limit: 0, current: coach.athletes?.length || 0,
+                        upgradeUrl: '/settings?tab=subscription'
+                    });
+                }
+                if (limit !== -1) {
+                    const athleteCount = coach.athletes?.length || 0;
+                    if (athleteCount >= limit) {
+                        return res.status(403).json({
+                            error: 'FREE_PLAN_LIMIT',
+                            feature: 'athletes',
+                            message: `Your plan allows only ${limit} athlete(s). Upgrade to Coach plan for more.`,
+                            limit, current: athleteCount,
+                            upgradeUrl: '/settings?tab=subscription'
+                        });
+                    }
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         // Find athlete by email — if not found, create a stub pre-registered account
         let athlete = await userDao.findByEmail(email);

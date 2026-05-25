@@ -120,6 +120,47 @@ function pairActivities(plannedForDay, acts) {
   return { pwToAct, claimed };
 }
 
+// ─── Planned workout mini step-chart (mirrors WeeklyCalendar PlanMiniChart) ───
+function PlanMiniChart({ steps, color, width = 88, height = 16 }) {
+  if (!steps?.length) return null;
+  const STEP_COLORS = { warmup: '#fbbf24', work: '#767EB5', recovery: '#6ee7b7', cooldown: '#38bdf8', rest: '#d1d5db' };
+  // Expand groups / repeats into a flat list of steps
+  const expanded = [];
+  const visited = new Set();
+  steps.forEach(s => {
+    if (!s.groupId) { expanded.push(s); return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter(x => x.groupId === s.groupId);
+    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
+    group.filter(x => !x.isGroupHeader).forEach(gs => {
+      for (let r = 0; r < reps; r++) expanded.push(gs);
+    });
+  });
+  const total = expanded.reduce((s, st) => s + (st.durationSeconds || 30), 0);
+  if (!total) return null;
+  const FLOOR = 0.12;
+  let cx = 0;
+  return (
+    <svg width={width} height={height} style={{ display: 'block', flexShrink: 0 }}>
+      {expanded.map((step, i) => {
+        const w = Math.max(1, ((step.durationSeconds || 30) / total) * width);
+        const intensity = step.stepType === 'work' ? 1 : step.stepType === 'warmup' ? 0.55 : step.stepType === 'cooldown' ? 0.4 : step.stepType === 'recovery' ? 0.3 : 0.15;
+        const bh = Math.max(FLOOR * height, intensity * height);
+        const bw = Math.max(1, w - 0.5);
+        const fill = STEP_COLORS[step.stepType] || color || '#767EB5';
+        const sx = cx; cx += w;
+        if (step.isRamp && step.stepType === 'warmup') {
+          return <polygon key={i} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
+        } else if (step.isRamp && step.stepType === 'cooldown') {
+          return <polygon key={i} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
+        }
+        return <rect key={i} x={sx} y={height - bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85} />;
+      })}
+    </svg>
+  );
+}
+
 // ─── Animated wrapper ─────────────────────────────────────────────────────────
 // CSS keyframe animation — no framer-motion dependency needed
 const SLIDE_IN_STYLE = `
@@ -240,11 +281,14 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
           : 0;
         const compliance = isPaired ? getCompliance(pwSecs, actSecs) : null;
 
-        // Style by state
-        const bg     = isPaired ? '#f0fdf4' : isMissed ? '#fef2f2' : color + '08';
-        const border = isPaired ? '#bbf7d0' : isMissed ? '#fecaca' : color + '44';
-        const leftC  = isPaired ? '#22c55e' : isMissed ? '#ef4444' : color;
-        const titleC = isPaired ? '#14532d' : isMissed ? '#991b1b' : color;
+        // Style by state — mirrors PlannedMiniCard in WeeklyCalendar
+        const isPurelyPlanned = !isPaired && !isMissed;
+        const bg         = isPaired ? '#f0fdf4' : isMissed ? '#fef2f2' : color + '0d';
+        const borderColor= isPaired ? '#bbf7d0' : isMissed ? '#fecaca' : color + '55';
+        const borderStyle= isPurelyPlanned ? 'dashed' : 'solid';
+        const leftC      = isPaired ? '#22c55e' : isMissed ? '#ef4444' : color;
+        const titleC     = isPaired ? '#14532d' : isMissed ? '#991b1b' : color;
+        const hasSteps   = isPurelyPlanned && Array.isArray(pw.steps) && pw.steps.length > 0;
 
         const dur     = fmtDuration(pwSecs);
         const actDur  = linkedAct ? fmtDuration(actSecs) : null;
@@ -268,7 +312,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
               padding: '10px 11px',
               borderRadius: 13,
               background: bg,
-              border: `1px solid ${border}`,
+              border: `1px ${borderStyle} ${borderColor}`,
               borderLeft: `3px solid ${leftC}`,
               marginBottom: pi < dayPlanned.length - 1 || unclaimedActs.length > 0 ? 6 : 0,
               cursor: linkedAct ? 'pointer' : 'default',
@@ -284,12 +328,16 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
 
             {/* Info column */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Title + category */}
+              {/* Title row + mini step chart for planned workouts */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                   {actTitle || pwTitle}
                 </div>
-                {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
+                {/* Mini step chart — only for purely planned workouts with structured steps */}
+                {hasSteps && (
+                  <PlanMiniChart steps={pw.steps} color={color} width={72} height={14} />
+                )}
+                {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && !hasSteps && (
                   <span style={{
                     fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
                     letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
@@ -301,8 +349,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
                 )}
               </div>
 
+              {/* Category badge below title (when mini chart is shown there's no room next to title) */}
+              {hasSteps && (linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
+                <div style={{ marginTop: 2 }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                    ...catStyle(linkedAct?.category || pw.category),
+                  }}>
+                    {catLabel(linkedAct?.category || pw.category)}
+                  </span>
+                </div>
+              )}
+
               {/* Stats row */}
-              <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 6px' }}>
+              <div style={{ fontSize: 11, color: isPurelyPlanned ? color + 'cc' : '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 6px' }}>
                 {isPaired && actDur && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     {/* Check SVG — replaces ✓ char */}
@@ -313,7 +374,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
                   </span>
                 )}
                 {isPaired && distStr && <span>{distStr}</span>}
-                {!isPaired && dur   && <span>Plan: {dur}</span>}
+                {!isPaired && dur   && <span>{isPurelyPlanned ? dur : `Plan: ${dur}`}</span>}
                 {pw.targetTss > 0   && <span>{pw.targetTss} TSS</span>}
               </div>
             </div>
@@ -344,7 +405,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
                   </svg>
                 </span>
               )}
-              {!isPaired && !isMissed && (
+              {isPurelyPlanned && (
                 <span style={{
                   fontSize: 9.5, fontWeight: 700,
                   padding: '2px 7px', borderRadius: 9999,
@@ -477,6 +538,7 @@ export default function NativeDashboardPage({
   // and applies `scroll-snap-type: y proximity`. Restores on unmount so the
   // setting doesn't leak to other pages.
   const pageRef = useRef(null);
+  const scrollContainerRef = useRef(null); // kept so the tab-reclicked handler can reach it
   useEffect(() => {
     const el = pageRef.current;
     if (!el) return;
@@ -488,6 +550,7 @@ export default function NativeDashboardPage({
       node = node.parentElement;
     }
     if (!node || node === document.body) return;
+    scrollContainerRef.current = node;
     const prev = {
       snapType:    node.style.scrollSnapType,
       padding:     node.style.scrollPaddingTop,
@@ -502,7 +565,21 @@ export default function NativeDashboardPage({
       node.style.scrollSnapType    = prev.snapType    || '';
       node.style.scrollPaddingTop  = prev.padding     || '';
       node.style.scrollBehavior    = prev.behavior    || '';
+      scrollContainerRef.current   = null;
     };
+  }, []);
+
+  // ── Tap home tab while already on home → scroll back to top ───────────────
+  useEffect(() => {
+    const onReclicked = (e) => {
+      if (e.detail?.key !== 'dashboard') return;
+      const node = scrollContainerRef.current;
+      if (node) {
+        node.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('nl-tab-reclicked', onReclicked);
+    return () => window.removeEventListener('nl-tab-reclicked', onReclicked);
   }, []);
 
   // Snap style applied to each card so it stops at viewport top

@@ -29,7 +29,7 @@
 import React, {
   createContext, useContext, useState, useEffect, useRef, useCallback, useMemo,
 } from 'react';
-import useBluetoothTrainer from '../hooks/useBluetoothTrainer';
+import { useTrainer } from '../trainer/react/useTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import useBluetoothCoreTemp from '../hooks/useBluetoothCoreTemp';
 import useWakeLock from '../hooks/useWakeLock';
@@ -58,9 +58,12 @@ function resolveTargetWatts(target, ctx = {}) {
   if (target.type === 'lt1')         return Math.round(lt1Power || ftp * 0.75);
   if (target.type === 'lt2')         return Math.round(lt2Power || ftp);
   if (target.type === 'zone') {
-    const zoneIdx = Math.max(0, Math.min(4, (target.value || 1) - 1));
-    const zonePcts = [0.55, 0.68, 0.83, 0.97, 1.10];
-    return Math.round(ftp * zonePcts[zoneIdx]);
+    // Must match WorkoutBuilder.resolveTargetWatts so execution watts = planned watts.
+    // Z1=lt1×0.8  Z2=lt1  Z3=lt2×0.95  Z4=lt2  Z5=lt2×1.1
+    const z   = Math.max(1, Math.min(5, target.value || 1));
+    const lt2 = lt2Power || ftp;
+    const lt1 = lt1Power || ftp * 0.75;
+    return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
   }
   return null;
 }
@@ -130,7 +133,104 @@ export function WorkoutSessionProvider({ children }) {
   // ── BLE hooks live HERE so notifications keep arriving while the user is
   //    on other routes. Disconnect only happens via endSession() / explicit
   //    user tap in the settings sheet. ───────────────────────────────────
-  const trainer = useBluetoothTrainer();
+  //
+  // useTrainer is the same robust adapter stack used by LactateTestingPage:
+  //   • Rich state machine (disconnected → scanning → connecting → ready →
+  //     controlled → erg_active)
+  //   • Auto requestControl before the first ERG write
+  //   • Debounced setErgWatts with retry on control loss
+  //   • Works on Web Bluetooth (desktop Chrome) and Capacitor native (iOS/Android)
+  //
+  // A thin compatibility shim below maps useTrainer's interface to the shape
+  // that every downstream consumer (WorkoutSettingsSheet, ERG effects, sample
+  // accumulator) already expects — so nothing else in this file needs changing.
+  const trainerHook = useTrainer();
+
+  // ── useTrainer → useBluetoothTrainer compatibility shim ──────────────
+  const trainerConnected = ['ready', 'controlled', 'erg_active'].includes(trainerHook.status);
+  const trainer = useMemo(() => ({
+    // ── Status ────────────────────────────────────────────────────────
+    // Map the rich useTrainer states to the binary connected/connecting/…
+    // that downstream effects check.
+    status: trainerConnected ? 'connected'
+      : trainerHook.status === 'scanning' || trainerHook.status === 'connecting' ? 'connecting'
+      : trainerHook.status === 'error' ? 'error'
+      : 'disconnected',
+
+    // ── Device info ───────────────────────────────────────────────────
+    deviceName: trainerHook.connectedDevice?.name ?? null,
+
+    // ── Live sensor data ──────────────────────────────────────────────
+    data: {
+      power:     trainerHook.telemetry?.power   ?? null,
+      cadence:   trainerHook.telemetry?.cadence ?? null,
+      speed:     trainerHook.telemetry?.speed   ?? null,
+      heartRate: trainerHook.telemetry?.hr      ?? null,
+    },
+
+    // ── ERG capability ────────────────────────────────────────────────
+    // useTrainer.capabilities.erg is true when the adapter confirmed the
+    // FTMS Control Point is writable (same signal as useBluetoothTrainer's
+    // protocol === 'ftms').
+    protocol: trainerConnected
+      ? (trainerHook.capabilities?.erg ? 'ftms' : 'cps-readonly')
+      : null,
+    ergCapable: trainerHook.capabilities?.erg === true,
+
+    // ── Actions ───────────────────────────────────────────────────────
+    // connect() — opens the native Bluetooth picker, scans for FTMS / CPS
+    // devices, and auto-connects to the one the user selects.  requestControl
+    // + start are handled by setErgWatts the first time it fires, so we don't
+    // need to call them explicitly here.
+    connect: async () => {
+      try {
+        const found = await trainerHook.scan();
+        if (!found || found.length === 0) return false;
+        await trainerHook.connect(found[0].id);
+        // Request control so the trainer is ready for ERG writes immediately.
+        if (trainerHook.requestControl) {
+          try { await trainerHook.requestControl(); } catch (_) { /* non-fatal */ }
+        }
+        return true;
+      } catch (e) {
+        console.warn('[trainer/shim] connect error:', e?.message || e);
+        return false;
+      }
+    },
+    disconnect: trainerHook.disconnect,
+
+    // setPower(w) — delegates to setErgWatts which auto-requests control if
+    // needed and debounces rapid calls (e.g. step-change + bias change
+    // arriving in the same tick).  Returns a Promise<true> to match the
+    // useBluetoothTrainer.setPower(w) → Promise<bool> contract.
+    setPower: async (w) => {
+      try {
+        await trainerHook.setErgWatts(w);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    error: trainerHook.error,
+
+    // Expose raw hook so WorkoutSettingsSheet can open TrainerConnectModal
+    // for a richer connection UX (device list, ERG test button, etc.).
+    _hook: trainerHook,
+  }), [ // eslint-disable-line react-hooks/exhaustive-deps
+    trainerConnected,
+    trainerHook.status,
+    trainerHook.connectedDevice,
+    trainerHook.telemetry,
+    trainerHook.capabilities,
+    trainerHook.scan,
+    trainerHook.connect,
+    trainerHook.requestControl,
+    trainerHook.disconnect,
+    trainerHook.setErgWatts,
+    trainerHook.error,
+  ]);
+
   const hrStrap = useBluetoothHeartRate();
   const coreTemp = useBluetoothCoreTemp();
 
@@ -255,7 +355,20 @@ export function WorkoutSessionProvider({ children }) {
       }
       return;
     }
-    if (effectiveErgWatts == null) return;
+
+    // Step has no power target (warmup, cool-down, free-ride, rest) —
+    // release the trainer from its previous ERG hold so resistance drops.
+    // Only send the 0 W if we previously held a non-zero target (avoids
+    // a redundant write when two consecutive free steps follow each other).
+    if (effectiveErgWatts == null) {
+      if (ergSentRef.current != null && ergSentRef.current !== 0 && ergSentRef.current !== 'cps-noop') {
+        console.log('[ERG] no power target for this step — releasing trainer with setPower(0)');
+        ergSentRef.current = 0;
+        trainer.setPower(0).catch(() => {});
+      }
+      return;
+    }
+
     if (ergSentRef.current === effectiveErgWatts) return;
     ergSentRef.current = effectiveErgWatts;
     console.log(`[ERG] setPower(${effectiveErgWatts}) — bias ${Math.round(ergBias * 100)} %`);

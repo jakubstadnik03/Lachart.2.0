@@ -14,10 +14,11 @@
  * scrolls inside a fixed-height sheet so the close button stays
  * reachable even with a tall device list.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
+import { TrainerConnectModal } from '../../trainer/react/TrainerConnectModal';
 
 function DevicePill({ label, sublabel, color, connected, connecting, onConnect, onDisconnect, icon }) {
   return (
@@ -74,7 +75,7 @@ function DevicePill({ label, sublabel, color, connected, connecting, onConnect, 
 export default function WorkoutSettingsSheet({
   open,
   onClose,
-  // Device hooks (each provides { status, deviceName, connect, disconnect, data, error })
+  // Device hooks (each provides { status, deviceName, connect, disconnect, data, error, _hook })
   trainer,
   hrStrap,
   coreTemp,
@@ -104,7 +105,16 @@ export default function WorkoutSettingsSheet({
   autoPauseEnabled,
   setAutoPauseEnabled,
 }) {
+  const [showTrainerModal, setShowTrainerModal] = useState(false);
+
   return (
+    <>
+    {/* TrainerConnectModal — same UI as LactateTestingPage */}
+    <TrainerConnectModal
+      isOpen={showTrainerModal}
+      onClose={() => setShowTrainerModal(false)}
+      trainer={trainer._hook}
+    />
     <AnimatePresence>
       {open && (
         <motion.div
@@ -154,12 +164,20 @@ export default function WorkoutSettingsSheet({
               <div className="space-y-2.5">
                 <DevicePill
                   label={trainer.status === 'connected' ? (trainer.deviceName || 'Smart Trainer') : 'Smart Trainer'}
-                  sublabel="FTMS · power, cadence, ERG"
+                  sublabel={
+                    trainer.status === 'connected'
+                      ? trainer.protocol === 'cps-readonly'
+                        ? 'CPS · power only — no ERG'
+                        : trainer.protocol === 'ftms'
+                          ? 'FTMS · power, cadence, ERG'
+                          : 'Connecting…'
+                      : 'FTMS · power, cadence, ERG'
+                  }
                   color="#a78bfa"
                   icon={<BoltSolid className="w-5 h-5" />}
                   connected={trainer.status === 'connected'}
                   connecting={trainer.status === 'connecting'}
-                  onConnect={trainer.connect}
+                  onConnect={() => setShowTrainerModal(true)}
                   onDisconnect={trainer.disconnect}
                 />
                 <DevicePill
@@ -402,5 +420,6 @@ export default function WorkoutSettingsSheet({
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 }
