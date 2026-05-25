@@ -515,12 +515,12 @@ export default function About() {
             <div className="lc-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
               {/* Left column */}
               <div ref={pushRef} className="lc-reveal">
-                <Eyebrow>Lactate testing · Made simple</Eyebrow>
+                <Eyebrow>Blood lactate testing · Made simple</Eyebrow>
                 <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>
-                  Train smarter<br />with <em>lactate data</em>
+                  Lactate Threshold<br /><em>Calculator & Testing App</em>
                 </h1>
-                <p className="lc-lead" style={{ margin: '0 0 24px' }}>
-                  LaChart generates lactate curves, calculates LT1 &amp; LT2, builds training zones, and tracks performance — one platform for athletes and coaches.
+                <p className="lc-lead hero-description" style={{ margin: '0 0 24px' }}>
+                  LaChart calculates LT1 &amp; LT2 thresholds from blood lactate test data, builds training zones, and tracks performance over time — one platform for athletes and coaches.
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
                   {[['LT1 / LT2', LC.primary], ['Zones', LC.secondary], ['PDF Report', LC.accent], ['Progress', LC.green]].map(([label, color]) => (
@@ -588,8 +588,8 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 50px' }}>
               <Eyebrow>For whom</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Built for every athlete <em>and every coach</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>From the first home test to a full coaching workspace — LaChart fits the way you train.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Lactate testing for <em>cyclists, runners &amp; triathletes</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>From the first home lactate test to a full coaching workspace — LaChart fits the way you train.</p>
             </div>
             <div className="lc-aud-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18 }}>
               {[
@@ -617,8 +617,8 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
               <Eyebrow>Three workspaces · one app</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>A view <em>built for your role</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart adapts to how you use it — train yourself, coach a team, or run lactate tests for clients. Same data, three completely different shells.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Athlete, coach <em>&amp; tester workspace</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart adapts to how you use it — train yourself, manage athlete lactate tests, or run tests for clients. Same data, three completely different shells.</p>
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 30, flexWrap: 'wrap' }}>
               {ROLES.map(r => (
@@ -673,8 +673,8 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
               <Eyebrow>Platform features</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>The complete <em>training ecosystem</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>Everything for lactate-based performance — testing, analysis, tracking, and coaching in one place.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Lactate testing, <em>threshold analysis &amp; zone builder</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>Everything for lactate-based training — blood lactate curve generation, LT1/LT2 detection, zone builder, FIT upload, and coaching tools in one place.</p>
             </div>
             <div ref={pushRef} className="lc-reveal d1" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 30 }}>
               {['All','Testing','Analysis','Training','Progress','Integration','Tools'].map(cat => (
@@ -750,8 +750,8 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
               <Eyebrow>The science</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Four threshold methods. <em>You pick the one your sport uses</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart calculates LT1 and LT2 with the four most-cited methods in exercise science — use them side by side or stick to your federation's standard.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>LT1, LT2, OBLA &amp; D-max — <em>four lactate threshold methods</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart calculates lactate thresholds using OBLA, D-max, IAT and Log-log — the four most-cited methods in exercise science. Use them side by side or stick to your federation's standard.</p>
             </div>
             <div className="lc-meth-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
               {METHODS.map((m, i) => (
@@ -784,11 +784,11 @@ export default function About() {
                 Learn
               </span>
               <h2 style={{ fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 800, color: LC.text, margin: '0 0 12px', letterSpacing: '-0.02em' }}>
-                The science, explained
+                Blood lactate testing — the science explained
               </h2>
               <p style={{ fontSize: 16, color: LC.muted, lineHeight: 1.6 }}>
-                Long-form guides on lactate testing, threshold detection methods,
-                and what your curve actually means for training.
+                Long-form guides on blood lactate testing protocols, threshold detection methods (LT1, LT2, OBLA, D-max),
+                and what your lactate curve actually means for training zones.
               </p>
             </div>
             <div
@@ -897,8 +897,8 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 40px' }}>
               <Eyebrow>Integrations</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Sync, link <em>and connect</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>Connect Strava. Upload FIT files. Manual entry for trainer sessions. Every workout flows into one platform.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Strava &amp; Garmin integration <em>for lactate tracking</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>Connect Strava, upload Garmin/Wahoo FIT files, or enter data manually. Every workout and lactate value flows into one platform.</p>
             </div>
             <div className="lc-int-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
@@ -926,7 +926,7 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 40px' }}>
               <Eyebrow>Used by</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Athletes and coaches <em>across three sports</em></h2>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Lactate testing used by <em>cyclists, runners &amp; triathletes</em></h2>
             </div>
             <div className="lc-voices-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
               {VOICES.map((v, i) => (
@@ -1019,7 +1019,7 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
               <Eyebrow>Pricing</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Currently completely <em>free</em></h2>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Free lactate threshold calculator — <em>no sign-up needed</em></h2>
               <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart is in <b style={{ color: LC.text }}>early access</b> — every feature is free while we build and improve. Paid plans are planned for the future.</p>
             </div>
             <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 24, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
@@ -1046,8 +1046,8 @@ export default function About() {
           <div className="lc-sectpad" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 60 }}>
             <div ref={pushRef} className="lc-reveal left">
               <Eyebrow>FAQ</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Common <em>questions</em></h2>
-              <p className="lc-lead" style={{ margin: 0 }}>Everything you need to know about lactate testing and LaChart. Can't find it? <a href="mailto:support@lachart.net" style={{ color: LC.primaryDark, fontWeight: 600 }}>Email us</a>.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Lactate testing — <em>common questions</em></h2>
+              <p className="lc-lead" style={{ margin: 0 }}>Everything you need to know about blood lactate testing, LT1/LT2 thresholds, and LaChart. Can't find it? <a href="mailto:support@lachart.net" style={{ color: LC.primaryDark, fontWeight: 600 }}>Email us</a>.</p>
             </div>
             <div ref={pushRef} className="lc-reveal right" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {FAQ.map(item => (
@@ -1072,8 +1072,8 @@ export default function About() {
               background: `linear-gradient(135deg, ${LC.primary}, ${LC.secondary})`,
               color: '#fff',
             }}>
-              <h2 className="lc-big" style={{ color: '#fff', margin: '0 0 14px' }}>Start your first lactate test today</h2>
-              <p style={{ fontSize: 17, opacity: 0.92, maxWidth: 580, margin: '0 auto 22px' }}>No credit card. No downloads. Just enter your test values and see your curve in seconds.</p>
+              <h2 className="lc-big" style={{ color: '#fff', margin: '0 0 14px' }}>Run your first blood lactate test — it's free</h2>
+              <p style={{ fontSize: 17, opacity: 0.92, maxWidth: 580, margin: '0 auto 22px' }}>No credit card. No downloads. Enter your lactate test values and see your LT1 &amp; LT2 thresholds in seconds.</p>
               <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <Link to="/signup" onClick={() => track('cta_start_free')} style={{ padding: '14px 28px', borderRadius: 12, background: '#fff', color: LC.primaryDark, textDecoration: 'none', fontSize: 15, fontWeight: 700, boxShadow: '0 8px 24px -6px rgba(0,0,0,.25)' }}>
                   Start free
