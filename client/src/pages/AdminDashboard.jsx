@@ -73,6 +73,13 @@ const AdminDashboard = () => {
   const [bulkStarting, setBulkStarting] = useState(false);
   const [bulkCampaignError, setBulkCampaignError] = useState('');
 
+  // ── Leads table state ────────────────────────────────────────────────────────
+  const [leadsSearch, setLeadsSearch] = useState('');
+  const [leadsTypeFilter, setLeadsTypeFilter] = useState('');
+  const [leadsShowContacted, setLeadsShowContacted] = useState(false);
+  const [leadsPreviewingId, setLeadsPreviewingId] = useState(null); // leadId being previewed
+  const [leadsSendingId, setLeadsSendingId] = useState(null);       // leadId being sent to
+
   // ── Retention email preview ──────────────────────────────────────────────────
   const [retentionSearch,    setRetentionSearch]    = useState('');
   const [retentionEmailType, setRetentionEmailType] = useState('weekly');
@@ -955,6 +962,52 @@ const AdminDashboard = () => {
       setBulkCampaignsLoading(false);
     }
   };
+
+  // ── Preview email to yourself for a specific lead ───────────────────────────
+  const handleLeadPreview = async (lead) => {
+    setLeadsPreviewingId(lead._id);
+    try {
+      await sendCoachOutreachEmail({ name: lead.name, email: lead.email, preview: true });
+      addNotification('Preview sent to your email!', 'success');
+    } catch (err) {
+      addNotification(err?.response?.data?.error || 'Preview failed', 'error');
+    } finally {
+      setLeadsPreviewingId(null);
+    }
+  };
+
+  const handleLeadSend = async (lead) => {
+    if (!window.confirm(`Send outreach email to ${lead.name} (${lead.email})?`)) return;
+    setLeadsSendingId(lead._id);
+    try {
+      await sendCoachOutreachEmail({ name: lead.name, email: lead.email });
+      addNotification(`Email sent to ${lead.email}`, 'success');
+      // Refresh leads list to update sentCount
+      const fresh = await getCoachOutreachLeads();
+      setOutreachLeads(Array.isArray(fresh) ? fresh : []);
+    } catch (err) {
+      addNotification(err?.response?.data?.error || 'Send failed', 'error');
+    } finally {
+      setLeadsSendingId(null);
+    }
+  };
+
+  // Filtered + searched leads table (DB leads only)
+  const filteredLeads = useMemo(() => {
+    let list = outreachLeads.filter(l => l.source === 'csv' || l.city || l.country || l.type);
+    if (!leadsShowContacted) list = list.filter(l => !l.sentCount || l.sentCount === 0);
+    if (leadsTypeFilter) list = list.filter(l => l.type === leadsTypeFilter);
+    if (leadsSearch) {
+      const q = leadsSearch.toLowerCase();
+      list = list.filter(l =>
+        (l.name || '').toLowerCase().includes(q) ||
+        (l.email || '').toLowerCase().includes(q) ||
+        (l.city || '').toLowerCase().includes(q) ||
+        (l.country || '').toLowerCase().includes(q)
+      );
+    }
+    return list.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  }, [outreachLeads, leadsSearch, leadsTypeFilter, leadsShowContacted]);
 
   const CLUB_TYPES = [
     'triathlon club', 'cycling club', 'running club', 'swimming club',
@@ -2885,7 +2938,137 @@ const AdminDashboard = () => {
               )}
             </div>
 
-            {/* ── Section B: Bulk Campaign ─────────────────────────────────── */}
+            {/* ── Section B: Leads Table ───────────────────────────────────── */}
+            <div className="bg-white rounded-xl shadow p-4 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    Leads ({filteredLeads.length}{leadsShowContacted ? '' : ' not contacted'})
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {outreachLeads.filter(l => l.sentCount > 0).length} contacted · {outreachLeads.filter(l => l.source === 'csv' || l.city).length} total imported
+                  </p>
+                </div>
+                <button
+                  onClick={async () => { setOutreachLeadsLoading(true); try { const l = await getCoachOutreachLeads(); setOutreachLeads(Array.isArray(l) ? l : []); } finally { setOutreachLeadsLoading(false); } }}
+                  className="text-xs text-primary hover:underline"
+                >{outreachLeadsLoading ? 'Loading…' : '↻ Refresh'}</button>
+              </div>
+
+              {/* Filters row */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <input
+                  type="text"
+                  placeholder="Search name / email / city…"
+                  value={leadsSearch}
+                  onChange={e => setLeadsSearch(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-52"
+                />
+                <select
+                  value={leadsTypeFilter}
+                  onChange={e => setLeadsTypeFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">All types</option>
+                  {CLUB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={leadsShowContacted}
+                    onChange={e => setLeadsShowContacted(e.target.checked)}
+                    className="rounded border-gray-300 text-primary"
+                  />
+                  Show already contacted
+                </label>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-auto rounded-xl border border-gray-200" style={{ maxHeight: 480 }}>
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Type</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Location</th>
+                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Sent</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {outreachLeadsLoading ? (
+                      <tr><td colSpan={6} className="text-center py-8 text-gray-400 text-sm">Loading…</td></tr>
+                    ) : filteredLeads.length === 0 ? (
+                      <tr><td colSpan={6} className="text-center py-8 text-gray-400 text-sm">No leads match your filters.</td></tr>
+                    ) : filteredLeads.map(lead => {
+                      const contacted = lead.sentCount > 0;
+                      const isPreviewing = leadsPreviewingId === lead._id;
+                      const isSending = leadsSendingId === lead._id;
+                      return (
+                        <tr key={lead._id} className={`hover:bg-gray-50 transition-colors ${contacted ? 'opacity-60' : ''}`}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-gray-900 max-w-[160px] truncate" title={lead.name}>{lead.name || '—'}</div>
+                            {lead.priority > 0 && (
+                              <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 ${
+                                lead.priority >= 95 ? 'bg-green-100 text-green-700' :
+                                lead.priority >= 80 ? 'bg-blue-100 text-blue-700' :
+                                'bg-gray-100 text-gray-500'
+                              }`}>P{lead.priority}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <a href={`mailto:${lead.email}`} className="text-primary hover:underline text-xs">{lead.email}</a>
+                          </td>
+                          <td className="px-3 py-2 hidden md:table-cell">
+                            <span className="text-xs text-gray-600 capitalize">{lead.type || '—'}</span>
+                          </td>
+                          <td className="px-3 py-2 hidden lg:table-cell">
+                            <span className="text-xs text-gray-500">{[lead.city, lead.country].filter(Boolean).join(', ') || '—'}</span>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {contacted ? (
+                              <span className="inline-flex flex-col items-center gap-0.5">
+                                <span className="inline-block w-2 h-2 rounded-full bg-green-400" title={`Sent ${lead.sentCount}×`} />
+                                <span className="text-[10px] text-gray-400">{lead.sentCount}×</span>
+                              </span>
+                            ) : (
+                              <span className="inline-block w-2 h-2 rounded-full bg-gray-200" title="Not contacted" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleLeadPreview(lead)}
+                                disabled={isPreviewing || isSending}
+                                title="Send preview to yourself"
+                                className="px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40 whitespace-nowrap"
+                              >
+                                {isPreviewing ? '…' : '👁 Preview'}
+                              </button>
+                              <button
+                                onClick={() => handleLeadSend(lead)}
+                                disabled={isSending || isPreviewing}
+                                title={contacted ? 'Send follow-up' : 'Send email'}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 whitespace-nowrap ${
+                                  contacted
+                                    ? 'border border-gray-300 text-gray-500 hover:bg-gray-50'
+                                    : 'bg-primary text-white hover:bg-primary-dark'
+                                }`}
+                              >
+                                {isSending ? '…' : contacted ? '↩ Follow-up' : '✉ Send'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ── Section C: Bulk Campaign ─────────────────────────────────── */}
             <div className="bg-white rounded-xl shadow p-4 sm:p-6 space-y-5">
               <div>
                 <h3 className="text-base font-semibold text-gray-900">Bulk Outreach Campaign</h3>

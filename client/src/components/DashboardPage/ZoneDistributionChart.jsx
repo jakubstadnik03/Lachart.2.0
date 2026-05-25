@@ -9,11 +9,26 @@ import { useAuth } from '../../context/AuthProvider';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PERIODS = [
-  { label: '1m', months: 1 },
-  { label: '3m', months: 3 },
-  { label: '6m', months: 6 },
-  { label: '12m', months: 12 },
+  { label: 'Wk',      week: 0  },   // this week (Mon–Sun)
+  { label: 'Last wk', week: -1 },   // previous week
+  { label: '1m',      months: 1  },
+  { label: '3m',      months: 3  },
+  { label: '6m',      months: 6  },
+  { label: '12m',     months: 12 },
 ];
+
+/** Returns { startDate, endDate } for week offset 0 (this week) or -1 (last week). */
+function weekBounds(offset = 0) {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { startDate: monday, endDate: sunday };
+}
 
 const ZONES = [
   { zone: 1, label: 'Z1', name: 'Recovery',  color: '#60A5FA' },
@@ -156,11 +171,15 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const [metric, setMetric]           = useState('power'); // 'power' | 'hr' | 'pace'
   const [expandedZone, setExpandedZone] = useState(null); // zone number | null
   const [loadedMonths, setLoadedMonths] = useState(new Map());
+  const [weekData, setWeekData]       = useState({}); // keyed 'Wk' | 'Last wk'
   const [loading, setLoading]         = useState(false);
   const [tooltip, setTooltip]         = useState(null);
 
   // Ref to track what's been fetched — avoids re-fetching mid-render cycles
-  const loadedRef = useRef(new Map());
+  const loadedRef  = useRef(new Map());
+  const weekLoaded = useRef(new Set()); // tracks fetched week keys
+
+  const isWeekPeriod = PERIODS.find(p => p.label === period)?.week != null;
 
   // ── Athlete ID ─────────────────────────────────────────────────────────────
   const athleteId = user?.role === 'athlete'
@@ -171,8 +190,10 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // Reset cache when athleteId changes
   useEffect(() => {
-    loadedRef.current = new Map();
+    loadedRef.current  = new Map();
+    weekLoaded.current = new Set();
     setLoadedMonths(new Map());
+    setWeekData({});
   }, [athleteId]);
 
   // ── Month keys for the selected period ────────────────────────────────────
@@ -222,11 +243,31 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // Load all months needed for the current period
   useEffect(() => {
+    if (isWeekPeriod) return; // weeks handled separately below
     const missing = monthKeys.filter(k => !loadedRef.current.has(k));
     if (!missing.length) return;
     setLoading(true);
     Promise.all(missing.map(k => loadMonth(k))).finally(() => setLoading(false));
-  }, [monthKeys, loadMonth]);
+  }, [monthKeys, loadMonth, isWeekPeriod]);
+
+  // ── Load week data when a week period is selected ─────────────────────────
+  useEffect(() => {
+    if (!isWeekPeriod) return;
+    if (weekLoaded.current.has(period)) return;
+    const periodDef = PERIODS.find(p => p.label === period);
+    const { startDate, endDate } = weekBounds(periodDef.week);
+    setLoading(true);
+    getMonthlyPowerAnalysis(athleteId, null, { startDate, endDate })
+      .then(raw => {
+        weekLoaded.current.add(period);
+        const entries = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+        setWeekData(prev => ({ ...prev, [period]: entries }));
+      })
+      .catch(() => {
+        setWeekData(prev => ({ ...prev, [period]: [] }));
+      })
+      .finally(() => setLoading(false));
+  }, [period, isWeekPeriod, athleteId]);
 
   // ── Invalidate current month on training events ───────────────────────────
   useEffect(() => {
@@ -249,8 +290,10 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const periodMonths = useMemo(
-    () => monthKeys.map(k => loadedMonths.get(k)).filter(Boolean),
-    [monthKeys, loadedMonths]
+    () => isWeekPeriod
+      ? (weekData[period] || [])
+      : monthKeys.map(k => loadedMonths.get(k)).filter(Boolean),
+    [isWeekPeriod, weekData, period, monthKeys, loadedMonths]
   );
 
   const hasBike = periodMonths.some(m => Number(m.bikeTime) > 0 || m.zones || Number(m.bikeTrainings) > 0);
@@ -366,7 +409,9 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const aerobicPct = (zonePcts[1] || 0) + (zonePcts[2] || 0);
   const highIntPct = (zonePcts[4] || 0) + (zonePcts[5] || 0);
   const distLabel  = hasData ? getDistLabel(zonePcts) : null;
-  const allLoaded  = monthKeys.every(k => loadedRef.current.get(k) === 'done');
+  const allLoaded  = isWeekPeriod
+    ? weekLoaded.current.has(period)
+    : monthKeys.every(k => loadedRef.current.get(k) === 'done');
 
   // ── Zone boundary range string ─────────────────────────────────────────────
   const getZoneRange = (zoneNum) => {

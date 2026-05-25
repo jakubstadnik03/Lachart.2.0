@@ -1970,8 +1970,16 @@ function CompareContent({ merged, athleteId, onOpen }) {
   );
 }
 
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null, onDeleted = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null }) {
   const a = activity;
+
+  // Read highlightMetric + radarWatts from props (passed by SpiderChart navigation) or URL params
+  const _urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const highlightMetric = highlightMetricProp || _urlParams.get('highlightMetric') || null;
+  const radarWatts = radarWattsProp != null ? radarWattsProp : (Number(_urlParams.get('radarWatts')) || null);
+  const [highlightCleared, setHighlightCleared] = useState(false);
+  const activeHighlight = highlightCleared ? null : highlightMetric;
+  const activeRadarWatts = highlightCleared ? null : radarWatts;
 
   // Full detail loaded async (for laps)
   const [detail, setDetail] = useState(null);
@@ -2908,12 +2916,38 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     </button>
                   )}
                 </div>
+                {activeHighlight && (
+                  <div className="mb-2 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-1.5 text-xs text-indigo-800">
+                    <span>
+                      <span className="font-semibold">Power Radar highlight</span>
+                      {activeRadarWatts > 0 && (
+                        <span className="ml-1.5">
+                          — Best {activeHighlight === 'sprint5s' ? '5s' : activeHighlight === 'attack1min' ? '1min' : activeHighlight === 'vo2max5min' ? '5min' : activeHighlight === 'threshold20min' ? '20min' : '60min'}: <span className="font-bold">{activeRadarWatts} W</span>
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setHighlightCleared(true);
+                        const url = new URL(window.location);
+                        url.searchParams.delete('highlightMetric');
+                        url.searchParams.delete('radarWatts');
+                        window.history.replaceState({}, '', url.toString());
+                      }}
+                      className="ml-3 text-[10px] font-medium text-indigo-600 hover:text-indigo-900 underline underline-offset-2"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
                 <TrainingChart
                   training={chartTraining}
                   user={null}
                   userProfile={null}
                   onHover={() => {}}
                   onLeave={() => {}}
+                  highlightMetric={activeHighlight}
+                  radarWatts={activeRadarWatts}
                 />
               </div>
             ) : laps.length > 0 ? (

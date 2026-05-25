@@ -817,8 +817,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [savingLtOverride, setSavingLtOverride] = useState(false);
   const [ltOverrideStatus, setLtOverrideStatus] = useState(null); // {type:'success'|'error', msg}
   const [preTestSummaryData, setPreTestSummaryData] = useState(null); // populated by PreTestTrainingSummary callback
-  const [showPreTest, setShowPreTest] = useState(true);   // collapse Pre-test training panel
-  const [showCoach, setShowCoach]     = useState(true);   // collapse Test coach panel
+  const [showPreTest, setShowPreTest] = useState(false);  // collapsed by default
+  const [showCoach, setShowCoach]     = useState(false);  // collapsed by default
   const [showDataTable, setShowDataTable] = useState(window.innerWidth >= 768); // Hidden by default on mobile
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
