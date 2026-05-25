@@ -40,7 +40,9 @@
     <!-- Additional SEO Meta Tags -->
     <meta name="robots" content="index, follow" />
     <meta name="author" content="Jakub Stádník" />
-    <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate testing, LT1, LT2, OBLA, IAT, endurance training, sports analytics, performance analysis" />
+    <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, blood lactate testing, LT1, LT2, OBLA, IAT, endurance training, sports analytics, performance analysis, lactate threshold test, training zones calculator" />
+    <meta name="description" content="LaChart – professional blood lactate testing app for athletes and coaches. Calculate LT1 &amp; LT2 thresholds, build training zones, and export PDF reports. Free calculator included." />
+    <link rel="canonical" href="https://lachart.net/" />
     
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-HNHPQH30BL"></script>
@@ -51,10 +53,62 @@
       gtag('config', 'G-HNHPQH30BL');
     </script>
     
-    <meta
-      name="description"
-      content="LaChart - Your training management system"
-    />
+    <!-- JSON-LD: WebSite + Organization (fallback before React hydrates) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://lachart.net/#website",
+          "url": "https://lachart.net/",
+          "name": "LaChart",
+          "description": "Professional blood lactate testing and threshold analysis for athletes and coaches.",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://lachart.net/lactate-curve-calculator",
+            "query-input": "required name=search_term_string"
+          },
+          "inLanguage": "en"
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://lachart.net/#organization",
+          "name": "LaChart",
+          "url": "https://lachart.net/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://lachart.net/images/LaChart.png",
+            "width": 512,
+            "height": 512
+          },
+          "sameAs": []
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://lachart.net/#webapp",
+          "name": "LaChart – Lactate Threshold Calculator",
+          "url": "https://lachart.net/lactate-curve-calculator",
+          "applicationCategory": "SportsApplication",
+          "operatingSystem": "Web",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "description": "Calculate lactate thresholds (LT1, LT2, OBLA, IAT, D-max) from blood lactate test data. Free online tool for athletes and coaches.",
+          "featureList": [
+            "LT1 and LT2 threshold detection",
+            "OBLA, IAT, D-max, Log-log methods",
+            "Training zone builder",
+            "PDF report export",
+            "Strava integration",
+            "FIT file upload"
+          ]
+        }
+      ]
+    }
+    </script>
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

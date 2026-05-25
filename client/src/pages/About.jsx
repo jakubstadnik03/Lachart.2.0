@@ -354,11 +354,91 @@ export default function About() {
   return (
     <>
       <Helmet>
-        <title>Lactate Testing App, Lactate Threshold Calculator & PDF Reports | LaChart</title>
-        <meta name="description" content="LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2 thresholds, build training zones, and download professional PDF reports." />
+        <title>Blood Lactate Testing App & Threshold Calculator | LaChart</title>
+        <meta name="description" content="LaChart is a professional blood lactate testing app for athletes and coaches. Calculate LT1 &amp; LT2 thresholds, build training zones, and export PDF reports. Free calculator — no sign-up needed." />
+        <meta name="keywords" content="lactate testing app, lactate threshold calculator, blood lactate test, LT1 LT2, OBLA, IAT, D-max, training zones, endurance training, sports performance" />
         <meta name="theme-color" content="#767EB5" />
-        <meta property="og:title" content="LaChart — Lactate Testing App & Threshold Calculator" />
-        <meta property="og:description" content="Generate lactate curves, calculate LT1/LT2, build training zones, and export professional PDF reports." />
+        <link rel="canonical" href="https://lachart.net/" />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://lachart.net/" />
+        <meta property="og:title" content="Blood Lactate Testing App & Threshold Calculator | LaChart" />
+        <meta property="og:description" content="Professional lactate testing for athletes and coaches. Calculate LT1/LT2, build training zones, and export PDF reports. Free online calculator included." />
+        <meta property="og:image" content="https://lachart.net/images/lachart-og.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:site_name" content="LaChart" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Blood Lactate Testing App & Threshold Calculator | LaChart" />
+        <meta name="twitter:description" content="Professional lactate testing for athletes and coaches. Calculate LT1/LT2, build training zones, and export PDF reports." />
+        <meta name="twitter:image" content="https://lachart.net/images/lachart-og.png" />
+        <script type="application/ld+json">{`
+          {
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": "https://lachart.net/#webpage",
+            "url": "https://lachart.net/",
+            "name": "Blood Lactate Testing App & Threshold Calculator | LaChart",
+            "description": "Professional blood lactate testing app for athletes and coaches. Calculate LT1 & LT2 thresholds, build training zones, and export PDF reports.",
+            "isPartOf": { "@id": "https://lachart.net/#website" },
+            "about": { "@id": "https://lachart.net/#webapp" },
+            "inLanguage": "en",
+            "speakable": {
+              "@type": "SpeakableSpecification",
+              "cssSelector": ["h1", "h2", ".hero-description"]
+            },
+            "breadcrumb": {
+              "@type": "BreadcrumbList",
+              "itemListElement": [
+                {
+                  "@type": "ListItem",
+                  "position": 1,
+                  "name": "Home",
+                  "item": "https://lachart.net/"
+                }
+              ]
+            }
+          }
+        `}</script>
+        <script type="application/ld+json">{`
+          {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is a lactate threshold?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The lactate threshold (LT) is the exercise intensity at which lactic acid starts to accumulate in the bloodstream faster than it can be cleared. LT1 is the first threshold (aerobic threshold) and LT2 is the second threshold (anaerobic threshold or MLSS). Both are key markers for structuring endurance training zones."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How does LaChart calculate LT1 and LT2?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "LaChart supports multiple lactate threshold detection methods: OBLA (4 mmol/L fixed), D-max (maximum distance from baseline to curve), IAT (Individual Anaerobic Threshold), and Log-log method. Enter your step-test data (power or pace + lactate values) and LaChart instantly calculates and visualizes all thresholds."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is LaChart free to use?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The lactate curve calculator and threshold analysis tool are completely free — no sign-up required. Advanced features like athlete management, training tracking, Strava integration, and PDF reports are available on paid plans."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can coaches use LaChart for multiple athletes?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. LaChart has dedicated coach plans that allow managing multiple athletes, tracking training data over time, importing FIT files from Garmin/Wahoo, syncing with Strava, and generating professional PDF reports for each athlete."
+                }
+              }
+            ]
+          }
+        `}</script>
       </Helmet>
 
       <style>{STYLE}</style>
