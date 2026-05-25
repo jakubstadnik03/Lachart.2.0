@@ -115,12 +115,13 @@ const STYLE = `
   .lc-page { scroll-behavior: smooth; }
   html:has(.lc-page) { scroll-behavior: smooth; }
 
-  /* Reveal: y-translate / x-translate / scale variants, generous stagger. */
+  /* Reveal: y-translate / x-translate / scale variants, generous stagger.
+     Left/right use clip-safe translate so they never cause overflow-x scroll. */
   .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform 1s cubic-bezier(.2,.7,.2,1); will-change: transform, opacity; }
-  .lc-reveal.left  { transform: translate3d(-44px, 0, 0); }
-  .lc-reveal.right { transform: translate3d(44px, 0, 0); }
+  .lc-reveal.left  { transform: translate3d(-28px, 0, 0); }
+  .lc-reveal.right { transform: translate3d(28px, 0, 0); }
   .lc-reveal.scale { transform: scale(.94); }
-  .lc-reveal:not(.left):not(.right):not(.scale) { transform: translate3d(0, 36px, 0); }
+  .lc-reveal:not(.left):not(.right):not(.scale) { transform: translate3d(0, 28px, 0); }
   .lc-reveal.lc-in { opacity: 1; transform: none; }
   .lc-reveal.d1 { transition-delay: .08s; }
   .lc-reveal.d2 { transition-delay: .16s; }
@@ -159,10 +160,11 @@ const STYLE = `
   .lc-big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: ${LC.ink}; }
   .lc-big em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
   .lc-lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: ${LC.muted}; max-width: 580px; }
-  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; }
-  .lc-page section { scroll-margin-top: 80px; }
-  .lc-sectpad { padding: 96px 24px; max-width: 1280px; margin: 0 auto; }
-  @media (max-width: 640px) { .lc-sectpad { padding: 64px 16px; } }
+  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; overflow-x: hidden; }
+  .lc-page section { scroll-margin-top: 80px; overflow-x: hidden; }
+  .lc-sectpad { padding: 80px 24px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 1024px) { .lc-sectpad { padding: 60px 20px; } }
+  @media (max-width: 640px)  { .lc-sectpad { padding: 44px 16px; } }
 
   /* CTAs — buttery hover with elevation lift + brightness bump */
   .lc-btn-primary {
@@ -443,7 +445,7 @@ export default function About() {
 
       <style>{STYLE}</style>
 
-      <div className="lc-page lc-page-in">
+      <div className="lc-page lc-page-in" style={{ overflowX: 'hidden' }}>
         <div className="lc-progress" aria-hidden />
         {/* ── 1. Top banner ────────────────────────────────────────────── */}
         <div style={{
