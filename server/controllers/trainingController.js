@@ -79,25 +79,9 @@ const trainingController = {
                     resourceType: 'training',
                     fromName:     actorName,
                   });
-                } else {
-                  // Athlete created their own training — notify their coach(es)
-                  const athlete = await User.findById(athleteId).select('name surname coachIds').lean();
-                  if (athlete && Array.isArray(athlete.coachIds) && athlete.coachIds.length > 0) {
-                    const athleteName = `${athlete.name || ''} ${athlete.surname || ''}`.trim() || 'Athlete';
-                    await Notification.insertMany(
-                      athlete.coachIds.map(coachId => ({
-                        recipientId:  coachId,
-                        type:         'training_logged',
-                        title:        `${athleteName} logged a new training`,
-                        body:         `${trainingTitle} · ${sportLabel}`,
-                        resourceId,
-                        resourceType: 'training',
-                        fromName:     athleteName,
-                        read:         false,
-                      }))
-                    );
-                  }
                 }
+                // Note: coaches are NOT notified when athlete logs a training —
+                // only lactate additions and comments trigger coach notifications.
               } catch (notifErr) {
                 console.error('[TrainingNotif]', notifErr.message);
               }

@@ -4628,12 +4628,7 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
         body,
         resourceType: 'strava',
       }).catch(() => {});
-      notifyCoachesOfAthlete(String(userId), {
-        type: 'apple_health_sync',
-        title: 'Apple Health sync',
-        body,
-        resourceType: 'strava',
-      }).catch(() => {});
+      // Coaches are not notified on Apple Health sync — only lactate/comments trigger coach notifications.
     }
 
     res.json({ imported, total: workouts.length });

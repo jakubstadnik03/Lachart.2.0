@@ -378,14 +378,7 @@ async function uploadFitFile(req, res) {
       sport: notifSport,
     }).catch(() => {});
 
-    notifyCoachesOfAthlete(String(userId), {
-      type: 'fit_uploaded',
-      title: 'New training uploaded',
-      body: notifBody,
-      resourceId: String(fitTraining._id),
-      resourceType: 'fit',
-      sport: notifSport,
-    }).catch(() => {});
+    // Coaches are not notified on FIT upload — only lactate/comments trigger coach notifications.
 
     // Bust the server-side route cache so subsequent GET /api/fit/trainings returns fresh data
     invalidateFitCacheForUser(userId);
