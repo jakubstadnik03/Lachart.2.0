@@ -973,26 +973,44 @@ export default function CalendarPeriodStats({
     };
   }, [weeklyTrend]);
 
-  // Intensity donut option
+  // Intensity donut option — by training zones (Z1–Z5)
   const intensityDonutOption = useMemo(() => {
-    const { intensityEasySec, intensityModSec, intensityHardSec } = aggregates;
-    const total = intensityEasySec + intensityModSec + intensityHardSec;
+    const powerSec = aggregates.powerZoneSecAll || {};
+    const hrSec = aggregates.hrZoneSecAll || {};
+    // Prefer power zones if available, fall back to HR zones
+    const hasPower = ZONE_KEYS.some((k) => (powerSec[k] || 0) > 0);
+    const secMap = hasPower ? powerSec : hrSec;
+    const names = hasPower ? POWER_ZONE_NAMES : HR_ZONE_NAMES;
+    const fills = hasPower
+      ? ['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444']  // green→red gradient by zone
+      : ['#86efac', '#4ade80', '#f97316', '#dc2626', '#991b1b'];
+    const total = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
     if (total <= 0) return null;
+    const pieData = ZONE_KEYS.map((zk, i) => ({
+      value: secMap[zk] || 0,
+      name: `Z${i + 1} ${names[i]}`,
+      itemStyle: { color: fills[i] },
+    })).filter((d) => d.value > 0);
+    if (!pieData.length) return null;
     return {
       backgroundColor: 'transparent',
-      tooltip: { formatter: '{b}: {d}%' },
+      tooltip: {
+        formatter(params) {
+          const sec = params.value;
+          const h = Math.floor(sec / 3600);
+          const m = Math.floor((sec % 3600) / 60);
+          const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          return `<div style="font-size:11px"><b>${params.name}</b><br/>${params.percent}% · ${timeStr}</div>`;
+        },
+      },
       series: [
         {
           type: 'pie',
-          radius: ['55%', '85%'],
+          radius: ['50%', '80%'],
           center: ['50%', '50%'],
-          data: [
-            { value: intensityEasySec, name: 'Easy', itemStyle: { color: '#3b82f6' } },
-            { value: intensityModSec, name: 'Moderate', itemStyle: { color: '#f97316' } },
-            { value: intensityHardSec, name: 'Hard', itemStyle: { color: '#ef4444' } },
-          ],
-          label: { show: true, formatter: '{b}\n{d}%', fontSize: 10 },
-          labelLine: { length: 6, length2: 4 },
+          data: pieData,
+          label: { show: true, formatter: '{b}\n{d}%', fontSize: 9 },
+          labelLine: { length: 5, length2: 4 },
         },
       ],
     };

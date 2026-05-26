@@ -676,7 +676,7 @@ export default function TrainingPage() {
   }, [selectedAthleteId, user, trainings, loadTrainings]);
 
   // Funkce pro přidání nového tréninku
-  const handleAddTraining = async (formData) => {
+  const handleAddTraining = useCallback(async (formData) => {
     try {
       setIsSubmitting(true);
       console.log('Auth user:', user);
@@ -737,7 +737,7 @@ export default function TrainingPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [selectedAthleteId, user, loadTrainings]);
 
 
   // Open TrainingForm pre-filled for editing an existing training
@@ -765,7 +765,7 @@ export default function TrainingPage() {
     } else {
       await handleAddTraining(formData);
     }
-  }, [selectedAthleteId, user, loadTrainings, handleAddTraining]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedAthleteId, user, loadTrainings, handleAddTraining]);
 
   // Apply sport & category filters for all visual components.
   // Excludes raw external activities (Strava `source==='strava'`, FIT `source==='fit'`,
