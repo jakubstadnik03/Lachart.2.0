@@ -670,27 +670,16 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
 function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null }) {
-  const CHART_H   = 160;
+  const CHART_H   = 200;
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
-  const ZOOM_GAP  = 4;
-  const PAUSE_W   = 10;    // rest/pause dots in zoomed mode
-  const MAX_BAR_PX = 150;  // largest bar width in zoomed mode
-  const MIN_ZOOM_BAR = 10; // floor width for any non-pause bar — small so short laps stay proportional
 
-  // Allow zoom for any session with 3+ laps. With flex-grow bars stretch to
-  // fill the viewport (no left-cluster), and the zoom adds the gap + selection
-  // emphasis the user actually expects when they tap a bar.
-  // (Single very-long lap dominating the chart still skips zoom — it'd just
-  //  push everything else off-screen.)
-  const totalDur = laps.reduce((s, l) => s + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
-  const maxDur   = Math.max(...laps.map(l => Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0)), 1);
-  const skipZoom = laps.length < 3 || (totalDur > 0 && maxDur / totalDur > 0.70);
-  const isZoomed = selectedLap != null && !skipZoom;
+  // X-axis zoom is intentionally disabled — bars always fill the full width
+  // proportionally. Selecting a lap only tightens the Y-axis scale.
+  const isZoomed  = false; // kept for elevation path compat; never true
   const centerLapRef = useRef(null);
   const isProgrammaticScroll = useRef(false);
-  // Refs for throttled scroll-sync (declared here so they sit before the
-  // conditional early return below — React's rules of hooks)
+  // Refs for throttled scroll-sync
   const scrollRafRef = useRef(null);
   const scrollSettleTimeoutRef = useRef(null);
 
@@ -708,31 +697,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
   });
 
-  // In zoomed mode: bar width ∝ duration (elapsed time) so a 6-min interval
-  // is visually 3× wider than a 2-min one, matching real perceived effort.
-  // Non-zoomed bars keep weight=dist for swim/run (proportional to distance).
-  const activeDurs = entries.filter(e => !e.isPause).map(e => e.dur);
-  const maxDurForZoom = activeDurs.length ? Math.max(...activeDurs) : 1;
-  const pxPerDur = MAX_BAR_PX / maxDurForZoom;
-  const getZoomW = (ent) => ent.isPause ? PAUSE_W : Math.max(Math.round(ent.dur * pxPerDur), MIN_ZOOM_BAR);
-
-  // Scroll to center selected bar in zoom mode — must be before any early return
-  useEffect(() => {
-    if (!isZoomed || !chartScrollRef?.current) return;
-    const el = chartScrollRef.current;
-    let left = 0;
-    for (let i = 0; i < selectedLap; i++) {
-      left += getZoomW(entries[i]) + ZOOM_GAP;
-    }
-    const selW = getZoomW(entries[selectedLap] || { isPause: false, dur: maxDurForZoom });
-    const target = left + selW / 2 - el.clientWidth / 2;
-    isProgrammaticScroll.current = true;
-    requestAnimationFrame(() => {
-      el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
-      setTimeout(() => { isProgrammaticScroll.current = false; }, 450);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLap, isZoomed, chartScrollRef]);
+  // No X-axis zoom — bars always use proportional flex widths.
 
   const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
   if (!nonZero.length) return null;
@@ -789,42 +754,28 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
-  } else if (isZoomed) {
-    // When a lap is selected (zoomed), fit the Y-axis tightly to the actual
-    // data range so bars fill the full chart height — makes lap-to-lap
-    // differences much easier to read.
+  } else if (selectedLap != null) {
+    // Lap selected — fit Y-axis tightly to scaleValues range so every bar
+    // uses the full chart height and differences are easy to read.
     const padding = (maxVal - minVal) * 0.18 || maxVal * 0.06;
     chartMin = Math.max(0, minVal - padding);
     chartMax = maxVal + padding;
   } else {
-    // Center = distance/duration-weighted average pace of all non-trivial laps.
-    // Spread uses IQR (inter-quartile range) so outlier rest/warmup laps with
-    // extreme paces don't blow out the axis — work laps stay in the middle third.
-    const allValid = entries.filter(e =>
-      !e.isPause && e.value > 0 && (isBike || (e.dist || 0) >= 100)
-    );
-    const totalW = allValid.reduce((s, e) => s + e.weight, 0) || 1;
-    const center = allValid.length > 0
-      ? allValid.reduce((s, e) => s + e.value * e.weight, 0) / totalW
-      : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
-
-    // IQR-based spread: sort raw values, take Q1/Q3, spread = 2.0 * IQR.
-    const vals = allValid.map(e => e.value).sort((a, b) => a - b);
+    // No selection — center on the IQR-filtered work-lap values so warmup /
+    // cooldown outliers don't collapse the scale. Use scaleValues (already
+    // IQR-filtered) instead of allValid so extreme laps are excluded from
+    // center computation too.
+    const center = scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
+    const sorted = [...scaleValues].sort((a, b) => a - b);
     let spread;
-    if (vals.length >= 4) {
-      const q1 = vals[Math.floor(vals.length * 0.25)];
-      const q3 = vals[Math.floor(vals.length * 0.75)];
+    if (sorted.length >= 4) {
+      const q1 = sorted[Math.floor(sorted.length * 0.25)];
+      const q3 = sorted[Math.floor(sorted.length * 0.75)];
       const iqr = q3 - q1;
-      const iqrSpread = Math.max(iqr * 2.5, center * 0.08);
-      const mainDevs = allValid.map(e => Math.abs(e.value - center));
-      const mainDevSorted = mainDevs.slice().sort((a, b) => a - b);
-      const p75dev = mainDevSorted[Math.floor(mainDevSorted.length * 0.75)] || 0;
-      spread = Math.max(iqrSpread, p75dev * 2.0, center * 0.08);
+      spread = Math.max(iqr * 1.5, center * 0.06);
     } else {
-      const maxDev = allValid.length > 0
-        ? Math.max(...allValid.map(e => Math.abs(e.value - center)))
-        : Math.max(...scaleValues.map(v => Math.abs(v - center)));
-      spread = (maxDev || center * 0.08) * 1.3;
+      const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - center)));
+      spread = (maxDev || center * 0.06) * 1.2;
     }
     chartMin = Math.max(0, center - spread);
     chartMax = center + spread;
@@ -885,12 +836,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const altMax = Math.max(...alts);
     if (altMax - altMin >= 2) {
       const altRange = altMax - altMin;
-      const getBarW = (ent) => isZoomed ? getZoomW(ent) : ent.weight;
-      const totalW = entries.reduce((s, e) => s + getBarW(e) + (isZoomed ? ZOOM_GAP : 0), 0) || 1;
+      const totalW = entries.reduce((s, e) => s + e.weight, 0) || 1;
       let cumW = 0;
       const pts = alts.map((alt, i) => {
         const x = (cumW / totalW * 100).toFixed(1);
-        if (i < entries.length) cumW += getBarW(entries[i]) + (isZoomed ? ZOOM_GAP : 0);
+        if (i < entries.length) cumW += entries[i].weight;
         const y = ((1 - (alt - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
         return `${x},${y}`;
       });
@@ -941,40 +891,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
   })() : null;
 
-  // Total zoom width
-  const zoomTotalW = entries.reduce((s, e) => s + getZoomW(e) + ZOOM_GAP, 0);
-
-  // Scroll-sync: fire onScrollCenter with the lap index under the chart viewport
-  // center. Throttled to one rAF tick so dragging the chart on iOS doesn't
-  // trigger 60 setSelectedLap calls per second (each re-renders LapChart and
-  // the surrounding modal — jank city). Also debounce a "scroll settled"
-  // commit so the highlighted lap matches what the finger actually stopped on.
-  const handleChartScroll = (e) => {
-    if (!onScrollCenter || !isZoomed || isProgrammaticScroll.current) return;
-    const el = e.currentTarget;
-    if (scrollRafRef.current != null) return; // a rAF tick is already queued
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      const centerX = el.scrollLeft + el.clientWidth / 2;
-      let cumX = 0;
-      let found = entries.length - 1;
-      for (let i = 0; i < entries.length; i++) {
-        const w = getZoomW(entries[i]) + ZOOM_GAP;
-        if (cumX + w / 2 >= centerX) { found = i; break; }
-        cumX += w;
-      }
-      if (found !== centerLapRef.current) {
-        centerLapRef.current = found;
-        // Debounce the parent setState — only commit once the user pauses,
-        // so the chart's parent doesn't keep re-rendering mid-scroll.
-        if (scrollSettleTimeoutRef.current) clearTimeout(scrollSettleTimeoutRef.current);
-        scrollSettleTimeoutRef.current = setTimeout(() => {
-          scrollSettleTimeoutRef.current = null;
-          onScrollCenter(found);
-        }, 150);
-      }
-    });
-  };
+  // No scroll-sync needed — bars don't scroll horizontally any more.
+  const handleChartScroll = () => {};
 
   return (
     <div className="px-4 pb-2">
@@ -995,12 +913,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             </span>
           )}
         </div>
-        {isZoomed && (
+        {selectedLap != null && (
           <button
             onClick={() => onSelectLap(null)}
             className="flex-shrink-0 text-[10px] px-2 py-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 font-semibold leading-none transition-colors"
           >
-            zoom out
+            deselect
           </button>
         )}
       </div>
@@ -1017,46 +935,18 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
           <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
         </div>
 
-        {/* Bars — scrollable horizontally only when zoomed bars genuinely
-            exceed the container width. Otherwise width:100% lets flex bars
-            spread to fill the chart.
-            touchAction: pan-x prevents the horizontal lap scroller from
-            stealing vertical touches on iOS — otherwise the parent modal
-            body's vertical scroll judders when the user starts a swipe near
-            the bars. */}
+        {/* Bars — always proportional, no horizontal scroll */}
         <div
           ref={chartScrollRef}
-          className="flex-1 min-w-0 overflow-x-auto"
-          style={{
-            overflowY: 'hidden',
-            touchAction: 'pan-x',
-            WebkitOverflowScrolling: 'touch',
-            overscrollBehaviorX: 'contain',
-            // Snap each bar to centre when scrolling settles, so dragging
-            // never leaves the chart parked between bars. Only meaningful
-            // in zoom mode (where the inner canvas is wider than the
-            // viewport); the proportional mode has nothing to scroll.
-            scrollSnapType: isZoomed ? 'x proximity' : 'none',
-            scrollPaddingLeft: '50%',
-            scrollPaddingRight: '50%',
-            // Hint the compositor to keep the scroller on its own layer —
-            // makes momentum scroll on iOS noticeably smoother when there
-            // are 30+ bars in zoom mode.
-            willChange: 'scroll-position',
-            transform: 'translateZ(0)',
-          }}
+          className="flex-1 min-w-0 overflow-x-hidden"
+          style={{ overflowY: 'hidden' }}
           onScroll={handleChartScroll}
         >
           <div
             style={{
               position: 'relative',
               height: CHART_H + X_LABEL_H,
-              // In zoom mode the inner canvas must be wider than the viewport
-              // (=== zoomTotalW) so the user can actually scroll between
-              // intervals. Outside zoom mode it just fills 100% of the parent.
-              minWidth: isZoomed ? zoomTotalW : '100%',
-              width: isZoomed ? zoomTotalW : '100%',
-              transition: 'width 0.25s ease, min-width 0.25s ease',
+              width: '100%',
             }}
           >
             {/* Horizontal grid lines — one per Y-axis tick, helps visual alignment */}
@@ -1088,22 +978,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               className="flex items-end"
               style={{
                 height: CHART_H + X_LABEL_H,
-                gap: isZoomed ? ZOOM_GAP : 1,
+                gap: 1,
                 width: '100%',
                 position: 'relative',
                 zIndex: 2,
-                transition: 'gap 0.25s ease',
               }}
             >
             {entries.map((ent, i) => {
               const isSelected = selectedLap === i;
-              const zoomW      = getZoomW(ent);
-
-              // In skipZoom mode boost the selected bar height by 15%
-              const rawBarH = getBarH(ent.value);
-              const barH = skipZoom && isSelected && !ent.isPause
-                ? Math.min(rawBarH * 1.15, CHART_H)
-                : rawBarH;
+              const barH = getBarH(ent.value);
 
               // Intensity-based color shading
               const hasLactate = ent.lactate != null && !isNaN(ent.lactate);
@@ -1123,17 +1006,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 barBg = color + alpha;
               }
 
-              // Width: even in zoom mode let bars grow proportionally so the
-              // chart spans 100% of the container; only scroll horizontally
-              // when bars genuinely don't fit (totalZoomW > container width).
-              // The earlier fixed-width zoom packed everything into the left
-              // half on wide screens — the chart looked half-empty.
-              // In zoom mode each bar is a fixed width (so the inner canvas
-              // is wider than the viewport → horizontal scroll appears).
-              // Outside zoom mode bars still use proportional flex-grow.
-              const itemStyle = isZoomed
-                ? { width: zoomW, minWidth: zoomW, flex: 'none',           height: CHART_H + X_LABEL_H, transition: 'width 0.25s ease, min-width 0.25s ease', scrollSnapAlign: 'center', scrollSnapStop: 'normal' }
-                : { flex: `${ent.weight} 0 2px`,  minWidth: 2,             height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease, min-width 0.25s ease' };
+              // Bars always fill the full width proportionally — no X-axis zoom.
+              const itemStyle = { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -1145,7 +1019,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                   {/* ── Bar area — exactly CHART_H tall, bar grows from the bottom ── */}
                   <div style={{ height: CHART_H, position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
                     {ent.isPause ? (
-                      <div style={{ width: isZoomed ? 4 : 3, height: isZoomed ? 4 : 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: 2 }} />
+                      <div style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: 2 }} />
                     ) : (
                       <div style={{ position: 'relative', width: '100%' }}>
                         {/* Lactate value label above the bar */}
