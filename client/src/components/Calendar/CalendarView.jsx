@@ -842,23 +842,30 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 
   // ── Fallback: build elevation from raw records when lap-level data is missing ──
   if (!elevPathD && Array.isArray(records) && records.length > 0) {
-    const altRecs = records.filter(r => r.altitude != null && (r.distance != null || r.timeFromStart != null));
+    const altRecs = records.filter(r => r.altitude != null);
     if (altRecs.length >= 4) {
       const altValues = altRecs.map(r => r.altitude);
       const altMin = Math.min(...altValues);
       const altMax = Math.max(...altValues);
-      if (altMax - altMin >= 2) {
+      if (altMax - altMin >= 1) {
         const altRange = altMax - altMin;
-        // Use timeFromStart for x-axis — works correctly in both zoomed (duration-based)
-        // and non-zoomed modes since bars are proportional to duration or distance.
-        const useTime = altRecs[0].timeFromStart != null;
-        const xVals = altRecs.map(r => useTime ? r.timeFromStart : r.distance);
+        // Pick the best x-axis source: timeFromStart (FIT) → distance (Strava)
+        // → index (fallback when neither is available)
+        const hasTime = altRecs[0].timeFromStart != null;
+        const hasDist = altRecs.some(r => r.distance != null);
+        const getX = hasTime
+          ? (r) => r.timeFromStart
+          : hasDist
+            ? (r) => r.distance
+            : (_, i) => i;
+        const xVals = altRecs.map((r, i) => getX(r, i));
         const xMax = Math.max(...xVals) || 1;
         // Downsample to ~300 points to keep the SVG path short
         const step = Math.max(1, Math.floor(altRecs.length / 300));
         const sampled = altRecs.filter((_, i) => i % step === 0 || i === altRecs.length - 1);
-        const pts = sampled.map(r => {
-          const xv = useTime ? r.timeFromStart : r.distance;
+        const pts = sampled.map((r, si) => {
+          const origIdx = si * step;
+          const xv = getX(r, origIdx);
           const x = ((xv / xMax) * 100).toFixed(1);
           const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
           return `${x},${y}`;
@@ -2869,7 +2876,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   onSelectLap={() => {}}
                   chartScrollRef={{ current: null }}
                   onScrollCenter={() => {}}
-                  records={merged?.records}
+                  records={chartTraining?.records}
                 />
               </div>
             ) : null}
@@ -3014,7 +3021,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
-                records={merged?.records}
+                records={chartTraining?.records}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
                   lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3497,7 +3504,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
-                records={merged?.records}
+                records={chartTraining?.records}
                 onSelectLap={(i) => {
                   setSelectedLap(i);
                   lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
