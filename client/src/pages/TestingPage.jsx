@@ -1201,12 +1201,7 @@ const TestingPage = () => {
         }))
       };
 
-      // ── Premium gate: free plan allows only 1 test ──────────────────────
-      if (!isPremium && tests.length >= 1) {
-        gate('Unlimited Tests', 'pro');
-        return;
-      }
-      // ────────────────────────────────────────────────────────────────────
+      // All users have unlimited tests — no gate needed.
 
       const response = await addTest(processedTest);
       const testId = response.data._id;
@@ -1435,18 +1430,7 @@ const TestingPage = () => {
                 </motion.div>
               )}
 
-              {/* Free-plan usage banner */}
-              {!isCoachLikeRole && tests.length >= 1 && (!user?.subscription || user?.subscription?.plan === 'free' || !user?.subscription?.plan) && (
-                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-                  <span>{tests.length}/1 tests on the free plan.</span>
-                  <button
-                    onClick={() => navigate('/settings?tab=subscription')}
-                    className="shrink-0 px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    Upgrade to Pro
-                  </button>
-                </div>
-              )}
+              {/* Free-plan usage banner removed — all users have unlimited tests */}
 
               {/* Tests list — wrapped in ErrorBoundary so a single bad
                   test (NaN, weird lactate sequence, etc.) can't freeze
