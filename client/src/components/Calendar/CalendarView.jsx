@@ -34,7 +34,12 @@ import TrainingChart from '../FitAnalysis/TrainingChart';
 
 function MapInvalidator() {
   const map = useMap();
-  useEffect(() => { setTimeout(() => map.invalidateSize(), 100); }, [map]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { map.invalidateSize(); } catch (_) { /* map already destroyed */ }
+    }, 100);
+    return () => clearTimeout(t);
+  }, [map]);
   return null;
 }
 
