@@ -973,7 +973,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                     <stop offset="100%" stopColor="#d97706" stopOpacity="0.06" />
                   </linearGradient>
                 </defs>
-                <path d={elevPathD} fill="url(#lapElevGrad)" stroke="#a16207" strokeWidth="1" strokeOpacity="0.45" vectorEffect="non-scaling-stroke" />
+                <path d={elevPathD} fill="url(#lapElevGrad)" />
               </svg>
             )}
             {/* Bars */}
