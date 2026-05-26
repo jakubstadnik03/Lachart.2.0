@@ -34,7 +34,7 @@ const MemoizedHeader = memo(Header);
 const MemoizedFooter = memo(Footer);
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
-  const { user, premiumPreviewNoAccess } = useAuth();
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [showOnboarding, setShowOnboarding] = useState(false);
