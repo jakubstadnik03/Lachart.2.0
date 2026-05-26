@@ -407,12 +407,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     setHoveredPoint(midPoint);
   }, [highlightMetric, processedData, summarizeWindow]);
 
-  // Check if training has elevation data and set showElevation default
-  useEffect(() => {
-    if (processedData && processedData.maxAltitude !== null && processedData.minAltitude !== null && !isSwimming) {
-      setShowElevation(true);
-    }
-  }, [processedData, isSwimming]);
+  // Elevation background is always shown; showElevation controls the outline only
+  // No need to auto-enable on load — background is always visible when data exists
 
   // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
   const chartHeight = isMobile ? 250 : 400;
@@ -1052,15 +1048,15 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showCadence ? 'text-gray-700' : 'text-gray-400'}`}>Cadence</span>
           </button>
           )}
-          {/* Only show elevation toggle if elevation data is available and it's not swimming */}
+          {/* Elevation toggle - background fill always shown, this toggles the outline */}
           {processedData && processedData.maxAltitude !== null && processedData.minAltitude !== null && !isSwimming && (
             <button
               onClick={() => setShowElevation(!showElevation)}
               className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
-                showElevation ? 'bg-orange-100' : 'bg-gray-100 opacity-50'
+                showElevation ? 'bg-amber-100' : 'bg-gray-100 opacity-50'
               }`}
             >
-              <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showElevation ? 'bg-orange-500' : 'bg-gray-400'}`}></div>
+              <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showElevation ? 'bg-amber-600' : 'bg-gray-400'}`}></div>
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showElevation ? 'text-gray-700' : 'text-gray-400'}`}>Elevation</span>
             </button>
           )}
@@ -1270,12 +1266,12 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             );
           })}
 
-          {/* Area fills - Elevation in background first */}
-          {showElevation && elevationAreaPath && elevationAreaPath.length > 0 && (
+          {/* Elevation background - always visible when data is available (not swimming) */}
+          {elevationAreaPath && elevationAreaPath.length > 0 && !isSwimming && (
             <path
               d={elevationAreaPath}
               fill="url(#elevationGradient)"
-              opacity="0.5"
+              opacity="0.55"
             />
           )}
           {showSpeed && (
@@ -1315,8 +1311,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               <stop offset="100%" stopColor="#9333ea" stopOpacity="0" />
             </linearGradient>
             <linearGradient id="elevationGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6b7280" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#9ca3af" stopOpacity="0.2" />
+              <stop offset="0%" stopColor="#a16207" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#d97706" stopOpacity="0.08" />
             </linearGradient>
           </defs>
 
@@ -1352,6 +1348,16 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               stroke="#374151"
               strokeWidth="2.5"
               opacity="0.9"
+            />
+          )}
+          {/* Elevation stroke line - visible when toggle is on */}
+          {showElevation && elevationPath && elevationPath.length > 0 && !isSwimming && (
+            <path
+              d={elevationPath}
+              fill="none"
+              stroke="#d97706"
+              strokeWidth="1.5"
+              opacity="0.8"
             />
           )}
 
