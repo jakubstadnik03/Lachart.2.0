@@ -685,13 +685,18 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    // For pace: prefer moving_time (excludes stopped time) so paused laps
+    // don't show an artificially slow pace. Fall back to elapsed_time.
+    const movingDur = Number(
+      lap.moving_time || lap.movingTime || lap.totalMovingTime || 0
+    ) || dur;
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     const lactate = lap.lactate != null ? Number(lap.lactate) : null;
     let value = 0;
-    if (isBike)                              value = pow;
-    else if (isRun  && dist > 0 && dur > 0)  value = dur / (dist / 1000);
-    else if (isSwim && dist > 0 && dur > 0)  value = dur / (dist / 100);
+    if (isBike)                                   value = pow;
+    else if (isRun  && dist > 0 && movingDur > 0) value = movingDur / (dist / 1000);
+    else if (isSwim && dist > 0 && movingDur > 0) value = movingDur / (dist / 100);
     // weight = dist for swim/run (proportional to distance), dur for bike
     const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
@@ -1263,12 +1268,13 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
     return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
   const fmtPace = lap => {
-    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || elapsed;
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     if (isBike) return pow > 0 ? `${Math.round(pow)} W` : '—';
-    if ((isRun || isSwim) && dist > 0 && dur > 0) {
-      const pace = isSwim ? dur / (dist / 100) : dur / (dist / 1000);
+    if ((isRun || isSwim) && dist > 0 && moving > 0) {
+      const pace = isSwim ? moving / (dist / 100) : moving / (dist / 1000);
       const m = Math.floor(pace / 60), s = Math.round(pace % 60);
       return `${m}:${String(s).padStart(2,'0')}${isSwim ? '/100m' : '/km'}`;
     }
@@ -3079,7 +3085,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           // `totalDistance`, `avgHeartRate`, `avgPower`, etc.
                           // which previously weren't matched here — all rows
                           // came up blank for FIT uploads.
-                          const lapDur = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                          const lapElapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+                          const lapMoving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || lapElapsed;
+                          const lapDur = lapElapsed; // used for display (time column)
                           const lapDist = Number(lap.distance || lap.totalDistance || 0);
                           const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                           const lapHr = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
@@ -3090,14 +3098,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           // Detect lap type for color-coding
                           const lapType = detectLapType(lap, i, laps.length);
                           const isRestLap = lapType === 'recovery' || lapType === 'rest';
-                          // Pace — suppress for rest/recovery laps with crazy values
+                          // Pace — use moving time to exclude stopped time; suppress crazy values
                           let lapPaceStr = '—';
                           let paceIsNormal = true;
                           if (isSwim) {
-                            const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                            const spd = lapSpeed || (lapDist > 0 && lapMoving > 0 ? lapDist / lapMoving : 0);
                             if (spd > 0) { const s = Math.round(100 / spd); lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
-                          } else if (isRun && lapDist > 0 && lapDur > 0) {
-                            const spk = lapDur / (lapDist / 1000);
+                          } else if (isRun && lapDist > 0 && lapMoving > 0) {
+                            const spk = lapMoving / (lapDist / 1000);
                             lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
                             // Show pace for rest/walk laps too, just style it gray
                             if (isRestLap && spk > 480) paceIsNormal = false;
