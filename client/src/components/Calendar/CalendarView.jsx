@@ -784,6 +784,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
+  } else if (isZoomed) {
+    // When a lap is selected (zoomed), fit the Y-axis tightly to the actual
+    // data range so bars fill the full chart height — makes lap-to-lap
+    // differences much easier to read.
+    const padding = (maxVal - minVal) * 0.18 || maxVal * 0.06;
+    chartMin = Math.max(0, minVal - padding);
+    chartMax = maxVal + padding;
   } else {
     // Center = distance/duration-weighted average pace of all non-trivial laps.
     // Spread uses IQR (inter-quartile range) so outlier rest/warmup laps with
@@ -797,20 +804,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
       : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
 
     // IQR-based spread: sort raw values, take Q1/Q3, spread = 2.0 * IQR.
-    // This naturally ignores outlier rest laps (10:35, 13:26 etc.) and keeps
-    // the axis centred on the main training pace cluster.
-    // Minimum spread: 8% of center so the chart isn't totally flat.
     const vals = allValid.map(e => e.value).sort((a, b) => a - b);
     let spread;
     if (vals.length >= 4) {
       const q1 = vals[Math.floor(vals.length * 0.25)];
       const q3 = vals[Math.floor(vals.length * 0.75)];
       const iqr = q3 - q1;
-      // Use 2.5× IQR so even the widest "normal" outlier stays in frame,
-      // but extreme rest laps beyond that get clipped (still visible as full-height bars).
       const iqrSpread = Math.max(iqr * 2.5, center * 0.08);
-      // Never clip laps that are within 1.5× the work-pace deviation from center —
-      // this ensures warmup/cooldown (often 1-2 min off main pace) are visible.
       const mainDevs = allValid.map(e => Math.abs(e.value - center));
       const mainDevSorted = mainDevs.slice().sort((a, b) => a - b);
       const p75dev = mainDevSorted[Math.floor(mainDevSorted.length * 0.75)] || 0;
