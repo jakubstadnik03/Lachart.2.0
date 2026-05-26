@@ -73,7 +73,7 @@ const SettingsPage = () => {
   const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
-  const { gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
+  const { gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium(); // eslint-disable-line no-unused-vars
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
