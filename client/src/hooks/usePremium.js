@@ -27,8 +27,8 @@ export function usePremium() {
   // Capacitor build — UpgradeModal already returns null on native, and
   // we make sure no gate ever flips false, so neither the modal nor any
   // PremiumLockedCard can ever surface in the iOS app.
-  const rawIsPremium = user ? (user.isPremium !== undefined ? user.isPremium : true) : false;
-  const isPremium = rawIsPremium || isCapacitorNative();
+  // All features are free for everyone — no subscription required.
+  const isPremium = user != null || isCapacitorNative();
   const isCoach = isPremium;
 
   const [modalState, setModalState] = useState({

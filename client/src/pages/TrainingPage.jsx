@@ -131,9 +131,8 @@ export default function TrainingPage() {
   const [showRecordLactate, setShowRecordLactate] = useState(false);
 
   // ── Subscription gate ─────────────────────────────────────────────────────
-  // Native (Capacitor/iOS) builds must never show subscription gates — App Store
-  // guideline 3.1.1 forbids any reference to paid content outside of IAP.
-  const isFreePlan = !isCapacitorNative() && (!user?.subscription?.plan || user?.subscription?.plan === 'free');
+  // All features are free — subscription not required.
+  const isFreePlan = false;
   const [upgradeModalFeature, setUpgradeModalFeature] = useState('');
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const openUpgradeModal = useCallback((feature) => {

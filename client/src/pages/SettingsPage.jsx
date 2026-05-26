@@ -209,7 +209,7 @@ const SettingsPage = () => {
     { id: 'training', name: 'Preferences', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     ...(isCapacitorNative() ? [] : [{ id: 'subscription', name: 'Subscription', icon: CreditCard }]),
-    ...(['coach','team','enterprise'].includes(user?.subscription?.plan) || isPremium ? [{ id: 'branding', name: 'Branding', icon: Sparkles }] : []),
+    { id: 'branding', name: 'Branding', icon: Sparkles },
     { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },

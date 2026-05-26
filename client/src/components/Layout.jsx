@@ -646,17 +646,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         {/* Header */}
         <MemoizedHeader {...headerProps} />
 
-        {premiumPreviewNoAccess && (
-          <div
-            className="shrink-0 z-20 bg-amber-100 border-b border-amber-300 px-3 py-2 text-center text-xs sm:text-sm text-amber-950"
-            role="status"
-          >
-            <strong>Náhled bez premium</strong>
-            {' — '}
-            UI se tváří jako free účet (jen tento prohlížeč). Vypnout v{' '}
-            <span className="whitespace-nowrap">Nastavení → Subscription</span>.
-          </div>
-        )}
+        {/* Premium preview banner removed — all features are free */}
 
         {/* Coach: "Viewing athlete" banner */}
         <CoachAthleteBar />
