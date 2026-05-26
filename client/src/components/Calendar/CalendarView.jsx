@@ -991,21 +991,21 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               const isSelected = selectedLap === i;
               const barH = getBarH(ent.value);
 
-              // Intensity-based color shading
+              // Intensity-based color shading — all bars keep some transparency
+              // so the elevation background always shows through.
               const hasLactate = ent.lactate != null && !isNaN(ent.lactate);
               let barBg;
               if (ent.isPause) {
-                barBg = isSelected ? color + '60' : '#E5E7EB';
+                barBg = isSelected ? color + '55' : '#E5E7EB99';
               } else if (hasLactate) {
-                // Bars with lactate measurement → violet, selected = deeper
-                barBg = isSelected ? '#7c3aed' : '#a78bfa';
-              } else if (isSelected) {
-                barBg = color;
+                barBg = isSelected ? '#7c3aedcc' : '#a78bfaaa';
               } else {
                 const intensity = getIntensity(ent.value);
                 const dimmed = selectedLap != null && !isSelected;
-                // Wider alpha range (0.15 → 1.0) for bigger visual contrast between bars
-                const alpha = Math.round((dimmed ? 0.20 : (0.15 + intensity * 0.85)) * 255).toString(16).padStart(2, '0');
+                // Selected: ~80% opacity, unselected: 15–75%, dimmed: ~28%
+                const alpha = Math.round((
+                  isSelected ? 0.80 : dimmed ? 0.28 : (0.15 + intensity * 0.60)
+                ) * 255).toString(16).padStart(2, '0');
                 barBg = color + alpha;
               }
 
