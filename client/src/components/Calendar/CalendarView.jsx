@@ -1034,14 +1034,20 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
               }} />
             ))}
-            {/* Elevation outline */}
+            {/* Elevation background — neutral earth-tone fill, always behind bars */}
             {elevPathD && (
               <svg
                 viewBox={`0 0 100 ${CHART_H}`}
                 preserveAspectRatio="none"
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: CHART_H, pointerEvents: 'none', zIndex: 1 }}
               >
-                <path d={elevPathD} fill={`${color}18`} stroke={`${color}55`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                <defs>
+                  <linearGradient id="lapElevGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#92400e" stopOpacity="0.22" />
+                    <stop offset="100%" stopColor="#d97706" stopOpacity="0.06" />
+                  </linearGradient>
+                </defs>
+                <path d={elevPathD} fill="url(#lapElevGrad)" stroke="#a16207" strokeWidth="1" strokeOpacity="0.45" vectorEffect="non-scaling-stroke" />
               </svg>
             )}
             {/* Bars */}
