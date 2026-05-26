@@ -750,21 +750,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // and use that as a symmetric spread on both sides.
   //   e.g. 8×800 m at 3:06–3:12/km  → avg ≈ 3:09, spread ≈ ±15 s
   //        chart range 2:54 – 3:24  → all bars clearly differentiated
+  // Y-axis is fixed regardless of selection — selecting a lap never changes the scale.
   let chartMin, chartMax;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
-  } else if (selectedLap != null) {
-    // Lap selected — fit Y-axis tightly to scaleValues range so every bar
-    // uses the full chart height and differences are easy to read.
-    const padding = (maxVal - minVal) * 0.18 || maxVal * 0.06;
-    chartMin = Math.max(0, minVal - padding);
-    chartMax = maxVal + padding;
   } else {
-    // No selection — center on the IQR-filtered work-lap values so warmup /
-    // cooldown outliers don't collapse the scale. Use scaleValues (already
-    // IQR-filtered) instead of allValid so extreme laps are excluded from
-    // center computation too.
     const center = scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
     const sorted = [...scaleValues].sort((a, b) => a - b);
     let spread;
