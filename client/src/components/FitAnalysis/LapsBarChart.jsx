@@ -207,6 +207,11 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
   }, [activeEntries, disableZoom, isSwim, totalDuration]);
 
   const TARGET_SELECTED_PX = 90;
+  // Always keep at least this many laps visible in the viewport when zoomed —
+  // selecting a 30-second recovery in an hour-long workout used to blow the
+  // container up so wide that only 1-2 surrounding laps fit on screen.
+  // Capping the zoom level keeps the surrounding context readable.
+  const MIN_VISIBLE_LAPS = 7;
 
   useEffect(() => {
     const el = outerRef.current;
@@ -221,10 +226,36 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     if (selectedLapNumber == null || skipZoom) return null;
     const selEntry = entries.find(e => String(e.lapNumber) === String(selectedLapNumber) && !e.isPause);
     if (!selEntry || selEntry.duration <= 0 || totalDuration <= 0) return null;
-    const needed = TARGET_SELECTED_PX * (totalDuration / selEntry.duration);
+
+    // Target: zoom such that the selected lap is ~90 px wide.
+    const desired = TARGET_SELECTED_PX * (totalDuration / selEntry.duration);
     const base = outerW > 0 ? outerW : 400;
-    return needed > base ? needed : null;
-  }, [selectedLapNumber, entries, totalDuration, outerW, skipZoom]);
+    if (desired <= base) return null; // already big enough at 1x, no zoom needed.
+
+    // Cap: don't zoom so deeply that fewer than MIN_VISIBLE_LAPS laps fit on
+    // screen. Estimate the duration covered by MIN_VISIBLE_LAPS adjacent
+    // laps around the selection — using the *minimum* of (window-average,
+    // overall-average) so a recovery-heavy section doesn't artificially
+    // shrink the window. Container width must keep that window ≥ outerW.
+    const activeOnly = activeEntries.length > 0 ? activeEntries : entries;
+    const avgAllDur  = totalDuration / Math.max(1, activeOnly.length);
+    const selIdxAll  = entries.findIndex(e => String(e.lapNumber) === String(selectedLapNumber));
+    const half       = Math.floor(MIN_VISIBLE_LAPS / 2);
+    const windowDurs = entries.slice(Math.max(0, selIdxAll - half), selIdxAll + (MIN_VISIBLE_LAPS - half))
+      .map((e) => e.duration);
+    const avgWinDur  = windowDurs.length > 0
+      ? windowDurs.reduce((s, d) => s + d, 0) / windowDurs.length
+      : avgAllDur;
+    const sliceDur   = MIN_VISIBLE_LAPS * Math.min(avgAllDur, avgWinDur);
+    // viewportDuration when container = needed-width:
+    //   viewportDur = outerW / containerW * totalDuration
+    // We want viewportDur ≥ sliceDur → containerW ≤ outerW * totalDuration / sliceDur
+    const maxContainerW = sliceDur > 0
+      ? base * (totalDuration / sliceDur)
+      : desired;
+
+    return Math.min(desired, maxContainerW);
+  }, [selectedLapNumber, entries, activeEntries, totalDuration, outerW, skipZoom]);
 
   // Re-check scroll edges after layout changes
   useEffect(() => {
