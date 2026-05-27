@@ -396,7 +396,18 @@ export default function SessionProgressChart({
     return sum > 0 ? sum : s.laps.length;
   });
   const grandTotal = sessionTotals.reduce((a, b) => a + b, 0) || 1;
-  const sessionWs  = sessionTotals.map(d => (innerW - totalGaps) * (d / grandTotal));
+
+  // When only ONE session ends up with usable lap data — common when the
+  // comparison list pulled in older trainings that had no per-lap power /
+  // pace records — that one session would otherwise consume the entire
+  // chart width and look like a giant block. Cap it to a reasonable slice
+  // (≈ 1/N of the original session count or 35 % of the chart, whichever is
+  // smaller) so the single bar reads as "one session" instead of "deformed
+  // chart". Leftover space stays empty.
+  const lonelyBarMode = data.length === 1 && sessions.length > 1;
+  const sessionWs = lonelyBarMode
+    ? [Math.min(innerW * 0.35, innerW / Math.max(2, sessions.length))]
+    : sessionTotals.map(d => (innerW - totalGaps) * (d / grandTotal));
   const lapGap     = 0.8;
 
   const ticks = [yLo, yLo + (yHi - yLo) / 2, yHi];
