@@ -70,7 +70,7 @@ function getStoredAuthToken() {
 }
 
 const SettingsPage = () => {
-  const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
+  const { user, logout, login } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
   const { isPremium, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
