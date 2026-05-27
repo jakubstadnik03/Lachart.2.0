@@ -6,6 +6,7 @@ import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import WelcomePaywallModal from '../components/WelcomePaywallModal';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
@@ -96,6 +97,33 @@ export default function DashboardPage() {
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
+
+  /**
+   * Welcome paywall — shown once per user the first time they land on the
+   * dashboard after sign-up / first login. Suppressed on native iOS (App
+   * Store guideline 3.1.1) and for users who already have a paid plan.
+   * Persistence is local-only (localStorage) so the user gets exactly one
+   * pitch and we don't need a server-side flag for it.
+   */
+  const [showWelcomePaywall, setShowWelcomePaywall] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return;
+    if (isCapacitorNative()) return;
+    if (isPremium) return; // already paying — no pitch needed
+    const flagKey = `welcomePaywall_seen_${user._id}`;
+    if (localStorage.getItem(flagKey)) return;
+    // Small delay so the dashboard renders first and the modal feels like
+    // an intentional welcome step instead of an interrupting popup.
+    const t = setTimeout(() => setShowWelcomePaywall(true), 800);
+    return () => clearTimeout(t);
+  }, [isAuthenticated, user?._id, isPremium]);
+
+  const dismissWelcomePaywall = useCallback(() => {
+    if (user?._id) {
+      localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
+    }
+    setShowWelcomePaywall(false);
+  }, [user?._id]);
   // ── Single source of truth for athlete selection ─────────────────────────────
   const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
   // For non-coach roles use own ID; for coach/tester roles use global selection.
@@ -1505,6 +1533,11 @@ export default function DashboardPage() {
   return (
     <>
     <UpgradeModal {...UpgradeModalProps} />
+    <WelcomePaywallModal
+      open={showWelcomePaywall}
+      onClose={dismissWelcomePaywall}
+      userName={user?.name}
+    />
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
