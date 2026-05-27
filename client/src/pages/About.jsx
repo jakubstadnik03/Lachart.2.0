@@ -1663,18 +1663,33 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 const FeatIcon = ({ d }) => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>);
 
 const FEATURES = [
+  // === Testing & analysis ===
   { cat: 'Testing',     title: 'Lactate Curve Generation',  body: 'Enter test values and auto-generate your curve. Calculates LT1, LT2, LTP1, LTP2, IAT, log-log, OBLA (2.0–3.5) and baseline.', icon: <FeatIcon d="M3 20h18M5 16l3-6 4 4 5-9" /> },
   { cat: 'Testing',     title: 'Training Zone Calculation', body: 'Auto-calculate 5 training zones with precise power / pace ranges. Customised for cycling, running, swimming.', icon: <FeatIcon d="M13 10V3L4 14h7v7l9-11h-7z" /> },
   { cat: 'Analysis',    title: 'Historical Test Comparison',body: 'Store every test and compare curves over time. Overlay multiple tests to see how thresholds shift and improve.', icon: <FeatIcon d="M12 7v5l3 2" /> },
-  { cat: 'Training',    title: 'Lactate Recording to Intervals', body: 'Tag any interval with a blood lactate sample. Each sample feeds back into your curve and your zones.', icon: <FeatIcon d="M12 3s7 8 7 13a7 7 0 1 1-14 0c0-5 7-13 7-13z" /> },
+  { cat: 'Training',    title: 'Lactate Recording to Intervals', body: 'Tag any interval of an existing workout with a blood lactate sample. Each sample feeds straight back into your curve and zones.', icon: <FeatIcon d="M12 3s7 8 7 13a7 7 0 1 1-14 0c0-5 7-13 7-13z" /> },
   { cat: 'Progress',    title: 'Training Progress Tracking', body: 'Compare the same workout type over time. Track how your pace / power improves at the same lactate level.', icon: <FeatIcon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /> },
+
+  // === Planning & execution ===
+  { cat: 'Planning',    title: 'Workout Planner',           body: 'Build structured workouts step-by-step — warm-up, intervals with target power / pace / HR, recoveries, cooldown. Drop them onto the calendar in seconds.', icon: <FeatIcon d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /> },
+  { cat: 'Planning',    title: 'Training Calendar',          body: 'Plan, execute and review — drag planned sessions across the week, see Strava/FIT/manual workouts side-by-side with what was scheduled.', icon: <FeatIcon d="M3 10h18M8 3v4M16 3v4" /> },
+  { cat: 'Execution',   title: 'Start Trainings from the App', body: 'Open a planned workout and run it live — step-by-step prompts, target zones, lap timers and target adherence right in the browser.', icon: <FeatIcon d="M5 3l14 9-14 9V3z" /> },
+  { cat: 'Execution',   title: 'Smart Trainer Connection',   body: 'Pair your indoor smart trainer over Bluetooth (FTMS) and execute structured workouts with automatic resistance control. No third-party app needed.', icon: <FeatIcon d="M12 18h.01M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0" /> },
+
+  // === Integrations ===
   { cat: 'Integration', title: 'Strava & FIT File Sync',     body: 'Sync workouts from Strava or upload FIT files from Garmin, Wahoo, Polar. Full interval detection.', icon: <FeatIcon d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 15.9 6M16 16a4 4 0 1 0 0-8M12 22V10M15 13l-3-3-3 3" /> },
-  { cat: 'Training',    title: 'Training Categorization',    body: 'Auto-categorize sessions by intensity: threshold, VO₂max, endurance, tempo or recovery.', icon: <FeatIcon d="M7 7h.01M3 7v5a2 2 0 0 0 .6 1.4l7 7a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8l-7-7A2 2 0 0 0 12 3H7a4 4 0 0 0-4 4z" /> },
-  { cat: 'Training',    title: 'Coach & Athlete Management', body: 'Plan, log and review every athlete from one dashboard. Status dots, athlete switcher, bulk actions.', icon: <FeatIcon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /> },
-  { cat: 'Training',    title: 'Training Calendar',          body: 'Interactive calendar — all workouts from Strava, FIT and manual entries. View load across your timeline.', icon: <FeatIcon d="M3 10h18M8 3v4M16 3v4" /> },
+  { cat: 'Integration', title: 'Apple Health Sync',          body: 'Pull workouts and HR streams from Apple Health on iPhone. Works in the background — your test data and your training stay in one place.', icon: <FeatIcon d="M21 8.5c0-3-2-5.5-5-5.5-2.5 0-4 1.5-4 1.5S10.5 3 8 3c-3 0-5 2.5-5 5.5C3 14 12 21 12 21s9-7 9-12.5z" /> },
+  { cat: 'Training',    title: 'Training Categorization',    body: 'Auto-categorize sessions by intensity: threshold, VO₂max, endurance, tempo or recovery — based on your actual zones.', icon: <FeatIcon d="M7 7h.01M3 7v5a2 2 0 0 0 .6 1.4l7 7a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8l-7-7A2 2 0 0 0 12 3H7a4 4 0 0 0-4 4z" /> },
   { cat: 'Analysis',    title: 'TSS & Performance Analytics',body: 'Calculate Training Stress Score per workout. Analyze CTL / ATL / TSB to plan peaks and rest.', icon: <FeatIcon d="M9 19v-6H5v6M14 19v-9h-4M21 19V5h-3v14" /> },
+
+  // === Coach features ===
+  { cat: 'Coach',       title: 'Athlete Management',         body: 'Add unlimited athletes, plan their week, review their tests and trainings. Status dots, athlete switcher and bulk actions in one dashboard.', icon: <FeatIcon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /> },
+  { cat: 'Coach',       title: 'Plan Workouts for Athletes', body: 'Build structured sessions once and push them to any athlete\'s calendar. They execute in their own app — you see what they actually did vs what you planned.', icon: <FeatIcon d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 4h6v4H9zM9 14l2 2 4-4" /> },
+  { cat: 'Coach',       title: 'Branded PDF Reports',         body: 'Upload your logo and add your studio name, address and trademark — every test report comes out as your branded handout. Custom primary colour included.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13l3 3 5-6" /> },
+
+  // === Tools (always free) ===
   { cat: 'Tools',       title: 'Free Lactate Calculator',    body: 'No registration required. Instantly generate a lactate curve with all threshold calculations and PDF export.', icon: <FeatIcon d="M8 7h8M8 11h2M12 11h2M16 11h.01M8 15h2M12 15h2M16 15h.01M8 19h8" /> },
-  { cat: 'Tools',       title: 'PDF Report Generation',      body: 'Branded PDF — lactate curve, HR overlay, color-coded zones, stage table and personalised recommendations.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M9 13h6M9 17h6" /> },
+  { cat: 'Tools',       title: 'PDF Report Generation',      body: 'Branded PDF — lactate curve, HR overlay, color-coded zones, stage table and personalised recommendations. Unlimited on Coach plans.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M9 13h6M9 17h6" /> },
 ];
 
 const DEEPDIVES = [

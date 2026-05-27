@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
+import WhatsNewModal, { whatsNewSeenKey } from '../components/WhatsNewModal';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
@@ -123,6 +124,44 @@ export default function DashboardPage() {
       localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
     }
     setShowWelcomePaywall(false);
+  }, [user?._id]);
+
+  /**
+   * 'What's new' announcement for users who joined BEFORE the latest feature
+   * release. The release tag is baked into the localStorage key so bumping
+   * it in WhatsNewModal.jsx automatically re-shows the modal to everyone
+   * with the new contents.
+   *
+   * Mutually exclusive with WelcomePaywallModal: fresh sign-ups already see
+   * the paywall, so we don't double-popup. We also wait a tiny bit longer
+   * (1.2 s) than the paywall so layout settles first.
+   */
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return;
+    if (isCapacitorNative()) return;
+    // Don't pile two modals on top of each other.
+    if (showWelcomePaywall) return;
+    // Skip for accounts created after the release — they already signed
+    // up into the new feature set, so 'What's new' is meaningless and
+    // would just feel like noise.
+    const RELEASE_DATE = new Date('2026-05-25');
+    const createdAt = user.createdAt ? new Date(user.createdAt) : null;
+    if (createdAt && !Number.isNaN(createdAt.getTime()) && createdAt > RELEASE_DATE) {
+      return;
+    }
+
+    const flagKey = whatsNewSeenKey(user._id);
+    if (localStorage.getItem(flagKey)) return;
+    const t = setTimeout(() => setShowWhatsNew(true), 1200);
+    return () => clearTimeout(t);
+  }, [isAuthenticated, user?._id, showWelcomePaywall, user?.createdAt]);
+
+  const dismissWhatsNew = useCallback(() => {
+    if (user?._id) {
+      localStorage.setItem(whatsNewSeenKey(user._id), '1');
+    }
+    setShowWhatsNew(false);
   }, [user?._id]);
 
   /**
@@ -1570,6 +1609,11 @@ export default function DashboardPage() {
     <WelcomePaywallModal
       open={showWelcomePaywall}
       onClose={dismissWelcomePaywall}
+      userName={user?.name}
+    />
+    <WhatsNewModal
+      open={showWhatsNew}
+      onClose={dismissWhatsNew}
       userName={user?.name}
     />
     <motion.div
