@@ -1744,6 +1744,13 @@ const AdminDashboard = () => {
                             </span>
                           );
                         }
+                        if (source === 'system_disabled') {
+                          return (
+                            <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-800" title="SUBSCRIPTION_ENABLED is off — paywall disabled for everyone">
+                              ⚙︎ System off
+                            </span>
+                          );
+                        }
                         // Free user — show explicit "Free" chip so the column
                         // never looks empty (was confusing during testing).
                         return (
@@ -2330,6 +2337,13 @@ const AdminDashboard = () => {
                                   return (
                                     <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-900" title="BETA_ALL_PREMIUM env override">
                                       β Beta-all
+                                    </span>
+                                  );
+                                }
+                                if (source === 'system_disabled') {
+                                  return (
+                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-800" title="SUBSCRIPTION_ENABLED is off — paywall disabled for everyone">
+                                      ⚙︎ System off
                                     </span>
                                   );
                                 }

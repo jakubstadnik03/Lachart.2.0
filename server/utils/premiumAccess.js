@@ -20,17 +20,22 @@ function subscriptionGrantsPremium(sub) {
 /**
  * @param {object} user - User document or lean (must have optional `premium`)
  * @param {object|null} subscription - Subscription lean/doc or null
- * @returns {{ isPremium: boolean, source: 'manual'|'subscription'|'none' }}
+ * @returns {{ isPremium: boolean, source: 'manual'|'subscription'|'beta'|'system_disabled'|'none' }}
  *
- * Premium access rules (post-beta, paid launch):
- *   1. user.premium === true  →  manual admin grant (comp accounts, support, testers)
- *   2. Active paid Subscription (status active/trialing, plan != free)  →  Stripe-driven
- *   3. Otherwise → no premium. Admins are NOT auto-premium — they get
- *      access only via the same two paths above so paywall can be tested
- *      and dogfooded.
+ * Premium access rules (in priority order):
+ *   1. user.premium === true            →  'manual'   (admin grant: comp/support/testers)
+ *   2. Active paid Subscription         →  'subscription' (Stripe trialing or active)
+ *   3. SUBSCRIPTION_ENABLED !== 'true'  →  'system_disabled' (paywall is off entirely —
+ *                                          if we can't sell, we shouldn't gate)
+ *   4. BETA_ALL_PREMIUM === 'true'      →  'beta' (early-access override even while
+ *                                          subscriptions are live)
+ *   5. Otherwise                        →  'none' (free user, gated)
  *
- * To re-enable a "free for everyone" mode (e.g. early access campaign),
- * set BETA_ALL_PREMIUM=true on the server.
+ * Rules 3 and 4 are independent escape hatches:
+ *   - Set SUBSCRIPTION_ENABLED=false to turn the paywall off completely (e.g.
+ *     during a feature rebuild, or while waiting for Stripe Tax setup).
+ *   - Set BETA_ALL_PREMIUM=true to keep selling but also give every logged-in
+ *     user premium access (e.g. promotional period running in parallel).
  */
 function resolvePremiumAccess(user, subscription) {
   if (!user) return { isPremium: false, source: 'none' };
@@ -45,8 +50,14 @@ function resolvePremiumAccess(user, subscription) {
     return { isPremium: true, source: 'subscription' };
   }
 
-  // Optional escape hatch for early-access campaigns.
-  // Default is OFF so admins / regular users are gated like real customers.
+  // If subscriptions are disabled at the system level, there is no way to
+  // pay. Gating features would just lock users out with no recovery, so
+  // unlock everything until subscriptions are turned back on.
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true') {
+    return { isPremium: true, source: 'system_disabled' };
+  }
+
+  // Optional escape hatch for early-access / promo campaigns.
   if (process.env.BETA_ALL_PREMIUM === 'true') {
     return { isPremium: true, source: 'beta' };
   }
