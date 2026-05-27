@@ -615,6 +615,28 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                                   </span>
                                 );
                               })()}
+                              {/* Lap-typing preview — only present for structured
+                                  categories (vo2max / lt2 / lt1 / tempo). Tells
+                                  the user the apply pass will also tag intervals
+                                  as work/recovery/etc, not just set the category. */}
+                              {p.proposedLapTypes && (() => {
+                                const lt = p.proposedLapTypes;
+                                const total = (lt.work || 0) + (lt.recovery || 0) + (lt.warmup || 0) + (lt.cooldown || 0);
+                                if (total === 0) return null;
+                                const parts = [];
+                                if (lt.work)     parts.push(`${lt.work} work`);
+                                if (lt.recovery) parts.push(`${lt.recovery} rec`);
+                                if (lt.warmup)   parts.push(`WU`);
+                                if (lt.cooldown) parts.push(`CD`);
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700"
+                                    title={`Will tag ${total} laps with their interval type when applied`}
+                                  >
+                                    🏃 {parts.join(' · ')}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-gray-600 text-[11px]">

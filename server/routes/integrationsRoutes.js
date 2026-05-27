@@ -1032,6 +1032,14 @@ async function fetchAndSaveStravaActivity(user, stravaActivityId) {
  */
 async function prewarmStravaActivityExtras(user, stravaActivityId, token) {
   // 1) Laps — usually ready immediately. Persist onto the StravaActivity doc.
+  //    Title-based auto-categorize already ran at upsert time (the title is
+  //    available from the activity payload), but lap typing needs the laps
+  //    array which we only have HERE. So we:
+  //      a) Fetch & save laps as usual.
+  //      b) If the activity ended up with a structured category (vo2max /
+  //         lt2 / lt1 / tempo) — either from title or via a later modal apply
+  //         — tag each lap with its intervalType in the same write.
+  //    Best-effort: a failure in lap typing must not stop the prewarm.
   try {
     await stravaBudget.take();
     const lapsResp = await axios.get(
@@ -1041,9 +1049,37 @@ async function prewarmStravaActivityExtras(user, stravaActivityId, token) {
     try { stravaBudget.reconcileFromHeaders(lapsResp.headers); } catch (_) { /* swallow */ }
     const laps = Array.isArray(lapsResp.data) ? lapsResp.data : [];
     if (laps.length > 0) {
+      // Look up current category + sport so we know whether to lap-type.
+      const existing = await StravaActivity.findOne(
+        { userId: user._id, stravaId: stravaActivityId },
+        { category: 1, sport: 1 },
+      ).lean();
+      const category = existing?.category || null;
+      const normSport = _acNormSport(existing?.sport);
+
+      let lapsToSave = laps;
+      if (category && ['vo2max', 'lt2', 'lt1', 'tempo'].includes(category) && normSport) {
+        try {
+          // Need fresh zones — populate them from the user we already have.
+          const userDoc = await User.findById(user._id, { powerZones: 1, heartRateZones: 1 }).lean();
+          const pZones = userDoc?.powerZones?.[normSport] || {};
+          const hZones = userDoc?.heartRateZones?.[normSport] || {};
+          const lapTypes = _acClassifyLapTypes(laps, normSport, pZones, hZones, category);
+          if (lapTypes) {
+            lapsToSave = laps.map((l, i) =>
+              lapTypes[i] ? { ...l, intervalType: lapTypes[i] } : l,
+            );
+            console.log(`[Strava] prewarm tagged ${lapTypes.filter(Boolean).length} laps on ${stravaActivityId} (${category})`);
+          }
+        } catch (e) {
+          // Don't lose the laps over a lap-typing hiccup.
+          console.warn('[Strava] prewarm lap-typing failed:', e?.message);
+        }
+      }
+
       await StravaActivity.updateOne(
         { userId: user._id, stravaId: stravaActivityId },
-        { $set: { laps } },
+        { $set: { laps: lapsToSave } },
       );
     }
   } catch (e) {
