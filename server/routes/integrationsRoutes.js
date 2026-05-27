@@ -4574,6 +4574,113 @@ function _acCategorizeByIntervals(act, normSport, pZones, hZones) {
   return { category: null, evidence };
 }
 
+/**
+ * Per-lap interval-type classification for structured workouts.
+ *
+ * Given the laps of a workout that's already been categorised as vo2max /
+ * lt2 / lt1 / tempo, decide for each lap whether it's a:
+ *   - 'warmup'   — easier than the work effort, sits at the start
+ *   - 'work'     — the target-intensity interval
+ *   - 'recovery' — easier than work, sits between work laps
+ *   - 'cooldown' — easier than work, sits at the end
+ *
+ * The classifier uses three signals in priority order:
+ *   1. Lap zone vs the target zone for the category (zone5 for vo2max,
+ *      zone4 for lt2, zone3 for lt1). Anything inside the target zone or
+ *      higher counts as a work lap.
+ *   2. Power / HR delta vs the work-lap mean — laps notably below work
+ *      effort are warmup/recovery/cooldown.
+ *   3. Position in the workout — first sub-work lap = warmup, last = cooldown,
+ *      sub-work laps sandwiched between two work laps = recovery.
+ *
+ * For non-structured categories (endurance, zone2, hills, recovery) we
+ * skip lap typing entirely — those are continuous efforts, not intervals.
+ *
+ * @param {Array}  laps        Strava lap shape (average_watts, average_heartrate, elapsed_time…)
+ * @param {string} normSport   'cycling' | 'running' | 'swimming'
+ * @param {object} pZones      Power zones for that sport
+ * @param {object} hZones      HR zones for that sport
+ * @param {string} category    'vo2max' | 'lt2' | 'lt1' | 'tempo' | …
+ *
+ * @returns {Array<string|null>} Parallel array of 'warmup'/'work'/'recovery'/
+ *   'cooldown' or null when we can't decide for that lap. Same length as `laps`.
+ *   Returns null (instead of an array) when the workout isn't structured.
+ */
+function _acClassifyLapTypes(laps, normSport, pZones, hZones, category) {
+  if (!Array.isArray(laps) || laps.length < 2) return null;
+
+  const STRUCTURED = new Set(['vo2max', 'lt2', 'lt1', 'tempo']);
+  if (!STRUCTURED.has(category)) return null;
+
+  // Which zone counts as "work" for this category.
+  const TARGET_ZONE = {
+    vo2max: 'zone5',
+    lt2:    'zone4',
+    lt1:    'zone3',
+    tempo:  'zone3',  // tempo overlaps LT1 in most models
+  }[category];
+
+  // Pull a metric we can compare per lap. Cycling prefers power, running/swim
+  // fall back to HR. Same priority chain as the existing zone-finder.
+  const metricFor = (lap) => {
+    if (normSport === 'cycling' && lap?.average_watts > 0) {
+      return { val: lap.average_watts, kind: 'power' };
+    }
+    if (lap?.average_heartrate > 0) {
+      return { val: lap.average_heartrate, kind: 'hr' };
+    }
+    if (lap?.average_watts > 0) {
+      return { val: lap.average_watts, kind: 'power' };
+    }
+    return null;
+  };
+
+  // First pass — figure out which laps reached the target zone.
+  // Laps with no usable metric stay null (we won't lie about them).
+  const types = new Array(laps.length).fill(null);
+  const isWork = new Array(laps.length).fill(false);
+
+  for (let i = 0; i < laps.length; i++) {
+    const m = metricFor(laps[i]);
+    if (!m) continue;
+    const zones = m.kind === 'power' ? pZones : hZones;
+    const z = _acFindZone(m.val, zones);
+    // Work = at or above target zone for the category. zone5 trumps zone4
+    // trumps zone3 so an LT2 set with a couple of accidental VO2max bursts
+    // still gets all hard laps marked as work.
+    const ZONE_RANK = { zone1: 1, zone2: 2, zone3: 3, zone4: 4, zone5: 5 };
+    const targetRank = ZONE_RANK[TARGET_ZONE] || 4;
+    if (z && ZONE_RANK[z] >= targetRank) {
+      isWork[i] = true;
+      types[i] = 'work';
+    }
+  }
+
+  const workCount = isWork.filter(Boolean).length;
+  if (workCount === 0) return null; // not actually a structured workout
+
+  // Second pass — assign warmup/cooldown/recovery to non-work laps.
+  // Skip laps with no metric (stay null — better than guessing wrong).
+  const firstWorkIdx = isWork.indexOf(true);
+  const lastWorkIdx  = isWork.lastIndexOf(true);
+
+  for (let i = 0; i < laps.length; i++) {
+    if (types[i] !== null) continue; // already 'work'
+    if (!metricFor(laps[i])) continue; // unknown — leave null
+
+    if (i < firstWorkIdx) {
+      types[i] = 'warmup';
+    } else if (i > lastWorkIdx) {
+      types[i] = 'cooldown';
+    } else {
+      // Between two work laps → recovery.
+      types[i] = 'recovery';
+    }
+  }
+
+  return types;
+}
+
 /** Build a human-readable title for the activity */
 function _acBuildTitle(category, sport, movingTimeSec, distanceM, laps) {
   const sLabel = _AC_SPORT_LABEL[sport] || 'Workout';
@@ -4718,6 +4825,15 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         // Both fields can be present (title wins, intervals confirm).
         titleMatch: titleCategory ? { keyword: matchedKeyword, category: titleCategory } : null,
         intervalEvidence: evidence,
+        // Preview of how many laps would be auto-typed as work/recovery/etc
+        // when the proposal is applied. UI uses this to show "+ types 8 laps".
+        proposedLapTypes: (() => {
+          const types = _acClassifyLapTypes(act.laps, normSport, pZones, hZones, category);
+          if (!types) return null;
+          const counts = { work: 0, warmup: 0, recovery: 0, cooldown: 0 };
+          types.forEach((t) => { if (t && counts[t] !== undefined) counts[t] += 1; });
+          return counts;
+        })(),
         proposedCategory: category,
         proposedTitle: title,
       });
@@ -4818,14 +4934,35 @@ router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
 
       if (!category) { skipped++; continue; }
 
+      // Lap-type classification — only meaningful for structured workouts
+      // (vo2max/lt2/lt1/tempo). For continuous efforts (endurance, zone2,
+      // hills) we leave laps alone.
+      const pZones = powerZones[normSport] || {};
+      const hZones = hrZones[normSport] || {};
+      const lapTypes = _acClassifyLapTypes(act.laps, normSport, pZones, hZones, category);
+      let nextLaps = null;
+      if (lapTypes && Array.isArray(act.laps)) {
+        nextLaps = act.laps.map((l, i) =>
+          lapTypes[i] ? { ...l, intervalType: lapTypes[i] } : l,
+        );
+      }
+
       if (sample.length < 20) {
-        sample.push({ id: String(act._id), name: titleText, category, source: sourceUsed });
+        sample.push({
+          id: String(act._id),
+          name: titleText,
+          category,
+          source: sourceUsed,
+          lapsTyped: lapTypes ? lapTypes.filter(Boolean).length : 0,
+        });
       }
 
       if (!dryRun) {
+        const setOps = { category };
+        if (nextLaps) setOps.laps = nextLaps;
         const result = await StravaActivity.updateOne(
           { _id: act._id, userId: user._id, $or: query.$or },
-          { $set: { category } },
+          { $set: setOps },
         );
         if (result.modifiedCount > 0) updated++;
       } else {
@@ -4849,12 +4986,46 @@ router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!items.length) return res.json({ updated: 0 });
 
+    const powerZones = user.powerZones || {};
+    const hrZones = user.heartRateZones || {};
+
     let updated = 0;
+    let lapsTypedTotal = 0;
     for (const item of items) {
       if (!item._id) continue;
       const patch = {};
       if (item.applyCategory && item.category !== undefined) patch.category = item.category || null;
       if (item.applyTitle && item.title) patch.titleManual = item.title;
+
+      // When applying a structured category (vo2max/lt2/lt1/tempo), also
+      // tag each lap with intervalType so the activity detail view shows
+      // proper warmup/work/recovery/cooldown labels right away — no need
+      // to ask the user to manually mark them.
+      if (patch.category && ['vo2max', 'lt2', 'lt1', 'tempo'].includes(patch.category)) {
+        try {
+          const activity = await StravaActivity.findOne(
+            { _id: item._id, userId: user._id },
+            { laps: 1, sport: 1 },
+          ).lean();
+          const normSport = _acNormSport(activity?.sport);
+          if (normSport && Array.isArray(activity?.laps) && activity.laps.length > 0) {
+            const pZones = powerZones[normSport] || {};
+            const hZones = hrZones[normSport] || {};
+            const lapTypes = _acClassifyLapTypes(activity.laps, normSport, pZones, hZones, patch.category);
+            if (lapTypes) {
+              patch.laps = activity.laps.map((l, i) =>
+                lapTypes[i] ? { ...l, intervalType: lapTypes[i] } : l,
+              );
+              lapsTypedTotal += lapTypes.filter(Boolean).length;
+            }
+          }
+        } catch (e) {
+          // Lap-typing is best-effort — don't fail the category apply just
+          // because we couldn't tag the laps.
+          console.warn('[auto-classify apply] lap typing failed for', item._id, ':', e?.message);
+        }
+      }
+
       if (!Object.keys(patch).length) continue;
       const result = await StravaActivity.updateOne(
         { _id: item._id, userId: user._id },
@@ -4863,7 +5034,7 @@ router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
       if (result.modifiedCount > 0) updated++;
     }
 
-    res.json({ updated });
+    res.json({ updated, lapsTyped: lapsTypedTotal });
   } catch (err) {
     console.error('[auto-classify] apply error:', err.message);
     res.status(500).json({ error: err.message });
