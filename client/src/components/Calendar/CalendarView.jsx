@@ -674,11 +674,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
 
-  // X-axis zoom: enable horizontal scroll when there are many laps so bars
-  // don't get squeezed to unreadable widths. Under the threshold all bars
-  // fill the available width proportionally (no scroll needed).
-  const ZOOM_THRESHOLD = 10;
-  const MIN_BAR_PX     = 24; // px per lap when zoomed
+  // X-axis zoom: enable horizontal scroll when a lap is selected so the
+  // selected bar gets more breathing room. Threshold = 0 means zoom always
+  // activates on selection. On deselect the chart snaps back to full-width.
+  const ZOOM_THRESHOLD = 0;
+  const MIN_BAR_PX     = 36; // px per lap when zoomed — bigger = more focused
 
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -1249,6 +1249,22 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
               </button>
             );
           })}
+          {/* Settings shortcut — opens the CategoryManager directly so the
+              user can add / rename / re-colour categories without hunting
+              for the right tab in Settings. Anchor (not Link) because we
+              don't import react-router here; full-document navigation is
+              fine for a one-shot jump into Settings. */}
+          <div className="border-t border-gray-100" />
+          <a
+            href="/settings?tab=categories"
+            onClick={() => setOpen(false)}
+            className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 text-primary font-medium"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Setup categories</span>
+          </a>
         </div>
       )}
     </div>
@@ -3423,7 +3439,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
                   return (
                     <div className="rounded-xl border border-gray-100 overflow-hidden">
-                      <div className="grid text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
+                      <div className="grid text-[11px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
                         style={{ gridTemplateColumns: cols }}>
                         <span>#</span>
                         <span className="text-right">Time</span>
@@ -3479,7 +3495,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           return (
                             <div key={i} ref={el => lapRowRefs.current[i] = el}
                               onClick={() => setSelectedLap(isSelected ? null : i)}
-                              className="grid items-center px-3 py-2.5 text-xs cursor-pointer"
+                              className="grid items-center px-3 py-3 text-[13px] cursor-pointer"
                               style={{ gridTemplateColumns: cols, backgroundColor: typeRowBg, borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}` }}>
                               <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
                               <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
