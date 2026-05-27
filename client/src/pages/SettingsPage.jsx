@@ -193,6 +193,10 @@ const SettingsPage = () => {
   const [subLoading, setSubLoading] = useState(false);
   const [subActionLoading, setSubActionLoading] = useState(false);
   const [subError, setSubError] = useState(null);
+  // Cancel confirmation modal — replaces the native window.confirm so we can
+  // show the user exactly what cancelling does (access until period end,
+  // reactivate any time, etc.) before we actually hit the Stripe API.
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   // Coach branding state
   const [coachBranding, setCoachBranding] = useState({
@@ -772,15 +776,29 @@ const SettingsPage = () => {
     }
   };
 
-  // Cancel subscription
-  const handleCancelSub = async () => {
-    if (!window.confirm('Are you sure you want to cancel? You will keep access until the end of the billing period.')) return;
+  /**
+   * Cancel subscription — split into two steps:
+   *   1. Click 'Cancel subscription' button → opens modal (handleCancelSub).
+   *   2. Click 'Yes, cancel' inside modal → fires the API call (confirmCancelSub).
+   *
+   * This avoids the ugly native window.confirm dialog and gives the user a
+   * clear explanation of what cancelling actually does before we touch Stripe.
+   */
+  const handleCancelSub = () => {
+    setCancelConfirmOpen(true);
+  };
+
+  const confirmCancelSub = async () => {
     setSubActionLoading(true);
     try {
+      // cancelSubscription() POSTs /api/subscription/cancel which calls
+      // stripe.subscriptions.update(..., { cancel_at_period_end: true }).
+      // The server-side handler also sends the cancellation email.
       await cancelSubscription();
       addNotification('Subscription will be canceled at the end of the billing period.', 'success');
       const data = await getCurrentSubscription();
       setSubData(data);
+      setCancelConfirmOpen(false);
     } catch (err) {
       addNotification(err?.response?.data?.error || 'Cancel failed', 'error');
     } finally {
@@ -2893,6 +2911,67 @@ const SettingsPage = () => {
                 </div>
               )}
             </div>
+
+            {/* Cancel confirmation modal — only renders when the user clicks
+                'Cancel subscription'. Stops the cancel from happening until
+                they explicitly confirm so we never accidentally hit Stripe. */}
+            {cancelConfirmOpen && (
+              <div
+                className="fixed inset-0 z-[12000] flex items-center justify-center p-4"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget && !subActionLoading) {
+                    setCancelConfirmOpen(false);
+                  }
+                }}
+              >
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+                <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                      <span className="text-xl">⚠️</span>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">
+                        Cancel your subscription?
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        We're sorry to see you go.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-gray-700 space-y-2 mb-5">
+                    <p>
+                      Your <strong>LaChart {currentPlan === 'coach' ? 'Coach' : 'Pro'}</strong> subscription will be canceled
+                      {periodEnd ? <> on <strong>{formatPeriodEnd(periodEnd)}</strong></> : ' at the end of your current billing period'}.
+                    </p>
+                    <p>
+                      You'll keep <strong>full premium access until then</strong>. After that, your account drops back to the Free plan — no data is lost.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      You can reactivate any time before the period ends and continue uninterrupted.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                    <button
+                      onClick={() => setCancelConfirmOpen(false)}
+                      disabled={subActionLoading}
+                      className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                    >
+                      Keep subscription
+                    </button>
+                    <button
+                      onClick={confirmCancelSub}
+                      disabled={subActionLoading}
+                      className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                    >
+                      {subActionLoading ? 'Cancelling…' : 'Yes, cancel'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
