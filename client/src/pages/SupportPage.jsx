@@ -288,7 +288,7 @@ const SupportPage = () => {
         },
         {
           question: "Is there a free trial for paid plans?",
-          answer: "Yes — every paid plan includes a 30-day free trial. You won't be charged until the trial ends, and you can cancel anytime before that at no cost. After the trial, billing starts automatically. You can manage your subscription in Settings → Subscription.",
+          answer: "Yes — every paid plan includes a 60-day (2 months) free trial. You won't be charged until the trial ends, and you can cancel anytime before that at no cost. After the trial, billing starts automatically. You can manage your subscription in Settings → Subscription.",
         },
         {
           question: "How do I cancel or change my plan?",

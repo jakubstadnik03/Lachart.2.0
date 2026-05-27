@@ -6,28 +6,29 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 const PLAN_DETAILS = {
   pro: {
     name: 'Pro',
-    price: '$9.99',
+    price: '€9.99',
     color: 'from-primary to-primary/80',
     features: [
       'Unlimited lactate tests',
-      'FIT file analysis — intervals & power charts',
+      'Plan workouts in the calendar',
+      'Start trainings from the app',
+      'Connect to your smart trainer',
       'Advanced analytics & charts',
       'PDF export of test reports',
-      'Population comparison',
       'Priority support',
     ],
   },
   coach: {
     name: 'Coach',
-    price: '$19.99',
+    price: '€19.99',
     color: 'from-purple-600 to-purple-500',
     features: [
-      'Unlimited athletes (free: 1)',
-      'Unlimited tests per athlete (free: 1)',
-      'Coach dashboard & athlete overview',
-      'Bulk data export',
-      'PDF branding & custom logo',
-      'Priority support',
+      'Unlimited athletes',
+      'Plan workouts for your athletes',
+      'Unlimited PDF report generation',
+      'PDF branding — your logo, title & address',
+      'Coach dashboard & overview',
+      'Everything in Pro',
     ],
   },
 };
@@ -88,7 +89,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           </div>
 
           <p className="text-white/80 text-sm">
-            Unlock this with <span className="font-semibold text-white">LaChart {plan.name}</span> — start with 1 month free, no charge today.
+            Unlock this with <span className="font-semibold text-white">LaChart {plan.name}</span> — start with 2 months free, no charge today.
           </p>
         </div>
 
@@ -97,7 +98,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           {/* Price */}
           <div className="flex items-end gap-1 mb-4">
             <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
-            <span className="text-gray-400 text-sm mb-1">/ month after trial</span>
+            <span className="text-gray-400 text-sm mb-1">/ month after 2-month free trial</span>
           </div>
 
           {/* Features */}
@@ -122,7 +123,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
               onClick={handleUpgrade}
               className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
             >
-              🎁 Try {plan.name} free for 1 month
+              🎁 Try {plan.name} free for 2 months
             </button>
           )}
 
