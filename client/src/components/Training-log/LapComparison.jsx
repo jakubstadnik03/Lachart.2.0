@@ -239,12 +239,12 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
         <div className="relative shrink-0 select-none" style={{ width: Y_AXIS_W, height: CHART_H }}>
           {yTicks.map((v, i) => (
             <span key={i}
-              className="absolute right-1 text-[9px] text-gray-400 tabular-nums leading-none"
+              className="absolute right-1 text-[11px] text-gray-400 tabular-nums leading-none"
               style={{ top: `${(i / 4) * 100}%`, transform: 'translateY(-50%)' }}>
               {fmtTick(v)}
             </span>
           ))}
-          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none">{unitLabel}</span>
+          <span className="absolute right-1 bottom-0 text-[11px] text-gray-400 leading-none">{unitLabel}</span>
         </div>
         {/* Bars */}
         <div ref={wrapperRef} className="flex items-end gap-[2px] flex-1 min-w-0 border-l border-gray-100"
@@ -292,7 +292,7 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
       {hover && (() => {
         const x = items[hover.idx];
         return (
-          <div className="absolute pointer-events-none z-20 px-2 py-1.5 rounded-lg shadow-lg bg-white border border-gray-200 text-[10px] leading-tight"
+          <div className="absolute pointer-events-none z-20 px-2 py-1.5 rounded-lg shadow-lg bg-white border border-gray-200 text-xs leading-tight"
             style={{ left: hover.x, top: Math.max(hover.y - 10, 0), transform: 'translate(-50%, -100%)', minWidth: 110 }}>
             <div className="font-bold text-gray-800 mb-0.5">Lap #{x.i + 1}</div>
             {x.dist > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Distance</span><span className="font-semibold text-gray-700">{fmtLapDistance(x.dist)}</span></div>}
@@ -639,7 +639,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
           <div className="hidden sm:flex gap-1">
             {METRICS.map(m => (
               <button key={m.id} onClick={() => setMetric(m.id)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${metric === m.id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200 hover:border-primary/40'}`}>
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${metric === m.id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200 hover:border-primary/40'}`}>
                 {m.label}
               </button>
             ))}
@@ -679,7 +679,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
               <div className="flex sm:hidden gap-1 ml-auto">
                 {METRICS.map(m => (
                   <button key={m.id} onClick={() => setMetric(m.id)}
-                    className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-all ${metric === m.id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200'}`}>
+                    className={`px-2 py-1 rounded-full text-xs font-semibold border transition-all ${metric === m.id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-200'}`}>
                     {m.label}
                   </button>
                 ))}
@@ -693,11 +693,11 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                   <span className="text-xs font-semibold text-gray-500">{sessions.length} sessions — tap to compare</span>
                   <div className="flex gap-1">
                     <button onClick={() => setSelectedIds(sessions.map(getSessionId))}
-                      className="text-[10px] px-2 py-0.5 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100">All</button>
+                      className="text-xs px-2 py-0.5 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100">All</button>
                     <button onClick={() => setSelectedIds(sessions.slice(-2).map(getSessionId))}
-                      className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Last 2</button>
+                      className="text-xs px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Last 2</button>
                     <button onClick={() => setSelectedIds([])}
-                      className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Clear</button>
+                      className="text-xs px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Clear</button>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -755,13 +755,13 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                 {/* Legend chips */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   {series.map(s => (
-                    <span key={s.key} className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                    <span key={s.key} className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-2 py-1 rounded-lg"
                       style={{ backgroundColor: `${s.color}12`, color: s.color }}>
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
                       {s.label}
                     </span>
                   ))}
-                  {isAnyLoading && <span className="text-[11px] text-gray-400 animate-pulse">Loading…</span>}
+                  {isAnyLoading && <span className="text-[13px] text-gray-400 animate-pulse">Loading…</span>}
                 </div>
 
                 {/* Per-session lap bars — full session info + clickable to
@@ -827,8 +827,8 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                             <span className="text-[13px] font-bold text-gray-900">{s.label}</span>
-                            {s.session.sport && <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">{String(s.session.sport).toLowerCase()}</span>}
-                            <span className="text-[10px] text-gray-400">· {laps.length} {laps.length === 1 ? 'lap' : 'laps'}</span>
+                            {s.session.sport && <span className="text-xs uppercase tracking-wide text-gray-400 font-semibold">{String(s.session.sport).toLowerCase()}</span>}
+                            <span className="text-xs text-gray-400">· {laps.length} {laps.length === 1 ? 'lap' : 'laps'}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             {/* Edit button — only for manual (non-strava, non-fit) trainings */}
@@ -846,7 +846,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                         </div>
 
                         {/* Totals row */}
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[11px]">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[13px]">
                           {distLabel && <div><span className="text-gray-400">Distance </span><span className="font-bold text-gray-700">{distLabel}</span></div>}
                           {durLabel  && <div><span className="text-gray-400">Time </span><span className="font-bold text-gray-700">{durLabel}</span></div>}
                           {avgVal != null && <div><span className="text-gray-400">{metric === 'pace' ? 'Avg pace ' : metric === 'hr' ? 'Avg HR ' : 'Avg power '}</span><span className="font-bold text-gray-700">{fmtMetricLabel(avgVal, metric, s.session.sport || sport)}</span></div>}
@@ -940,14 +940,14 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
 
                   return (
                     <div className="mt-4 overflow-x-auto">
-                      <table className="w-full text-[11px]">
+                      <table className="w-full text-[13px]">
                         <thead>
                           <tr className="text-gray-400 text-left border-b border-gray-100">
                             <th className="py-1.5 pr-3 font-semibold sticky left-0 bg-white z-10">Lap</th>
                             {orderedSeries.map(s => (
                               <th key={s.key} className="py-1.5 px-2 font-semibold text-right whitespace-nowrap" style={{ color: s.color }}>
                                 {s.label}
-                                <div className="text-[9px] font-medium text-gray-400">
+                                <div className="text-[11px] font-medium text-gray-400">
                                   {(lapsBySeries.get(s.key) || []).length} laps
                                 </div>
                               </th>
@@ -982,12 +982,12 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                                           {val != null ? fmtMetricLabel(val, metric, s.session.sport || sport) : <span className="text-gray-300">—</span>}
                                         </span>
                                         {delta && delta.sign !== '=' && (
-                                          <span className={`text-[9px] font-bold tabular-nums ${delta.cls}`} title="vs. previous session">
+                                          <span className={`text-[11px] font-bold tabular-nums ${delta.cls}`} title="vs. previous session">
                                             {delta.sign}{delta.text}
                                           </span>
                                         )}
                                       </div>
-                                      <div className="text-[9px] text-gray-400 tabular-nums flex items-center justify-end gap-1.5 mt-0.5">
+                                      <div className="text-[11px] text-gray-400 tabular-nums flex items-center justify-end gap-1.5 mt-0.5">
                                         {dist > 0 && <span>{fmtLapDistance(dist)}</span>}
                                         {dur > 0 && <span>· {fmtLapDuration(dur)}</span>}
                                         {hr > 0 && <span>· {Math.round(hr)} bpm</span>}

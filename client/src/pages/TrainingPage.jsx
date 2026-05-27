@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom';
-import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, BeakerIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';

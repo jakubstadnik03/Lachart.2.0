@@ -9,6 +9,7 @@ import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
+
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile } from '../services/api';
@@ -281,6 +282,11 @@ const SettingsPage = () => {
       if (tab === 'subscription') setActiveTab('subscription');
       if (tab === 'coach') setActiveTab('coach');
       if (tab === 'units') setActiveTab('training'); // units merged into preferences
+      if (tab === 'branding') setActiveTab('branding');
+      if (tab === 'categories') setActiveTab('categories');
+      if (tab === 'training' || tab === 'preferences') setActiveTab('training');
+      if (tab === 'profile') setActiveTab('profile');
+      if (tab === 'notifications') setActiveTab('notifications');
       // Stripe redirect feedback
       if (tab === 'subscription' && q.get('success') === '1') {
         addNotification('Payment successful! Your subscription is now active.', 'success');

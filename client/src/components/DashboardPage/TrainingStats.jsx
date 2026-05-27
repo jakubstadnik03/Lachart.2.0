@@ -197,7 +197,7 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
 
         {/* Header — interval number + (when set) the work/warmup/cooldown/recovery tag */}
         <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100 flex items-center justify-between gap-2">
-          <span className="text-[11px] font-bold text-gray-700 tracking-wide">
+          <span className="text-[13px] font-bold text-gray-700 tracking-wide">
             Interval #{index + 1}
           </span>
           {intervalType && (() => {
@@ -211,7 +211,7 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
             if (!m) return null;
             return (
               <span
-                className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                 style={{ backgroundColor: m.bg, color: m.fg }}
               >
                 {m.label}
@@ -224,8 +224,8 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
         <div className="px-3 py-2 space-y-1">
           {rows.map((row, i) => (
             <div key={i} className="flex items-center justify-between gap-3">
-              <span className="text-[10px] text-gray-400 whitespace-nowrap">{row.label}</span>
-              <span className={`text-[11px] font-semibold whitespace-nowrap ${
+              <span className="text-xs text-gray-400 whitespace-nowrap">{row.label}</span>
+              <span className={`text-[13px] font-semibold whitespace-nowrap ${
                 row.isLactate ? "text-orange-500" : "text-gray-800"
               }`}>
                 {row.value}
@@ -233,7 +233,7 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
             </div>
           ))}
           {rows.length === 0 && (
-            <span className="text-[10px] text-gray-400">No data</span>
+            <span className="text-xs text-gray-400">No data</span>
           )}
         </div>
       </div>
@@ -319,7 +319,7 @@ function Scale({ values, formatValue }) {
           className="absolute right-0 left-0 flex items-center justify-end pr-1"
           style={{ top: `${axisTickY(i, values.length)}px`, transform: "translateY(-50%)" }}
         >
-          <span className="text-[9px] text-gray-400 bg-white pl-0.5 leading-none whitespace-nowrap">
+          <span className="text-[11px] text-gray-400 bg-white pl-0.5 leading-none whitespace-nowrap">
             {formatValue ? formatValue(v) : v}
           </span>
         </div>
@@ -387,13 +387,13 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
       onClick={() => onTrainingClick?.(training)}
       className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-gray-50 transition-colors"
     >
-      <span className="shrink-0 text-[11px] text-gray-400 w-14 tabular-nums">
+      <span className="shrink-0 text-[13px] text-gray-400 w-14 tabular-nums">
         {new Date(training.date).toLocaleDateString("en-US", { day: "numeric", month: "numeric", year: "2-digit" })}
       </span>
-      <span className="flex-1 min-w-0 text-[11px] text-gray-600 truncate">{training.title}</span>
-      <span className="shrink-0 text-[11px] font-semibold text-gray-800 flex items-center gap-0.5">
+      <span className="flex-1 min-w-0 text-[13px] text-gray-600 truncate">{training.title}</span>
+      <span className="shrink-0 text-[13px] font-semibold text-gray-800 flex items-center gap-0.5">
         {metricStr}
-        {icon && <span className={`text-[10px] ${iconCls}`}>{icon}</span>}
+        {icon && <span className={`text-xs ${iconCls}`}>{icon}</span>}
       </span>
     </button>
   );
@@ -751,7 +751,7 @@ export function TrainingStats({
             Training History
           </h2>
           {filteredTrainings.length > 0 && (
-            <span className="text-[11px] text-gray-400 font-normal">({filteredTrainings.length})</span>
+            <span className="text-[13px] text-gray-400 font-normal">({filteredTrainings.length})</span>
           )}
           {/* chart navigation */}
           <div className="flex items-center gap-0.5 ml-1">
@@ -780,7 +780,7 @@ export function TrainingStats({
             {isSettingsOpen && (
               <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-gray-100 z-50 p-3 flex flex-col gap-3">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Sport</label>
+                  <label className="block text-[13px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Sport</label>
                   <select
                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
                     value={currentSelectedSport || "all"}
@@ -793,7 +793,7 @@ export function TrainingStats({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Visible</label>
+                  <label className="block text-[13px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Visible</label>
                   <select
                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
                     value={displayCount}
@@ -809,7 +809,7 @@ export function TrainingStats({
                     onChange={(e) => setHideWarmCool(e.target.checked)}
                     className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-violet-500 focus:ring-violet-400"
                   />
-                  <span className="text-[11px] text-gray-700 leading-tight">
+                  <span className="text-[13px] text-gray-700 leading-tight">
                     Hide warm-up &amp; cool-down
                   </span>
                 </label>
@@ -919,7 +919,7 @@ export function TrainingStats({
                       );
                     })}
                   </div>
-                  <div className="mt-1 w-full shrink-0 text-center text-[10px] text-gray-400 tabular-nums leading-tight">
+                  <div className="mt-1 w-full shrink-0 text-center text-xs text-gray-400 tabular-nums leading-tight">
                     {new Date(training.date).toLocaleDateString("en-US", { day:"numeric", month:"numeric", year:"2-digit" })}
                   </div>
                 </div>
@@ -936,7 +936,7 @@ export function TrainingStats({
             <span className="text-xs font-semibold text-gray-700">
               Progress
               {filteredTrainings.length > 2 && (
-                <span className="ml-1.5 text-[11px] font-normal text-gray-400">
+                <span className="ml-1.5 text-[13px] font-normal text-gray-400">
                   {progressIndex + 1}–{Math.min(progressIndex + 2, filteredTrainings.length)} of {filteredTrainings.length}
                 </span>
               )}

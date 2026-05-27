@@ -323,7 +323,7 @@ function MetricCol({ label, values, color, formatVal, unit }) {
   if (nums.length === 0) return (
     <div className="flex flex-col items-center gap-1">
       <MiniSparkline values={[]} color={color} />
-      <span className="text-[9px] text-gray-300">—</span>
+      <span className="text-[11px] text-gray-300">—</span>
     </div>
   );
 
@@ -332,7 +332,7 @@ function MetricCol({ label, values, color, formatVal, unit }) {
   return (
     <div className="flex flex-col items-center gap-0.5">
       <MiniSparkline values={nums.map(Number)} color={color} />
-      <span className="text-[9px] font-medium text-gray-500">
+      <span className="text-[11px] font-medium text-gray-500">
         Ø {formatVal ? formatVal(avg) : Math.round(avg)}{unit}
       </span>
     </div>
@@ -352,7 +352,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
     <div className="overflow-x-auto">
       <table className="w-full text-xs text-gray-600">
         <thead>
-          <tr className="border-b border-gray-100 text-gray-400 text-[10px] uppercase tracking-wide">
+          <tr className="border-b border-gray-100 text-gray-400 text-xs uppercase tracking-wide">
             <th className="py-2 text-left w-6">#</th>
             <th className="py-2 text-center">{isRun || isSwim ? `Pace ${paceUnit}` : 'Power (W)'}</th>
             <th className="py-2 text-center">HR</th>
@@ -379,7 +379,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
             return (
               <tr key={absIdx} className="border-b border-gray-50 hover:bg-gray-50 transition-colors" style={rowBg ? { backgroundColor: rowBg } : undefined}>
                 <td className="py-1.5">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold" style={{ backgroundColor: badgeFill, color: badgeText }}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[11px] font-bold" style={{ backgroundColor: badgeFill, color: badgeText }}>
                     {r.interval || absIdx + 1}
                   </span>
                 </td>
@@ -390,7 +390,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
                   {curLac != null ? (
                     <span className="flex items-center justify-center gap-0.5">
                       {lacDelta != null && lacDelta !== 0 && (
-                        <span className="text-[8px]">{lacDelta > 0 ? '▲' : '▼'}</span>
+                        <span className="text-[10px]">{lacDelta > 0 ? '▲' : '▼'}</span>
                       )}
                       {curLac % 1 === 0 ? curLac : curLac.toFixed(1)}
                     </span>
@@ -552,14 +552,14 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
         <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">vs. previous same workout</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">vs. previous same workout</span>
         {prevDateStr && (
           <>
-            <span className="text-[10px] text-gray-300">·</span>
-            <span className="text-[10px] text-gray-500 font-medium">
+            <span className="text-xs text-gray-300">·</span>
+            <span className="text-xs text-gray-500 font-medium">
               {new Date(prevDateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
-            <span className="text-[10px] text-gray-400">({relDate(prevDateStr)})</span>
+            <span className="text-xs text-gray-400">({relDate(prevDateStr)})</span>
           </>
         )}
       </div>
@@ -598,11 +598,11 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
                 stroke="#e5e7eb" strokeWidth={1} strokeDasharray="3 2" />
             </svg>
             <div className="flex items-center gap-3 mt-1.5">
-              <span className="flex items-center gap-1 text-[9px] text-gray-500">
+              <span className="flex items-center gap-1 text-[11px] text-gray-500">
                 <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: accentColor }} />
                 Now
               </span>
-              <span className="flex items-center gap-1 text-[9px] text-gray-500">
+              <span className="flex items-center gap-1 text-[11px] text-gray-500">
                 <span className="inline-block w-2 h-2 rounded-sm bg-gray-300 flex-shrink-0" />
                 Prev
               </span>
@@ -625,13 +625,13 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
 
             return (
               <div key={m.key} className="flex flex-col gap-0.5 min-w-[72px]">
-                <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">{m.label}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{m.label}</span>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-sm font-semibold text-gray-800">
                     {cVal != null ? m.format(cVal) : '—'}
                   </span>
                   {delta !== null && !isZero && (
-                    <span className={`text-[10px] font-semibold flex items-center gap-0.5 leading-none ${
+                    <span className={`text-xs font-semibold flex items-center gap-0.5 leading-none ${
                       isGood === true  ? 'text-emerald-500' :
                       isGood === false ? 'text-red-400' :
                                          'text-gray-400'
@@ -640,11 +640,11 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
                     </span>
                   )}
                   {isZero && (
-                    <span className="text-[10px] text-gray-300 font-medium">±0</span>
+                    <span className="text-xs text-gray-300 font-medium">±0</span>
                   )}
                 </div>
                 {pVal != null && (
-                  <span className="text-[9px] text-gray-400">was {m.format(pVal)}</span>
+                  <span className="text-[11px] text-gray-400">was {m.format(pVal)}</span>
                 )}
               </div>
             );
@@ -777,26 +777,26 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             <div className="text-sm font-semibold text-gray-900 truncate leading-tight">
               {title || <span className="text-gray-300 italic">Untitled</span>}
             </div>
-            <div className="text-[11px] text-gray-400 mt-0.5">{date}</div>
+            <div className="text-[13px] text-gray-400 mt-0.5">{date}</div>
             <div className="flex flex-wrap gap-1 mt-1">
               {category && (
-                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide text-white" style={{ backgroundColor: catColor }}>
+                <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wide text-white" style={{ backgroundColor: catColor }}>
                   {(getCategory(category)?.label) || categoryLabel(category)}
                 </span>
               )}
               {hasLactate && (
-                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
                   lactate
                 </span>
               )}
               {safeResults.length > 0 && (
-                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] text-gray-400 bg-gray-50">
+                <span className="inline-block px-1.5 py-0.5 rounded text-[11px] text-gray-400 bg-gray-50">
                   {safeResults.length} {safeResults[0]?._fromLaps ? 'laps' : 'int.'}
                 </span>
               )}
               {/* Activity-level summary pills (distance / time / elev) */}
               {activityStats.slice(0, 2).map(s => (
-                <span key={s.label} className="inline-block px-1.5 py-0.5 rounded text-[9px] text-gray-500 bg-gray-50">
+                <span key={s.label} className="inline-block px-1.5 py-0.5 rounded text-[11px] text-gray-500 bg-gray-50">
                   {s.value}
                 </span>
               ))}
@@ -808,7 +808,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
         <div className="hidden md:flex flex-1 items-center min-w-0" style={{ gap: 0 }}>
           {/* Power / Pace */}
           <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">
               {isBike ? 'Power' : 'Pace'}
             </span>
             {powerVals.length > 0 ? (
@@ -830,14 +830,14 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             ) : (() => {
               const stat = activityStats.find(s => s.label === 'Avg Power' || s.label === 'Avg Pace');
               return stat
-                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[11px] font-semibold text-gray-500">{stat.value}</span></div>
-                : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>;
+                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[13px] font-semibold text-gray-500">{stat.value}</span></div>
+                : <div className="h-9 flex items-center text-xs text-gray-200">—</div>;
             })()}
           </div>
 
           {/* Heart Rate */}
           <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">HR</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">HR</span>
             {hrVals.length > 0 ? (
               <MetricCol
                 values={hrVals}
@@ -848,14 +848,14 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             ) : (() => {
               const avgHr = training.average_heartrate || training.avgHeartRate;
               return avgHr
-                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[11px] font-semibold text-gray-500">{Math.round(avgHr)} bpm</span></div>
-                : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>;
+                ? <div className="h-9 flex flex-col items-center justify-center"><span className="text-[13px] font-semibold text-gray-500">{Math.round(avgHr)} bpm</span></div>
+                : <div className="h-9 flex items-center text-xs text-gray-200">—</div>;
             })()}
           </div>
 
           {/* Lactate — always rendered to keep Skyline column aligned */}
           <div className="flex flex-col items-center gap-0.5" style={{ flex: '1 1 0', minWidth: 0 }}>
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">Lactate</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5">Lactate</span>
             {lactateVals.length > 0 ? (
               <MetricCol
                 values={lactateVals}
@@ -863,13 +863,13 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                 unit=" mmol"
                 formatVal={v => Number(v).toFixed(1)}
               />
-            ) : <div className="h-9 flex items-center text-[10px] text-gray-200">—</div>}
+            ) : <div className="h-9 flex items-center text-xs text-gray-200">—</div>}
           </div>
         </div>
 
         {/* ── Skyline ── */}
         <div className="flex-shrink-0 flex flex-col items-center gap-0.5">
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5 hidden md:block">Skyline</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300 mb-0.5 hidden md:block">Skyline</span>
           {safeResults.length > 0 ? (
             <SkylineChart results={safeResults} sport={sport} />
           ) : detailLoading ? (
@@ -880,7 +880,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
               </svg>
             </div>
           ) : (
-            <div className="w-[180px] h-[52px] rounded bg-gray-50 flex items-center justify-center text-[10px] text-gray-300">
+            <div className="w-[180px] h-[52px] rounded bg-gray-50 flex items-center justify-center text-xs text-gray-300">
               No intervals
             </div>
           )}
@@ -918,7 +918,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
               { label: 'Z4 Threshold', fill: '#f97316' },
               { label: 'Z5 Max',       fill: '#e53e3e' },
             ].map(z => (
-              <span key={z.label} className="flex items-center gap-1 text-[10px] text-gray-500">
+              <span key={z.label} className="flex items-center gap-1 text-xs text-gray-500">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: z.fill }} />
                 {z.label}
               </span>
@@ -973,7 +973,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                 <IntervalTable results={pageSlice} sport={sport} startIndex={pageStart} globalMax={globalMax} />
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-xs text-gray-400">
                       Intervals {pageStart + 1}–{Math.min(pageStart + INTERVALS_PER_PAGE, safeResults.length)} of {safeResults.length}
                     </span>
                     <div className="flex items-center gap-1">
@@ -990,7 +990,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                         <button
                           key={i}
                           onClick={() => setIntervalPage(i)}
-                          className={`w-6 h-6 rounded-full text-[10px] font-semibold transition-colors ${
+                          className={`w-6 h-6 rounded-full text-xs font-semibold transition-colors ${
                             intervalPage === i
                               ? 'text-white'
                               : 'text-gray-400 hover:bg-gray-100'
@@ -1039,7 +1039,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-50">
               {activityStats.map(s => (
                 <div key={s.label} className="flex flex-col items-center px-3 py-1.5 bg-gray-50 rounded-lg">
-                  <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">{s.label}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{s.label}</span>
                   <span className="text-sm font-semibold text-gray-700">{s.value}</span>
                 </div>
               ))}

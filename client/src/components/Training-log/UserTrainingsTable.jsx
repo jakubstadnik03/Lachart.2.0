@@ -617,7 +617,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           {(filterSport !== 'all' || filterCategory !== 'all') && (
             <button
               onClick={() => { setFilterSport('all'); setFilterCategory('all'); setCurrentPage(1); }}
-              className="ml-1 px-2 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1"
+              className="ml-1 px-2 py-0.5 text-xs font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -629,7 +629,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       )}
 
       {/* ── Column hint bar (desktop only) ── */}
-      <div className="hidden md:flex items-center px-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-300" style={{ gap: 16 }}>
+      <div className="hidden md:flex items-center px-4 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-300" style={{ gap: 16 }}>
         <div style={{ minWidth: 180, maxWidth: 240, flexShrink: 0 }}>Activity</div>
         {/* 3 metric cols — same flex:1 1 0 as in TrainingItem */}
         <div className="flex-1 flex" style={{ gap: 0 }}>

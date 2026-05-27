@@ -304,18 +304,18 @@ function ZoneRows({ secMap, colors, zoneNames }) {
         const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
         return (
           <div key={zk} className="flex items-center gap-2">
-            <span className="w-6 text-xs font-bold text-gray-400 shrink-0">Z{zi + 1}</span>
-            <span className="w-16 text-[10px] text-gray-500 shrink-0">{zoneNames[zi]}</span>
+            <span className="w-6 text-sm font-bold text-gray-400 shrink-0">Z{zi + 1}</span>
+            <span className="w-16 text-xs text-gray-500 shrink-0">{zoneNames[zi]}</span>
             <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
               <div
                 className="h-full rounded-full transition-all"
                 style={{ width: `${pct}%`, backgroundColor: colors[zi] }}
               />
             </div>
-            <span className="w-8 text-[10px] text-right text-gray-500 shrink-0">
+            <span className="w-8 text-xs text-right text-gray-500 shrink-0">
               {pct.toFixed(0)}%
             </span>
-            <span className="w-10 text-[10px] text-right text-gray-600 font-medium shrink-0">
+            <span className="w-10 text-xs text-right text-gray-600 font-medium shrink-0">
               {sec > 0 ? timeStr : '—'}
             </span>
           </div>
@@ -1571,14 +1571,14 @@ export default function CalendarPeriodStats({
                 },
               ].map((card) => (
                 <div key={card.label} className="bg-gray-50 rounded-xl p-3">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">
+                  <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold leading-tight">
                     {card.label}
                   </div>
                   <div className="text-sm font-bold text-gray-900 mt-1 leading-tight tabular-nums">
                     {card.value}
                   </div>
                   {card.sub && (
-                    <div className="text-[10px] text-gray-400 truncate mt-0.5">{card.sub}</div>
+                    <div className="text-xs text-gray-400 truncate mt-0.5">{card.sub}</div>
                   )}
                 </div>
               ))}
@@ -1601,15 +1601,15 @@ export default function CalendarPeriodStats({
                     />
                     <div className="grid grid-cols-3 gap-2 mt-2">
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
+                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
                         <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{lastEntry.ctl}</div>
                       </div>
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
+                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
                         <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{lastEntry.atl}</div>
                       </div>
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
+                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
                         <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
                       </div>
                     </div>
@@ -1623,7 +1623,7 @@ export default function CalendarPeriodStats({
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="bg-gray-50 rounded-xl p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                    <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
                       Current TSS
                     </div>
                     <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
@@ -1631,7 +1631,7 @@ export default function CalendarPeriodStats({
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                    <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
                       Previous TSS
                     </div>
                     <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
@@ -1639,7 +1639,7 @@ export default function CalendarPeriodStats({
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                    <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
                       Delta
                     </div>
                     <div
@@ -1652,7 +1652,7 @@ export default function CalendarPeriodStats({
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+                    <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
                       Overload risk
                     </div>
                     <div className="text-sm font-bold mt-1">
@@ -1677,9 +1677,9 @@ export default function CalendarPeriodStats({
                       <div key={ps} className="bg-gray-50 rounded-xl px-3 py-2">
                         <div className="flex items-center gap-2 mb-1">
                           <img src={`/icon/${bucket}.svg`} alt={bucket} className="w-3.5 h-3.5 object-contain shrink-0" />
-                          <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{SPORT_LABEL[ps]}</span>
-                          <span className="ml-auto text-xs font-bold text-gray-900 tabular-nums">{cur > 0 ? formatDistance(cur, user) : '—'}</span>
-                          <span className="text-[10px] text-gray-400 tabular-nums">vs {prev > 0 ? formatDistance(prev, user) : '—'}</span>
+                          <span className="text-xs uppercase tracking-wide text-gray-500 font-semibold">{SPORT_LABEL[ps]}</span>
+                          <span className="ml-auto text-sm font-bold text-gray-900 tabular-nums">{cur > 0 ? formatDistance(cur, user) : '—'}</span>
+                          <span className="text-xs text-gray-400 tabular-nums">vs {prev > 0 ? formatDistance(prev, user) : '—'}</span>
                         </div>
                         <div className="flex gap-1 items-center">
                           <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
@@ -1728,7 +1728,7 @@ export default function CalendarPeriodStats({
                               />
                             )}
                           </div>
-                          <span className="w-8 text-xs text-gray-500 shrink-0">
+                          <span className="w-8 text-sm text-gray-500 shrink-0">
                             {sportBucketLabel[b]}
                           </span>
                           <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
@@ -1737,11 +1737,11 @@ export default function CalendarPeriodStats({
                               style={{ width: `${pct}%`, backgroundColor: BUCKET_COLOR[b] }}
                             />
                           </div>
-                          <span className="w-10 text-[11px] font-semibold text-gray-700 shrink-0 text-right">
+                          <span className="w-10 text-[13px] font-semibold text-gray-700 shrink-0 text-right">
                             {timeStr}
                           </span>
                           {dist > 0 && (
-                            <span className="w-14 text-[10px] text-gray-400 shrink-0 text-right">
+                            <span className="w-14 text-xs text-gray-400 shrink-0 text-right">
                               {formatDistance(dist, user)}
                             </span>
                           )}
@@ -1788,7 +1788,7 @@ export default function CalendarPeriodStats({
                   Load trend (last 12 weeks)
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <div className="flex gap-3 mb-1 text-[10px] text-gray-400">
+                  <div className="flex gap-3 mb-1 text-xs text-gray-400">
                     <span>
                       <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1" style={{ backgroundColor: '#3b82f6' }} />
                       TSS (bars)
@@ -1797,7 +1797,7 @@ export default function CalendarPeriodStats({
                       <span className="inline-block w-2.5 h-2.5 rounded-full mr-1" style={{ backgroundColor: '#f97316' }} />
                       Volume h (line)
                     </span>
-                    <span className="text-[9px] text-gray-300">
+                    <span className="text-[11px] text-gray-300">
                       Current period highlighted
                     </span>
                   </div>
@@ -1816,7 +1816,7 @@ export default function CalendarPeriodStats({
         {activeTab === 'zones' && (
           <div className="space-y-4">
             {/* Source note */}
-            <p className="text-[10px] text-gray-400 leading-relaxed border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
+            <p className="text-xs text-gray-400 leading-relaxed border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
               {monthlyZones
                 ? <>Zone times are computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>
                 : <>Zone times are <span className="font-semibold text-gray-500">estimates</span>: each activity is counted using its average power, pace, or HR against your profile zones (not second-by-second files).</>
@@ -1923,7 +1923,7 @@ export default function CalendarPeriodStats({
                           <img src={`/icon/${row.bucket}.svg`} alt={row.bucket} className="w-4 h-4 object-contain shrink-0" />
                           <span className="text-xs text-gray-600 font-medium w-10 shrink-0">{row.label}</span>
                           <span className="text-xs font-bold text-gray-800 tabular-nums">{timeStr}</span>
-                          <span className="text-[10px] text-gray-400 ml-1">({row.isPower ? 'power/pace zones' : 'HR zones'})</span>
+                          <span className="text-xs text-gray-400 ml-1">({row.isPower ? 'power/pace zones' : 'HR zones'})</span>
                         </div>
                       );
                     })}
@@ -2001,7 +2001,7 @@ export default function CalendarPeriodStats({
                     }}
                   />
                 </div>
-                <div className="flex gap-3 text-[10px] text-gray-500">
+                <div className="flex gap-3 text-xs text-gray-500">
                   <span>
                     <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1" />
                     Easy {zonePolarization.easyPct.toFixed(0)}%
@@ -2016,7 +2016,7 @@ export default function CalendarPeriodStats({
                   </span>
                 </div>
                 <span
-                  className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${zonePolarization.badge.color}`}
+                  className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${zonePolarization.badge.color}`}
                 >
                   {zonePolarization.badge.label}
                 </span>
@@ -2045,7 +2045,7 @@ export default function CalendarPeriodStats({
                 <div key={catKey} className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className={`text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-xl border ${categoryChipClass(displayCat)}`}
+                      className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-xl border ${categoryChipClass(displayCat)}`}
                     >
                       {categoryLabel(displayCat, getCategory)}
                     </span>
@@ -2096,10 +2096,10 @@ export default function CalendarPeriodStats({
                               <div className="text-sm font-semibold text-gray-900 truncate">
                                 {act.title || 'Activity'}
                               </div>
-                              <div className="text-[11px] text-gray-400 mt-0.5">
+                              <div className="text-[13px] text-gray-400 mt-0.5">
                                 {fmtActDate(act)}
                               </div>
-                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">
+                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[13px] text-gray-500">
                                 {sec > 0 && <span>{formatDuration(sec)}</span>}
                                 {dist > 0 && <span>{formatDistance(dist, user)}</span>}
                                 {tss > 0 && (
@@ -2176,7 +2176,7 @@ export default function CalendarPeriodStats({
                   Effort timeline
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <div className="flex gap-3 mb-1 text-[10px] text-gray-400">
+                  <div className="flex gap-3 mb-1 text-xs text-gray-400">
                     {['bike', 'run', 'swim', 'other'].map((b) => (
                       <span key={b} className="flex items-center gap-1">
                         <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: BUCKET_COLOR[b] }} />
@@ -2222,7 +2222,7 @@ export default function CalendarPeriodStats({
                     if (period?.periodStart) setCompareRefDate(new Date(period.periodStart));
                     setCompareMode(periodView);
                   }}
-                  className="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
+                  className="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors whitespace-nowrap"
                 >
                   ↵ Current period
                 </button>
@@ -2269,15 +2269,15 @@ export default function CalendarPeriodStats({
             {/* Year labels */}
             <div className="flex items-stretch gap-3">
               <div className="flex-1 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-primary">This year</div>
-                <div className="text-xs font-bold text-gray-900 mt-0.5">{cmpLabel}</div>
-                <div className="text-[10px] text-gray-500">{aggCmpThis.count} {aggCmpThis.count === 1 ? 'activity' : 'activities'}</div>
+                <div className="text-xs uppercase tracking-wide font-semibold text-primary">This year</div>
+                <div className="text-sm font-bold text-gray-900 mt-0.5">{cmpLabel}</div>
+                <div className="text-xs text-gray-500">{aggCmpThis.count} {aggCmpThis.count === 1 ? 'activity' : 'activities'}</div>
               </div>
               <div className="flex items-center text-gray-300 text-xs shrink-0">vs</div>
               <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">Last year</div>
-                <div className="text-xs font-bold text-gray-600 mt-0.5">{cmpLYLabel}</div>
-                <div className="text-[10px] text-gray-400">{aggCmpPrev.count} {aggCmpPrev.count === 1 ? 'activity' : 'activities'}</div>
+                <div className="text-xs uppercase tracking-wide font-semibold text-gray-400">Last year</div>
+                <div className="text-sm font-bold text-gray-600 mt-0.5">{cmpLYLabel}</div>
+                <div className="text-xs text-gray-400">{aggCmpPrev.count} {aggCmpPrev.count === 1 ? 'activity' : 'activities'}</div>
               </div>
             </div>
 
@@ -2298,11 +2298,11 @@ export default function CalendarPeriodStats({
                     const delta = card.ly > 0 ? ((card.cur - card.ly) / card.ly) * 100 : null;
                     return (
                       <div key={card.label} className="bg-gray-50 rounded-xl p-3">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">{card.label}</div>
+                        <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-1">{card.label}</div>
                         <div className="text-sm font-bold text-gray-900 tabular-nums">{card.fmt(card.cur)}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">LY: {card.fmt(card.ly)}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">LY: {card.fmt(card.ly)}</div>
                         {delta !== null && (
-                          <div className={`text-[11px] font-semibold mt-1 ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                          <div className={`text-[13px] font-semibold mt-1 ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
                             {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
                           </div>
                         )}
@@ -2351,25 +2351,25 @@ export default function CalendarPeriodStats({
                               <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain" />
                               <span className="text-xs font-semibold text-gray-600">{SPORT_LABEL[ps]}</span>
                               {delta !== null && (
-                                <span className={`text-[10px] font-semibold ml-auto ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
+                                <span className={`text-xs font-semibold ml-auto ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
                                   {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%
                                 </span>
                               )}
                             </div>
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="w-14 text-[10px] text-gray-500 shrink-0">This year</span>
+                                <span className="w-14 text-xs text-gray-500 shrink-0">This year</span>
                                 <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
                                   <div className="h-full rounded-full" style={{ width: `${(curSec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] }} />
                                 </div>
-                                <span className="w-14 text-[10px] text-right font-semibold text-gray-700 shrink-0 tabular-nums">{curSec > 0 ? fmtH(curSec) : '—'}</span>
+                                <span className="w-14 text-xs text-right font-semibold text-gray-700 shrink-0 tabular-nums">{curSec > 0 ? fmtH(curSec) : '—'}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="w-14 text-[10px] text-gray-400 shrink-0">Last year</span>
+                                <span className="w-14 text-xs text-gray-400 shrink-0">Last year</span>
                                 <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
                                   <div className="h-full rounded-full" style={{ width: `${(lySec / maxSec) * 100}%`, backgroundColor: BUCKET_COLOR[b] + '66' }} />
                                 </div>
-                                <span className="w-14 text-[10px] text-right font-medium text-gray-400 shrink-0 tabular-nums">{lySec > 0 ? fmtH(lySec) : '—'}</span>
+                                <span className="w-14 text-xs text-right font-medium text-gray-400 shrink-0 tabular-nums">{lySec > 0 ? fmtH(lySec) : '—'}</span>
                               </div>
                             </div>
                           </div>
@@ -2402,9 +2402,9 @@ export default function CalendarPeriodStats({
                               <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
                               <div className="min-w-0 flex-1">
                                 <div className="text-xs font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
-                                <div className="text-[10px] text-gray-400">{fmtActDate(act)}</div>
+                                <div className="text-xs text-gray-400">{fmtActDate(act)}</div>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0 text-[10px] text-gray-500">
+                              <div className="flex items-center gap-2 shrink-0 text-xs text-gray-500">
                                 {sec > 0 && <span className="tabular-nums">{formatDuration(sec)}</span>}
                                 {dist > 0 && <span className="tabular-nums">{formatDistance(dist, user)}</span>}
                                 {tss > 0 && <span className="text-primary font-semibold tabular-nums">{Math.round(tss)} TSS</span>}

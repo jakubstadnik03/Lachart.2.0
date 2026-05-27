@@ -9,7 +9,13 @@ import {
   PlayCircleIcon,
   BeakerIcon,
   PaintBrushIcon,
+  BoltIcon,
+  ArrowTrendingUpIcon,
+  ChartBarSquareIcon,
+  HeartIcon,
+  CloudArrowDownIcon,
 } from '@heroicons/react/24/outline';
+import { getIntegrationStatus } from '../services/api';
 
 /**
  * WhatsNewModal
@@ -34,7 +40,19 @@ const RELEASE_TAG = '2026-05';
 // (colourful on macOS, flat / outline on Windows / Linux, missing on
 // some Linux distros entirely) which made the modal look amateurish on
 // non-Apple devices. Heroicons stays crisp and matches the accent palette.
+// `stravaOnly: true` slides are only shown to users whose Strava is NOT yet
+// connected — they're a soft prompt to wire it up. Filtered in-component
+// once we know the integration status. Items without the flag always show.
 const ITEMS = [
+  {
+    icon: CloudArrowDownIcon,
+    title: 'Connect Strava in one click',
+    body: "Auto-import every ride, run and swim — with power, HR, pace and laps — straight into LaChart. Your training history fills itself in.",
+    cta: 'Connect Strava',
+    href: '/settings?tab=integrations',
+    accent: '#fc4c02', // strava orange
+    stravaOnly: true,
+  },
   {
     icon: CalendarDaysIcon,
     title: 'Plan workouts in the calendar',
@@ -67,19 +85,80 @@ const ITEMS = [
     href: '/settings?tab=branding',
     accent: '#f59e0b', // amber
   },
+  {
+    icon: BoltIcon,
+    title: 'Auto-categorize your activities',
+    body: 'Connect Strava or upload a FIT file and LaChart sorts each session — endurance, threshold, VO2max, recovery — using interval structure, zones and workout titles.',
+    cta: 'Open Strava sync',
+    href: '/settings?tab=integrations',
+    accent: '#6366f1', // indigo
+  },
+  {
+    icon: HeartIcon,
+    title: 'Track form, fitness & fatigue',
+    body: 'CTL, ATL and TSB charted over weeks so you can see when you peak, when you overreach, and when to back off — built from every workout you log.',
+    cta: 'See my form',
+    href: '/training-calendar',
+    accent: '#ec4899', // pink
+  },
+  {
+    icon: ChartBarSquareIcon,
+    title: 'Compare sessions side-by-side',
+    body: 'Stack any two workouts on the same chart — pace, power, HR, lactate — and watch how the same session looks fresh vs fatigued, base vs race-fit.',
+    cta: 'Open compare',
+    href: '/training',
+    accent: '#06b6d4', // cyan
+  },
+  {
+    icon: ArrowTrendingUpIcon,
+    title: 'Watch your lactate curve evolve',
+    body: 'Every new test re-builds your curve with LT1, LT2, IAT and OBLA thresholds — and overlays previous tests so progress is impossible to miss.',
+    cta: 'View my tests',
+    href: '/lactate-statistics',
+    accent: '#10b981', // emerald
+  },
 ];
 
 export default function WhatsNewModal({ open, onClose, userName }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const total = ITEMS.length;
+
+  // `null` while we haven't checked yet → assume connected (i.e. hide the
+  // Strava-only prompt slide) so it doesn't flash-in then disappear. Flip
+  // to `false` only after the status call confirms the user has NOT linked
+  // Strava — then the conditional slides appear.
+  const [stravaConnected, setStravaConnected] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await getIntegrationStatus({ timeout: 6000 });
+        if (!cancelled) setStravaConnected(Boolean(status?.stravaConnected));
+      } catch {
+        // Treat any failure as "connected" so we don't nag people whose
+        // status call just timed out / was rate-limited.
+        if (!cancelled) setStravaConnected(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Hide `stravaOnly` slides once we know the user has Strava linked. Until
+  // the status resolves we also hide them — see comment on the state above.
+  const visibleItems = ITEMS.filter((it) => !it.stravaOnly || stravaConnected === false);
+  const total = visibleItems.length;
 
   // Reset to the first slide whenever the modal is (re-)opened — otherwise
   // a user who closed it midway through last time would re-open on slide 4
-  // with no context.
+  // with no context. Also reset if the filtered slide count changes under
+  // us (e.g. status resolves and adds a slide) to avoid an out-of-range step.
   useEffect(() => {
     if (open) setStep(0);
   }, [open]);
+  useEffect(() => {
+    if (step >= total) setStep(0);
+  }, [total, step]);
 
   // Keyboard navigation — ← → for prev/next, Esc to close. Wired only
   // while the modal is open so we don't trap arrow keys elsewhere.
@@ -95,8 +174,9 @@ export default function WhatsNewModal({ open, onClose, userName }) {
   }, [open, onClose, total]);
 
   if (!open) return null;
+  if (total === 0) return null;
 
-  const current = ITEMS[step];
+  const current = visibleItems[step];
   const isFirst = step === 0;
   const isLast  = step === total - 1;
 
@@ -203,7 +283,7 @@ export default function WhatsNewModal({ open, onClose, userName }) {
 
           {/* Dot indicators */}
           <div className="flex-1 flex items-center justify-center gap-1.5">
-            {ITEMS.map((it, i) => {
+            {visibleItems.map((it, i) => {
               const active = i === step;
               return (
                 <button

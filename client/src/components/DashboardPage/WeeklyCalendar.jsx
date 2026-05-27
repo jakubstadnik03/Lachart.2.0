@@ -300,7 +300,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
           {['done', 'plan'].map(t => (
             <button key={t} onClick={() => onTabChange?.(t)}
               style={{ touchAction: 'manipulation' }}
-              className={`flex-1 text-[9px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`flex-1 text-[11px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {t === 'done' ? 'Done' : 'Plan'}
             </button>
           ))}
@@ -310,12 +310,12 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
           <span className={`font-extrabold text-gray-900 tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>{plannedHoursStr || '—'}</span>
         </div>
         {byDay.length === 0 ? (
-          <span className={`text-gray-400 italic flex-1 flex items-center ${compact ? 'text-[9px]' : 'text-[10px]'}`}>No plan</span>
+          <span className={`text-gray-400 italic flex-1 flex items-center ${compact ? 'text-[11px]' : 'text-xs'}`}>No plan</span>
         ) : (
           <div className="space-y-1 flex-1 overflow-hidden">
             {byDay.map(({ dow, pws }) => (
               <div key={dow} className="flex items-start gap-1">
-                <span className={`font-bold text-gray-400 w-5 shrink-0 mt-0.5 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>{dow}</span>
+                <span className={`font-bold text-gray-400 w-5 shrink-0 mt-0.5 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{dow}</span>
                 <div className="flex-1 min-w-0 space-y-0.5">
                   {pws.map((pw, i) => {
                     const color = sportColorForSummary(pw.sport || 'bike');
@@ -323,8 +323,8 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
                     return (
                       <div key={i} className="flex items-center gap-1 min-w-0">
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span className={`text-gray-700 font-medium truncate flex-1 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>{pw.title || 'Workout'}</span>
-                        {secs > 0 && <span className={`text-gray-400 shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>{secsToHMShort(secs)}</span>}
+                        <span className={`text-gray-700 font-medium truncate flex-1 ${compact ? 'text-[11px]' : 'text-xs'}`}>{pw.title || 'Workout'}</span>
+                        {secs > 0 && <span className={`text-gray-400 shrink-0 tabular-nums ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{secsToHMShort(secs)}</span>}
                       </div>
                     );
                   })}
@@ -350,7 +350,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
         {['done', 'plan'].map(t => (
           <button key={t} onClick={() => onTabChange?.(t)}
             style={{ touchAction: 'manipulation' }}
-            className={`flex-1 text-[9px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex-1 text-[11px] font-bold py-0.5 rounded transition-all ${tab === t ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {t === 'done' ? 'Done' : 'Plan'}
           </button>
         ))}
@@ -361,7 +361,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
         <div>
           {hasPlan ? (
             <div className="flex items-baseline gap-1 leading-tight">
-              <span className={`font-medium text-gray-400 tabular-nums ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{plannedHoursStr}</span>
+              <span className={`font-medium text-gray-400 tabular-nums ${compact ? 'text-xs' : 'text-[13px]'}`}>{plannedHoursStr}</span>
               <span className={`font-extrabold text-gray-900 tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>{hoursStr || '—'}</span>
             </div>
           ) : (
@@ -373,12 +373,12 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
             {tssRounded > 0 && (
               <div className="flex items-center gap-0.5">
                 <FireIcon className={`text-primary shrink-0 ${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
-                <span className={`font-bold text-primary tabular-nums ${compact ? 'text-[9px]' : 'text-xs'}`}>{tssRounded}</span>
-                <span className={`text-gray-400 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>TSS</span>
+                <span className={`font-bold text-primary tabular-nums ${compact ? 'text-[11px]' : 'text-xs'}`}>{tssRounded}</span>
+                <span className={`text-gray-400 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>TSS</span>
               </div>
             )}
             {completionPct !== null && (
-              <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-500'}`}>
+              <span className={`text-[11px] font-bold px-1 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-500'}`}>
                 {completionPct}%
               </span>
             )}
@@ -415,21 +415,21 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
       {/* Per-sport rows */}
       <div className="space-y-1">
         {bySport.length === 0 ? (
-          <div className={`text-gray-400 italic ${compact ? 'text-[9px]' : 'text-[10px]'}`}>—</div>
+          <div className={`text-gray-400 italic ${compact ? 'text-[11px]' : 'text-xs'}`}>—</div>
         ) : (
           bySport.map((row) => {
             const timePart = row.sec > 0 ? formatDecimalHours(row.sec) || formatWeekDurationSeconds(row.sec) : '—';
             return (
               <div key={row.sport} className="flex items-center gap-1">
                 <SportIcon sport={row.sport} className={compact ? 'w-3.5 h-3.5 text-gray-500' : 'w-4 h-4 text-gray-500'} />
-                <span className={`font-semibold text-gray-700 flex-1 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}>{timePart}</span>
+                <span className={`font-semibold text-gray-700 flex-1 tabular-nums ${compact ? 'text-[11px]' : 'text-xs'}`}>{timePart}</span>
                 {row.dist > 0 && (
-                  <span className={`text-gray-400 flex-shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
+                  <span className={`text-gray-400 flex-shrink-0 tabular-nums ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
                     {formatDistanceForUser(row.dist, user)}
                   </span>
                 )}
                 {row.tss > 0 && (
-                  <span className={`font-bold text-primary flex-shrink-0 tabular-nums ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
+                  <span className={`font-bold text-primary flex-shrink-0 tabular-nums ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
                     {Math.round(row.tss)}
                   </span>
                 )}
@@ -660,7 +660,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           </button>
           {repeatOpen && (
             <div className="px-3 pb-2">
-              <p className="text-[9px] text-gray-400 py-1">Next N weeks</p>
+              <p className="text-[11px] text-gray-400 py-1">Next N weeks</p>
               <div className="grid grid-cols-3 gap-1">
                 {[2,3,4,6,8,12].map(n => (
                   <button key={n}
@@ -693,11 +693,11 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           {exportOpen && (
             <div className="px-3 pb-2 space-y-0.5">
               <button onClick={() => handleExport('zwo')} disabled={exportBusy}
-                className="w-full text-left text-[11px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
+                className="w-full text-left text-[13px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
                 ZWO <span className="text-gray-400">· Zwift / TrainerRoad</span>
               </button>
               <button onClick={() => handleExport('tcx')} disabled={exportBusy}
-                className="w-full text-left text-[11px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
+                className="w-full text-left text-[13px] py-1 px-1.5 rounded hover:bg-gray-50 text-gray-600 font-medium">
                 TCX <span className="text-gray-400">· Garmin / TrainingPeaks</span>
               </button>
             </div>
@@ -758,7 +758,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
             )}
           </span>
           <span
-            className="text-[11px] font-bold truncate flex-1"
+            className="text-[13px] font-bold truncate flex-1"
             style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
           >
             {pw.title || 'Planned workout'}
@@ -770,10 +770,10 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         </div>
         {/* Category + stats row */}
         {(pw.category || displayDurStr || displayDistStr) && (
-          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: isPurelyPlanned ? planColor + 'cc' : '#6b7280' }}>
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: isPurelyPlanned ? planColor + 'cc' : '#6b7280' }}>
             {pw.category && getCategory(pw.category) && (
               <span
-                className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
+                className="text-[11px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
                 style={getCatStyle(pw.category)}
                 title={getCategory(pw.category)?.label}
               >
@@ -839,7 +839,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
             to "Bike Endura…". `min-w-0` on the parent + `break-words` here
             ensure wrap actually triggers in narrow flex children. */}
         <span
-          className={`font-bold flex-1 min-w-0 break-words leading-tight ${compact ? 'text-[10px]' : 'text-[11px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
+          className={`font-bold flex-1 min-w-0 break-words leading-tight ${compact ? 'text-xs' : 'text-[13px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
           style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
         >
           {title}
@@ -848,7 +848,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
       {act.category && catBadgeStyle && catLabel && (
         <div className="flex">
           <span
-            className={`uppercase tracking-wide font-bold border rounded-md leading-tight flex-shrink-0 ${compact ? 'text-[8px] px-1 py-[1px]' : 'text-[9px] px-1.5 py-[1px]'}`}
+            className={`uppercase tracking-wide font-bold border rounded-md leading-tight flex-shrink-0 ${compact ? 'text-[10px] px-1 py-[1px]' : 'text-[11px] px-1.5 py-[1px]'}`}
             style={isSelected
               ? { backgroundColor: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.4)' }
               : catBadgeStyle(act.category)}
@@ -860,8 +860,8 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
       )}
       {!compact && (durStr || distStr) && (
         <div className="flex items-center gap-2 flex-wrap">
-          {durStr && <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{durStr}</span>}
-          {distStr && <><span className={isSelected ? 'text-white/40' : 'text-gray-300'}>·</span><span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{distStr}</span></>}
+          {durStr && <span className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{durStr}</span>}
+          {distStr && <><span className={isSelected ? 'text-white/40' : 'text-gray-300'}>·</span><span className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{distStr}</span></>}
         </div>
       )}
       {!compact && tss > 0 && (
@@ -869,13 +869,13 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
           <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${Math.min(100, (tss / 150) * 100)}%`, backgroundColor: tss > 100 ? '#ef4444' : tss > 70 ? '#f59e0b' : '#22c55e' }} />
           </div>
-          <span className={`text-[9px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
+          <span className={`text-[11px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
         </div>
       )}
       {!compact && (power > 0 || hr > 0) && (
         <div className="flex items-center gap-2 flex-wrap">
-          {power > 0 && <span className={`text-[10px] ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>{Math.round(power)}W</span>}
-          {hr > 0 && <span className={`text-[10px] ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>♥ {Math.round(hr)}</span>}
+          {power > 0 && <span className={`text-xs ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>{Math.round(power)}W</span>}
+          {hr > 0 && <span className={`text-xs ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>♥ {Math.round(hr)}</span>}
         </div>
       )}
     </button>
@@ -1628,7 +1628,7 @@ const WeeklyCalendar = ({
             </p>
           )}
           {weekRangeMeta.secondary && (
-            <p className="text-[10px] sm:text-xs text-lighterText/90 truncate" title={weekRangeMeta.secondary}>
+            <p className="text-xs sm:text-sm text-lighterText/90 truncate" title={weekRangeMeta.secondary}>
               {weekRangeMeta.secondary}
             </p>
           )}
@@ -1642,7 +1642,7 @@ const WeeklyCalendar = ({
           </button>
           <button
             onClick={today}
-            className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-white hover:bg-gray-50 text-gray-700 rounded-lg border border-gray-200 shadow-sm transition-colors font-medium"
+            className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs sm:text-sm bg-white hover:bg-gray-50 text-gray-700 rounded-lg border border-gray-200 shadow-sm transition-colors font-medium"
           >
             Today
           </button>
@@ -1654,7 +1654,7 @@ const WeeklyCalendar = ({
           </button>
           <button
             onClick={() => setShowRecordLactate(true)}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-primary text-white rounded-lg shadow-sm transition-colors font-semibold active:opacity-80 touch-manipulation"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs sm:text-sm bg-primary text-white rounded-lg shadow-sm transition-colors font-semibold active:opacity-80 touch-manipulation"
             style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             <PlusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
@@ -1728,7 +1728,7 @@ const WeeklyCalendar = ({
                           <div className={`text-xs font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                             {day.getDate()}
                           </div>
-                          <div className="text-[9px] text-gray-400 mt-0.5">
+                          <div className="text-[11px] text-gray-400 mt-0.5">
                             {dayNames[idx].substring(0, 3)}
                           </div>
                         </div>
@@ -1772,7 +1772,7 @@ const WeeklyCalendar = ({
                           );
                         })}
                         {dayActivities.length > 2 && (
-                          <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
+                          <div className="text-[10px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
                         )}
                       </div>
                     </div>
@@ -1805,7 +1805,7 @@ const WeeklyCalendar = ({
                       <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">
+                      <div className="text-xs text-gray-400 mt-0.5">
                         {dayNames[idx].substring(0, 3)}
                       </div>
                     </div>
@@ -1849,7 +1849,7 @@ const WeeklyCalendar = ({
                       );
                     })}
                     {dayActivities.length > 2 && (
-                      <div className="text-[9px] text-gray-400 text-center">+{dayActivities.length - 2} more</div>
+                      <div className="text-[11px] text-gray-400 text-center">+{dayActivities.length - 2} more</div>
                     )}
                   </div>
                 </div>
@@ -2459,7 +2459,7 @@ const WeeklyCalendar = ({
                     <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                       {day.getDate()}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
+                    <div className="text-xs text-gray-400 mt-0.5">
                       {dayNames[idx].substring(0, 3)}
                     </div>
                   </div>
@@ -2496,7 +2496,7 @@ const WeeklyCalendar = ({
                       compact={true} />
                   ))}
                   {dayActivities.length > 2 && (
-                    <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
+                    <div className="text-[10px] text-gray-400 text-center">+{dayActivities.length - 2}</div>
                   )}
                 </div>
               </div>
@@ -2530,7 +2530,7 @@ const WeeklyCalendar = ({
                       <div className={`text-base font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      <div className="text-xs text-gray-400 mt-0.5 truncate">
                         {dayNames[idx].substring(0, 3)}
                       </div>
                     </div>

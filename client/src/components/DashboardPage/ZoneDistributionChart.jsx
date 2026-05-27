@@ -457,7 +457,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zone.color }} />
           <span className="font-semibold text-gray-900">{zone.label} · {zone.name}</span>
         </div>
-        {rng && <div className="text-gray-500 text-[11px]">{metricLabel}: {rng}</div>}
+        {rng && <div className="text-gray-500 text-[13px]">{metricLabel}: {rng}</div>}
         <div className="text-gray-800 font-medium">Time: {fmtDur(t)}</div>
         <div className="text-gray-500">Share: {pct.toFixed(1)}%</div>
       </div>
@@ -666,7 +666,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
                   >
                     {/* Label + range */}
                     <div className="w-[88px] flex-shrink-0">
-                      <div className="text-[11px] font-semibold text-gray-700 leading-tight flex items-center gap-1">
+                      <div className="text-[13px] font-semibold text-gray-700 leading-tight flex items-center gap-1">
                         {zone.label} · {zone.name}
                         {t > 0 && (
                           <svg
@@ -678,7 +678,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
                         )}
                       </div>
                       {rng && (
-                        <div className="text-[10px] text-gray-400 truncate leading-tight">{rng}</div>
+                        <div className="text-xs text-gray-400 truncate leading-tight">{rng}</div>
                       )}
                     </div>
 
@@ -697,14 +697,14 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
                     {/* Time + percentage */}
                     <div className="w-[52px] text-right flex-shrink-0">
-                      <div className="text-[11px] font-semibold text-gray-800 leading-tight">{fmtDur(t)}</div>
-                      <div className="text-[10px] text-gray-400 leading-tight">{Math.round(pct)}%</div>
+                      <div className="text-[13px] font-semibold text-gray-800 leading-tight">{fmtDur(t)}</div>
+                      <div className="text-xs text-gray-400 leading-tight">{Math.round(pct)}%</div>
                     </div>
                   </div>
 
                   {/* Expanded average row */}
                   {isExpanded && (
-                    <div className="ml-[96px] mr-[60px] mb-1 flex items-center gap-2 text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm">
+                    <div className="ml-[96px] mr-[60px] mb-1 flex items-center gap-2 text-[13px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm">
                       <span
                         className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ background: zone.color }}
@@ -724,7 +724,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
       {/* Subtle updating indicator */}
       {loading && hasData && (
-        <div className="mt-2 text-center text-[10px] text-gray-400">Updating…</div>
+        <div className="mt-2 text-center text-xs text-gray-400">Updating…</div>
       )}
     </motion.div>
   );
