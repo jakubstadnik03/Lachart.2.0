@@ -292,9 +292,22 @@ function ProfileStep({ user, onSave, saving }) {
   );
 }
 
-/** Step 2 — Units (split into 2 sub-pages: units / training prefs) */
+/**
+ * Step 2 — Preferences (units + training preferences combined).
+ *
+ * Was split into two sub-pages (Units → Training Prefs) with its own
+ * inline Back button. That created two problems:
+ *   - The bottom Back button was inconsistent with every other step in
+ *     the modal, which only use the header back arrow for navigation.
+ *   - Sub-page Back navigated within the step, but the header arrow
+ *     navigated to the previous step — two different "back" semantics
+ *     in the same screen confused users.
+ *
+ * Now everything lives in one scrollable view with a single
+ * "Save & Continue →" CTA. The modal's header back arrow handles step
+ * navigation; nothing inside the step does.
+ */
 function UnitsStep({ user, onSave, saving }) {
-  const [subPage, setSubPage] = useState(0); // 0 = units, 1 = training prefs
   const [units, setUnits] = useState({
     distance:    user?.units?.distance    || 'metric',
     weight:      user?.units?.weight      || 'kg',
@@ -338,14 +351,16 @@ function UnitsStep({ user, onSave, saving }) {
     </div>
   );
 
-  if (subPage === 0) return (
+  return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
         <div className="text-center">
-          <div className="flex justify-center mb-2"><Globe className="w-10 h-10 text-primary" /></div>
-          <h3 className="text-lg font-bold text-gray-900">Units</h3>
-          <p className="text-sm text-gray-500 mt-1">Choose your measurement system</p>
+          <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
+          <h3 className="text-lg font-bold text-gray-900">Preferences</h3>
+          <p className="text-sm text-gray-500 mt-1">Units and how you like to measure your training</p>
         </div>
+
+        {/* Units */}
         <RadioGroup stateKey="distance" label="Distance" options={[
           { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
           { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
@@ -354,22 +369,8 @@ function UnitsStep({ user, onSave, saving }) {
           { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
           { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
         ]} />
-      </div>
-      <div className="flex-shrink-0 pt-3 border-t border-gray-100"
-           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
-        <button type="button" onClick={() => setSubPage(1)} className={BTN_PRIMARY}>Continue →</button>
-      </div>
-    </div>
-  );
 
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
-        <div className="text-center">
-          <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
-          <h3 className="text-lg font-bold text-gray-900">Training Preferences</h3>
-          <p className="text-sm text-gray-500 mt-1">How you like to measure your training</p>
-        </div>
+        {/* Training preferences */}
         <RadioGroup stateKey="paceDisplay" label="Running Pace" isTraining options={[
           { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
           { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
@@ -384,12 +385,22 @@ function UnitsStep({ user, onSave, saving }) {
           { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
         ]} />
       </div>
-      <div className="flex-shrink-0 pt-3 border-t border-gray-100 space-y-2"
+
+      {/* Sticky action — single primary CTA matches the rest of the flow. */}
+      <div className="flex-shrink-0 pt-3 border-t border-gray-100 bg-white"
            style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
-        <button type="button" onClick={() => onSave({ units, trainingPreferences: trainingPrefs, onboarding: { unitsDone: true } })} disabled={saving} className={BTN_PRIMARY}>
+        <button
+          type="button"
+          onClick={() => onSave({
+            units,
+            trainingPreferences: trainingPrefs,
+            onboarding: { unitsDone: true },
+          })}
+          disabled={saving}
+          className={BTN_PRIMARY}
+        >
           {saving ? 'Saving…' : 'Save & Continue →'}
         </button>
-        <button type="button" onClick={() => setSubPage(0)} className={BTN_GHOST}>← Back</button>
       </div>
     </div>
   );
