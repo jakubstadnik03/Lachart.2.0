@@ -723,7 +723,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                       />
                     </div>
                     <div className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-800">{percent.toFixed(0)}%</div>
-                    <div className="w-20 shrink-0 text-right text-[10px] text-gray-400 leading-tight">{formatHrZoneRange(zKey)}</div>
+                    <div className="w-20 shrink-0 text-right text-xs text-gray-400 leading-tight">{formatHrZoneRange(zKey)}</div>
                   </div>
                 ) : (
                   <div key={zKey} className="flex items-center gap-3">
@@ -800,7 +800,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                       />
                     </div>
                     <div className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-800">{percent.toFixed(0)}%</div>
-                    <div className="w-20 shrink-0 text-right text-[10px] text-gray-400 leading-tight">{formatPowerZoneRange(zKey)}</div>
+                    <div className="w-20 shrink-0 text-right text-xs text-gray-400 leading-tight">{formatPowerZoneRange(zKey)}</div>
                   </div>
                 ) : (
                   <div key={zKey} className="flex items-center gap-3">
@@ -1200,12 +1200,12 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                           : `${(lapSpeedMpsForChart(lap) * 3.6).toFixed(1)} km/h`}
                       </span>
                     )}
-                    {lap.average_heartrate && <span className="text-[11px] text-red-500 shrink-0">{Math.round(lap.average_heartrate)} bpm</span>}
-                    {lap.average_watts > 0 && <span className="text-[11px] text-purple-600 shrink-0">{Math.round(lap.average_watts)} W</span>}
+                    {lap.average_heartrate && <span className="text-[13px] text-red-500 shrink-0">{Math.round(lap.average_heartrate)} bpm</span>}
+                    {lap.average_watts > 0 && <span className="text-[13px] text-purple-600 shrink-0">{Math.round(lap.average_watts)} W</span>}
                     {elevation !== null && elevation !== 0 && (
-                      <span className="text-[11px] text-emerald-600 shrink-0">{elevation > 0 ? '+' : ''}{elevation} m</span>
+                      <span className="text-[13px] text-emerald-600 shrink-0">{elevation > 0 ? '+' : ''}{elevation} m</span>
                     )}
-                    {lap.lactate && <span className="text-[11px] font-semibold text-primary shrink-0">{lap.lactate.toFixed(1)} mmol/L</span>}
+                    {lap.lactate && <span className="text-[13px] font-semibold text-primary shrink-0">{lap.lactate.toFixed(1)} mmol/L</span>}
                   </div>
                 </div>
               </button>
@@ -1625,16 +1625,28 @@ const FitAnalysisPage = () => {
   const stravaMaxSpeed = selectedStrava?.max_speed || selectedStrava?.maxSpeed || null;
   
   // Calculate TSS for Strava activity
+  //
+  // userProfile is the source of truth for zones / weight / FTP used by every
+  // calculation on this page (TSS, lap zones, calendar period stats, etc.).
+  //
+  // Previously this only fetched once on mount, so editing zones in Settings
+  // didn't propagate here — calendar kept colour-coding by the old zones
+  // until a full page reload. We now also listen for the 'userUpdated'
+  // window event that AuthProvider broadcasts whenever the user document
+  // changes, and refetch in response. Same channel that keeps WeeklyCalendar
+  // in sync — using it here closes the gap between Dashboard and FIT views.
   const [userFTP, setUserFTP] = React.useState(null);
   const [userProfile, setUserProfile] = React.useState(null);
   React.useEffect(() => {
+    let cancelled = false;
     const loadUserProfile = async () => {
       try {
         const response = await api.get('/user/profile');
+        if (cancelled) return;
         const profileData = response.data;
         setUserProfile(profileData);
-        const ftp = profileData.powerZones?.cycling?.lt2 || 
-                   profileData.powerZones?.cycling?.zone5?.min || 
+        const ftp = profileData.powerZones?.cycling?.lt2 ||
+                   profileData.powerZones?.cycling?.zone5?.min ||
                    null;
         setUserFTP(ftp);
       } catch (error) {
@@ -1642,6 +1654,29 @@ const FitAnalysisPage = () => {
       }
     };
     loadUserProfile();
+
+    // Re-apply when AuthProvider broadcasts a user refresh. The event detail
+    // carries the freshly-fetched profile, so we skip an extra HTTP round-trip
+    // when it's available.
+    const onUserUpdated = (e) => {
+      const fresh = e?.detail;
+      if (cancelled) return;
+      if (fresh && typeof fresh === 'object') {
+        setUserProfile(fresh);
+        const ftp = fresh.powerZones?.cycling?.lt2 ||
+                   fresh.powerZones?.cycling?.zone5?.min ||
+                   null;
+        setUserFTP(ftp);
+      } else {
+        // Fallback: detail missing — refetch from the API ourselves.
+        loadUserProfile();
+      }
+    };
+    window.addEventListener('userUpdated', onUserUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('userUpdated', onUserUpdated);
+    };
   }, []);
   
   // Check if Strava activity is running
@@ -4620,45 +4655,45 @@ const FitAnalysisPage = () => {
                             </div>
                             <div className={`grid ${isMobile ? 'grid-cols-3 gap-1.5' : 'grid-cols-2 md:grid-cols-4 gap-3 md:gap-4'}`}>
                               <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Duration</div>
+                                <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Duration</div>
                                 <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{formatDuration(selectionStats.duration)}</div>
                               </div>
                               {selectionStats.totalDistance && (
                                 <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Distance</div>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Distance</div>
                                   <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{formatDistance(selectionStats.totalDistance, user)}</div>
                                 </div>
                               )}
                               {selectionStats.avgSpeed != null && (
                                 <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Speed</div>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Speed</div>
                                   <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgSpeed} km/h</div>
                                   {selectionStats.maxSpeed != null && (
-                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxSpeed} km/h</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[11px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxSpeed} km/h</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgHeartRate && (
                                 <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg HR</div>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg HR</div>
                                   <div className={`font-bold text-red-600 ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgHeartRate} bpm</div>
                                   {selectionStats.maxHeartRate && (
-                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxHeartRate} bpm</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[11px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxHeartRate} bpm</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgPower && (
                                 <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Power</div>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Power</div>
                                   <div className={`font-bold text-primary-dark ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgPower} W</div>
                                   {selectionStats.maxPower && (
-                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxPower} W</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[11px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxPower} W</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgCadence && (
                                 <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
-                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Cadence</div>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-xs mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Cadence</div>
                                   <div className={`font-bold text-greenos ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgCadence} rpm</div>
                                 </div>
                               )}
@@ -5514,7 +5549,7 @@ const FitAnalysisPage = () => {
                               {/* None option */}
                               <button
                                 onClick={() => { setCategory(''); handleSaveCategory(''); }}
-                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${!category ? 'bg-gray-100 border-gray-400 text-gray-700' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[13px] font-medium border transition-all ${!category ? 'bg-gray-100 border-gray-400 text-gray-700' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
                               >
                                 <span>✕</span> None
                               </button>
@@ -5525,7 +5560,7 @@ const FitAnalysisPage = () => {
                                   <button
                                     key={cat.id}
                                     onClick={() => { setCategory(cat.id); handleSaveCategory(cat.id); setIsEditingCategory(false); }}
-                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-90"
+                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[13px] font-semibold border transition-all hover:opacity-90"
                                     style={isActive
                                       ? { backgroundColor: cat.color, color: '#fff', borderColor: cat.color }
                                       : { backgroundColor: `${cat.color}18`, color: cat.color, borderColor: `${cat.color}40` }
@@ -5539,7 +5574,7 @@ const FitAnalysisPage = () => {
                             </div>
                             <button
                               onClick={() => { setIsEditingCategory(false); setCategory(selectedStrava?.category || ''); }}
-                              className="w-full text-[10px] text-gray-400 hover:text-gray-600 py-0.5 text-center"
+                              className="w-full text-xs text-gray-400 hover:text-gray-600 py-0.5 text-center"
                             >
                               Cancel
                             </button>
@@ -5550,7 +5585,7 @@ const FitAnalysisPage = () => {
                       ) : (
                         <button onClick={() => setIsEditingCategory(true)} title="Click to set category" className="flex items-center gap-1">
                           <span
-                            className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80 flex items-center gap-1"
+                            className="px-2 py-0.5 text-xs rounded-md font-medium border transition-opacity hover:opacity-80 flex items-center gap-1"
                             style={getCategoryStyle(category)}
                           >
                             {category && CATEGORY_ICONS[category] && (
@@ -5795,9 +5830,9 @@ const FitAnalysisPage = () => {
                             key={idx}
                             className="min-w-0 rounded-xl border border-gray-100 bg-gray-50 px-2 py-2"
                           >
-                            <div className="truncate text-[10px] font-medium leading-tight text-gray-500 mb-0.5" title={item.label}>{item.label}</div>
-                            <div className="text-xs font-bold leading-tight text-gray-900">{item.value}</div>
-                            {item.sub && <div className="truncate text-[9px] leading-tight text-gray-400 mt-0.5">{item.sub}</div>}
+                            <div className="truncate text-xs font-medium leading-tight text-gray-500 mb-0.5" title={item.label}>{item.label}</div>
+                            <div className="text-sm font-bold leading-tight text-gray-900">{item.value}</div>
+                            {item.sub && <div className="truncate text-[11px] leading-tight text-gray-400 mt-0.5">{item.sub}</div>}
                           </div>
                         ))}
                       </div>
