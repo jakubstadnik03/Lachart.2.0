@@ -4107,7 +4107,7 @@ const FitAnalysisPage = () => {
                 Auto-categorize
               </button>
               <button
-                onClick={() => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date: new Date(), workout: null }); }}
+                onClick={() => setPlanModal({ date: new Date(), workout: null })}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-primary/30 text-primary text-sm font-semibold rounded-xl hover:bg-primary/5 transition-all shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -4135,7 +4135,7 @@ const FitAnalysisPage = () => {
                 <SparklesIcon className="w-3.5 h-3.5 text-primary" />
               </button>
               <button
-                onClick={() => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date: new Date(), workout: null }); }}
+                onClick={() => setPlanModal({ date: new Date(), workout: null })}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
                 title="Plan workout"
               >
@@ -4224,7 +4224,7 @@ const FitAnalysisPage = () => {
             }
           }}
           onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}${selectedAthleteId ? `?athleteId=${selectedAthleteId}` : ''}`)}
-          onPlanWorkout={(date) => { if (!isPremium) { gate('Workout Planning', 'pro'); return; } setPlanModal({ date, workout: null }); }}
+          onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
           onMovePlannedWorkout={handleMovePlannedWorkout}
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onDeletePlannedWorkout={handlePlanDelete}
