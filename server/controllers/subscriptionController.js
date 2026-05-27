@@ -7,6 +7,12 @@ const Subscription = require('../models/SubscriptionModel');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { sendPremiumActivationEmail } = require('../services/premiumActivationEmailService');
+const {
+  sendTrialEndingEmail,
+  sendPaymentReceiptEmail,
+  sendPaymentFailedEmail,
+  sendSubscriptionCanceledEmail,
+} = require('../services/subscriptionLifecycleEmailService');
 
 // Available subscription plans (exported for use in middleware)
 const PLANS = {
@@ -353,20 +359,37 @@ exports.handleWebhook = async (req, res) => {
         await handleCheckoutCompleted(session);
         break;
       }
-      case 'customer.subscription.updated':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        await handleSubscriptionUpdate(subscription);
+        break;
+      }
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
         await handleSubscriptionUpdate(subscription);
+        // Stripe also fires this when a canceled-at-period-end sub finally ends.
+        await handleSubscriptionCanceledEmail(subscription);
+        break;
+      }
+      // Fires ~3 days before the trial converts. We use it to send a friendly
+      // "your trial ends on X" reminder so the charge isn't a surprise.
+      case 'customer.subscription.trial_will_end': {
+        const subscription = event.data.object;
+        await handleTrialWillEndEmail(subscription);
         break;
       }
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object;
         await handlePaymentSucceeded(invoice);
+        // Friendly receipt email — Stripe also sends its own PDF invoice when
+        // the "Email invoices" setting is on in the Dashboard.
+        await handleInvoicePaidEmail(invoice);
         break;
       }
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
         await handlePaymentFailed(invoice);
+        await handleInvoiceFailedEmail(invoice);
         break;
       }
     }
@@ -487,6 +510,103 @@ async function handlePaymentSucceeded(invoice) {
   if (subscription) {
     subscription.status = 'active';
     await subscription.save();
+  }
+}
+
+/**
+ * Find the LaChart user behind a Stripe subscription / invoice, plus the
+ * matching local Subscription doc. Returns { user, subscription, plan } or
+ * nulls when we can't resolve them (e.g. subscription was created in a
+ * different mode). Helpers below use this to send lifecycle emails without
+ * each one re-doing the same lookup.
+ */
+async function resolveUserAndPlanFromStripeSub(stripeSubscriptionId) {
+  if (!stripeSubscriptionId) return { user: null, subscription: null, plan: 'pro' };
+  const subscription = await Subscription.findOne({ stripeSubscriptionId });
+  if (!subscription) return { user: null, subscription: null, plan: 'pro' };
+  const user = await User.findById(subscription.userId);
+  return { user, subscription, plan: subscription.plan || 'pro' };
+}
+
+/**
+ * customer.subscription.trial_will_end → send "trial ends in 3 days" email.
+ */
+async function handleTrialWillEndEmail(stripeSubscription) {
+  try {
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(stripeSubscription.id);
+    if (!user) return;
+    const priceItem = stripeSubscription.items?.data?.[0]?.price;
+    await sendTrialEndingEmail(user, {
+      plan,
+      trialEnd: stripeSubscription.trial_end ? new Date(stripeSubscription.trial_end * 1000) : null,
+      amount: priceItem?.unit_amount, // minor units
+      currency: priceItem?.currency,
+    });
+  } catch (err) {
+    console.error('[Webhook] trial_will_end email failed:', err?.message);
+  }
+}
+
+/**
+ * invoice.payment_succeeded → send receipt for non-zero recurring charges.
+ * Trial-activation invoices are $0 and handled by sendPremiumActivationEmail.
+ */
+async function handleInvoicePaidEmail(invoice) {
+  try {
+    // Skip zero-amount invoices (the trial-activation $0 invoice).
+    if (!invoice.amount_paid || invoice.amount_paid === 0) return;
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    if (!user) return;
+    await sendPaymentReceiptEmail(user, {
+      plan,
+      amount: invoice.amount_paid, // minor units
+      currency: invoice.currency,
+      periodEnd: invoice.lines?.data?.[0]?.period?.end
+        ? new Date(invoice.lines.data[0].period.end * 1000)
+        : null,
+      invoiceUrl: invoice.hosted_invoice_url,
+      invoicePdf: invoice.invoice_pdf,
+    });
+  } catch (err) {
+    console.error('[Webhook] invoice.paid email failed:', err?.message);
+  }
+}
+
+/**
+ * invoice.payment_failed → tell the user to update their card.
+ */
+async function handleInvoiceFailedEmail(invoice) {
+  try {
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    if (!user) return;
+    await sendPaymentFailedEmail(user, {
+      plan,
+      amount: invoice.amount_due,
+      currency: invoice.currency,
+    });
+  } catch (err) {
+    console.error('[Webhook] invoice.failed email failed:', err?.message);
+  }
+}
+
+/**
+ * customer.subscription.deleted → final "subscription ended" email.
+ * Only sent for actual cancellations (cancellation_reason / status canceled),
+ * not for plan switches that happen to fire the same event.
+ */
+async function handleSubscriptionCanceledEmail(stripeSubscription) {
+  try {
+    if (stripeSubscription.status !== 'canceled') return;
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(stripeSubscription.id);
+    if (!user) return;
+    await sendSubscriptionCanceledEmail(user, {
+      plan,
+      endedAt: stripeSubscription.canceled_at
+        ? new Date(stripeSubscription.canceled_at * 1000)
+        : new Date(),
+    });
+  } catch (err) {
+    console.error('[Webhook] subscription.canceled email failed:', err?.message);
   }
 }
 
