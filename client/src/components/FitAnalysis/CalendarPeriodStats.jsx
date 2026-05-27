@@ -373,29 +373,47 @@ export default function CalendarPeriodStats({
   // on its average power/pace which is wrong (shows 100% Z1 for easy rides).
   // Instead, fetch the server's second-by-second zone distribution — the same
   // source the Home "TIME IN ZONES" card uses.
+  // We fetch the FULL period (start→end) with startDate/endDate so multi-month
+  // periods are covered. The API returns an array of month objects; we aggregate.
   const [monthlyZones, setMonthlyZones] = useState(null);
   useEffect(() => {
-    if (!effectiveAthleteId || !period?.periodStart) { setMonthlyZones(null); return; }
+    if (!effectiveAthleteId || !period?.periodStart || !period?.periodEnd) { setMonthlyZones(null); return; }
     let cancelled = false;
-    const d = new Date(period.periodStart);
-    if (isNaN(d.getTime())) { setMonthlyZones(null); return; }
-    const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    getMonthlyPowerAnalysis(effectiveAthleteId, mk)
+    const startDate = new Date(period.periodStart);
+    const endDate = new Date(period.periodEnd);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) { setMonthlyZones(null); return; }
+
+    // Convert API shape { 1: { time: N }, 2: ... } → { zone1: N, zone2: ... }
+    const toZoneSec = (src) => {
+      if (!src) return null;
+      const out = {};
+      for (let z = 1; z <= 5; z++) {
+        const v = src[z] ?? src[String(z)];
+        out[`zone${z}`] = Number(v?.time) || 0;
+      }
+      return Object.values(out).some(v => v > 0) ? out : null;
+    };
+
+    // Aggregate zone data across multiple month objects (API returns array)
+    const aggregateZones = (months, getter) => {
+      const out = Object.fromEntries(['zone1','zone2','zone3','zone4','zone5'].map(k => [k, 0]));
+      months.forEach(m => {
+        const src = getter(m);
+        if (!src) return;
+        ['zone1','zone2','zone3','zone4','zone5'].forEach(k => { out[k] += src[k] || 0; });
+      });
+      return Object.values(out).some(v => v > 0) ? out : null;
+    };
+
+    getMonthlyPowerAnalysis(effectiveAthleteId, null, { startDate, endDate })
       .then(res => {
         if (cancelled) return;
-        const m = res?.data ?? res;
-        if (!m) { setMonthlyZones(null); return; }
-        // Convert API shape { 1: { time: N }, 2: ... } → { zone1: N, zone2: ... }
-        const toZoneSec = (src) => {
-          if (!src) return null;
-          const out = {};
-          for (let z = 1; z <= 5; z++) {
-            const v = src[z] ?? src[String(z)];
-            out[`zone${z}`] = Number(v?.time) || 0;
-          }
-          return Object.values(out).some(v => v > 0) ? out : null;
-        };
-        setMonthlyZones({
+        // API always returns an array of month objects
+        const months = Array.isArray(res) ? res : (res ? [res] : []);
+        if (!months.length) { setMonthlyZones(null); return; }
+
+        // Build per-month zone-sec objects first, then aggregate
+        const monthZoneSecs = months.map(m => ({
           power: {
             cycling: toZoneSec(m.zones),
             running: toZoneSec(m.runningZoneTimes),
@@ -406,11 +424,24 @@ export default function CalendarPeriodStats({
             running: toZoneSec(m.runningHrZones),
             swimming: toZoneSec(m.swimmingHrZones),
           },
+        }));
+
+        setMonthlyZones({
+          power: {
+            cycling: aggregateZones(monthZoneSecs, m => m.power.cycling),
+            running: aggregateZones(monthZoneSecs, m => m.power.running),
+            swimming: aggregateZones(monthZoneSecs, m => m.power.swimming),
+          },
+          hr: {
+            cycling: aggregateZones(monthZoneSecs, m => m.hr.cycling),
+            running: aggregateZones(monthZoneSecs, m => m.hr.running),
+            swimming: aggregateZones(monthZoneSecs, m => m.hr.swimming),
+          },
         });
       })
       .catch(() => setMonthlyZones(null));
     return () => { cancelled = true; };
-  }, [effectiveAthleteId, period?.periodStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [effectiveAthleteId, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combine monthly server zones across sports for the "All" tab
   const serverZoneSecAll = useMemo(() => {
@@ -1032,9 +1063,10 @@ export default function CalendarPeriodStats({
   }, [weeklyTrend]);
 
   // Intensity donut option — by training zones (Z1–Z5)
+  // Prefer server second-by-second data; fall back to client estimate
   const intensityDonutOption = useMemo(() => {
-    const powerSec = aggregates.powerZoneSecAll || {};
-    const hrSec = aggregates.hrZoneSecAll || {};
+    const powerSec = serverZoneSecAll.power || aggregates.powerZoneSecAll || {};
+    const hrSec = serverZoneSecAll.hr || aggregates.hrZoneSecAll || {};
     // Prefer power zones if available, fall back to HR zones
     const hasPower = ZONE_KEYS.some((k) => (powerSec[k] || 0) > 0);
     const secMap = hasPower ? powerSec : hrSec;
@@ -1072,7 +1104,7 @@ export default function CalendarPeriodStats({
         },
       ],
     };
-  }, [aggregates]);
+  }, [aggregates, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {

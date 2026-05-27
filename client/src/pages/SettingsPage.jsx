@@ -73,7 +73,7 @@ const SettingsPage = () => {
   const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
-  const { gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium(); // eslint-disable-line no-unused-vars
+  const { isPremium, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
@@ -198,10 +198,18 @@ const SettingsPage = () => {
   const [coachBranding, setCoachBranding] = useState({
     logoUrl:      user?.coachBranding?.logoUrl      || '',
     title:        user?.coachBranding?.title        || '',
+    subtitle:     user?.coachBranding?.subtitle     || '',
     trademark:    user?.coachBranding?.trademark    || '',
     primaryColor: user?.coachBranding?.primaryColor || '#767EB5',
+    email:        user?.coachBranding?.email        || '',
+    web:          user?.coachBranding?.web          || '',
+    phone:        user?.coachBranding?.phone        || '',
   });
   const [brandingSaving, setBrandingSaving] = useState(false);
+  // Ref used to prevent the user→coachBranding sync effect from overwriting
+  // form state while a save is in progress (the save already sets state from
+  // the server response, which is the authoritative value).
+  const brandingSavingRef = React.useRef(false);
 
   // App Store guideline 3.1.1: native iOS builds must not surface external
   // subscription / payment flows. Subscription management stays on the web.
@@ -210,7 +218,7 @@ const SettingsPage = () => {
     { id: 'training', name: 'Preferences', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     ...(isCapacitorNative() ? [] : [{ id: 'subscription', name: 'Subscription', icon: CreditCard }]),
-    { id: 'branding', name: 'Branding', icon: Sparkles },
+    ...(['coach', 'tester', 'testing'].includes(user?.role) ? [{ id: 'branding', name: 'Branding', icon: Sparkles }] : []),
     { id: 'coach', name: 'Coach', icon: Users },
     { id: 'integrations', name: 'Integrations', icon: LinkIcon },
     { id: 'categories', name: 'Categories', icon: Tag },
@@ -689,13 +697,20 @@ const SettingsPage = () => {
   }, [activeTab]);
 
   useEffect(() => {
+    // Don't overwrite form state mid-save — handleSaveBranding sets it directly
+    // from the server response, which is the authoritative value.
+    if (brandingSavingRef.current) return;
     setCoachBranding({
       logoUrl:      user?.coachBranding?.logoUrl      || '',
       title:        user?.coachBranding?.title        || '',
+      subtitle:     user?.coachBranding?.subtitle     || '',
       trademark:    user?.coachBranding?.trademark    || '',
       primaryColor: user?.coachBranding?.primaryColor || '#767EB5',
+      email:        user?.coachBranding?.email        || '',
+      web:          user?.coachBranding?.web          || '',
+      phone:        user?.coachBranding?.phone        || '',
     });
-  }, [user?.coachBranding]);
+  }, [user?.coachBranding]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle upgrade / checkout
   const handleUpgrade = async (planId) => {
@@ -1327,10 +1342,13 @@ const SettingsPage = () => {
 
   const handleSaveBranding = async () => {
     setBrandingSaving(true);
+    brandingSavingRef.current = true;
     try {
+      console.log('[BRANDING] Sending to server:', JSON.stringify(coachBranding));
       const res = await updateUserProfile({ coachBranding });
       // Propagate updated user (with coachBranding) to AuthProvider + localStorage
       const updatedUser = res?.data ?? res;
+      console.log('[BRANDING] Server returned coachBranding:', JSON.stringify(updatedUser?.coachBranding));
       if (updatedUser?._id) {
         // Persist to localStorage immediately (don't rely solely on event chain)
         saveUserToStorage(updatedUser);
@@ -1342,8 +1360,12 @@ const SettingsPage = () => {
           setCoachBranding({
             logoUrl:      saved.logoUrl      || '',
             title:        saved.title        || '',
+            subtitle:     saved.subtitle     || '',
             trademark:    saved.trademark    || '',
             primaryColor: saved.primaryColor || '#767EB5',
+            email:        saved.email        || '',
+            web:          saved.web          || '',
+            phone:        saved.phone        || '',
           });
         }
       }
@@ -1352,6 +1374,9 @@ const SettingsPage = () => {
       addNotification('Failed to save branding', 'error');
     } finally {
       setBrandingSaving(false);
+      // Allow the user→coachBranding sync effect to run again after save
+      // (slight delay so the final setCoachBranding from the response settles first)
+      setTimeout(() => { brandingSavingRef.current = false; }, 500);
     }
   };
 
@@ -3319,7 +3344,27 @@ const SettingsPage = () => {
       case 'branding':
         return (
           <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
-            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+            {!isPremium && (
+              <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-4' : 'p-8'} flex flex-col items-center justify-center text-center gap-4`}>
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="w-7 h-7 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">PDF Report Branding</h3>
+                  <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                    Customise your logo, colours and contact details on exported PDF reports. Available on the Coach plan.
+                  </p>
+                </div>
+                <button
+                  onClick={() => gate('PDF Report Branding', 'coach')}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-sm"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Upgrade to Coach
+                </button>
+              </div>
+            )}
+            {isPremium && <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <Sparkles className="w-5 h-5 text-primary" />
@@ -3333,29 +3378,93 @@ const SettingsPage = () => {
               </div>
 
               <div className="space-y-5">
-                {/* Logo URL */}
+                {/* Logo — upload file OR paste URL */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Logo URL</label>
-                  <p className="text-xs text-gray-400 mb-2">Paste a direct URL to your logo image (PNG/SVG, max 512×512 px recommended).</p>
-                  <input
-                    type="url"
-                    value={coachBranding.logoUrl}
-                    onChange={(e) => setCoachBranding(prev => ({ ...prev, logoUrl: e.target.value }))}
-                    placeholder="https://yoursite.com/logo.png"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                  {coachBranding.logoUrl && (
-                    <div className="mt-2 flex items-center gap-3">
-                      <img src={coachBranding.logoUrl} alt="Logo preview" className="h-10 w-auto object-contain rounded border border-gray-200 bg-gray-50 p-1" onError={(e) => { e.target.style.display = 'none'; }} />
-                      <span className="text-xs text-gray-400">Preview</span>
-                    </div>
-                  )}
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Logo</label>
+                  <p className="text-xs text-gray-400 mb-2">Upload an image file or paste a direct URL (PNG/SVG, max 512×512 px recommended).</p>
+
+                  {/* Upload button + preview */}
+                  <div className="flex items-center gap-3 mb-2">
+                    {/* Hidden file input */}
+                    <input
+                      id="logo-upload"
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        // Resize to max 256×256 via canvas, then convert to base64
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const img = new Image();
+                          img.onload = () => {
+                            const MAX = 256;
+                            const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+                            const w = Math.round(img.width  * scale);
+                            const h = Math.round(img.height * scale);
+                            const canvas = document.createElement('canvas');
+                            canvas.width  = w;
+                            canvas.height = h;
+                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                            const dataUrl = canvas.toDataURL(file.type === 'image/svg+xml' ? 'image/png' : file.type, 0.9);
+                            setCoachBranding(prev => ({ ...prev, logoUrl: dataUrl }));
+                          };
+                          img.src = ev.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                        // Reset input so the same file can be re-selected
+                        e.target.value = '';
+                      }}
+                    />
+                    <label
+                      htmlFor="logo-upload"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                      Upload image
+                    </label>
+
+                    {coachBranding.logoUrl ? (
+                      <>
+                        <img
+                          src={coachBranding.logoUrl}
+                          alt="Logo preview"
+                          className="h-12 w-12 object-contain rounded-lg border border-gray-200 bg-gray-50 p-1"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCoachBranding(prev => ({ ...prev, logoUrl: '' }))}
+                          className="text-xs text-red-400 hover:text-red-600 underline"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-400">No logo set</span>
+                    )}
+                  </div>
+
+                  {/* Or paste a URL */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 whitespace-nowrap">or paste URL:</span>
+                    <input
+                      type="url"
+                      value={coachBranding.logoUrl.startsWith('data:') ? '' : coachBranding.logoUrl}
+                      onChange={(e) => setCoachBranding(prev => ({ ...prev, logoUrl: e.target.value }))}
+                      placeholder="https://yoursite.com/logo.png"
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
                 </div>
 
                 {/* Title */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Organisation / Club Title</label>
-                  <p className="text-xs text-gray-400 mb-2">Shown in the header of the PDF (e.g. "Elite Triathlon Academy").</p>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Organisation / Club Name</label>
+                  <p className="text-xs text-gray-400 mb-2">Large title shown in the PDF header (e.g. "Elite Triathlon Academy").</p>
                   <input
                     type="text"
                     value={coachBranding.title}
@@ -3366,10 +3475,53 @@ const SettingsPage = () => {
                   />
                 </div>
 
+                {/* Subtitle */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Subtitle / Tagline</label>
+                  <p className="text-xs text-gray-400 mb-2">Small line below the title in the PDF header (e.g. "Lactate Testing Services").</p>
+                  <input
+                    type="text"
+                    value={coachBranding.subtitle}
+                    onChange={(e) => setCoachBranding(prev => ({ ...prev, subtitle: e.target.value }))}
+                    placeholder="e.g. Lactate Testing Services"
+                    maxLength={80}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+
+                {/* Contact details row */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Contact Details</label>
+                  <p className="text-xs text-gray-400 mb-2">Shown in the PDF footer instead of LaChart contact info.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <input
+                      type="email"
+                      value={coachBranding.email}
+                      onChange={(e) => setCoachBranding(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="contact@yourclub.com"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    <input
+                      type="url"
+                      value={coachBranding.web}
+                      onChange={(e) => setCoachBranding(prev => ({ ...prev, web: e.target.value }))}
+                      placeholder="yourclub.com"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    <input
+                      type="tel"
+                      value={coachBranding.phone}
+                      onChange={(e) => setCoachBranding(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="+420 123 456 789"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                </div>
+
                 {/* Trademark */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Trademark / Copyright line</label>
-                  <p className="text-xs text-gray-400 mb-2">Shown in the footer of the PDF (e.g. "© 2025 John Smith Coaching").</p>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Copyright line</label>
+                  <p className="text-xs text-gray-400 mb-2">Optional copyright text in the footer (e.g. "© 2025 John Smith Coaching").</p>
                   <input
                     type="text"
                     value={coachBranding.trademark}
@@ -3403,7 +3555,6 @@ const SettingsPage = () => {
                       placeholder="#767EB5"
                       className="w-28 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
-                    {/* Preview swatch */}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-xs font-bold" style={{ backgroundColor: coachBranding.primaryColor || '#767EB5' }}>
                       Preview header
                     </div>
@@ -3425,7 +3576,7 @@ const SettingsPage = () => {
                   {brandingSaving ? 'Saving…' : 'Save Branding'}
                 </button>
               </div>
-            </div>
+            </div>}
           </div>
         );
 

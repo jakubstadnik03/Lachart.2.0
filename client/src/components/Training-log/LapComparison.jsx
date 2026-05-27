@@ -15,9 +15,10 @@ import { useCategories } from '../../context/CategoryContext';
 const SERIES_COLORS = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
 
 const METRICS = [
-  { id: 'pace',  label: 'Pace' },
-  { id: 'hr',    label: 'Heart Rate' },
-  { id: 'power', label: 'Power' },
+  { id: 'pace',    label: 'Pace' },
+  { id: 'hr',      label: 'Heart Rate' },
+  { id: 'power',   label: 'Power' },
+  { id: 'lactate', label: 'Lactate' },
 ];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -63,6 +64,10 @@ function getLapValue(lap, metric, sport) {
     if (spd > 0) return 1000 / spd; // sec/km
     return null;
   }
+  if (metric === 'lactate') {
+    const la = lap.lactate != null ? Number(lap.lactate) : null;
+    return la != null && la > 0 ? la : null;
+  }
   return null;
 }
 
@@ -80,6 +85,7 @@ function fmtMetricLabel(val, metric, sport) {
   if (metric === 'hr') return `${Math.round(val)} bpm`;
   if (metric === 'power') return `${Math.round(val)} W`;
   if (metric === 'pace') return fmtPaceLabel(val, sport);
+  if (metric === 'lactate') return `${Number(val).toFixed(1)} mmol/L`;
   return String(val);
 }
 
@@ -192,10 +198,10 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
   const minV = scaleMin != null ? scaleMin : Math.min(...vals);
   const maxV = scaleMax != null ? scaleMax : Math.max(...vals);
   const span = Math.max(maxV - minV, 1);
-  const isPaceLike = metric === 'pace';
+  const isPaceLike = metric === 'pace' || metric === 'lactate'; // lower = "best" for both
 
   // Per-session rank: darkest shade goes to the "best" lap (highest power/HR,
-  // lowest pace), lightest to the weakest. Mirrors TrainingStats' VerticalBar.
+  // lowest pace / lowest lactate), lightest to the weakest. Mirrors TrainingStats' VerticalBar.
   const ranked = [...items]
     .filter(x => x.val != null && x.val > 0)
     .sort((a, b) => isPaceLike ? a.val - b.val : b.val - a.val);
@@ -213,14 +219,17 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
       const full = fmtPaceLabel(v, sport);
       return full.replace(/\/\S+$/, '').trim();
     }
-    if (metric === 'hr')   return `${Math.round(v)}`;
+    if (metric === 'hr')      return `${Math.round(v)}`;
+    if (metric === 'lactate') return `${Number(v).toFixed(1)}`;
     return `${Math.round(v)}`;
   };
   const unitLabel = metric === 'pace'
     ? (String(sport || '').toLowerCase().includes('swim') ? '/100m' : '/km')
-    : (metric === 'hr' ? 'bpm' : 'W');
-  // Pace ticks are "M:SS" (e.g. "5:13") — 4 chars. HR/power are 3 digits max.
-  const Y_AXIS_W = metric === 'pace' ? 44 : 32;
+    : metric === 'hr' ? 'bpm'
+    : metric === 'lactate' ? 'mmol'
+    : 'W';
+  // Pace ticks are "M:SS" (e.g. "5:13") — 4 chars. Lactate is "X.X" — 3 chars. HR/power are 3 digits max.
+  const Y_AXIS_W = metric === 'pace' ? 44 : metric === 'lactate' ? 36 : 32;
   const CHART_H = 140;
 
   return (
@@ -251,7 +260,8 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
               : 0;
             const rank = rankByIdx.get(idx) ?? idx;
             const hasLactate = x.lactate != null && x.lactate > 0;
-            const palette = hasLactate ? LACTATE_PALETTE : VIOLET_PALETTE;
+            // When viewing lactate metric, ALL bars are amber; otherwise amber only for laps with measured lactate.
+            const palette = (metric === 'lactate' || hasLactate) ? LACTATE_PALETTE : VIOLET_PALETTE;
             const bg = palette[Math.min(rank, palette.length - 1)];
             const isHovered = hover && hover.idx === idx;
             return (
@@ -318,14 +328,20 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   const { categories } = useCategories();
   const navigate = useNavigate();
 
-  // Open the full activity modal (training-calendar route resolves to
-  // ActivityFullModal for any id prefix — strava-, fit-, regular-, training-).
+  // Open the full activity on the training-calendar page (FitAnalysisPage).
+  // Priority: Strava > linked Strava (Training record exported from Strava) > FIT > regular.
+  // Training model records that were exported from Strava have sourceStravaActivityId — we
+  // open the linked Strava activity so the full stream chart (power/HR/pace over time) is shown
+  // instead of the bare Training record which has no time-series data.
   const navigateToSession = useCallback((session) => {
     if (!session) return;
     const sid = String(session.id || session._id || '');
     let target;
     if (session.type === 'strava' || session.source === 'strava' || session.stravaId) {
       target = `strava-${session.stravaId || session.id || sid.replace(/^strava-/, '')}`;
+    } else if (session.sourceStravaActivityId) {
+      // Training model record linked to a Strava activity — open the full Strava detail
+      target = `strava-${session.sourceStravaActivityId}`;
     } else if (session.type === 'fit' || session.source === 'fit') {
       target = `fit-${session._id || sid.replace(/^fit-/, '')}`;
     } else if (sid.startsWith('strava-') || sid.startsWith('fit-') || sid.startsWith('regular-') || sid.startsWith('training-')) {
@@ -430,20 +446,16 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
       let laps = [];
       const isStrava = session.type === 'strava' || !!session.stravaId || !!session.stravaActivityId;
       const isFit    = session.type === 'fit' && !!session._id;
-      if (isStrava) {
-        const stravaId = session.stravaId || session.id || session.stravaActivityId;
-        const data = await getStravaActivityDetail(stravaId);
-        laps = Array.isArray(data?.laps) ? data.laps : [];
-      } else if (isFit) {
-        const data = await getFitTraining(session._id);
-        laps = Array.isArray(data?.laps) ? data.laps : [];
-      } else if (Array.isArray(session.results) && session.results.length > 0) {
-        // Manual training — convert each result to the lap shape that
-        // getLapValue() expects. The tricky part is that for run/swim the
-        // `power` field stores pace seconds (sec/km or sec/100m), and
-        // `duration` may store *distance* (km or m) when durationType is
-        // 'distance'. Normalize to: distance in meters, elapsed_time in
-        // seconds, average_speed in m/s, average_watts only for bike.
+      // Training model records (from filteredTrainings) always have `results` with manually entered
+      // data including lactate. Prefer results over Strava/FIT laps when any lactate is assigned
+      // so the user-entered lactate values are visible. Only fall back to the API when no results.
+      const hasResults = Array.isArray(session.results) && session.results.length > 0;
+      const hasResultsWithLactate = hasResults && session.results.some(r => r.lactate != null && Number(r.lactate) > 0);
+
+      if (hasResultsWithLactate || (!isStrava && !isFit && hasResults)) {
+        // Manual training (or Strava export with lactate assigned) — convert each result to the
+        // lap shape that getLapValue() expects. For run/swim the `power` field stores pace seconds
+        // (sec/km or sec/100m), and `duration` may store *distance* when durationType is 'distance'.
         const sportStr = String(session.sport || '').toLowerCase();
         const isSwim   = sportStr.includes('swim');
         const isRun    = sportStr.includes('run') || sportStr.includes('walk') || sportStr.includes('hike');
@@ -478,22 +490,18 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
         };
 
         laps = session.results.map(r => {
-          // Distance in meters
           let distM = Number(r.distanceMeters || 0);
           if (!distM && r.durationType === 'distance') distM = parseDistMeters(r.duration);
           if (!distM && r.distance) distM = parseDistMeters(r.distance);
 
-          // Pace in seconds (per km for run, per 100m for swim) lives in `power`
           const paceSec = (isRun || isSwim) ? parseMaybeTime(r.power) : 0;
 
-          // Elapsed time
           let elapsed = Number(r.durationSeconds || 0);
           if (!elapsed && r.durationType !== 'distance') elapsed = parseMaybeTime(r.duration);
           if (!elapsed && paceSec > 0 && distM > 0) {
             elapsed = isSwim ? paceSec * (distM / 100) : paceSec * (distM / 1000);
           }
 
-          // average_speed (m/s) — let getLapValue fall through to it
           let avgSpeed = 0;
           if (paceSec > 0) avgSpeed = isSwim ? (100 / paceSec) : (1000 / paceSec);
           else if (elapsed > 0 && distM > 0) avgSpeed = distM / elapsed;
@@ -506,11 +514,16 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
             average_speed: avgSpeed,
             lactate: r.lactate != null ? Number(r.lactate) : null,
             lapNumber: r.interval,
-            // Carry the manual warmup/work/recovery/cooldown classification
-            // through so filterWorkLaps can honour it.
             intervalType: r.intervalType || (r.isRecovery ? 'recovery' : undefined),
           };
         });
+      } else if (isStrava) {
+        const stravaId = session.stravaId || session.id || session.stravaActivityId;
+        const data = await getStravaActivityDetail(stravaId);
+        laps = Array.isArray(data?.laps) ? data.laps : [];
+      } else if (isFit) {
+        const data = await getFitTraining(session._id);
+        laps = Array.isArray(data?.laps) ? data.laps : [];
       }
       setLapsCache(prev => ({ ...prev, [id]: laps }));
     } catch {
@@ -601,8 +614,9 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
       const full = fmtPaceLabel(val, sport);
       return full.replace(/\/\S+$/, '').trim();
     }
-    if (metric === 'hr')   return `${Math.round(val)}`;
-    if (metric === 'power') return `${Math.round(val)}`;
+    if (metric === 'hr')      return `${Math.round(val)}`;
+    if (metric === 'power')   return `${Math.round(val)}`;
+    if (metric === 'lactate') return `${Number(val).toFixed(1)}`;
     return val;
   }, [metric, sport]);
 
@@ -864,8 +878,8 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                           tickFormatter={yAxisTickFmt}
                           tick={{ fontSize: 10, fill: '#9ca3af' }}
                           axisLine={false} tickLine={false}
-                          width={metric === 'pace' ? 44 : 36}
-                          reversed={metric === 'pace'} // lower pace = faster = better → show at top
+                          width={metric === 'pace' ? 44 : metric === 'lactate' ? 38 : 36}
+                          reversed={metric === 'pace'} // lower pace = faster = better → show at top; lactate not reversed
                           domain={[
                             sharedRangeRef.current.min != null ? sharedRangeRef.current.min : 'auto',
                             sharedRangeRef.current.max != null ? sharedRangeRef.current.max : 'auto',
@@ -902,19 +916,22 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                   // Reuse the memoized per-session laps map (see lapsByKey above).
                   const lapsBySeries = lapsByKey;
                   const maxLaps = Math.max(...orderedSeries.map(s => lapsBySeries.get(s.key)?.length || 0), 0);
-                  const isPaceLike = metric === 'pace';
+                  const isPaceLike = metric === 'pace' || metric === 'lactate'; // both: lower = better
                   // Δ value formatting against the previous (older) session.
                   const fmtDelta = (cur, prev) => {
                     if (cur == null || prev == null || !Number.isFinite(cur) || !Number.isFinite(prev)) return null;
                     const diff = cur - prev;
-                    if (Math.abs(diff) < 0.5) return { sign: '=', cls: 'text-gray-400', text: '0' };
-                    const improved = isPaceLike ? diff < 0 : diff > 0; // pace lower = faster
+                    const threshold = metric === 'lactate' ? 0.05 : 0.5;
+                    if (Math.abs(diff) < threshold) return { sign: '=', cls: 'text-gray-400', text: '0' };
+                    const improved = isPaceLike ? diff < 0 : diff > 0; // pace/lactate: lower = better
                     const arrow = improved ? '▲' : '▼';
                     const cls = improved ? 'text-emerald-500' : 'text-red-400';
                     let text;
                     if (metric === 'pace') {
                       const s = Math.abs(Math.round(diff));
                       text = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+                    } else if (metric === 'lactate') {
+                      text = Math.abs(diff).toFixed(1);
                     } else {
                       text = `${Math.abs(Math.round(diff))}`;
                     }

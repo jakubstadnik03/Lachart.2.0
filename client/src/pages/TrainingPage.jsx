@@ -1166,10 +1166,10 @@ export default function TrainingPage() {
         >
           {isFreePlan ? (
             <LockedFeatureOverlay feature="Training History & Export" minHeight={300}>
-              <UserTrainingsTable trainings={filteredTrainings} />
+              <UserTrainingsTable trainings={filteredTrainings} onTrainingUpdate={() => loadTrainings(selectedAthleteId || user._id)} />
             </LockedFeatureOverlay>
           ) : (
-            <UserTrainingsTable trainings={filteredTrainings} />
+            <UserTrainingsTable trainings={filteredTrainings} onTrainingUpdate={() => loadTrainings(selectedAthleteId || user._id)} />
           )}
         </motion.div>
 

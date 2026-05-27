@@ -79,8 +79,12 @@ const userSchema = new mongoose.Schema({
   coachBranding: {
     logoUrl:      { type: String, default: null },  // URL of coach's uploaded logo
     title:        { type: String, default: null },  // e.g. "Elite Triathlon Club"
+    subtitle:     { type: String, default: null },  // e.g. "Lactate Testing Services"
     trademark:    { type: String, default: null },  // e.g. "© 2025 Coach John"
     primaryColor: { type: String, default: null },  // e.g. "#1D4ED8" — PDF header/accent color
+    email:        { type: String, default: null },  // contact email shown in PDF footer
+    web:          { type: String, default: null },  // website URL shown in PDF footer
+    phone:        { type: String, default: null },  // phone number shown in PDF footer
   },
   avatar: {
     type: String,

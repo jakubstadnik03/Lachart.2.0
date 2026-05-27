@@ -4,7 +4,7 @@ const Test = require('../models/test');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
 const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
-const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
+const { buildLactateCurveSvg, svgToEmailImgSrc, escapeHtml } = require('../utils/lactateReportSvgs');
 
 function createTransporter() {
   // Uses Zoho SMTP when configured (EMAIL_USER/EMAIL_APP_PASSWORD + SMTP_HOST/PORT/SECURE).
@@ -480,6 +480,11 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
   if (data.error) return { error: true, reason: data.reason };
 
   const { test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, hasOverrideZones, focus, lactateSvg, baseTitle, opts } = data;
+
+  // Convert SVG to a raster PNG data URL so every email client renders it correctly.
+  // Inline SVGs are stripped by many email clients (Gmail, Outlook, some Zoho views).
+  const chartImgSrc = lactateSvg ? await svgToEmailImgSrc(lactateSvg, 2) : null;
+
   const clientUrl = getClientUrl();
   const testUrl = `${clientUrl}/testing?testId=${test._id}`;
   const aboutUrl = `${clientUrl}/about`;
@@ -517,7 +522,7 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
         </div>
       </div>
 
-      ${lactateSvg ? `<div>${lactateSvg}</div>` : ''}
+      ${chartImgSrc ? `<div style="border-radius:12px;overflow:hidden;border:1px solid #EEF2F7;"><img src="${chartImgSrc}" width="560" height="260" alt="Lactate curve" style="display:block;max-width:100%;height:auto;" /></div>` : ''}
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
         <div style="font-weight:800;color:#111827;font-size:16px;margin-bottom:6px;">Zones</div>

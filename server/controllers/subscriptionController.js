@@ -14,6 +14,7 @@ const PLANS = {
     name: 'Free',
     price: 0,
     interval: 'month',
+    currency: 'eur',
     features: ['basic_testing', 'basic_analytics'],
     limits: {
       tests: 1,
@@ -25,6 +26,7 @@ const PLANS = {
     name: 'Pro',
     price: 9.99,
     interval: 'month',
+    currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_PRO, // Set in .env
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync'],
     limits: {
@@ -37,6 +39,7 @@ const PLANS = {
     name: 'Coach',
     price: 19.99,
     interval: 'month',
+    currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_COACH,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes'],
     limits: {
@@ -49,6 +52,7 @@ const PLANS = {
     name: 'Team',
     price: 49.99,
     interval: 'month',
+    currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_TEAM,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes', 'team_branding', 'csv_export'],
     limits: {
@@ -61,6 +65,7 @@ const PLANS = {
     name: 'Enterprise',
     price: 99.99,
     interval: 'month',
+    currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_ENTERPRISE,
     features: ['basic_testing', 'basic_analytics', 'advanced_analytics', 'population_comparison', 'export_pdf', 'strava_sync', 'coach_dashboard', 'multiple_athletes', 'team_branding', 'csv_export', 'white_label', 'priority_support', 'custom_onboarding'],
     limits: {
@@ -230,9 +235,10 @@ exports.createCheckoutSession = async (req, res) => {
         }
       ],
       mode: 'subscription',
-      // 30-day free trial for first-time subscribers
+      // 60-day (2 months) free trial for first-time subscribers.
+      // Overridable per-deploy via STRIPE_TRIAL_DAYS env var.
       subscription_data: alreadyTrialed ? undefined : {
-        trial_period_days: 30,
+        trial_period_days: Number(process.env.STRIPE_TRIAL_DAYS) || 60,
       },
       // Require card upfront even during trial
       payment_method_collection: 'always',

@@ -217,9 +217,37 @@ function buildStagesSvg({ results, sport, unitSystem, inputMode }) {
   `.trim();
 }
 
+/**
+ * Convert an inline SVG string to a PNG base64 data URL using sharp.
+ * Falls back to an SVG data URL if sharp fails (e.g. missing librsvg).
+ * Result is safe to use as <img src="..."> in HTML emails.
+ *
+ * @param {string} svgString - The raw SVG markup
+ * @param {number} [scale=2] - Device-pixel ratio for sharpness (2 = 2× retina)
+ * @returns {Promise<string>} data URL like "data:image/png;base64,..."
+ */
+async function svgToEmailImgSrc(svgString, scale = 2) {
+  if (!svgString) return '';
+  try {
+    const sharp = require('sharp');
+    const buf = Buffer.from(svgString, 'utf8');
+    const pngBuf = await sharp(buf, { density: 144 * scale })
+      .png({ compressionLevel: 8 })
+      .toBuffer();
+    return `data:image/png;base64,${pngBuf.toString('base64')}`;
+  } catch (err) {
+    // sharp unavailable or SVG rendering failed – fall back to SVG data URL
+    // (works in most modern email clients at least for preview)
+    console.warn('[svgToEmailImgSrc] sharp failed, falling back to SVG data URL:', err?.message);
+    const b64 = Buffer.from(svgString, 'utf8').toString('base64');
+    return `data:image/svg+xml;base64,${b64}`;
+  }
+}
+
 module.exports = {
   buildLactateCurveSvg,
   buildStagesSvg,
+  svgToEmailImgSrc,
   escapeHtml,
   clamp
 };

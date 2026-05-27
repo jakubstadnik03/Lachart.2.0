@@ -695,8 +695,12 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
           updateData.coachBranding = {
             logoUrl:      req.body.coachBranding.logoUrl      ?? null,
             title:        req.body.coachBranding.title        ?? null,
+            subtitle:     req.body.coachBranding.subtitle     ?? null,
             trademark:    req.body.coachBranding.trademark    ?? null,
             primaryColor: req.body.coachBranding.primaryColor ?? null,
+            email:        req.body.coachBranding.email        ?? null,
+            web:          req.body.coachBranding.web          ?? null,
+            phone:        req.body.coachBranding.phone        ?? null,
           };
         }
 
@@ -779,11 +783,13 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         }
 
         console.log('Updating user profile:', { userId, updateData });
-        console.log('Heart Rate Zones being saved:', JSON.stringify(req.body.heartRateZones, null, 2));
+        if (updateData.coachBranding) {
+          console.log('[BRANDING] Saving coachBranding:', JSON.stringify(updateData.coachBranding, null, 2));
+        }
 
         const updatedUser = await userDao.updateUser(userId, updateData);
         
-        console.log('Updated user heartRateZones:', JSON.stringify(updatedUser?.heartRateZones, null, 2));
+        console.log('[BRANDING] Updated coachBranding from DB:', JSON.stringify(updatedUser?.coachBranding, null, 2));
         if (!updatedUser) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -838,8 +844,12 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 ? {
                     logoUrl:      updatedUser.coachBranding.logoUrl      ?? null,
                     title:        updatedUser.coachBranding.title        ?? null,
+                    subtitle:     updatedUser.coachBranding.subtitle     ?? null,
                     trademark:    updatedUser.coachBranding.trademark    ?? null,
                     primaryColor: updatedUser.coachBranding.primaryColor ?? null,
+                    email:        updatedUser.coachBranding.email        ?? null,
+                    web:          updatedUser.coachBranding.web          ?? null,
+                    phone:        updatedUser.coachBranding.phone        ?? null,
                   }
                 : null,
         };
@@ -1235,8 +1245,12 @@ router.get("/profile", verifyToken, async (req, res) => {
               ? {
                   logoUrl:      user.coachBranding.logoUrl      ?? null,
                   title:        user.coachBranding.title        ?? null,
+                  subtitle:     user.coachBranding.subtitle     ?? null,
                   trademark:    user.coachBranding.trademark    ?? null,
                   primaryColor: user.coachBranding.primaryColor ?? null,
+                  email:        user.coachBranding.email        ?? null,
+                  web:          user.coachBranding.web          ?? null,
+                  phone:        user.coachBranding.phone        ?? null,
                 }
               : null,
         };
@@ -1245,7 +1259,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             console.log('Returning user profile - strava.autoSync:', userResponse.strava?.autoSync);
         }
 
-        res.set('Cache-Control', 'private, max-age=60');
+        res.set('Cache-Control', 'no-store');
         res.status(200).json(userResponse);
     } catch (error) {
         console.error("Error getting user profile:", error);

@@ -18,8 +18,17 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 export function usePremium() {
   const { user } = useAuth();
 
-  // Read isPremium from the user object (which already has premiumPreviewNoAccess applied
-  // by AuthProvider via userWithPremiumPreviewApplied). Falls back to true for beta users.
+  // isPremium comes from the user object resolved by AuthProvider, which
+  // mirrors server/utils/premiumAccess.js → resolvePremiumAccess():
+  //   - true  if user.premium === true (manual admin grant)
+  //   - true  if active paid Subscription (status active/trialing)
+  //   - true  if BETA_ALL_PREMIUM=true on the server
+  //   - false otherwise — INCLUDING admins. Admins must also pay (or be
+  //     granted manual access) so they dogfood the real paywall.
+  //
+  // We require strict === true here. A missing / undefined isPremium MUST
+  // be treated as not-premium (previous `!== false` was leaky — it let any
+  // legacy account through).
   //
   // On native iOS the App Store guideline 3.1.1 forbids any reference to
   // paid digital content that isn't sold via Apple IAP. The cheapest path
@@ -27,8 +36,7 @@ export function usePremium() {
   // Capacitor build — UpgradeModal already returns null on native, and
   // we make sure no gate ever flips false, so neither the modal nor any
   // PremiumLockedCard can ever surface in the iOS app.
-  // All features are free for everyone — no subscription required.
-  const isPremium = user != null || isCapacitorNative();
+  const isPremium = (user != null && user.isPremium === true) || isCapacitorNative();
   const isCoach = isPremium;
 
   const [modalState, setModalState] = useState({

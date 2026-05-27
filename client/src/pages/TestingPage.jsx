@@ -1201,7 +1201,11 @@ const TestingPage = () => {
         }))
       };
 
-      // All users have unlimited tests — no gate needed.
+      // Free-tier coaches: max 1 test per athlete
+      if (!isPremium && isCoachLikeRole && tests.length >= 1) {
+        gate('Unlimited tests — upgrade to add more', 'coach');
+        return;
+      }
 
       const response = await addTest(processedTest);
       const testId = response.data._id;
@@ -1356,7 +1360,13 @@ const TestingPage = () => {
 
             {user?.role === 'coach' && (
               <button
-                onClick={() => setShowAddAthleteModal(true)}
+                onClick={() => {
+                  if (!isPremium && coachAthleteCount >= 1) {
+                    gate('Multiple athletes — upgrade to add more', 'coach');
+                    return;
+                  }
+                  setShowAddAthleteModal(true);
+                }}
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors touch-manipulation"
                 title="Add Athlete & Test"
               >
@@ -1366,7 +1376,13 @@ const TestingPage = () => {
             )}
             {user?.role === 'coach' && (
               <button
-                onClick={() => setShowAddAthleteModal(true)}
+                onClick={() => {
+                  if (!isPremium && coachAthleteCount >= 1) {
+                    gate('Multiple athletes — upgrade to add more', 'coach');
+                    return;
+                  }
+                  setShowAddAthleteModal(true);
+                }}
                 className="sm:hidden w-9 h-9 flex items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors touch-manipulation"
               >
                 <UserPlusIcon className="w-5 h-5" />
@@ -1377,6 +1393,11 @@ const TestingPage = () => {
             <button
               data-tour="tour-new-testing"
               onClick={() => {
+                // Free-tier coaches: max 1 test; gate before opening the form
+                if (!showNewTesting && !isPremium && isCoachLikeRole && tests.length >= 1) {
+                  gate('Unlimited tests — upgrade to add more', 'coach');
+                  return;
+                }
                 setShowNewTesting(prev => !prev);
                 setActiveTab('tests');
               }}

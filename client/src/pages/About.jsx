@@ -32,6 +32,7 @@ import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../context/AuthProvider';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { trackEvent } from '../utils/analytics';
+import { createCheckoutSession } from '../services/api';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
@@ -1021,23 +1022,48 @@ export default function About() {
           <div className="lc-sectpad">
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
               <Eyebrow>Pricing</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Free lactate threshold calculator — <em>no sign-up needed</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>LaChart is in <b style={{ color: LC.text }}>early access</b> — every feature is free while we build and improve. Paid plans are planned for the future.</p>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Try every paid feature — <em>2 months free</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>Start with a <b style={{ color: LC.text }}>60-day free trial</b> on Pro or Coach. No charge until the trial ends — cancel any time from your account settings.</p>
             </div>
             <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 24, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
               <div style={{ width: 48, height: 48, borderRadius: 14, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" /></svg>
               </div>
               <div style={{ flex: 1, minWidth: 240 }}>
-                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>Free during demo & early access</p>
-                <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>All features — lactate testing, FIT analysis, Strava sync, coaching tools — are fully available at no cost. When paid plans launch, existing users will get a generous discount.</p>
+                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 2 months free on every paid plan</p>
+                <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>Pick Pro or Coach, enter your card, and use the full app for 60 days at no cost. We email you 7 days before the trial ends — cancel anytime, no questions asked.</p>
               </div>
-              <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Sign up free →</Link>
+              <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free trial →</Link>
             </div>
-            <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18, opacity: 0.85 }}>
-              <PriceCard name="Free" price="$0" features={['Up to 5 lactate tests / month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar']} ctaLabel="Get started free" ctaTo="/signup" track={track} />
-              <PriceCard name="Pro" price="$9.99" badge="Coming soon" highlighted features={['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support']} ctaLabel="Access free now" ctaTo="/signup" track={track} />
-              <PriceCard name="Coach" price="$19.99" badge="Coming soon" features={['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export']} ctaLabel="Access free now" ctaTo="/signup" track={track} />
+            <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
+              <PriceCard
+                planId="free"
+                name="Free"
+                price="€0"
+                features={['Up to 5 lactate tests / month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar']}
+                ctaLabel="Get started free"
+                ctaTo="/signup"
+                track={track}
+              />
+              <PriceCard
+                planId="pro"
+                name="Pro"
+                price="€9.99"
+                highlighted
+                features={['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support']}
+                ctaLabel="Start 2-month free trial"
+                ctaTo="/signup"
+                track={track}
+              />
+              <PriceCard
+                planId="coach"
+                name="Coach"
+                price="€19.99"
+                features={['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export']}
+                ctaLabel="Start 2-month free trial"
+                ctaTo="/signup"
+                track={track}
+              />
             </div>
             <style>{`@media (max-width: 900px) { .lc-price-grid { grid-template-columns: 1fr !important; } }`}</style>
           </div>
@@ -1510,7 +1536,57 @@ function FloatingBadge({ icon, label, value, tint, style, cls }) {
 }
 
 /* ─── Pricing card subcomponent ──────────────────────────────────────── */
-function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo, track }) {
+function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo, planId, track }) {
+  const { isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  // Non-billable plans (Free, or anonymous browsers): use plain navigation.
+  const isPaidPlan = planId && planId !== 'free';
+
+  /**
+   * Stripe Checkout handoff:
+   *   - Logged-in users on a paid plan → call backend, redirect to Stripe.
+   *     Server attaches a 60-day free trial for first-time subscribers
+   *     (subscriptionController.js).
+   *   - Logged-out users → bounce to /signup with ?plan= so the signup flow
+   *     can resume the checkout right after the account is created.
+   */
+  const handleCheckout = async (e) => {
+    if (!isPaidPlan) return; // let the Link navigate normally
+    e.preventDefault();
+    track?.(`pricing_${name.toLowerCase()}`);
+
+    if (!isAuthenticated) {
+      window.location.href = `/signup?plan=${encodeURIComponent(planId)}`;
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { url } = await createCheckoutSession(planId);
+      if (url) {
+        window.location.href = url;
+      } else {
+        alert('Could not start checkout. Please try again or contact support.');
+      }
+    } catch (err) {
+      console.error('Checkout error:', err);
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Checkout failed';
+      alert(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buttonStyle = {
+    justifyContent: 'center',
+    background: highlighted ? LC.primary : '#F3F4F6',
+    color: highlighted ? '#fff' : LC.text,
+    boxShadow: highlighted ? undefined : 'none',
+    opacity: loading ? 0.6 : 1,
+    cursor: loading ? 'wait' : 'pointer',
+  };
+
   return (
     <div className="lc-card" style={{
       padding: 24, position: 'relative', display: 'flex', flexDirection: 'column', gap: 14,
@@ -1524,7 +1600,12 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
           <span style={{ fontSize: 36, fontWeight: 800, color: badge ? LC.muted : LC.ink, textDecoration: badge ? 'line-through' : 'none' }}>{price}</span>
           <span style={{ fontSize: 14, color: LC.muted }}>/ month</span>
         </div>
-        {badge && <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '6px 0 0' }}>Free during early access</p>}
+        {isPaidPlan && (
+          <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '6px 0 0' }}>
+            🎁 Start with 2 months free
+          </p>
+        )}
+        {badge && !isPaidPlan && <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '6px 0 0' }}>Free during early access</p>}
       </div>
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
         {features.map(f => (
@@ -1533,7 +1614,19 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
           </li>
         ))}
       </ul>
-      <Link to={ctaTo} onClick={() => track?.(`pricing_${name.toLowerCase()}`)} className="lc-btn-primary" style={{ justifyContent: 'center', background: highlighted ? LC.primary : '#F3F4F6', color: highlighted ? '#fff' : LC.text, boxShadow: highlighted ? undefined : 'none' }}>{ctaLabel}</Link>
+      {isPaidPlan ? (
+        <button
+          type="button"
+          disabled={loading}
+          onClick={handleCheckout}
+          className="lc-btn-primary"
+          style={buttonStyle}
+        >
+          {loading ? 'Loading…' : ctaLabel}
+        </button>
+      ) : (
+        <Link to={ctaTo} onClick={() => track?.(`pricing_${name.toLowerCase()}`)} className="lc-btn-primary" style={buttonStyle}>{ctaLabel}</Link>
+      )}
     </div>
   );
 }

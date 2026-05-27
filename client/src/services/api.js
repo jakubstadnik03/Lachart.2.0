@@ -649,6 +649,16 @@ function invalidateTrainingCaches() {
   invalidateCache('api_cache_ext_activities');
   invalidateCache('api_cache_form_fitness');
   invalidateCache('api_cache_weekly_load');
+  // Also clear the TrainingPage localStorage cache (athleteTrainings_v3_*)
+  // so the next loadTrainings call shows fresh data with updated lactate values.
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('athleteTrainings_v3_')) toRemove.push(k);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
 }
 
 export const updateUserProfile = async (userData) => {

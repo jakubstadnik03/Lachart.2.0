@@ -8,11 +8,26 @@ import { getAthleteAvatar } from '../utils/avatarUtils';
 import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';
 import Modal from '../components/Modal';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
+import { usePremium } from '../hooks/usePremium';
+import UpgradeModal from '../components/UpgradeModal';
 
 const AthletesPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { setSelectedAthleteId } = useAthleteSelection();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
+
+  /** Returns true if allowed to proceed, false if free-tier limit was hit. */
+  const gateAthleteCreation = () => {
+    if (isPremium) return true;
+    // Free coaches: max 1 athlete
+    const activeAthletes = athletes.filter(a => !a.invitationPending && a.coachLinkStatus !== 'pending');
+    if (activeAthletes.length >= 1) {
+      gate('Multiple athletes — upgrade to add more', 'coach');
+      return false;
+    }
+    return true;
+  };
   const [athletes, setAthletes] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -366,7 +381,7 @@ const AthletesPage = () => {
                   <span className="hidden sm:inline">Existing</span>
                 </button>
                 <button
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={() => { if (gateAthleteCreation()) setIsModalOpen(true); }}
                   data-tour="tour-add-athlete"
                   className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-xl text-xs font-medium hover:bg-primary-dark transition-colors shadow-sm"
                 >
@@ -415,7 +430,7 @@ const AthletesPage = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredAthletes.length === 0 && (
                   <div className="col-span-full py-12 text-center text-gray-400 text-sm">
-                    No athletes found. <button onClick={() => setIsModalOpen(true)} className="text-primary underline">Add one</button>
+                    No athletes found. <button onClick={() => { if (gateAthleteCreation()) setIsModalOpen(true); }} className="text-primary underline">Add one</button>
                   </div>
                 )}
                 {filteredAthletes.map((athlete) => {
@@ -755,6 +770,9 @@ const AthletesPage = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Freemium upgrade modal */}
+      <UpgradeModal {...UpgradeModalProps} />
     </>
   );
 };

@@ -9,11 +9,14 @@ import {
   requestAppleHealthPermissions,
   fetchRecentWorkouts,
 } from '../health/appleHealth';
+import { usePremium } from '../premium/usePremium';
+import { PremiumLocked, PremiumBadge } from '../premium/PremiumLocked';
 
 export function SettingsScreen() {
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle');
   const [healthSynced, setHealthSynced] = useState<number | null>(null);
+  const { tier, isPremium, can } = usePremium();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -27,8 +30,34 @@ export function SettingsScreen() {
         </Text>
       </View>
 
-      {/* Apple Health */}
-      {isAppleHealthAvailable() && (
+      {/* Account / Plan */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Plan</Text>
+        <Text style={styles.row}>
+          <Text style={styles.k}>Current plan:</Text>{' '}
+          {tier === 'coach'
+            ? 'Coach Premium'
+            : tier === 'athlete'
+            ? 'Athlete Premium'
+            : 'Free'}
+        </Text>
+        {!isPremium && (
+          <Text style={styles.small}>
+            Premium subscriptions are managed on the LaChart website.
+          </Text>
+        )}
+      </View>
+
+      {/* Apple Health — Premium */}
+      {isAppleHealthAvailable() && !can('appleHealthSync') && (
+        <PremiumLocked
+          featureName="🍎 Apple Health Sync"
+          description="Automatically import workouts from Apple Health and pair them with your lactate tests."
+          compact
+        />
+      )}
+
+      {isAppleHealthAvailable() && can('appleHealthSync') && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🍎 Apple Health</Text>
           <Text style={styles.small}>

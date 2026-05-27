@@ -22,11 +22,12 @@ const PLAN_DETAILS = {
     price: '$19.99',
     color: 'from-purple-600 to-purple-500',
     features: [
-      'Everything in Pro',
-      'Manage up to 10 athletes',
-      'Coach dashboard',
-      'Athlete performance overview',
+      'Unlimited athletes (free: 1)',
+      'Unlimited tests per athlete (free: 1)',
+      'Coach dashboard & athlete overview',
       'Bulk data export',
+      'PDF branding & custom logo',
+      'Priority support',
     ],
   },
 };

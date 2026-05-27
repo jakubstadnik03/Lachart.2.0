@@ -143,15 +143,14 @@ class UserDao {
       }
 
       // Save the document to persist nested object changes
-      const savedUser = await user.save();
-      
-      console.log('updateUser - After save, heartRateZones:', JSON.stringify(savedUser.heartRateZones, null, 2));
-      
-      // Verify the data was saved by fetching again
+      await user.save();
+
+      // Always return a fresh fetch from the DB so the caller gets the true
+      // persisted state (avoids any stale in-memory subdocument issues).
       const verifiedUser = await UserModel.findById(id);
-      console.log('updateUser - Verified heartRateZones from DB:', JSON.stringify(verifiedUser?.heartRateZones, null, 2));
-      
-      return savedUser;
+      console.log('updateUser - Verified coachBranding from DB:', JSON.stringify(verifiedUser?.coachBranding, null, 2));
+
+      return verifiedUser;
     } catch (error) {
       console.error("Error updating user:", error);
       throw error;

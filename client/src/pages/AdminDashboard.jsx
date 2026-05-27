@@ -1612,8 +1612,19 @@ const AdminDashboard = () => {
                     >
                       Login as user
                     </button>
+                    <button
+                      onClick={() => handleUserUpdate(user._id, { premium: !user.premium })}
+                      className={`ml-1 flex-shrink-0 px-2 py-1 text-xs font-medium rounded border ${
+                        user.premium
+                          ? 'text-amber-900 bg-amber-100 border-amber-500 hover:bg-amber-200'
+                          : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                      title={user.premium ? 'Revoke manual premium access' : 'Grant manual premium access'}
+                    >
+                      {user.premium ? '★ Premium' : '☆ Grant Premium'}
+                    </button>
                     </div>
-                    
+
                     <div className="flex flex-wrap gap-2 mt-2">
                       <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
                         user.role === 'admin' ? 'bg-red-100 text-red-800' :
@@ -1630,7 +1641,7 @@ const AdminDashboard = () => {
                       </span>
                       {user.premium && (
                         <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
-                          Premium (manual)
+                          ★ Premium (manual)
                         </span>
                       )}
                     </div>

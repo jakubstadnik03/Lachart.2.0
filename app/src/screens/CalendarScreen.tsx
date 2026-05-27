@@ -9,6 +9,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, TrainingSourceType } from '../navigation/types';
 import { Chip } from '../ui/components';
+import { usePremium } from '../premium/usePremium';
+import { FREE_LIMITS } from '../premium/features';
 
 type ActivityItem = {
   id: string;
@@ -129,12 +131,35 @@ function todayKey() {
 
 export function CalendarScreen() {
   const { user } = useAuth();
+  const { isPremium } = usePremium();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(todayKey());
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [planned, setPlanned] = useState<PlannedItem[]>([]);
+
+  /**
+   * Free tier sees only the last N days of history.
+   * Premium subscribers (Athlete / Coach) see the full timeline.
+   * Cutoff is enforced client-side; the backend remains the source of truth.
+   */
+  const historyCutoffISO = useMemo(() => {
+    if (isPremium) return null;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - FREE_LIMITS.calendarHistoryDays);
+    return cutoff.toISOString();
+  }, [isPremium]);
+
+  const visibleItems = useMemo(() => {
+    if (!historyCutoffISO) return items;
+    return items.filter((i) => i.dateISO >= historyCutoffISO);
+  }, [items, historyCutoffISO]);
+
+  const visiblePlanned = useMemo(() => {
+    if (!historyCutoffISO) return planned;
+    return planned.filter((p) => p.dateISO >= historyCutoffISO);
+  }, [planned, historyCutoffISO]);
 
   const load = useCallback(async () => {
     try {
@@ -242,8 +267,8 @@ export function CalendarScreen() {
   };
 
   const dayCards = useMemo<DayCard[]>(() => {
-    const dayActivities = items.filter((i) => i.dateKey === selectedDate);
-    const dayPlanned = planned.filter((p) => p.dateKey === selectedDate);
+    const dayActivities = visibleItems.filter((i) => i.dateKey === selectedDate);
+    const dayPlanned = visiblePlanned.filter((p) => p.dateKey === selectedDate);
     const { pwToAct, claimedKeys } = pairPlannedWithDayActivities(dayPlanned, dayActivities);
     const cards: DayCard[] = [];
     for (const pw of dayPlanned) {
@@ -254,7 +279,7 @@ export function CalendarScreen() {
       cards.push({ kind: 'activity', activity: a });
     }
     return cards;
-  }, [items, planned, selectedDate]);
+  }, [visibleItems, visiblePlanned, selectedDate]);
 
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
@@ -273,16 +298,16 @@ export function CalendarScreen() {
             ? '#06B6D4'
             : '#F59E0B';
 
-    for (const it of items) {
+    for (const it of visibleItems) {
       addDot(it.dateKey, sportColor(it.sport), `${it.sourceType}-${it.sport || 'other'}`);
     }
-    for (const pw of planned) {
+    for (const pw of visiblePlanned) {
       // softer color for planned-only days
       addDot(pw.dateKey, '#A78BFA', `planned-${pw.sport || 'other'}`);
     }
     marks[selectedDate] = { ...(marks[selectedDate] || {}), selected: true, selectedColor: '#111827' };
     return marks;
-  }, [items, planned, selectedDate]);
+  }, [visibleItems, visiblePlanned, selectedDate]);
 
   if (loading) return <LoadingScreen label="Loading calendar…" />;
 
@@ -308,6 +333,14 @@ export function CalendarScreen() {
           arrowColor: '#111827',
         }}
       />
+
+      {!isPremium && items.length > visibleItems.length && (
+        <View style={styles.freeBanner}>
+          <Text style={styles.freeBannerText}>
+            🔒 Showing the last {FREE_LIMITS.calendarHistoryDays} days. Full history is a Premium feature.
+          </Text>
+        </View>
+      )}
 
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>{selectedDate}</Text>
@@ -407,6 +440,8 @@ export function CalendarScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
   listHeader: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between' },
+  freeBanner: { marginHorizontal: 16, marginTop: 8, padding: 10, backgroundColor: '#F3F4F6', borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  freeBannerText: { fontSize: 12, color: '#374151', fontWeight: '600', textAlign: 'center' },
   listTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
   listSubtitle: { fontSize: 12, color: '#6B7280', marginTop: 3 },
   card: {

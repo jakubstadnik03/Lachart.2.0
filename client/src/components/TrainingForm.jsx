@@ -1719,6 +1719,17 @@ const TrainingForm = ({
                             className="w-10 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
                           />
                         </div>
+                        {/* Lactate — shown even on compact (non-work) rows so values are always visible */}
+                        <div className="flex items-center gap-1 bg-primary/10 rounded px-1.5 py-0.5">
+                          <span className="text-[9px] text-primary uppercase leading-none shrink-0">la</span>
+                          <input
+                            id={`training-form-lactate-compact-${index}`}
+                            type="number" inputMode="decimal" placeholder="—"
+                            value={interval.lactate ?? ''}
+                            onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                            className="w-10 text-[11px] text-primary font-semibold bg-transparent outline-none placeholder-gray-300"
+                          />
+                        </div>
                         <div className="flex-1" />
                         <TypePicker />
                         <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}

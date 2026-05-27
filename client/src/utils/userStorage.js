@@ -37,8 +37,12 @@ export const extractUserDataForStorage = (user) => {
       ? {
           logoUrl:      user.coachBranding.logoUrl      ?? null,
           title:        user.coachBranding.title        ?? null,
+          subtitle:     user.coachBranding.subtitle     ?? null,
           trademark:    user.coachBranding.trademark    ?? null,
           primaryColor: user.coachBranding.primaryColor ?? null,
+          email:        user.coachBranding.email        ?? null,
+          web:          user.coachBranding.web          ?? null,
+          phone:        user.coachBranding.phone        ?? null,
         }
       : null,
     // Explicitly exclude: athletes array, large nested objects, etc.

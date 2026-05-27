@@ -339,50 +339,58 @@ function UnitsStep({ user, onSave, saving }) {
   );
 
   if (subPage === 0) return (
-    <div className="space-y-4 flex flex-col h-full">
-      <div className="text-center">
-        <div className="flex justify-center mb-2"><Globe className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Units</h3>
-        <p className="text-sm text-gray-500 mt-1">Choose your measurement system</p>
+    <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
+        <div className="text-center">
+          <div className="flex justify-center mb-2"><Globe className="w-10 h-10 text-primary" /></div>
+          <h3 className="text-lg font-bold text-gray-900">Units</h3>
+          <p className="text-sm text-gray-500 mt-1">Choose your measurement system</p>
+        </div>
+        <RadioGroup stateKey="distance" label="Distance" options={[
+          { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
+          { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
+        ]} />
+        <RadioGroup stateKey="weight" label="Weight" options={[
+          { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
+          { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
+        ]} />
       </div>
-      <RadioGroup stateKey="distance" label="Distance" options={[
-        { value: 'metric',   icon: <Globe className="w-5 h-5" />,  label: 'Metric',   sub: 'km, meters' },
-        { value: 'imperial', icon: <Flag className="w-5 h-5" />,   label: 'Imperial', sub: 'miles, feet' },
-      ]} />
-      <RadioGroup stateKey="weight" label="Weight" options={[
-        { value: 'kg',  icon: <Scale className="w-5 h-5" />,    label: 'Kilograms', sub: 'kg' },
-        { value: 'lbs', icon: <Dumbbell className="w-5 h-5" />, label: 'Pounds',    sub: 'lbs' },
-      ]} />
-      <div className="flex-1" />
-      <button type="button" onClick={() => setSubPage(1)} className={BTN_PRIMARY}>Continue →</button>
+      <div className="flex-shrink-0 pt-3 border-t border-gray-100"
+           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
+        <button type="button" onClick={() => setSubPage(1)} className={BTN_PRIMARY}>Continue →</button>
+      </div>
     </div>
   );
 
   return (
-    <div className="space-y-4 flex flex-col h-full">
-      <div className="text-center">
-        <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
-        <h3 className="text-lg font-bold text-gray-900">Training Preferences</h3>
-        <p className="text-sm text-gray-500 mt-1">How you like to measure your training</p>
+    <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
+        <div className="text-center">
+          <div className="flex justify-center mb-2"><SlidersHorizontal className="w-10 h-10 text-primary" /></div>
+          <h3 className="text-lg font-bold text-gray-900">Training Preferences</h3>
+          <p className="text-sm text-gray-500 mt-1">How you like to measure your training</p>
+        </div>
+        <RadioGroup stateKey="paceDisplay" label="Running Pace" isTraining options={[
+          { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
+          { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
+        ]} />
+        <RadioGroup stateKey="rpeScale" label="Perceived Exertion" isTraining options={[
+          { value: 'rpe',  icon: <Dumbbell className="w-5 h-5" />,   label: 'RPE 1–10',  sub: 'Simple scale' },
+          { value: 'borg', icon: <Microscope className="w-5 h-5" />, label: 'Borg 6–20', sub: 'Scientific' },
+        ]} />
+        <RadioGroup stateKey="zonesMethod" label="Zones Based On" isTraining options={[
+          { value: 'lactate', icon: <Droplets className="w-5 h-5" />, label: 'Lactate LT1/LT2', sub: 'Recommended' },
+          { value: 'hrmax',   icon: <Heart className="w-5 h-5" />,    label: 'Max HR %',         sub: 'Classic' },
+          { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
+        ]} />
       </div>
-      <RadioGroup stateKey="paceDisplay" label="Running Pace" isTraining options={[
-        { value: 'minpkm', icon: <Timer className="w-5 h-5" />, label: 'min/km', sub: 'e.g. 4:30 /km' },
-        { value: 'kmh',    icon: <Zap className="w-5 h-5" />,   label: 'km/h',   sub: 'e.g. 13.3 km/h' },
-      ]} />
-      <RadioGroup stateKey="rpeScale" label="Perceived Exertion" isTraining options={[
-        { value: 'rpe',  icon: <Dumbbell className="w-5 h-5" />,   label: 'RPE 1–10',  sub: 'Simple scale' },
-        { value: 'borg', icon: <Microscope className="w-5 h-5" />, label: 'Borg 6–20', sub: 'Scientific' },
-      ]} />
-      <RadioGroup stateKey="zonesMethod" label="Zones Based On" isTraining options={[
-        { value: 'lactate', icon: <Droplets className="w-5 h-5" />, label: 'Lactate LT1/LT2', sub: 'Recommended' },
-        { value: 'hrmax',   icon: <Heart className="w-5 h-5" />,    label: 'Max HR %',         sub: 'Classic' },
-        { value: 'ftp',     icon: <Zap className="w-5 h-5" />,      label: 'FTP / Power',      sub: 'Cycling' },
-      ]} />
-      <div className="flex-1" />
-      <button type="button" onClick={() => onSave({ units, trainingPreferences: trainingPrefs, onboarding: { unitsDone: true } })} disabled={saving} className={BTN_PRIMARY}>
-        {saving ? 'Saving…' : 'Save & Continue →'}
-      </button>
-      <button type="button" onClick={() => setSubPage(0)} className={BTN_GHOST}>← Back</button>
+      <div className="flex-shrink-0 pt-3 border-t border-gray-100 space-y-2"
+           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
+        <button type="button" onClick={() => onSave({ units, trainingPreferences: trainingPrefs, onboarding: { unitsDone: true } })} disabled={saving} className={BTN_PRIMARY}>
+          {saving ? 'Saving…' : 'Save & Continue →'}
+        </button>
+        <button type="button" onClick={() => setSubPage(0)} className={BTN_GHOST}>← Back</button>
+      </div>
     </div>
   );
 }
@@ -551,19 +559,20 @@ function ZonesStep({ onSkip, onSave, saving }) {
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Scrollable body */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-4">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
         <div className="text-center">
           <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
           <h3 className="text-lg font-bold text-gray-900">Generate Training Zones</h3>
           <p className="text-sm text-gray-500 mt-1">Enter your LT1 & LT2 thresholds to auto-calculate zones</p>
         </div>
 
-        {/* Sport selector */}
+        {/* Sport selector — switching sport only changes the unit label; generated
+            zones stay visible so the user doesn't lose their work. */}
         <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
           {['cycling', 'running', 'swimming'].map(s => (
-            <button key={s} type="button" onClick={() => { setSport(s); setEditableZones(null); }}
+            <button key={s} type="button" onClick={() => setSport(s)}
               className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
               {s}
             </button>
@@ -636,9 +645,7 @@ function ZonesStep({ onSkip, onSave, saving }) {
             {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Confirm & Save Zones'}
           </button>
         )}
-        <button type="button" onClick={onSkip} className={BTN_GHOST}>
-          Skip — I'll set zones later
-        </button>
+        <button type="button" onClick={onSkip} className={BTN_GHOST}>Skip — I'll set zones later</button>
       </div>
     </div>
   );
@@ -1264,7 +1271,6 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
                     {setupStep === 3 && (
                       <div className="flex flex-col gap-3 pb-8">
                         <StravaStep user={user} onSkip={handleFinish} />
-                        <button onClick={handleFinish} className={BTN_GHOST}>Skip for now</button>
                       </div>
                     )}
                     {setupStep >= SETUP_STEPS.length && handleFinish()}

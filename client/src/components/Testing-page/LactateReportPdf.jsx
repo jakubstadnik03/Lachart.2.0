@@ -635,14 +635,16 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
 
 // ── Header ─────────────────────────────────────────────────────────────────────
 const Header = ({ title, date, branding }) => {
-  const pc = branding?.primaryColor || C.primary;
+  const pc       = branding?.primaryColor || C.primary;
+  const name     = branding?.title    || 'LaChart';
+  const tagline  = branding?.subtitle || (branding?.title ? '' : 'LACTATE ANALYSIS PLATFORM');
   return (
     <View style={s.header} fixed>
       <View style={s.headerBrand}>
         <Image src={branding?.logoUrl || LOGO_URL} style={s.headerLogo} />
         <View>
-          <Text style={[s.headerName, { color: pc }]}>{branding?.title || 'LaChart'}</Text>
-          <Text style={s.headerSub}>LACTATE ANALYSIS PLATFORM</Text>
+          <Text style={[s.headerName, { color: pc }]}>{name}</Text>
+          {tagline ? <Text style={s.headerSub}>{tagline.toUpperCase()}</Text> : null}
         </View>
       </View>
       <Text style={s.headerDate}>{title} · {date}</Text>
@@ -652,17 +654,27 @@ const Header = ({ title, date, branding }) => {
 
 // ── Footer ─────────────────────────────────────────────────────────────────────
 const Footer = ({ athlete, creatorEmail, branding }) => {
-  const pc = branding?.primaryColor || C.primary;
+  const pc       = branding?.primaryColor || C.primary;
+  const name     = branding?.title || 'LaChart';
+  const hasCustom = !!(branding?.title);
+
+  // Build contact detail fragments: prefer branding contact, fall back to LaChart defaults
+  const web      = branding?.web      || (!hasCustom ? 'lachart.net'            : null);
+  const email    = branding?.email    || (!hasCustom ? creatorEmail             : null);
+  const phone    = branding?.phone    || null;
+  const trademark= branding?.trademark|| null;
+
+  // Assemble up to 3 short pieces separated by · so the footer doesn't overflow
+  const contactParts = [trademark, web, email, phone].filter(Boolean).slice(0, 3);
+
   return (
     <View style={s.footer} fixed>
       <View style={s.footerBrand}>
         <Image src={branding?.logoUrl || LOGO_URL} style={s.footerLogo} />
-        <Text style={[s.footerName, { color: pc }]}>{branding?.title || 'LaChart'}</Text>
-        {branding?.trademark
-          ? <Text style={s.footerText}> · {branding.trademark}</Text>
-          : <Text style={s.footerText}> · lachart.net</Text>
-        }
-        {creatorEmail ? <Text style={s.footerText}> · Contact: {creatorEmail}</Text> : null}
+        <Text style={[s.footerName, { color: pc }]}>{name}</Text>
+        {contactParts.map((part, i) => (
+          <Text key={i} style={s.footerText}> · {part}</Text>
+        ))}
       </View>
       <Text style={s.footerText}
         render={({ pageNumber, totalPages }) => `${athlete || ''} · Page ${pageNumber} / ${totalPages}`} />
@@ -843,7 +855,11 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               <Image src={coachBranding?.logoUrl || LOGO_URL} style={s.coverLogo} />
               <View>
                 <Text style={s.coverBrandName}>{coachBranding?.title || 'LaChart'}</Text>
-                <Text style={s.coverBrandSub}>LACTATE ANALYSIS PLATFORM</Text>
+                <Text style={s.coverBrandSub}>
+                  {coachBranding?.subtitle
+                    ? coachBranding.subtitle.toUpperCase()
+                    : (coachBranding?.title ? '' : 'LACTATE ANALYSIS PLATFORM')}
+                </Text>
               </View>
             </View>
             <View style={s.coverTitleWrap}>
@@ -1202,8 +1218,35 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   );
 }
 
+// ── Logo pre-fetch helper ───────────────────────────────────────────────────────
+// @react-pdf/renderer fetches Image src internally and CORS blocks most CDN / 3rd-party
+// hosts. Converting to a base64 data URL first sidesteps the restriction entirely.
+async function fetchLogoDataUrl(url) {
+  if (!url || url.startsWith('data:')) return url; // already base64 or empty
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result || null);
+      reader.onerror  = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null; // CORS failure → fall back to LaChart logo in the component
+  }
+}
+
 // ── Download helper ─────────────────────────────────────────────────────────────
 export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
+  // Pre-fetch the coach logo so the PDF renderer never has to make a cross-origin request
+  let resolvedBranding = coachBranding;
+  if (coachBranding?.logoUrl) {
+    const dataUrl = await fetchLogoDataUrl(coachBranding.logoUrl);
+    resolvedBranding = { ...coachBranding, logoUrl: dataUrl || null };
+  }
+
   const doc = (
     <LactateReportPdf
       test={test}
@@ -1218,7 +1261,7 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       customAnalysis={customAnalysis}
       creatorEmail={creatorEmail}
       preTestSummary={preTestSummary}
-      coachBranding={coachBranding}
+      coachBranding={resolvedBranding}
     />
   );
   return pdf(doc).toBlob();
