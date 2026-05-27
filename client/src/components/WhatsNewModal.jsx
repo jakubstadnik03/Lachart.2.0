@@ -37,14 +37,6 @@ const ITEMS = [
     accent: '#0ea5e9', // sky
   },
   {
-    emoji: '📡',
-    title: 'Connect your smart trainer',
-    body: 'Pair an indoor smart trainer over Bluetooth and execute structured workouts with automatic resistance control. No third-party app needed.',
-    cta: 'How it works',
-    href: '/how-to-use',
-    accent: '#10b981', // emerald
-  },
-  {
     emoji: '🩸',
     title: 'Add lactate values to any interval',
     body: 'Tag any interval of an existing workout with a blood lactate sample. Each sample feeds straight back into your curve and zones.',

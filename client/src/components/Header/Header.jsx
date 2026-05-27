@@ -4,10 +4,7 @@ import { UserDropdown } from "./UserDropdown";
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
 import NotificationBell from './NotificationBell';
-// NOTE: WhatsNewButton import temporarily removed — the announcement modal
-// is paused. Re-add this line + the <WhatsNewButton /> below when bringing
-// it back. The component file (./WhatsNewButton) and the underlying
-// WhatsNewModal stay in the repo for that re-enable.
+import WhatsNewButton from './WhatsNewButton';
 
 const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -43,6 +40,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
           <div className="hidden lg:block flex-1 max-w-xl">
             <SearchInput />
           </div>
+          {user?.role && <WhatsNewButton />}
           {user?.role && <NotificationBell />}
           <UserDropdown
             isOpen={isDropdownOpen}
