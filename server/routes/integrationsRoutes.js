@@ -976,6 +976,30 @@ async function fetchAndSaveStravaActivity(user, stravaActivityId) {
         ? Number(a.weighted_average_watts) : null,
     raw: a,
   };
+
+  // Title-based auto-categorisation on sync. We only set category when
+  // it's currently empty (don't overwrite a user's manual choice on the
+  // next webhook update), and only when the activity name contains an
+  // explicit category keyword like "VO2max", "LT2", "threshold", …
+  // Interval-based detection still needs the laps fetch to complete; that
+  // runs separately via the auto-classify modal / backfill endpoint.
+  try {
+    const existing = await StravaActivity.findOne(
+      { userId: user._id, stravaId: a.id },
+      { category: 1 },
+    ).lean();
+    if (!existing?.category) {
+      const { category: titleCat, matchedKeyword } = _acCategorizeByTitle(a.name);
+      if (titleCat) {
+        doc.category = titleCat;
+        console.log(`[Strava sync] Auto-categorized "${a.name}" → ${titleCat} (keyword: ${matchedKeyword})`);
+      }
+    }
+  } catch (e) {
+    // Non-fatal — sync continues without auto-category.
+    console.warn('[Strava sync] auto-categorize from title failed:', e?.message);
+  }
+
   const result = await StravaActivity.updateOne(
     { userId: user._id, stravaId: a.id },
     { $set: doc },
@@ -4393,6 +4417,72 @@ function _acFindDominantZone(act, normSport, pZones, hZones) {
 }
 
 /**
+ * Title-based categorization — the highest-confidence signal we have.
+ * If the user (or their device) explicitly named the workout "4x5 VO2max"
+ * or "Threshold 3x10", we should respect that even when the interval data
+ * disagrees (averaged-out HR, missing power meter, GPS noise, etc.).
+ *
+ * Matching is case-insensitive and tolerant of subscript glyphs (VO₂max),
+ * spaces (VO2 max) and various separators. Order matters: more specific
+ * patterns are checked first so "VO2max threshold mix" lands as vo2max
+ * rather than lt2.
+ *
+ * Returns: { category: string|null, matchedKeyword: string|null }
+ */
+function _acCategorizeByTitle(title) {
+  const raw = String(title || '').trim();
+  if (!raw) return { category: null, matchedKeyword: null };
+
+  // Normalise: lowercase + collapse runs of whitespace + drop subscript ₂.
+  const t = raw
+    .toLowerCase()
+    .replace(/[₂]/g, '2')
+    .replace(/\s+/g, ' ');
+
+  // Ordered: most-specific first. Each entry returns the category if the
+  // regex matches anywhere in the normalised title.
+  const PATTERNS = [
+    // VO2max — single most-recognisable keyword, also catch "z5" / "zone 5"
+    { re: /\bvo\s?2\s?max\b/,                            cat: 'vo2max', kw: 'VO2max' },
+    { re: /\bvo2\b/,                                     cat: 'vo2max', kw: 'VO2' },
+    { re: /\b(zone\s?5|z\s?5|z5)\b/,                     cat: 'vo2max', kw: 'Z5' },
+
+    // LT2 / threshold / FTP — same physiological intent
+    { re: /\blt\s?2\b/,                                  cat: 'lt2',    kw: 'LT2' },
+    { re: /\bthreshold\b/,                               cat: 'lt2',    kw: 'threshold' },
+    { re: /\bsweet\s?spot\b/,                            cat: 'lt2',    kw: 'sweet spot' },
+    { re: /\bftp\b/,                                     cat: 'lt2',    kw: 'FTP' },
+    { re: /\b(práh|prah)\b/,                             cat: 'lt2',    kw: 'práh' },
+    { re: /\b(zone\s?4|z\s?4|z4)\b/,                     cat: 'lt2',    kw: 'Z4' },
+
+    // LT1 — aerobic threshold
+    { re: /\blt\s?1\b/,                                  cat: 'lt1',    kw: 'LT1' },
+    { re: /\baerobic\s+threshold\b/,                     cat: 'lt1',    kw: 'aerobic threshold' },
+    { re: /\b(zone\s?3|z\s?3|z3)\b/,                     cat: 'lt1',    kw: 'Z3' },
+
+    // Tempo — between LT1 and LT2 in many models; UI has its own category
+    { re: /\btempo\b/,                                   cat: 'tempo',  kw: 'tempo' },
+
+    // Hills
+    { re: /\b(hill|hills|hilly|climb|climbs|climbing|kopc?[áa]ky|kopec)\b/, cat: 'hills', kw: 'hills' },
+
+    // Easy / endurance / long
+    { re: /\b(zone\s?2|z\s?2|z2)\b/,                     cat: 'zone2',     kw: 'Z2' },
+    { re: /\bendurance\b/,                               cat: 'endurance', kw: 'endurance' },
+    { re: /\b(long\s+ride|long\s+run|long\s+swim|dlouh[áy])\b/, cat: 'endurance', kw: 'long' },
+    { re: /\b(recovery|spin|easy)\b/,                    cat: 'endurance', kw: 'easy' }, // recovery isn't in matrix → use endurance
+    { re: /\b(zone\s?1|z\s?1|z1)\b/,                     cat: 'endurance', kw: 'Z1' },
+  ];
+
+  for (const { re, cat, kw } of PATTERNS) {
+    if (re.test(t)) {
+      return { category: cat, matchedKeyword: kw };
+    }
+  }
+  return { category: null, matchedKeyword: null };
+}
+
+/**
  * Per-interval categorization.
  * Looks at each significant work lap individually and decides the category
  * based on how many fell into which zone — rather than picking the average
@@ -4568,6 +4658,12 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         : 0;
       const isHillsWorkout = elevPerKm > 20;
 
+      // Step 0 — Title-based detection. Highest confidence: if the user
+      // explicitly named the workout "4x5 VO2max" / "Threshold" we should
+      // trust that even when the interval data is noisy or absent.
+      const titleText = act.titleManual || act.name || '';
+      const { category: titleCategory, matchedKeyword } = _acCategorizeByTitle(titleText);
+
       // Step 1 — Per-interval categorization: VO2max if ANY lap reached
       // zone5, else LT2/LT1 if ≥2 laps in zone4/zone3. Returns null when
       // the evidence is inconclusive (rather than guessing "endurance"
@@ -4581,11 +4677,12 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
       // workouts (zone1=endurance, zone2). We deliberately DON'T let the
       // fallback re-label something as lt1/lt2/vo2max — those should
       // come from the per-interval check or not at all.
-      const dominantZone = intervalCategory
+      const dominantZone = (titleCategory || intervalCategory)
         ? null
         : _acFindDominantZone(act, normSport, pZones, hZones);
 
-      let category = intervalCategory;
+      // Priority: title > intervals > dominant-zone > hills > skip.
+      let category = titleCategory || intervalCategory;
       if (!category) {
         if (isHillsWorkout && !dominantZone) {
           category = 'hills';
@@ -4612,9 +4709,14 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         startDate: act.startDate,
         movingTime: act.movingTime || act.elapsedTime || 0,
         currentCategory: act.category || null,
-        dominantZone: dominantZone || (intervalCategory ? `intervals:${intervalCategory}` : 'hills'),
-        // Surfaces the per-interval evidence so the UI can show "based on
-        // 3 work laps in zone5" instead of an unexplained category.
+        dominantZone: dominantZone
+          || (titleCategory ? `title:${matchedKeyword}` : null)
+          || (intervalCategory ? `intervals:${intervalCategory}` : 'hills'),
+        // Surfaces *why* we proposed this category so the UI can show:
+        //   - "Detected from name: VO2max"          (title match)
+        //   - "Based on 3 work laps in VO2max zone" (interval match)
+        // Both fields can be present (title wins, intervals confirm).
+        titleMatch: titleCategory ? { keyword: matchedKeyword, category: titleCategory } : null,
         intervalEvidence: evidence,
         proposedCategory: category,
         proposedTitle: title,
@@ -4633,6 +4735,112 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
  * Applies selected category + title changes.
  * Body: { items: [{ _id, category, title }] }
  */
+/**
+ * POST /api/integrations/strava/auto-classify/backfill
+ *
+ * Hands-off retrospective categorisation. Runs the same classifier
+ * (title > intervals > dominant-zone-low-only) over every uncategorised
+ * Strava activity belonging to the user and writes the result straight
+ * into Mongo. Use this when:
+ *   - User just added category keywords to their workout names and wants
+ *     them propagated to existing activities.
+ *   - You upgraded the classifier (this commit) and want old entries
+ *     re-evaluated.
+ *
+ * Returns:
+ *   { processed: N, updated: M, skipped: K, sample: [{ id, name, category, source }] }
+ *
+ * Body (all optional):
+ *   - sport: 'cycling' | 'running' | 'swimming' | 'all' (default 'all')
+ *   - dryRun: true → return what WOULD change without saving (handy for
+ *             eyeballing before committing).
+ *   - source: 'title'  → only apply title-based matches (safest)
+ *             'all'    → apply title + intervals + dominant-zone (default)
+ */
+router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).lean();
+    if (!user) return res.status(401).json({ error: 'User not found' });
+
+    const sportFilter = String(req.body?.sport || 'all').toLowerCase();
+    const dryRun = req.body?.dryRun === true;
+    const source = String(req.body?.source || 'all').toLowerCase();
+
+    const query = {
+      userId: user._id,
+      $or: [{ category: null }, { category: '' }, { category: { $exists: false } }],
+    };
+    const activities = await StravaActivity.find(query)
+      .select('_id stravaId name titleManual sport laps category averageHeartRate averagePower weightedAveragePower total_elevation_gain distance')
+      .limit(2000)
+      .lean();
+
+    const powerZones = user.powerZones || {};
+    const hrZones = user.heartRateZones || {};
+
+    let processed = 0;
+    let updated = 0;
+    let skipped = 0;
+    const sample = [];
+
+    for (const act of activities) {
+      processed++;
+      const normSport = _acNormSport(act.sport);
+      if (!normSport) { skipped++; continue; }
+      if (sportFilter !== 'all' && normSport !== sportFilter) { skipped++; continue; }
+
+      // 1) Title is the highest-confidence signal.
+      const titleText = act.titleManual || act.name || '';
+      const titleResult = _acCategorizeByTitle(titleText);
+
+      let category = null;
+      let sourceUsed = null;
+      if (titleResult.category) {
+        category = titleResult.category;
+        sourceUsed = `title:${titleResult.matchedKeyword}`;
+      } else if (source === 'all') {
+        // 2) Per-interval.
+        const pZones = powerZones[normSport] || {};
+        const hZones = hrZones[normSport] || {};
+        const intervalResult = _acCategorizeByIntervals(act, normSport, pZones, hZones);
+        if (intervalResult.category) {
+          category = intervalResult.category;
+          sourceUsed = `intervals:${intervalResult.category}`;
+        } else {
+          // 3) Dominant-zone fallback (only for confidently low intensity).
+          const dz = _acFindDominantZone(act, normSport, pZones, hZones);
+          if (dz === 'zone1' || dz === 'zone2') {
+            category = _AC_ZONE_CAT[dz];
+            sourceUsed = `dominantZone:${dz}`;
+          }
+        }
+      }
+
+      if (!category) { skipped++; continue; }
+
+      if (sample.length < 20) {
+        sample.push({ id: String(act._id), name: titleText, category, source: sourceUsed });
+      }
+
+      if (!dryRun) {
+        const result = await StravaActivity.updateOne(
+          { _id: act._id, userId: user._id, $or: query.$or },
+          { $set: { category } },
+        );
+        if (result.modifiedCount > 0) updated++;
+      } else {
+        updated++;
+      }
+    }
+
+    console.log(`[auto-classify backfill] user=${user._id} processed=${processed} updated=${updated} skipped=${skipped} dryRun=${dryRun}`);
+    res.json({ processed, updated, skipped, dryRun, sample });
+  } catch (err) {
+    console.error('[auto-classify] backfill error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/strava/auto-classify/apply', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).lean();
