@@ -10,6 +10,19 @@ const verifyToken = require('../middleware/verifyToken');
 const WorkoutTemplate = require('../models/WorkoutTemplate');
 const PlannedWorkout  = require('../models/PlannedWorkout');
 const User       = require('../models/UserModel');
+const { requireFeature } = require('../middleware/featureGate');
+
+/**
+ * Workout planning is a Pro-tier feature. Free users can READ what's been
+ * planned for them (e.g. a coach assigned a workout) but can't CREATE or
+ * EDIT plans themselves. Coaches planning for athletes need the Coach
+ * plan — the same gate is applied because Coach inherits Pro.
+ *
+ * Reads stay open (GET) so an athlete on a free plan still sees the workout
+ * their Pro/Coach trainer assigned them. Writes (POST/PUT/DELETE) require
+ * plan_workouts.
+ */
+const requirePlanWorkouts = requireFeature('plan_workouts');
 
 // ── Helper: is requester a coach/admin who may manage athlete data? ──────────
 function isCoachLike(user) {
@@ -65,7 +78,7 @@ router.get('/templates/:id', verifyToken, async (req, res) => {
 });
 
 /** POST /api/workout-planner/templates */
-router.post('/templates', verifyToken, async (req, res) => {
+router.post('/templates', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const { name, sport, description, tags, steps, isPublic } = req.body;
     if (!name || !sport) return res.status(400).json({ error: 'name and sport are required' });
@@ -83,7 +96,7 @@ router.post('/templates', verifyToken, async (req, res) => {
 });
 
 /** PUT /api/workout-planner/templates/:id */
-router.put('/templates/:id', verifyToken, async (req, res) => {
+router.put('/templates/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const tpl = await WorkoutTemplate.findById(req.params.id);
     if (!tpl) return res.status(404).json({ error: 'Template not found' });
@@ -105,7 +118,7 @@ router.put('/templates/:id', verifyToken, async (req, res) => {
 });
 
 /** DELETE /api/workout-planner/templates/:id */
-router.delete('/templates/:id', verifyToken, async (req, res) => {
+router.delete('/templates/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const tpl = await WorkoutTemplate.findById(req.params.id);
     if (!tpl) return res.status(404).json({ error: 'Template not found' });
@@ -161,7 +174,7 @@ router.get('/planned/:id', verifyToken, async (req, res) => {
 });
 
 /** POST /api/workout-planner/planned */
-router.post('/planned', verifyToken, async (req, res) => {
+router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
     const { date, sport, title, description, templateId, steps,
@@ -196,7 +209,7 @@ router.post('/planned', verifyToken, async (req, res) => {
 });
 
 /** PUT /api/workout-planner/planned/:id */
-router.put('/planned/:id', verifyToken, async (req, res) => {
+router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
     const pw = await PlannedWorkout.findById(req.params.id);
@@ -314,7 +327,7 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
 });
 
 /** DELETE /api/workout-planner/planned/:id */
-router.delete('/planned/:id', verifyToken, async (req, res) => {
+router.delete('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
     const pw = await PlannedWorkout.findById(req.params.id);

@@ -46,6 +46,7 @@ const {
   removeCoachFromAthleteIds,
   athleteCoachIdSet,
 } = require("../utils/athleteCoachAccess");
+const { requireQuotaSlot } = require("../middleware/featureGate");
 
 /** Shared transporter: defaults to Zoho when only EMAIL_USER + APP_PASSWORD are set (avoids null transport). */
 const { createEmailTransporter } = require("../utils/createEmailTransporter");
@@ -362,7 +363,16 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
 });
 
 // Add athlete to coach
-router.post("/coach/add-athlete", verifyToken, async (req, res) => {
+router.post(
+  "/coach/add-athlete",
+  verifyToken,
+  // Plan-based athlete cap. Free/Pro = 0 (paywall), Coach = unlimited,
+  // Team = 25, Enterprise = 60. Bypasses for admins / manual premium /
+  // BETA_ALL_PREMIUM=true / SUBSCRIPTION_ENABLED=false via resolveUserPlan.
+  requireQuotaSlot('athletes', async (req, user) =>
+    Array.isArray(user?.athletes) ? user.athletes.length : 0
+  ),
+  async (req, res) => {
     try {
         console.log("Received add-athlete request:", req.body);
         const { 
@@ -396,40 +406,8 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
-        // ── Subscription-plan athlete limit ──────────────────────────────
-        if (process.env.SUBSCRIPTION_ENABLED === 'true') {
-            const coachRole = String(coach?.role || '').toLowerCase();
-            const isAdminRole = coachRole === 'admin' || coach?.admin === true;
-            if (!isAdminRole) {
-                const User = require('../models/UserModel');
-                const fullCoach = await User.findById(req.user.userId).populate('subscriptionId');
-                const plan = fullCoach?.subscriptionId?.plan || 'free';
-                const ATHLETE_LIMITS = { free: 1, pro: 0, coach: 10, team: 25, enterprise: 60 };
-                const limit = ATHLETE_LIMITS[plan] !== undefined ? ATHLETE_LIMITS[plan] : 1;
-                if (limit === 0) {
-                    return res.status(403).json({
-                        error: 'FREE_PLAN_LIMIT',
-                        feature: 'athletes',
-                        message: 'Your plan does not include athlete management. Upgrade to Coach plan.',
-                        limit: 0, current: coach.athletes?.length || 0,
-                        upgradeUrl: '/settings?tab=subscription'
-                    });
-                }
-                if (limit !== -1) {
-                    const athleteCount = coach.athletes?.length || 0;
-                    if (athleteCount >= limit) {
-                        return res.status(403).json({
-                            error: 'FREE_PLAN_LIMIT',
-                            feature: 'athletes',
-                            message: `Your plan allows only ${limit} athlete(s). Upgrade to Coach plan for more.`,
-                            limit, current: athleteCount,
-                            upgradeUrl: '/settings?tab=subscription'
-                        });
-                    }
-                }
-            }
-        }
-        // ─────────────────────────────────────────────────────────────────
+        // Athlete cap is enforced by requireQuotaSlot('athletes') middleware
+        // attached on the route definition above — no inline limit check needed.
 
         // Check if email is already registered (only if email is provided)
         if (email) {
@@ -533,7 +511,8 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         console.error("Error adding athlete:", error);
         res.status(500).json({ error: error.message });
     }
-});
+  }
+);
 
 // Complete athlete registration
 router.post("/complete-registration/:token", async (req, res) => {
@@ -690,18 +669,42 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
 
-        // Coach branding (logo URL, title, trademark)
+        // Coach branding (logo URL, title, trademark) — gated to Coach plan
+        // and above. Pro/Free users silently drop the field rather than
+        // erroring out, because the profile edit endpoint is shared with
+        // non-branding updates and we don't want a partial save to fail
+        // just because the client sent an empty coachBranding object.
         if (req.body.coachBranding !== undefined) {
-          updateData.coachBranding = {
-            logoUrl:      req.body.coachBranding.logoUrl      ?? null,
-            title:        req.body.coachBranding.title        ?? null,
-            subtitle:     req.body.coachBranding.subtitle     ?? null,
-            trademark:    req.body.coachBranding.trademark    ?? null,
-            primaryColor: req.body.coachBranding.primaryColor ?? null,
-            email:        req.body.coachBranding.email        ?? null,
-            web:          req.body.coachBranding.web          ?? null,
-            phone:        req.body.coachBranding.phone        ?? null,
-          };
+          const { resolveUserPlan, FEATURE_MATRIX } = require('../middleware/featureGate');
+          const planResult = await resolveUserPlan({ user: { userId } });
+          const planAllowsBranding = planResult.bypass
+            || FEATURE_MATRIX.pdf_branding.includes(planResult.plan);
+          if (planAllowsBranding) {
+            updateData.coachBranding = {
+              logoUrl:      req.body.coachBranding.logoUrl      ?? null,
+              title:        req.body.coachBranding.title        ?? null,
+              subtitle:     req.body.coachBranding.subtitle     ?? null,
+              trademark:    req.body.coachBranding.trademark    ?? null,
+              primaryColor: req.body.coachBranding.primaryColor ?? null,
+              email:        req.body.coachBranding.email        ?? null,
+              web:          req.body.coachBranding.web          ?? null,
+              phone:        req.body.coachBranding.phone        ?? null,
+            };
+          } else if (Object.values(req.body.coachBranding || {}).some((v) => v != null && v !== '')) {
+            // User actually tried to set branding fields without the plan.
+            // Surface a clear 403 instead of silently dropping the change so
+            // the UI can react and prompt an upgrade.
+            return res.status(403).json({
+              error: 'PDF branding is a Coach-plan feature',
+              code: 'FEATURE_REQUIRES_UPGRADE',
+              feature: 'pdf_branding',
+              currentPlan: planResult.plan,
+              requiredPlans: FEATURE_MATRIX.pdf_branding,
+              suggestedPlan: 'coach',
+            });
+          }
+          // else: branding object is all-empty (e.g. a clear-out from the UI)
+          // — let it through silently, harmless either way.
         }
 
         // Load current user to snapshot previous zones into history before updating
