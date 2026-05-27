@@ -6,6 +6,7 @@ const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { sendPremiumActivationEmail } = require('../services/premiumActivationEmailService');
 
 // Available subscription plans (exported for use in middleware)
 const PLANS = {
@@ -400,7 +401,9 @@ async function handleCheckoutCompleted(session) {
   }
 
   let userSubscription = await Subscription.findOne({ userId: user._id });
-  
+  // Capture previous plan so we only email on a real free→paid transition.
+  const previousPlan = userSubscription?.plan || 'free';
+
   if (!userSubscription) {
     userSubscription = await Subscription.create({
       userId: user._id,
@@ -431,6 +434,19 @@ async function handleCheckoutCompleted(session) {
 
   user.subscriptionId = userSubscription._id;
   await user.save();
+
+  // Fire-and-forget confirmation email on a real free→paid transition.
+  // Don't block the webhook response on email delivery.
+  if (previousPlan === 'free' && planId !== 'free') {
+    const planPrice = PLANS[planId]?.price;
+    sendPremiumActivationEmail(user, {
+      plan: planId,
+      status: subscription.status,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+      amount: planPrice,
+      currency: PLANS[planId]?.currency || 'eur',
+    }).catch((err) => console.error('[Checkout] activation email failed:', err?.message));
+  }
 }
 
 async function handleSubscriptionUpdate(stripeSubscription) {
@@ -547,6 +563,9 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
     const priceId = liveSub.items?.data?.[0]?.price?.id;
     const planId = priceToPlan[priceId] || userSubscription?.plan || 'pro';
 
+    // Capture previous plan for activation-email gating.
+    const previousPlan = userSubscription?.plan || 'free';
+
     if (!userSubscription) {
       userSubscription = await Subscription.create({
         userId: user._id,
@@ -578,6 +597,19 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
     if (!user.subscriptionId) {
       user.subscriptionId = userSubscription._id;
       await user.save();
+    }
+
+    // Activation email — only on real free→paid transitions, so users who
+    // hit /sync repeatedly (or come back from refresh) don't get spammed.
+    if (previousPlan === 'free' && planId !== 'free') {
+      const planPrice = PLANS[planId]?.price;
+      sendPremiumActivationEmail(user, {
+        plan: planId,
+        status: liveSub.status,
+        trialEnd: liveSub.trial_end ? new Date(liveSub.trial_end * 1000) : null,
+        amount: planPrice,
+        currency: PLANS[planId]?.currency || 'eur',
+      }).catch((err) => console.error('[Sync] activation email failed:', err?.message));
     }
 
     res.json({
