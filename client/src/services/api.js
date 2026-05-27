@@ -1648,6 +1648,26 @@ export const cancelSubscription = async () => {
   return data;
 };
 
+/**
+ * Force-sync subscription state from Stripe → MongoDB.
+ * Webhook-failure fallback. Safe to call repeatedly.
+ * Returns { synced, subscription? }.
+ */
+export const syncSubscriptionFromStripe = async () => {
+  const { data } = await api.post('/api/subscription/sync');
+  return data;
+};
+
+/**
+ * Fetch the latest user profile (bypasses local cache).
+ * Used after subscription sync so isPremium flips on immediately.
+ */
+export const fetchUserProfile = async () => {
+  invalidateCache('/user/profile');
+  const { data } = await api.get('/user/profile');
+  return data;
+};
+
 /** Reactivate a canceled subscription */
 export const reactivateSubscription = async () => {
   const { data } = await api.post('/api/subscription/reactivate');

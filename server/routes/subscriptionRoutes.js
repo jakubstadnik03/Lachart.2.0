@@ -39,6 +39,14 @@ router.post('/create-checkout-session', verifyToken, subscriptionController.crea
 router.post('/webhook', express.raw({ type: 'application/json' }), subscriptionController.handleWebhook);
 
 /**
+ * POST /api/subscription/sync
+ * Defensive fallback when webhooks fail: pulls latest subscription state
+ * from Stripe and writes it onto the user's MongoDB record. Client calls
+ * this right after returning from Stripe Checkout (?success=1).
+ */
+router.post('/sync', verifyToken, subscriptionController.syncSubscriptionFromStripe);
+
+/**
  * POST /api/subscription/cancel
  * Cancel subscription (at period end)
  */

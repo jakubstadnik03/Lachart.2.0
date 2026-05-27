@@ -9,7 +9,7 @@ import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -680,10 +680,34 @@ const SettingsPage = () => {
   useEffect(() => {
     if (activeTab !== 'subscription') return;
     let cancelled = false;
+
+    // When the user just returned from Stripe Checkout (?success=1), the
+    // webhook may not have updated MongoDB yet (or may be misconfigured).
+    // Trigger an explicit sync BEFORE loading the subscription so the UI
+    // shows the freshly purchased plan instead of "Free".
+    const params = new URLSearchParams(location.search || '');
+    const justSucceeded = params.get('success') === '1';
+
     const load = async () => {
       setSubLoading(true);
       setSubError(null);
       try {
+        if (justSucceeded) {
+          try {
+            await syncSubscriptionFromStripe();
+          } catch (syncErr) {
+            // Sync failure is non-fatal — getCurrentSubscription still gives
+            // us a usable state. Log and continue.
+            console.warn('[Subscription] Stripe sync after checkout failed:', syncErr);
+          }
+          // Also refresh the user profile so isPremium flips on across the app.
+          try {
+            const fresh = await fetchUserProfile();
+            if (fresh) {
+              window.dispatchEvent(new CustomEvent('userUpdated', { detail: fresh }));
+            }
+          } catch { /* ignore */ }
+        }
         const data = await getCurrentSubscription();
         if (!cancelled) setSubData(data);
       } catch (err) {
@@ -694,7 +718,7 @@ const SettingsPage = () => {
     };
     load();
     return () => { cancelled = true; };
-  }, [activeTab]);
+  }, [activeTab, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Don't overwrite form state mid-save — handleSaveBranding sets it directly

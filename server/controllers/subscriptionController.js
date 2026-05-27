@@ -486,6 +486,117 @@ async function handlePaymentFailed(invoice) {
 }
 
 /**
+ * Sync the user's subscription state from Stripe → MongoDB.
+ *
+ * Defensive endpoint: webhooks are the primary delivery channel, but if a
+ * webhook is misconfigured, blocked, or signature-mismatched, the user's DB
+ * record will lag behind Stripe. The client calls this endpoint right after
+ * a successful checkout (?success=1) and the page reload picks up the result.
+ *
+ * Pulls the latest customer's subscriptions, picks the most recent
+ * non-canceled one, and writes its fields onto the user's Subscription doc.
+ */
+exports.syncSubscriptionFromStripe = async (req, res) => {
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true' || !stripe) {
+    return res.status(503).json({ error: 'Subscription system not enabled' });
+  }
+
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let userSubscription = await Subscription.findOne({ userId: user._id });
+    let customerId = userSubscription?.stripeCustomerId;
+
+    // No cached customer? Try to find by email — covers the case where the
+    // checkout completed but our local stripeCustomerId was wiped earlier
+    // (e.g. test→live mode switch).
+    if (!customerId && user.email) {
+      const found = await stripe.customers.list({ email: user.email, limit: 1 });
+      if (found.data.length > 0) {
+        customerId = found.data[0].id;
+      }
+    }
+
+    if (!customerId) {
+      return res.json({ synced: false, reason: 'no_stripe_customer' });
+    }
+
+    const subs = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'all',
+      limit: 5,
+    });
+
+    // Prefer trialing/active over canceled.
+    const liveSub =
+      subs.data.find((s) => s.status === 'trialing' || s.status === 'active') ||
+      subs.data[0];
+
+    if (!liveSub) {
+      return res.json({ synced: false, reason: 'no_stripe_subscription', customerId });
+    }
+
+    // Map Stripe price → our plan id.
+    const priceToPlan = {
+      [process.env.STRIPE_PRICE_ID_PRO]: 'pro',
+      [process.env.STRIPE_PRICE_ID_COACH]: 'coach',
+      [process.env.STRIPE_PRICE_ID_TEAM]: 'team',
+      [process.env.STRIPE_PRICE_ID_ENTERPRISE]: 'enterprise',
+    };
+    const priceId = liveSub.items?.data?.[0]?.price?.id;
+    const planId = priceToPlan[priceId] || userSubscription?.plan || 'pro';
+
+    if (!userSubscription) {
+      userSubscription = await Subscription.create({
+        userId: user._id,
+        plan: planId,
+        status: liveSub.status,
+        stripeSubscriptionId: liveSub.id,
+        stripeCustomerId: customerId,
+        stripePriceId: priceId,
+        currentPeriodStart: liveSub.current_period_start ? new Date(liveSub.current_period_start * 1000) : undefined,
+        currentPeriodEnd: liveSub.current_period_end ? new Date(liveSub.current_period_end * 1000) : undefined,
+        trialStart: liveSub.trial_start ? new Date(liveSub.trial_start * 1000) : null,
+        trialEnd: liveSub.trial_end ? new Date(liveSub.trial_end * 1000) : null,
+        cancelAtPeriodEnd: liveSub.cancel_at_period_end,
+      });
+    } else {
+      userSubscription.plan = planId;
+      userSubscription.status = liveSub.status;
+      userSubscription.stripeSubscriptionId = liveSub.id;
+      userSubscription.stripeCustomerId = customerId;
+      userSubscription.stripePriceId = priceId;
+      userSubscription.currentPeriodStart = liveSub.current_period_start ? new Date(liveSub.current_period_start * 1000) : undefined;
+      userSubscription.currentPeriodEnd = liveSub.current_period_end ? new Date(liveSub.current_period_end * 1000) : undefined;
+      userSubscription.trialStart = liveSub.trial_start ? new Date(liveSub.trial_start * 1000) : null;
+      userSubscription.trialEnd = liveSub.trial_end ? new Date(liveSub.trial_end * 1000) : null;
+      userSubscription.cancelAtPeriodEnd = liveSub.cancel_at_period_end;
+      await userSubscription.save();
+    }
+
+    if (!user.subscriptionId) {
+      user.subscriptionId = userSubscription._id;
+      await user.save();
+    }
+
+    res.json({
+      synced: true,
+      subscription: {
+        plan: userSubscription.plan,
+        status: userSubscription.status,
+        currentPeriodEnd: userSubscription.currentPeriodEnd,
+        trialEnd: userSubscription.trialEnd,
+        cancelAtPeriodEnd: userSubscription.cancelAtPeriodEnd,
+      },
+    });
+  } catch (error) {
+    console.error('[Sync] Failed:', { message: error?.message, code: error?.code });
+    res.status(500).json({ error: 'Sync failed', message: error?.message });
+  }
+};
+
+/**
  * Cancel subscription (at period end)
  */
 exports.cancelSubscription = async (req, res) => {
