@@ -12,6 +12,8 @@ const {
   sendPaymentReceiptEmail,
   sendPaymentFailedEmail,
   sendSubscriptionCanceledEmail,
+  sendCancelScheduledEmail,
+  sendReactivatedEmail,
 } = require('../services/subscriptionLifecycleEmailService');
 
 // Available subscription plans (exported for use in middleware)
@@ -776,21 +778,33 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
 exports.cancelSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate('subscriptionId');
-    
+
     if (!user || !user.subscriptionId) {
       return res.status(404).json({ error: 'Subscription not found' });
     }
 
     const subscription = user.subscriptionId;
-    
+
     if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         cancel_at_period_end: true
       });
     }
 
+    // If the local doc was already flagged as cancelling, the user clicked
+    // cancel twice — don't re-spam them with another email.
+    const alreadyScheduled = subscription.cancelAtPeriodEnd === true;
+
     subscription.cancelAtPeriodEnd = true;
     await subscription.save();
+
+    if (!alreadyScheduled) {
+      // Fire-and-forget — don't block the API response on email delivery.
+      sendCancelScheduledEmail(user, {
+        plan: subscription.plan,
+        endsAt: subscription.currentPeriodEnd,
+      }).catch((err) => console.error('[Cancel] confirmation email failed:', err?.message));
+    }
 
     res.json({ message: 'Subscription will be canceled at period end' });
   } catch (error) {
@@ -805,13 +819,17 @@ exports.cancelSubscription = async (req, res) => {
 exports.reactivateSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate('subscriptionId');
-    
+
     if (!user || !user.subscriptionId) {
       return res.status(404).json({ error: 'Subscription not found' });
     }
 
     const subscription = user.subscriptionId;
-    
+
+    // Only email if there was actually a pending cancel to undo. Clicking
+    // 'Reactivate' on an already-active subscription shouldn't trigger spam.
+    const wasScheduledForCancel = subscription.cancelAtPeriodEnd === true;
+
     if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         cancel_at_period_end: false
@@ -820,6 +838,13 @@ exports.reactivateSubscription = async (req, res) => {
 
     subscription.cancelAtPeriodEnd = false;
     await subscription.save();
+
+    if (wasScheduledForCancel) {
+      sendReactivatedEmail(user, {
+        plan: subscription.plan,
+        renewsAt: subscription.currentPeriodEnd,
+      }).catch((err) => console.error('[Reactivate] confirmation email failed:', err?.message));
+    }
 
     res.json({ message: 'Subscription reactivated' });
   } catch (error) {

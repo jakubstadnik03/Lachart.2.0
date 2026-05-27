@@ -195,9 +195,67 @@ async function sendSubscriptionCanceledEmail(user, opts = {}) {
   });
 }
 
+/**
+ * User clicked "Cancel subscription" — confirmation that the cancel is
+ * scheduled and access continues until the period ends.
+ *
+ * Distinct from sendSubscriptionCanceledEmail() which fires when access has
+ * actually ended (from customer.subscription.deleted webhook).
+ */
+async function sendCancelScheduledEmail(user, opts = {}) {
+  const label = planLabel(opts.plan);
+  const endStr = fmtDate(opts.endsAt) || 'the end of your current billing period';
+  const portalUrl = `${getClientUrl()}/settings?tab=subscription`;
+
+  const content = `
+    <p>Hi <strong>${user.name || 'there'}</strong>,</p>
+    <p>Your <strong>${label}</strong> subscription is now set to cancel on <strong>${endStr}</strong>. You'll keep full access to every premium feature until then — nothing changes for now.</p>
+    <p>If you change your mind, you can reactivate with one click from Settings → Subscription any time before that date and we won't charge you anything extra.</p>
+    <p>Was something missing or frustrating? Just reply to this email — replies come straight to me and I read every one.</p>
+    <p>— Jakub @ LaChart</p>
+  `;
+
+  return send(user, {
+    subject: `Cancellation scheduled for your ${label} subscription`,
+    title: `Cancellation scheduled`,
+    content,
+    buttonText: 'Manage subscription',
+    buttonUrl: portalUrl,
+    footerText: `You'll keep premium access until ${endStr}.`,
+  });
+}
+
+/**
+ * User clicked "Reactivate" after previously scheduling a cancellation.
+ * Sub continues uninterrupted; this is the receipt that the cancel was undone.
+ */
+async function sendReactivatedEmail(user, opts = {}) {
+  const label = planLabel(opts.plan);
+  const renewStr = fmtDate(opts.renewsAt) || null;
+  const portalUrl = `${getClientUrl()}/settings?tab=subscription`;
+
+  const content = `
+    <p>Hi <strong>${user.name || 'there'}</strong>,</p>
+    <p>You reactivated your <strong>${label}</strong> subscription — welcome back!</p>
+    ${renewStr ? `<p>Your plan will renew automatically on <strong>${renewStr}</strong>. No action needed from you.</p>` : ''}
+    <p>If you ever want to cancel again, you'll find the option in Settings → Subscription. No questions asked.</p>
+    <p>— Jakub @ LaChart</p>
+  `;
+
+  return send(user, {
+    subject: `${label} reactivated — welcome back`,
+    title: `Subscription reactivated`,
+    content,
+    buttonText: 'Open LaChart',
+    buttonUrl: portalUrl,
+  });
+}
+
 module.exports = {
   sendTrialEndingEmail,
   sendPaymentReceiptEmail,
   sendPaymentFailedEmail,
   sendSubscriptionCanceledEmail,
+  sendCancelScheduledEmail,
+  sendReactivatedEmail,
 };
