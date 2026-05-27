@@ -260,9 +260,21 @@ exports.createCheckoutSession = async (req, res) => {
     const alreadyTrialed = existingSub?.trialStart != null;
 
     // Create checkout session
+    //
+    // Payment methods: 'card' covers Apple Pay & Google Pay automatically —
+    // Stripe Checkout detects the device/browser and surfaces the wallet
+    // sheet on iOS Safari and Chrome on Android with no extra config.
+    // The wallet buttons appear above the card form when supported.
+    //
+    // We intentionally don't enumerate Apple Pay separately; passing it as
+    // a separate payment_method_type would trigger a domain-verification
+    // requirement for any non-Checkout flows. Hosted Checkout doesn't need
+    // it — verification is automatic for the Stripe-hosted URL.
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      payment_method_types: ['card'],
+      // Omit payment_method_types entirely so Stripe shows every method
+      // enabled in the Dashboard (card, Apple/Google Pay, SEPA, Link, …)
+      // based on the buyer's region. Best UX out of the box.
       line_items: [
         {
           price: plan.stripePriceId,
@@ -270,6 +282,16 @@ exports.createCheckoutSession = async (req, res) => {
         }
       ],
       mode: 'subscription',
+      // Stripe Tax: when enabled in the Dashboard (Settings → Tax), this
+      // makes Checkout collect the buyer's country, compute the right VAT
+      // for EU customers, and emit a tax-compliant invoice.
+      automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true' },
+      // Required when automatic_tax is on so we have a buyer address to
+      // base VAT on. Safe to set even when tax is off — just collects it.
+      billing_address_collection: 'required',
+      // Let customers add their VAT/DIČ at checkout — useful for B2B coach
+      // accounts; flows straight into the Stripe invoice.
+      tax_id_collection: { enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true' },
       // 60-day (2 months) free trial for first-time subscribers.
       // Overridable per-deploy via STRIPE_TRIAL_DAYS env var.
       subscription_data: alreadyTrialed ? undefined : {
