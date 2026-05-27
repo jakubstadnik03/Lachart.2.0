@@ -5002,3 +5002,6 @@ module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;
 // Boot-time recovery for backfills interrupted by a restart.
 module.exports.resumeInterruptedStravaBackfills = resumeInterruptedStravaBackfills;
+// Exported so other ingest paths (FIT upload, Garmin sync, …) can reuse
+// the same title-keyword detection without duplicating the regex table.
+module.exports._acCategorizeByTitle = _acCategorizeByTitle;

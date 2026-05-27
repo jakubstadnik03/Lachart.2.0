@@ -9,6 +9,7 @@ import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
+import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -3432,6 +3433,11 @@ const SettingsPage = () => {
                   />
               </div>
             </div>
+
+            {/* Maintenance: retro-categorise activities that were imported
+                before the title-keyword classifier shipped (or before the
+                user added category names to their workout titles). */}
+            <ReclassifyActivitiesCard />
           </div>
         );
 

@@ -409,6 +409,68 @@ router.post('/trainings/:id/laps', verifyToken, fitUploadController.createLap);
 router.put('/trainings/:id/lactate', verifyToken, fitUploadController.updateLactate);
 router.delete('/trainings/:id', verifyToken, fitUploadController.deleteFitTraining);
 
+/**
+ * POST /api/fit/auto-classify/backfill
+ *
+ * Retrospective categorisation for FIT trainings without a category.
+ * Same title-based detector as the Strava backfill — runs the user's
+ * existing FIT uploads through the classifier and sets a category when
+ * the title contains an explicit keyword (VO2max / LT2 / threshold / …).
+ *
+ * Body (all optional):
+ *   - dryRun: true → preview without saving (sample is returned regardless).
+ *
+ * Returns: { processed, updated, skipped, dryRun, sample[] }
+ */
+router.post('/auto-classify/backfill', verifyToken, async (req, res) => {
+  try {
+    const FitTraining = require('../models/fitTraining');
+    const { _acCategorizeByTitle } = require('./integrationsRoutes');
+
+    const dryRun = req.body?.dryRun === true;
+
+    const trainings = await FitTraining.find({
+      userId: req.user.userId,
+      $or: [{ category: null }, { category: '' }, { category: { $exists: false } }],
+    })
+      .select('_id titleManual titleAuto originalFileName')
+      .limit(2000)
+      .lean();
+
+    let processed = 0;
+    let updated = 0;
+    let skipped = 0;
+    const sample = [];
+
+    for (const t of trainings) {
+      processed++;
+      const titleText = t.titleManual || t.titleAuto || t.originalFileName || '';
+      const { category, matchedKeyword } = _acCategorizeByTitle(titleText);
+      if (!category) { skipped++; continue; }
+
+      if (sample.length < 20) {
+        sample.push({ id: String(t._id), name: titleText, category, source: `title:${matchedKeyword}` });
+      }
+
+      if (!dryRun) {
+        const result = await FitTraining.updateOne(
+          { _id: t._id, userId: req.user.userId },
+          { $set: { category } },
+        );
+        if (result.modifiedCount > 0) updated++;
+      } else {
+        updated++;
+      }
+    }
+
+    console.log(`[FIT auto-classify backfill] user=${req.user.userId} processed=${processed} updated=${updated} skipped=${skipped} dryRun=${dryRun}`);
+    res.json({ processed, updated, skipped, dryRun, sample });
+  } catch (err) {
+    console.error('[FIT auto-classify] backfill error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 
 

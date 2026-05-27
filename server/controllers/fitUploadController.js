@@ -353,6 +353,29 @@ async function uploadFitFile(req, res) {
       firstLap: trainingData.laps?.[0]
     });
 
+    // Auto-categorise from the FIT title before saving. Same rules as the
+    // Strava sync path: title keywords ("VO2max", "LT2", "threshold", …)
+    // map to a category and we set it on the doc when it's currently empty.
+    // Bypasses the auto-classify modal so brand-new uploads land in the
+    // right bucket immediately.
+    try {
+      if (!trainingData.category) {
+        const { _acCategorizeByTitle } = require('../routes/integrationsRoutes');
+        if (typeof _acCategorizeByTitle === 'function') {
+          const titleText = trainingData.titleManual || trainingData.titleAuto
+            || trainingData.title || trainingData.originalFileName || '';
+          const { category: titleCat, matchedKeyword } = _acCategorizeByTitle(titleText);
+          if (titleCat) {
+            trainingData.category = titleCat;
+            console.log(`[FIT upload] Auto-categorized "${titleText}" → ${titleCat} (keyword: ${matchedKeyword})`);
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal — upload continues without auto-category.
+      console.warn('[FIT upload] auto-categorize from title failed:', e?.message);
+    }
+
     // Save to database
     const fitTraining = new FitTraining(trainingData);
     await fitTraining.save();

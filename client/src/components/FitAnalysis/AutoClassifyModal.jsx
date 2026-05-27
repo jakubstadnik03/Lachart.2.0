@@ -581,7 +581,41 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                           <td className="px-3 py-2.5 text-gray-700 font-medium max-w-xs truncate">{p.name}</td>
                           <td className="px-3 py-2.5 text-gray-400 text-[11px]">{formatDur(p.movingTime)}</td>
                           <td className="px-3 py-2.5">
-                            <CategoryPill category={p.proposedCategory} />
+                            <div className="flex flex-col gap-1">
+                              <CategoryPill category={p.proposedCategory} />
+                              {/* Reason chip — explains WHY we proposed this
+                                  category. Title matches feel high-confidence
+                                  (user explicitly named the workout), interval
+                                  evidence feels medium (data-driven), and the
+                                  silent fallback gets no chip so the user can
+                                  spot ambiguous proposals. */}
+                              {p.titleMatch?.keyword && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary"
+                                  title={`Matched the keyword "${p.titleMatch.keyword}" in the activity name`}
+                                >
+                                  🏷 from name: {p.titleMatch.keyword}
+                                </span>
+                              )}
+                              {!p.titleMatch && p.intervalEvidence?.considered > 0 && (() => {
+                                const ev = p.intervalEvidence;
+                                const counts = [];
+                                if (ev.vo2max > 0) counts.push(`${ev.vo2max} VO₂`);
+                                if (ev.lt2 > 0) counts.push(`${ev.lt2} LT2`);
+                                if (ev.lt1 > 0) counts.push(`${ev.lt1} LT1`);
+                                const label = counts.length
+                                  ? counts.join(' · ')
+                                  : `${ev.considered} laps analysed`;
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700"
+                                    title={`Based on ${ev.considered} work lap${ev.considered === 1 ? '' : 's'}`}
+                                  >
+                                    📊 {label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           </td>
                           <td className="px-3 py-2.5 text-gray-600 text-[11px]">
                             {p.proposedTitle || <span className="text-gray-300">—</span>}
