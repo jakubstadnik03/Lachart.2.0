@@ -1036,11 +1036,22 @@ export default function About() {
               <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free trial →</Link>
             </div>
             <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
+              {/* IMPORTANT: keep this feature list in sync with PLANS_UI in
+                  client/src/pages/SettingsPage.jsx and PLAN_DETAILS in
+                  client/src/components/UpgradeModal.jsx. Visitors compare
+                  what's pitched here against what they see after sign-up —
+                  drift between the two screens reads as bait-and-switch. */}
               <PriceCard
                 planId="free"
                 name="Free"
                 price="€0"
-                features={['Up to 5 lactate tests / month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar']}
+                features={[
+                  '1 lactate test',
+                  'Strava & Garmin sync',
+                  'Add lactate values to intervals',
+                  'Connect with your coach',
+                  'Basic analytics',
+                ]}
                 ctaLabel="Get started free"
                 ctaTo="/signup"
                 track={track}
@@ -1050,7 +1061,17 @@ export default function About() {
                 name="Pro"
                 price="€9.99"
                 highlighted
-                features={['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support']}
+                features={[
+                  'Unlimited lactate tests',
+                  'Plan workouts in the calendar',
+                  'Start trainings from the app',
+                  'Connect to your smart trainer',
+                  'Advanced analytics & charts',
+                  'Population comparison',
+                  'PDF export',
+                  'Priority support',
+                  'Everything in Free',
+                ]}
                 ctaLabel="Start 2-month free trial"
                 ctaTo="/signup"
                 track={track}
@@ -1059,7 +1080,14 @@ export default function About() {
                 planId="coach"
                 name="Coach"
                 price="€19.99"
-                features={['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export']}
+                features={[
+                  'Unlimited athletes',
+                  'Plan workouts for your athletes',
+                  'Unlimited PDF report generation',
+                  'PDF branding — your logo, title & address',
+                  'Coach dashboard & overview',
+                  'Everything in Pro',
+                ]}
                 ctaLabel="Start 2-month free trial"
                 ctaTo="/signup"
                 track={track}
