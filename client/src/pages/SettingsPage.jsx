@@ -2694,24 +2694,6 @@ const SettingsPage = () => {
         return (
           <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
 
-            {/* Dev preview toggle */}
-            {user?.role === 'admin' || hasPremium ? (
-              <div className={`bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900`}>
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!premiumPreviewNoAccess}
-                    onChange={(e) => setPremiumPreviewNoAccess(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary"
-                  />
-                  <span>
-                    <span className="font-semibold block mb-0.5">Preview as non-premium user</span>
-                    <span className="text-xs text-amber-700">Browser-only (localStorage). Lets you test the free-plan UI without touching the server.</span>
-                  </span>
-                </label>
-              </div>
-            ) : null}
-
             {/* Current plan status banner */}
             <div className={`bg-white border border-gray-200 rounded-2xl ${isMobile ? 'p-4' : 'p-6'} shadow-sm`}>
               <div className="flex items-start justify-between gap-4 flex-wrap">
