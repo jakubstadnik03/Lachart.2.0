@@ -8,6 +8,7 @@ import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
 import WhatsNewModal, { whatsNewSeenKey } from '../components/WhatsNewModal';
+import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingLoadHeatmap from "../components/DashboardPage/TrainingLoadHeatmap";
@@ -294,6 +295,16 @@ export default function DashboardPage() {
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
+  /**
+   * Tracks how many athletes the coach has actually linked. Used to surface
+   * an empty-state CTA that nudges fresh coach accounts toward the Athletes
+   * tab — without it, a brand-new coach lands on an empty dashboard with
+   * no obvious next step.
+   *
+   * `null` = not yet loaded (don't render the nudge), `0` = empty (render),
+   * `>0` = at least one athlete (don't render).
+   */
+  const [coachAthletesCount, setCoachAthletesCount] = useState(null);
   const navigate = useNavigate();  /** Avoid flashing the empty-state hero while API/cache is still settling */
   const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
   /** True once trainings + calendar have been fetched at least once (avoids flash on initial load) */
@@ -353,6 +364,13 @@ export default function DashboardPage() {
           .filter((a) => a?.invitationPending || a?.coachLinkStatus === 'pending')
           .map((a) => String(a._id));
         setPendingAthleteIds(pendingIds);
+        // Linked (non-pending) athletes only — those are the ones that
+        // gate the "add your first athlete" CTA. Pending invites don't
+        // count because the coach already sent them.
+        const linkedCount = list.filter(
+          (a) => !(a?.invitationPending || a?.coachLinkStatus === 'pending'),
+        ).length;
+        setCoachAthletesCount(linkedCount);
       } catch (e) {
         console.warn('Failed to load coach athletes for pending-state checks:', e?.message || e);
       }
@@ -1630,6 +1648,21 @@ export default function DashboardPage() {
             This athlete is waiting for confirmation. Profile and historical data will unlock after the athlete accepts the invitation.
           </div>
         )}
+
+      {/* Coach with zero linked athletes — surface the first natural action
+          (add an athlete) right above the empty dashboard widgets. Only
+          renders once the count actually loaded (null = still fetching). */}
+      {isCoachLikeRole && coachAthletesCount === 0 && (
+        <EmptyStateCTA
+          variant="banner"
+          emoji="👥"
+          title="Add your first athlete"
+          body="Invite athletes by email — they'll show up here with status, tests, and training load. You can also plan workouts for each of them."
+          ctaLabel="Open Athletes"
+          to="/athletes"
+          className="mb-4"
+        />
+      )}
       
       {showAthleteEmptyWelcome && (
         <DashboardEmptyWelcome
@@ -1700,6 +1733,32 @@ export default function DashboardPage() {
           <>
         {!showAthleteEmptyWelcome && (
           <>
+        {/* If the user has zero activities (no Strava, no FIT, no manual,
+            no plan), nudge them toward the Workout Planner — otherwise the
+            calendar looks unhelpfully empty and they don't know it can be
+            planned ahead. Restricted to the user's own dashboard so coaches
+            looking at athletes don't see it. */}
+        {!isCoachLikeRole &&
+          Array.isArray(calendarData) &&
+          calendarData.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <EmptyStateCTA
+              variant="banner"
+              emoji="📅"
+              title="Plan your first workout"
+              body="Build a structured session — warm-up, intervals with target zones, cooldown — and drop it onto today or any upcoming day."
+              ctaLabel="Open Planner"
+              to="/workout-planner"
+              className="mb-4"
+            />
+          </motion.div>
+        )}
+
         {/* Weekly Calendar — at the top */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

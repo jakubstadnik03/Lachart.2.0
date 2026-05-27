@@ -378,6 +378,23 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
         onSaved={handleLactateSaved}
       />
 
+      {/* Discoverability nudge — many users don't realise they can attach
+          blood-lactate samples to existing workout intervals. Show a slim
+          banner above the table on the first workout where nothing has
+          been recorded yet. Hidden once any lap has a value. */}
+      {uniqueLaps.length > 0 &&
+        !uniqueLaps.some((l) => Number.isFinite(Number(l?.lactate)) && Number(l.lactate) > 0) && (
+          <div className="mb-3 flex items-start gap-2 p-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 text-xs sm:text-sm">
+            <span className="text-base shrink-0" aria-hidden>🩸</span>
+            <div className="flex-1">
+              <div className="font-semibold text-gray-900">Add a lactate sample to any interval</div>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Click <span className="font-semibold text-primary">+ add</span> in the Lactate column of any row below — each sample feeds straight back into your lactate curve and zones.
+              </p>
+            </div>
+          </div>
+        )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
         <div className="flex items-center gap-3">
           <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
@@ -527,11 +544,14 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                   <span
-                    className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-400 cursor-pointer hover:text-primary transition-colors'}
+                    className={lap.lactate
+                      ? 'font-semibold text-primary-dark'
+                      // Stronger styling on the empty state so it's obvious this is clickable
+                      : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium cursor-pointer hover:bg-primary/20 transition-colors'}
                     onClick={(e) => { e.stopPropagation(); if (onOpenLactateForm) { onOpenLactateForm(index); } else { setInitialLapIndex(index); setLactateModalOpen(true); } }}
-                    title={lap.lactate ? undefined : 'Click to add lactate'}
+                    title={lap.lactate ? undefined : 'Click to add a lactate sample for this interval'}
                   >
-                    {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '+ add'}
+                    {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '🩸 Add'}
                   </span>
                 </td>
               </tr>

@@ -8,6 +8,7 @@ import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, 
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -3457,7 +3458,34 @@ const SettingsPage = () => {
                 </button>
               </div>
             )}
-            {isPremium && <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+            {isPremium && (() => {
+              // Empty-state nudge: every branding field is blank → coach
+              // hasn't realised they can put their studio name & logo on
+              // exported PDFs. Surface a banner right above the form.
+              const brandingEmpty =
+                !coachBranding.logoUrl &&
+                !coachBranding.title &&
+                !coachBranding.subtitle &&
+                !coachBranding.trademark &&
+                !coachBranding.email &&
+                !coachBranding.web &&
+                !coachBranding.phone;
+              return brandingEmpty ? (
+                <EmptyStateCTA
+                  variant="banner"
+                  emoji="🎨"
+                  title="Brand your PDF reports"
+                  body="Upload your logo and add your studio name, address, colour — every test PDF goes out as your handout."
+                  ctaLabel="Set up below"
+                  onClick={() => {
+                    const el = document.getElementById('branding-form');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="mb-3"
+                />
+              ) : null;
+            })()}
+            {isPremium && <div id="branding-form" className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <Sparkles className="w-5 h-5 text-primary" />
