@@ -111,12 +111,17 @@ export default function WhatsNewModal({ open, onClose, userName }) {
 
   return (
     <div
-      className="fixed inset-0 z-[11500] flex items-center justify-center p-4 overflow-y-auto"
+      // Anchor near the top of the viewport (≈64 px from top) so the modal
+      // sits beneath any global app header / topbar without obscuring the
+      // dashboard content underneath. Falls back to center on very small
+      // screens via the items-center sm: variant. Backdrop click still
+      // dismisses.
+      className="fixed inset-0 z-[11500] flex items-start sm:items-start justify-center pt-[64px] sm:pt-[80px] px-4 pb-4 overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
 
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4 overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-10 p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"

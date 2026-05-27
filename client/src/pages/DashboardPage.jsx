@@ -128,35 +128,29 @@ export default function DashboardPage() {
   }, [user?._id]);
 
   /**
-   * 'What's new' announcement for users who joined BEFORE the latest feature
-   * release. The release tag is baked into the localStorage key so bumping
-   * it in WhatsNewModal.jsx automatically re-shows the modal to everyone
-   * with the new contents.
+   * 'What's new' announcement — shown to every logged-in user on the web,
+   * once per RELEASE_TAG. Closable via Got it / Esc / ✕.
    *
-   * Mutually exclusive with WelcomePaywallModal: fresh sign-ups already see
-   * the paywall, so we don't double-popup. We also wait a tiny bit longer
-   * (1.2 s) than the paywall so layout settles first.
+   * Previously gated to accounts created before the release date so brand-
+   * new users wouldn't be shown "new" features they signed up into. Now
+   * shown to everyone — it doubles as a feature tour for sign-ups, and the
+   * release-tag flag still ensures each user sees each round exactly once.
+   *
+   * Mutually exclusive with WelcomePaywallModal: brand-new accounts see the
+   * paywall first, the What's New slides next session. iOS native build
+   * skipped because some deep-links point to web-only flows.
    */
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !user?._id) return;
     if (isCapacitorNative()) return;
-    // Don't pile two modals on top of each other.
     if (showWelcomePaywall) return;
-    // Skip for accounts created after the release — they already signed
-    // up into the new feature set, so 'What's new' is meaningless and
-    // would just feel like noise.
-    const RELEASE_DATE = new Date('2026-05-25');
-    const createdAt = user.createdAt ? new Date(user.createdAt) : null;
-    if (createdAt && !Number.isNaN(createdAt.getTime()) && createdAt > RELEASE_DATE) {
-      return;
-    }
 
     const flagKey = whatsNewSeenKey(user._id);
     if (localStorage.getItem(flagKey)) return;
     const t = setTimeout(() => setShowWhatsNew(true), 1200);
     return () => clearTimeout(t);
-  }, [isAuthenticated, user?._id, showWelcomePaywall, user?.createdAt]);
+  }, [isAuthenticated, user?._id, showWelcomePaywall]);
 
   const dismissWhatsNew = useCallback(() => {
     if (user?._id) {
