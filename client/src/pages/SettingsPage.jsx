@@ -196,9 +196,10 @@ const SettingsPage = () => {
 
   // Coach branding state
   const [coachBranding, setCoachBranding] = useState({
-    logoUrl: user?.coachBranding?.logoUrl || '',
-    title: user?.coachBranding?.title || '',
-    trademark: user?.coachBranding?.trademark || '',
+    logoUrl:      user?.coachBranding?.logoUrl      || '',
+    title:        user?.coachBranding?.title        || '',
+    trademark:    user?.coachBranding?.trademark    || '',
+    primaryColor: user?.coachBranding?.primaryColor || '#767EB5',
   });
   const [brandingSaving, setBrandingSaving] = useState(false);
 
@@ -688,13 +689,12 @@ const SettingsPage = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (user?.coachBranding) {
-      setCoachBranding({
-        logoUrl: user.coachBranding.logoUrl || '',
-        title: user.coachBranding.title || '',
-        trademark: user.coachBranding.trademark || '',
-      });
-    }
+    setCoachBranding({
+      logoUrl:      user?.coachBranding?.logoUrl      || '',
+      title:        user?.coachBranding?.title        || '',
+      trademark:    user?.coachBranding?.trademark    || '',
+      primaryColor: user?.coachBranding?.primaryColor || '#767EB5',
+    });
   }, [user?.coachBranding]);
 
   // Handle upgrade / checkout
@@ -1328,7 +1328,25 @@ const SettingsPage = () => {
   const handleSaveBranding = async () => {
     setBrandingSaving(true);
     try {
-      await updateUserProfile({ coachBranding });
+      const res = await updateUserProfile({ coachBranding });
+      // Propagate updated user (with coachBranding) to AuthProvider + localStorage
+      const updatedUser = res?.data ?? res;
+      if (updatedUser?._id) {
+        // Persist to localStorage immediately (don't rely solely on event chain)
+        saveUserToStorage(updatedUser);
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        // Update local form state directly from the saved response so fields
+        // remain filled even if the useEffect / event timing is off
+        const saved = updatedUser.coachBranding;
+        if (saved) {
+          setCoachBranding({
+            logoUrl:      saved.logoUrl      || '',
+            title:        saved.title        || '',
+            trademark:    saved.trademark    || '',
+            primaryColor: saved.primaryColor || '#767EB5',
+          });
+        }
+      }
       addNotification('Branding saved successfully', 'success');
     } catch (e) {
       addNotification('Failed to save branding', 'error');
@@ -3360,6 +3378,43 @@ const SettingsPage = () => {
                     maxLength={80}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
+                </div>
+
+                {/* Accent color */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Accent / Header colour</label>
+                  <p className="text-xs text-gray-400 mb-2">Used for the PDF header bar, pill badges, table headers and section titles.</p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={coachBranding.primaryColor || '#767EB5'}
+                      onChange={(e) => setCoachBranding(prev => ({ ...prev, primaryColor: e.target.value }))}
+                      className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer p-0.5 bg-white"
+                      style={{ WebkitAppearance: 'none' }}
+                    />
+                    <input
+                      type="text"
+                      value={coachBranding.primaryColor || '#767EB5'}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setCoachBranding(prev => ({ ...prev, primaryColor: v }));
+                      }}
+                      maxLength={7}
+                      placeholder="#767EB5"
+                      className="w-28 px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {/* Preview swatch */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-xs font-bold" style={{ backgroundColor: coachBranding.primaryColor || '#767EB5' }}>
+                      Preview header
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCoachBranding(prev => ({ ...prev, primaryColor: '#767EB5' }))}
+                      className="text-xs text-gray-400 hover:text-gray-600 underline"
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
 
                 <button

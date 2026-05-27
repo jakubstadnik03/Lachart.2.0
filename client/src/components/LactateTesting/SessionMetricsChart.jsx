@@ -75,6 +75,12 @@ const formatMetricValue = (metricKey, value) => {
 const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
   const [chartLayout, setChartLayout] = useState('combined'); // combined | grid
   const [visibleMetrics, setVisibleMetrics] = useState(DEFAULT_VISIBLE_METRICS);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const formatTimeLabel = useCallback((seconds) => {
     if (seconds === null || seconds === undefined) return '0s';
@@ -470,7 +476,7 @@ const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
   }
 
   return (
-    <div>
+    <div className="w-full">
       <h3 className="text-sm font-semibold text-gray-700 mb-2">Session Metrics</h3>
       
       {/* Interval Bars Chart */}
@@ -535,13 +541,13 @@ const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
-        <div className="flex gap-1 bg-white/70 border border-gray-200 rounded-xl p-1">
+      <div className="flex flex-wrap items-start gap-1.5 mb-2 text-xs">
+        <div className="flex gap-1 bg-white/70 border border-gray-200 rounded-xl p-0.5 flex-shrink-0">
           {['combined', 'grid'].map((layout) => (
             <button
               key={layout}
               onClick={() => setChartLayout(layout)}
-              className={`px-3 py-1 rounded-lg font-semibold transition ${
+              className={`px-2.5 py-1 rounded-lg font-semibold transition text-[11px] ${
                 chartLayout === layout
                   ? 'bg-primary text-white shadow'
                   : 'text-gray-600 hover:bg-white'
@@ -560,7 +566,7 @@ const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
                 key={key}
                 disabled={!available}
                 onClick={() => handleMetricToggle(key)}
-                className={`px-3 py-1 rounded-full border text-xs font-medium transition ${
+                className={`px-2 py-0.5 rounded-full border text-[11px] font-medium transition ${
                   !available
                     ? 'border-gray-200 text-gray-300 cursor-not-allowed'
                     : selected
@@ -574,12 +580,12 @@ const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
           })}
         </div>
       </div>
-      <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-4">
+      <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2 sm:p-4">
         {chartLayout === 'combined' ? (
           <ResponsiveContainer width="100%" height={360}>
             <ComposedChart
               data={chartData}
-              margin={{ top: 10, right: 80, bottom: 30, left: 60 }}
+              margin={{ top: 10, right: isMobile ? 45 : 70, bottom: 20, left: isMobile ? 40 : 55 }}
             >
               <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
               <XAxis
@@ -589,22 +595,26 @@ const SessionMetricsChart = ({ historical, lactateValues, laps }) => {
                 domain={['dataMin', 'dataMax']}
                 ticks={getTickPositions()}
                 tickFormatter={formatTimeLabel}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
               />
               <YAxis
                 yAxisId="left"
                 stroke="#666"
-                label={{ value: 'Power (W)', angle: -90, position: 'insideLeft', offset: 10 }}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
+                label={isMobile
+                  ? undefined
+                  : { value: 'Power (W)', angle: -90, position: 'insideLeft', offset: 10 }}
+                width={isMobile ? 32 : 50}
               />
               <YAxis
                 yAxisId="right"
                 orientation="right"
                 stroke="#666"
-                label={{
-                  value: 'HR / Cadence / Speed / Sensors',
-                  angle: 90,
-                  position: 'insideRight',
-                  offset: 10
-                }}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
+                label={isMobile
+                  ? undefined
+                  : { value: 'HR / Cad / Speed', angle: 90, position: 'insideRight', offset: 10 }}
+                width={isMobile ? 32 : 50}
               />
               <YAxis yAxisId="shade" type="number" domain={[0, 1]} hide />
               {intervalSummaries.map((interval, index) => (

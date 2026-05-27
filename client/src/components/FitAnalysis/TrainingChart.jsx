@@ -1628,6 +1628,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
           );
         })()}
       </div>
+
     </div>
   );
 };

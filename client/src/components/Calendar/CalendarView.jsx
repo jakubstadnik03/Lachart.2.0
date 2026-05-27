@@ -674,14 +674,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
 
-  // X-axis zoom is intentionally disabled — bars always fill the full width
-  // proportionally. Selecting a lap only tightens the Y-axis scale.
-  const isZoomed  = false; // kept for elevation path compat; never true
-  const centerLapRef = useRef(null);
-  const isProgrammaticScroll = useRef(false);
-  // Refs for throttled scroll-sync
-  const scrollRafRef = useRef(null);
-  const scrollSettleTimeoutRef = useRef(null);
+  // X-axis zoom: enable horizontal scroll when there are many laps so bars
+  // don't get squeezed to unreadable widths. Under the threshold all bars
+  // fill the available width proportionally (no scroll needed).
+  const ZOOM_THRESHOLD = 10;
+  const MIN_BAR_PX     = 24; // px per lap when zoomed
 
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -702,7 +699,39 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
   });
 
-  // No X-axis zoom — bars always use proportional flex widths.
+  // Zoom activates only when a lap is selected AND there are many laps.
+  // On deselect → isZoomed goes false → bars automatically fit the full width
+  // again (proportionally), no scrolling needed.
+  const isZoomed = entries.length > ZOOM_THRESHOLD && selectedLap != null;
+
+  // When zoomed, scale the container so that bars remain proportional to their
+  // weight (distance / duration) while giving the shortest non-pause lap at
+  // least MIN_BAR_PX pixels of width.
+  const totalWeight    = entries.reduce((a, e) => a + e.weight, 0) || 1;
+  const minNonPauseW   = Math.min(...entries.filter(e => !e.isPause && e.weight > 0).map(e => e.weight)) || 1;
+  // Container width = scale factor × MIN_BAR_PX, where scale factor = totalWeight / minLapWeight.
+  // This guarantees proportionality: every bar's flex-grow (= weight) / totalWeight × containerW
+  // gives the shortest bar exactly MIN_BAR_PX and longer bars proportionally more.
+  const zoomedTotalW   = isZoomed
+    ? Math.round((totalWeight / minNonPauseW) * MIN_BAR_PX)
+    : 0;
+
+  // Auto-scroll: center the selected lap when zoomed.
+  // On deselect, reset scroll to 0 before the container shrinks back.
+  useEffect(() => {
+    if (!chartScrollRef?.current) return;
+    const container = chartScrollRef.current;
+    if (!isZoomed || selectedLap == null) {
+      container.scrollTo({ left: 0, behavior: 'smooth' });
+      return;
+    }
+    const containerW = container.clientWidth;
+    const innerW     = Math.max(zoomedTotalW, containerW);
+    const cumW       = entries.slice(0, selectedLap).reduce((a, e) => a + e.weight, 0);
+    const barCenterX = (cumW + entries[selectedLap].weight / 2) / totalWeight * innerW;
+    container.scrollTo({ left: Math.max(0, barCenterX - containerW / 2), behavior: 'smooth' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLap, isZoomed]);
 
   const nonZero = entries.filter(e => !e.isPause && e.value > 0).map(e => e.value);
   if (!nonZero.length) return null;
@@ -894,7 +923,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
   })() : null;
 
-  // No scroll-sync needed — bars don't scroll horizontally any more.
   const handleChartScroll = () => {};
 
   return (
@@ -938,18 +966,22 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
           <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
         </div>
 
-        {/* Bars — always proportional, no horizontal scroll */}
+        {/* Bars — scroll horizontally when there are many laps */}
         <div
           ref={chartScrollRef}
-          className="flex-1 min-w-0 overflow-x-hidden"
-          style={{ overflowY: 'hidden' }}
+          className="flex-1 min-w-0"
+          style={{ overflowX: isZoomed ? 'auto' : 'hidden', overflowY: 'hidden' }}
           onScroll={handleChartScroll}
         >
           <div
             style={{
               position: 'relative',
               height: CHART_H + X_LABEL_H,
-              width: '100%',
+              /* When zoomed: at least zoomedTotalW px wide so every bar has
+                 room; minWidth:100% ensures it still fills the container when
+                 there are few laps (non-zoomed path). */
+              width: isZoomed ? Math.max(zoomedTotalW, 0) : '100%',
+              minWidth: '100%',
             }}
           >
             {/* Horizontal grid lines — one per Y-axis tick, helps visual alignment */}
@@ -960,17 +992,17 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
               }} />
             ))}
-            {/* Elevation background — neutral earth-tone fill, always behind bars */}
+            {/* Elevation background — emerald green fill behind bars */}
             {elevPathD && (
               <svg
                 viewBox={`0 0 100 ${CHART_H}`}
                 preserveAspectRatio="none"
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: CHART_H, pointerEvents: 'none', zIndex: 1 }}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: CHART_H, pointerEvents: 'none', zIndex: 1, opacity: 0.55 }}
               >
                 <defs>
                   <linearGradient id="lapElevGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#92400e" stopOpacity="0.22" />
-                    <stop offset="100%" stopColor="#d97706" stopOpacity="0.06" />
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.55" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.08" />
                   </linearGradient>
                 </defs>
                 <path d={elevPathD} fill="url(#lapElevGrad)" />
@@ -1009,7 +1041,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 barBg = color + alpha;
               }
 
-              // Bars always fill the full width proportionally — no X-axis zoom.
               const itemStyle = { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
@@ -1267,6 +1298,11 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
     const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
     return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
+  const fmtDistCol = lap => {
+    const d = Number(lap.distance || lap.totalDistance || 0);
+    if (!d) return '—';
+    return d >= 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`;
+  };
   const fmtPace = lap => {
     const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
     const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || elapsed;
@@ -1293,6 +1329,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
           <th className="text-left font-bold text-gray-400 py-1 pr-1 w-5">#</th>
           <th className="text-left font-bold text-gray-400 py-1 pr-1">Type</th>
           <th className="text-right font-bold text-gray-400 py-1 pr-1">Time</th>
+          {(isRun || isSwim) && <th className="text-right font-bold text-gray-400 py-1 pr-1">Dist</th>}
           <th className="text-right font-bold text-gray-400 py-1 pr-1">{isBike ? 'Power' : 'Pace'}</th>
           <th className="text-right font-bold text-gray-400 py-1"><HeartIcon className="w-3 h-3 inline" /></th>
         </tr>
@@ -1315,6 +1352,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
                 </span>
               </td>
               <td className="py-0.5 pr-1 text-right tabular-nums text-gray-700">{fmtSec(dur)}</td>
+              {(isRun || isSwim) && <td className="py-0.5 pr-1 text-right tabular-nums text-gray-600">{fmtDistCol(lap)}</td>}
               <td className="py-0.5 pr-1 text-right tabular-nums font-semibold" style={{ color: txtCol }}>{fmtPace(lap)}</td>
               <td className="py-0.5 text-right tabular-nums text-gray-600">{hr > 0 ? hr : '—'}</td>
             </tr>
@@ -1326,27 +1364,43 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
 }
 
 function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
-  // Extract work laps (by type) from each session
   const sessions = [
     { label: 'Tento', laps: currentLaps, isRef: true },
-    ...results.map(r => ({ label: r.date ? (() => { const d = new Date(r.date); return `${d.getDate()}.${d.getMonth()+1}.${String(d.getFullYear()).slice(-2)}`; })() : '?', laps: Array.isArray(r.laps) ? r.laps : [], isRef: false, id: r.id })),
+    ...results.map(r => ({
+      label: r.date ? (() => { const d = new Date(r.date); return `${d.getDate()}.${d.getMonth()+1}.${String(d.getFullYear()).slice(-2)}`; })() : '?',
+      laps: Array.isArray(r.laps) ? r.laps : [], isRef: false, id: r.id,
+    })),
   ];
 
-  const fmtPace = (lap, b, r, s) => {
-    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+  const fmtTime = (lap) => {
+    const moving = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0);
+    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const s = moving || elapsed;
+    if (!s) return null;
+    const m = Math.floor(s / 60), sec = Math.round(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+  const fmtDist = (lap) => {
+    const d = Number(lap.distance || lap.totalDistance || 0);
+    if (!d) return null;
+    return d >= 1000 ? `${(d / 1000).toFixed(2)} km` : `${Math.round(d)} m`;
+  };
+  const fmtPace = (lap) => {
+    const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0);
+    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+    const dur  = moving || elapsed;
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
-    if (b) return pow > 0 ? `${Math.round(pow)}W` : '—';
-    if ((r || s) && dist > 0 && dur > 0) {
-      const pace = s ? dur / (dist / 100) : dur / (dist / 1000);
-      const m = Math.floor(pace / 60), sec = Math.round(pace % 60);
-      return `${m}:${String(sec).padStart(2,'0')}`;
+    if (isBike) return pow > 0 ? `${Math.round(pow)} W` : null;
+    if ((isRun || isSwim) && dist > 0 && dur > 0) {
+      const pace = isSwim ? dur / (dist / 100) : dur / (dist / 1000);
+      const m = Math.floor(pace / 60), s = Math.round(pace % 60);
+      return `${m}:${String(s).padStart(2, '0')}${isSwim ? '/100m' : '/km'}`;
     }
-    return '—';
+    return null;
   };
-  const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : '—'; };
+  const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : null; };
 
-  // For each session, get only work laps with original index
   const sessWorkLaps = sessions.map(s => {
     const total = s.laps.length;
     return s.laps.map((lap, i) => ({ lap, origIdx: i, type: detectLapType(lap, i, total) }))
@@ -1376,16 +1430,25 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
           <tbody>
             {Array.from({ length: maxWork }, (_, wi) => (
               <tr key={wi} className="border-b border-gray-50" style={{ backgroundColor: wi % 2 === 0 ? '#eef0fa' : '#f5f6fc' }}>
-                <td className="text-center font-bold text-[#767EB5] py-1 px-2">{wi + 1}</td>
+                <td className="text-center font-bold text-[#767EB5] py-1.5 px-2">{wi + 1}</td>
                 {sessWorkLaps.map((workLaps, si) => {
                   const entry = workLaps[wi];
-                  if (!entry) return <td key={si} className="text-center text-gray-300 py-1 px-2">—</td>;
-                  const pace = fmtPace(entry.lap, isBike, isRun, isSwim);
+                  if (!entry) return <td key={si} className="text-center text-gray-300 py-1.5 px-2">—</td>;
+                  const time = fmtTime(entry.lap);
+                  const dist = (isRun || isSwim) ? fmtDist(entry.lap) : null;
+                  const pace = fmtPace(entry.lap);
                   const hr   = fmtHr(entry.lap);
+                  const isRef = sessions[si].isRef;
                   return (
-                    <td key={si} className="text-center py-1 px-2">
-                      <div className={`font-bold tabular-nums ${sessions[si].isRef ? 'text-blue-700' : 'text-gray-700'}`}>{pace}</div>
-                      {hr !== '—' && <div className="text-gray-400 tabular-nums flex items-center justify-center gap-0.5">{hr}<HeartIcon className="w-2.5 h-2.5 inline" /></div>}
+                    <td key={si} className="text-center py-1.5 px-2">
+                      {/* time */}
+                      {time && <div className="text-gray-500 tabular-nums text-[9px]">{time}</div>}
+                      {/* distance (run/swim only) */}
+                      {dist && <div className="text-gray-400 tabular-nums text-[9px]">{dist}</div>}
+                      {/* pace / power — primary metric */}
+                      {pace && <div className={`font-bold tabular-nums ${isRef ? 'text-blue-700' : 'text-gray-700'}`}>{pace}</div>}
+                      {/* HR */}
+                      {hr && <div className="text-gray-400 tabular-nums flex items-center justify-center gap-0.5">{hr}<HeartIcon className="w-2.5 h-2.5 inline" /></div>}
                     </td>
                   );
                 })}
@@ -1418,7 +1481,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
-  const [workOnly, setWorkOnly] = useState(false);
+  const [workOnly, setWorkOnly] = useState(true); // hide rest/recovery by default
   const [expandedCards, setExpandedCards] = useState({});
   // Session-progress chart state
   const [metric, setMetric]           = useState('power');
@@ -1427,6 +1490,33 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [hiddenSessions, setHiddenSessions] = useState(new Set());
   // Edit training form
   const [editTarget, setEditTarget]   = useState(null); // training to open in form
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentLaps = useMemo(() => Array.isArray(merged?.laps) ? merged.laps : [], [merged?.laps]);
+
+  // Similarity helpers — used to rank fetched results
+  const currentDurSec = Number(merged?.duration || merged?.elapsed_time || merged?.totalElapsedTime || 0);
+  const currentWorkLapCount = useMemo(() => {
+    const n = currentLaps.length;
+    return currentLaps.filter((l, i) => detectLapType(l, i, n) === 'work').length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLaps]);
+
+  const similarityScore = useCallback((r) => {
+    const dur = Number(r.duration || r.elapsed_time || r.totalElapsedTime || 0);
+    const laps = Array.isArray(r.laps) ? r.laps : [];
+    const wlCount = laps.filter((l, i) => detectLapType(l, i, laps.length) === 'work').length;
+    // Duration score: 1 = identical, 0 = completely different (>2× off)
+    const durScore = currentDurSec > 0 && dur > 0
+      ? Math.max(0, 1 - Math.abs(currentDurSec - dur) / Math.max(currentDurSec, dur))
+      : 0.5;
+    // Work-lap-count score
+    const lapScore = currentWorkLapCount > 0 && wlCount > 0
+      ? Math.max(0, 1 - Math.abs(currentWorkLapCount - wlCount) / Math.max(currentWorkLapCount, wlCount))
+      : 0.5;
+    return (durScore * 0.6 + lapScore * 0.4);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDurSec, currentWorkLapCount]);
 
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
@@ -1439,7 +1529,18 @@ function CompareContent({ merged, athleteId, onOpen }) {
     if (activeFilters.includes('category') && merged?.category) params.category = merged.category;
     if (activeFilters.includes('lactate') && Number(merged?.lactate) > 0) params.lactate = Number(merged.lactate);
     getSimilarActivities(params)
-      .then(d => { if (!cancelled) { setResults(d); setLoading(false); } })
+      .then(d => {
+        if (cancelled) return;
+        // Sort by combined duration + work-lap similarity so the closest
+        // structural matches appear first (recent date as tiebreaker).
+        const sorted = [...d].sort((a, b) => {
+          const sd = similarityScore(b) - similarityScore(a);
+          if (Math.abs(sd) > 0.02) return sd;
+          return new Date(b.date) - new Date(a.date);
+        });
+        setResults(sorted);
+        setLoading(false);
+      })
       .catch(e => { if (!cancelled) { setError(e?.message || 'Failed'); setLoading(false); } });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1455,9 +1556,6 @@ function CompareContent({ merged, athleteId, onOpen }) {
   };
   const fmtDist = m => (!m || m <= 0) ? '—' : m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
   const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const currentLaps = useMemo(() => Array.isArray(merged?.laps) ? merged.laps : [], [merged?.laps]);
 
   const getLapValue = (lap, b, r, s) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -2214,6 +2312,183 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const lapChartScrollRef = useRef(null);
   const tableScrollingRef = useRef(false); // true while user is manually scrolling the table
   const tableScrollTimerRef = useRef(null);
+
+  // ── Auto-lap: virtual laps computed from per-second records ──────────────────
+  const [autoLaps, setAutoLaps] = useState(null); // null = not active; array = virtual laps
+  const [autoLapLactates, setAutoLapLactates] = useState({}); // { [lapIndex]: mmol/L }
+  const [autoLapLaInput, setAutoLapLaInput] = useState(null); // index of open inline input
+  const [savingAutoLaps, setSavingAutoLaps] = useState(false);
+
+  const computeAutoLaps = useCallback((records, splitMinutes = null) => {
+    if (!Array.isArray(records) || records.length < 30) return;
+    const recs = records.filter(r => r != null);
+    if (recs.length < 30) return;
+
+    // Raw value: power for bike, speed (m/s) for run/swim
+    const getVal = (r) => {
+      const pw = Number(r.power ?? r.watts ?? 0);
+      if (pw > 0) return pw;
+      const spd = Number(r.speed ?? r.speed_ms ?? 0);
+      return spd > 0 ? spd : 0;
+    };
+
+    // Time of a record (seconds from start)
+    const getTime = (r, i) => Number(r.timeFromStart ?? r.timestamp ?? i);
+    const t0 = getTime(recs[0], 0);
+
+    // ── Fixed-time split ──────────────────────────────────────────────────────
+    if (splitMinutes) {
+      const splitSec = splitMinutes * 60;
+      const tEnd = getTime(recs[recs.length - 1], recs.length - 1) - t0;
+      const numSplits = Math.ceil(tEnd / splitSec);
+      if (numSplits < 2 || numSplits > 200) return;
+      const buckets = Array.from({ length: numSplits }, () => []);
+      recs.forEach((r, i) => {
+        const bi = Math.min(numSplits - 1, Math.floor((getTime(r, i) - t0) / splitSec));
+        buckets[bi].push(r);
+      });
+      const built = buckets.filter(b => b.length > 5).map((b, bi) => buildLapFromRecs(b, bi));
+      if (built.length >= 2) { setAutoLaps(built); return; }
+    }
+
+    // ── Smart split: ON/OFF interval detection ────────────────────────────────
+    // 1. Smooth with a 20-second rolling window to kill noise
+    const WIN = 20;
+    const vals = recs.map(getVal);
+    const smoothed = vals.map((_, i) => {
+      const lo = Math.max(0, i - WIN), hi = Math.min(vals.length - 1, i + WIN);
+      let sum = 0, cnt = 0;
+      for (let j = lo; j <= hi; j++) { if (vals[j] > 0) { sum += vals[j]; cnt++; } }
+      return cnt > 0 ? sum / cnt : 0;
+    });
+
+    // 2. k-means(2) on non-zero smoothed values to find work vs rest cluster centers.
+    //    Start seeds at P25 and P75 so we always split the distribution.
+    const nonZero = smoothed.filter(v => v > 0).sort((a, b) => a - b);
+    if (nonZero.length < 30) return;
+    let c1 = nonZero[Math.floor(nonZero.length * 0.25)]; // rest center seed
+    let c2 = nonZero[Math.floor(nonZero.length * 0.75)]; // work center seed
+    for (let iter = 0; iter < 30; iter++) {
+      let s1 = 0, n1 = 0, s2 = 0, n2 = 0;
+      for (const v of nonZero) {
+        if (Math.abs(v - c1) <= Math.abs(v - c2)) { s1 += v; n1++; } else { s2 += v; n2++; }
+      }
+      const nc1 = n1 > 0 ? s1 / n1 : c1;
+      const nc2 = n2 > 0 ? s2 / n2 : c2;
+      if (Math.abs(nc1 - c1) < 0.1 && Math.abs(nc2 - c2) < 0.1) break;
+      c1 = nc1; c2 = nc2;
+    }
+    // Ensure c1 < c2 (c1 = rest, c2 = work)
+    if (c1 > c2) { const tmp = c1; c1 = c2; c2 = tmp; }
+    const threshold = (c1 + c2) / 2;
+    const separation = c2 > 0 ? (c2 - c1) / c2 : 0;
+
+    // 3. If the two clusters are very close (< 15% apart) the training is
+    //    steady-state — fall back to 10-minute fixed splits.
+    if (separation < 0.15) {
+      const fallbackMin = 10;
+      const splitSec = fallbackMin * 60;
+      const tEnd = getTime(recs[recs.length - 1], recs.length - 1) - t0;
+      const numSplits = Math.ceil(tEnd / splitSec);
+      if (numSplits < 2) return;
+      const buckets = Array.from({ length: numSplits }, () => []);
+      recs.forEach((r, i) => {
+        const bi = Math.min(numSplits - 1, Math.floor((getTime(r, i) - t0) / splitSec));
+        buckets[bi].push(r);
+      });
+      const built = buckets.filter(b => b.length > 5).map((b, bi) => buildLapFromRecs(b, bi));
+      if (built.length >= 2) setAutoLaps(built);
+      return;
+    }
+
+    // 4. Binary classify each second: true = work, false = rest
+    const isWork = smoothed.map(v => v >= threshold);
+
+    // 5. Group consecutive same-state seconds into raw segments
+    const rawSegs = [];
+    let segWork = isWork[0], segStart = 0;
+    for (let i = 1; i <= recs.length; i++) {
+      const w = i < recs.length ? isWork[i] : !segWork;
+      if (w !== segWork) {
+        rawSegs.push({ start: segStart, end: i, isWork: segWork });
+        segStart = i; segWork = w;
+      }
+    }
+
+    // 6. Merge short noise segments (< 30 s) into their neighbor
+    const MIN_SEG = 30;
+    const merged2 = [...rawSegs];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < merged2.length; i++) {
+        if (merged2[i].end - merged2[i].start < MIN_SEG) {
+          if (i > 0) {
+            merged2[i - 1].end = merged2[i].end;
+          } else if (i < merged2.length - 1) {
+            merged2[i + 1].start = merged2[i].start;
+            merged2[i + 1].isWork = merged2[i + 1].isWork;
+          }
+          merged2.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (merged2.length < 2) return;
+
+    // 7. Build lap objects
+    const built = merged2.map((seg, i) => {
+      const segRecs = recs.slice(seg.start, seg.end);
+      const lap = buildLapFromRecs(segRecs, i);
+      lap.intervalType = seg.isWork ? 'work' : 'recovery';
+      return lap;
+    });
+    if (built.length >= 2) setAutoLaps(built);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBike]);
+
+  // Build a synthetic lap object from a slice of records
+  function buildLapFromRecs(segRecs, index) {
+    // Parse a record's time value to seconds-from-epoch (or index fallback).
+    // Strava records store timestamp as ISO string → Number() = NaN, so we must
+    // detect and parse ISO strings explicitly.  FIT records use numeric timeFromStart.
+    const getT = (r, i) => {
+      if (r.timeFromStart != null) { const v = Number(r.timeFromStart); if (!isNaN(v)) return v; }
+      if (r.timestamp != null) {
+        const raw = r.timestamp;
+        const v = typeof raw === 'string'
+          ? new Date(raw).getTime() / 1000          // ISO → unix seconds
+          : Number(raw) > 1e10 ? Number(raw) / 1000 // ms  → unix seconds
+          : Number(raw);                             // already seconds
+        if (!isNaN(v) && v > 0) return v;
+      }
+      return i; // fallback: record index (assumes ~1 rec/s)
+    };
+    const t0 = getT(segRecs[0], 0);
+    const t1 = getT(segRecs[segRecs.length - 1], segRecs.length - 1);
+    const dur = Math.max(1, t1 - t0 + 1);
+    // Distance: prefer cumulative distance field diff, fallback to per-record deltas
+    const d0 = Number(segRecs[0].distance ?? 0);
+    const d1 = Number(segRecs[segRecs.length - 1].distance ?? 0);
+    const dist = d1 > d0 ? d1 - d0
+      : segRecs.reduce((s, r) => s + Number(r.distance_delta ?? 0), 0);
+    const pwr  = segRecs.filter(r => Number(r.power ?? r.watts ?? 0) > 0);
+    const hrs  = segRecs.filter(r => Number(r.heartRate ?? r.heart_rate ?? 0) > 0);
+    const spds = segRecs.filter(r => Number(r.speed ?? r.speed_ms ?? 0) > 0);
+    const avg  = (arr, fn) => arr.length > 0 ? arr.reduce((s, r) => s + fn(r), 0) / arr.length : 0;
+    return {
+      lapNumber: index + 1,
+      elapsed_time: dur,
+      moving_time: dur,
+      distance: Math.abs(dist),
+      average_watts: Math.round(avg(pwr, r => Number(r.power ?? r.watts ?? 0))),
+      average_heartrate: Math.round(avg(hrs, r => Number(r.heartRate ?? r.heart_rate ?? 0))),
+      average_speed: avg(spds, r => Number(r.speed ?? r.speed_ms ?? 0)),
+      _isAutoLap: true,
+    };
+  }
 
   // Mobile detection + view tabs (TrainingPeaks-style)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -3022,9 +3297,89 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {/* ── LAPS TAB ── */}
         {mobileView === 'laps' && hasLaps && (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* Auto-lap bar — show only when records are available */}
+            {chartTraining?.records?.length > 30 && (
+              <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50/80">
+                {autoLaps ? (
+                  <>
+                    <span className="text-[10px] font-bold text-primary">{autoLaps.length} auto laps</span>
+                    <div className="flex gap-1.5 ml-auto items-center">
+                      <button
+                        onClick={() => { setSelectedLap(null); setAutoLapLactates({}); computeAutoLaps(chartTraining.records, null); }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-primary/40 bg-primary/5 text-primary active:bg-primary/10 flex items-center gap-1">
+                        <BoltIcon className="w-3 h-3" />Smart
+                      </button>
+                      {Object.keys(autoLapLactates).length > 0 && (
+                        <button
+                          disabled={savingAutoLaps}
+                          onClick={async () => {
+                            setSavingAutoLaps(true);
+                            try {
+                              const { createFieldLactateMeasurement } = await import('../../services/api.js');
+                              const trainingDate = merged?.date || merged?.startDate || new Date().toISOString();
+                              const trainingTitle = merged?.titleManual || merged?.title || 'Activity';
+                              const stravaId = merged?.type === 'strava' ? String(merged?.id ?? merged?.stravaId ?? '') : null;
+                              const trainingId = merged?.type === 'training' ? (merged?._id ? String(merged._id) : null) : null;
+                              await Promise.all(
+                                Object.entries(autoLapLactates).map(([idxStr, val]) => {
+                                  const idx = Number(idxStr);
+                                  return createFieldLactateMeasurement({
+                                    value: Number(val),
+                                    recordedAt: trainingDate,
+                                    notes: `Auto lap ${idx + 1}`,
+                                    athleteId: athleteId || undefined,
+                                    status: 'assigned',
+                                    assignment: {
+                                      stravaActivityId: stravaId || undefined,
+                                      trainingId: trainingId || undefined,
+                                      lapIndex: idx,
+                                      lapNumber: idx + 1,
+                                      trainingTitle,
+                                      trainingDate: new Date(trainingDate).toISOString(),
+                                    },
+                                  });
+                                })
+                              );
+                              // Mark saved: move lactate values into the autoLaps objects so they display
+                              setAutoLaps(prev => prev.map((l, i) =>
+                                autoLapLactates[i] != null ? { ...l, lactate: autoLapLactates[i] } : l
+                              ));
+                              setAutoLapLactates({});
+                            } catch (e) {
+                              console.error('Save auto-lap lactate failed:', e);
+                            } finally {
+                              setSavingAutoLaps(false);
+                            }
+                          }}
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white active:bg-violet-700 disabled:opacity-50 touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >
+                          {savingAutoLaps ? 'Saving…' : `Save ${Object.keys(autoLapLactates).length} La`}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setAutoLaps(null); setSelectedLap(null); setAutoLapLactates({}); setAutoLapLaInput(null); }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-gray-200 bg-white text-gray-400 active:bg-gray-100 flex items-center gap-0.5">
+                        <XMarkIcon className="w-3 h-3" />Reset
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-[10px] text-gray-400">Auto laps:</span>
+                    <button
+                      onClick={() => { setSelectedLap(null); computeAutoLaps(chartTraining.records, null); }}
+                      className="px-3 py-1 rounded-full text-[11px] font-bold border border-primary/40 bg-primary/5 text-primary active:bg-primary/10 flex items-center gap-1 touch-manipulation"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}>
+                      <BoltIcon className="w-3.5 h-3.5" />Smart detect
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {/* LapChart — sticky at top */}
             <div className="flex-shrink-0 border-b border-gray-100">
-              <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+              <LapChart laps={autoLaps ?? laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
                 records={chartTraining?.records}
@@ -3034,8 +3389,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 }}
                 onScrollCenter={(i) => {
                   setSelectedLap(i);
-                  // Scroll the table row into view after chart settle,
-                  // but only if the user isn't manually scrolling the table.
                   if (!tableScrollingRef.current) {
                     lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   }
@@ -3053,12 +3406,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             >
               <div className="px-4 py-3">
                 {(() => {
-                  const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
-                  const showLactate = hasLactate || !!onAddLactate;
-                  const hasPower = isBike && laps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
-                  const showSwimPace = isSwim && laps.some(l => Number(l.distance || 0) > 0);
-                  const hasPace = (isRun || showSwimPace) && laps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
-                  const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                  const displayLaps = autoLaps ?? laps;
+                  const hasLactate = displayLaps.some(l => (l.lactate ?? l.lactateValue) != null)
+                    || Object.keys(autoLapLactates).length > 0;
+                  const showLactate = hasLactate || !!onAddLactate || !!autoLaps;
+                  const hasPower = isBike && displayLaps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
+                  const showSwimPace = isSwim && displayLaps.some(l => Number(l.distance || 0) > 0);
+                  const hasPace = (isRun || showSwimPace) && displayLaps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
+                  const hasCadence = displayLaps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
@@ -3079,12 +3434,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         {showLactate && <span className="text-right">La</span>}
                       </div>
                       <div className="divide-y divide-gray-50">
-                        {laps.map((lap, i) => {
-                          // Accept both Strava (snake_case) and FIT (camelCase)
-                          // field names. The FIT parser saves laps with
-                          // `totalDistance`, `avgHeartRate`, `avgPower`, etc.
-                          // which previously weren't matched here — all rows
-                          // came up blank for FIT uploads.
+                        {displayLaps.map((lap, i) => {
                           const lapElapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
                           const lapMoving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || lapElapsed;
                           const lapDur = lapElapsed; // used for display (time column)
@@ -3096,7 +3446,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           const lapLa = lap.lactate ?? lap.lactateValue;
                           const lapNum = lap.lapNumber ?? (i + 1);
                           // Detect lap type for color-coding
-                          const lapType = detectLapType(lap, i, laps.length);
+                          const lapType = detectLapType(lap, i, displayLaps.length);
                           const isRestLap = lapType === 'recovery' || lapType === 'rest';
                           // Pace — use moving time to exclude stopped time; suppress crazy values
                           let lapPaceStr = '—';
@@ -3137,19 +3487,78 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
-                              {showLactate && (
-                                lapLa != null ? (
-                                  <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
-                                ) : onAddLactate ? (
-                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
-                                    className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
-                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
-                                    <span className="text-sm font-bold leading-none">+</span>
-                                  </button>
-                                ) : (
-                                  <span className="text-right tabular-nums text-gray-400">—</span>
-                                )
-                              )}
+                              {showLactate && (() => {
+                                // Auto-lap: show inline input when active, saved value when set
+                                if (autoLaps) {
+                                  const savedInLap = lapLa != null ? Number(lapLa) : null;
+                                  const pendingVal = autoLapLactates[i];
+                                  const displayVal = savedInLap ?? pendingVal;
+                                  if (autoLapLaInput === i) {
+                                    return (
+                                      <div className="flex items-center justify-end gap-0.5" onClick={e => e.stopPropagation()}>
+                                        <input
+                                          autoFocus
+                                          type="number"
+                                          step="0.1"
+                                          min="0.1"
+                                          max="30"
+                                          placeholder="0.0"
+                                          defaultValue={displayVal ?? ''}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                              const v = parseFloat(e.target.value);
+                                              if (!isNaN(v) && v > 0) setAutoLapLactates(p => ({ ...p, [i]: v }));
+                                              else setAutoLapLactates(p => { const n = { ...p }; delete n[i]; return n; });
+                                              setAutoLapLaInput(null);
+                                            }
+                                            if (e.key === 'Escape') setAutoLapLaInput(null);
+                                          }}
+                                          onBlur={e => {
+                                            const v = parseFloat(e.target.value);
+                                            if (!isNaN(v) && v > 0) setAutoLapLactates(p => ({ ...p, [i]: v }));
+                                            else setAutoLapLactates(p => { const n = { ...p }; delete n[i]; return n; });
+                                            setAutoLapLaInput(null);
+                                          }}
+                                          className="w-12 text-center text-[11px] font-bold rounded-lg border border-violet-300 bg-violet-50 px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                          style={{ color: '#7c3aed' }}
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                  if (displayVal != null) {
+                                    return (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); setAutoLapLaInput(i); }}
+                                        className="text-right tabular-nums font-semibold w-full touch-manipulation"
+                                        style={{ color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
+                                        {Number(displayVal).toFixed(1)}
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setAutoLapLaInput(i); }}
+                                      className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
+                                      style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
+                                      <span className="text-sm font-bold leading-none">+</span>
+                                    </button>
+                                  );
+                                }
+                                // Normal laps
+                                if (lapLa != null) {
+                                  return <span className="text-right tabular-nums font-semibold" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>;
+                                }
+                                if (onAddLactate) {
+                                  return (
+                                    <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                      className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
+                                      style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
+                                      <span className="text-sm font-bold leading-none">+</span>
+                                    </button>
+                                  );
+                                }
+                                return <span className="text-right tabular-nums text-gray-400">—</span>;
+                              })()}
                             </div>
                           );
                         })}
@@ -4066,6 +4475,378 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   );
 }
 
+// ─── Add Completed Workout Sheet ──────────────────────────────────────────────
+const SPORT_OPTIONS_COMPLETED = [
+  { key: 'bike',     label: 'Cycling',   icon: '/icon/bike.svg',   color: '#767EB5' },
+  { key: 'run',      label: 'Running',   icon: '/icon/run.svg',    color: '#f97316' },
+  { key: 'swim',     label: 'Swimming',  icon: '/icon/swim.svg',   color: '#599FD0' },
+  { key: 'strength', label: 'Strength',  icon: null,               color: '#9ca3af' },
+  { key: 'other',    label: 'Other',     icon: null,               color: '#9ca3af' },
+];
+
+function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout }) {
+  // step: 'menu' (when plan option available) | 'pick' | 'manual' | 'fit'
+  const [step, setStep]     = useState(onPlanWorkout ? 'menu' : 'pick');
+  const [saving, setSaving] = useState(false);
+  const [fitError, setFitError] = useState(null);
+  const fitInputRef = useRef(null);
+
+  // ── Manual form state ─────────────────────────────────────────────────────
+  const dateStr = date ? [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-') : '';
+
+  const [form, setForm] = useState({
+    sport: 'bike',
+    title: '',
+    date: dateStr,
+    duration: '',   // hh:mm or mm:ss
+    distanceKm: '',
+    elevationM: '',
+    tss: '',
+    avgHr: '',
+    notes: '',
+  });
+
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // Parse "h:mm:ss", "mm:ss", or plain minutes → seconds
+  const parseDuration = (s) => {
+    const parts = String(s).trim().split(':').map(Number);
+    if (parts.length === 3) return parts[0]*3600 + parts[1]*60 + parts[2];
+    if (parts.length === 2) return parts[0]*60  + parts[1];
+    return (Number(s) || 0) * 60; // bare number = minutes
+  };
+
+  const handleManualSubmit = async () => {
+    if (!form.date || !form.sport) return;
+    setSaving(true);
+    try {
+      const { addTraining } = await import('../../services/api.js');
+      const durSec = parseDuration(form.duration);
+      const dist   = Number(form.distanceKm) * 1000 || 0;
+      const payload = {
+        date: form.date,
+        sport: form.sport,
+        title: form.title || (SPORT_OPTIONS_COMPLETED.find(s => s.key === form.sport)?.label ?? form.sport),
+        duration: durSec || undefined,
+        elapsed_time: durSec || undefined,
+        distance: dist || undefined,
+        elevationGain: Number(form.elevationM) || undefined,
+        tss: Number(form.tss) || undefined,
+        averageHeartRate: Number(form.avgHr) || undefined,
+        description: form.notes || undefined,
+        athleteId: athleteId || undefined,
+        source: 'manual',
+      };
+      await addTraining(payload);
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      console.error('Manual workout save error:', e);
+      setSaving(false);
+    }
+  };
+
+  const handleFitChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFitError(null);
+    setSaving(true);
+    try {
+      const { uploadFitFile } = await import('../../services/api.js');
+      await uploadFitFile(file);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setFitError(err?.response?.data?.message || err?.message || 'Upload failed');
+      setSaving(false);
+    }
+  };
+
+  const sportOpt = SPORT_OPTIONS_COMPLETED.find(s => s.key === form.sport) || SPORT_OPTIONS_COMPLETED[0];
+
+  return ReactDOM.createPortal(
+    <AnimatePresence>
+      <motion.div
+        key="add-completed-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[300] flex items-end justify-center"
+        style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <motion.div
+          initial={{ y: '100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '100%' }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          className="w-full max-w-lg bg-white rounded-t-2xl overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Handle */}
+          <div className="flex justify-center pt-2 pb-1">
+            <div className="w-10 h-1 bg-gray-200 rounded-full" />
+          </div>
+
+          {/* ── Step: menu (plan vs log) ── */}
+          {step === 'menu' && (
+            <div className="px-5 pb-8 pt-2">
+              <p className="text-xs text-gray-400 mb-5 text-center">{date?.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => { onClose(); setTimeout(() => onPlanWorkout(date), 50); }}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Plan workout</div>
+                    <div className="text-[11px] text-gray-400">Create a training plan entry</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setStep('pick')}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Log completed workout</div>
+                    <div className="text-[11px] text-gray-400">Upload FIT or enter manually</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step: pick type ── */}
+          {step === 'pick' && (
+            <div className="px-5 pb-8 pt-2">
+              <div className="flex items-center justify-between mb-1">
+                {onPlanWorkout ? (
+                  <button onClick={() => setStep('menu')} className="text-xs text-gray-400 flex items-center gap-1">
+                    <ChevronLeftIcon className="w-3.5 h-3.5" />Back
+                  </button>
+                ) : <div />}
+                <h2 className="text-base font-bold text-gray-800">Log completed workout</h2>
+                <div className="w-10" />
+              </div>
+              <p className="text-xs text-gray-400 mb-5">{date?.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => { setStep('fit'); setTimeout(() => fitInputRef.current?.click(), 50); }}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 8l-3-3m3 3l3-3" /></svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Upload FIT file</div>
+                    <div className="text-[11px] text-gray-400">Import from Garmin, Wahoo, etc.</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setStep('manual')}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-6-6l6 6M13 3l4 4-9 9H4v-4l9-9z" /></svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Add manually</div>
+                    <div className="text-[11px] text-gray-400">Enter distance, time, TSS…</div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Hidden FIT input */}
+              <input
+                ref={fitInputRef}
+                type="file"
+                accept=".fit,.FIT"
+                className="hidden"
+                onChange={handleFitChange}
+              />
+              {fitError && <p className="mt-3 text-xs text-red-500">{fitError}</p>}
+              {saving && <p className="mt-3 text-xs text-primary text-center">Uploading…</p>}
+            </div>
+          )}
+
+          {/* ── Step: FIT upload (file picker launched; just show spinner if saving) ── */}
+          {step === 'fit' && (
+            <div className="px-5 pb-8 pt-2 text-center">
+              <h2 className="text-base font-bold text-gray-800 mb-2">Upload FIT file</h2>
+              <input
+                ref={fitInputRef}
+                type="file"
+                accept=".fit,.FIT"
+                className="hidden"
+                onChange={handleFitChange}
+              />
+              {saving ? (
+                <p className="text-sm text-primary py-6">Uploading…</p>
+              ) : (
+                <>
+                  {fitError && <p className="text-xs text-red-500 mb-3">{fitError}</p>}
+                  <button
+                    onClick={() => fitInputRef.current?.click()}
+                    className="w-full py-3 rounded-xl bg-primary text-white text-sm font-semibold mb-2"
+                  >Choose file</button>
+                  <button onClick={() => setStep('pick')} className="text-xs text-gray-400">← Back</button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: manual form ── */}
+          {step === 'manual' && (
+            <div className="px-4 pb-6 pt-2 max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => setStep('pick')} className="text-xs text-gray-400 flex items-center gap-1">
+                  <ChevronLeftIcon className="w-3.5 h-3.5" />Back
+                </button>
+                <h2 className="text-sm font-bold text-gray-800">Manual workout</h2>
+                <div className="w-10" />
+              </div>
+
+              {/* Sport picker */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {SPORT_OPTIONS_COMPLETED.map(s => (
+                  <button
+                    key={s.key}
+                    onClick={() => set('sport', s.key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all touch-manipulation ${form.sport === s.key ? 'text-white border-transparent' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
+                    style={form.sport === s.key ? { backgroundColor: s.color, borderColor: s.color } : {}}
+                  >
+                    {s.icon
+                      ? <img src={s.icon} alt={s.key} className="w-3.5 h-3.5" style={form.sport === s.key ? { filter: 'brightness(10)' } : { opacity: 0.6 }} />
+                      : <BoltIcon className="w-3.5 h-3.5" />
+                    }
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Title */}
+              <div className="mb-3">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Title (optional)</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={e => set('title', e.target.value)}
+                  placeholder={sportOpt.label + ' workout'}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* Date */}
+              <div className="mb-3">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date</label>
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={e => set('date', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* Duration + Distance row */}
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Duration</label>
+                  <input
+                    type="text"
+                    value={form.duration}
+                    onChange={e => set('duration', e.target.value)}
+                    placeholder="h:mm:ss"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Distance (km)</label>
+                  <input
+                    type="number"
+                    value={form.distanceKm}
+                    onChange={e => set('distanceKm', e.target.value)}
+                    placeholder="0.0"
+                    step="0.1"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Elevation + TSS row */}
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Elevation gain (m)</label>
+                  <input
+                    type="number"
+                    value={form.elevationM}
+                    onChange={e => set('elevationM', e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">TSS</label>
+                  <input
+                    type="number"
+                    value={form.tss}
+                    onChange={e => set('tss', e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Avg HR */}
+              <div className="mb-3">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Avg heart rate (bpm)</label>
+                <input
+                  type="number"
+                  value={form.avgHr}
+                  onChange={e => set('avgHr', e.target.value)}
+                  placeholder="—"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="mb-5">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Notes</label>
+                <textarea
+                  value={form.notes}
+                  onChange={e => set('notes', e.target.value)}
+                  placeholder="How did it feel?"
+                  rows={2}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary resize-none"
+                />
+              </div>
+
+              <button
+                onClick={handleManualSubmit}
+                disabled={saving || !form.date}
+                className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-50 transition-opacity"
+                style={{ backgroundColor: sportOpt.color }}
+              >
+                {saving ? 'Saving…' : 'Save workout'}
+              </button>
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.getElementById('app-modal-root') || document.body
+  );
+}
+
 // ─── Richer Summary Column ────────────────────────────────────────────────────
 const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
 
@@ -4262,6 +5043,8 @@ export default function CalendarView({
   onStartWorkout = null,
   /** Called with a Date when the user wants to plan a workout for that day */
   onPlanWorkout = null,
+  /** Called (with no args) after a completed workout is saved — parent should refresh */
+  onAddCompletedWorkout = null,
   /** Called with (id, newDateStr) when a workout is moved via drag */
   onMovePlannedWorkout = null,
   /** Called with (pw, newDateStr) when a workout is copied via Alt+drag */
@@ -4362,6 +5145,8 @@ export default function CalendarView({
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
+  // Add completed workout sheet
+  const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -5576,12 +6361,27 @@ export default function CalendarView({
                         <span className={`text-base font-extrabold ${isToday ? 'text-primary' : 'text-gray-800'}`}>{dayDate.getDate()}</span>
                         {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
                       </div>
-                      {onPlanWorkout && (
-                        <button
-                          onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
-                          className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >+</button>
+                      {(onPlanWorkout || onAddCompletedWorkout) && (
+                        onAddCompletedWorkout ? (
+                          /* Show a tiny dropdown when "log completed" is available */
+                          <div className="relative" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                // If only one action, skip menu — but we always have both here
+                                setAddCompletedDate(dayDate);
+                              }}
+                              className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                              style={{ WebkitTapHighlightColor: 'transparent' }}
+                            >+</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
+                            className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                          >+</button>
+                        )
                       )}
                     </div>
                     {/* Content */}
@@ -6472,5 +7272,22 @@ export default function CalendarView({
       )}
     </motion.div>
   );
-  return isFullscreen ? ReactDOM.createPortal(calendarContent, document.body) : calendarContent;
+  return (
+    <>
+      {isFullscreen ? ReactDOM.createPortal(calendarContent, document.body) : calendarContent}
+      {/* Add completed workout sheet */}
+      {addCompletedDate && (
+        <AddCompletedSheet
+          date={addCompletedDate}
+          athleteId={athleteId}
+          onPlanWorkout={onPlanWorkout}
+          onClose={() => setAddCompletedDate(null)}
+          onSaved={() => {
+            setAddCompletedDate(null);
+            onAddCompletedWorkout?.();
+          }}
+        />
+      )}
+    </>
+  );
 }

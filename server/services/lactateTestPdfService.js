@@ -8,6 +8,7 @@ const { formatPace } = require('../utils/lactateZones');
 const { escapeHtml } = require('../utils/lactateReportSvgs');
 const path = require('path');
 const fs = require('fs');
+const User = require('../models/UserModel');
 
 let sharp;
 let jsPDF;
@@ -442,21 +443,27 @@ function getLogoBase64() {
   return _logoBase64;
 }
 
-function drawHeader(doc, title, pageW) {
+function drawHeader(doc, title, pageW, branding = null) {
   doc.setFillColor(...BRAND.primary);
   doc.rect(0, 0, pageW, 28, 'F');
 
-  const logo = getLogoBase64();
-  if (logo) {
-    try {
-      doc.addImage(logo, 'PNG', 10, 4, 20, 20);
-    } catch { /* ignore */ }
+  // Use coach's logo URL if provided, otherwise fall back to built-in LaChart logo
+  const logoB64 = getLogoBase64();
+  const brandLogoUrl = branding?.logoUrl;
+  let logoAdded = false;
+
+  // Try coach logo first (it's a URL — skip for server-side; use built-in only)
+  if (!brandLogoUrl && logoB64) {
+    try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
+  } else if (logoB64) {
+    try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
   }
 
+  const brandName = branding?.title || 'LaChart';
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
+  doc.setFontSize(18);
   doc.setTextColor(...BRAND.white);
-  doc.text('LaChart', logo ? 34 : 12, 17);
+  doc.text(brandName, logoAdded ? 34 : 12, 17);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
@@ -472,14 +479,17 @@ function drawWatermark(doc, pageW, pageH) {
   doc.text('LaChart', cx, cy, { align: 'center', angle: 35 });
 }
 
-function drawFooter(doc, pageW, pageH, pageNum) {
+function drawFooter(doc, pageW, pageH, pageNum, branding = null) {
   const footerY = pageH - 8;
   doc.setDrawColor(...BRAND.lightGray);
   doc.line(14, footerY - 4, pageW - 14, footerY - 4);
   doc.setFontSize(7);
   doc.setTextColor(...BRAND.gray);
   doc.setFont('helvetica', 'normal');
-  doc.text('LaChart – Advanced lactate testing and analysis  |  lachart.net', 14, footerY);
+  const footerLeft = branding?.trademark
+    ? branding.trademark
+    : 'LaChart – Advanced lactate testing and analysis  |  lachart.net';
+  doc.text(footerLeft, 14, footerY);
   doc.text(`Page ${pageNum}`, pageW - 14, footerY, { align: 'right' });
 }
 
@@ -493,14 +503,14 @@ function drawSectionTitle(doc, text, y, left) {
   return y + 8;
 }
 
-function ensureSpace(doc, y, needed, pageW, pageH, title, pageNumRef) {
+function ensureSpace(doc, y, needed, pageW, pageH, title, pageNumRef, branding = null) {
   if (y + needed > pageH - 16) {
-    drawFooter(doc, pageW, pageH, pageNumRef.n);
+    drawFooter(doc, pageW, pageH, pageNumRef.n, branding);
     doc.addPage();
     pageNumRef.n++;
     drawWatermark(doc, pageW, pageH);
-    drawHeader(doc, title, pageW);
-    drawFooter(doc, pageW, pageH, pageNumRef.n);
+    drawHeader(doc, title, pageW, branding);
+    drawFooter(doc, pageW, pageH, pageNumRef.n, branding);
     return 34;
   }
   return y;
@@ -524,6 +534,15 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     const data = await getReportData(requesterUserId, testId, overrides || {});
     if (data.error) return { error: true, reason: data.reason };
 
+    // Load requester's coach branding (title + trademark shown in header/footer)
+    let branding = null;
+    try {
+      const requesterUser = await User.findById(requesterUserId).select('coachBranding').lean();
+      if (requesterUser?.coachBranding?.title || requesterUser?.coachBranding?.trademark) {
+        branding = requesterUser.coachBranding;
+      }
+    } catch { /* non-fatal — fall back to LaChart default */ }
+
     const { test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, focus, lactateSvg, baseTitle } = data;
     const coreSport = normalizeSport(sport);
     const displayInputMode = inferInputModeForPdf({
@@ -540,8 +559,8 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     const pageNumRef = { n: 1 };
 
     drawWatermark(doc, pageW, pageH);
-    drawHeader(doc, formatDateShort(test.date), pageW);
-    drawFooter(doc, pageW, pageH, pageNumRef.n);
+    drawHeader(doc, formatDateShort(test.date), pageW, branding);
+    drawFooter(doc, pageW, pageH, pageNumRef.n, branding);
 
     let y = 34;
 
@@ -557,7 +576,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     y += 8;
 
     // ---------- ATHLETE INFO CARD ----------
-    y = ensureSpace(doc, y, 28, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 28, pageW, pageH, baseTitle, pageNumRef, branding);
     doc.setFillColor(...BRAND.lightGray);
     doc.roundedRect(left, y - 2, contentW, 22, 3, 3, 'F');
     doc.setFont('helvetica', 'bold');
@@ -577,7 +596,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     y += 28;
 
     // ---------- TEST INFO CARD ----------
-    y = ensureSpace(doc, y, 26, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 26, pageW, pageH, baseTitle, pageNumRef, branding);
     doc.setFillColor(245, 243, 255);
     doc.roundedRect(left, y - 2, contentW, 22, 3, 3, 'F');
     doc.setFont('helvetica', 'bold');
@@ -597,7 +616,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
       sport: coreSport, unitSystem, inputMode: displayInputMode
     });
     if (dualSvg) {
-      y = ensureSpace(doc, y, 95, pageW, pageH, baseTitle, pageNumRef);
+      y = ensureSpace(doc, y, 95, pageW, pageH, baseTitle, pageNumRef, branding);
       y = drawSectionTitle(doc, 'Lactate Curve & Heart Rate', y, left);
       try {
         const base64 = await svgToPngBase64(dualSvg, 1400);
@@ -612,7 +631,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     }
 
     // ---------- TRAINING ZONES ----------
-    y = ensureSpace(doc, y, 55, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 55, pageW, pageH, baseTitle, pageNumRef, branding);
     y = drawSectionTitle(doc, 'Training Zones', y, left);
 
     if (curZones) {
@@ -676,7 +695,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     }
 
     // ---------- THRESHOLDS ----------
-    y = ensureSpace(doc, y, 60, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 60, pageW, pageH, baseTitle, pageNumRef, branding);
     y = drawSectionTitle(doc, 'Thresholds', y, left);
     const methods = ['Log-log', 'IAT', 'OBLA 2.0', 'OBLA 2.5', 'OBLA 3.0', 'OBLA 3.5', 'Bsln + 0.5', 'Bsln + 1.0', 'Bsln + 1.5', 'LTP1', 'LTP2', 'LTRatio'];
     const thrRows = methods.map(m => {
@@ -710,7 +729,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     y = doc.lastAutoTable.finalY + 8;
 
     // ---------- STAGE RESULTS ----------
-    y = ensureSpace(doc, y, 40, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 40, pageW, pageH, baseTitle, pageNumRef, branding);
     y = drawSectionTitle(doc, 'Stage Results', y, left);
     const resultRows = (test.results || []).map((r, idx) => {
       const stage = r.interval ?? (idx + 1);
@@ -733,7 +752,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     y = doc.lastAutoTable.finalY + 8;
 
     // ---------- COMPARISON ----------
-    y = ensureSpace(doc, y, 35, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 35, pageW, pageH, baseTitle, pageNumRef, branding);
     y = drawSectionTitle(doc, 'Comparison with Previous Test', y, left);
     if (prevTest && curThr && prevThr) {
       doc.setFont('helvetica', 'normal');
@@ -745,7 +764,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
       // Comparison graph: overlay both curves
       const compSvg = buildComparisonSvg({ currentTest: test, prevTest, sport: coreSport, unitSystem, inputMode: displayInputMode });
       if (compSvg) {
-        y = ensureSpace(doc, y, 90, pageW, pageH, baseTitle, pageNumRef);
+        y = ensureSpace(doc, y, 90, pageW, pageH, baseTitle, pageNumRef, branding);
         try {
           const compB64 = await svgToPngBase64(compSvg, 1400);
           const gW = contentW;
@@ -772,7 +791,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
         ['LTP1', formatIntensity(curLt1, { sport: coreSport, unitSystem, inputMode: displayInputMode }), formatIntensity(prevLt1, { sport: coreSport, unitSystem, inputMode: displayInputMode }), `${arrow(pct1)}${pct1}%`],
         ['LTP2', formatIntensity(curLt2, { sport: coreSport, unitSystem, inputMode: displayInputMode }), formatIntensity(prevLt2, { sport: coreSport, unitSystem, inputMode: displayInputMode }), `${arrow(pct2)}${pct2}%`]
       ];
-      y = ensureSpace(doc, y, 25, pageW, pageH, baseTitle, pageNumRef);
+      y = ensureSpace(doc, y, 25, pageW, pageH, baseTitle, pageNumRef, branding);
       doc.autoTable({
         startY: y,
         head: [['Metric', 'Current', 'Previous', 'Change']],
@@ -800,14 +819,14 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     }
 
     // ---------- RECOMMENDATIONS ----------
-    y = ensureSpace(doc, y, 30, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 30, pageW, pageH, baseTitle, pageNumRef, branding);
     y = drawSectionTitle(doc, 'Recommendations', y, left);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(...BRAND.dark);
     if (focus && focus.length > 0) {
       focus.forEach(f => {
-        y = ensureSpace(doc, y, 16, pageW, pageH, baseTitle, pageNumRef);
+        y = ensureSpace(doc, y, 16, pageW, pageH, baseTitle, pageNumRef, branding);
         doc.setFillColor(245, 243, 255);
         const bodyLines = doc.splitTextToSize(f.body || '', contentW - 12);
         const boxH = 6 + bodyLines.length * 4.2 + 4;
@@ -826,7 +845,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     }
 
     // Final footer on last page
-    drawFooter(doc, pageW, pageH, pageNumRef.n);
+    drawFooter(doc, pageW, pageH, pageNumRef.n, branding);
 
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
     return { pdf: pdfBuffer, title: baseTitle };

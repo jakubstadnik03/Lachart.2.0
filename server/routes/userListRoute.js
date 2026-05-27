@@ -693,9 +693,10 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         // Coach branding (logo URL, title, trademark)
         if (req.body.coachBranding !== undefined) {
           updateData.coachBranding = {
-            logoUrl: req.body.coachBranding.logoUrl ?? null,
-            title: req.body.coachBranding.title ?? null,
-            trademark: req.body.coachBranding.trademark ?? null,
+            logoUrl:      req.body.coachBranding.logoUrl      ?? null,
+            title:        req.body.coachBranding.title        ?? null,
+            trademark:    req.body.coachBranding.trademark    ?? null,
+            primaryColor: req.body.coachBranding.primaryColor ?? null,
           };
         }
 
@@ -832,7 +833,15 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 athleteId: updatedUser.strava.athleteId,
                 autoSync: updatedUser.strava.autoSync !== undefined ? updatedUser.strava.autoSync : false,
                 lastSyncDate: updatedUser.strava.lastSyncDate
-            } : null
+            } : null,
+            coachBranding: updatedUser.coachBranding
+                ? {
+                    logoUrl:      updatedUser.coachBranding.logoUrl      ?? null,
+                    title:        updatedUser.coachBranding.title        ?? null,
+                    trademark:    updatedUser.coachBranding.trademark    ?? null,
+                    primaryColor: updatedUser.coachBranding.primaryColor ?? null,
+                  }
+                : null,
         };
 
         res.status(200).json(userResponse);
@@ -1221,7 +1230,15 @@ router.get("/profile", verifyToken, async (req, res) => {
               autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
               lastSyncDate: user.strava.lastSyncDate
               // Don't include accessToken, refreshToken, expiresAt for security
-            } : null
+            } : null,
+            coachBranding: user.coachBranding
+              ? {
+                  logoUrl:      user.coachBranding.logoUrl      ?? null,
+                  title:        user.coachBranding.title        ?? null,
+                  trademark:    user.coachBranding.trademark    ?? null,
+                  primaryColor: user.coachBranding.primaryColor ?? null,
+                }
+              : null,
         };
         if (process.env.DEBUG_PROFILE === '1') {
             console.log('Returning user profile - avatar:', userResponse.avatar);

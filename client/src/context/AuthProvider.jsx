@@ -262,7 +262,8 @@ export const AuthProvider = ({ children }) => {
         saveUserToStorage(loginUser);
         setIsAuthenticated(true);
         clearApiCache();
-        if (!sessionStorage.getItem('welcomed')) {
+        const isNativeApp = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.());
+        if (!isNativeApp && !sessionStorage.getItem('welcomed')) {
           setTimeout(() => {
             setShowWelcome(true);
             sessionStorage.setItem('welcomed', '1');

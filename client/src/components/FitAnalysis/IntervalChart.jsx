@@ -418,6 +418,41 @@ const IntervalChart = ({
     return { bars, maxValue, minValue, totalDistance, groups };
   }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem, records, lapTimeSource]);
 
+  // Elevation profile path derived from stream records — used as a background layer in the bar chart
+  const elevationPath = useMemo(() => {
+    if (isSwim) return null;
+    if (!Array.isArray(records) || records.length === 0) return null;
+    const totalDist = chartData?.totalDistance || 0;
+    if (totalDist <= 0) return null;
+
+    // Filter records that have both distance and altitude
+    const pts = records
+      .map(r => ({ d: Number(r.distance), alt: Number(r.altitude ?? r.altitude_m) }))
+      .filter(p => Number.isFinite(p.d) && Number.isFinite(p.alt) && p.d >= 0);
+    if (pts.length < 2) return null;
+
+    const altMin = Math.min(...pts.map(p => p.alt));
+    const altMax = Math.max(...pts.map(p => p.alt));
+    const altRange = altMax - altMin;
+    if (altRange < 1) return null; // flat — skip
+
+    // SVG viewBox is 1000 × 100 (preserveAspectRatio none)
+    const W = 1000;
+    const H = 100;
+    const mapX = (d) => Math.min(W, Math.max(0, (d / totalDist) * W));
+    const mapY = (alt) => H - ((alt - altMin) / altRange) * H * 0.85 - H * 0.05; // 5%–90% of height
+
+    // Build closed area path
+    const movePt = pts[0];
+    let d = `M ${mapX(movePt.d).toFixed(1)} ${mapY(movePt.alt).toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${mapX(pts[i].d).toFixed(1)} ${mapY(pts[i].alt).toFixed(1)}`;
+    }
+    // Close to bottom
+    d += ` L ${mapX(pts[pts.length - 1].d).toFixed(1)} ${H} L ${mapX(pts[0].d).toFixed(1)} ${H} Z`;
+    return d;
+  }, [records, chartData?.totalDistance, isSwim]);
+
   // Determine which bar corresponds to selectedLapNumber (after chartData is defined)
   const selectedBarIndex = useMemo(() => {
     if (!selectedLapNumber || !Array.isArray(chartData?.bars)) return -1;
@@ -951,6 +986,24 @@ const IntervalChart = ({
                 />
               ))}
             </div>
+
+            {/* Elevation profile background */}
+            {elevationPath && (
+              <svg
+                className="absolute inset-0 w-full h-full"
+                viewBox="0 0 1000 100"
+                preserveAspectRatio="none"
+                style={{ pointerEvents: 'none', opacity: 0.18 }}
+              >
+                <defs>
+                  <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.2" />
+                  </linearGradient>
+                </defs>
+                <path d={elevationPath} fill="url(#elevGrad)" />
+              </svg>
+            )}
 
             {/* Bars */}
             <div

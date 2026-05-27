@@ -148,6 +148,17 @@ const fmtDate = (d) => {
   try { return new Date(d).toLocaleDateString('cs-CZ', { day:'2-digit', month:'2-digit', year:'numeric' }); }
   catch { return '—'; }
 };
+
+/** Darken a hex color by `amount` (0–1). Returns original on parse error. */
+function darkenHex(hex, amount = 0.15) {
+  try {
+    const h = hex.replace('#', '');
+    const r = Math.max(0, Math.round(parseInt(h.slice(0,2),16) * (1-amount)));
+    const g = Math.max(0, Math.round(parseInt(h.slice(2,4),16) * (1-amount)));
+    const b = Math.max(0, Math.round(parseInt(h.slice(4,6),16) * (1-amount)));
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  } catch { return hex; }
+}
 const sportLabel = (s) => ({ bike:'Cycling', run:'Running', swim:'Swimming' }[s] || s || 'Sport');
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 
@@ -310,7 +321,7 @@ function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
 function numOrNull(v) { return Number.isFinite(Number(v)) ? Number(v) : null; }
 
 // ── Single-test Lactate Curve SVG ──────────────────────────────────────────────
-function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
+function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary = C.primary }) {
   const isPace = sport !== 'bike' && inputMode === 'pace';
   const W = 500, H = 210;
   const PAD = { top: 12, right: 24, bottom: 34, left: 42 };
@@ -397,8 +408,8 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
         <>
           <Line x1={sx(lt1).toFixed(1)} y1={PAD.top}
             x2={sx(lt1).toFixed(1)} y2={PAD.top + ch}
-            stroke={C.primary} strokeWidth={1} strokeDasharray="3,3" />
-          <Rect x={sx(lt1) - 14} y={PAD.top + 2} width={28} height={11} rx={3} fill={C.primary} />
+            stroke={primary} strokeWidth={1} strokeDasharray="3,3" />
+          <Rect x={sx(lt1) - 14} y={PAD.top + 2} width={28} height={11} rx={3} fill={primary} />
           <Text style={{ fontSize: 6, fill: C.white }}
             x={sx(lt1).toFixed(1)} y={PAD.top + 10} textAnchor="middle">LT1</Text>
         </>
@@ -470,7 +481,7 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds }) {
 }
 
 // ── Comparison Curve SVG — both tests overlaid ────────────────────────────────
-function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inputMode, currentThresholds, prevThresholds, currentDate, prevDate }) {
+function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inputMode, currentThresholds, prevThresholds, currentDate, prevDate, primary = C.primary }) {
   const isPace = sport !== 'bike' && inputMode === 'pace';
   const W = 500, H = 180;
   const PAD = { top: 16, right: 24, bottom: 42, left: 42 };
@@ -543,12 +554,12 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
       {/* Previous test curve — dashed purple */}
       {prevPath && (
         <>
-          <Path d={prevPath} stroke={C.primary} strokeWidth={1.5} fill="none"
+          <Path d={prevPath} stroke={primary} strokeWidth={1.5} fill="none"
             strokeLinejoin="round" strokeDasharray="5,3" />
           {prevPts.map((p, i) => (
             <Circle key={i}
               cx={sx(p.x).toFixed(1)} cy={sla(p.la).toFixed(1)}
-              r={2.5} fill={C.white} stroke={C.primary} strokeWidth={1.2} />
+              r={2.5} fill={C.white} stroke={primary} strokeWidth={1.2} />
           ))}
         </>
       )}
@@ -612,7 +623,7 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
       {prevPath && (
         <>
           <Line x1={PAD.left+10} y1={PAD.top+22} x2={PAD.left+22} y2={PAD.top+22}
-            stroke={C.primary} strokeWidth={1.5} strokeDasharray="4,2" />
+            stroke={primary} strokeWidth={1.5} strokeDasharray="4,2" />
           <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left+26} y={PAD.top+24}>
             {prevDate ? `Previous (${prevDate})` : 'Previous test'}
           </Text>
@@ -623,35 +634,41 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
 }
 
 // ── Header ─────────────────────────────────────────────────────────────────────
-const Header = ({ title, date, branding }) => (
-  <View style={s.header} fixed>
-    <View style={s.headerBrand}>
-      <Image src={branding?.logoUrl || LOGO_URL} style={s.headerLogo} />
-      <View>
-        <Text style={s.headerName}>{branding?.title || 'LaChart'}</Text>
-        <Text style={s.headerSub}>LACTATE ANALYSIS PLATFORM</Text>
+const Header = ({ title, date, branding }) => {
+  const pc = branding?.primaryColor || C.primary;
+  return (
+    <View style={s.header} fixed>
+      <View style={s.headerBrand}>
+        <Image src={branding?.logoUrl || LOGO_URL} style={s.headerLogo} />
+        <View>
+          <Text style={[s.headerName, { color: pc }]}>{branding?.title || 'LaChart'}</Text>
+          <Text style={s.headerSub}>LACTATE ANALYSIS PLATFORM</Text>
+        </View>
       </View>
+      <Text style={s.headerDate}>{title} · {date}</Text>
     </View>
-    <Text style={s.headerDate}>{title} · {date}</Text>
-  </View>
-);
+  );
+};
 
 // ── Footer ─────────────────────────────────────────────────────────────────────
-const Footer = ({ athlete, creatorEmail, branding }) => (
-  <View style={s.footer} fixed>
-    <View style={s.footerBrand}>
-      <Image src={branding?.logoUrl || LOGO_URL} style={s.footerLogo} />
-      <Text style={s.footerName}>{branding?.title || 'LaChart'}</Text>
-      {branding?.trademark
-        ? <Text style={s.footerText}> · {branding.trademark}</Text>
-        : <Text style={s.footerText}> · lachart.net</Text>
-      }
-      {creatorEmail ? <Text style={s.footerText}> · Contact: {creatorEmail}</Text> : null}
+const Footer = ({ athlete, creatorEmail, branding }) => {
+  const pc = branding?.primaryColor || C.primary;
+  return (
+    <View style={s.footer} fixed>
+      <View style={s.footerBrand}>
+        <Image src={branding?.logoUrl || LOGO_URL} style={s.footerLogo} />
+        <Text style={[s.footerName, { color: pc }]}>{branding?.title || 'LaChart'}</Text>
+        {branding?.trademark
+          ? <Text style={s.footerText}> · {branding.trademark}</Text>
+          : <Text style={s.footerText}> · lachart.net</Text>
+        }
+        {creatorEmail ? <Text style={s.footerText}> · Contact: {creatorEmail}</Text> : null}
+      </View>
+      <Text style={s.footerText}
+        render={({ pageNumber, totalPages }) => `${athlete || ''} · Page ${pageNumber} / ${totalPages}`} />
     </View>
-    <Text style={s.footerText}
-      render={({ pageNumber, totalPages }) => `${athlete || ''} · Page ${pageNumber} / ${totalPages}`} />
-  </View>
-);
+  );
+};
 
 // ── Pre-test training summary section ──────────────────────────────────────────
 const PT_ZONE_COLORS = ['#60A5FA', '#34D399', '#FBBF24', '#F97316', '#F43F5E'];
@@ -725,9 +742,9 @@ function PreTestSection({ preTestSummary }) {
 }
 
 // ── Section header ──────────────────────────────────────────────────────────────
-const SectionHeader = ({ title }) => (
+const SectionHeader = ({ title, color }) => (
   <View style={s.sectionHeader}>
-    <Text style={s.sectionTitle}>{title}</Text>
+    <Text style={[s.sectionTitle, color ? { color } : {}]}>{title}</Text>
     <View style={s.sectionLine} />
   </View>
 );
@@ -735,6 +752,10 @@ const SectionHeader = ({ title }) => (
 // ── Main Document ───────────────────────────────────────────────────────────────
 export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
   if (!test) return null;
+
+  // Brand colour — use coach's custom primary if set, fall back to LaChart default
+  const brandPrimary     = coachBranding?.primaryColor || C.primary;
+  const brandPrimaryDark = darkenHex(brandPrimary);
 
   const sport       = test.sport || 'bike';
   const inputMode   = test.inputMode || 'pace';
@@ -816,7 +837,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
         {/* No Header on page 1 — cover band already shows logo + title */}
 
         {/* Cover band — single compact row: brand left, title right */}
-        <View style={s.coverBand}>
+        <View style={[s.coverBand, { backgroundColor: brandPrimary }]}>
           <View style={s.coverTopRow}>
             <View style={s.coverBrandWrap}>
               <Image src={coachBranding?.logoUrl || LOGO_URL} style={s.coverLogo} />
@@ -891,7 +912,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </View>
 
           {/* Lactate curve */}
-          <SectionHeader title="Lactate Curve" />
+          <SectionHeader title="Lactate Curve" color={brandPrimary} />
 
           {/* Legend above chart */}
           <View style={{ flexDirection: 'row', gap: 16, marginBottom: 6 }}>
@@ -906,9 +927,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               </View>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <View style={{ width: 10, height: 1, backgroundColor: C.primary, marginRight: 2 }} />
-              <View style={{ width: 3, height: 1, backgroundColor: C.primary, marginRight: 2 }} />
-              <View style={{ width: 5, height: 1, backgroundColor: C.primary }} />
+              <View style={{ width: 10, height: 1, backgroundColor: brandPrimary, marginRight: 2 }} />
+              <View style={{ width: 3, height: 1, backgroundColor: brandPrimary, marginRight: 2 }} />
+              <View style={{ width: 5, height: 1, backgroundColor: brandPrimary }} />
               <Text style={{ fontSize: 7.5, color: C.dark }}>LT1</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -938,7 +959,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
           <View wrap={false}>
             {results.length >= 2
-              ? <LattateCurveSvg results={results} sport={sport} inputMode={inputMode} thresholds={thresholds} />
+              ? <LattateCurveSvg results={results} sport={sport} inputMode={inputMode} thresholds={thresholds} primary={brandPrimary} />
               : <Text style={{ fontSize: 8.5, color: C.gray }}>Not enough data points to render curve.</Text>
             }
           </View>
@@ -969,9 +990,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               suspenders guard for unusually long tests (>~15 stages) where the
               table itself may need to span pages. */}
           <View wrap={false}>
-            <SectionHeader title="Stage Results" />
+            <SectionHeader title="Stage Results" color={brandPrimary} />
             <View style={s.table}>
-              <View style={s.tableHead}>
+              <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
                 {['Stage', isBike ? 'Power (W)' : 'Pace', 'HR (bpm)', 'Lactate (mmol/L)', 'RPE'].map(h => (
                   <Text key={h} style={s.tableHeadT}>{h}</Text>
                 ))}
@@ -1000,10 +1021,10 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
         <View style={s.body}>
           {/* Key threshold highlight cards — now include lactate value */}
-          <SectionHeader title="Key Thresholds" />
+          <SectionHeader title="Key Thresholds" color={brandPrimary} />
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             {[
-              { label: 'LT1 · Aerobic Threshold',  val: fmtIntensity(lt1,  sport, inputMode), hr: lt1Hr, la: thresholds?.lactates?.['LTP1'],     color: C.primary   },
+              { label: 'LT1 · Aerobic Threshold',  val: fmtIntensity(lt1,  sport, inputMode), hr: lt1Hr, la: thresholds?.lactates?.['LTP1'],     color: brandPrimary },
               { label: 'LT2 · Anaerobic Threshold', val: fmtIntensity(lt2,  sport, inputMode), hr: lt2Hr, la: thresholds?.lactates?.['LTP2'],     color: C.red       },
               { label: 'OBLA 3.0',                  val: fmtIntensity(obla, sport, inputMode), hr: thresholds?.heartRates?.['OBLA 3.0'], la: thresholds?.lactates?.['OBLA 3.0'] ?? 3.0, color: C.secondary },
             ].map(item => (
@@ -1024,9 +1045,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           </View>
 
           {/* All threshold methods */}
-          <SectionHeader title="All Threshold Methods" />
+          <SectionHeader title="All Threshold Methods" color={brandPrimary} />
           <View style={s.table}>
-            <View style={s.tableHead}>
+            <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
               {['Method', isBike ? 'Power' : 'Pace', 'HR (bpm)', 'La (mmol/L)'].map(h => (
                 <Text key={h} style={s.tableHeadT}>{h}</Text>
               ))}
@@ -1041,7 +1062,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                   <Text style={[s.thrMethod, (method==='LTP1'||method==='LTP2') ? { fontFamily:'Helvetica-Bold' } : {}]}>
                     {method}
                   </Text>
-                  <Text style={s.thrVal}>{fmtIntensity(val, sport, inputMode)}</Text>
+                  <Text style={[s.thrVal, { color: brandPrimary }]}>{fmtIntensity(val, sport, inputMode)}</Text>
                   <Text style={s.thrHr}>{hr ? `${Math.round(hr)} bpm` : '—'}</Text>
                   <Text style={s.thrLa}>{la ? `${Number(la).toFixed(2)}` : '—'}</Text>
                 </View>
@@ -1051,9 +1072,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
           {/* Training zones */}
           {hasZones && <>
-            <SectionHeader title="Training Zones" />
+            <SectionHeader title="Training Zones" color={brandPrimary} />
             <View style={s.table}>
-              <View style={s.tableHead}>
+              <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
                 {['Zone', 'Name', isBike ? 'Power (W)' : 'Pace', 'Heart Rate'].map(h => (
                   <Text key={h} style={s.tableHeadT}>{h}</Text>
                 ))}
@@ -1086,14 +1107,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           {/* ── Pre-test training context ── */}
           {preTestSummary && (
             <>
-              <SectionHeader title="Pre-test Training · 8 weeks" />
+              <SectionHeader title="Pre-test Training · 8 weeks" color={brandPrimary} />
               <PreTestSection preTestSummary={preTestSummary} />
             </>
           )}
 
           {/* ── Comparison with previous test ── */}
           {hasPrev && <>
-            <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} → ${prevDate} → ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} />
+            <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} → ${prevDate} → ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} color={brandPrimary} />
 
             {/* Overlaid dual-curve chart (primary comparison only) */}
             <ComparisonCurveSvg
@@ -1105,6 +1126,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               prevThresholds={prevThresholds}
               currentDate={testDate}
               prevDate={prevDate}
+              primary={brandPrimary}
             />
 
             {/* Delta cards (current vs primary comparison) */}
@@ -1139,7 +1161,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             {hasPrev2 && (
               <View style={s.trendTable}>
                 {/* Header */}
-                <View style={s.trendHead}>
+                <View style={[s.trendHead, { backgroundColor: brandPrimaryDark }]}>
                   <Text style={s.trendHeadFirst}>Test date</Text>
                   <Text style={s.trendHeadCell}>LT1</Text>
                   <Text style={s.trendHeadCell}>LT2</Text>
@@ -1162,12 +1184,12 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 {/* Current test (highlighted) */}
                 <View style={[s.trendRow, { backgroundColor: '#EEF0FA' }]}>
                   <View style={{ flex: 1.6, flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={[s.trendCellDate, { color: C.primary, fontFamily: 'Helvetica-Bold' }]}>{testDate}</Text>
-                    <Text style={s.trendBadge}>NOW</Text>
+                    <Text style={[s.trendCellDate, { color: brandPrimary, fontFamily: 'Helvetica-Bold' }]}>{testDate}</Text>
+                    <Text style={[s.trendBadge, { backgroundColor: brandPrimary }]}>NOW</Text>
                   </View>
-                  <Text style={[s.trendCellVal, { color: C.primary }]}>{fmtIntensity(lt1, sport, inputMode)}</Text>
-                  <Text style={[s.trendCellVal, { color: C.primary }]}>{fmtIntensity(lt2, sport, inputMode)}</Text>
-                  <Text style={[s.trendCellVal, { color: C.primary }]}>{lt2Hr ? `${Math.round(lt2Hr)} bpm` : '—'}</Text>
+                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtIntensity(lt1, sport, inputMode)}</Text>
+                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtIntensity(lt2, sport, inputMode)}</Text>
+                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{lt2Hr ? `${Math.round(lt2Hr)} bpm` : '—'}</Text>
                 </View>
               </View>
             )}

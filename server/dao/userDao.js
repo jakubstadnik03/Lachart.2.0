@@ -128,7 +128,8 @@ class UserDao {
             key === 'stravaReminderEmail' ||
             key === 'onboarding' ||
             key === 'registrationLocation' ||
-            key === 'lastLoginLocation'
+            key === 'lastLoginLocation' ||
+            key === 'coachBranding'
           ) {
             user.markModified(key);
             console.log(`Marked ${key} as modified`);

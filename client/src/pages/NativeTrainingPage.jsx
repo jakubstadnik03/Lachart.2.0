@@ -1822,14 +1822,11 @@ export default function NativeTrainingPage({
         </div>
 
         {/* Record Lactate modal */}
-        {showRecordLactate && ReactDOM.createPortal(
-          <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
-            <RecordLactateModal
-              onClose={() => setShowRecordLactate(false)}
-              onSave={async (data) => { await handleRecordLactate(data); setShowRecordLactate(false); }}
-            />
-          </div>,
-          document.getElementById('app-modal-root') || document.body
+        {showRecordLactate && (
+          <RecordLactateModal
+            onClose={() => setShowRecordLactate(false)}
+            onSave={async (data) => { await handleRecordLactate(data); setShowRecordLactate(false); }}
+          />
         )}
 
         {/* Lactate-assignment sheet — pick training, then lap, then assign. */}

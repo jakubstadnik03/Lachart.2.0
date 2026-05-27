@@ -1654,6 +1654,13 @@ export default function DashboardPage() {
               localStorage.removeItem(cacheKey);
               localStorage.removeItem(cacheTimestampKey);
             }}
+            onAddCompletedWorkout={() => {
+              // Bust the cache so the calendar reloads on next render
+              const cacheKey = `calendarData_${dashboardDataAthleteId}`;
+              const cacheTimestampKey = `calendarData_timestamp_${dashboardDataAthleteId}`;
+              localStorage.removeItem(cacheKey);
+              localStorage.removeItem(cacheTimestampKey);
+            }}
             plannedWorkouts={plannedWorkouts}
             onPlanWorkout={(date) => {
               if (!isPremium) { gate('Workout Planning', 'pro'); return; }

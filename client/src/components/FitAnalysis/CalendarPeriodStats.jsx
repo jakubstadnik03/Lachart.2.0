@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
-import { getFormFitnessData } from '../../services/api';
+import { getFormFitnessData, getMonthlyPowerAnalysis } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
@@ -367,6 +367,64 @@ export default function CalendarPeriodStats({
     return () => { cancelled = true; };
   }, [effectiveAthleteId]);
   const periodView = period?.view === 'week' ? 'week' : 'month';
+
+  // ── Server zone data ─────────────────────────────────────────────────────────
+  // The client-side fallback assigns the WHOLE activity to a single zone based
+  // on its average power/pace which is wrong (shows 100% Z1 for easy rides).
+  // Instead, fetch the server's second-by-second zone distribution — the same
+  // source the Home "TIME IN ZONES" card uses.
+  const [monthlyZones, setMonthlyZones] = useState(null);
+  useEffect(() => {
+    if (!effectiveAthleteId || !period?.periodStart) { setMonthlyZones(null); return; }
+    let cancelled = false;
+    const d = new Date(period.periodStart);
+    if (isNaN(d.getTime())) { setMonthlyZones(null); return; }
+    const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    getMonthlyPowerAnalysis(effectiveAthleteId, mk)
+      .then(res => {
+        if (cancelled) return;
+        const m = res?.data ?? res;
+        if (!m) { setMonthlyZones(null); return; }
+        // Convert API shape { 1: { time: N }, 2: ... } → { zone1: N, zone2: ... }
+        const toZoneSec = (src) => {
+          if (!src) return null;
+          const out = {};
+          for (let z = 1; z <= 5; z++) {
+            const v = src[z] ?? src[String(z)];
+            out[`zone${z}`] = Number(v?.time) || 0;
+          }
+          return Object.values(out).some(v => v > 0) ? out : null;
+        };
+        setMonthlyZones({
+          power: {
+            cycling: toZoneSec(m.zones),
+            running: toZoneSec(m.runningZoneTimes),
+            swimming: toZoneSec(m.swimmingZoneTimes),
+          },
+          hr: {
+            cycling: toZoneSec(m.bikeHrZones ?? m.hrZones),
+            running: toZoneSec(m.runningHrZones),
+            swimming: toZoneSec(m.swimmingHrZones),
+          },
+        });
+      })
+      .catch(() => setMonthlyZones(null));
+    return () => { cancelled = true; };
+  }, [effectiveAthleteId, period?.periodStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Combine monthly server zones across sports for the "All" tab
+  const serverZoneSecAll = useMemo(() => {
+    if (!monthlyZones) return { power: null, hr: null };
+    const combine = (byPs) => {
+      const out = Object.fromEntries(ZONE_KEYS.map(k => [k, 0]));
+      PROFILE_SPORTS.forEach(ps => {
+        const src = byPs[ps];
+        if (src) ZONE_KEYS.forEach(k => { out[k] += src[k] || 0; });
+      });
+      return Object.values(out).some(v => v > 0) ? out : null;
+    };
+    return { power: combine(monthlyZones.power), hr: combine(monthlyZones.hr) };
+  }, [monthlyZones]);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showZoneDetails, setShowZoneDetails] = useState(false);
@@ -1019,8 +1077,13 @@ export default function CalendarPeriodStats({
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {
     const isAll = zoneSport === 'all';
-    const powerSec = isAll ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {});
-    const hrSec = isAll ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {});
+    // Prefer server-computed second-by-second data; fall back to client estimate
+    const powerSec = isAll
+      ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
+      : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {});
+    const hrSec = isAll
+      ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
+      : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {});
 
     const powerTotal = ZONE_KEYS.reduce((s, k) => s + (powerSec[k] || 0), 0);
     const hrTotal = ZONE_KEYS.reduce((s, k) => s + (hrSec[k] || 0), 0);
@@ -1084,7 +1147,7 @@ export default function CalendarPeriodStats({
       power: makeOption(powerSec, powerTotal, POWER_ZONE_FILL),
       hr: makeOption(hrSec, hrTotal, HR_ZONE_FILL),
     };
-  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
+  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity effort scatter / timeline option
   const effortTimelineOption = useMemo(() => {
@@ -1166,8 +1229,13 @@ export default function CalendarPeriodStats({
   // --- Zone polarization computation ---
   const zonePolarization = useMemo(() => {
     const isAll = zoneSport === 'all';
-    const powerSec = isAll ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {});
-    const hrSec = isAll ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {});
+    // Prefer server data here too
+    const powerSec = isAll
+      ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
+      : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {});
+    const hrSec = isAll
+      ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
+      : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {});
     // Use power if available, else HR
     const secMap =
       ZONE_KEYS.some((zk) => (powerSec[zk] || 0) > 0) ? powerSec : hrSec;
@@ -1180,7 +1248,7 @@ export default function CalendarPeriodStats({
     if (easyPct > 75 && hardPct >= 5) badge = { label: 'Polarized', color: 'bg-green-100 text-green-800' };
     else if (midPct > 40) badge = { label: 'High threshold load', color: 'bg-yellow-100 text-yellow-800' };
     return { easyPct, midPct, hardPct, badge };
-  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll]);
+  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Independent compare-tab navigation ──────────────────────────────────
@@ -1715,11 +1783,12 @@ export default function CalendarPeriodStats({
         {/* ===================== ZONES TAB ===================== */}
         {activeTab === 'zones' && (
           <div className="space-y-4">
-            {/* Disclaimer */}
+            {/* Source note */}
             <p className="text-[10px] text-gray-400 leading-relaxed border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
-              Zone times are <span className="font-semibold text-gray-500">estimates</span>: each
-              activity is counted using its average power, pace, or HR against your profile zones
-              (not second-by-second files).
+              {monthlyZones
+                ? <>Zone times are computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>
+                : <>Zone times are <span className="font-semibold text-gray-500">estimates</span>: each activity is counted using its average power, pace, or HR against your profile zones (not second-by-second files).</>
+              }
             </p>
 
             {/* Sport toggle — always show All + all 3 sports */}
@@ -1851,7 +1920,9 @@ export default function CalendarPeriodStats({
                       Power / Pace zones
                     </div>
                     <ZoneRows
-                      secMap={zoneSport === 'all' ? (aggregates.powerZoneSecAll || {}) : (aggregates.powerZoneSec?.[zoneSport] || {})}
+                      secMap={zoneSport === 'all'
+                        ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
+                        : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {})}
                       colors={POWER_ZONE_FILL}
                       zoneNames={POWER_ZONE_NAMES}
                     />
@@ -1859,7 +1930,9 @@ export default function CalendarPeriodStats({
                   <div className="bg-gray-50 rounded-xl p-4">
                     <div className="text-xs font-semibold text-gray-600 mb-3">Heart Rate zones</div>
                     <ZoneRows
-                      secMap={zoneSport === 'all' ? (aggregates.hrZoneSecAll || {}) : (aggregates.hrZoneSec?.[zoneSport] || {})}
+                      secMap={zoneSport === 'all'
+                        ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
+                        : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {})}
                       colors={HR_ZONE_FILL}
                       zoneNames={HR_ZONE_NAMES}
                     />

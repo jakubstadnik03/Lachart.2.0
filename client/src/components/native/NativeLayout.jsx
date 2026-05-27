@@ -14,7 +14,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, autoSyncStravaActivities } from '../../services/api';
@@ -102,24 +102,90 @@ const fmtNotifTime = (d) => {
 function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick, onDelete, onMarkAllRead }) {
   const unread = notifs.filter(n => !n.read).length;
 
+  // Swipe-to-close
+  const y = useMotionValue(0);
+  const opacity = useTransform(y, [0, 300], [1, 0]);
+  const startYRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const listScrollRef = useRef(null);
+
+  const onTouchStart = useCallback((e) => {
+    startYRef.current = e.touches[0].clientY;
+    isDraggingRef.current = true;
+  }, []);
+
+  const onTouchMove = useCallback((e) => {
+    if (!isDraggingRef.current || startYRef.current == null) return;
+    // Only allow swipe-down when list is scrolled to top
+    const listEl = listScrollRef.current;
+    if (listEl && listEl.scrollTop > 0) return;
+    const dy = e.touches[0].clientY - startYRef.current;
+    if (dy > 0) {
+      y.set(dy);
+      e.preventDefault();
+    }
+  }, [y]);
+
+  const onTouchEnd = useCallback(() => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    if (y.get() > 100) {
+      animate(y, 500, { duration: 0.2, onComplete: onClose });
+    } else {
+      animate(y, 0, { type: 'spring', stiffness: 300, damping: 30 });
+    }
+    startYRef.current = null;
+  }, [y, onClose]);
+
+  // Reset y when sheet opens
+  useEffect(() => { if (open) y.set(0); }, [open, y]);
+
+  // Body scroll lock
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
-        <>
+        <div
+          className="fixed inset-0 z-50"
+          style={{ pointerEvents: 'auto' }}
+          onTouchStart={e => e.stopPropagation()}
+          onTouchMove={e => { e.stopPropagation(); }}
+          onTouchEnd={e => e.stopPropagation()}
+        >
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40"
+            className="absolute inset-0 bg-black/40"
+            style={{ pointerEvents: 'auto' }}
             onClick={onClose}
           />
+
+          {/* Sheet */}
           <motion.div
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl"
-            style={{ maxHeight: '75vh', display: 'flex', flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom)' }}
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl"
+            style={{
+              y, opacity,
+              maxHeight: '80vh',
+              display: 'flex', flexDirection: 'column',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              touchAction: 'none',
+              pointerEvents: 'auto',
+            }}
+            onTouchStart={e => { e.stopPropagation(); onTouchStart(e); }}
+            onTouchMove={e => { e.stopPropagation(); onTouchMove(e); }}
+            onTouchEnd={e => { e.stopPropagation(); onTouchEnd(); }}
           >
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-              <div className="w-10 h-1 rounded-full bg-gray-200" />
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0 cursor-grab active:cursor-grabbing">
+              <div className="w-10 h-[5px] rounded-full bg-gray-300" />
             </div>
 
             {/* Header */}
@@ -134,6 +200,7 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
               </div>
               {unread > 0 && (
                 <button
+                  onPointerDown={e => e.stopPropagation()}
                   onClick={onMarkAllRead}
                   style={{ touchAction: 'manipulation' }}
                   className="text-xs text-primary font-semibold active:opacity-60"
@@ -143,14 +210,18 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
               )}
             </div>
 
-            {/* List */}
-            <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            {/* List — allow internal scroll; stop touch propagation so swipe only fires at top */}
+            <div
+              ref={listScrollRef}
+              style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+              onTouchStart={e => e.stopPropagation()}
+              onTouchMove={e => e.stopPropagation()}
+            >
               {loading && notifs.length === 0 && (
                 <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
               )}
               {!loading && notifs.length === 0 && (
                 <div className="py-12 text-center flex flex-col items-center">
-                  {/* Bell SVG — replaces 🔔 emoji */}
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mb-3">
                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -165,23 +236,16 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   className={`w-full flex items-start gap-3 px-5 py-3.5 border-b border-gray-50 active:bg-gray-50 text-left ${!n.read ? 'bg-primary/[0.03]' : ''}`}
                 >
-                  {/* Icon circle — SVG per type/sport, replaces emoji */}
                   <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center ${!n.read ? 'bg-primary/10' : 'bg-gray-100'}`}>
                     <NotifIcon type={n.type} sport={n.sport} size={18} />
                   </div>
-
-                  {/* Text */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 leading-snug truncate">{n.title}</p>
                     <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{n.body}</p>
                     {n.fromName && <p className="text-[11px] text-gray-400 mt-0.5">from {n.fromName}</p>}
                     <p className="text-[11px] text-gray-400 mt-1">{fmtNotifTime(n.createdAt)}</p>
                   </div>
-
-                  {/* Unread dot */}
                   {!n.read && <div className="w-2.5 h-2.5 bg-primary rounded-full flex-shrink-0 mt-1.5" />}
-
-                  {/* Delete */}
                   <button
                     onClick={(e) => { e.stopPropagation(); onDelete(n._id); }}
                     style={{ touchAction: 'manipulation' }}
@@ -195,7 +259,7 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
               ))}
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

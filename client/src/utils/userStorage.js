@@ -32,7 +32,15 @@ export const extractUserDataForStorage = (user) => {
       autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
       lastSyncDate: user.strava.lastSyncDate
       // Don't include tokens
-    } : null
+    } : null,
+    coachBranding: user.coachBranding
+      ? {
+          logoUrl:      user.coachBranding.logoUrl      ?? null,
+          title:        user.coachBranding.title        ?? null,
+          trademark:    user.coachBranding.trademark    ?? null,
+          primaryColor: user.coachBranding.primaryColor ?? null,
+        }
+      : null,
     // Explicitly exclude: athletes array, large nested objects, etc.
   };
 };
