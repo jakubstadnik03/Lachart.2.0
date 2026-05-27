@@ -681,10 +681,13 @@ const SettingsPage = () => {
     if (activeTab !== 'subscription') return;
     let cancelled = false;
 
-    // When the user just returned from Stripe Checkout (?success=1), the
-    // webhook may not have updated MongoDB yet (or may be misconfigured).
-    // Trigger an explicit sync BEFORE loading the subscription so the UI
-    // shows the freshly purchased plan instead of "Free".
+    // Always pull the latest state from Stripe when the Subscription tab is
+    // opened. This catches the case where:
+    //   1. Webhook signature failed / endpoint blocked → DB lags behind Stripe.
+    //   2. The user closed the browser tab before /settings?success=1 fired.
+    //   3. The user came back later expecting their plan to be unlocked.
+    // The sync endpoint is idempotent and cheap (one Stripe API call), so
+    // running it on every tab open is the simplest "self-healing" UX.
     const params = new URLSearchParams(location.search || '');
     const justSucceeded = params.get('success') === '1';
 
@@ -692,22 +695,22 @@ const SettingsPage = () => {
       setSubLoading(true);
       setSubError(null);
       try {
-        if (justSucceeded) {
-          try {
-            await syncSubscriptionFromStripe();
-          } catch (syncErr) {
-            // Sync failure is non-fatal — getCurrentSubscription still gives
-            // us a usable state. Log and continue.
-            console.warn('[Subscription] Stripe sync after checkout failed:', syncErr);
-          }
-          // Also refresh the user profile so isPremium flips on across the app.
-          try {
-            const fresh = await fetchUserProfile();
-            if (fresh) {
-              window.dispatchEvent(new CustomEvent('userUpdated', { detail: fresh }));
-            }
-          } catch { /* ignore */ }
+        try {
+          await syncSubscriptionFromStripe();
+        } catch (syncErr) {
+          // Sync failure is non-fatal — getCurrentSubscription still gives
+          // us a usable state. Log and continue.
+          console.warn('[Subscription] Stripe sync failed:', syncErr);
         }
+        // Refresh the user profile so isPremium flips on across the app
+        // (cached React state would otherwise keep the old value).
+        try {
+          const fresh = await fetchUserProfile();
+          if (fresh) {
+            window.dispatchEvent(new CustomEvent('userUpdated', { detail: fresh }));
+          }
+        } catch { /* ignore */ }
+
         const data = await getCurrentSubscription();
         if (!cancelled) setSubData(data);
       } catch (err) {
@@ -717,6 +720,8 @@ const SettingsPage = () => {
       }
     };
     load();
+    // justSucceeded is intentionally read but unused — we sync regardless.
+    void justSucceeded;
     return () => { cancelled = true; };
   }, [activeTab, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
 

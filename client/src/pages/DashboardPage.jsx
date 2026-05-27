@@ -124,6 +124,40 @@ export default function DashboardPage() {
     }
     setShowWelcomePaywall(false);
   }, [user?._id]);
+
+  /**
+   * One-shot self-healing sync on dashboard mount.
+   *
+   * Webhooks are the primary delivery channel for Stripe → MongoDB, but if a
+   * webhook is misconfigured / delayed / signature-mismatched the user's plan
+   * can stay "free" in our DB even after they paid. The user lands here right
+   * after checkout (and on every subsequent login), so this is the best place
+   * to reconcile state without making them click anything.
+   *
+   * Safe to run on every mount: the sync endpoint is idempotent and only
+   * sends an activation email on a real free→paid transition.
+   */
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return;
+    if (isCapacitorNative()) return; // iOS native — no Stripe linkage
+    let cancelled = false;
+    (async () => {
+      try {
+        const { syncSubscriptionFromStripe, fetchUserProfile } = await import('../services/api');
+        const result = await syncSubscriptionFromStripe();
+        if (cancelled || !result?.synced) return;
+        // Only refresh the user object if sync actually flipped something.
+        const fresh = await fetchUserProfile();
+        if (!cancelled && fresh) {
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: fresh }));
+        }
+      } catch (err) {
+        // Non-fatal — sync is a best-effort reconciliation.
+        console.warn('[Dashboard] subscription self-sync failed:', err?.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, user?._id]);
   // ── Single source of truth for athlete selection ─────────────────────────────
   const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
   // For non-coach roles use own ID; for coach/tester roles use global selection.
