@@ -4392,6 +4392,98 @@ function _acFindDominantZone(act, normSport, pZones, hZones) {
   return zone;
 }
 
+/**
+ * Per-interval categorization.
+ * Looks at each significant work lap individually and decides the category
+ * based on how many fell into which zone — rather than picking the average
+ * (which "endurance-rounds out" a VO2max session as Tempo, etc.).
+ *
+ * Rules (in priority order; first match wins, no auto-set otherwise):
+ *   1. ANY work lap reached zone5  → 'vo2max'
+ *      A single all-out interval is unambiguous. We don't require multiple
+ *      because a 3×3' VO2max set always has the rest of the session at
+ *      easier zones — averaging hides the intent.
+ *   2. ≥2 work laps in zone4       → 'lt2'  (threshold)
+ *   3. ≥2 work laps in zone3       → 'lt1'  (sweet-spot / tempo-lite)
+ *   4. Otherwise                   → null   (let the user pick — endurance
+ *      / recovery / zone2 are too easy to mis-detect from interval data
+ *      alone; leaving it blank is friendlier than guessing wrong).
+ *
+ * Returns: { category: string|null, evidence: { vo2max, lt2, lt1, considered } }
+ */
+function _acCategorizeByIntervals(act, normSport, pZones, hZones) {
+  if (!Array.isArray(act.laps) || act.laps.length === 0) {
+    return { category: null, evidence: { vo2max: 0, lt2: 0, lt1: 0, considered: 0 } };
+  }
+
+  // Significant = at least 60s long — short laps are typically transitions
+  // (start/stop of a hill, water break, lap-button taps).
+  const significantLaps = act.laps.filter(
+    (l) => (l.elapsed_time || l.moving_time || 0) >= 60,
+  );
+  if (significantLaps.length === 0) {
+    return { category: null, evidence: { vo2max: 0, lt2: 0, lt1: 0, considered: 0 } };
+  }
+
+  // Identify "work" laps — within 70-130 % of the median lap duration of
+  // significant laps. This filters out the long warm-up / cool-down so an
+  // 8×3' threshold session isn't pulled down by a 20' easy spin at the end.
+  // If lap structure is uniform (no warm-up/cool-down — e.g. group ride),
+  // ALL significant laps count as work.
+  const durations = significantLaps
+    .map((l) => l.elapsed_time || l.moving_time || 0)
+    .sort((a, b) => a - b);
+  const medDur = durations[Math.floor(durations.length / 2)];
+  let workLaps = significantLaps.filter((l) => {
+    const d = l.elapsed_time || l.moving_time || 0;
+    return d >= medDur * 0.7 && d <= medDur * 1.3;
+  });
+  // Safety: if filtering left us with <2 laps but the activity *has* lots
+  // of structure, fall back to all significant laps — better to classify
+  // off a noisier sample than to bail entirely.
+  if (workLaps.length < 2 && significantLaps.length >= 3) {
+    workLaps = significantLaps;
+  }
+  if (workLaps.length === 0) {
+    return { category: null, evidence: { vo2max: 0, lt2: 0, lt1: 0, considered: 0 } };
+  }
+
+  // For each work lap, decide its zone by power (preferred for cycling) or HR.
+  const zoneCounts = { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
+  let considered = 0;
+  for (const lap of workLaps) {
+    const power = lap.average_watts;
+    const hr = lap.average_heartrate;
+    let z = null;
+    if (normSport === 'cycling' && power && power > 0) {
+      z = _acFindZone(power, pZones);
+    }
+    if (!z && hr && hr > 0) {
+      z = _acFindZone(hr, hZones);
+    }
+    if (!z && power && power > 0) {
+      // Last-resort for run/swim where pZones is sometimes set.
+      z = _acFindZone(power, pZones);
+    }
+    if (z && zoneCounts[z] !== undefined) {
+      zoneCounts[z] += 1;
+      considered += 1;
+    }
+  }
+
+  const evidence = {
+    vo2max: zoneCounts.zone5,
+    lt2: zoneCounts.zone4,
+    lt1: zoneCounts.zone3,
+    considered,
+  };
+
+  if (zoneCounts.zone5 >= 1) return { category: 'vo2max', evidence };
+  if (zoneCounts.zone4 >= 2) return { category: 'lt2',    evidence };
+  if (zoneCounts.zone3 >= 2) return { category: 'lt1',    evidence };
+  return { category: null, evidence };
+}
+
 /** Build a human-readable title for the activity */
 function _acBuildTitle(category, sport, movingTimeSec, distanceM, laps) {
   const sLabel = _AC_SPORT_LABEL[sport] || 'Workout';
@@ -4476,22 +4568,38 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         : 0;
       const isHillsWorkout = elevPerKm > 20;
 
-      // Use interval-aware zone detection
-      const dominantZone = _acFindDominantZone(act, normSport, pZones, hZones);
+      // Step 1 — Per-interval categorization: VO2max if ANY lap reached
+      // zone5, else LT2/LT1 if ≥2 laps in zone4/zone3. Returns null when
+      // the evidence is inconclusive (rather than guessing "endurance"
+      // and being wrong half the time).
+      const { category: intervalCategory, evidence } = _acCategorizeByIntervals(
+        act, normSport, pZones, hZones,
+      );
 
-      let category = null;
-      if (isHillsWorkout && !dominantZone) {
-        // Only hills when no zone data available
-        category = 'hills';
-      } else if (dominantZone) {
-        category = _AC_ZONE_CAT[dominantZone] || null;
-        // If significant elevation and classified as endurance/zone2, override to hills
-        if (isHillsWorkout && elevPerKm > 35 && (category === 'endurance' || category === 'zone2')) {
+      // Step 2 — Fall back to the dominant-zone heuristic only for clear
+      // signals: hills (terrain-based) or for the legacy single-zone
+      // workouts (zone1=endurance, zone2). We deliberately DON'T let the
+      // fallback re-label something as lt1/lt2/vo2max — those should
+      // come from the per-interval check or not at all.
+      const dominantZone = intervalCategory
+        ? null
+        : _acFindDominantZone(act, normSport, pZones, hZones);
+
+      let category = intervalCategory;
+      if (!category) {
+        if (isHillsWorkout && !dominantZone) {
+          category = 'hills';
+        } else if (dominantZone === 'zone1' || dominantZone === 'zone2') {
+          // Only confidently low-intensity zones — don't auto-set lt1+
+          // from the average.
+          category = _AC_ZONE_CAT[dominantZone] || null;
+          if (isHillsWorkout && elevPerKm > 35) category = 'hills';
+        } else if (isHillsWorkout && elevPerKm > 35) {
           category = 'hills';
         }
       }
 
-      if (!category) continue; // can't classify without zone data
+      if (!category) continue; // honest "don't know" — skip the proposal
 
       const title = _acBuildTitle(category, normSport, act.movingTime || act.elapsedTime, act.distance, act.laps);
 
@@ -4504,7 +4612,10 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
         startDate: act.startDate,
         movingTime: act.movingTime || act.elapsedTime || 0,
         currentCategory: act.category || null,
-        dominantZone: dominantZone || 'hills',
+        dominantZone: dominantZone || (intervalCategory ? `intervals:${intervalCategory}` : 'hills'),
+        // Surfaces the per-interval evidence so the UI can show "based on
+        // 3 work laps in zone5" instead of an unexplained category.
+        intervalEvidence: evidence,
         proposedCategory: category,
         proposedTitle: title,
       });
