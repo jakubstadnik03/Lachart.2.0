@@ -2614,7 +2614,6 @@ const SettingsPage = () => {
         const cancelAtPeriodEnd = subData?.subscription?.cancelAtPeriodEnd;
         const periodEnd = subData?.subscription?.currentPeriodEnd;
         const systemEnabled = subData?.subscription?.systemEnabled;
-        const hasPremium = subData?.isPremium ?? (user?.isPremium === true);
         const premiumSource = subData?.premiumSource || user?.premiumSource;
         const isManualPremium = premiumSource === 'manual';
         // User already used a trial if they have a trialStart date in their subscription
