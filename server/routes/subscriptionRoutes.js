@@ -21,6 +21,33 @@ const subscriptionController = require('../controllers/subscriptionController');
 router.get('/plans', subscriptionController.getPlans);
 
 /**
+ * GET /api/subscription/debug
+ *
+ * Reveals exactly which env flags the running Node process sees, so we can
+ * diagnose "I set SUBSCRIPTION_ENABLED=false on Render but premium is still
+ * locked" without guessing. Open endpoint — no auth required, but only
+ * returns env *presence/value* for the four flags that gate premium access.
+ * No secrets are exposed.
+ */
+router.get('/debug', (req, res) => {
+  res.json({
+    commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null,
+    env: {
+      SUBSCRIPTION_ENABLED: process.env.SUBSCRIPTION_ENABLED ?? null,
+      BETA_ALL_PREMIUM: process.env.BETA_ALL_PREMIUM ?? null,
+      STRIPE_TRIAL_DAYS: process.env.STRIPE_TRIAL_DAYS ?? null,
+      STRIPE_AUTOMATIC_TAX: process.env.STRIPE_AUTOMATIC_TAX ?? null,
+    },
+    derived: {
+      subscriptionsLive: process.env.SUBSCRIPTION_ENABLED === 'true',
+      paywallBypassedSystemDisabled: process.env.SUBSCRIPTION_ENABLED !== 'true',
+      paywallBypassedBeta: process.env.BETA_ALL_PREMIUM === 'true',
+    },
+    nodeEnv: process.env.NODE_ENV || null,
+  });
+});
+
+/**
  * GET /api/subscription/current
  * Get current user's subscription
  */
