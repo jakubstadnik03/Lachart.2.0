@@ -344,7 +344,19 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
             </div>
           </div>
 
-          <button type="button" onClick={() => setSkipCategorized(v => !v)} className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+          <button
+            type="button"
+            onClick={() => {
+              setSkipCategorized(v => !v);
+              // Same reset rationale as the title toggle below — flipping
+              // the filter changes which activities the server will return,
+              // so the cached proposal list becomes meaningless.
+              setProposals(null);
+              setSelected(new Set());
+              setResult(null);
+            }}
+            className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none"
+          >
             <Checkbox checked={skipCategorized} />
             Skip already categorized
           </button>
@@ -357,10 +369,18 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
           {/* Zones-only mode — when on, the title-keyword classifier is
               skipped server-side and the proposal is based purely on
               interval zones and the dominant-zone fallback. Useful when
-              activity names are auto-generated or otherwise noisy. */}
+              activity names are auto-generated or otherwise noisy.
+              Toggling clears any current proposals so the user has to
+              re-Analyze — otherwise they'd see stale results from before
+              the toggle flipped and think the option didn't work. */}
           <button
             type="button"
-            onClick={() => setSkipTitleDetection(v => !v)}
+            onClick={() => {
+              setSkipTitleDetection(v => !v);
+              setProposals(null);
+              setSelected(new Set());
+              setResult(null);
+            }}
             className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none"
             title="Ignore activity names — classify only from zone data in the laps"
           >
