@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { createCheckoutSession } from '../services/api';
+import { useAuth } from '../context/AuthProvider';
 
 const PLAN_DETAILS = {
   pro: {
@@ -44,7 +46,10 @@ const PLAN_DETAILS = {
  */
 export default function UpgradeModal({ isOpen, onClose, feature = 'This feature', requiredPlan = 'pro' }) {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const plan = PLAN_DETAILS[requiredPlan] || PLAN_DETAILS.pro;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   if (!isOpen) return null;
   // App Store guideline 3.1.1: native iOS builds may not reference external
@@ -53,9 +58,46 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
   // so we simply suppress the upgrade UI on iOS and never gate anything.
   if (isCapacitorNative()) return null;
 
-  const handleUpgrade = () => {
-    onClose();
-    navigate('/settings?tab=subscription');
+  /**
+   * Direct Stripe Checkout handoff — skips the Settings page entirely so the
+   * user goes from "I want this feature" straight to the payment screen in
+   * one click. Matches how every onboarding-style paywall works today.
+   *
+   * - Logged-out users → /signup?plan=... so the signup flow can resume the
+   *   checkout once the account is created.
+   * - Logged-in users  → backend creates a Stripe Checkout Session and we
+   *   redirect the browser to Stripe's hosted page.
+   * - Errors are shown inline; the user can still click "Maybe later" or use
+   *   the fallback link to the Settings page.
+   */
+  const handleUpgrade = async () => {
+    if (!isAuthenticated) {
+      onClose();
+      navigate(`/signup?plan=${encodeURIComponent(requiredPlan)}`);
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      const { url } = await createCheckoutSession(requiredPlan);
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      // Fallback if Stripe didn't return a URL — shouldn't happen, but
+      // we still navigate so the user has somewhere to recover.
+      onClose();
+      navigate('/settings?tab=subscription');
+    } catch (err) {
+      console.error('UpgradeModal checkout error:', err);
+      const debug = err?.response?.data?.debug;
+      const msg = debug?.hint || debug?.message || err?.response?.data?.message ||
+                  err?.response?.data?.error || err?.message || 'Checkout failed';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -119,12 +161,26 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
               This is a {plan.name} feature. Manage subscriptions at lachart.net in a web browser.
             </div>
           ) : (
-            <button
-              onClick={handleUpgrade}
-              className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
-            >
-              🎁 Try {plan.name} free for 2 months
-            </button>
+            <>
+              <button
+                onClick={handleUpgrade}
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
+              >
+                {loading ? 'Redirecting to checkout…' : `🎁 Try ${plan.name} free for 2 months`}
+              </button>
+              {error && (
+                <p className="mt-2 text-xs text-red-600 text-center">
+                  {error}{' '}
+                  <button
+                    onClick={() => { onClose(); navigate('/settings?tab=subscription'); }}
+                    className="underline hover:text-red-700"
+                  >
+                    Go to subscription settings
+                  </button>
+                </p>
+              )}
+            </>
           )}
 
           <button
