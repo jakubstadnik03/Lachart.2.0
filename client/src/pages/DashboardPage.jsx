@@ -128,29 +128,12 @@ export default function DashboardPage() {
   }, [user?._id]);
 
   /**
-   * 'What's new' announcement — shown to every logged-in user on the web,
-   * once per RELEASE_TAG. Closable via Got it / Esc / ✕.
-   *
-   * Previously gated to accounts created before the release date so brand-
-   * new users wouldn't be shown "new" features they signed up into. Now
-   * shown to everyone — it doubles as a feature tour for sign-ups, and the
-   * release-tag flag still ensures each user sees each round exactly once.
-   *
-   * Mutually exclusive with WelcomePaywallModal: brand-new accounts see the
-   * paywall first, the What's New slides next session. iOS native build
-   * skipped because some deep-links point to web-only flows.
+   * 'What's new' auto-popup — temporarily paused. The trigger logic and
+   * the modal component (WhatsNewModal.jsx) stay in the repo for the
+   * next round of feature announcements; re-enable by restoring the
+   * effect below + putting <WhatsNewModal …/> back in the JSX tree.
    */
   const [showWhatsNew, setShowWhatsNew] = useState(false);
-  useEffect(() => {
-    if (!isAuthenticated || !user?._id) return;
-    if (isCapacitorNative()) return;
-    if (showWelcomePaywall) return;
-
-    const flagKey = whatsNewSeenKey(user._id);
-    if (localStorage.getItem(flagKey)) return;
-    const t = setTimeout(() => setShowWhatsNew(true), 1200);
-    return () => clearTimeout(t);
-  }, [isAuthenticated, user?._id, showWelcomePaywall]);
 
   const dismissWhatsNew = useCallback(() => {
     if (user?._id) {
@@ -1623,11 +1606,9 @@ export default function DashboardPage() {
       onClose={dismissWelcomePaywall}
       userName={user?.name}
     />
-    <WhatsNewModal
-      open={showWhatsNew}
-      onClose={dismissWhatsNew}
-      userName={user?.name}
-    />
+    {/* WhatsNewModal temporarily disabled — see comment in the trigger
+        effect above. Keep the import + dismiss handler so re-enabling is
+        a single-line change. */}
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
