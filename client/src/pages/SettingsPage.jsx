@@ -2604,28 +2604,31 @@ const SettingsPage = () => {
             id: 'free',
             name: 'Free',
             price: 0,
-            priceLabel: '$0',
+            priceLabel: '€0',
             period: '/ month',
             highlight: false,
             features: [
-              'Up to 5 lactate tests/month',
-              'Basic analytics',
-              'Manual FIT file upload',
+              '1 lactate test',
               'Strava & Garmin sync',
-              'Calendar view',
+              'Add lactate values to intervals',
+              'Connect with your coach',
+              'Basic analytics',
             ],
           },
           {
             id: 'pro',
             name: 'Pro',
             price: 9.99,
-            priceLabel: '$9.99',
+            priceLabel: '€9.99',
             period: '/ month',
             highlight: true,
             badge: 'Most popular',
             trial: true,
             features: [
               'Unlimited lactate tests',
+              'Plan workouts in the calendar',
+              'Start trainings from the app',
+              'Connect to your smart trainer',
               'Advanced analytics & charts',
               'Population comparison',
               'PDF export',
@@ -2637,15 +2640,16 @@ const SettingsPage = () => {
             id: 'coach',
             name: 'Coach',
             price: 19.99,
-            priceLabel: '$19.99',
+            priceLabel: '€19.99',
             period: '/ month',
             highlight: false,
             trial: true,
             features: [
-              'Up to 10 athletes',
-              'Coach dashboard',
-              'Athlete management',
-              'Bulk data export',
+              'Unlimited athletes',
+              'Plan workouts for your athletes',
+              'Unlimited PDF report generation',
+              'PDF branding — your logo, title & address',
+              'Coach dashboard & overview',
               'Everything in Pro',
             ],
           },
@@ -2761,8 +2765,8 @@ const SettingsPage = () => {
               <div className="bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-4 flex items-center gap-3">
                 <span className="text-2xl">🎁</span>
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">1 month free — no charge today</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Start any paid plan with a 30-day free trial. Cancel anytime before it ends and you won't be billed.</p>
+                  <p className="font-semibold text-gray-900 text-sm">2 months free — no charge today</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Start any paid plan with a 60-day free trial. Cancel anytime before it ends and you won't be billed.</p>
                 </div>
               </div>
             )}
@@ -2805,7 +2809,7 @@ const SettingsPage = () => {
                           {showTrialOnCard ? (
                             <>
                               <span className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-primary`}>Free</span>
-                              <span className="text-sm text-gray-400 mb-1">first month</span>
+                              <span className="text-sm text-gray-400 mb-1">for 2 months</span>
                             </>
                           ) : (
                             <>
@@ -2854,7 +2858,7 @@ const SettingsPage = () => {
                             {subActionLoading
                               ? 'Loading…'
                               : showTrialOnCard
-                              ? `Try ${plan.name} free for 1 month`
+                              ? `Try ${plan.name} free for 2 months`
                               : isUpgrade
                               ? `Upgrade to ${plan.name}`
                               : `Switch to ${plan.name}`}

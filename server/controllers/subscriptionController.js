@@ -254,8 +254,42 @@ exports.createCheckoutSession = async (req, res) => {
 
     res.json({ sessionId: session.id, url: session.url });
   } catch (error) {
-    console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: 'Failed to create checkout session' });
+    // Verbose logging so Render logs always show the underlying Stripe / DB error.
+    console.error('[Checkout] Failed to create session:', {
+      message: error?.message,
+      type: error?.type,
+      code: error?.code,
+      param: error?.param,
+      statusCode: error?.statusCode,
+      requestId: error?.requestId,
+      raw: error?.raw?.message,
+      stack: error?.stack,
+    });
+
+    // For admins (or when SUBSCRIPTION_DEBUG=true), surface details to the client
+    // so we don't have to dig through Render logs while wiring things up.
+    let userDoc = null;
+    try {
+      userDoc = await User.findById(req.user?.userId).lean();
+    } catch { /* ignore */ }
+    const isAdminOrDebug =
+      process.env.SUBSCRIPTION_DEBUG === 'true' ||
+      userDoc?.admin === true ||
+      String(userDoc?.role || '').toLowerCase() === 'admin';
+
+    const payload = { error: 'Failed to create checkout session' };
+    if (isAdminOrDebug) {
+      payload.debug = {
+        message: error?.message,
+        type: error?.type,
+        code: error?.code,
+        param: error?.param,
+        statusCode: error?.statusCode,
+        requestId: error?.requestId,
+        hint: error?.raw?.message,
+      };
+    }
+    res.status(500).json(payload);
   }
 };
 
