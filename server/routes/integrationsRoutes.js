@@ -4717,49 +4717,161 @@ function _acClassifyLapTypes(laps, normSport, pZones, hZones, category) {
   return types;
 }
 
+// ─── Title generation helpers ────────────────────────────────────────────────
+
+/**
+ * Round a distance to a human-friendly value used in workout titles.
+ *
+ *   991m  → "1km"
+ *   850m  → "900m"
+ *   2.3km → "2.5km"
+ *   4.7km → "5km"
+ *   18.5km → "19km"
+ *
+ * Granularity escalates with size — sub-1km rounds to nearest 100m,
+ * 1-5km to nearest 0.5km, 5km+ to whole km. Anything close to a round
+ * km gets bumped up (991m reads as "1km" not "990m").
+ */
+function _acFormatDistance(meters) {
+  if (!Number.isFinite(meters) || meters < 100) return null;
+  // Bump up if within 5 % of the next whole km — "1km" reads much better
+  // than "990m" or "1.0km" for an essentially-round value.
+  if (meters >= 950 && meters < 1050) return '1km';
+  if (meters < 1000) return `${Math.round(meters / 100) * 100}m`;
+
+  const km = meters / 1000;
+  if (km < 5) {
+    // 1-5 km — nearest 0.5
+    const half = Math.round(km * 2) / 2;
+    return Number.isInteger(half) ? `${half}km` : `${half.toFixed(1)}km`;
+  }
+  // 5km+ — whole km
+  return `${Math.round(km)}km`;
+}
+
+/**
+ * Round an interval duration for the "5×N" title chunk.
+ *
+ *   45s  → "45s"
+ *   90s  → "1:30'"
+ *   180s → "3'"
+ *   195s → "3:15'"   (rounded to nearest 15 s)
+ *   600s → "10'"
+ *
+ * Sub-minute keeps seconds; 1-10 min uses MM:SS rounded to nearest 15 s
+ * (cleans up watch-clipped intervals like 178 s = "3:00'"); 10 min+
+ * collapses to whole minutes because the seconds don't help readability.
+ */
+function _acFormatIntervalDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 15) return null;
+  if (seconds < 60) {
+    return `${Math.round(seconds / 5) * 5}s`;
+  }
+  const min = seconds / 60;
+  if (min < 10) {
+    // Round to nearest 15-s grid so 178 s reads as 3:00 instead of 2:58.
+    const rounded = Math.round(seconds / 15) * 15;
+    const m = Math.floor(rounded / 60);
+    const s = rounded % 60;
+    if (s === 0) return `${m}'`;
+    return `${m}:${String(s).padStart(2, '0')}'`;
+  }
+  return `${Math.round(min)}'`;
+}
+
+/**
+ * Decide whether a set of laps look like a *real* interval workout vs the
+ * watch's auto-distance / auto-time laps. Returns the count + duration of
+ * the work laps, or null when the laps are uniform (= auto splits).
+ *
+ * Heuristic: real intervals show a clear bimodal split between long-ish
+ * work and short rest (or sharp metric differences). Auto laps are all
+ * roughly the same length (every-km splits in a 4:30/km run = 14 laps of
+ * ~270 s each). We measure the duration coefficient of variation —
+ * uniform laps stay below ~15 %.
+ */
+function _acDetectIntervalStructure(laps) {
+  if (!Array.isArray(laps) || laps.length < 4) return null;
+  const active = laps.filter((l) => (l.elapsed_time || l.moving_time || 0) > 20);
+  if (active.length < 3 || active.length > 30) return null;
+
+  const durations = active.map((l) => l.elapsed_time || l.moving_time || 0);
+  const mean = durations.reduce((a, b) => a + b, 0) / durations.length;
+  const variance = durations.reduce((a, b) => a + (b - mean) ** 2, 0) / durations.length;
+  const stddev = Math.sqrt(variance);
+  const cv = mean > 0 ? stddev / mean : 0;
+
+  // Uniform laps (auto-splits) → CV is tiny. Real intervals usually
+  // alternate work/rest → CV > 0.25.
+  if (cv < 0.2) return null;
+
+  // Find work laps (cluster around the median duration ± 30 %).
+  const sorted = [...durations].sort((a, b) => a - b);
+  const medDur = sorted[Math.floor(sorted.length / 2)];
+  const workLaps = active.filter((l) => {
+    const d = l.elapsed_time || l.moving_time || 0;
+    return d >= medDur * 0.7 && d <= medDur * 1.3;
+  });
+  if (workLaps.length < 2) return null;
+
+  return { count: workLaps.length, medianSec: medDur };
+}
+
 /** Build a human-readable title for the activity */
 function _acBuildTitle(category, sport, movingTimeSec, distanceM, laps) {
   const sLabel = _AC_SPORT_LABEL[sport] || 'Workout';
   const cLabel = _AC_CAT_LABEL[category] || '';
-  const movMin = Math.round((movingTimeSec || 0) / 60);
 
-  // Detect repeating interval structure from laps
-  if (Array.isArray(laps) && laps.length >= 4) {
-    const active = laps.filter(l => (l.elapsed_time || l.moving_time || 0) > 20);
-    if (active.length >= 3 && active.length <= 20) {
-      const durations = active.map(l => l.elapsed_time || l.moving_time || 0).sort((a, b) => a - b);
-      const medDur = durations[Math.floor(durations.length / 2)];
-      const workLaps = active.filter(l => {
-        const d = l.elapsed_time || l.moving_time || 0;
-        return d >= medDur * 0.7 && d <= medDur * 1.3;
-      });
-      if (workLaps.length >= 2) {
-        const dMin = Math.floor(medDur / 60);
-        const dSec = Math.round(medDur % 60);
-        const dStr = dSec > 0 ? `${dMin}:${String(dSec).padStart(2, '0')}'` : `${dMin}'`;
-        return cLabel ? `${workLaps.length}×${dStr} ${cLabel} ${sLabel}` : `${workLaps.length}×${dStr} ${sLabel}`;
+  // Cycling — prefer the time-interval pattern when the laps look like
+  // structured intervals. Bike intervals are almost always defined by
+  // time (3×8', 5×3', etc.), and a power meter set to 'auto-lap by km'
+  // gives the same uniform-duration trap as runs but in time terms, so
+  // the CV check filters those out too.
+  if (sport === 'cycling') {
+    const intervals = _acDetectIntervalStructure(laps);
+    if (intervals) {
+      const dStr = _acFormatIntervalDuration(intervals.medianSec);
+      if (dStr) {
+        const reps = `${intervals.count}×${dStr}`;
+        return cLabel ? `${reps} ${cLabel} ${sLabel}` : `${reps} ${sLabel}`;
       }
     }
+    // Fallback for cycling: distance for ≥10 km rides, otherwise duration.
+    const distStr = distanceM >= 10000 ? _acFormatDistance(distanceM) : null;
+    if (distStr) {
+      return cLabel ? `${distStr} ${cLabel} ${sLabel}` : `${distStr} ${sLabel}`;
+    }
+    const mins = Math.round((movingTimeSec || 0) / 60);
+    return cLabel ? `${mins}' ${cLabel} ${sLabel}` : `${mins}' ${sLabel}`;
   }
 
-  // Distance-based title for longer efforts
-  if (distanceM > 2000) {
-    if (sport === 'cycling' && distanceM >= 10000) {
-      const km = Math.round(distanceM / 1000);
-      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
+  // Running / Swimming — distance is the natural unit. Most run laps are
+  // 1 km auto-splits (16 laps of 4:32 = uniform, NOT an interval workout).
+  // Default to a rounded distance title; only fall back to interval-rep
+  // format when the lap durations show real variance (work/rest).
+  if (sport === 'running' || sport === 'swimming') {
+    const minDist = sport === 'swimming' ? 400 : 1000;
+    const distStr = distanceM >= minDist ? _acFormatDistance(distanceM) : null;
+    if (distStr) {
+      return cLabel ? `${distStr} ${cLabel} ${sLabel}` : `${distStr} ${sLabel}`;
     }
-    if (sport === 'running' && distanceM >= 3000) {
-      const km = (distanceM / 1000).toFixed(1).replace('.0', '');
-      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
+    // Short or unknown-distance — try interval pattern as a fallback.
+    const intervals = _acDetectIntervalStructure(laps);
+    if (intervals) {
+      const dStr = _acFormatIntervalDuration(intervals.medianSec);
+      if (dStr) {
+        const reps = `${intervals.count}×${dStr}`;
+        return cLabel ? `${reps} ${cLabel} ${sLabel}` : `${reps} ${sLabel}`;
+      }
     }
-    if (sport === 'swimming' && distanceM >= 1000) {
-      const km = (distanceM / 1000).toFixed(1).replace('.0', '');
-      return cLabel ? `${km}km ${cLabel} ${sLabel}` : `${km}km ${sLabel}`;
-    }
+    // Last resort — duration.
+    const mins = Math.round((movingTimeSec || 0) / 60);
+    return cLabel ? `${mins}' ${cLabel} ${sLabel}` : `${mins}' ${sLabel}`;
   }
 
-  // Duration-based fallback
-  return cLabel ? `${movMin}' ${cLabel} ${sLabel}` : `${movMin}' ${sLabel}`;
+  // Unknown sport — duration only.
+  const mins = Math.round((movingTimeSec || 0) / 60);
+  return cLabel ? `${mins}' ${cLabel} ${sLabel}` : `${mins}' ${sLabel}`;
 }
 
 /**
