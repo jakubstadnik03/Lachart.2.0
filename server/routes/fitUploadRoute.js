@@ -435,6 +435,14 @@ router.post('/auto-classify/backfill', verifyToken, async (req, res) => {
       ? req.body.skipFromTitleIds.map((s) => String(s).toLowerCase())
       : [];
     const skipFromTitleSet = new Set(skipFromTitleIds);
+    // FIT backfill is a *title-only* classifier today (we don't have zones
+    // or laps wired up for FIT yet), so when the client asks to skip titles
+    // globally we have nothing left to do — return zeros instead of running.
+    const skipAllTitles = req.body?.skipAllTitles === true;
+    if (skipAllTitles) {
+      console.log(`[FIT auto-classify backfill] user=${req.user.userId} skipAllTitles=true — nothing to do`);
+      return res.json({ processed: 0, updated: 0, skipped: 0, dryRun, sample: [] });
+    }
 
     const trainings = await FitTraining.find({
       userId: req.user.userId,

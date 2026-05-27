@@ -30,6 +30,10 @@ export default function ReclassifyActivitiesCard() {
   // Honour user's per-category opt-outs from Settings → Categories. The
   // server reads this list and filters title-keyword matches accordingly.
   const { skipFromTitleIds } = useCategories();
+  // Global "ignore titles" — user opts to classify purely from zones / laps.
+  // Useful when activity names are auto-generated (Garmin "Morning Ride")
+  // or otherwise unreliable.
+  const [skipAllTitles, setSkipAllTitles] = useState(false);
 
   /** Run one backfill call. Resolves to whatever the server returned. */
   const runBackfill = async (path, body) => {
@@ -43,8 +47,8 @@ export default function ReclassifyActivitiesCard() {
     setResult(null);
     try {
       const [strava, fit] = await Promise.allSettled([
-        runBackfill('/api/integrations/strava/auto-classify/backfill', { dryRun: true, skipFromTitleIds }),
-        runBackfill('/api/fit/auto-classify/backfill',                  { dryRun: true, skipFromTitleIds }),
+        runBackfill('/api/integrations/strava/auto-classify/backfill', { dryRun: true, skipFromTitleIds, skipAllTitles }),
+        runBackfill('/api/fit/auto-classify/backfill',                  { dryRun: true, skipFromTitleIds, skipAllTitles }),
       ]);
       setPreview({
         strava: strava.status === 'fulfilled' ? strava.value
@@ -64,8 +68,8 @@ export default function ReclassifyActivitiesCard() {
     setError(null);
     try {
       const [strava, fit] = await Promise.allSettled([
-        runBackfill('/api/integrations/strava/auto-classify/backfill', { skipFromTitleIds }),
-        runBackfill('/api/fit/auto-classify/backfill',                  { skipFromTitleIds }),
+        runBackfill('/api/integrations/strava/auto-classify/backfill', { skipFromTitleIds, skipAllTitles }),
+        runBackfill('/api/fit/auto-classify/backfill',                  { skipFromTitleIds, skipAllTitles }),
       ]);
       const stravaResult = strava.status === 'fulfilled' ? strava.value : { updated: 0, processed: 0, error: strava.reason?.message };
       const fitResult    = fit.status === 'fulfilled'    ? fit.value    : { updated: 0, processed: 0, error: fit.reason?.message };
@@ -144,6 +148,24 @@ export default function ReclassifyActivitiesCard() {
       {error && (
         <p className="mt-2 mb-3 text-xs text-red-600">{error}</p>
       )}
+
+      {/* Classifier mode — title is the default high-confidence signal but
+          some users have noisy auto-generated names (Garmin "Morning Ride")
+          and prefer to rely on zone data alone. */}
+      <label className="flex items-start gap-2 mt-3 mb-1 text-xs text-gray-600 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={skipAllTitles}
+          onChange={(e) => setSkipAllTitles(e.target.checked)}
+          className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-1 focus:ring-primary"
+        />
+        <span>
+          Use zones &amp; laps only (ignore workout names)
+          <span className="ml-1 text-gray-400">
+            — turn on when activity titles are unreliable.
+          </span>
+        </span>
+      </label>
 
       <div className="flex flex-wrap gap-2 mt-3">
         <button

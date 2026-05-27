@@ -4772,7 +4772,13 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
     const user = await User.findById(req.user.userId).lean();
     if (!user) return res.status(401).json({ error: 'User not found' });
 
-    const { sport = 'all', skipCategorized = 'true', limit = '300' } = req.query;
+    const { sport = 'all', skipCategorized = 'true', limit = '300', skipTitle = 'false' } = req.query;
+    // When the client passes ?skipTitle=true, every title-keyword match is
+    // ignored. Interval analysis + dominant-zone fallback still run normally.
+    // Lets the user say "classify purely from my zone data, don't trust
+    // workout names" without having to flip every individual category in
+    // Settings → Categories.
+    const skipTitleAll = String(skipTitle) === 'true';
 
     const query = { userId: user._id };
     if (skipCategorized === 'true') query.category = { $in: [null, undefined, ''] };
@@ -4804,8 +4810,14 @@ router.get('/strava/auto-classify', verifyToken, async (req, res) => {
       // Step 0 — Title-based detection. Highest confidence: if the user
       // explicitly named the workout "4x5 VO2max" / "Threshold" we should
       // trust that even when the interval data is noisy or absent.
+      //
+      // Suppressed entirely when the request set ?skipTitle=true so the
+      // user can deliberately classify by zone/lap data only (e.g. their
+      // titles are auto-generated junk).
       const titleText = act.titleManual || act.name || '';
-      const { category: titleCategory, matchedKeyword } = _acCategorizeByTitle(titleText);
+      const { category: titleCategory, matchedKeyword } = skipTitleAll
+        ? { category: null, matchedKeyword: null }
+        : _acCategorizeByTitle(titleText);
 
       // Step 1 — Per-interval categorization: VO2max if ANY lap reached
       // zone5, else LT2/LT1 if ≥2 laps in zone4/zone3. Returns null when
@@ -4926,6 +4938,10 @@ router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
       ? req.body.skipFromTitleIds.map((s) => String(s).toLowerCase())
       : [];
     const skipFromTitleSet = new Set(skipFromTitleIds);
+    // Global "ignore titles entirely" flag. Setting source='intervals_only'
+    // or skipAllTitles=true disables title detection across the board for
+    // this backfill run.
+    const skipAllTitles = req.body?.skipAllTitles === true || source === 'intervals_only';
 
     const query = {
       userId: user._id,
@@ -4951,16 +4967,19 @@ router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
       if (sportFilter !== 'all' && normSport !== sportFilter) { skipped++; continue; }
 
       // 1) Title is the highest-confidence signal — unless the user has
-      //    opted this specific category out of title-based detection.
+      //    opted this specific category out of title-based detection or
+      //    suppressed title detection globally for this run.
       const titleText = act.titleManual || act.name || '';
-      const titleResult = _acCategorizeByTitle(titleText);
+      const titleResult = skipAllTitles
+        ? { category: null, matchedKeyword: null }
+        : _acCategorizeByTitle(titleText);
 
       let category = null;
       let sourceUsed = null;
       if (titleResult.category && !skipFromTitleSet.has(titleResult.category)) {
         category = titleResult.category;
         sourceUsed = `title:${titleResult.matchedKeyword}`;
-      } else if (source === 'all') {
+      } else if (source === 'all' || source === 'intervals_only') {
         // 2) Per-interval.
         const pZones = powerZones[normSport] || {};
         const hZones = hrZones[normSport] || {};
