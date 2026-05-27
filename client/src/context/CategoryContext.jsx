@@ -1,14 +1,20 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 // ─── Built-in default categories ───────────────────────────────────────────────
+//
+// `skipFromTitle`: when true, the auto-classifier will NOT propose this
+// category just because a title keyword matched (e.g. user explicitly
+// types "VO2 test" on a workout that isn't actually VO2max). Defaults to
+// false — title detection is on for every category unless the user opts
+// out per-category in Settings → Categories.
 export const DEFAULT_CATEGORIES = [
-  { id: 'endurance', label: 'Endurance', color: '#3b82f6', builtIn: true },
-  { id: 'lt1',       label: 'LT1',       color: '#0ea5e9', builtIn: true },
-  { id: 'tempo',     label: 'Tempo',     color: '#f97316', builtIn: true },
-  { id: 'lt2',       label: 'LT2',       color: '#8b5cf6', builtIn: true },
-  { id: 'zone2',     label: 'Zone 2',    color: '#22c55e', builtIn: true },
-  { id: 'vo2max',    label: 'VO₂max',    color: '#ef4444', builtIn: true },
-  { id: 'hills',     label: 'Hills',     color: '#f59e0b', builtIn: true },
+  { id: 'endurance', label: 'Endurance', color: '#3b82f6', builtIn: true, skipFromTitle: false },
+  { id: 'lt1',       label: 'LT1',       color: '#0ea5e9', builtIn: true, skipFromTitle: false },
+  { id: 'tempo',     label: 'Tempo',     color: '#f97316', builtIn: true, skipFromTitle: false },
+  { id: 'lt2',       label: 'LT2',       color: '#8b5cf6', builtIn: true, skipFromTitle: false },
+  { id: 'zone2',     label: 'Zone 2',    color: '#22c55e', builtIn: true, skipFromTitle: false },
+  { id: 'vo2max',    label: 'VO₂max',    color: '#ef4444', builtIn: true, skipFromTitle: false },
+  { id: 'hills',     label: 'Hills',     color: '#f59e0b', builtIn: true, skipFromTitle: false },
 ];
 
 /** Preset color palette for the color picker (matches LacTrace-style grid). */
@@ -121,6 +127,17 @@ export function CategoryProvider({ children }) {
     return categories.find(c => c.id === id) || null;
   }, [categories]);
 
+  /**
+   * IDs of categories the user has marked "skip from title" — sent to the
+   * server with classify / backfill requests so title-keyword matches for
+   * these categories are ignored. Memoised so consumers can pass it to
+   * api calls without re-renders triggering refetch.
+   */
+  const skipFromTitleIds = React.useMemo(
+    () => categories.filter(c => c.skipFromTitle === true).map(c => c.id),
+    [categories],
+  );
+
   /** Get style object for a category tag. */
   const getCatStyle = useCallback((id) => {
     return getCategoryStyle(id, categories);
@@ -134,6 +151,7 @@ export function CategoryProvider({ children }) {
       deleteCategory,
       getCategory,
       getCategoryStyle: getCatStyle,
+      skipFromTitleIds,
     }}>
       {children}
     </CategoryContext.Provider>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../../services/api';
+import { useCategories } from '../../context/CategoryContext';
 
 /**
  * ReclassifyActivitiesCard
@@ -26,6 +27,9 @@ export default function ReclassifyActivitiesCard() {
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null); // { strava, fit }
   const [result, setResult] = useState(null);   // counts after Apply
+  // Honour user's per-category opt-outs from Settings → Categories. The
+  // server reads this list and filters title-keyword matches accordingly.
+  const { skipFromTitleIds } = useCategories();
 
   /** Run one backfill call. Resolves to whatever the server returned. */
   const runBackfill = async (path, body) => {
@@ -39,8 +43,8 @@ export default function ReclassifyActivitiesCard() {
     setResult(null);
     try {
       const [strava, fit] = await Promise.allSettled([
-        runBackfill('/api/integrations/strava/auto-classify/backfill', { dryRun: true }),
-        runBackfill('/api/fit/auto-classify/backfill', { dryRun: true }),
+        runBackfill('/api/integrations/strava/auto-classify/backfill', { dryRun: true, skipFromTitleIds }),
+        runBackfill('/api/fit/auto-classify/backfill',                  { dryRun: true, skipFromTitleIds }),
       ]);
       setPreview({
         strava: strava.status === 'fulfilled' ? strava.value
@@ -60,8 +64,8 @@ export default function ReclassifyActivitiesCard() {
     setError(null);
     try {
       const [strava, fit] = await Promise.allSettled([
-        runBackfill('/api/integrations/strava/auto-classify/backfill', {}),
-        runBackfill('/api/fit/auto-classify/backfill', {}),
+        runBackfill('/api/integrations/strava/auto-classify/backfill', { skipFromTitleIds }),
+        runBackfill('/api/fit/auto-classify/backfill',                  { skipFromTitleIds }),
       ]);
       const stravaResult = strava.status === 'fulfilled' ? strava.value : { updated: 0, processed: 0, error: strava.reason?.message };
       const fitResult    = fit.status === 'fulfilled'    ? fit.value    : { updated: 0, processed: 0, error: fit.reason?.message };

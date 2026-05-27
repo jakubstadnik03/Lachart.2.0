@@ -4881,6 +4881,15 @@ router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
     const sportFilter = String(req.body?.sport || 'all').toLowerCase();
     const dryRun = req.body?.dryRun === true;
     const source = String(req.body?.source || 'all').toLowerCase();
+    // Per-category opt-out from title-keyword detection. Client (CategoryManager
+    // checkbox) ships the list of category IDs the user marked
+    // "Skip auto-detection from workout name". We honour it by ignoring title
+    // matches that map to those categories — intervals / dominant-zone fall-
+    // back still run normally for them.
+    const skipFromTitleIds = Array.isArray(req.body?.skipFromTitleIds)
+      ? req.body.skipFromTitleIds.map((s) => String(s).toLowerCase())
+      : [];
+    const skipFromTitleSet = new Set(skipFromTitleIds);
 
     const query = {
       userId: user._id,
@@ -4905,13 +4914,14 @@ router.post('/strava/auto-classify/backfill', verifyToken, async (req, res) => {
       if (!normSport) { skipped++; continue; }
       if (sportFilter !== 'all' && normSport !== sportFilter) { skipped++; continue; }
 
-      // 1) Title is the highest-confidence signal.
+      // 1) Title is the highest-confidence signal — unless the user has
+      //    opted this specific category out of title-based detection.
       const titleText = act.titleManual || act.name || '';
       const titleResult = _acCategorizeByTitle(titleText);
 
       let category = null;
       let sourceUsed = null;
-      if (titleResult.category) {
+      if (titleResult.category && !skipFromTitleSet.has(titleResult.category)) {
         category = titleResult.category;
         sourceUsed = `title:${titleResult.matchedKeyword}`;
       } else if (source === 'all') {

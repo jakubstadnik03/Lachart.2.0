@@ -428,6 +428,13 @@ router.post('/auto-classify/backfill', verifyToken, async (req, res) => {
     const { _acCategorizeByTitle } = require('./integrationsRoutes');
 
     const dryRun = req.body?.dryRun === true;
+    // Per-category opt-out from title-keyword detection (see CategoryManager).
+    // When a category id appears in this list, title matches for it are
+    // ignored — same semantics as the Strava backfill.
+    const skipFromTitleIds = Array.isArray(req.body?.skipFromTitleIds)
+      ? req.body.skipFromTitleIds.map((s) => String(s).toLowerCase())
+      : [];
+    const skipFromTitleSet = new Set(skipFromTitleIds);
 
     const trainings = await FitTraining.find({
       userId: req.user.userId,
@@ -447,6 +454,8 @@ router.post('/auto-classify/backfill', verifyToken, async (req, res) => {
       const titleText = t.titleManual || t.titleAuto || t.originalFileName || '';
       const { category, matchedKeyword } = _acCategorizeByTitle(titleText);
       if (!category) { skipped++; continue; }
+      // Respect per-category title opt-out (CategoryManager checkbox).
+      if (skipFromTitleSet.has(category)) { skipped++; continue; }
 
       if (sample.length < 20) {
         sample.push({ id: String(t._id), name: titleText, category, source: `title:${matchedKeyword}` });

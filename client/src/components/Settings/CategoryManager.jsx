@@ -70,6 +70,9 @@ function CategoryRow({ cat, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(cat.label);
   const [color, setColor] = useState(cat.color);
+  // Independent of the edit-mode form because users want to toggle this
+  // without having to click "Edit" / "Save" — it's a setting, not a name change.
+  const skipFromTitle = cat.skipFromTitle === true;
 
   const handleSave = () => {
     if (!label.trim()) return;
@@ -81,6 +84,10 @@ function CategoryRow({ cat, onUpdate, onDelete }) {
     setLabel(cat.label);
     setColor(cat.color);
     setEditing(false);
+  };
+
+  const handleToggleSkipFromTitle = (e) => {
+    onUpdate(cat.id, { skipFromTitle: e.target.checked });
   };
 
   const tagStyle = {
@@ -131,33 +138,52 @@ function CategoryRow({ cat, onUpdate, onDelete }) {
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-3">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold"
-            style={tagStyle}
-          >
-            {cat.builtIn && CATEGORY_ICONS[cat.id] ? CATEGORY_ICONS[cat.id] : null}
-            {cat.label}
-          </span>
-          {cat.builtIn && (
-            <span className="text-[10px] uppercase tracking-wide text-slate-400">built-in</span>
-          )}
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              onClick={() => setEditing(true)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-              title="Edit"
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold"
+              style={tagStyle}
             >
-              <PencilIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => onDelete(cat.id)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-              title={cat.builtIn ? 'Reset to default' : 'Delete'}
-            >
-              <TrashIcon className="w-4 h-4" />
-            </button>
+              {cat.builtIn && CATEGORY_ICONS[cat.id] ? CATEGORY_ICONS[cat.id] : null}
+              {cat.label}
+            </span>
+            {cat.builtIn && (
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">built-in</span>
+            )}
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                onClick={() => setEditing(true)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                title="Edit"
+              >
+                <PencilIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onDelete(cat.id)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                title={cat.builtIn ? 'Reset to default' : 'Delete'}
+              >
+                <TrashIcon className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Auto-detect opt-out — kept outside the edit form because it's
+              a behaviour toggle, not part of the name/color edit cycle. */}
+          <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={skipFromTitle}
+              onChange={handleToggleSkipFromTitle}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-[#767eb5] focus:ring-1 focus:ring-[#767eb5]"
+            />
+            <span>
+              Skip auto-detection from workout name
+              <span className="ml-1 text-slate-400">
+                (don't assign this category just because the title contains "{cat.label}")
+              </span>
+            </span>
+          </label>
         </div>
       )}
     </div>
