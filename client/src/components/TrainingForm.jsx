@@ -956,6 +956,33 @@ const TrainingForm = ({
       // Počkáme krátkou chvíli, aby se data stihla aktualizovat na serveru
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Broadcast the update so calendar / list views that aren't owned by
+      // the form's parent can patch their cached copy without a full reload.
+      // We reuse the existing 'activityTitleUpdated' / 'activityCategoryUpdated'
+      // window events that DashboardPage already listens for (around line 280).
+      // Only dispatch when we have a stable id to patch on — new trainings
+      // come back via the parent's loadTrainings refetch instead.
+      try {
+        const updateId = dataToSubmit._id || initialData?._id
+          || initialData?.id || initialData?.stravaId || null;
+        if (updateId) {
+          if (dataToSubmit.title !== undefined && dataToSubmit.title !== initialData?.title) {
+            window.dispatchEvent(new CustomEvent('activityTitleUpdated', {
+              detail: { id: updateId, title: dataToSubmit.title },
+            }));
+          }
+          // Category is the common drift: TrainingForm sets it, but the
+          // weekly-calendar tile keeps showing the old badge until reload.
+          // Always dispatch (incl. null = cleared) so listeners can patch
+          // their state regardless of whether title also changed.
+          window.dispatchEvent(new CustomEvent('activityCategoryUpdated', {
+            detail: { id: updateId, category: dataToSubmit.category ?? null },
+          }));
+        }
+      } catch {
+        // CustomEvent unavailable in very old environments — ignore.
+      }
+
       addNotification(isEditing ? 'Training updated successfully' : 'Training added successfully', 'success');
 
       // Zavřeme formulář
