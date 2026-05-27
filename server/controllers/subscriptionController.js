@@ -191,13 +191,38 @@ exports.createCheckoutSession = async (req, res) => {
       });
     }
 
-    // Get or create Stripe customer
+    // Get or create Stripe customer.
+    //
+    // IMPORTANT: customer IDs are scoped to the Stripe mode they were created in
+    // (Test vs Live). If we switch modes (or restore from a backup, or the
+    // customer was deleted in the dashboard), the cached ID becomes invalid and
+    // Stripe responds with `resource_missing` ("No such customer"). When that
+    // happens we transparently create a fresh customer and overwrite the ID,
+    // so users never see the error.
     let customerId = null;
     let subscription = await Subscription.findOne({ userId: user._id });
-    
+
     if (subscription?.stripeCustomerId) {
-      customerId = subscription.stripeCustomerId;
-    } else {
+      try {
+        const existing = await stripe.customers.retrieve(subscription.stripeCustomerId);
+        if (!existing || existing.deleted) {
+          customerId = null; // fall through to create
+        } else {
+          customerId = existing.id;
+        }
+      } catch (err) {
+        // Most likely "No such customer" because the ID was created in the
+        // other Stripe mode. Wipe it and create a fresh one below.
+        if (err?.code === 'resource_missing' || err?.statusCode === 404) {
+          console.warn(`[Checkout] Stripe customer ${subscription.stripeCustomerId} not found in current mode, recreating.`);
+          customerId = null;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
@@ -205,7 +230,7 @@ exports.createCheckoutSession = async (req, res) => {
         }
       });
       customerId = customer.id;
-      
+
       if (!subscription) {
         subscription = await Subscription.create({
           userId: user._id,
@@ -215,8 +240,11 @@ exports.createCheckoutSession = async (req, res) => {
         user.subscriptionId = subscription._id;
         await user.save();
       }
-      
+
       subscription.stripeCustomerId = customerId;
+      // Reset Stripe-only fields tied to the stale customer.
+      subscription.stripeSubscriptionId = undefined;
+      subscription.stripePriceId = undefined;
       await subscription.save();
     }
 
