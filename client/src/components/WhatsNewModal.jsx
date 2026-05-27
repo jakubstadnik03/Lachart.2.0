@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { XMarkIcon, SparklesIcon, ArrowRightIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import {
+  XMarkIcon,
+  SparklesIcon,
+  ArrowRightIcon,
+  ArrowLeftIcon,
+  CalendarDaysIcon,
+  PlayCircleIcon,
+  BeakerIcon,
+  PaintBrushIcon,
+} from '@heroicons/react/24/outline';
 
 /**
  * WhatsNewModal
@@ -19,9 +28,15 @@ import { XMarkIcon, SparklesIcon, ArrowRightIcon, ArrowLeftIcon } from '@heroico
 
 const RELEASE_TAG = '2026-05';
 
+// Slide content — each item carries a React component for its hero icon
+// (we render it via createElement with an `accent` colour) instead of an
+// emoji glyph. Emojis used to render inconsistently across OS / browser
+// (colourful on macOS, flat / outline on Windows / Linux, missing on
+// some Linux distros entirely) which made the modal look amateurish on
+// non-Apple devices. Heroicons stays crisp and matches the accent palette.
 const ITEMS = [
   {
-    emoji: '📅',
+    icon: CalendarDaysIcon,
     title: 'Plan workouts in the calendar',
     body: 'Build structured sessions — warm-up, intervals with target zones, recoveries, cooldown — and drop them onto any day. See planned vs actual side-by-side.',
     cta: 'Open the planner',
@@ -29,7 +44,7 @@ const ITEMS = [
     accent: '#7c3aed', // violet
   },
   {
-    emoji: '▶️',
+    icon: PlayCircleIcon,
     title: 'Start trainings from the app',
     body: 'Open a planned workout and run it live with step-by-step prompts, target zones and lap timers right in the browser.',
     cta: "See today's plan",
@@ -37,7 +52,7 @@ const ITEMS = [
     accent: '#0ea5e9', // sky
   },
   {
-    emoji: '🩸',
+    icon: BeakerIcon,
     title: 'Add lactate values to any interval',
     body: 'Tag any interval of an existing workout with a blood lactate sample. Each sample feeds straight back into your curve and zones.',
     cta: 'Try it',
@@ -45,7 +60,7 @@ const ITEMS = [
     accent: '#ef4444', // red
   },
   {
-    emoji: '🎨',
+    icon: PaintBrushIcon,
     title: 'Brand your PDF reports',
     body: 'Coach plan: upload your logo, set your studio name + address + colour, and every test PDF goes out as your branded handout.',
     cta: 'Set up branding',
@@ -148,11 +163,13 @@ export default function WhatsNewModal({ open, onClose, userName }) {
             time and the CSS transition replays. */}
         <div key={step} className="px-6 sm:px-10 py-8 text-center animate-[fadeInUp_.35s_ease]">
           <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-4 text-5xl"
+            className="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-4"
             style={{ backgroundColor: `${current.accent}12` }}
             aria-hidden
           >
-            {current.emoji}
+            {/* Stroke colour = slide accent so the icon visually matches the
+                rest of the slide chrome (header gradient, CTA, dot, etc.). */}
+            <current.icon className="w-10 h-10" style={{ color: current.accent }} strokeWidth={1.6} />
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
             {current.title}
