@@ -2050,9 +2050,18 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                               : 'MM:SS'
                           ))}
                       {renderInput(index, 'power', row.power,
-                        formData.sport === 'bike' ? 'W' :
-                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'MM:SS' :
-                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? (unitSystem === 'imperial' ? 'mph' : 'km/h') : 'MM:SS'
+                        // Placeholder for the "Speed/Pace/Power" column.
+                        // - Bike has no pace concept → always watts.
+                        // - Run/swim respect the chosen inputMode (pace 'MM:SS'
+                        //   or speed 'km/h' / 'mph').
+                        // - Before a sport is selected, fall back to the user's
+                        //   global Preferences (inputMode is already seeded from
+                        //   user.trainingPreferences.paceDisplay on mount), so a
+                        //   km/h user never sees a stale 'MM:SS' default.
+                        formData.sport === 'bike' ? 'W'
+                          : inputMode === 'speed'
+                            ? (unitSystem === 'imperial' ? 'mph' : 'km/h')
+                            : 'MM:SS'
                       )}
                       {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
                       {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
