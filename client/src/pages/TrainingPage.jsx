@@ -987,40 +987,12 @@ export default function TrainingPage() {
             })()}
           </div>
 
-          {/* Export all trainings (locked for free plan) */}
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              if (isFreePlan) { openUpgradeModal('Export All Trainings'); return; }
-              // Pro+: export filtered trainings as JSON
-              const blob = new Blob([JSON.stringify(filteredTrainings, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `trainings_${new Date().toISOString().slice(0,10)}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className="flex items-center gap-1 h-8 px-2.5 bg-white border border-gray-200 text-gray-500 text-xs font-semibold rounded-lg hover:border-gray-400 transition-all shadow-sm relative"
-            title={isFreePlan ? 'Export trainings — Pro feature' : 'Export all trainings as JSON'}
-          >
-            {isFreePlan && <LockClosedIcon className="w-3 h-3 text-gray-400 absolute -top-1 -right-1" />}
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span className="hidden sm:inline">Export</span>
-          </motion.button>
-
-          {/* Add Lactate — icon + label on sm+, icon-only on mobile */}
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={() => setShowRecordLactate(true)}
-            className="flex items-center gap-1 h-8 px-2.5 bg-white border border-primary/30 text-primary text-xs font-semibold rounded-lg hover:bg-primary/5 transition-all shadow-sm"
-            title="Record Lactate Measurement"
-          >
-            <BeakerIcon className="w-4 h-4 flex-shrink-0" />
-            <span className="hidden sm:inline">Add Lactate</span>
-          </motion.button>
+          {/* Export and 'Add Lactate' toolbar buttons removed by request —
+              the JSON export was only useful to power users (lives under a
+              separate Pro paywall) and the standalone 'Add Lactate' picker
+              duplicated the '+ Lactate' next-to-each-activity flow below.
+              Field-lactate panel '+ Lactate' button now deep-links into the
+              activity directly (see handleFieldAddLactate refactor). */}
 
           {/* Add Training */}
           <motion.button
@@ -1090,7 +1062,15 @@ export default function TrainingPage() {
                 key={fieldLactatePanelKey}
                 integrationAthleteId={integrationAthleteId}
                 user={user}
-                onAddLactate={handleFieldAddLactate}
+                // onAddLactate intentionally omitted — the previous bridge
+                // (handleFieldAddLactate → fetch detail → open Strava
+                // lactate-form modal) silently failed for activities with
+                // no laps cached and never showed a recoverable error,
+                // reading as 'button does nothing'.
+                // Without this prop the panel falls back to a plain Link
+                // to /training-calendar/strava-<id>, which auto-opens the
+                // ActivityFullModal with its battle-tested "+ lactate per
+                // lap" UI. Same end result, one fewer flaky code path.
                 onOpenMeasurementInForm={handleOpenMeasurementInForm}
                 loadingActivityId={lactateActivityLoadingId}
               />
@@ -1247,7 +1227,13 @@ export default function TrainingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            // Bumped z-index to 9999 — the previous 200 lost to sidebar /
+            // calendar overlays on some routes, causing the modal to render
+            // but stay invisibly behind page chrome (= 'Add Training does
+            // nothing'). Also centres vertically on desktop so the form
+            // doesn't sit pinned to the bottom of large screens.
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', overflowY: 'auto' }}
+            onClick={(e) => { if (e.target === e.currentTarget) { setIsFormOpen(false); setEditingTraining(null); } }}
           >
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
