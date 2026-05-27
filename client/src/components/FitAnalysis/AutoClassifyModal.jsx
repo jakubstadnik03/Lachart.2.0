@@ -625,7 +625,25 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                               <img src={SPORT_ICONS[p.sport]} className="w-4 h-4 object-contain opacity-50" alt={p.sport} />
                             ) : <span className="text-gray-300">?</span>}
                           </td>
-                          <td className="px-3 py-2.5 text-gray-700 font-medium max-w-xs truncate">{p.name}</td>
+                          <td className="px-3 py-2.5 text-gray-700 font-medium max-w-xs truncate">
+                            {/* Click-through to the activity's detail modal.
+                                Opens in a new tab so the user keeps their
+                                AutoClassify selection state — they can spot-
+                                check a single suggestion and come back to
+                                Apply without losing what they ticked.
+                                Stop propagation so the row's checkbox
+                                toggle doesn't also fire. */}
+                            <a
+                              href={`/training-calendar/strava-${p.stravaId || p._id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-gray-700 hover:text-primary hover:underline decoration-dotted underline-offset-2"
+                              title="Open activity in new tab"
+                            >
+                              {p.name}
+                            </a>
+                          </td>
                           <td className="px-3 py-2.5 text-gray-400 text-[11px]">{formatDur(p.movingTime)}</td>
                           <td className="px-3 py-2.5">
                             <div className="flex flex-col gap-1">
