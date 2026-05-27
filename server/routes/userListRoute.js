@@ -2607,6 +2607,20 @@ router.get("/admin/users", verifyToken, async (req, res) => {
 
         const users = await userDao.findAll();
         const Event = require('../models/Event');
+        const Subscription = require('../models/SubscriptionModel');
+        const { resolvePremiumAccess } = require('../utils/premiumAccess');
+
+        // Batch-load all Subscriptions referenced by these users so we can
+        // join plan / status / trial info into the admin list without N+1.
+        const subscriptionIds = users
+            .map((u) => u.subscriptionId)
+            .filter(Boolean);
+        const subscriptionDocs = subscriptionIds.length > 0
+            ? await Subscription.find({ _id: { $in: subscriptionIds } }).lean()
+            : [];
+        const subscriptionById = new Map(
+            subscriptionDocs.map((s) => [String(s._id), s])
+        );
 
         // Fallback: compute login counts from Event logs (if loginCount is missing/0 on the user document)
         const loginCountsByUserId = new Map();
@@ -2759,6 +2773,13 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 console.log(`[Admin Users] Coach ${user.name} ${user.surname} (${user._id}): trainingCount=${finalTrainingCount}, testCount=${finalTestCount}`);
             }
             
+            // Resolve effective premium access (manual flag OR active sub),
+            // then surface plan/status so the admin UI can show details.
+            const userSubscription = user.subscriptionId
+                ? subscriptionById.get(String(user.subscriptionId)) || null
+                : null;
+            const premiumState = resolvePremiumAccess(user, userSubscription);
+
             return {
                 _id: user._id,
                 name: user.name,
@@ -2768,6 +2789,16 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 role: user.role,
                 admin: user.admin,
                 premium: user.premium === true,
+                isPremium: premiumState.isPremium,
+                premiumSource: premiumState.source,
+                subscription: userSubscription ? {
+                    plan: userSubscription.plan,
+                    status: userSubscription.status,
+                    currentPeriodEnd: userSubscription.currentPeriodEnd || null,
+                    trialEnd: userSubscription.trialEnd || null,
+                    cancelAtPeriodEnd: !!userSubscription.cancelAtPeriodEnd,
+                    stripeCustomerId: userSubscription.stripeCustomerId || null,
+                } : null,
                 dateOfBirth: user.dateOfBirth,
                 sport: user.sport,
                 createdAt: user.createdAt,

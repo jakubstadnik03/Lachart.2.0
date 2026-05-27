@@ -19,6 +19,7 @@ const AdminDashboard = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [stravaFilter, setStravaFilter] = useState('all'); // 'all', 'connected', 'notConnected'
+  const [premiumFilter, setPremiumFilter] = useState('all'); // 'all' | 'free' | 'manual' | 'paid' | 'trial' | 'any'
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
@@ -463,7 +464,30 @@ const AdminDashboard = () => {
       const name = `${user.name || ''} ${user.surname || ''}`.toLowerCase();
       return email.includes(query) || name.includes(query);
     });
-    
+
+    // Premium filter — uses server-resolved premiumSource so the chips
+    // behave consistently with the badges shown on each row.
+    if (premiumFilter !== 'all') {
+      filtered = filtered.filter((u) => {
+        const source = u.premiumSource;
+        const status = u.subscription?.status;
+        switch (premiumFilter) {
+          case 'free':
+            return !u.isPremium;
+          case 'any':
+            return !!u.isPremium;
+          case 'manual':
+            return source === 'manual';
+          case 'paid':
+            return source === 'subscription' && status === 'active';
+          case 'trial':
+            return source === 'subscription' && status === 'trialing';
+          default:
+            return true;
+        }
+      });
+    }
+
     // Sort by last login (most recent first)
     filtered = filtered.sort((a, b) => {
       if (!a.lastLogin && !b.lastLogin) return 0;
@@ -471,10 +495,28 @@ const AdminDashboard = () => {
       if (!b.lastLogin) return -1;
       return new Date(b.lastLogin) - new Date(a.lastLogin);
     });
-    
+
     // Apply limit
     return filtered.slice(0, usersLimit);
-  }, [users, searchQuery, usersLimit]);
+  }, [users, searchQuery, premiumFilter, usersLimit]);
+
+  /**
+   * Counts of users in each premium bucket — drives the filter chip labels.
+   * Computed off the unfiltered `users` array so the numbers stay stable
+   * regardless of which filter is currently active.
+   */
+  const premiumCounts = useMemo(() => {
+    const c = { all: users.length, free: 0, any: 0, manual: 0, paid: 0, trial: 0 };
+    users.forEach((u) => {
+      if (u.isPremium) c.any += 1; else c.free += 1;
+      if (u.premiumSource === 'manual') c.manual += 1;
+      if (u.premiumSource === 'subscription') {
+        if (u.subscription?.status === 'active') c.paid += 1;
+        else if (u.subscription?.status === 'trialing') c.trial += 1;
+      }
+    });
+    return c;
+  }, [users]);
 
   // Marketing users with recommendations
   const marketingUsers = useMemo(() => {
@@ -1508,6 +1550,22 @@ const AdminDashboard = () => {
                           <option value="notConnected">Not Connected</option>
                         </select>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Premium:</label>
+                        <select
+                          value={premiumFilter}
+                          onChange={(e) => setPremiumFilter(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          title="Filter users by premium access state"
+                        >
+                          <option value="all">All ({premiumCounts.all})</option>
+                          <option value="any">Any premium ({premiumCounts.any})</option>
+                          <option value="paid">Paid ({premiumCounts.paid})</option>
+                          <option value="trial">Trial ({premiumCounts.trial})</option>
+                          <option value="manual">Manual grant ({premiumCounts.manual})</option>
+                          <option value="free">Free only ({premiumCounts.free})</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
@@ -1639,11 +1697,61 @@ const AdminDashboard = () => {
                       }`}>
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
-                      {user.premium && (
-                        <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
-                          ★ Premium (manual)
-                        </span>
-                      )}
+                      {(() => {
+                        // Single source of truth for "is this user paying?"
+                        // We prefer the server-resolved premiumSource so the
+                        // badge accurately reflects how access was granted:
+                        //   manual       — admin clicked ★ Grant Premium
+                        //   subscription — active Stripe sub (trialing / active)
+                        //   beta         — BETA_ALL_PREMIUM env override
+                        //   none         — free user
+                        const source = user.premiumSource;
+                        const sub = user.subscription;
+                        if (source === 'manual') {
+                          return (
+                            <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900" title="Manually granted by admin">
+                              ★ Premium (manual)
+                            </span>
+                          );
+                        }
+                        if (source === 'subscription' && sub) {
+                          const planLabel = sub.plan
+                            ? sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1)
+                            : 'Paid';
+                          const isTrial = sub.status === 'trialing';
+                          const trialEndStr = isTrial && sub.trialEnd
+                            ? new Date(sub.trialEnd).toLocaleDateString()
+                            : null;
+                          return (
+                            <span
+                              className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
+                                isTrial
+                                  ? 'bg-blue-100 text-blue-900'
+                                  : 'bg-green-100 text-green-900'
+                              }`}
+                              title={isTrial
+                                ? `Free trial${trialEndStr ? ` until ${trialEndStr}` : ''}`
+                                : `Active paid subscription`}
+                            >
+                              {isTrial ? '🎁' : '✓'} {planLabel}{isTrial ? ' (trial)' : ''}
+                            </span>
+                          );
+                        }
+                        if (source === 'beta') {
+                          return (
+                            <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-900" title="BETA_ALL_PREMIUM env override">
+                              β Beta-all
+                            </span>
+                          );
+                        }
+                        // Free user — show explicit "Free" chip so the column
+                        // never looks empty (was confusing during testing).
+                        return (
+                          <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600" title="No premium access">
+                            Free
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="flex flex-wrap gap-2 mt-1.5">
                       <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
@@ -2184,11 +2292,53 @@ const AdminDashboard = () => {
                               }`}>
                                 {user.isActive ? 'Active' : 'Inactive'}
                               </span>
-                              {user.premium && (
-                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
-                                  Premium
-                                </span>
-                              )}
+                              {(() => {
+                                // Same logic as the card view above — mirror
+                                // it in the desktop table so the source of
+                                // premium access is visible at a glance.
+                                const source = user.premiumSource;
+                                const sub = user.subscription;
+                                if (source === 'manual') {
+                                  return (
+                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-900" title="Manually granted by admin">
+                                      ★ Premium (manual)
+                                    </span>
+                                  );
+                                }
+                                if (source === 'subscription' && sub) {
+                                  const planLabel = sub.plan
+                                    ? sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1)
+                                    : 'Paid';
+                                  const isTrial = sub.status === 'trialing';
+                                  const trialEndStr = isTrial && sub.trialEnd
+                                    ? new Date(sub.trialEnd).toLocaleDateString()
+                                    : null;
+                                  return (
+                                    <span
+                                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                        isTrial ? 'bg-blue-100 text-blue-900' : 'bg-green-100 text-green-900'
+                                      }`}
+                                      title={isTrial
+                                        ? `Free trial${trialEndStr ? ` until ${trialEndStr}` : ''}`
+                                        : 'Active paid subscription'}
+                                    >
+                                      {isTrial ? '🎁' : '✓'} {planLabel}{isTrial ? ' (trial)' : ''}
+                                    </span>
+                                  );
+                                }
+                                if (source === 'beta') {
+                                  return (
+                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-900" title="BETA_ALL_PREMIUM env override">
+                                      β Beta-all
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600" title="No premium access">
+                                    Free
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td className="px-4 lg:px-6 py-4 text-sm font-medium space-y-2">
