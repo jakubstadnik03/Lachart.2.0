@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import NativeDashboardPage from './NativeDashboardPage';
@@ -99,6 +99,8 @@ export default function DashboardPage() {
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
+  const trainingsRequestRef = useRef(new Map());
+  const calendarRequestRef = useRef(new Map());
 
   /**
    * Welcome paywall — shown once per user the first time they land on the
@@ -477,8 +479,11 @@ export default function DashboardPage() {
       console.warn('Error reading trainings cache (dashboard):', e);
     }
 
-    // 2) Always try to refresh from API (stale-while-revalidate)
-    try {
+      const inFlightTrainings = trainingsRequestRef.current.get(targetId);
+      if (inFlightTrainings) return inFlightTrainings;
+
+      // 2) Refresh from API, coalescing duplicate dashboard refreshes for the same athlete.
+      const request = (async () => {
       if (!usedCache) {
         setLoading(true);
       }
@@ -497,7 +502,10 @@ export default function DashboardPage() {
       // Optionally enrich with FIT trainings and Strava activities (same as TrainingPage)
       const [fitResponse, stravaResponse] = await Promise.all([
         api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
-        api.get(`/api/integrations/activities`, { params: { athleteId: targetId } }).catch(() => ({ data: [] }))
+        api.get(`/api/integrations/activities`, {
+          params: { athleteId: targetId, summaryOnly: true, limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES },
+          cacheTtlMs: 60000,
+        }).catch(() => ({ data: [] }))
       ]);
 
       const allTrainings = [
@@ -550,11 +558,17 @@ export default function DashboardPage() {
       // Return both merged list and raw regular trainings so callers can pass
       // regularTrainings directly to loadCalendarData without another fetch.
       return { allTrainings, regularTrainings: regularTrainingsData };
+      })();
+
+      trainingsRequestRef.current.set(targetId, request);
+      try {
+        return await request;
     } catch (error) {
       console.error('Error loading trainings (dashboard):', error);
       // setError(error.message);
       return null;
     } finally {
+        trainingsRequestRef.current.delete(targetId);
       setLoading(false);
     }
   }, [setLoading]);
@@ -621,8 +635,7 @@ export default function DashboardPage() {
             // Cache is valid, use it immediately
             setCalendarData(parsed);
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
-            // Still load from API in background to refresh cache, but don't wait
-            // Continue to load from API to refresh cache
+            return parsed;
           } else if (parsed.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
             setCalendarData(parsed);
@@ -636,12 +649,20 @@ export default function DashboardPage() {
         console.log('[DashboardPage] No cached calendar data found');
       }
       
+      const inFlightCalendar = calendarRequestRef.current.get(targetId);
+      if (inFlightCalendar) return inFlightCalendar;
+
+      const request = (async () => {
       const [fitData, stravaData] = await Promise.all([
         getFitTrainings(targetId).catch(err => {
           console.error('Error loading FIT trainings:', err);
           return [];
         }),
-        listExternalActivities({ athleteId: targetId }).catch(err => {
+        listExternalActivities({
+          athleteId: targetId,
+          summaryOnly: true,
+          limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES,
+        }).catch(err => {
           // Silently handle 429 (Too Many Requests) and network errors - don't log
           if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
             console.error('Error loading Strava activities:', err);
@@ -768,6 +789,14 @@ export default function DashboardPage() {
         console.log('[DashboardPage] Sample activity:', limitedForView[0]);
       }
       return limitedForView;
+      })();
+
+      calendarRequestRef.current.set(targetId, request);
+      try {
+        return await request;
+      } finally {
+        calendarRequestRef.current.delete(targetId);
+      }
     } catch (error) {
       console.error('Error loading calendar data:', error);
       

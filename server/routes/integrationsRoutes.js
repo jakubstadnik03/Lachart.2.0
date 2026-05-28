@@ -2822,48 +2822,71 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       targetUserId = userId;
     }
 
-    // Increased limit to 5000 activities to support longer history in calendar view
-    // This should cover several years of activities for most users
-    // IMPORTANT: Keep this payload small (calendar view).
-    // Returning `raw` or `laps` for thousands of activities is extremely slow and bloats responses.
-    // Optimize: Only fetch last 2 years of activities (reduces query time significantly)
-    // For HR test plan, we need more activities - check if request is for HR test plan
+    // IMPORTANT: Keep this payload small for dashboard/calendar list views.
+    // Full lap/raw data belongs on detail endpoints; list payloads are often thousands of rows.
     const isHRTestPlan = req.query.hrTestPlan === 'true';
-    const dateCutoff = isHRTestPlan 
+    const summaryOnly = req.query.summaryOnly === 'true';
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const maxLimit = isHRTestPlan ? 5000 : 2000;
+    const activityLimit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(requestedLimit, maxLimit))
+      : (isHRTestPlan ? 5000 : 1000);
+    const requestedFrom = req.query.from ? new Date(req.query.from) : null;
+    const requestedTo = req.query.to ? new Date(req.query.to) : null;
+    const dateCutoff = requestedFrom && !Number.isNaN(requestedFrom.getTime())
+      ? requestedFrom
+      : isHRTestPlan
       ? new Date(Date.now() - (180 * 24 * 60 * 60 * 1000)) // 180 days for HR test plan
       : (() => {
           const twoYearsAgo = new Date();
           twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
           return twoYearsAgo;
         })();
-    const activityLimit = isHRTestPlan ? 5000 : 2000; // More activities for HR test plan
+    const dateFilter = { $gte: dateCutoff };
+    if (requestedTo && !Number.isNaN(requestedTo.getTime())) {
+      dateFilter.$lte = requestedTo;
+    }
+    const stravaSelect = summaryOnly
+      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate'
+      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate laps.lactate';
+    const garminSelect = summaryOnly
+      ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate'
+      : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate laps.lactate';
+    const appleSelect = summaryOnly
+      ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
+      : null;
     
     const [stravaActs, garminActs, appleHealthActs] = await Promise.all([
       StravaActivity.find({
         userId: targetUserId.toString(),
-        startDate: { $gte: dateCutoff }
+        startDate: dateFilter
       })
       .sort({ startDate: -1 })
         .limit(activityLimit)
-      .select(
-        'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate laps.lactate'
-      )
+      .select(stravaSelect)
         .lean(),
       GarminActivity.find({
         userId: targetUserId.toString(),
-        startDate: { $gte: dateCutoff }
+        startDate: dateFilter
       })
         .sort({ startDate: -1 })
         .limit(activityLimit)
-        .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate laps.lactate')
+        .select(garminSelect)
         .lean(),
-      AppleHealthActivity.find({
+      (appleSelect ? AppleHealthActivity.find({
         userId: targetUserId,
-        startDate: { $gte: dateCutoff },
+        startDate: dateFilter,
       })
         .sort({ startDate: -1 })
         .limit(activityLimit)
-        .lean(),
+        .select(appleSelect)
+        .lean() : AppleHealthActivity.find({
+          userId: targetUserId,
+          startDate: dateFilter,
+        })
+          .sort({ startDate: -1 })
+          .limit(activityLimit)
+          .lean()),
     ]);
 
     // Deduplicate activities from Strava and Garmin
@@ -2963,18 +2986,24 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       })),
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
-    // Optimized deduplication: use Map for O(1) lookups instead of O(n²) nested loops
+    // Deduplicate with bucketed lookups so large calendar payloads don't do an O(n²) scan.
     const dedupMap = new Map(); // key -> activity
+    const similarBuckets = new Map(); // date+sport -> [{ key, activity }]
     
     // Deduplicate: prefer source based on EXTERNAL_SOURCE_PRIORITY.
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
+      const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
+      const bucketKey = `${actDatePart}_${actSport}`;
       
       // Check if we've already seen this exact key
       if (dedupMap.has(key)) {
         const existing = dedupMap.get(key);
         const merged = choosePreferredActivity(existing, act);
         dedupMap.set(key, merged);
+        const bucket = similarBuckets.get(bucketKey) || [];
+        const bucketItem = bucket.find(item => item.key === key);
+        if (bucketItem) bucketItem.activity = merged;
         const existingIndex = deduplicatedActs.findIndex(a => a === existing);
         if (existingIndex >= 0) {
           deduplicatedActs[existingIndex] = merged;
@@ -2982,38 +3011,39 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         continue;
       }
       
-      // Check for similar keys (same date and sport, similar duration/distance) - O(n) but only once per activity
+      // Check only same-minute/same-sport candidates, not the full activity set.
       let isDuplicate = false;
-      for (const [seenKey, seenAct] of dedupMap.entries()) {
-        const [datePart, sport, duration, distance] = seenKey.split('_');
-        const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
-        
-        // Check if keys match (same date, sport, similar duration/distance)
-        if (datePart === actDatePart && sport === actSport) {
-          const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
-          const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
-          
-          if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
-            isDuplicate = true;
-            const merged = choosePreferredActivity(seenAct, act);
-            const preferredSourceChanged = merged.source !== seenAct.source;
-            if (preferredSourceChanged) {
-              dedupMap.delete(seenKey);
-              dedupMap.set(key, merged);
-            } else {
-              dedupMap.set(seenKey, merged);
-            }
-            const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
-            if (existingIndex >= 0) {
-              deduplicatedActs[existingIndex] = merged;
-            }
-            break;
+      const bucket = similarBuckets.get(bucketKey) || [];
+      for (const candidate of bucket) {
+        const [,, duration, distance] = candidate.key.split('_');
+        const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
+        const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
+
+        if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
+          isDuplicate = true;
+          const seenAct = candidate.activity;
+          const merged = choosePreferredActivity(seenAct, act);
+          const preferredSourceChanged = merged.source !== seenAct.source;
+          if (preferredSourceChanged) {
+            dedupMap.delete(candidate.key);
+            dedupMap.set(key, merged);
+            candidate.key = key;
+          } else {
+            dedupMap.set(candidate.key, merged);
           }
+          candidate.activity = merged;
+          const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
+          if (existingIndex >= 0) {
+            deduplicatedActs[existingIndex] = merged;
+          }
+          break;
         }
       }
       
       if (!isDuplicate) {
         dedupMap.set(key, act);
+        if (!similarBuckets.has(bucketKey)) similarBuckets.set(bucketKey, []);
+        similarBuckets.get(bucketKey).push({ key, activity: act });
         deduplicatedActs.push(act);
       }
     }
@@ -3021,8 +3051,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // Sort by date descending
     deduplicatedActs.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
-    // Limit to 5000 most recent
-    const limitedActs = deduplicatedActs.slice(0, 5000);
+    const limitedActs = deduplicatedActs.slice(0, activityLimit);
 
     // Cache-friendly headers (private because this is user-scoped)
     res.set('Cache-Control', 'private, max-age=60');

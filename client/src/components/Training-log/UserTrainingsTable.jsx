@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import ReactDOM from "react-dom";
 import TrainingItem from "./TrainingItem";
 import TrainingForm from "../TrainingForm";
@@ -199,7 +199,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [filterSport,    setFilterSport]    = useState('all');
 
   /** A training is "curated" if it has been exported, categorised, has lactate, or has a manual title. */
-  const isCurated = (t) => {
+  const isCurated = useCallback((t) => {
     if (!t) return false;
 
     const hasTitle    = Boolean(t.title && t.title.trim() && t.title.trim().toLowerCase() !== 'untitled');
@@ -224,7 +224,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
 
     // Untitled: only show if it has actual interval/lap data
     return hasData && (hasCategory || hasLactate || isLinked);
-  };
+  }, []);
 
   /** Detect the storage type of a training to call the right delete endpoint. */
   const getTrainingType = (t) => {
@@ -257,7 +257,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     });
   };
 
-  const sortData = (trainings, config) => {
+  const sortData = useCallback((trainings, config) => {
     return [...trainings].sort((a, b) => {
       if (config.key === 'date') {
         const dateA = new Date(a.date || a.startDate || a.start_date || a.startTime || a.timestamp || 0);
@@ -276,7 +276,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       if (aValue > bValue) return config.direction === "asc" ? 1 : -1;
       return 0;
     });
-  };
+  }, []);
 
   // Derive unique categories and sports from the incoming trainings
   const availableCategories = useMemo(() => {
@@ -301,38 +301,43 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
 
   // ── Previous same-title training map (for inline comparison) ──────────────
   // For each training, find the most-recent earlier training with the same title
-  // that also has interval/lap data. O(n²) but n is typically small (≤200).
+  // that also has interval/lap data. Grouping avoids repeated full-list scans.
   const prevTrainingMap = useMemo(() => {
     const map = {};
+    const byTitle = new Map();
+    const timestampOf = (item) => {
+      const ts = new Date(item.date || item.startDate || item.start_date || item.timestamp || item.createdAt || 0).getTime();
+      return Number.isFinite(ts) ? ts : 0;
+    };
+
     trainings.forEach(t => {
       const title = (t.title || t.titleManual || t.name || t.titleAuto || '').trim().toLowerCase();
       if (!title || title === 'untitled') return;
-      const tMs = new Date(t.date || t.startDate || t.start_date || t.timestamp || t.createdAt || 0).getTime();
+      const tMs = timestampOf(t);
       if (!tMs) return;
-
-      const prev = trainings
-        .filter(other => {
-          if (other._id === t._id) return false;
-          const oTitle = (other.title || other.titleManual || other.name || other.titleAuto || '').trim().toLowerCase();
-          if (oTitle !== title) return false;
-          const hasData = (Array.isArray(other.results) && other.results.length > 0)
-                       || (Array.isArray(other.laps)    && other.laps.length    > 0);
-          if (!hasData) return false;
-          const oMs = new Date(other.date || other.startDate || other.start_date || other.timestamp || other.createdAt || 0).getTime();
-          return oMs < tMs;
-        })
-        .sort((a, b) => {
-          const dA = new Date(a.date || a.startDate || a.start_date || a.timestamp || a.createdAt || 0).getTime();
-          const dB = new Date(b.date || b.startDate || b.start_date || b.timestamp || b.createdAt || 0).getTime();
-          return dB - dA; // most recent first
-        });
-
-      if (prev.length > 0) map[t._id] = prev[0];
+      if (!byTitle.has(title)) byTitle.set(title, []);
+      byTitle.get(title).push(t);
     });
+
+    byTitle.forEach(group => {
+      let previousWithData = null;
+      group
+        .sort((a, b) => timestampOf(a) - timestampOf(b))
+        .forEach(t => {
+          if (previousWithData && t._id) map[t._id] = previousWithData;
+          const hasData = (Array.isArray(t.results) && t.results.length > 0)
+                       || (Array.isArray(t.laps)    && t.laps.length    > 0);
+          if (hasData) previousWithData = t;
+        });
+    });
+
     return map;
   }, [trainings]);
 
-  const sortedTrainings = sortData(trainings, sortConfig);
+  const sortedTrainings = useMemo(
+    () => sortData(trainings, sortConfig),
+    [trainings, sortConfig, sortData]
+  );
 
   const filteredTrainings = useMemo(() => {
     return sortedTrainings.filter((training) => {
@@ -360,7 +365,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       }
       return true;
     });
-  }, [sortedTrainings, searchQuery, filterCategory, filterSport, showExportedOnly]);
+  }, [sortedTrainings, searchQuery, filterCategory, filterSport, showExportedOnly, isCurated]);
 
   const handleSort = (key) => {
     setSortConfig((prevConfig) => {
@@ -369,9 +374,12 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     });
   };
 
-  const paginatedTrainings = filteredTrainings.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
+  const paginatedTrainings = useMemo(
+    () => filteredTrainings.slice(
+      (currentPage - 1) * rowsPerPage,
+      currentPage * rowsPerPage
+    ),
+    [filteredTrainings, currentPage, rowsPerPage]
   );
 
   const handleEditTraining = (training) => {

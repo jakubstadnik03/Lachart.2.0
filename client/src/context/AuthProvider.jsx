@@ -262,13 +262,18 @@ export const AuthProvider = ({ children }) => {
         saveUserToStorage(loginUser);
         setIsAuthenticated(true);
         clearApiCache();
-        const isNativeApp = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.());
-        if (!isNativeApp && !sessionStorage.getItem('welcomed')) {
-          setTimeout(() => {
-            setShowWelcome(true);
-            sessionStorage.setItem('welcomed', '1');
-          }, 10000);
-        }
+        // Auto-popup of WelcomeModal disabled 2026-05 — felt too pushy on every
+        // session start. The modal component + setShowWelcome state are kept
+        // wired up so it can still be triggered manually (e.g. from a help menu
+        // entry) without re-adding this side effect. To re-enable, restore:
+        //
+        //   const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
+        //   if (!isNativeApp && !sessionStorage.getItem('welcomed')) {
+        //     setTimeout(() => {
+        //       setShowWelcome(true);
+        //       sessionStorage.setItem('welcomed', '1');
+        //     }, 10000);
+        //   }
         // Navigate to dashboard (or last route) without full reload — preserves in-memory cache
         const lastRoute = localStorage.getItem('lastRoute');
         const target = lastRoute && lastRoute !== '/' && lastRoute !== '/login' && lastRoute !== '/signup'

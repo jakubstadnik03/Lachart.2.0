@@ -160,7 +160,7 @@ function fmtLapDistance(m) {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 2)} km`;
 }
 
-function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
+function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick }) {
   const [hover, setHover] = useState(null); // { idx, x, y }
   const wrapperRef = useRef(null);
 
@@ -274,6 +274,8 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax }) {
                   const bx = e.currentTarget.getBoundingClientRect();
                   setHover({ idx, x: bx.left - (rect?.left || 0) + bx.width / 2, y: bx.top - (rect?.top || 0) });
                 }}
+                onClick={() => onBarClick && onBarClick(idx)}
+                title={`Lap ${idx + 1} — click to jump to this lap in the table`}
               >
                 <div
                   className="absolute bottom-0 left-0 right-0 rounded-t-md transition-opacity"
@@ -366,6 +368,25 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   // Filled by the per-card bar block; the line chart below reads it so both
   // share the same y-axis bounds (max across every session of the title).
   const sharedRangeRef = useRef({ min: null, max: null });
+
+  // ── Bar/line click → scroll-to-row interaction ───────────────────────────────
+  // When the user clicks a lap in any of the bar mini-charts (LapBars) or the
+  // shared line chart below, we scroll the matching row in the lap-detail table
+  // into view and briefly highlight it. The table has a capped max-height with
+  // its own scrollbar, so jumping to lap 18 of 22 would otherwise require
+  // manually scrolling there every time.
+  const [selectedLapIdx, setSelectedLapIdx] = useState(null);  // 0-based
+  const lapTableScrollRef = useRef(null);                       // <div> wrapping <table>
+  useEffect(() => {
+    if (selectedLapIdx == null) return;
+    const wrap = lapTableScrollRef.current;
+    if (!wrap) return;
+    const row = wrap.querySelector(`tr[data-lap-idx="${selectedLapIdx}"]`);
+    if (!row) return;
+    // Use 'nearest' so we only scroll when the row is actually off-screen —
+    // clicking a lap already in view doesn't trigger jarring re-centering.
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedLapIdx]);
 
   // Use external title if provided (keeps in sync with TrainingGraph selector)
   const selectedTitle = externalTitle !== undefined && externalTitle !== null ? externalTitle : localTitle;
@@ -856,7 +877,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
 
                         {/* Bars */}
                         <div onClick={(e) => e.stopPropagation()}>
-                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} scaleMin={sharedMin} scaleMax={sharedMax} />
+                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} scaleMin={sharedMin} scaleMax={sharedMax} onBarClick={setSelectedLapIdx} />
                         </div>
                       </div>
                     );
@@ -866,7 +887,20 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                 <div className="w-full overflow-x-auto">
                   <div style={{ minWidth: Math.max(300, chartData.length * 52), height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                      <ComposedChart
+                        data={chartData}
+                        margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
+                        onClick={(state) => {
+                          // recharts hands us activeTooltipIndex when the user
+                          // clicks the chart background (most reliable across
+                          // Line + dot click variations). Convert to 0-based
+                          // lap idx and trigger the scroll-into-view effect.
+                          if (state && typeof state.activeTooltipIndex === 'number') {
+                            setSelectedLapIdx(state.activeTooltipIndex);
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis
                           dataKey="lap"
@@ -939,11 +973,21 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                   };
 
                   return (
-                    <div className="mt-4 overflow-x-auto">
+                    // Cap the table height so a 22-lap session doesn't push the
+                    // whole comparison block off-screen. Vertical overflow gets
+                    // its own scrollbar; sticky <thead> keeps column headers
+                    // visible while scrolling. selectedLapIdx (set by bar /
+                    // line-chart clicks above) scrolls the matching row into
+                    // view via the useEffect at the top of this component.
+                    <div
+                      ref={lapTableScrollRef}
+                      className="mt-4 overflow-x-auto overflow-y-auto rounded-lg border border-gray-100"
+                      style={{ maxHeight: 'min(60vh, 460px)' }}
+                    >
                       <table className="w-full text-[13px]">
-                        <thead>
+                        <thead className="sticky top-0 bg-white z-20 shadow-[0_1px_0_0_#f3f4f6]">
                           <tr className="text-gray-400 text-left border-b border-gray-100">
-                            <th className="py-1.5 pr-3 font-semibold sticky left-0 bg-white z-10">Lap</th>
+                            <th className="py-1.5 pr-3 pl-2 font-semibold sticky left-0 bg-white z-10">Lap</th>
                             {orderedSeries.map(s => (
                               <th key={s.key} className="py-1.5 px-2 font-semibold text-right whitespace-nowrap" style={{ color: s.color }}>
                                 {s.label}
@@ -957,9 +1001,25 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                         <tbody className="divide-y divide-gray-50">
                           {Array.from({ length: maxLaps }, (_, i) => {
                             const lapIdx = i;
+                            const isSelected = selectedLapIdx === lapIdx;
+                            // Click the row to "select" it from the table side too — handy when
+                            // the user navigates via keyboard or wants to clear/reselect.
                             return (
-                              <tr key={lapIdx} className="hover:bg-gray-50 transition-colors align-top">
-                                <td className="py-1.5 pr-3 font-semibold text-gray-600 sticky left-0 bg-white z-10">L{lapIdx + 1}</td>
+                              <tr
+                                key={lapIdx}
+                                data-lap-idx={lapIdx}
+                                onClick={() => setSelectedLapIdx(lapIdx)}
+                                className={`align-top transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-gray-50'
+                                }`}
+                              >
+                                <td
+                                  className={`py-1.5 pr-3 pl-2 font-semibold sticky left-0 z-10 ${
+                                    isSelected ? 'text-primary bg-primary/10' : 'text-gray-600 bg-white'
+                                  }`}
+                                >
+                                  L{lapIdx + 1}
+                                </td>
                                 {orderedSeries.map((s, sIdx) => {
                                   const lap = lapsBySeries.get(s.key)?.[lapIdx];
                                   if (!lap) {

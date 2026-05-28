@@ -16,7 +16,7 @@ function getAuthToken() {
 
 // ===== API CALL MONITORING =====
 // Enable/disable monitoring via localStorage or environment
-const ENABLE_API_MONITORING = process.env.NODE_ENV === 'development' || localStorage.getItem('enableApiMonitoring') === 'true';
+const ENABLE_API_MONITORING = localStorage.getItem('enableApiMonitoring') === 'true';
 
 // Wrap fetch to also track API calls made via fetch (not just axios)
 // This ensures all API calls are monitored, regardless of whether they use axios or fetch

@@ -322,6 +322,14 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
 
   // Use laps passed from selectedStrava (already deduplicated during load)
   const uniqueLaps = React.useMemo(() => selectedStrava?.laps || [], [selectedStrava?.laps]);
+  const cumulativeLapStartTimes = React.useMemo(() => {
+    let total = 0;
+    return uniqueLaps.map((lap) => {
+      const start = total;
+      total += Number(lap?.elapsed_time || 0);
+      return start;
+    });
+  }, [uniqueLaps]);
 
   const zoneKeys = React.useMemo(() => ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'], []);
   // HR bars: single red theme (like LactateStatistics HR screenshot)
