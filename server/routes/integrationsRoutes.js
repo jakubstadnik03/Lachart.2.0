@@ -938,6 +938,7 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null, lates
     body,
     resourceType: 'strava',
     sport: normalizeSportForNotif(latestSport),
+    skipPush: true,
     ...(latestStravaId ? { resourceId: String(latestStravaId) } : {}),
   }).catch((e) => console.error('[Strava sync notification]', e.message || e));
 }
@@ -2897,7 +2898,6 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // - Similar distance (within 5% difference)
     
     const deduplicatedActs = [];
-    const seenKeys = new Set();
     
     // Helper function to create a deduplication key
     const createDedupKey = (activity, source) => {
@@ -2907,33 +2907,6 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       const duration = Math.round((activity.elapsedTime || activity.movingTime || 0) / 60); // minutes
       const distance = Math.round((activity.distance || 0) / 100); // 100m precision
       return `${dateKey}_${sport}_${duration}_${distance}`;
-    };
-    
-    // Helper function to check if activities are duplicates
-    const areDuplicates = (act1, act2) => {
-      const date1 = new Date(act1.startDate);
-      const date2 = new Date(act2.startDate);
-      const timeDiff = Math.abs(date1.getTime() - date2.getTime()) / 1000 / 60; // minutes
-      
-      if (timeDiff > 5) return false; // More than 5 minutes apart
-      
-      const sport1 = (act1.sport || 'unknown').toLowerCase();
-      const sport2 = (act2.sport || 'unknown').toLowerCase();
-      if (sport1 !== sport2) return false;
-      
-      const duration1 = act1.elapsedTime || act1.movingTime || 0;
-      const duration2 = act2.elapsedTime || act2.movingTime || 0;
-      const durationDiff = Math.abs(duration1 - duration2) / Math.max(duration1, duration2, 1);
-      if (durationDiff > 0.1) return false; // More than 10% duration difference
-      
-      const distance1 = act1.distance || 0;
-      const distance2 = act2.distance || 0;
-      if (distance1 > 0 && distance2 > 0) {
-        const distanceDiff = Math.abs(distance1 - distance2) / Math.max(distance1, distance2);
-        if (distanceDiff > 0.05) return false; // More than 5% distance difference
-      }
-      
-      return true;
     };
     
     // Keep preferred source by provider priority, but don't lose useful metrics from fallback providers.

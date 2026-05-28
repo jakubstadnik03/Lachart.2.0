@@ -21,7 +21,8 @@ function getWebhookStatus() {
 async function bootstrapStravaWebhook() {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
-  const serverUrl = process.env.SERVER_PUBLIC_URL || process.env.STRAVA_WEBHOOK_CALLBACK_URL;
+  const explicitCallbackUrl = process.env.STRAVA_WEBHOOK_CALLBACK_URL;
+  const serverUrl = process.env.SERVER_PUBLIC_URL;
   const verifyToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || 'lachart-strava-webhook';
 
   if (!clientId || !clientSecret) {
@@ -29,16 +30,18 @@ async function bootstrapStravaWebhook() {
     setStatus('dead', 'Strava credentials missing on server (STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET)');
     return;
   }
-  if (!serverUrl) {
-    console.error('[StravaWebhook] ❌ DEAD: SERVER_PUBLIC_URL not set — Strava cannot push activity events to this deploy. Set SERVER_PUBLIC_URL=https://your-render-domain on the backend.');
-    setStatus('dead', 'SERVER_PUBLIC_URL env var is not set on this deploy. Real-time webhook sync is disabled — users will only see new activities via the 30-min polling fallback.');
+  if (!serverUrl && !explicitCallbackUrl) {
+    console.error('[StravaWebhook] ❌ DEAD: webhook callback URL not set — Strava cannot push activity events to this deploy. Set SERVER_PUBLIC_URL=https://your-render-domain or STRAVA_WEBHOOK_CALLBACK_URL=https://your-render-domain/api/integrations/strava/webhook on the backend.');
+    setStatus('dead', 'Webhook callback URL is not set on this deploy. Real-time webhook sync is disabled — users will only see new activities via the polling fallback.');
     return;
   }
   if (process.env.STRAVA_DISABLE_POLL === 'true' && process.env.STRAVA_DISABLE_WEBHOOK_BOOTSTRAP === 'true') {
     return;
   }
 
-  const callbackUrl = `${serverUrl.replace(/\/+$/, '')}/api/integrations/strava/webhook`;
+  const callbackUrl = explicitCallbackUrl
+    ? explicitCallbackUrl.replace(/\/+$/, '')
+    : `${serverUrl.replace(/\/+$/, '')}/api/integrations/strava/webhook`;
 
   try {
     // Check existing subscriptions first

@@ -1012,11 +1012,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
             startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
           } else {
             // Fallback: calculate cumulative time
-            let cumulativeTime = 0;
-            for (let i = 0; i < idx; i++) {
-              cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
-            }
-            startTimeSeconds = cumulativeTime;
+            startTimeSeconds = cumulativeLapStartTimes[idx] || 0;
           }
           
           // Ensure startTime is not negative
@@ -1143,10 +1139,8 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
         <div className={lapsScrollShellClass}>
         <div className="divide-y divide-gray-100 pr-0.5">
           {uniqueLaps.map((lap, index) => {
-            let cumulativeTime = 0;
-            for (let i = 0; i < index; i++) cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
-            const startTime = cumulativeTime;
-            const endTime = cumulativeTime + (lap.elapsed_time || 0);
+            const startTime = cumulativeLapStartTimes[index] || 0;
+            const endTime = startTime + (lap.elapsed_time || 0);
             const lapNumber = lap?.lapNumber ?? (index + 1);
             const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
             const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
@@ -1318,12 +1312,8 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
             {uniqueLaps.map((lap, index) => {
               const sportRawLaps = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
               const isSwimLapsRow = sportRawLaps.includes('swim');
-              let cumulativeTime = 0;
-              for (let i = 0; i < index; i++) {
-                cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
-              }
-              const startTime = cumulativeTime;
-              const endTime = cumulativeTime + (lap.elapsed_time || 0);
+              const startTime = cumulativeLapStartTimes[index] || 0;
+              const endTime = startTime + (lap.elapsed_time || 0);
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
               const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
@@ -1572,6 +1562,8 @@ const FitAnalysisPage = () => {
   const [showAutoClassify, setShowAutoClassify] = useState(false);
   const [, setGarminConnected] = useState(false);
   const [externalActivities, setExternalActivities] = useState([]);
+  const [externalActivitiesLoading, setExternalActivitiesLoading] = useState(false);
+  const [externalActivitiesError, setExternalActivitiesError] = useState(null);
   const [plannedWorkoutsCalendar, setPlannedWorkoutsCalendar] = useState([]);
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
   const [compareModal, setCompareModal] = useState(null); // PlannedWorkout object with executionData
@@ -1992,9 +1984,12 @@ const FitAnalysisPage = () => {
         setSelectedAthleteId(athleteIdParam);
         localStorage.setItem('trainingCalendar_selectedAthleteId', athleteIdParam);
       }
-      await loadTrainings();
-      await loadRegularTrainings();
-      await loadExternalActivities();
+      const initialAthleteId = athleteIdParam || selectedAthleteId || user?._id || null;
+      await Promise.all([
+        loadTrainings(initialAthleteId),
+        loadRegularTrainings(initialAthleteId),
+        loadExternalActivities(initialAthleteId),
+      ]);
 
       // Canonical path: /training-calendar/:activityId or .../:athleteId/:activityId
       if (activityId) {
@@ -2055,7 +2050,6 @@ const FitAnalysisPage = () => {
       window.history.replaceState({}, '', url);
     } else {
       checkStatus();
-      loadExternalActivities();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2176,16 +2170,19 @@ const FitAnalysisPage = () => {
     }
   }, [selectedAthleteId, user?.role, user?._id, addNotification, regularTrainings]);
 
-  const loadExternalActivities = useCallback(async () => {
+  const loadExternalActivities = useCallback(async (athleteIdOverride = null) => {
+    setExternalActivitiesLoading(true);
+    setExternalActivitiesError(null);
     try {
       const role = String(user?.role || '').toLowerCase();
       // Athlete: own data without query param. Coach: explicit athlete or self (own Strava/FIT).
       const athleteId =
-        role === 'athlete'
+        athleteIdOverride ||
+        (role === 'athlete'
           ? null
           : role === 'coach'
             ? (selectedAthleteId || user?._id)
-            : selectedAthleteId;
+            : selectedAthleteId);
 
       if (role === 'coach' && !athleteId) {
         setExternalActivities([]);
@@ -2201,7 +2198,7 @@ const FitAnalysisPage = () => {
         return;
       }
 
-      const params = athleteId ? { athleteId } : {};
+      const params = athleteId ? { athleteId, summaryOnly: true, limit: 2000 } : { summaryOnly: true, limit: 2000 };
       const acts = normalizeApiList(await listExternalActivities(params));
       setExternalActivities(acts);
       
@@ -2233,7 +2230,10 @@ const FitAnalysisPage = () => {
         return;
       }
       console.error('Error loading external activities:', e);
-      setExternalActivities([]);
+      setExternalActivitiesError('Calendar activities could not be loaded. Please try again.');
+    }
+    finally {
+      setExternalActivitiesLoading(false);
     }
   }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail, pendingAthleteIds]);
 
@@ -2724,15 +2724,16 @@ const FitAnalysisPage = () => {
     };
   }, [selectedStrava, selectedStravaStreams]);
 
-  const loadTrainings = useCallback(async () => {
+  const loadTrainings = useCallback(async (athleteIdOverride = null) => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const athleteId =
-        role === 'athlete'
+        athleteIdOverride ||
+        (role === 'athlete'
           ? null
           : role === 'coach'
             ? (selectedAthleteId || user?._id)
-            : selectedAthleteId;
+            : selectedAthleteId);
 
       if (role === 'coach' && !athleteId) {
         setTrainings([]);
@@ -2805,15 +2806,16 @@ const FitAnalysisPage = () => {
   }, [selectedAthleteId, user?.role, user?._id, selectedTraining, pendingAthleteIds]);
 
   // Load regular trainings from /training route
-  const loadRegularTrainings = useCallback(async () => {
+  const loadRegularTrainings = useCallback(async (athleteIdOverride = null) => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const athleteId =
-        role === 'athlete'
+        athleteIdOverride ||
+        (role === 'athlete'
           ? user._id
           : role === 'coach'
             ? (selectedAthleteId || user._id)
-            : selectedAthleteId;
+            : selectedAthleteId);
 
       if (role === 'coach' && !athleteId) {
         setRegularTrainings([]);
@@ -4172,6 +4174,23 @@ const FitAnalysisPage = () => {
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'flex-1 min-h-0' : ''}`}>
+        {(externalActivitiesLoading || externalActivitiesError) && calendarMergedActivities.length === 0 && (
+          <div className="mb-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {externalActivitiesLoading && <div className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />}
+              <span>{externalActivitiesError || 'Loading calendar activities…'}</span>
+            </div>
+            {externalActivitiesError && (
+              <button
+                type="button"
+                onClick={() => loadExternalActivities(selectedAthleteId || user?._id || null)}
+                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         <CalendarView
           activities={calendarMergedActivities}
           selectedActivityId={

@@ -26,7 +26,7 @@ async function sendNotification(recipientIds, opts = {}) {
 
   if (!ids.length) return;
 
-  const { type, title, body, resourceId, resourceType, sport, fromName, pushData = {} } = opts;
+  const { type, title, body, resourceId, resourceType, sport, fromName, pushData = {}, skipPush = false } = opts;
 
   // 1. Create in-app Notification documents
   try {
@@ -45,6 +45,8 @@ async function sendNotification(recipientIds, opts = {}) {
   } catch (e) {
     console.error('[notificationHelper] insertMany error:', e.message);
   }
+
+  if (skipPush) return;
 
   // 2. Send Expo push to each recipient that has tokens registered
   try {

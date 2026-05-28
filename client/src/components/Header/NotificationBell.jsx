@@ -12,6 +12,8 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropRef = useRef(null);
+  const seenStravaNotifIds = useRef(new Set());
+  const notifsInitialized = useRef(false);
   const navigate = useNavigate();
 
   const unreadCount = notifs.filter(n => !n.read).length;
@@ -21,7 +23,33 @@ export default function NotificationBell() {
     setLoading(true);
     try {
       const r = await getNotifications();
-      setNotifs(r.data || []);
+      const fresh = r.data || [];
+      setNotifs(fresh);
+
+      if (!notifsInitialized.current) {
+        fresh.forEach(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          if (rt === 'strava_import' || rt === 'strava') {
+            seenStravaNotifIds.current.add(String(n._id));
+          }
+        });
+        notifsInitialized.current = true;
+      } else {
+        const newStravaNotif = fresh.find(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          return (rt === 'strava_import' || rt === 'strava') &&
+                 !seenStravaNotifIds.current.has(String(n._id));
+        });
+        if (newStravaNotif) {
+          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'notification_bell' } }));
+        }
+        fresh.forEach(n => {
+          const rt = String(n.resourceType || '').toLowerCase();
+          if (rt === 'strava_import' || rt === 'strava') {
+            seenStravaNotifIds.current.add(String(n._id));
+          }
+        });
+      }
     } catch {}
     setLoading(false);
   }, [isAuthenticated]);
@@ -31,7 +59,13 @@ export default function NotificationBell() {
     load();
     const t = setInterval(load, 60000);
     // Reload when a push notification arrives in foreground (dispatched by initCapacitorShell)
-    const onPush = () => load();
+    const onPush = (e) => {
+      load();
+      const type = e?.detail?.data?.type || e?.detail?.type;
+      if (type === 'strava_import' || type === 'strava') {
+        window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'push' } }));
+      }
+    };
     window.addEventListener('pushNotificationReceived', onPush);
     return () => {
       clearInterval(t);

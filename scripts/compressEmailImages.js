@@ -31,7 +31,10 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('./../server/node_modules/sharp');
 
-const DIR = path.resolve(__dirname, '..', 'public', 'images', 'email');
+// Lives under client/public/ so Vercel's static build picks it up and
+// serves at lachart.net/images/email/*. Putting it at the repo root (next
+// to /server) does NOT work — Vercel only serves client/public.
+const DIR = path.resolve(__dirname, '..', 'client', 'public', 'images', 'email');
 const MAX_EDGE = 1200;
 const JPEG_QUALITY = 78;
 const ALPHA_THRESHOLD = 0.02; // % of pixels with alpha < 255 needed to keep PNG
