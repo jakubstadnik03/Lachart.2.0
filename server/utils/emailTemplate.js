@@ -229,7 +229,7 @@ function generateEmailTemplate({
                     <span style="color: ${BRAND.border};">&nbsp;·&nbsp;</span>
                     <a href="${CLIENT_URL}/lactate-guide" style="color: ${BRAND.primary}; text-decoration: none;">Lactate guide</a>
                     <span style="color: ${BRAND.border};">&nbsp;·&nbsp;</span>
-                    <a href="mailto:jakub@lachart.net" style="color: ${BRAND.primary}; text-decoration: none;">Support</a>
+                    <a href="mailto:jakub.stadnik@lachart.net" style="color: ${BRAND.primary}; text-decoration: none;">Support</a>
                   </p>
                   <p style="margin: 12px 0 0; color: ${BRAND.textMuted}; font-size: 11.5px; line-height: 1.5;">
                     If you did not expect this email, you can safely ignore it.

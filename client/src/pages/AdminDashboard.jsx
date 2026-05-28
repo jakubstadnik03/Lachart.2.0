@@ -1,11 +1,30 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { OUTREACH_CONTACTS, buildOutreachEmail, ALL_COUNTRIES } from '../data/outreachContacts';
+import { PageSkeleton } from '../components/common/Skeleton';
+
+function formatAdminHealthTime(value) {
+  if (!value) return 'Never';
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return 'Unknown';
+  const mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function healthUserName(log) {
+  const user = log?.userId;
+  if (!user) return 'Unknown user';
+  return [user.name, user.surname].filter(Boolean).join(' ') || user.email || String(user._id || 'Unknown user');
+}
 
 const AdminDashboard = () => {
   const { user: currentUser, loading, login: authLogin } = useAuth();
@@ -13,6 +32,7 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
+  const [adminHealth, setAdminHealth] = useState(null);
   const [eventStats, setEventStats] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState(null);
@@ -114,15 +134,17 @@ const AdminDashboard = () => {
       setLoadingData(true);
       const endDate = new Date();
       const startDate = new Date(Date.now() - chartTimeRange * 24 * 60 * 60 * 1000);
-      const [usersData, statsData, eventStatsData] = await Promise.all([
+      const [usersData, statsData, healthData, eventStatsData] = await Promise.all([
         getAdminUsers(),
         getAdminStats(),
+        getAdminHealth(),
         getEventStats(null, startDate.toISOString(), endDate.toISOString())
       ]);
       
       // Data loaded successfully; debug logging removed to keep console clean
       setUsers(usersData);
       setStats(statsData);
+      setAdminHealth(healthData);
       setEventStats(eventStatsData);
     } catch (err) {
       setError('Failed to fetch data');
@@ -1019,7 +1041,11 @@ const AdminDashboard = () => {
   };
 
   const handleLeadSend = async (lead) => {
-    if (!window.confirm(`Send outreach email to ${lead.name} (${lead.email})?`)) return;
+    // Confirm() prompt removed 2026-05 — admin flow is high-volume (sending
+    // dozens of leads a day from the table), and the surrounding UI already
+    // makes intent unambiguous (explicit Send button, separate from Preview).
+    // The "Sent" indicator + post-send toast give enough feedback that an
+    // accidental misclick is recoverable.
     setLeadsSendingId(lead._id);
     try {
       await sendCoachOutreachEmail({ name: lead.name, email: lead.email });
@@ -1099,11 +1125,8 @@ const AdminDashboard = () => {
 
   if (loadingData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading admin dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6">
+        <PageSkeleton cards={4} />
       </div>
     );
   }
@@ -1131,6 +1154,7 @@ const AdminDashboard = () => {
 
   const tabs = [
     { id: 'overview',   name: 'Overview',   icon: '📊' },
+    { id: 'health',     name: 'Health',     icon: '🩺' },
     { id: 'users',      name: 'Users',      icon: '👥' },
     { id: 'marketing',  name: 'Marketing',  icon: '📧' },
     { id: 'retention',  name: 'Retention',  icon: '🔁' },
@@ -1500,6 +1524,161 @@ const AdminDashboard = () => {
                 </div>
               </div>
             )}
+          </motion.div>
+        )}
+
+        {activeTab === 'health' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4 sm:space-y-6"
+          >
+            {(() => {
+              const webhook = adminHealth?.strava?.webhookSubscription || {};
+              const budget = adminHealth?.strava?.budget || {};
+              const counts = adminHealth?.strava?.counts || {};
+              const webhookBroken = ['dead', 'error'].includes(webhook.state);
+              const dbConnected = adminHealth?.database?.stateLabel === 'connected';
+              const budgetPct = budget.windowLimit ? Math.round((Number(budget.windowUsed || 0) / Number(budget.windowLimit)) * 100) : 0;
+              const cards = [
+                {
+                  label: 'API / DB',
+                  value: dbConnected ? 'Healthy' : (adminHealth?.database?.stateLabel || 'Unknown'),
+                  detail: `uptime ${Math.round((adminHealth?.app?.uptimeSeconds || 0) / 60)} min`,
+                  tone: dbConnected ? 'green' : 'red',
+                },
+                {
+                  label: 'Strava webhook',
+                  value: webhookBroken ? 'Needs attention' : (webhook.state || 'Unknown'),
+                  detail: webhook.callbackUrl || webhook.message || 'No callback reported',
+                  tone: webhookBroken ? 'red' : webhook.state === 'active' ? 'green' : 'amber',
+                },
+                {
+                  label: 'Strava budget',
+                  value: budget.windowLimit ? `${budget.windowUsed || 0}/${budget.windowLimit}` : 'Unknown',
+                  detail: `${budgetPct}% of current 15-min window`,
+                  tone: budgetPct > 80 ? 'red' : budgetPct > 60 ? 'amber' : 'green',
+                },
+                {
+                  label: '24h sync health',
+                  value: `${counts.failures24h || 0} failures`,
+                  detail: `${counts.syncs24h || 0} sync logs, ${counts.rateLimits24h || 0} rate limits`,
+                  tone: counts.failures24h > 0 || counts.rateLimits24h > 0 ? 'amber' : 'green',
+                },
+              ];
+              const toneClass = (tone) => {
+                if (tone === 'red') return 'border-red-200 bg-red-50 text-red-800';
+                if (tone === 'amber') return 'border-amber-200 bg-amber-50 text-amber-800';
+                return 'border-green-200 bg-green-50 text-green-800';
+              };
+
+              return (
+                <>
+                  <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div>
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">System Health</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Strava sync, webhook, rate-limit and import diagnostics for support.
+                        </p>
+                      </div>
+                      <button
+                        onClick={fetchData}
+                        className="px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                      >
+                        Refresh health
+                      </button>
+                    </div>
+                    {webhookBroken && (
+                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                        <div className="font-semibold">Strava real-time webhook is not working.</div>
+                        <div className="mt-1">{webhook.message || 'Webhook bootstrap failed.'}</div>
+                        <div className="mt-1 font-medium">
+                          Check backend env vars `SERVER_PUBLIC_URL` or `STRAVA_WEBHOOK_CALLBACK_URL`, then restart the server.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                    {cards.map((card) => (
+                      <div key={card.label} className={`rounded-xl border p-4 ${toneClass(card.tone)}`}>
+                        <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{card.label}</p>
+                        <p className="text-xl font-bold mt-1">{card.value}</p>
+                        <p className="text-xs mt-2 break-all">{card.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                      <h4 className="font-semibold text-gray-900 mb-3">Strava Users</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between"><span className="text-gray-500">Active users</span><span className="font-semibold">{counts.activeUsers || 0}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Connected</span><span className="font-semibold">{counts.connectedUsers || 0}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Auto-sync enabled</span><span className="font-semibold">{counts.autoSyncUsers || 0}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Last success</span><span className="font-semibold">{formatAdminHealthTime(adminHealth?.strava?.lastSuccessfulSyncAt)}</span></div>
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-4 sm:p-6 lg:col-span-2">
+                      <h4 className="font-semibold text-gray-900 mb-3">Deploy / Runtime</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        <div><span className="text-gray-500">Environment:</span> <span className="font-mono">{adminHealth?.app?.environment || 'unknown'}</span></div>
+                        <div><span className="text-gray-500">Commit:</span> <span className="font-mono break-all">{adminHealth?.app?.commit || 'not reported'}</span></div>
+                        <div><span className="text-gray-500">DB:</span> <span className="font-mono">{adminHealth?.database?.name || 'unknown'} ({adminHealth?.database?.stateLabel || 'unknown'})</span></div>
+                        <div><span className="text-gray-500">Generated:</span> {adminHealth?.generatedAt ? new Date(adminHealth.generatedAt).toLocaleString() : 'unknown'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow overflow-hidden">
+                    <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+                      <h4 className="font-semibold text-gray-900">Recent Strava Sync Logs</h4>
+                      <p className="text-sm text-gray-500 mt-1">Manual sync, webhook imports, scheduler runs and rate-limit events.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            {['Time', 'User', 'Source', 'Status', 'Imported', 'Updated', 'Error'].map((h) => (
+                              <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {(adminHealth?.recentLogs || []).map((log) => (
+                            <tr key={log._id}>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{formatAdminHealthTime(log.createdAt)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{healthUserName(log)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{log.source}</td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  log.status === 'success' ? 'bg-green-100 text-green-800' :
+                                  log.status === 'rate_limited' ? 'bg-amber-100 text-amber-800' :
+                                  log.status === 'partial' ? 'bg-blue-100 text-blue-800' :
+                                  log.status === 'skipped' ? 'bg-gray-100 text-gray-700' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {log.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{log.imported || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{log.updated || 0}</td>
+                              <td className="px-4 py-3 text-sm text-red-700 max-w-md truncate" title={log.error || log.message || ''}>{log.error || log.message || '-'}</td>
+                            </tr>
+                          ))}
+                          {(!adminHealth?.recentLogs || adminHealth.recentLogs.length === 0) && (
+                            <tr>
+                              <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">No Strava sync logs recorded yet.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </motion.div>
         )}
 

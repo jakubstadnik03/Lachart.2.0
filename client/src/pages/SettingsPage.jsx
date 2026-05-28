@@ -9,10 +9,11 @@ import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
+import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -72,6 +73,48 @@ function getStoredAuthToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token') || '';
 }
 
+function formatRelativeSyncTime(iso) {
+  if (!iso) return 'Never';
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return 'Unknown';
+  const mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function getStravaSyncHealth(status) {
+  const subscriptionState = status?.webhookSubscription?.state || 'unknown';
+  if (subscriptionState === 'dead' || subscriptionState === 'error') {
+    return {
+      tone: 'red',
+      label: 'Real-time webhook needs attention',
+      description: status?.webhookSubscription?.message || 'Webhook bootstrap failed. New activities will rely on polling fallback.',
+    };
+  }
+  if (status?.webhookHealthy) {
+    return {
+      tone: 'green',
+      label: 'Real-time sync active',
+      description: 'Strava webhook is receiving activity events. New uploads should appear automatically.',
+    };
+  }
+  if (subscriptionState === 'active') {
+    return {
+      tone: 'amber',
+      label: 'Webhook active, waiting for next event',
+      description: 'Subscription exists, but no recent Strava webhook event was seen. Polling fallback is still active.',
+    };
+  }
+  return {
+    tone: 'amber',
+    label: 'Polling fallback active',
+    description: 'Could not confirm real-time webhook health. New activities may take up to 15 minutes.',
+  };
+}
+
 const SettingsPage = () => {
   const { user, logout, login } = useAuth();
   const location = useLocation();
@@ -97,6 +140,7 @@ const SettingsPage = () => {
   // Real-time webhook health — populated by /api/integrations/strava/status.
   // {webhookHealthy:boolean, webhookLastEventAt:string|null}
   const [stravaWebhookStatus, setStravaWebhookStatus] = useState(null);
+  const [stravaWebhookStatusLoading, setStravaWebhookStatusLoading] = useState(false);
   const [garminAutoSync, setGarminAutoSync] = useState(false);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
@@ -238,6 +282,29 @@ const SettingsPage = () => {
     }));
   };
 
+  const refreshStravaWebhookStatus = useCallback(async (connectedOverride = stravaConnected) => {
+    if (!connectedOverride) {
+      setStravaWebhookStatus(null);
+      return null;
+    }
+    setStravaWebhookStatusLoading(true);
+    try {
+      const status = await fetchStravaStatus();
+      setStravaWebhookStatus(status || {
+        connected: true,
+        webhookHealthy: false,
+        webhookLastEventAt: null,
+        webhookSubscription: {
+          state: 'error',
+          message: 'Could not load Strava sync health from the server.',
+        },
+      });
+      return status;
+    } finally {
+      setStravaWebhookStatusLoading(false);
+    }
+  }, [stravaConnected]);
+
   const fetchMyCoaches = useCallback(async () => {
     try {
       const token = localStorage.getItem('authToken') || localStorage.getItem('token');
@@ -337,11 +404,7 @@ const SettingsPage = () => {
           // their uploads should appear instantly (webhook) or with up to a
           // 15-min polling delay (scheduler fallback).
           if (isNowConnected) {
-            try {
-              const { fetchStravaStatus } = await import('../services/api');
-              const s = await fetchStravaStatus();
-              if (s) setStravaWebhookStatus(s);
-            } catch (e) { /* non-fatal */ }
+            refreshStravaWebhookStatus(true).catch(() => {});
           } else {
             setStravaWebhookStatus(null);
           }
@@ -374,7 +437,7 @@ const SettingsPage = () => {
     };
     checkIntegrationStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, refreshStravaWebhookStatus]);
   
   // Check for Strava callback in URL and reload user profile
   useEffect(() => {
@@ -2789,7 +2852,14 @@ const SettingsPage = () => {
               </div>
 
               {subLoading && (
-                <div className="mt-4 text-sm text-gray-400 text-center">Loading subscription info…</div>
+                <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4" aria-busy="true">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Skeleton className="h-14" />
+                    <Skeleton className="h-14" />
+                    <Skeleton className="h-14" />
+                  </div>
+                  <Skeleton className="mt-4 h-3 w-64 max-w-full" />
+                </div>
               )}
               {subError && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{subError}</div>
@@ -3023,21 +3093,81 @@ const SettingsPage = () => {
                   
                   {stravaConnected && (
                     <>
-                      {/* Real-time sync health pill. Green = webhook fired in
-                          the last 7 days (uploads appear in seconds). Amber =
-                          falling back to the 15-min polling scheduler so the
-                          user knows why a fresh ride isn't showing up yet. */}
+                      {/* Real-time sync health panel. */}
+                      {!stravaWebhookStatus && stravaWebhookStatusLoading && (
+                        <div className={`${isMobile ? 'mb-2' : 'mb-4'}`}>
+                          <SkeletonCard lines={2} className={isMobile ? 'p-2' : ''} />
+                        </div>
+                      )}
                       {stravaWebhookStatus && (
-                        <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b flex items-center gap-2`}>
-                          <span className={`inline-flex items-center gap-1.5 ${isMobile ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1'} rounded-full font-medium ${stravaWebhookStatus.webhookHealthy ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${stravaWebhookStatus.webhookHealthy ? 'bg-green-500' : 'bg-amber-500'}`} />
-                            {stravaWebhookStatus.webhookHealthy ? 'Real-time sync active' : 'Polling fallback (≤15 min)'}
-                          </span>
-                          {stravaWebhookStatus.webhookLastEventAt && (
-                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>
-                              last push {new Date(stravaWebhookStatus.webhookLastEventAt).toLocaleString()}
-                            </span>
-                          )}
+                        <div className={`${isMobile ? 'mb-2 p-2' : 'mb-4 p-4'} rounded-xl border ${
+                          getStravaSyncHealth(stravaWebhookStatus).tone === 'green'
+                            ? 'border-green-200 bg-green-50'
+                            : getStravaSyncHealth(stravaWebhookStatus).tone === 'red'
+                              ? 'border-red-200 bg-red-50'
+                              : 'border-amber-200 bg-amber-50'
+                        }`}>
+                          {(() => {
+                            const health = getStravaSyncHealth(stravaWebhookStatus);
+                            const toneCls = health.tone === 'green'
+                              ? 'text-green-800'
+                              : health.tone === 'red'
+                                ? 'text-red-800'
+                                : 'text-amber-800';
+                            const dotCls = health.tone === 'green'
+                              ? 'bg-green-500'
+                              : health.tone === 'red'
+                                ? 'bg-red-500'
+                                : 'bg-amber-500';
+                            const isAdminUser = user?.admin === true || String(user?.role || '').toLowerCase() === 'admin';
+                            const subscription = stravaWebhookStatus.webhookSubscription || {};
+                            const budget = stravaWebhookStatus.budget || {};
+                            return (
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className={`flex items-center gap-2 ${isMobile ? 'text-xs' : 'text-sm'} font-bold ${toneCls}`}>
+                                      <span className={`h-2 w-2 rounded-full ${dotCls}`} />
+                                      {health.label}
+                                    </div>
+                                    <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} mt-1 ${toneCls}`}>
+                                      {health.description}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => refreshStravaWebhookStatus(true)}
+                                    disabled={stravaWebhookStatusLoading}
+                                    className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-xs'} rounded-lg bg-white/80 border border-current ${toneCls} disabled:opacity-60`}
+                                  >
+                                    {stravaWebhookStatusLoading ? 'Checking…' : 'Check'}
+                                  </button>
+                                </div>
+
+                                <div className={`grid ${isMobile ? 'grid-cols-1 gap-1' : 'grid-cols-2 gap-2'} ${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
+                                  <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
+                                  <div><span className="font-semibold">Last sync:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}</div>
+                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 15 min)' : 'off'}</div>
+                                  <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
+                                </div>
+
+                                {isAdminUser && (
+                                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg bg-white/75 border border-current/20 px-2 py-1.5 ${toneCls}`}>
+                                    <div className="font-semibold">Admin diagnostics</div>
+                                    <div>Bootstrap: {subscription.state || 'unknown'}{subscription.subscriptionId ? ` (#${subscription.subscriptionId})` : ''}</div>
+                                    {subscription.callbackUrl && <div className="break-all">Callback: {subscription.callbackUrl}</div>}
+                                    {subscription.message && <div>{subscription.message}</div>}
+                                    {budget.windowLimit ? <div>Budget: {budget.windowUsed || 0}/{budget.windowLimit} in current window</div> : null}
+                                    {(subscription.state === 'dead' || subscription.state === 'error') && (
+                                      <div className="mt-1 font-semibold">
+                                        Set `SERVER_PUBLIC_URL` or `STRAVA_WEBHOOK_CALLBACK_URL` on the backend and restart the server.
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>

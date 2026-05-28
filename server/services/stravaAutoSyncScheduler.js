@@ -1,5 +1,6 @@
 const { syncStravaForAllUsers } = require('./stravaAutoSyncService');
 const stravaBudget = require('../utils/stravaBudget');
+const { recordStravaSyncLogSafe } = require('./stravaSyncLogService');
 
 /**
  * Start the Strava auto-sync scheduler
@@ -51,6 +52,13 @@ function startStravaAutoSyncScheduler() {
       const usedPct = snap.windowLimit > 0 ? snap.windowUsed / snap.windowLimit : 0;
       if (usedPct > 0.6) {
         console.log(`[StravaAutoSyncScheduler] Skipping tick — budget ${snap.windowUsed}/${snap.windowLimit} (${Math.round(usedPct * 100)}%) used.`);
+        recordStravaSyncLogSafe({
+          source: 'scheduler',
+          status: 'rate_limited',
+          rateLimited: true,
+          error: `Scheduler skipped because Strava budget is ${Math.round(usedPct * 100)}% used`,
+          budgetSnapshot: snap,
+        });
         return;
       }
       console.log('[StravaAutoSyncScheduler] Starting scheduled sync...', {
@@ -65,6 +73,11 @@ function startStravaAutoSyncScheduler() {
       });
     } catch (error) {
       console.error('[StravaAutoSyncScheduler] Scheduled sync error:', error);
+      recordStravaSyncLogSafe({
+        source: 'scheduler',
+        status: 'error',
+        error: error?.message || String(error),
+      });
     }
   };
 

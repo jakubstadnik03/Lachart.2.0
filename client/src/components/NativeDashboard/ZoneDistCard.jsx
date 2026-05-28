@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getMonthlyPowerAnalysis } from '../../services/api';
+import { NativeSkeleton } from '../native/shared/Tiles';
 
 // ─── Zone definitions ─────────────────────────────────────────────────────────
 
@@ -465,9 +466,9 @@ export default function ZoneDistCard({ athleteId = null }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
           {[1,2,3,4,5].map(i => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '88px 1fr 60px', gap: 8, alignItems: 'center' }}>
-              <div style={{ height: 14, borderRadius: 6, background: 'rgba(118,126,181,.12)', animation: 'ndPulse 1.4s ease infinite' }} />
-              <div style={{ height: 7,  borderRadius: 4, background: 'rgba(118,126,181,.10)', animation: 'ndPulse 1.4s ease infinite' }} />
-              <div style={{ height: 14, borderRadius: 6, background: 'rgba(118,126,181,.08)', animation: 'ndPulse 1.4s ease infinite' }} />
+              <NativeSkeleton height={14} radius={6} />
+              <NativeSkeleton height={7} radius={4} />
+              <NativeSkeleton height={14} radius={6} />
             </div>
           ))}
         </div>

@@ -8,6 +8,7 @@ import { getFitTrainings, getFitTraining, deleteFitTraining, createLap, getTrain
 import TrainingComments from '../components/TrainingComments';
 import { motion } from 'framer-motion';
 import CalendarView from '../components/Calendar/CalendarView';
+import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
@@ -1560,6 +1561,7 @@ const FitAnalysisPage = () => {
   const [selectionStats, setSelectionStats] = useState(null);
   const dragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
   const [showAutoClassify, setShowAutoClassify] = useState(false);
+  const [stravaConnected, setStravaConnected] = useState(false);
   const [, setGarminConnected] = useState(false);
   const [externalActivities, setExternalActivities] = useState([]);
   const [externalActivitiesLoading, setExternalActivitiesLoading] = useState(false);
@@ -2037,6 +2039,7 @@ const FitAnalysisPage = () => {
     const checkStatus = async () => {
       try {
         const status = await getIntegrationStatus();
+        setStravaConnected(Boolean(status.stravaConnected));
         setGarminConnected(Boolean(status.garminConnected));
       } catch (e) {
         // ignore if not logged
@@ -2226,7 +2229,7 @@ const FitAnalysisPage = () => {
       // Handle rate limit errors gracefully
       if (e.response?.status === 429) {
         console.warn('Rate limit exceeded when loading external activities. Please wait a moment.');
-        // Don't show error to user, just log it
+        setExternalActivitiesError('Strava API rate limit is active. Try again in a few minutes.');
         return;
       }
       console.error('Error loading external activities:', e);
@@ -4174,21 +4177,67 @@ const FitAnalysisPage = () => {
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'flex-1 min-h-0' : ''}`}>
-        {(externalActivitiesLoading || externalActivitiesError) && calendarMergedActivities.length === 0 && (
+        {externalActivitiesLoading && calendarMergedActivities.length === 0 && (
+          <div className="mb-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm" aria-busy="true">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-44" />
+                <Skeleton className="h-3 w-64 max-w-full" />
+              </div>
+              <Skeleton className="h-9 w-24 rounded-xl" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+              {Array.from({ length: 7 }).map((_, idx) => (
+                <div key={idx} className="rounded-xl border border-gray-100 p-3">
+                  <Skeleton className="mb-3 h-3 w-14" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {externalActivitiesError && calendarMergedActivities.length === 0 && (
           <div className="mb-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {externalActivitiesLoading && <div className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />}
-              <span>{externalActivitiesError || 'Loading calendar activities…'}</span>
+              <span>{externalActivitiesError}</span>
             </div>
-            {externalActivitiesError && (
+            <button
+              type="button"
+              onClick={() => loadExternalActivities(selectedAthleteId || user?._id || null)}
+              className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!externalActivitiesLoading && !externalActivitiesError && calendarMergedActivities.length === 0 && (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div className="font-semibold">No calendar activities loaded yet</div>
+              <div className="text-xs mt-0.5">
+                {stravaConnected
+                  ? 'Strava is connected. Try refreshing activities if a new upload is missing.'
+                  : 'Connect Strava or upload a FIT file to populate the analysis calendar.'}
+              </div>
+            </div>
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => loadExternalActivities(selectedAthleteId || user?._id || null)}
                 className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
               >
-                Retry
+                Refresh
               </button>
-            )}
+              {!stravaConnected && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings?tab=integrations')}
+                  className="shrink-0 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700"
+                >
+                  Connect Strava
+                </button>
+              )}
+            </div>
           </div>
         )}
         <CalendarView
@@ -4288,9 +4337,7 @@ const FitAnalysisPage = () => {
         {/* Training Detail and Charts - Full Width */}
         {(detailLoading && !selectedTraining && !selectedStrava) && (
           <div className="w-full mt-4">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-4 text-center text-sm text-gray-500">
-              Loading training…
-            </div>
+            <SkeletonCard lines={5} />
           </div>
         )}
         {selectedTraining && (
@@ -5353,8 +5400,16 @@ const FitAnalysisPage = () => {
             )}
             {!selectedStravaStreams ? (
               <div className={`${isMobile ? 'p-2' : 'p-4 md:p-6'} bg-yellow-50/80 backdrop-blur-sm border border-yellow-200/60 ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-md`}>
-                <p className={`text-yellow-800 ${isMobile ? 'text-xs' : 'text-sm md:text-base'}`}>Loading graph data...</p>
-                        </div>
+                <div className="space-y-3" aria-busy="true">
+                  <Skeleton className="h-4 w-44 bg-yellow-200/80" />
+                  <Skeleton className={`${isMobile ? 'h-40' : 'h-64'} w-full bg-yellow-100`} />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Skeleton className="h-3 bg-yellow-200/80" />
+                    <Skeleton className="h-3 bg-yellow-200/80" />
+                    <Skeleton className="h-3 bg-yellow-200/80" />
+                  </div>
+                </div>
+              </div>
             ) : (() => {
           const time = selectedStravaStreams?.time?.data || [];
           const maxTime = time.length > 0 ? time[time.length-1] : 0;

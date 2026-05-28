@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NativeSkeleton } from '../native/shared/Tiles';
 
 // TSB → status label + color
 function getTsbStatus(tsb) {
@@ -155,8 +156,24 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   if (loading) {
     return (
       <div style={styles.card}>
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={styles.spinner} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <NativeSkeleton width={80} height={10} style={{ marginBottom: 8 }} />
+            <NativeSkeleton width={124} height={18} />
+          </div>
+          <NativeSkeleton width={86} height={26} radius={999} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '112px 1fr', gap: 18, alignItems: 'center' }}>
+          <NativeSkeleton width={112} height={112} radius={999} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <NativeSkeleton width="72%" height={13} />
+            <NativeSkeleton width="92%" height={54} radius={14} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              <NativeSkeleton height={36} radius={10} />
+              <NativeSkeleton height={36} radius={10} />
+              <NativeSkeleton height={36} radius={10} />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -584,5 +601,4 @@ const styles = {
   segBtn: { border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: '#6B7280', padding: '4px 10px', borderRadius: 8, cursor: 'pointer' },
   segBtnSm: { border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#6B7280', padding: '4px 9px', borderRadius: 8, cursor: 'pointer' },
   segBtnOn: { background: '#5E6590', color: '#fff', boxShadow: '0 2px 6px -2px rgba(94,101,144,.5)' },
-  spinner: { width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(118,126,181,.2)', borderTopColor: '#767EB5', animation: 'spin 0.8s linear infinite' },
 };

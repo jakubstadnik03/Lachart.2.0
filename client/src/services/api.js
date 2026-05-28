@@ -763,6 +763,16 @@ export const getAdminStats = async () => {
   }
 };
 
+export const getAdminHealth = async () => {
+  try {
+    const response = await api.get('/user/admin/health');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching admin health:', error);
+    throw error;
+  }
+};
+
 // Send reactivation email with latest lactate test to a specific user (admin only)
 export const sendReactivationEmail = async (userId) => {
   try {

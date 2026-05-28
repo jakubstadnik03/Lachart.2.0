@@ -2,6 +2,7 @@ const axios = require('axios');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
 const stravaBudget = require('../utils/stravaBudget');
+const { recordStravaSyncLogSafe } = require('./stravaSyncLogService');
 // Shared token helper — uses the same refresh + invalid-grant logic as the
 // route module. The old local copy aggressively wiped user.strava on every
 // 4xx, which caused users to be silently disconnected by transient errors.
@@ -16,15 +17,26 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @returns {Promise<{imported: number, updated: number, error?: string}>}
  */
 async function syncStravaForUser(user, opts = {}) {
-  const { force = false } = opts;
+  const { force = false, source = 'auto-sync' } = opts;
+  const startedAt = new Date();
   let imported = 0;
   // Track stravaId of newly-imported activities so the push notification can
   // deep-link to the most recent one (great for the "tap → add lactate" flow).
   const importedActivityIds = [];
   let updated = 0;
+  let rateLimited = false;
 
   try {
     if (!user || !user.strava?.accessToken) {
+      recordStravaSyncLogSafe({
+        userId: user?._id || null,
+        source,
+        status: 'error',
+        startedAt,
+        imported,
+        updated,
+        error: 'Strava not connected',
+      });
       return { imported: 0, updated: 0, error: 'Strava not connected' };
     }
 
@@ -33,11 +45,25 @@ async function syncStravaForUser(user, opts = {}) {
     // otherwise users who turned auto-sync off would silently get nothing back
     // when they tapped the manual refresh button.
     if (!force && !user.strava?.autoSync) {
+      recordStravaSyncLogSafe({
+        userId: user._id,
+        source,
+        status: 'skipped',
+        startedAt,
+        message: 'Auto-sync is disabled',
+      });
       return { imported: 0, updated: 0, message: 'Auto-sync is disabled' };
     }
     
     let token = await getValidStravaToken(user);
     if (!token) {
+      recordStravaSyncLogSafe({
+        userId: user._id,
+        source,
+        status: 'error',
+        startedAt,
+        error: 'Invalid Strava token',
+      });
       return { imported: 0, updated: 0, error: 'Invalid Strava token' };
     }
     
@@ -159,6 +185,7 @@ async function syncStravaForUser(user, opts = {}) {
         if (pageErr.response?.status === 429) {
           console.log('[StravaAutoSync] Rate limit hit during sync, stopping');
           cleanRun = false;
+          rateLimited = true;
           break;
         }
         if (pageErr.response?.status === 401) {
@@ -176,6 +203,17 @@ async function syncStravaForUser(user, opts = {}) {
             // Here we just stop this sync; the user may simply need to
             // wait for the next Strava recovery or manually reconnect.
             console.log('[StravaAutoSync] Token refresh returned null for user', user._id);
+            recordStravaSyncLogSafe({
+              userId: user._id,
+              source,
+              status: 'error',
+              startedAt,
+              imported,
+              updated,
+              totalFetched: imported + updated,
+              stravaActivityIds: importedActivityIds,
+              error: 'Strava token refresh failed; will retry next cycle',
+            });
             return { imported, updated, error: 'Strava token refresh failed; will retry next cycle' };
           }
         }
@@ -246,6 +284,18 @@ async function syncStravaForUser(user, opts = {}) {
     const latestImportedId = importedActivityIds.length === 1
       ? importedActivityIds[0]
       : (importedActivityIds.length > 1 ? importedActivityIds[importedActivityIds.length - 1] : null);
+    recordStravaSyncLogSafe({
+      userId: user._id,
+      source,
+      status: rateLimited ? 'rate_limited' : (cleanRun ? 'success' : 'partial'),
+      startedAt,
+      imported,
+      updated,
+      totalFetched: imported + updated,
+      rateLimited,
+      stravaActivityIds: importedActivityIds,
+      message: cleanRun ? null : 'Sync stopped before all pages completed',
+    });
     return { imported, updated, latestActivityId: latestImportedId };
   } catch (error) {
     // Ensure we never crash the server - catch all errors
@@ -253,7 +303,18 @@ async function syncStravaForUser(user, opts = {}) {
     const statusCode = error.response?.status;
     
     console.error(`[StravaAutoSync] Error for user ${user._id}:`, errorMessage, statusCode ? `(Status: ${statusCode})` : '');
-    
+
+    recordStravaSyncLogSafe({
+      userId: user?._id || null,
+      source,
+      status: statusCode === 429 ? 'rate_limited' : 'error',
+      startedAt,
+      imported,
+      updated,
+      rateLimited: statusCode === 429,
+      error: errorMessage,
+    });
+
     return { imported: 0, updated: 0, error: errorMessage };
   }
 }
@@ -329,7 +390,7 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
           continue;
         }
         
-        const result = await syncStravaForUser(freshUser);
+        const result = await syncStravaForUser(freshUser, { source: 'scheduler' });
         results.push({ userId: user._id, ...result });
         
         if (result.error) {

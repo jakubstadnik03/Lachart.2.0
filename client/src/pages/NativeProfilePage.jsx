@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import {
   SportTile, LacValueChip, ThresholdChip, KpiTile, GlassCard, SectionTitle,
-  normSport, SPORT_TINT,
+  normSport, SPORT_TINT, NativeSkeletonRows,
 } from '../components/native/shared/Tiles';
 import api, { getTestingsByAthleteId, updateUserProfile } from '../services/api';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -375,8 +375,8 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
               </div>
 
               {loading && tests.length === 0 ? (
-                <div style={{ padding: '14px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
-                  Loading…
+                <div style={{ padding: '2px 0' }}>
+                  <NativeSkeletonRows rows={3} />
                 </div>
               ) : tests.length === 0 ? (
                 <div style={{ padding: '14px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 12, fontWeight: 600 }}>

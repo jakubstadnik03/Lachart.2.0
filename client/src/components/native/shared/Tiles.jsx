@@ -188,6 +188,51 @@ export function GlassCard({ children, style }) {
   );
 }
 
+// ─── Native skeletons ─────────────────────────────────────────────────────────
+// Inline-style friendly placeholders for Capacitor/native pages.
+
+export function NativeSkeleton({ width = '100%', height = 12, radius = 999, style }) {
+  return (
+    <div
+      className="animate-pulse"
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        background: 'linear-gradient(90deg, rgba(118,126,181,.10), rgba(118,126,181,.18), rgba(118,126,181,.10))',
+        ...style,
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function NativeSkeletonRows({ rows = 3, style }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...style }} aria-busy="true">
+      {Array.from({ length: rows }).map((_, idx) => (
+        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <NativeSkeleton width={34} height={34} radius={12} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <NativeSkeleton width={idx % 2 === 0 ? '62%' : '48%'} height={10} style={{ marginBottom: 7 }} />
+            <NativeSkeleton width={idx % 2 === 0 ? '86%' : '72%'} height={8} />
+          </div>
+          <NativeSkeleton width={42} height={18} radius={999} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function NativeSkeletonCard({ rows = 3, style }) {
+  return (
+    <GlassCard style={style}>
+      <NativeSkeleton width="42%" height={12} style={{ marginBottom: 14 }} />
+      <NativeSkeletonRows rows={rows} />
+    </GlassCard>
+  );
+}
+
 // ─── SectionTitle ────────────────────────────────────────────────────────────
 
 export function SectionTitle({ children, style }) {

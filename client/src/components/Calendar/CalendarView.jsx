@@ -6964,11 +6964,17 @@ export default function CalendarView({
                 const acts = allActs.filter(a => !claimed.has(String(a?.id ?? a?._id ?? '')));
                 const isToday = isSameDay(dayDate, new Date());
                 const isExpanded = expandedDays.has(key);
-                const hasOverflow = acts.length > 3;
-                const visibleActs = isExpanded
-                  ? acts
-                  : (hasOverflow ? acts.slice(0, 2) : acts.slice(0, 3));
-                const remainingCount = hasOverflow ? (acts.length - 2) : 0;
+                const maxCollapsedItems = view === 'month' ? 3 : Number.POSITIVE_INFINITY;
+                const totalDayItems = plannedForDay.length + acts.length;
+                const hasOverflow = view === 'month' && totalDayItems > maxCollapsedItems;
+                const visiblePlannedForDay = isExpanded
+                  ? plannedForDay
+                  : plannedForDay.slice(0, maxCollapsedItems);
+                const remainingSlots = isExpanded
+                  ? Number.POSITIVE_INFINITY
+                  : Math.max(0, maxCollapsedItems - visiblePlannedForDay.length);
+                const visibleActs = isExpanded ? acts : acts.slice(0, remainingSlots);
+                const remainingCount = hasOverflow ? totalDayItems - maxCollapsedItems : 0;
 
                 const toggleExpand = (e) => {
                   e.stopPropagation();
@@ -6988,9 +6994,14 @@ export default function CalendarView({
                 return (
                   <motion.div
                     key={`day-${weekIdx}-${dayIdx}`}
+                    layout
                     initial={{ opacity: 0, scale: 0.92 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.18, delay: cellIdx * 0.008 }}
+                    transition={{
+                      layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                      opacity: { duration: 0.18, delay: cellIdx * 0.008 },
+                      scale: { duration: 0.18, delay: cellIdx * 0.008 },
+                    }}
                     className={`bg-white p-1 md:p-2.5 ${view === 'week' ? 'min-h-[160px]' : 'min-h-[130px]'} transition-all group ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
                     style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}
                     onDragOver={e => { if (!draggedPw) return; e.preventDefault(); setDragOverKey(key); }}
@@ -7025,9 +7036,14 @@ export default function CalendarView({
                         </button>
                       )}
                     </div>
-                    <div className="space-y-1 w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                    <motion.div
+                      layout
+                      className="space-y-1 w-full"
+                      style={{ maxWidth: '100%', overflow: 'hidden' }}
+                      transition={{ layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } }}
+                    >
                       {/* Planned workouts first (dashed) */}
-                      {plannedForDay.map((pw, pi) => (
+                      {visiblePlannedForDay.map((pw, pi) => (
                         <PlannedWorkoutCard
                           key={`plan-${pi}`}
                           pw={pw}
@@ -7138,22 +7154,22 @@ export default function CalendarView({
                       {hasOverflow && (
                         <button
                           onClick={toggleExpand}
-                          className="w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5"
+                          className="w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                           {isExpanded ? (
                             <>
-                              <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
+                              <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500 rotate-180 transition-transform duration-300" />
                               <span className="text-gray-600">Show less</span>
                             </>
                           ) : (
                             <>
                               <span className="text-primary font-bold">+</span>
-                              <span className="text-gray-600">{remainingCount} more</span>
+                              <span className="text-gray-600">Show {remainingCount} more</span>
                             </>
                           )}
                         </button>
                       )}
-                    </div>
+                    </motion.div>
                   </motion.div>
                 );
               }),

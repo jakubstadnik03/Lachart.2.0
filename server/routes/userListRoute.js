@@ -33,6 +33,7 @@ const trainingDao = new TrainingDao();
 const Test = require("../models/test");
 const FitTraining = require("../models/fitTraining");
 const StravaActivity = require("../models/StravaActivity");
+const StravaSyncLog = require("../models/StravaSyncLog");
 const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
@@ -3061,6 +3062,110 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error fetching admin stats:", error);
         res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+});
+
+// Admin health dashboard — system + Strava sync observability.
+router.get("/admin/health", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const [
+            totalUsers,
+            activeUsers,
+            stravaConnectedUsers,
+            stravaAutoSyncUsers,
+            recentLogs,
+            recentFailures,
+            lastSuccess,
+        ] = await Promise.all([
+            User.countDocuments({}),
+            User.countDocuments({ isActive: { $ne: false } }),
+            User.countDocuments({
+                'strava.accessToken': { $exists: true, $ne: null },
+                'strava.athleteId': { $exists: true, $ne: null },
+            }),
+            User.countDocuments({
+                'strava.accessToken': { $exists: true, $ne: null },
+                'strava.autoSync': true,
+                isActive: { $ne: false },
+            }),
+            StravaSyncLog.find({})
+                .sort({ createdAt: -1 })
+                .limit(30)
+                .populate('userId', 'name surname email role')
+                .lean(),
+            StravaSyncLog.find({ status: { $in: ['error', 'rate_limited', 'partial'] } })
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .populate('userId', 'name surname email role')
+                .lean(),
+            StravaSyncLog.findOne({ status: 'success' }).sort({ createdAt: -1 }).lean(),
+        ]);
+
+        let webhookSubscription = null;
+        try {
+            const { getWebhookStatus } = require('../services/stravaWebhookBootstrap');
+            webhookSubscription = getWebhookStatus();
+        } catch (_) {
+            webhookSubscription = { state: 'unknown', message: 'Webhook status unavailable' };
+        }
+
+        let budget = null;
+        try {
+            const stravaBudget = require('../utils/stravaBudget');
+            budget = stravaBudget.snapshot();
+        } catch (_) {
+            budget = null;
+        }
+
+        const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const [syncs24h, failures24h, rateLimits24h] = await Promise.all([
+            StravaSyncLog.countDocuments({ createdAt: { $gte: since24h } }),
+            StravaSyncLog.countDocuments({ createdAt: { $gte: since24h }, status: { $in: ['error', 'partial'] } }),
+            StravaSyncLog.countDocuments({
+                createdAt: { $gte: since24h },
+                $or: [{ status: 'rate_limited' }, { rateLimited: true }],
+            }),
+        ]);
+
+        res.status(200).json({
+            ok: true,
+            generatedAt: new Date().toISOString(),
+            app: {
+                uptimeSeconds: Math.round(process.uptime()),
+                commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.COMMIT_SHA || null,
+                environment: process.env.NODE_ENV || 'development',
+                renderService: process.env.RENDER_SERVICE_NAME || null,
+            },
+            database: {
+                state: mongoose.connection.readyState,
+                stateLabel: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
+                name: mongoose.connection.name || null,
+            },
+            strava: {
+                webhookSubscription,
+                budget,
+                lastSuccessfulSyncAt: lastSuccess?.createdAt || null,
+                counts: {
+                    totalUsers,
+                    activeUsers,
+                    connectedUsers: stravaConnectedUsers,
+                    autoSyncUsers: stravaAutoSyncUsers,
+                    syncs24h,
+                    failures24h,
+                    rateLimits24h,
+                },
+            },
+            recentLogs,
+            recentFailures,
+        });
+    } catch (error) {
+        console.error("Error fetching admin health:", error);
+        res.status(500).json({ error: "Failed to fetch admin health" });
     }
 });
 

@@ -147,6 +147,10 @@ const userSchema = new mongoose.Schema({
     expiresAt: { type: Number, default: null },
     autoSync: { type: Boolean, default: false }, // Enable automatic sync
     lastSyncDate: { type: Date, default: null }, // Last successful sync date
+    backfillState: { type: String, default: null },
+    backfillCursorBefore: { type: Number, default: null },
+    backfillStartedAt: { type: Date, default: null },
+    backfillFinishedAt: { type: Date, default: null },
     // Real-time sync diagnostics: set every time Strava's push subscription
     // fires a webhook event for this athlete. Lets the UI surface whether
     // real-time sync is healthy or whether we're silently falling back to

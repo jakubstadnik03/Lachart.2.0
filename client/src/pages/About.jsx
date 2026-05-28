@@ -161,8 +161,13 @@ const STYLE = `
   .lc-big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: ${LC.ink}; }
   .lc-big em { font-style: normal; background: linear-gradient(135deg, ${LC.primary}, ${LC.secondary}); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
   .lc-lead { font-size: clamp(15px, 1.3vw, 18px); line-height: 1.6; color: ${LC.muted}; max-width: 580px; }
-  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; overflow-x: hidden; }
-  .lc-page section { scroll-margin-top: 80px; overflow-x: hidden; }
+  /* overflow-x uses clip instead of hidden so position:sticky descendants
+     (the top nav) still anchor to the viewport. hidden would silently
+     create a scroll container and break sticky. Sections also use clip
+     so a card with a negative margin or wide background doesn't kick the
+     page sideways while keeping sticky alive throughout the tree. */
+  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; overflow-x: clip; }
+  .lc-page section { scroll-margin-top: 80px; overflow-x: clip; }
   .lc-sectpad { padding: 80px 24px; max-width: 1280px; margin: 0 auto; }
   @media (max-width: 1024px) { .lc-sectpad { padding: 60px 20px; } }
   @media (max-width: 640px)  { .lc-sectpad { padding: 44px 16px; } }
@@ -330,7 +335,7 @@ export default function About() {
   // Scroll-spy — highlight the nav link whose section is currently in view.
   const [activeSection, setActiveSection] = useState('hero');
   useEffect(() => {
-    const ids = ['hero', 'solutions', 'workspaces', 'features', 'methodology', 'connect', 'voices', 'pricing', 'faq'];
+    const ids = ['hero', 'solutions', 'workspaces', 'headline-features', 'anatomy', 'features', 'methodology', 'connect', 'voices', 'try-it-now', 'pricing', 'faq'];
     const sections = ids
       .map(id => document.getElementById(id))
       .filter(Boolean);
@@ -446,7 +451,16 @@ export default function About() {
 
       <style>{STYLE}</style>
 
-      <div className="lc-page lc-page-in" style={{ overflowX: 'hidden' }}>
+      {/*
+        overflowX uses `clip` rather than `hidden` because `overflow-x: hidden`
+        creates a scrolling-context that kills `position: sticky` for every
+        descendant — that's why the top nav stopped sticking. `overflow: clip`
+        clips overflowing pixels the same way visually but does NOT establish a
+        new scroll container, so sticky children continue to anchor to the
+        viewport. Supported in all modern evergreen browsers (Chrome 90+,
+        Safari 15.4+, Firefox 81+).
+      */}
+      <div className="lc-page lc-page-in" style={{ overflowX: 'clip' }}>
         <div className="lc-progress" aria-hidden />
         {/* ── 1. Top banner ────────────────────────────────────────────── */}
         <div style={{
@@ -671,6 +685,221 @@ export default function About() {
           </div>
         </section>
 
+        {/* ── 5.5 Bento — headline features (2026-05) ──────────────────
+            Visual showcase of the 6 highest-leverage features above the
+            comprehensive filterable grid below. Each card pairs a real
+            product screenshot with a one-sentence value prop — so a first-
+            time visitor gets the "wow" before they even hit the deep dives.
+            Grid sizes vary (2-col hero, 1-col + 1-col, then 3 small) so it
+            doesn't read like another rigid feature matrix. Collapses to
+            single-column on mobile. */}
+        <section id="headline-features" style={{ background: '#fafbff' }}>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 36px' }}>
+              <Eyebrow>What's inside</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>
+                Six things you can do <em>today</em> in LaChart
+              </h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>
+                The features paying users use most, with real screenshots from the app — not stock illustrations.
+              </p>
+            </div>
+
+            {/* Bento — 6 cards, asymmetric grid */}
+            <div ref={pushRef} className="lc-reveal d1 lc-bento" style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gridAutoRows: 'minmax(280px, auto)',
+              gap: 18,
+            }}>
+              {/* 1 — Lactate curve · hero tile (4 cols × 2 rows) */}
+              <article className="lc-bento-card lc-bento-hero" style={{
+                gridColumn: 'span 4', gridRow: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 12px 30px rgba(15,23,42,0.05)',
+              }}>
+                <div style={{ position: 'relative', flex: 1, minHeight: 280, overflow: 'hidden',
+                              background: 'linear-gradient(135deg, ' + LC.primaryTint + ' 0%, #fff 60%)' }}>
+                  <img src="/about-design/hero-lactate-curve.jpg"
+                       alt="Lactate curve with LT1 and LT2 thresholds"
+                       loading="lazy"
+                       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                                objectFit: 'cover', objectPosition: 'center' }} />
+                </div>
+                <div style={{ padding: '22px 26px 24px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Core feature
+                  </span>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, color: LC.ink, margin: '4px 0 8px', letterSpacing: '-0.01em' }}>
+                    Lactate curve, eight thresholds, in one click
+                  </h3>
+                  <p style={{ fontSize: 14.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>
+                    Paste your step-test values — we draw the curve and surface <strong>LT1, LT2, OBLA (2.0–3.5), IAT, D-max, log-log</strong> in parallel. No spreadsheets, no formulas.
+                  </p>
+                </div>
+              </article>
+
+              {/* 2 — Workout planner (2 cols × 1 row) */}
+              <article className="lc-bento-card" style={{
+                gridColumn: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
+              }}>
+                <div style={{ height: 140, overflow: 'hidden',
+                              background: 'linear-gradient(135deg, #FFE6DF 0%, #fff 80%)' }}>
+                  <img src="/about-design/training-calendar.png"
+                       alt="Structured workout planner in the calendar"
+                       loading="lazy"
+                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+                <div style={{ padding: '16px 18px 18px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Plan
+                  </span>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '4px 0 6px', letterSpacing: '-0.01em' }}>
+                    Structured workouts in the calendar
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.5, margin: 0 }}>
+                    Warm-up · intervals with target zones · cooldown — drop on any day, run live from the app.
+                  </p>
+                </div>
+              </article>
+
+              {/* 3 — Per-interval lactate (2 cols × 1 row) */}
+              <article className="lc-bento-card" style={{
+                gridColumn: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
+              }}>
+                <div style={{ height: 140, overflow: 'hidden',
+                              background: 'linear-gradient(135deg, #FEF3C7 0%, #fff 80%)' }}>
+                  <img src="/about-design/training-log-page.png"
+                       alt="Per-interval lactate tagging"
+                       loading="lazy"
+                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+                <div style={{ padding: '16px 18px 18px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Unique
+                  </span>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '4px 0 6px', letterSpacing: '-0.01em' }}>
+                    Lactate sample on any interval
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.5, margin: 0 }}>
+                    Tag any lap of any workout with a blood-lactate value. Every sample feeds back into your curve.
+                  </p>
+                </div>
+              </article>
+
+              {/* 4 — Strava + FIT (2 cols × 1 row) */}
+              <article className="lc-bento-card" style={{
+                gridColumn: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                padding: '22px 22px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
+              }}>
+                <div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 14 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                   padding: '4px 10px', borderRadius: 999, background: '#FFEEE8',
+                                   color: '#FC4C02', fontSize: 11, fontWeight: 700 }}>● Strava</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                   padding: '4px 10px', borderRadius: 999, background: '#F0F4FF',
+                                   color: LC.primary, fontSize: 11, fontWeight: 700 }}>● FIT files</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                   padding: '4px 10px', borderRadius: 999, background: '#FFF5F0',
+                                   color: '#FF6B4A', fontSize: 11, fontWeight: 700 }}>● Apple Health</span>
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Auto-sync
+                  </span>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '4px 0 6px', letterSpacing: '-0.01em' }}>
+                    Every workout flows in automatically
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.5, margin: 0 }}>
+                    Connect once. Rides, runs and swims arrive with power, HR, pace and laps — pre-categorised by intensity.
+                  </p>
+                </div>
+              </article>
+
+              {/* 5 — Form / fitness / fatigue (2 cols × 1 row) */}
+              <article className="lc-bento-card" style={{
+                gridColumn: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
+              }}>
+                <div style={{ height: 140, overflow: 'hidden',
+                              background: 'linear-gradient(135deg, ' + LC.primaryTint + ' 0%, #fff 80%)' }}>
+                  <img src="/about-design/dashboard-home.png"
+                       alt="Form, fitness and fatigue chart over weeks"
+                       loading="lazy"
+                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+                <div style={{ padding: '16px 18px 18px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Form
+                  </span>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '4px 0 6px', letterSpacing: '-0.01em' }}>
+                    Fitness, fatigue &amp; form, day by day
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.5, margin: 0 }}>
+                    CTL · ATL · TSB charted over weeks — see when you peak and when to back off.
+                  </p>
+                </div>
+              </article>
+
+              {/* 6 — Branded PDF (2 cols × 1 row) */}
+              <article className="lc-bento-card" style={{
+                gridColumn: 'span 2',
+                background: '#fff', borderRadius: 22, border: '1px solid ' + LC.border,
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
+              }}>
+                <div style={{ height: 140, overflow: 'hidden',
+                              background: 'linear-gradient(135deg, #FFE6DF 0%, #fff 70%)' }}>
+                  <img src="/about-design/lachart-test-pdf.png"
+                       alt="Branded PDF lactate test report for athletes"
+                       loading="lazy"
+                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+                </div>
+                <div style={{ padding: '16px 18px 18px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Coach plan
+                  </span>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '4px 0 6px', letterSpacing: '-0.01em' }}>
+                    Branded PDF reports for your athletes
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.5, margin: 0 }}>
+                    Your logo, studio name + address. Each test exports as your own polished handout.
+                  </p>
+                </div>
+              </article>
+            </div>
+
+            {/* Responsive collapse:
+                  ≥1100 px  → 6-col bento as above
+                  900-1099  → 4-col, hero becomes 4×1, others 2×1
+                  ≤899 px   → single column, everything stacks
+                And bump tile min-heights on small screens so images stay
+                photographically meaningful. */}
+            <style>{`
+              @media (max-width: 1099px) {
+                .lc-bento { grid-template-columns: repeat(4, 1fr) !important; }
+                .lc-bento .lc-bento-hero { grid-column: span 4 !important; grid-row: span 1 !important; }
+                .lc-bento > article:not(.lc-bento-hero) { grid-column: span 2 !important; }
+              }
+              @media (max-width: 720px) {
+                .lc-bento { grid-template-columns: 1fr !important; grid-auto-rows: auto !important; }
+                .lc-bento > article { grid-column: span 1 !important; grid-row: span 1 !important; }
+              }
+            `}</style>
+          </div>
+        </section>
+
         {/* ── 6. Features grid w/ filter chips ─────────────────────────── */}
         <section id="features">
           <div className="lc-sectpad">
@@ -706,6 +935,153 @@ export default function About() {
             <style>{`
               @media (max-width: 900px) { .lc-feat-grid { grid-template-columns: repeat(2, 1fr) !important; } }
               @media (max-width: 540px) { .lc-feat-grid { grid-template-columns: 1fr !important; } }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 6.5 Anatomy of a lactate test (2026-05) ──────────────────
+            Step-by-step flowchart explaining what LaChart actually does with
+            a test from start to finish. Each step is a card with an icon, a
+            label, a 1-sentence body and a "↓" connector to the next.
+            Reads as a story: data in → analysis → zones → planning → results.
+            CSS handles the responsive collapse from 5-across (desktop) to
+            single column (mobile). */}
+        <section id="anatomy" style={{ background: '#fff', borderTop: '1px solid ' + LC.border }}>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 36px' }}>
+              <Eyebrow>How it works</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>
+                Anatomy of a <em>lactate test</em> in LaChart
+              </h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>
+                From raw step-test values to a branded PDF, structured workouts and a tracked curve — five steps, one platform.
+              </p>
+            </div>
+
+            <div ref={pushRef} className="lc-reveal d1 lc-anatomy" style={{
+              display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, alignItems: 'stretch',
+            }}>
+              {[
+                {
+                  n: '01',
+                  label: 'Enter test values',
+                  body: 'Stage power / pace + blood lactate + HR. Step or ramp protocol — any test design.',
+                  // Beaker icon
+                  d: 'M9 3v6l-4 8a3 3 0 0 0 2.7 4.3h8.6A3 3 0 0 0 19 17l-4-8V3H9z M9 3h6 M9 9h6',
+                  tone: LC.primary,
+                  bg: LC.primaryTint,
+                },
+                {
+                  n: '02',
+                  label: 'Eight thresholds calculated',
+                  body: 'LT1, LT2, OBLA (2.0–3.5), IAT, D-max, log-log, LTP1, LTP2 — in parallel, instantly.',
+                  // Spark / chart icon
+                  d: 'M3 20h18 M5 16l3-6 4 4 5-9 M19 9v3',
+                  tone: '#10B981',
+                  bg: '#ECFDF5',
+                },
+                {
+                  n: '03',
+                  label: 'Zones auto-generated',
+                  body: '5 training zones with power / pace / HR ranges, tailored to cycling, running or swimming.',
+                  // Target icon
+                  d: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0 M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0 M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
+                  tone: '#FF6B4A',
+                  bg: '#FFE6DF',
+                },
+                {
+                  n: '04',
+                  label: 'Plan structured workouts',
+                  body: 'Drag intervals at your new zones onto any day of the calendar. Run them live from the app.',
+                  // Calendar icon
+                  d: 'M3 10h18 M8 3v4 M16 3v4 M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z',
+                  tone: '#F59E0B',
+                  bg: '#FEF3C7',
+                },
+                {
+                  n: '05',
+                  label: 'Branded PDF + curve history',
+                  body: 'Export a polished PDF (your logo on Coach plan). Each new test overlays on the curve so progress is visible.',
+                  // Document with chart icon
+                  d: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z M14 3v6h6 M8 14l3-3 2 2 4-4',
+                  tone: LC.primary,
+                  bg: LC.primaryTint,
+                },
+              ].map((step, idx, arr) => (
+                <article key={step.n} className="lc-anatomy-card" style={{
+                  background: '#fff',
+                  borderRadius: 18,
+                  border: '1px solid ' + LC.border,
+                  padding: '20px 18px 22px',
+                  display: 'flex', flexDirection: 'column', gap: 10,
+                  position: 'relative',
+                  boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.04)',
+                }}>
+                  {/* connector arrow to the right — hidden on the last card
+                      and on mobile where cards stack vertically */}
+                  {idx < arr.length - 1 && (
+                    <span aria-hidden className="lc-anatomy-arrow" style={{
+                      position: 'absolute', right: -19, top: '50%', transform: 'translateY(-50%)',
+                      width: 26, height: 26, borderRadius: '50%',
+                      background: '#fff', border: '1px solid ' + LC.border,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: LC.muted, zIndex: 2,
+                      boxShadow: '0 1px 3px rgba(15,23,42,0.06)',
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 12h14M13 5l7 7-7 7" />
+                      </svg>
+                    </span>
+                  )}
+
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 14,
+                    background: step.bg, color: step.tone,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d={step.d} />
+                    </svg>
+                  </div>
+
+                  <span style={{ fontSize: 11, fontWeight: 700, color: step.tone, letterSpacing: '0.1em' }}>
+                    STEP {step.n}
+                  </span>
+                  <h3 style={{ fontSize: 15.5, fontWeight: 800, color: LC.ink, margin: 0, letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+                    {step.label}
+                  </h3>
+                  <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.55, margin: 0 }}>
+                    {step.body}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            {/* CTA pod flowchartem — vede přímo do free calculator pro
+                "okamžitě si to vyzkoušej" cestu. */}
+            <div ref={pushRef} className="lc-reveal d2" style={{ textAlign: 'center', marginTop: 30 }}>
+              <a href="/lactate-curve-calculator" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: LC.accent, color: '#fff',
+                padding: '12px 24px', borderRadius: 12,
+                textDecoration: 'none', fontSize: 14.5, fontWeight: 700,
+                boxShadow: '0 2px 6px rgba(255,107,74,0.28)',
+              }}>
+                Try the free calculator — no sign-up
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M13 5l7 7-7 7" />
+                </svg>
+              </a>
+            </div>
+
+            <style>{`
+              @media (max-width: 1099px) {
+                .lc-anatomy { grid-template-columns: repeat(2, 1fr) !important; }
+                .lc-anatomy-arrow { display: none !important; }
+              }
+              @media (max-width: 599px) {
+                .lc-anatomy { grid-template-columns: 1fr !important; }
+              }
             `}</style>
           </div>
         </section>
@@ -1014,6 +1390,149 @@ export default function About() {
                 </span>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* ── 19.5 Try it now CTA (2026-05) ────────────────────────────
+            Strategically placed RIGHT BEFORE pricing — user has seen the
+            features, the methodology, the shipping notes; this is the
+            highest-intent moment to nudge them to try the free calculator
+            before evaluating pricing. Better than a generic "sign up free"
+            because it removes signup friction entirely — they get value in
+            <30 seconds, which is the single biggest lever for activation.
+            Iframe was considered but rejected: nested React roots + auth
+            providers risk double-mount issues. Instead we deep-link to the
+            already-prerendered /lactate-curve-calculator route. */}
+        <section id="try-it-now" style={{
+          background: 'linear-gradient(135deg, ' + LC.primaryTint + ' 0%, #fff 60%)',
+          borderTop: '1px solid ' + LC.border,
+        }}>
+          <div className="lc-sectpad">
+            <div ref={pushRef} className="lc-reveal lc-tryit" style={{
+              display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 48,
+              alignItems: 'center',
+              background: '#fff',
+              borderRadius: 28,
+              border: '1px solid ' + LC.border,
+              padding: '44px 48px',
+              boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 20px 50px rgba(15,23,42,0.06)',
+            }}>
+              {/* Left — pitch + CTA stack */}
+              <div>
+                <Eyebrow>Free · No sign-up</Eyebrow>
+                <h2 className="lc-big" style={{ margin: '14px 0 14px', letterSpacing: '-0.02em' }}>
+                  Have 30 seconds? <em>Try it on your own data</em>
+                </h2>
+                <p className="lc-lead" style={{ marginBottom: 22 }}>
+                  Drop your step-test values into the free Lactate Calculator. You'll see your curve, LT1, LT2, OBLA, IAT, D-max and matching training zones in real time — no account required.
+                </p>
+
+                {/* 3 micro-proofs aligned with what they'll actually get */}
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 26px', display: 'grid', gap: 10 }}>
+                  {[
+                    'Eight threshold methods calculated in parallel',
+                    'Power, pace and heart-rate zones tailored to your sport',
+                    'PDF export included — save and share immediately',
+                  ].map((point, i) => (
+                    <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: LC.text, fontSize: 14.5, lineHeight: 1.5 }}>
+                      <span style={{
+                        flexShrink: 0, marginTop: 2,
+                        width: 20, height: 20, borderRadius: 10,
+                        background: '#ECFDF5', color: '#10B981',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* CTA pair — primary (coral) + secondary ghost */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <a href="/lactate-curve-calculator" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    background: LC.accent, color: '#fff',
+                    padding: '14px 26px', borderRadius: 12,
+                    textDecoration: 'none', fontSize: 15, fontWeight: 700,
+                    boxShadow: '0 2px 8px rgba(255,107,74,0.32)',
+                  }}>
+                    Open free calculator
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M13 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                  <a href="/signup" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    background: '#fff', color: LC.primary,
+                    padding: '14px 24px', borderRadius: 12,
+                    textDecoration: 'none', fontSize: 15, fontWeight: 600,
+                    border: '2px solid ' + LC.primary,
+                  }}>
+                    Save your data — create account
+                  </a>
+                </div>
+
+                <p style={{ marginTop: 16, fontSize: 12.5, color: LC.muted }}>
+                  Already on LaChart? <a href="/login" style={{ color: LC.primary, fontWeight: 600 }}>Sign in →</a>
+                </p>
+              </div>
+
+              {/* Right — visual: floating mock browser frame with the curve.
+                  Reuses an existing screenshot so we don't ship a new asset. */}
+              <div style={{ position: 'relative' }}>
+                <div style={{
+                  background: '#fff',
+                  borderRadius: 18,
+                  border: '1px solid ' + LC.border,
+                  overflow: 'hidden',
+                  boxShadow: '0 20px 60px rgba(118,126,181,0.18)',
+                }}>
+                  {/* Mock browser chrome */}
+                  <div style={{
+                    background: '#F9FAFB',
+                    borderBottom: '1px solid ' + LC.border,
+                    padding: '10px 14px',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#F87171' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#FBBF24' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#4ADE80' }} />
+                    <span style={{ marginLeft: 14, padding: '4px 12px', borderRadius: 999, background: '#fff', border: '1px solid ' + LC.border, fontSize: 12, color: LC.muted, fontFamily: 'ui-monospace, Menlo, monospace' }}>
+                      lachart.net/lactate-curve-calculator
+                    </span>
+                  </div>
+                  <img src="/about-design/hero-lactate-curve.jpg"
+                       alt="Lactate curve calculator preview"
+                       loading="lazy"
+                       style={{ display: 'block', width: '100%', height: 'auto' }} />
+                </div>
+                {/* Floating badge */}
+                <div style={{
+                  position: 'absolute',
+                  top: -16, right: -12,
+                  background: LC.accent, color: '#fff',
+                  padding: '8px 16px', borderRadius: 999,
+                  fontSize: 12, fontWeight: 700,
+                  boxShadow: '0 8px 20px rgba(255,107,74,0.35)',
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                }}>
+                  No sign-up
+                </div>
+              </div>
+            </div>
+
+            <style>{`
+              @media (max-width: 960px) {
+                .lc-tryit { grid-template-columns: 1fr !important; gap: 36px !important; padding: 36px 28px !important; }
+              }
+              @media (max-width: 540px) {
+                .lc-tryit { padding: 28px 22px !important; border-radius: 20px !important; }
+              }
+            `}</style>
           </div>
         </section>
 

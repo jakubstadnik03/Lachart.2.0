@@ -21,6 +21,7 @@ import { getNotifications, markAllNotificationsRead, markNotificationRead, delet
 import { useNotification } from '../../context/NotificationContext';
 import NotifIcon from '../Notifications/NotifIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
+import { Skeleton } from '../common/Skeleton';
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -218,7 +219,18 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
               onTouchMove={e => e.stopPropagation()}
             >
               {loading && notifs.length === 0 && (
-                <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+                <div className="px-5 py-4 space-y-4" aria-busy="true">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <Skeleton className="h-9 w-9 rounded-full flex-shrink-0" />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <Skeleton className="h-3 w-2/3" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-2.5 w-20" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
               {!loading && notifs.length === 0 && (
                 <div className="py-12 text-center flex flex-col items-center">

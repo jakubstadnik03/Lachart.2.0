@@ -27,6 +27,7 @@ import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
+import { Skeleton } from "../components/common/Skeleton";
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
@@ -387,6 +388,8 @@ export default function DashboardPage() {
   
   // Training calendar data (FIT files and Strava activities)
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState(null);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [planModal, setPlanModal] = useState(null);
   // Native mobile dashboard — fitness metrics
@@ -614,6 +617,7 @@ export default function DashboardPage() {
   // without waiting for a state update cycle.
   const loadCalendarData = useCallback(async (targetId, regularTrainingsParam) => {
     const regTrainings = regularTrainingsParam || regularTrainings;
+    setCalendarError(null);
     try {
       // Check localStorage cache first
       const cacheKey = `calendarData_${targetId}`;
@@ -634,6 +638,7 @@ export default function DashboardPage() {
           if (isCacheValid) {
             // Cache is valid, use it immediately
             setCalendarData(parsed);
+            setCalendarLoading(false);
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
             return parsed;
           } else if (parsed.length > 0) {
@@ -652,7 +657,9 @@ export default function DashboardPage() {
       const inFlightCalendar = calendarRequestRef.current.get(targetId);
       if (inFlightCalendar) return inFlightCalendar;
 
+      setCalendarLoading(true);
       const request = (async () => {
+      let externalActivitiesError = null;
       const [fitData, stravaData] = await Promise.all([
         getFitTrainings(targetId).catch(err => {
           console.error('Error loading FIT trainings:', err);
@@ -663,7 +670,7 @@ export default function DashboardPage() {
           summaryOnly: true,
           limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES,
         }).catch(err => {
-          // Silently handle 429 (Too Many Requests) and network errors - don't log
+          externalActivitiesError = err;
           if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
             console.error('Error loading Strava activities:', err);
           }
@@ -743,6 +750,14 @@ export default function DashboardPage() {
       ];
 
       const limitedForView = sortAndLimitCalendarActivities(combined);
+      if (externalActivitiesError) {
+        const status = externalActivitiesError.response?.status;
+        if (status === 429) {
+          setCalendarError('Strava API rate limit is active. Calendar is showing cached/local activities; try again in a few minutes.');
+        } else {
+          setCalendarError('Strava activities could not be loaded. Calendar may be incomplete.');
+        }
+      }
 
       // Cache the combined data
       try {
@@ -796,9 +811,12 @@ export default function DashboardPage() {
         return await request;
       } finally {
         calendarRequestRef.current.delete(targetId);
+        setCalendarLoading(false);
       }
     } catch (error) {
       console.error('Error loading calendar data:', error);
+      setCalendarError('Calendar activities could not be loaded. Please retry.');
+      setCalendarLoading(false);
       
       // Try to use cached data even if expired on error
       try {
@@ -1782,6 +1800,69 @@ export default function DashboardPage() {
           transition={{ delay: 0.2 }}
           className="lg:col-span-5 md:col-span-2"
         >
+          {loading && (!calendarData || calendarData.length === 0) && (
+            <div className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm" aria-busy="true">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-3 w-56" />
+                </div>
+                <Skeleton className="h-9 w-28 rounded-xl" />
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                {Array.from({ length: 7 }).map((_, idx) => (
+                  <div key={idx} className="rounded-xl border border-gray-100 p-3">
+                    <Skeleton className="mb-3 h-3 w-16" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {(calendarLoading || calendarError || (!calendarLoading && !calendarError && (calendarData || []).length === 0)) && (
+            <div className={`mb-3 rounded-xl border px-4 py-3 text-sm shadow-sm ${
+              calendarError ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-white text-gray-600'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  {calendarLoading && <div className="mt-0.5 h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />}
+                  <div>
+                    <div className="font-semibold">
+                      {calendarError ? 'Calendar sync needs attention' : calendarLoading ? 'Loading calendar activities…' : 'No calendar activities yet'}
+                    </div>
+                    <div className="text-xs mt-0.5">
+                      {calendarError || (stravaConnected
+                        ? 'Strava is connected. Try refreshing the calendar or syncing new activities.'
+                        : 'Connect Strava or upload a FIT file to fill the dashboard calendar.')}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {calendarError && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const trainingsResult = await loadTrainings(dashboardDataAthleteId);
+                        loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
+                      }}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                    >
+                      Retry
+                    </button>
+                  )}
+                  {!stravaConnected && (
+                    <button
+                      type="button"
+                      onClick={handleConnectStrava}
+                      className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700"
+                    >
+                      Connect Strava
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <WeeklyCalendar
             selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}

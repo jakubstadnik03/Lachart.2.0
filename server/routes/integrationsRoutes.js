@@ -13,6 +13,7 @@ const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
+const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -1156,6 +1157,8 @@ router.post('/strava/webhook', async (req, res) => {
 
   const event = req.body || {};
   const { aspect_type, object_type, object_id, owner_id } = event;
+  const startedAt = new Date();
+  let webhookUser = null;
 
   try {
     if (object_type !== 'activity') return; // ignore athlete events
@@ -1163,34 +1166,71 @@ router.post('/strava/webhook', async (req, res) => {
 
     // Map Strava owner_id → LaChart user. OAuth stores athleteId as a string,
     // but older docs may still contain a number, so match both forms.
-    const user = await User.findOne({ 'strava.athleteId': { $in: [String(owner_id), Number(owner_id)] } });
-    if (!user) {
+    webhookUser = await User.findOne({ 'strava.athleteId': { $in: [String(owner_id), Number(owner_id)] } });
+    if (!webhookUser) {
       console.warn('[StravaWebhook] no user for athlete', owner_id);
+      recordStravaSyncLogSafe({
+        source: 'webhook',
+        status: 'error',
+        startedAt,
+        error: `No LaChart user found for Strava athlete ${owner_id}`,
+        meta: { owner_id, object_id, aspect_type },
+      });
       return;
     }
 
     if (aspect_type === 'create' || aspect_type === 'update') {
-      const { activity, isNew } = await fetchAndSaveStravaActivity(user, object_id);
+      const { activity, isNew } = await fetchAndSaveStravaActivity(webhookUser, object_id);
       // Update lastSyncDate so the scheduler doesn't redundantly re-fetch this
       // activity on its next tick (the webhook already handled it).
       // Also stamp webhookLastEventAt so the UI / /strava/status endpoint can
       // distinguish "real-time sync working" from "falling back to polling".
       const eventStamp = new Date();
-      await User.findByIdAndUpdate(user._id, {
+      await User.findByIdAndUpdate(webhookUser._id, {
         'strava.lastSyncDate': eventStamp,
         'strava.webhookLastEventAt': eventStamp,
       });
       if (isNew) {
-        notifyStravaImportedPush(user._id, 1, object_id, activity?.sport, activity);
+        notifyStravaImportedPush(webhookUser._id, 1, object_id, activity?.sport, activity);
       }
-      console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
+      recordStravaSyncLogSafe({
+        userId: webhookUser._id,
+        source: 'webhook',
+        status: 'success',
+        startedAt,
+        imported: isNew ? 1 : 0,
+        updated: isNew ? 0 : 1,
+        totalFetched: 1,
+        stravaActivityIds: [object_id],
+        meta: { aspect_type, owner_id },
+      });
+      console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${webhookUser._id} (new=${isNew})`);
     } else if (aspect_type === 'delete') {
-      await StravaActivity.deleteOne({ userId: user._id, stravaId: Number(object_id) });
-      await User.findByIdAndUpdate(user._id, { 'strava.webhookLastEventAt': new Date() });
-      console.log(`[StravaWebhook] deleted activity ${object_id} for user ${user._id}`);
+      await StravaActivity.deleteOne({ userId: webhookUser._id, stravaId: Number(object_id) });
+      await User.findByIdAndUpdate(webhookUser._id, { 'strava.webhookLastEventAt': new Date() });
+      recordStravaSyncLogSafe({
+        userId: webhookUser._id,
+        source: 'webhook',
+        status: 'success',
+        startedAt,
+        skipped: 1,
+        stravaActivityIds: [object_id],
+        message: 'Webhook delete event processed',
+        meta: { aspect_type, owner_id },
+      });
+      console.log(`[StravaWebhook] deleted activity ${object_id} for user ${webhookUser._id}`);
     }
   } catch (err) {
     console.error('[StravaWebhook] processing error:', err.message || err);
+    recordStravaSyncLogSafe({
+      userId: webhookUser?._id || null,
+      source: 'webhook',
+      status: err.response?.status === 429 ? 'rate_limited' : 'error',
+      startedAt,
+      rateLimited: err.response?.status === 429,
+      error: err.message || String(err),
+      meta: { owner_id, object_id, aspect_type },
+    });
   }
 });
 
@@ -1245,13 +1285,27 @@ router.get('/strava/webhook/subscriptions', verifyToken, async (req, res) => {
 
 // POST /api/integrations/strava/sync (basic history fetch)
 router.post('/strava/sync', verifyToken, async (req, res) => {
+  const startedAt = new Date();
   let imported = 0;
   let updated = 0;
   let total = 0;
+  const importedActivityIds = [];
   const lockKey = String(req.user?.userId || '');
+  let user = null;
 
   // App-wide Strava lockout — return 429 immediately without touching Strava.
-  if (bailIfStravaLocked(res)) return;
+  if (bailIfStravaLocked(res)) {
+    recordStravaSyncLogSafe({
+      userId: req.user?.userId || null,
+      source: 'manual',
+      status: 'rate_limited',
+      startedAt,
+      rateLimited: true,
+      retryAfterSec: stravaLockoutSecondsRemaining(),
+      error: 'App-level Strava rate limit lockout active',
+    });
+    return;
+  }
 
   try {
     if (stravaManualSyncLocks.has(lockKey)) {
@@ -1265,14 +1319,28 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     }
     stravaManualSyncLocks.add(lockKey);
 
-    const user = await User.findById(req.user.userId);
+    user = await User.findById(req.user.userId);
     if (!user || !user.strava?.accessToken) {
+      recordStravaSyncLogSafe({
+        userId: req.user?.userId || null,
+        source: 'manual',
+        status: 'error',
+        startedAt,
+        error: 'Strava not connected',
+      });
       return res.status(400).json({ error: 'Strava not connected' });
     }
     
     const token = await getValidStravaToken(user);
     if (!token) {
       // Not app JWT failure — avoid 401 so the client does not log the user out.
+      recordStravaSyncLogSafe({
+        userId: user._id,
+        source: 'manual',
+        status: 'error',
+        startedAt,
+        error: 'Invalid or expired Strava token. Reconnect Strava in Settings.',
+      });
       return res.status(400).json({ error: 'Invalid or expired Strava token. Reconnect Strava in Settings.' });
     }
     
@@ -1373,8 +1441,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
               { upsert: true }
             );
             
-            if (resUp.upsertedCount > 0) imported += 1;
-            else if (resUp.modifiedCount > 0) updated += 1;
+            if (resUp.upsertedCount > 0) {
+              imported += 1;
+              importedActivityIds.push(a.id);
+            } else if (resUp.modifiedCount > 0) updated += 1;
           } catch (dbErr) {
             console.error(`Error saving activity ${a.id}:`, dbErr.message);
             // Continue with next activity
@@ -1414,6 +1484,19 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
             total
           });
 
+          recordStravaSyncLogSafe({
+            userId: user._id,
+            source: 'manual',
+            status: 'rate_limited',
+            startedAt,
+            imported,
+            updated,
+            totalFetched: total,
+            rateLimited: true,
+            retryAfterSec: Number(retryAfter) || 900,
+            stravaActivityIds: importedActivityIds,
+            error: 'Strava rate limit exceeded',
+          });
           notifyStravaImportedPush(user._id, imported);
           return res.status(429).json({
             error: 'Strava rate limit exceeded',
@@ -1450,6 +1533,16 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     }
 
     notifyStravaImportedPush(user._id, imported);
+    recordStravaSyncLogSafe({
+      userId: user._id,
+      source: 'manual',
+      status: 'success',
+      startedAt,
+      imported,
+      updated,
+      totalFetched: total,
+      stravaActivityIds: importedActivityIds,
+    });
     
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
@@ -1461,6 +1554,19 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         (err.response?.data?.message && err.response.data.message.includes('Rate Limit'))) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
       stravaNoteRateLimit(retryAfter);
+      recordStravaSyncLogSafe({
+        userId: user?._id || req.user?.userId || null,
+        source: 'manual',
+        status: 'rate_limited',
+        startedAt,
+        imported,
+        updated,
+        totalFetched: total,
+        rateLimited: true,
+        retryAfterSec: Number(retryAfter) || 900,
+        stravaActivityIds: importedActivityIds,
+        error: 'Strava rate limit exceeded',
+      });
       notifyStravaImportedPush(user?._id || req.user?.userId, imported);
       return res.status(429).json({
         error: 'Strava rate limit exceeded',
@@ -1478,6 +1584,19 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     // friendly "try again in N min" toast instead of a generic 500.
     if (err.code === 'STRAVA_BUDGET_EXHAUSTED') {
       const retryAfter = Number(err.retryAfterSec) || 60;
+      recordStravaSyncLogSafe({
+        userId: user?._id || req.user?.userId || null,
+        source: 'manual',
+        status: 'rate_limited',
+        startedAt,
+        imported,
+        updated,
+        totalFetched: total,
+        rateLimited: true,
+        retryAfterSec: retryAfter,
+        stravaActivityIds: importedActivityIds,
+        error: 'Strava local budget exhausted',
+      });
       return res.status(429).json({
         error: 'Strava sync deferred',
         message: `Strava API budget is currently saturated (likely an in-progress historical backfill or a busy upload window). Please try again in ${Math.ceil(retryAfter / 60)} min.`,
@@ -1492,6 +1611,17 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     // Token-refresh wiped the connection mid-flight — return 400, not 500,
     // so the client doesn't keep retrying with stale credentials.
     if (/no valid strava token|invalid strava token/i.test(err.message || '')) {
+      recordStravaSyncLogSafe({
+        userId: user?._id || req.user?.userId || null,
+        source: 'manual',
+        status: 'error',
+        startedAt,
+        imported,
+        updated,
+        totalFetched: total,
+        stravaActivityIds: importedActivityIds,
+        error: 'Invalid or expired Strava token. Reconnect Strava in Settings.',
+      });
       return res.status(400).json({
         error: 'Invalid or expired Strava token. Reconnect Strava in Settings.',
       });
@@ -1500,6 +1630,17 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     // Return partial results if we have any
     if (total > 0) {
       notifyStravaImportedPush(user._id, imported);
+      recordStravaSyncLogSafe({
+        userId: user?._id || req.user?.userId || null,
+        source: 'manual',
+        status: 'partial',
+        startedAt,
+        imported,
+        updated,
+        totalFetched: total,
+        stravaActivityIds: importedActivityIds,
+        error: err.message || 'Sync completed with errors',
+      });
       return res.json({
         imported,
         updated,
@@ -1509,6 +1650,18 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         message: err.message
       });
     }
+
+    recordStravaSyncLogSafe({
+      userId: user?._id || req.user?.userId || null,
+      source: 'manual',
+      status: 'error',
+      startedAt,
+      imported,
+      updated,
+      totalFetched: total,
+      stravaActivityIds: importedActivityIds,
+      error: err.response?.data?.message || err.message || 'Unknown error',
+    });
 
     res.status(500).json({
       error: 'Strava sync failed',
@@ -1547,7 +1700,7 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
     // its own autoSync-disabled bail-out — a manual "Sync now" must always
     // pull, even for users who keep background auto-sync turned off.
     const { syncStravaForUser } = require('../services/stravaAutoSyncService');
-    const result = await syncStravaForUser(user, { force: isForced });
+    const result = await syncStravaForUser(user, { force: isForced, source: isForced ? 'manual' : 'auto-sync' });
     
     // Never use HTTP 401 here — the app treats 401 as "JWT invalid" and logs the user out.
     // Strava token / refresh failures are upstream auth issues; return 200 + error body (same as catch below).

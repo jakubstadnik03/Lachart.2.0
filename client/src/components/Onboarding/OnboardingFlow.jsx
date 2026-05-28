@@ -224,19 +224,20 @@ function ProfileStep({ user, onSave, saving }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="min-w-0">
             <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Birth</label>
             <input
               type="date"
-              className={`${INPUT} block`}
+              className={INPUT_DATE}
               value={form.dateOfBirth}
               onChange={e => set('dateOfBirth', e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
             />
           </div>
           <div className="min-w-0">
             <label className="block text-xs font-semibold text-gray-600 mb-1">Gender</label>
-            <select className={INPUT} value={form.gender} onChange={e => set('gender', e.target.value)}>
+            <select className={INPUT_CONTROL} value={form.gender} onChange={e => set('gender', e.target.value)}>
               <option value="male">Male</option>
               <option value="female">Female</option>
               <option value="other">Other</option>
@@ -473,18 +474,94 @@ function StravaStep({ user, onSkip, onConnect }) {
   );
 }
 
+const zoneKeys = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+
+function hasZoneRanges(zones = {}) {
+  return zoneKeys.some((key) => {
+    const zone = zones?.[key];
+    return zone && (zone.min !== undefined || zone.max !== undefined);
+  });
+}
+
+function normalizeZoneSet(zones = {}) {
+  return {
+    ...zones,
+    ...zoneKeys.reduce((acc, key) => {
+      acc[key] = {
+        min: zones?.[key]?.min ?? '',
+        max: zones?.[key]?.max ?? '',
+        description: zones?.[key]?.description || defaultZoneDescription(key),
+      };
+      return acc;
+    }, {}),
+  };
+}
+
+function defaultZoneDescription(key) {
+  const descriptions = {
+    zone1: 'Active Recovery',
+    zone2: 'Aerobic Base',
+    zone3: 'Tempo',
+    zone4: 'Threshold',
+    zone5: 'VO2 Max',
+  };
+  return descriptions[key] || '';
+}
+
+function getInitialZoneSport(user) {
+  const preferred = user?.sport === 'bike' ? 'cycling' : user?.sport;
+  if (['cycling', 'running', 'swimming'].includes(preferred) && hasZoneRanges(user?.powerZones?.[preferred])) {
+    return preferred;
+  }
+  return ['cycling', 'running', 'swimming'].find(sport => hasZoneRanges(user?.powerZones?.[sport])) || 'cycling';
+}
+
+function getExistingZonesForSport(user, sport) {
+  const power = user?.powerZones?.[sport];
+  const hr = user?.heartRateZones?.[sport];
+  const hasPower = hasZoneRanges(power);
+  const hasHr = hasZoneRanges(hr);
+  if (!hasPower && !hasHr) return null;
+
+  return {
+    lt1: power?.lt1 ?? '',
+    lt2: power?.lt2 ?? '',
+    lt1hr: hr?.zone2?.min ?? hr?.zone1?.max ?? '',
+    lt2hr: hr?.zone5?.min ?? hr?.zone4?.max ?? '',
+    maxhr: hr?.maxHeartRate ?? hr?.zone5?.max ?? '',
+    editableZones: {
+      power: normalizeZoneSet(power || {}),
+      hr: hasHr ? normalizeZoneSet(hr || {}) : null,
+    },
+  };
+}
+
 /** Step 4a — Training Zones (athlete) — enter LT1/LT2, generate zones, edit & confirm */
-function ZonesStep({ onSkip, onSave, saving }) {
-  const [sport, setSport] = useState('cycling');
-  const [lt1, setLt1] = useState('');
-  const [lt2, setLt2] = useState('');
-  const [lt1hr, setLt1hr] = useState('');
-  const [lt2hr, setLt2hr] = useState('');
-  const [maxhr, setMaxhr] = useState('');
-  const [editableZones, setEditableZones] = useState(null); // { power: {...}, hr: {...} } — editable after generation
+function ZonesStep({ user, onSkip, onSave, saving }) {
+  const initialSport = getInitialZoneSport(user);
+  const initialZones = getExistingZonesForSport(user, initialSport);
+  const [sport, setSport] = useState(initialSport);
+  const [lt1, setLt1] = useState(initialZones?.lt1 || '');
+  const [lt2, setLt2] = useState(initialZones?.lt2 || '');
+  const [lt1hr, setLt1hr] = useState(initialZones?.lt1hr || '');
+  const [lt2hr, setLt2hr] = useState(initialZones?.lt2hr || '');
+  const [maxhr, setMaxhr] = useState(initialZones?.maxhr || '');
+  const [editableZones, setEditableZones] = useState(initialZones?.editableZones || null); // { power: {...}, hr: {...} } — editable after generation
   const [err, setErr] = useState('');
 
   const sportLabel = sport === 'cycling' ? 'W' : sport === 'running' ? 'sec/km' : 'm/min';
+
+  useEffect(() => {
+    const nextSport = getInitialZoneSport(user);
+    const nextZones = getExistingZonesForSport(user, nextSport);
+    setSport(nextSport);
+    setLt1(nextZones?.lt1 || '');
+    setLt2(nextZones?.lt2 || '');
+    setLt1hr(nextZones?.lt1hr || '');
+    setLt2hr(nextZones?.lt2hr || '');
+    setMaxhr(nextZones?.maxhr || '');
+    setEditableZones(nextZones?.editableZones || null);
+  }, [user]);
 
   const handleGenerate = () => {
     const l1 = Number(lt1); const l2 = Number(lt2);
@@ -583,7 +660,16 @@ function ZonesStep({ onSkip, onSave, saving }) {
             zones stay visible so the user doesn't lose their work. */}
         <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
           {['cycling', 'running', 'swimming'].map(s => (
-            <button key={s} type="button" onClick={() => setSport(s)}
+            <button key={s} type="button" onClick={() => {
+              const zonesForSport = getExistingZonesForSport(user, s);
+              setSport(s);
+              setLt1(zonesForSport?.lt1 || '');
+              setLt2(zonesForSport?.lt2 || '');
+              setLt1hr(zonesForSport?.lt1hr || '');
+              setLt2hr(zonesForSport?.lt2hr || '');
+              setMaxhr(zonesForSport?.maxhr || '');
+              setEditableZones(zonesForSport?.editableZones || null);
+            }}
               className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
               {s}
             </button>
@@ -791,7 +877,10 @@ function FirstTestStep({ user, navigate, onClose, onSkip }) {
 
 // ─── Shared UI helpers ────────────────────────────────────────────────────────
 
-const INPUT = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-400';
+const INPUT = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-400 box-border min-w-0';
+/* iOS date inputs ignore vertical padding and render taller than text fields — fixed height keeps rows aligned */
+const INPUT_CONTROL = `${INPUT} h-11 py-0 leading-tight appearance-none`;
+const INPUT_DATE = `${INPUT_CONTROL} [color-scheme:light]`;
 const BTN_PRIMARY = 'w-full py-3 px-4 rounded-2xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50';
 const BTN_GHOST = 'w-full py-2.5 px-4 rounded-2xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-all';
 
@@ -1050,6 +1139,8 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
   const [setupStep, setSetupStep] = useState(0);
   const [saving, setSaving]     = useState(false);
   const [exiting, setExiting]   = useState(false);
+  const finishTimerRef = useRef(null);
+  const didFinishRef = useRef(false);
 
   const total   = INTRO_SLIDES.length;
   const current = INTRO_SLIDES[Math.min(slide, total - 1)];
@@ -1087,11 +1178,25 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
     else { setDir(-1); setPhase('slides'); }
   };
 
-  const handleFinish = () => {
+  const handleFinish = useCallback(() => {
+    if (didFinishRef.current) return;
+    didFinishRef.current = true;
     if (user?._id) localStorage.setItem(INTRO_SEEN_KEY(user._id), 'true');
     setExiting(true);
-    setTimeout(() => onDone(), 300);
-  };
+    finishTimerRef.current = setTimeout(() => onDone(), 300);
+  }, [onDone, user?._id]);
+
+  useEffect(() => {
+    return () => {
+      if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'setup' && setupStep >= SETUP_STEPS.length) {
+      handleFinish();
+    }
+  }, [handleFinish, phase, setupStep]);
 
   const saveAndNext = async (data) => {
     setSaving(true);
@@ -1274,6 +1379,7 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
                     )}
                     {setupStep === 2 && (
                       <ZonesStep
+                        user={user}
                         onSkip={goNextSetup}
                         onSave={saveAndNext}
                         saving={saving}
@@ -1284,7 +1390,6 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
                         <StravaStep user={user} onSkip={handleFinish} />
                       </div>
                     )}
-                    {setupStep >= SETUP_STEPS.length && handleFinish()}
                   </div>
                 </div>
               )}
@@ -1306,7 +1411,7 @@ export default function OnboardingFlow({ onDismiss }) {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [showIntro, setShowIntro] = useState(() => {
+  const [showIntro] = useState(() => {
     if (!user?._id) return false;
     return localStorage.getItem(INTRO_SEEN_KEY(user?._id)) !== 'true';
   });
@@ -1381,7 +1486,7 @@ export default function OnboardingFlow({ onDismiss }) {
         return <StravaStep user={user} onSkip={skipStrava} />;
 
       case 'zones':
-        return <ZonesStep onSkip={next} navigate={navigate} onClose={() => dismiss(true)} />;
+        return <ZonesStep user={user} onSkip={next} navigate={navigate} onClose={() => dismiss(true)} />;
 
       case 'athletes':
         return (
@@ -1412,7 +1517,7 @@ export default function OnboardingFlow({ onDismiss }) {
 
   // Show intro slides first for new users — also handles setup steps
   if (showIntro) {
-    return <IntroSlides user={user} onDone={() => setShowIntro(false)} />;
+    return <IntroSlides user={user} onDone={() => dismiss(true)} />;
   }
 
   // For returning users who skipped/need to redo setup — reuse IntroSlides in setup phase

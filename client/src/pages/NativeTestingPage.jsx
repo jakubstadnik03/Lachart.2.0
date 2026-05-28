@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   GlassCard, SectionTitle, SportTile,
-  normSport, SPORT_TINT, SPORT_ICONS,
+  normSport, SPORT_TINT, SPORT_ICONS, NativeSkeletonRows,
 } from '../components/native/shared/Tiles';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
@@ -995,8 +995,8 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
               )}
 
               {loading && filtered.length === 0 ? (
-                <div style={{ padding: '20px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
-                  Loading…
+                <div style={{ padding: '4px 0 2px' }}>
+                  <NativeSkeletonRows rows={4} />
                 </div>
               ) : filtered.length === 0 ? (
                 <div style={{ padding: '20px 0', textAlign: 'center' }}>
