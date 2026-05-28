@@ -1052,13 +1052,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 >
                   {/* ── Bar area — exactly CHART_H tall, bar grows from the bottom ── */}
                   <div style={{ height: CHART_H, position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    {ent.isPause ? (
+                  {ent.isPause ? (
                       <div style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: 2 }} />
-                    ) : (
+                  ) : (
                       <div style={{ position: 'relative', width: '100%' }}>
                         {/* Lactate value label above the bar */}
                         {hasLactate && (
-                          <div style={{
+                    <div style={{
                             position: 'absolute', bottom: barH + 2, left: 0, right: 0,
                             textAlign: 'center', fontSize: 8, fontWeight: 800,
                             color: '#7c3aed', lineHeight: 1, pointerEvents: 'none',
@@ -1067,12 +1067,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                           </div>
                         )}
                         <div style={{
-                          width: '100%',
-                          height: barH,
-                          backgroundColor: barBg,
-                          borderRadius: '3px 3px 0 0',
+                      width: '100%',
+                      height: barH,
+                      backgroundColor: barBg,
+                      borderRadius: '3px 3px 0 0',
                           boxShadow: isSelected ? `0 0 0 2px ${hasLactate ? '#7c3aed' : color}, 0 2px 8px ${hasLactate ? '#7c3aed' : color}60` : undefined,
-                          transition: 'height 0.2s ease, opacity 0.15s ease',
+                      transition: 'height 0.2s ease, opacity 0.15s ease',
                           position: 'relative', overflow: 'hidden',
                         }}>
                           {/* Violet cap stripe for lactate bars */}
@@ -2195,14 +2195,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
 
       if (time.length > 0) {
-        const watts     = streams.watts?.data || streams.watts || [];
-        const heartrate = streams.heartrate?.data || streams.heartrate || [];
+    const watts     = streams.watts?.data || streams.watts || [];
+    const heartrate = streams.heartrate?.data || streams.heartrate || [];
         let   velocity  = streams.velocity_smooth?.data || streams.velocity_smooth || [];
-        const cadence   = streams.cadence?.data || streams.cadence || [];
-        const altitude  = streams.altitude?.data || streams.altitude || [];
-        const distArr   = streams.distance?.data || streams.distance || [];
-        const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
-        const startMs   = new Date(startDate).getTime();
+    const cadence   = streams.cadence?.data || streams.cadence || [];
+    const altitude  = streams.altitude?.data || streams.altitude || [];
+    const distArr   = streams.distance?.data || streams.distance || [];
+    const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
+    const startMs   = new Date(startDate).getTime();
 
         // If velocity_smooth is absent (Garmin KEY_SET fallback returned time+heartrate+
         // distance but not speed), derive it from consecutive distance+time samples.
@@ -2241,16 +2241,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           });
         }
 
-        const records = time.map((t, i) => ({
-          timestamp: new Date(startMs + t * 1000).toISOString(),
+    const records = time.map((t, i) => ({
+      timestamp: new Date(startMs + t * 1000).toISOString(),
           distance:  distArr[i] != null ? distArr[i] : undefined,
-          power:     watts[i] > 0 ? watts[i] : null,
+      power:     watts[i] > 0 ? watts[i] : null,
           heartRate: heartrate[i] > 0 ? heartrate[i]
                     : (lapHrBySecond && lapHrBySecond[i] > 0 ? lapHrBySecond[i] : null),
-          speed:     velocity[i] > 0 ? velocity[i] : null,
-          cadence:   cadence[i] > 0 ? cadence[i] : null,
-          altitude:  altitude[i] != null ? altitude[i] : null,
-        }));
+      speed:     velocity[i] > 0 ? velocity[i] : null,
+      cadence:   cadence[i] > 0 ? cadence[i] : null,
+      altitude:  altitude[i] != null ? altitude[i] : null,
+    }));
         return { ...merged, records };
       }
     }
@@ -3566,11 +3566,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                                 }
                                 if (onAddLactate) {
                                   return (
-                                    <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
-                                      className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
-                                      style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
-                                      <span className="text-sm font-bold leading-none">+</span>
-                                    </button>
+                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                    className="flex items-center justify-center w-6 h-6 rounded-full ml-auto active:opacity-60 touch-manipulation"
+                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', WebkitTapHighlightColor: 'transparent' }}>
+                                    <span className="text-sm font-bold leading-none">+</span>
+                                  </button>
                                   );
                                 }
                                 return <span className="text-right tabular-nums text-gray-400">—</span>;
@@ -3756,7 +3756,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
               <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Duration</span>
               <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</span>
-            </div>
+              </div>
             {/* Distance */}
             {dist > 0 && (
               <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
@@ -6392,11 +6392,11 @@ export default function CalendarView({
                             >+</button>
                           </div>
                         ) : (
-                          <button
-                            onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
-                            className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
-                            style={{ WebkitTapHighlightColor: 'transparent' }}
-                          >+</button>
+                        <button
+                          onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
+                          className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >+</button>
                         )
                       )}
                     </div>

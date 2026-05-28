@@ -25,6 +25,7 @@ const FTMS_CTRL     = '00002ad9-0000-1000-8000-00805f9b34fb'; // FTMS Control Po
 const CPS_MEAS      = '00002a63-0000-1000-8000-00805f9b34fb'; // Cycling Power Measurement
 const CSC_MEAS      = '00002a5b-0000-1000-8000-00805f9b34fb'; // CSC Measurement
 const SC_CTRL       = '00002a55-0000-1000-8000-00805f9b34fb'; // SC Control Point (FE-C)
+const TACX_FEC_SERVICE = '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e'; // Tacx/Garmin FE-C over BLE
 
 export class CapacitorBleAdapter {
   constructor() {
@@ -64,7 +65,7 @@ export class CapacitorBleAdapter {
     try {
       device = await BleClient.requestDevice({
         services: [FTMS_SERVICE, CPS_SERVICE],
-        optionalServices: [CSC_SERVICE],
+        optionalServices: [CSC_SERVICE, TACX_FEC_SERVICE],
       });
     } catch (err) {
       if (/cancel|dismiss|user cancel/i.test(err?.message || '')) {
@@ -330,6 +331,11 @@ export class CapacitorBleAdapter {
     const clamped = Math.max(0, Math.min(2000, Math.round(watts)));
 
     if (this._ctrlType === 'ftms') {
+      if (!this._ctrlRequested) {
+        await this.requestControl();
+      }
+      await this.start();
+
       // FTMS opcode 0x05 = Set Target Power (uint16 LE, watts)
       const cmd = new Uint8Array([
         0x05,

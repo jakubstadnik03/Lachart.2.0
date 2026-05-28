@@ -48,9 +48,15 @@ const RESUME_CADENCE = 40;
 
 const SNAPSHOT_KEY = 'lachart_active_workout';
 
+function zoneMid(z) {
+  if (!z) return null;
+  if (z.min != null && z.max != null && isFinite(z.max)) return (z.min + z.max) / 2;
+  return z.min ?? null;
+}
+
 function resolveTargetWatts(target, ctx = {}) {
   if (!target || target.type === 'open') return null;
-  const { ftp = 250, lt1Power = null, lt2Power = null } = ctx;
+  const { ftp = 250, lt1Power = null, lt2Power = null, cyclingZones = null } = ctx;
   if (target.type === 'watts')       return target.useRange ? Math.round((target.rangeMin + target.rangeMax) / 2) : (target.value || 0);
   if (target.type === 'percent_ftp') return Math.round(ftp * ((target.value || 80) / 100));
   if (target.type === 'percent_lt1') return Math.round((lt1Power || ftp * 0.75) * ((target.value || 95) / 100));
@@ -58,9 +64,9 @@ function resolveTargetWatts(target, ctx = {}) {
   if (target.type === 'lt1')         return Math.round(lt1Power || ftp * 0.75);
   if (target.type === 'lt2')         return Math.round(lt2Power || ftp);
   if (target.type === 'zone') {
-    // Must match WorkoutBuilder.resolveTargetWatts so execution watts = planned watts.
-    // Z1=lt1×0.8  Z2=lt1  Z3=lt2×0.95  Z4=lt2  Z5=lt2×1.1
-    const z   = Math.max(1, Math.min(5, target.value || 1));
+    const z = Math.max(1, Math.min(5, target.value || 1));
+    const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
+    if (profileMid != null) return Math.round(profileMid);
     const lt2 = lt2Power || ftp;
     const lt1 = lt1Power || ftp * 0.75;
     return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
