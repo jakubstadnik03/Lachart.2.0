@@ -254,18 +254,6 @@ async function syncStravaForUser(user, opts = {}) {
     
     console.error(`[StravaAutoSync] Error for user ${user._id}:`, errorMessage, statusCode ? `(Status: ${statusCode})` : '');
     
-    // If it's a 401 error, try to clear Strava connection
-    if (statusCode === 401) {
-      try {
-        await User.findByIdAndUpdate(user._id, {
-          $unset: { strava: 1 }
-        });
-        console.log('[StravaAutoSync] Cleared Strava connection for user', user._id, 'due to 401 error');
-      } catch (clearErr) {
-        console.error('[StravaAutoSync] Error clearing Strava connection:', clearErr.message);
-      }
-    }
-    
     return { imported: 0, updated: 0, error: errorMessage };
   }
 }

@@ -1161,8 +1161,9 @@ router.post('/strava/webhook', async (req, res) => {
     if (object_type !== 'activity') return; // ignore athlete events
     if (!owner_id || !object_id) return;
 
-    // Map Strava owner_id → LaChart user
-    const user = await User.findOne({ 'strava.athleteId': Number(owner_id) });
+    // Map Strava owner_id → LaChart user. OAuth stores athleteId as a string,
+    // but older docs may still contain a number, so match both forms.
+    const user = await User.findOne({ 'strava.athleteId': { $in: [String(owner_id), Number(owner_id)] } });
     if (!user) {
       console.warn('[StravaWebhook] no user for athlete', owner_id);
       return;
@@ -1179,7 +1180,7 @@ router.post('/strava/webhook', async (req, res) => {
         'strava.lastSyncDate': eventStamp,
         'strava.webhookLastEventAt': eventStamp,
       });
-      if (aspect_type === 'create' && isNew) {
+      if (isNew) {
         notifyStravaImportedPush(user._id, 1, object_id, activity?.sport, activity);
       }
       console.log(`[StravaWebhook] ${aspect_type} activity ${object_id} for user ${user._id} (new=${isNew})`);
