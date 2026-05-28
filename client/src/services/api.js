@@ -904,6 +904,19 @@ export const listBulkCampaigns = async () => {
   }
 };
 
+// Loads the branded default LaChart outreach HTML (~35 KB, with hosted-image
+// refs) so the admin can preview, edit, or use as-is before kicking off a
+// campaign. See server/email-templates/coachOutreachDefault.html.
+export const getDefaultOutreachTemplate = async () => {
+  try {
+    const response = await api.get('/user/admin/coach-outreach-leads/default-template');
+    return response.data; // { html, sizeKB, isFullDocument }
+  } catch (error) {
+    console.error('Error loading default outreach template:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);

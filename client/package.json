@@ -52,13 +52,15 @@
   "scripts": {
     "postinstall": "node scripts/fix-fast-equals-shim.js",
     "start": "node scripts/fix-fast-equals-shim.js && GENERATE_SOURCEMAP=false react-scripts start",
-    "build": "GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false react-scripts build",
+    "build": "GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false react-scripts build && npm run prerender",
+    "build:no-prerender": "GENERATE_SOURCEMAP=false INLINE_RUNTIME_CHUNK=false react-scripts build",
+    "prerender": "node scripts/prerender.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
-    "cap:sync": "npm run build && npx cap sync",
+    "cap:sync": "npm run build:no-prerender && npx cap sync",
     "cap:sync:no-build": "npx cap sync",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android"
@@ -105,6 +107,8 @@
     "documentation": "^14.0.3",
     "eslint-plugin-react": "^7.37.5",
     "postcss": "^8.4.49",
+    "puppeteer": "^25.1.0",
+    "serve-handler": "^6.1.7",
     "source-map-explorer": "^2.5.3",
     "tailwindcss": "^3.4.16",
     "typescript": "^6.0.3"

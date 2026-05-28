@@ -16,6 +16,7 @@ import {
   CloudArrowDownIcon,
 } from '@heroicons/react/24/outline';
 import { getIntegrationStatus } from '../services/api';
+import { useAuth } from '../context/AuthProvider';
 
 /**
  * WhatsNewModal
@@ -80,10 +81,11 @@ const ITEMS = [
   {
     icon: PaintBrushIcon,
     title: 'Brand your PDF reports',
-    body: 'Coach plan: upload your logo, set your studio name + address + colour, and every test PDF goes out as your branded handout.',
+    body: 'Upload your logo, set your studio name + address + colour, and every test PDF goes out as your branded handout for athletes.',
     cta: 'Set up branding',
     href: '/settings?tab=branding',
     accent: '#f59e0b', // amber
+    coachOnly: true,
   },
   {
     icon: BoltIcon,
@@ -121,6 +123,8 @@ const ITEMS = [
 
 export default function WhatsNewModal({ open, onClose, userName }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isCoach = ['coach', 'tester', 'testing'].includes(user?.role);
   const [step, setStep] = useState(0);
 
   // `null` while we haven't checked yet → assume connected (i.e. hide the
@@ -144,9 +148,17 @@ export default function WhatsNewModal({ open, onClose, userName }) {
     return () => { cancelled = true; };
   }, [open]);
 
-  // Hide `stravaOnly` slides once we know the user has Strava linked. Until
-  // the status resolves we also hide them — see comment on the state above.
-  const visibleItems = ITEMS.filter((it) => !it.stravaOnly || stravaConnected === false);
+  // Filter slides by audience:
+  //   • `stravaOnly` — only shown to users whose Strava is NOT yet linked.
+  //     Hidden while the status call is in-flight to avoid a flash.
+  //   • `coachOnly`  — only shown to coach-tier roles (coach / tester /
+  //     testing). Athletes don't have the Branding tab in Settings, so the
+  //     PDF-branding pitch would dead-end for them.
+  const visibleItems = ITEMS.filter((it) => {
+    if (it.stravaOnly && stravaConnected !== false) return false;
+    if (it.coachOnly && !isCoach) return false;
+    return true;
+  });
   const total = visibleItems.length;
 
   // Reset to the first slide whenever the modal is (re-)opened — otherwise

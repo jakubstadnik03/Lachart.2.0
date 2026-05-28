@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -3353,7 +3353,44 @@ const AdminDashboard = () => {
 
               {/* Email template */}
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-700">Email Template</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-700">Email Template</h4>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const data = await getDefaultOutreachTemplate();
+                          if (!data?.html) { addNotification('Default template not available on server', 'warning'); return; }
+                          setBulkTemplate(data.html);
+                          addNotification(`Loaded LaChart default template (${data.sizeKB} KB)`, 'success');
+                        } catch (e) {
+                          addNotification('Failed to load default template', 'error');
+                        }
+                      }}
+                      className="text-xs px-3 py-1 rounded-md border border-primary/30 text-primary hover:bg-primary/5 font-medium"
+                    >
+                      Load LaChart default
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = bulkTemplate || '';
+                        if (!html.trim()) { addNotification('Nothing to preview — load or write a template first', 'info'); return; }
+                        // Render preview in a new tab. Replace {{name}} with a sample
+                        // value so the admin sees what the recipient sees.
+                        const w = window.open('', '_blank');
+                        if (!w) return;
+                        w.document.open();
+                        w.document.write(html.replace(/\{\{name\}\}/g, 'Sample Coach'));
+                        w.document.close();
+                      }}
+                      className="text-xs px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium"
+                    >
+                      Preview in new tab
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="text"
                   placeholder="Subject line…"
@@ -3368,7 +3405,12 @@ const AdminDashboard = () => {
                   rows={6}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono resize-y"
                 />
-                <p className="text-xs text-gray-400">Leave body empty to use the default LaChart outreach template.</p>
+                <p className="text-xs text-gray-400">
+                  Leave body empty to send the branded LaChart default. Full HTML
+                  documents (starting with <code>&lt;!DOCTYPE&gt;</code> or
+                  <code>&lt;html&gt;</code>) are sent verbatim — plain-text /
+                  partial bodies get wrapped in the standard LaChart envelope.
+                </p>
               </div>
 
               {bulkCampaignError && (

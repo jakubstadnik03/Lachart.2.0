@@ -580,8 +580,18 @@ const TABS = [
 
 const PATH_TO_TAB = Object.fromEntries(TABS.map(t => [t.path, t.id]));
 
+// Some URLs share a UI tab but need their own SEO target (e.g. /zone2-calculator
+// is a separate search-keyword landing page that visually re-uses the lactate
+// calculator — Zone 2 is derived from the lactate curve — but must own its own
+// canonical, title and description so Google indexes it as a distinct page).
+// If you want UI ≠ SEO, add an entry here; otherwise PATH_TO_TAB drives both.
+const PATH_TO_SEO_KEY = {
+  '/zone2-calculator': 'zone2',
+};
+
 const SEO_META = {
   lactate: { title:'Free Lactate Threshold Calculator — LT1, LT2 & Training Zones | LaChart', desc:'Calculate your lactate threshold (LT1 & LT2) from step test data. Get training zones, OBLA and PDF reports. Free, no login required.', canonical:'https://lachart.net/lactate-curve-calculator' },
+  zone2:   { title:'Free Zone 2 Calculator — Find Your Aerobic Base Heart Rate & Power | LaChart', desc:'Calculate your Zone 2 training range from lactate test data, FTP or LTHR. Build your aerobic base with the right intensity. Free, no sign-up.', canonical:'https://lachart.net/zone2-calculator' },
   ftp:     { title:'Free FTP Calculator — Functional Threshold Power & Coggan Zones | LaChart', desc:'Calculate your FTP from a 20-minute test, get W/kg, 7 Coggan power zones and your cycling performance profile. Free online tool.', canonical:'https://lachart.net/ftp-calculator' },
   vo2max:  { title:'Free VO2max Estimator — Maximal Oxygen Uptake Calculator | LaChart', desc:'Estimate your VO2max from a 5-minute all-out cycling effort. See your aerobic classification and compare to world-class standards.', canonical:'https://lachart.net/vo2max-calculator' },
   race:    { title:'Free Race Time Predictor — 5K to Marathon Riegel Formula | LaChart', desc:'Predict your 5K, 10K, half-marathon and marathon time from any race result using the Riegel model. Free online race predictor.', canonical:'https://lachart.net/race-predictor' },
@@ -612,7 +622,9 @@ const TestingWithoutLogin = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const activeTab = PATH_TO_TAB[location.pathname] || 'lactate';
-  const activeTabMeta = SEO_META[activeTab] || SEO_META.lactate;
+  // SEO key can diverge from the UI tab — see PATH_TO_SEO_KEY comment.
+  const seoKey = PATH_TO_SEO_KEY[location.pathname] || activeTab;
+  const activeTabMeta = SEO_META[seoKey] || SEO_META.lactate;
   const [showRegister, setShowRegister] = useState(false);
 
   // Lactate test state

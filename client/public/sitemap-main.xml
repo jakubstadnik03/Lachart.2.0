@@ -37,6 +37,36 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://lachart.net/blog/lactate-test-at-home</loc>
+    <lastmod>2026-05-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/lactate-test-interpretation</loc>
+    <lastmod>2026-05-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/ftp-vs-lt2</loc>
+    <lastmod>2026-05-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/blog/best-lactate-analyzer-2026</loc>
+    <lastmod>2026-05-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lachart.net/about</loc>
+    <lastmod>2026-05-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://lachart.net/documentation</loc>
     <lastmod>2026-05-25</lastmod>
     <changefreq>monthly</changefreq>

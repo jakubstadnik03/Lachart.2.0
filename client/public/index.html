@@ -41,9 +41,28 @@
     <meta name="robots" content="index, follow" />
     <meta name="author" content="Jakub Stádník" />
     <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, blood lactate testing, LT1, LT2, OBLA, IAT, endurance training, sports analytics, performance analysis, lactate threshold test, training zones calculator" />
-    <meta name="description" content="LaChart – professional blood lactate testing app for athletes and coaches. Calculate LT1 &amp; LT2 thresholds, build training zones, and export PDF reports. Free calculator included." />
-    <link rel="canonical" href="https://lachart.net/" />
-    
+    <!--
+      Per-route <meta name="description"> is set via react-helmet inside each
+      page component (About.jsx, TestingWithoutLogin.jsx, BlogPostLayout.jsx,
+      BlogIndex.jsx). We deliberately do NOT keep a static fallback here:
+      react-helmet APPENDS rather than replaces, so a static description would
+      cause every pre-rendered page to ship two <meta name="description">
+      tags (one global, one route-specific) which is undefined-behavior for
+      crawlers. The prerender script always visits each route, lets Helmet
+      flush, then serializes — so every output has exactly one description.
+    -->
+    <!--
+      NOTE: do NOT add a static <link rel="canonical"> here. Each route sets its
+      own canonical via react-helmet (see About.jsx, TestingWithoutLogin.jsx,
+      BlogPostLayout.jsx, BlogIndex.jsx). A hard-coded canonical to "/" caused
+      every calculator + blog page to be merged into the homepage in Google's
+      index — confirmed via raw curl as Googlebot returning canonical="/" for
+      /lactate-curve-calculator, /ftp-calculator, etc. (May 2026 audit).
+      Pre-rendering (react-snap, see scripts/prerender) bakes the per-route
+      canonical into the static HTML at build time so crawlers never see the
+      generic SPA shell.
+    -->
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-HNHPQH30BL"></script>
     <script>

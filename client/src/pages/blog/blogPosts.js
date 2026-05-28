@@ -67,6 +67,17 @@ export const blogPosts = [
     featured: true,
   },
   {
+    slug:     'best-lactate-analyzer-2026',
+    title:    'Best Lactate Analyzer 2026: Lactate Pro 2 vs Lactate Plus vs Lactate Scout — Tested',
+    excerpt:  'Three portable analyzers dominate home and lab lactate testing in 2026. We put Lactate Pro 2, Lactate Plus, and Lactate Scout 4 through accuracy, strip-cost, ease-of-use and Bluetooth checks — and tell you which one to actually buy.',
+    date:     '2026-05-28',
+    readTime: '13 min',
+    category: 'Testing Protocol',
+    tags:     ['lactate analyzer', 'lactate pro 2', 'lactate plus', 'lactate scout', 'buying guide', 'equipment'],
+    image:    '/images/lactate_testing.png',
+    featured: true,
+  },
+  {
     slug:     'ftp-vs-lt2',
     title:    'FTP vs LT2: Are They the Same Power? Spoiler — Usually Yes, Sometimes No',
     excerpt:  'FTP is everywhere in cycling, LT2 is the gold standard in physiology. They sit next to each other on the curve but they are not identical — here is exactly how much they differ, when they line up, and which one you should actually train against.',
