@@ -414,9 +414,12 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
     </div>
   `.trim();
 
+  // Tailor footer + CTAs by whether the recipient is a registered user or a
+  // first-touch demo from the no-login calculator. Logged-in users get a
+  // re-test reminder; anonymous demo users get a sign-up nudge.
   const footerText = userId
-    ? 'Tip: Repeat the test under similar conditions for best comparisons.'
-    : 'Create an account to save and track your tests over time.';
+    ? 'Tip: re-test under the same conditions (similar fatigue, temperature, time of day) so the comparison curves stay honest.'
+    : 'Create a free account to save this test, build a curve over time, and run structured workouts from your data.';
 
   try {
     await transporter.sendMail({
@@ -426,8 +429,10 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
       html: generateEmailTemplate({
         title,
         content,
-        buttonText: 'Open LaChart',
-        buttonUrl: `${clientUrl}/`,
+        buttonText: userId ? 'Open my dashboard' : 'Create a free account',
+        buttonUrl: userId ? `${clientUrl}/dashboard` : `${clientUrl}/signup`,
+        loginButtonText: userId ? 'Connect Strava' : 'Try the calculator again',
+        loginButtonUrl: userId ? `${clientUrl}/settings?tab=integrations` : `${clientUrl}/lactate-curve-calculator`,
         footerText
       })
     });

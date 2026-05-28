@@ -483,7 +483,10 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
 
   // Convert SVG to a raster PNG data URL so every email client renders it correctly.
   // Inline SVGs are stripped by many email clients (Gmail, Outlook, some Zoho views).
-  const chartImgSrc = lactateSvg ? await svgToEmailImgSrc(lactateSvg, 2) : null;
+  // Scale defaults to 1.5× in svgToEmailImgSrc — retina-safe AND keeps the
+  // total email body under Gmail's 102 KB clip threshold. Bump only if a
+  // future chart actually needs sharper detail.
+  const chartImgSrc = lactateSvg ? await svgToEmailImgSrc(lactateSvg) : null;
 
   const clientUrl = getClientUrl();
   const testUrl = `${clientUrl}/testing?testId=${test._id}`;
@@ -607,9 +610,11 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
   const html = generateEmailTemplate({
     title: baseTitle,
     content,
-    buttonText: opts.promo ? 'Open this test in LaChart' : 'Open LaChart',
-    buttonUrl: opts.promo ? testUrl : `${clientUrl}/`,
-    footerText: 'Tip: Repeat the test under similar conditions for best comparisons.'
+    buttonText: opts.promo ? 'See this test in LaChart' : 'Open my dashboard',
+    buttonUrl: opts.promo ? testUrl : `${clientUrl}/dashboard`,
+    loginButtonText: opts.promo ? 'Connect Strava' : null,
+    loginButtonUrl: opts.promo ? `${clientUrl}/settings?tab=integrations` : null,
+    footerText: 'Tip: re-test under the same conditions (similar fatigue, temperature, time of day) so the comparison curves stay honest.'
   });
   return { html, title: baseTitle };
 }

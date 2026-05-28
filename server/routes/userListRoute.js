@@ -3903,25 +3903,49 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
 
         const userName = targetUser.name || 'there';
 
+        // Refreshed copy (2026-05) — same goal (push Strava connect) but reframed
+        // around what you GET, not what you're "missing". Feature cards mirror
+        // the rest of the branded transactional emails so the look is consistent.
+        const cardStyle = 'background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;';
+        const accentCardStyle = 'background-color: #FFE6DF; border-radius: 10px; padding: 14px 16px;';
+        const cardTitleStyle = 'font-weight: 700; color: #0A0E1A; font-size: 15px;';
+        const cardBodyStyle = 'color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;';
+
         const emailContent = `
-            <p>Hi ${userName},</p>
-            <p>I noticed you haven't connected your Strava account yet. Connecting Strava unlocks powerful features that make LaChart much more useful!</p>
-            <p style="margin-top: 30px;">
-                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
-            </p>
-            <h3 style="margin-top: 30px; color: #767EB5;">🚀 What You're Missing:</h3>
-            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
-                <li><strong>Automatic Activity Import:</strong> All your runs, rides, and swims automatically synced to LaChart</li>
-                <li><strong>Smart Test Recommendations:</strong> Get personalized lactate test protocols based on your Strava data</li>
-                <li><strong>Progress Tracking:</strong> See your performance trends and improvements over time</li>
-                <li><strong>Training Load Analysis:</strong> Monitor TSS, form, and fitness automatically</li>
-                <li><strong>HR-First Test Planning:</strong> Get test recommendations based on your Strava heart rate data</li>
-                <li><strong>Profile Sync:</strong> Automatically update your profile picture from Strava</li>
-            </ul>
-            <p style="margin-top: 20px;">Connecting takes just 30 seconds and it's completely free!</p>
-            <p style="margin-top: 20px;">If you have any questions or need help, just reply to this email.</p>
-            <p style="margin-top: 30px;">Thanks!</p>
-            <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+            <p>Hi <strong>${userName}</strong>,</p>
+            <p>You're using LaChart — but you haven't connected Strava yet. That's the one setup step that turns LaChart from "manual logger" into "automatic training brain". Takes 30 seconds.</p>
+
+            <div style="margin: 22px 0; text-align: center;">
+              <img src="${imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);" />
+            </div>
+
+            <p style="margin-top: 22px; font-size: 15.5px;"><strong>What you unlock by connecting:</strong></p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 12px 0 18px; border-collapse: separate; border-spacing: 0 8px;">
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">⚡ Auto-import every workout</div>
+                <div style="${cardBodyStyle}">Every ride, run and swim flows in with power, HR, pace and laps — never type a workout in again.</div>
+              </td></tr>
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">🏷️ Auto-categorize by zone &amp; structure</div>
+                <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted from intervals, zones and titles. No manual tagging.</div>
+              </td></tr>
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">❤️ Form, fitness &amp; fatigue charted</div>
+                <div style="${cardBodyStyle}">CTL · ATL · TSB built automatically from every workout. See when you peak and when to back off.</div>
+              </td></tr>
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">💧 Add lactate to any imported interval</div>
+                <div style="${cardBodyStyle}">Tag any interval of a synced workout with a blood-lactate sample — feeds straight into your curve.</div>
+              </td></tr>
+              <tr><td style="${accentCardStyle}">
+                <div style="${cardTitleStyle}">🧠 Smarter test protocols</div>
+                <div style="${cardBodyStyle}">LaChart suggests step-test power ranges based on your Strava power history — no more guessing.</div>
+              </td></tr>
+            </table>
+
+            <p style="margin-top: 20px;">Stuck on the connect step? Reply to this email — it lands in my inbox and I'll sort it.</p>
+            <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart · <a href="https://lachart.net" style="color: #767EB5; text-decoration: none;">lachart.net</a></span></p>
         `;
 
         const transporter = createEmailTransporter();
@@ -3938,13 +3962,15 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
                 address: process.env.EMAIL_USER
             },
             to: targetUser.email,
-            subject: 'Connect Strava to Unlock More Features 🚀',
+            subject: 'One setup step you missed — connect Strava',
             html: generateEmailTemplate({
-                title: 'Connect Strava to Unlock More Features',
+                title: 'Connect Strava and let LaChart do the work',
                 content: emailContent,
-                buttonText: 'Connect Strava Now',
-                buttonUrl: `${clientUrl}/settings`,
-                footerText: 'From the creator Jakub Stádník. Connecting Strava takes just 30 seconds and unlocks powerful features!'
+                buttonText: 'Connect Strava (30 seconds)',
+                buttonUrl: `${clientUrl}/settings?tab=integrations`,
+                loginButtonText: 'Open my dashboard',
+                loginButtonUrl: `${clientUrl}/dashboard`,
+                footerText: 'You only need to do this once per account. Disconnect any time from Settings → Integrations.'
             })
         });
 
@@ -4028,43 +4054,96 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
         const clientUrl = getClientUrl() || 'https://lachart.net';
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
-        let subject, content;
+        // Three send paths, in this priority order. Mirrors processCampaignBatch()
+        // so single-lead "Send" and bulk-campaign behave identically — what you
+        // preview in one place is what every recipient gets in the other.
+        //
+        //   1. Admin pasted a custom subject + body in the modal:
+        //        • Full HTML doc (<!DOCTYPE>/<html>/<body>) → ship verbatim
+        //        • Plain text / partial HTML → wrap in generateEmailTemplate()
+        //   2. Admin clicked Send without customising → ship the branded
+        //      coachOutreachDefault.html template loaded at boot. {{name}} is
+        //      replaced per-lead.
+        //   3. Branded template not on disk (fresh deploy missing the file) →
+        //      fall back to the same generic inline copy we shipped before.
 
-        if (customSubject && customBody) {
-            // Custom personalised email — convert plain text to HTML paragraphs
+        let subject;
+        let finalHtml; // final HTML body for sendMail — already-wrapped or verbatim full doc
+        let isFullDoc = false;
+
+        const trimmedBody = customBody.trim();
+
+        if (customSubject && trimmedBody) {
             subject = customSubject;
-            const htmlParagraphs = customBody
-                .split(/\n{2,}/)
-                .map(block => `<p style="margin-top:14px;line-height:1.6;">${block.replace(/\n/g, '<br/>')}</p>`)
-                .join('\n');
-            content = `
-                ${htmlParagraphs}
-                <p style="margin-top: 20px;">
-                    <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
-                </p>
-            `;
+            if (isFullDocumentEmail(trimmedBody)) {
+                // Admin pasted a full HTML doc — replace {{name}} and ship as-is.
+                finalHtml = trimmedBody.replace(/\{\{name\}\}/g, contactName);
+                isFullDoc = true;
+            } else {
+                const htmlParagraphs = trimmedBody
+                    .replace(/\{\{name\}\}/g, contactName)
+                    .split(/\n{2,}/)
+                    .map(block => `<p style="margin-top:14px;line-height:1.6;">${block.replace(/\n/g, '<br/>')}</p>`)
+                    .join('\n');
+                const content = `${htmlParagraphs}
+                    <p style="margin-top: 20px;">
+                        <img src="${imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                    </p>`;
+                finalHtml = generateEmailTemplate({
+                    title: 'LaChart — Lactate Analysis Tool',
+                    content,
+                    buttonText: 'Open LaChart',
+                    buttonUrl: clientUrl,
+                    footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
+                });
+            }
+        } else if (DEFAULT_OUTREACH_TEMPLATE_HTML) {
+            // Default = branded coach outreach template (server/email-templates/
+            // coachOutreachDefault.html). Same template the bulk campaign uses
+            // when admin leaves the textarea empty — guarantees consistency.
+            subject = "A better home for your lactate tests and training zones — LaChart";
+            finalHtml = DEFAULT_OUTREACH_TEMPLATE_HTML.replace(/\{\{name\}\}/g, contactName);
+            isFullDoc = true;
         } else {
-            // Default generic template
+            // Last-resort fallback if the template file is missing on disk.
+            // Kept short — if you're seeing this email shape, redeploy.
             subject = "Free tool for lactate testing coaches - LaChart";
             const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
-            content = `
+            const content = `
                 <p>${greeting}</p>
-                <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
-                <p style="margin-top: 20px;">LaChart helps you:</p>
-                <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
-                    <li>log lactate step tests quickly,</li>
-                    <li>auto-calculate <strong>LT1 / LT2</strong> and training zones,</li>
-                    <li>generate and send a clear <strong>PDF report</strong>,</li>
-                    <li>manage athletes and keep test history in one place.</li>
-                </ul>
+                <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers — automatic LT1/LT2 detection, training zones, branded PDF reports, athlete management.</p>
                 <p style="margin-top: 20px;">
-                    <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                    <img src="${imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 8px;" />
                 </p>
-                <p style="margin-top: 20px;">If this could be useful for your coaching/testing workflow, I would love your feedback.</p>
-                <p style="margin-top: 20px;">You can try it here: <a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
-                <p style="margin-top: 26px;">Best regards,</p>
-                <p><strong>Jakub Stadnik</strong><br/>Creator of LaChart</p>
+                <p>If this could be useful for your workflow, I'd love your feedback.</p>
+                <p style="margin-top: 26px;">— Jakub Stadnik<br/>Creator of LaChart · <a href="${clientUrl}" style="color: #767EB5;">lachart.net</a></p>
             `;
+            finalHtml = generateEmailTemplate({
+                title: 'LaChart — Lactate Analysis Tool',
+                content,
+                buttonText: 'Open LaChart',
+                buttonUrl: clientUrl,
+                footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
+            });
+        }
+
+        // Preview-mode banner injection. The banner sits at the very top of the
+        // body so the admin sees immediately "this is a preview". Strategy:
+        //   • Full HTML doc → inject right after the opening <body> tag.
+        //   • Wrapped via generateEmailTemplate() → inject right after first
+        //     <table ...> in body (so it appears above the brand hero).
+        // Both fall back to "prepend if marker not found" so the banner is
+        // never silently dropped.
+        if (isPreview) {
+            const banner = `<div style="background: #FEF9C3; border-bottom: 1px solid #FDE047; padding: 12px 20px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #713F12;">
+              📧 <strong>Preview mode</strong> — this is how the email will look when sent to <em>${rawEmail}</em>. Lead tracking was NOT updated.
+            </div>`;
+            const bodyOpenRe = /<body[^>]*>/i;
+            if (bodyOpenRe.test(finalHtml)) {
+                finalHtml = finalHtml.replace(bodyOpenRe, (m) => `${m}\n${banner}`);
+            } else {
+                finalHtml = `${banner}\n${finalHtml}`;
+            }
         }
 
         const transporter = createEmailTransporter();
@@ -4082,19 +4161,7 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
             },
             to: deliveryEmail,
             subject: isPreview ? `[PREVIEW] ${subject}` : subject,
-            html: generateEmailTemplate({
-                title: 'LaChart — Lactate Analysis Tool',
-                content: isPreview
-                    ? `<p style="background:#fef9c3;border:1px solid #fde047;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:18px;">
-                        📧 <strong>Preview mode</strong> — this is how the email will look when sent to <em>${rawEmail}</em>. Lead tracking was NOT updated.
-                       </p>${content}`
-                    : content,
-                buttonText: 'Open LaChart',
-                buttonUrl: 'https://lachart.net',
-                footerText: isPreview
-                    ? `This is a preview sent to you (${deliveryEmail}). The actual email will go to ${rawEmail}.`
-                    : 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
-            })
+            html: finalHtml,
         });
 
         // Only update lead tracking when NOT in preview mode
@@ -4247,6 +4314,34 @@ function generateCampaignId() {
     return `bc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Load the polished default outreach HTML once at boot (35 KB file). The admin
+// can override it per campaign by pasting their own template, but if they leave
+// the body empty we ship this — it's the branded LaChart introduction email
+// (with hosted images from /images/email/*) instead of the bare-bones inline
+// fallback that lived here previously.
+const fs = require('fs');
+const path = require('path');
+let DEFAULT_OUTREACH_TEMPLATE_HTML = '';
+try {
+    DEFAULT_OUTREACH_TEMPLATE_HTML = fs.readFileSync(
+        path.join(__dirname, '..', 'email-templates', 'coachOutreachDefault.html'),
+        'utf8'
+    );
+    console.log(`[bulk-campaign] Loaded default outreach template (${(DEFAULT_OUTREACH_TEMPLATE_HTML.length / 1024).toFixed(1)} KB)`);
+} catch (e) {
+    console.warn('[bulk-campaign] Could not load default outreach template:', e.message);
+}
+
+// A template is considered "full-document" when it includes a <!DOCTYPE>, an
+// <html> tag, or a <body> tag — in that case we ship the body verbatim and do
+// NOT wrap it in generateEmailTemplate() (which would nest a second LaChart
+// header/footer around it). Plain-text or partial HTML bodies still go through
+// the wrapper for the legacy "compose in textarea" path.
+function isFullDocumentEmail(html) {
+    if (!html) return false;
+    return /<!DOCTYPE|<html[\s>]|<body[\s>]/i.test(html);
+}
+
 async function processCampaignBatch(campaignId) {
     const campaign = bulkCampaigns.get(campaignId);
     if (!campaign || campaign.status === 'stopped' || campaign.status === 'completed') return;
@@ -4301,10 +4396,27 @@ async function processCampaignBatch(campaignId) {
             const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
             let subject = campaign.subject || "Free tool for lactate testing coaches - LaChart";
             let content;
+            // Flag: when true, we send `content` as-is (already a full HTML doc).
+            // When false, we wrap `content` in the global generateEmailTemplate
+            // envelope so it gets the LaChart header/footer + button.
+            let isFullDoc = false;
 
-            if (campaign.template) {
-                // Custom template — replace {{name}} placeholder
-                const bodyText = campaign.template.replace(/\{\{name\}\}/g, contactName);
+            // 1. Admin-provided template — could be plain text OR a full HTML doc
+            //    (e.g. our branded coachOutreachDefault.html pasted as override).
+            // 2. No template provided — fall back to the polished default file.
+            // 3. If neither file nor template available — last-resort inline copy
+            //    (kept for backward compatibility and to survive a missing file).
+            const overrideHtml = (campaign.template || "").trim();
+            const useDefaultFile = !overrideHtml && DEFAULT_OUTREACH_TEMPLATE_HTML;
+
+            if (overrideHtml && isFullDocumentEmail(overrideHtml)) {
+                // Full-document override (admin pasted polished HTML). Ship verbatim.
+                content = overrideHtml.replace(/\{\{name\}\}/g, contactName);
+                isFullDoc = true;
+            } else if (overrideHtml) {
+                // Plain-text / partial HTML override — paragraph-wrap and hand off
+                // to generateEmailTemplate() for the branded envelope.
+                const bodyText = overrideHtml.replace(/\{\{name\}\}/g, contactName);
                 const htmlParagraphs = bodyText
                     .split(/\n{2,}/)
                     .map(block => `<p style="margin-top:14px;line-height:1.6;">${block.replace(/\n/g, '<br/>')}</p>`)
@@ -4313,6 +4425,10 @@ async function processCampaignBatch(campaignId) {
                     <p style="margin-top: 20px;">
                         <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
                     </p>`;
+            } else if (useDefaultFile) {
+                // Branded default template loaded from disk at boot.
+                content = DEFAULT_OUTREACH_TEMPLATE_HTML.replace(/\{\{name\}\}/g, contactName);
+                isFullDoc = true;
             } else {
                 content = `
                     <p>${greeting}</p>
@@ -4334,17 +4450,24 @@ async function processCampaignBatch(campaignId) {
                 `;
             }
 
-            await transporter.sendMail({
-                from: { name: 'Jakub - LaChart', address: process.env.EMAIL_USER },
-                to: lead.email,
-                subject,
-                html: generateEmailTemplate({
+            // Full-document templates (branded HTML email) ship verbatim;
+            // partial / plain-text content goes through the global wrapper so
+            // it gets the standard LaChart header, CTA button and footer.
+            const finalHtml = isFullDoc
+                ? content
+                : generateEmailTemplate({
                     title: 'LaChart — Lactate Analysis Tool',
                     content,
                     buttonText: 'Open LaChart',
                     buttonUrl: 'https://lachart.net',
                     footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
-                })
+                });
+
+            await transporter.sendMail({
+                from: { name: 'Jakub - LaChart', address: process.env.EMAIL_USER },
+                to: lead.email,
+                subject,
+                html: finalHtml,
             });
 
             await CoachOutreachLead.findByIdAndUpdate(lead._id, {
@@ -4496,6 +4619,27 @@ router.delete("/admin/coach-outreach-leads/bulk-campaign/:campaignId", verifyTok
     } catch (error) {
         console.error("[bulk-campaign/stop] error:", error);
         return res.status(500).json({ error: "Failed to stop campaign." });
+    }
+});
+
+// GET /user/admin/coach-outreach-leads/default-template — return the branded
+// default outreach HTML so the admin UI can preview it / load it into the
+// editor before starting a campaign. Returned as raw HTML; the admin pastes
+// it into the textarea (or it's auto-populated on the first render).
+router.get("/admin/coach-outreach-leads/default-template", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        return res.status(200).json({
+            html: DEFAULT_OUTREACH_TEMPLATE_HTML || '',
+            sizeKB: DEFAULT_OUTREACH_TEMPLATE_HTML ? +(DEFAULT_OUTREACH_TEMPLATE_HTML.length / 1024).toFixed(1) : 0,
+            isFullDocument: !!DEFAULT_OUTREACH_TEMPLATE_HTML,
+        });
+    } catch (error) {
+        console.error("[default-template] error:", error);
+        return res.status(500).json({ error: "Failed to load default template." });
     }
 });
 

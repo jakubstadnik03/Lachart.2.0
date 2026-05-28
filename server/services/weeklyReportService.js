@@ -693,18 +693,24 @@ async function sendWeeklyReportEmailToUser(user, weekStart, weekEnd, { force = f
   const transporter = createTransporter();
   const clientUrl = getClientUrl();
 
-  const subject = `LaChart - Your Weekly Stats (${weekStart.toISOString().split('T')[0]})`;
+  // Format week for the subject line — e.g. "Jul 21–27". Friendlier than ISO.
+  const weekStartFmt = weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const weekEndForSubj = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+  const weekEndFmt = weekEndForSubj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const subject = `Your training week — ${weekStartFmt} → ${weekEndFmt}`;
 
   await transporter.sendMail({
     from: { name: 'LaChart', address: process.env.EMAIL_USER },
     to: user.email,
     subject,
     html: generateEmailTemplate({
-      title: 'Your Weekly Stats',
+      title: `Your week — ${weekStartFmt} → ${weekEndFmt}`,
       content: htmlContent,
-      buttonText: 'Open Your Dashboard',
-      buttonUrl: `${clientUrl}/`,
-      footerText: 'You can control weekly emails in Settings → Notifications.'
+      buttonText: 'See full week in dashboard',
+      buttonUrl: `${clientUrl}/training-calendar`,
+      loginButtonText: 'Plan next week',
+      loginButtonUrl: `${clientUrl}/workout-planner`,
+      footerText: 'Don\'t want weekly emails? Turn them off any time in Settings → Notifications.'
     })
   });
 

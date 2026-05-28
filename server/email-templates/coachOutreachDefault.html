@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaChart — Introduction for testing centers and coaches</title>
+<style>/* ==========================================================================
+   LaChart — Colors & Type tokens
+   Source: client/tailwind.config.js, client/public/index.html, brand spec
+   ========================================================================== */
+
+/* Webfont — served locally from /fonts (brand master files) */
+
+
+
+
+
+
+:root {
+  /* ---------- Brand colors (from tailwind.config.js) ---------- */
+  --lc-primary:         #767EB5;   /* LaChart purple — signature */
+  --lc-primary-dark:    #5E6590;
+  --lc-primary-50:      #EEF0F8;
+  --lc-primary-100:     #DADDEE;
+  --lc-primary-200:     #B8BDDB;
+  --lc-primary-tint:    #E9ECF6;   /* selected row / bg wash */
+
+  --lc-secondary:       #599FD0;   /* mid blue */
+  --lc-secondary-dark:  #4780A8;
+  --lc-tertiary:        #7BC2EB;   /* light blue — used in logo curve */
+
+  /* ---------- Warm accent ---------- */
+  /* Use SPARINGLY — CTAs, PRs, key data highlights only. Never for body type. */
+  --lc-accent:          #FF6B4A;   /* coral — primary warm accent */
+  --lc-accent-dark:     #E85535;   /* hover / press */
+  --lc-accent-tint:     #FFE6DF;   /* background wash, PR badge bg */
+
+  /* ---------- Neutrals ---------- */
+  --lc-white:           #F9FBFD;   /* app near-white */
+  --lc-custom-gray:     #FCFCFC;
+  --lc-bg:              #F3F4F6;   /* html/body bg */
+  --lc-surface:         #FFFFFF;
+  --lc-border:          #E5E7EB;
+  --lc-border-soft:     #F1F2F5;
+
+  --lc-text:            #1D2C4C;   /* primary text */
+  --lc-text-light:      #4A5E82;   /* secondary text */
+  --lc-text-muted:      #6B7280;
+  --lc-text-ink:        #0A0E1A;   /* deepest text / dark headlines */
+
+  /* ---------- Semantic ---------- */
+  --lc-success:         #4BA87D;   /* greenos */
+  --lc-warning:         #F59E0B;
+  --lc-danger:          #E05347;
+  --lc-danger-dark:     #B84238;
+  --lc-info:            #599FD0;
+
+  /* ---------- Status dots (from Menu.jsx) ---------- */
+  --lc-status-fresh:    #4ADE80;   /* tested < 6w */
+  --lc-status-stale:    #FACC15;   /* tested 6–12w */
+  --lc-status-old:      #F87171;   /* > 12w */
+  --lc-status-pending:  #FBBF24;
+
+  /* ---------- Chart / zones palette (from styles/theme.js) ---------- */
+  --lc-chart-grid:      rgba(0,0,0,.15);
+  --lc-chart-measured:  #000000;
+  --lc-chart-loglog:    #52525B;
+  --lc-zone-obla-20:    #86EFAC;
+  --lc-zone-obla-25:    #FDBA74;
+  --lc-zone-obla-30:    #818CF8;
+  --lc-zone-obla-35:    #FDA4AF;
+  --lc-zone-bsln-05:    #0D9488;
+  --lc-zone-bsln-10:    #C026D3;
+  --lc-zone-ltp1:       #BEF264;
+  --lc-zone-ltp2:       #FCD34D;
+
+  /* ---------- Typography ---------- */
+  --lc-font-sans: 'Hind Vadodara', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --lc-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type scale — tuned for app + marketing carousels */
+  --lc-fs-display:  clamp(3rem, 6vw, 5rem);   /* 48–80px */
+  --lc-fs-h1:       2.5rem;                    /* 40 */
+  --lc-fs-h2:       2rem;                      /* 32 */
+  --lc-fs-h3:       1.5rem;                    /* 24 */
+  --lc-fs-h4:       1.25rem;                   /* 20 */
+  --lc-fs-body:     1rem;                      /* 16 */
+  --lc-fs-small:    0.875rem;                  /* 14 */
+  --lc-fs-xs:       0.75rem;                   /* 12 */
+
+  --lc-lh-tight:    1.1;
+  --lc-lh-snug:     1.25;
+  --lc-lh-normal:   1.5;
+  --lc-lh-relaxed:  1.65;
+
+  --lc-fw-regular:  400;
+  --lc-fw-medium:   500;
+  --lc-fw-semibold: 600;
+  --lc-fw-bold:     700;
+
+  /* ---------- Spacing / radii / shadow (extracted from CRA + tailwind defaults used) ---------- */
+  --lc-space-1:  4px;
+  --lc-space-2:  8px;
+  --lc-space-3:  12px;
+  --lc-space-4:  16px;
+  --lc-space-5:  20px;
+  --lc-space-6:  24px;
+  --lc-space-8:  32px;
+  --lc-space-10: 40px;
+  --lc-space-12: 48px;
+  --lc-space-16: 64px;
+
+  --lc-radius-sm:  6px;
+  --lc-radius-md:  8px;      /* default card/input */
+  --lc-radius-lg:  12px;     /* large cards */
+  --lc-radius-xl:  16px;
+  --lc-radius-2xl: 24px;
+  --lc-radius-full: 9999px;
+
+  /* Menu.jsx uses shadow-md on sidebar; cards use shadow-sm/md */
+  --lc-shadow-xs: 0 1px 2px 0 rgba(10, 14, 26, 0.05);
+  --lc-shadow-sm: 0 1px 2px 0 rgba(10, 14, 26, 0.05), 0 1px 3px 0 rgba(10, 14, 26, 0.06);
+  --lc-shadow-md: 0 4px 6px -1px rgba(10, 14, 26, 0.08), 0 2px 4px -2px rgba(10, 14, 26, 0.06);
+  --lc-shadow-lg: 0 10px 15px -3px rgba(10, 14, 26, 0.10), 0 4px 6px -4px rgba(10, 14, 26, 0.06);
+  --lc-shadow-brand: 0 10px 30px -10px rgba(118, 126, 181, 0.45);
+
+  /* Motion — from Menu.jsx (framer-motion spring defaults) */
+  --lc-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --lc-ease-in:       cubic-bezier(0.4, 0, 1, 1);
+  --lc-ease-out:      cubic-bezier(0, 0, 0.2, 1);
+  --lc-dur-fast:      150ms;
+  --lc-dur-base:      220ms;
+  --lc-dur-slow:      320ms;
+
+  /* ---------- Semantic aliases ---------- */
+  --fg1: var(--lc-text);
+  --fg2: var(--lc-text-light);
+  --fg3: var(--lc-text-muted);
+  --bg1: var(--lc-bg);
+  --bg2: var(--lc-surface);
+  --brand: var(--lc-primary);
+  --brand-ink: var(--lc-text-ink);
+  --danger: var(--lc-danger);
+  --success: var(--lc-success);
+}
+
+/* ---------- Base elements ---------- */
+html, body {
+  font-family: var(--lc-font-sans);
+  color: var(--fg1);
+  background: var(--bg1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+h1, .h1 { font-size: var(--lc-fs-h1); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-tight); letter-spacing: -0.02em; color: var(--fg1); }
+h2, .h2 { font-size: var(--lc-fs-h2); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-snug);  letter-spacing: -0.015em; color: var(--fg1); }
+h3, .h3 { font-size: var(--lc-fs-h3); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+h4, .h4 { font-size: var(--lc-fs-h4); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+
+.display {
+  font-size: var(--lc-fs-display);
+  font-weight: var(--lc-fw-bold);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+p { font-size: var(--lc-fs-body); line-height: var(--lc-lh-relaxed); color: var(--fg2); }
+small, .small { font-size: var(--lc-fs-small); color: var(--fg3); }
+.eyebrow { font-size: var(--lc-fs-xs); font-weight: var(--lc-fw-semibold); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg2); }
+code, pre { font-family: var(--lc-font-mono); }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<style>/* gujarati */
+
+/* latin-ext */
+
+/* latin */
+
+/* gujarati */
+
+/* latin-ext */
+
+/* latin */
+
+/* gujarati */
+
+/* latin-ext */
+
+/* latin */
+
+/* gujarati */
+
+/* latin-ext */
+
+/* latin */
+
+/* gujarati */
+
+/* latin-ext */
+
+/* latin */
+
+</style>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #ECEDF1;
+    font-family: var(--lc-font-sans);
+    color: var(--lc-text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Mail-client preview chrome ---------- */
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 32px 16px 80px;
+  }
+  .mail-meta {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 14px 18px;
+    background: #fff;
+    border: 1px solid #E5E7EB;
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 1px 2px rgba(10, 14, 26, 0.04);
+  }
+  .mail-meta__avatar {
+    width: 44px; height: 44px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #767EB5, #599FD0);
+    color: #fff;
+    display: grid; place-items: center;
+    font-weight: 700; letter-spacing: -0.02em;
+    font-size: 16px;
+  }
+  .mail-meta__from-line {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 13.5px;
+    color: var(--lc-text-light);
+  }
+  .mail-meta__from-name { color: var(--lc-text-ink); font-weight: 600; font-size: 14.5px; }
+  .mail-meta__subject {
+    margin-top: 2px;
+    font-size: 14px;
+    color: var(--lc-text);
+    font-weight: 500;
+  }
+  .mail-meta__date { font-size: 12.5px; color: var(--lc-text-muted); }
+  .mail-meta__pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--lc-primary-tint);
+    color: var(--lc-primary-dark);
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .mail-meta__pill::before {
+    content: ""; width: 6px; height: 6px; border-radius: 9999px; background: var(--lc-primary);
+  }
+
+  /* ---------- Email body ---------- */
+  .email {
+    background: #fff;
+    border: 1px solid #E5E7EB;
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px -16px rgba(10, 14, 26, 0.18);
+  }
+
+  /* Hero */
+  .hero {
+    position: relative;
+    background:
+      radial-gradient(900px 380px at 88% -10%, rgba(123, 194, 235, 0.45) 0%, rgba(123, 194, 235, 0) 60%),
+      radial-gradient(700px 360px at 10% 110%, rgba(89, 159, 208, 0.40) 0%, rgba(89, 159, 208, 0) 60%),
+      linear-gradient(160deg, #767EB5 0%, #5E6590 100%);
+    color: #fff;
+    padding: 40px 48px 44px;
+    overflow: hidden;
+  }
+  .hero__grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 75%);
+    pointer-events: none;
+  }
+  .hero__logo {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hero__logo img { height: 26px; width: auto; filter: brightness(0) invert(1); opacity: 0.95; }
+  .hero__eyebrow {
+    position: relative;
+    margin-top: 28px;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: rgba(255,255,255,0.78);
+  }
+  .hero__title {
+    position: relative;
+    margin: 10px 0 14px;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    color: #fff;
+    max-width: 560px;
+    text-wrap: pretty;
+  }
+  .hero__title em {
+    font-style: normal;
+    color: #FFE6DF;
+  }
+  .hero__lede {
+    position: relative;
+    font-size: 16px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.86);
+    max-width: 540px;
+    margin: 0;
+  }
+  .hero__sparkline {
+    position: absolute;
+    right: 24px; bottom: -2px;
+    width: 240px; height: 110px;
+    opacity: 0.95;
+    pointer-events: none;
+  }
+
+  /* Section frame */
+  .section {
+    padding: 44px 48px;
+    border-top: 1px solid var(--lc-border-soft);
+  }
+  .section--first { border-top: none; }
+  .section__eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--lc-primary-dark);
+    background: var(--lc-primary-tint);
+    padding: 5px 11px;
+    border-radius: 9999px;
+  }
+  .section__title {
+    margin: 14px 0 8px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--lc-text-ink);
+    line-height: 1.18;
+    text-wrap: balance;
+  }
+  .section__desc {
+    margin: 0 0 28px;
+    font-size: 15.5px;
+    line-height: 1.65;
+    color: var(--lc-text-light);
+    max-width: 580px;
+  }
+
+  /* Opening note — personal intro paragraph */
+  .intro {
+    padding: 36px 48px 8px;
+  }
+  .intro p {
+    margin: 0 0 14px;
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--lc-text);
+    max-width: 620px;
+  }
+  .intro p:last-child { margin-bottom: 0; }
+  .intro strong { color: var(--lc-text-ink); font-weight: 600; }
+
+  /* Two-column audience cards */
+  .who-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .who-card {
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 18px;
+    padding: 22px 22px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .who-card__icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--lc-primary-tint);
+    color: var(--lc-primary-dark);
+    display: grid; place-items: center;
+    margin-bottom: 14px;
+  }
+  .who-card__icon svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .who-card h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    color: var(--lc-text-ink);
+  }
+  .who-card p {
+    margin: 0 0 14px;
+    font-size: 13.8px;
+    line-height: 1.6;
+    color: var(--lc-text-light);
+  }
+  .who-card ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .who-card li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 6px;
+    align-items: start;
+    padding: 4px 0;
+    font-size: 13.5px;
+    color: var(--lc-text);
+    line-height: 1.5;
+  }
+  .who-card li::before {
+    content: "";
+    width: 6px; height: 6px;
+    margin-top: 8px;
+    border-radius: 9999px;
+    background: var(--lc-primary);
+    box-shadow: 0 0 0 3px var(--lc-primary-tint);
+  }
+
+  /* Feature card — alternating big rows */
+  .feat {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 28px;
+    align-items: center;
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 1px 2px rgba(10,14,26,0.04);
+  }
+  .feat + .feat { margin-top: 18px; }
+  .feat--reverse { grid-template-columns: 1fr 1.05fr; }
+  .feat--reverse .feat__media { order: -1; }
+  .feat__media {
+    background: linear-gradient(150deg, #EEF0F8 0%, #E9ECF6 100%);
+    border-radius: 14px;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(118, 126, 181, 0.18);
+  }
+  .feat__media img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+  }
+  .feat__media--contain {
+    background:
+      radial-gradient(circle at 30% 30%, rgba(123,194,235,0.35), transparent 60%),
+      linear-gradient(150deg, #EEF0F8 0%, #DADDEE 100%);
+  }
+  .feat__media--contain img { object-fit: contain; padding: 16px; }
+  .feat__media--shot {
+    aspect-ratio: 5 / 4;
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgba(123,194,235,0.28) 0%, transparent 60%),
+      linear-gradient(150deg, #F9FBFD 0%, #E9ECF6 100%);
+    padding: 14px;
+  }
+  .feat__media--shot img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: left top;
+    border-radius: 8px;
+    box-shadow: 0 12px 30px -14px rgba(10, 14, 26, 0.35), 0 0 0 1px rgba(10, 14, 26, 0.06);
+  }
+  .feat__body { padding: 6px 8px 6px 12px; }
+  .feat__kicker {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--lc-primary);
+    margin-bottom: 8px;
+  }
+  .feat__kicker--coral { color: var(--lc-accent-dark); }
+  .feat__title {
+    margin: 0 0 10px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.018em;
+    line-height: 1.2;
+    color: var(--lc-text-ink);
+    text-wrap: balance;
+  }
+  .feat__desc {
+    margin: 0 0 14px;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--lc-text-light);
+  }
+  .feat__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .feat__list li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 4px;
+    align-items: start;
+    padding: 6px 0;
+    font-size: 14px;
+    color: var(--lc-text);
+    line-height: 1.5;
+  }
+  .feat__list li::before {
+    content: "";
+    width: 14px; height: 14px;
+    margin-top: 4px;
+    border-radius: 9999px;
+    background:
+      radial-gradient(circle, #fff 0 30%, transparent 31%),
+      var(--lc-primary);
+    box-shadow: 0 0 0 3px var(--lc-primary-tint);
+  }
+  .feat__list li b { font-weight: 600; color: var(--lc-text-ink); }
+
+  /* Stat chip floating on media */
+  .media-chip {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(118,126,181,0.25);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--lc-text-ink);
+    box-shadow: 0 6px 18px -8px rgba(10,14,26,0.18);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .media-chip__dot {
+    width: 8px; height: 8px; border-radius: 9999px;
+    background: var(--lc-success);
+    box-shadow: 0 0 0 3px rgba(75,168,125,0.18);
+  }
+  .media-chip--coral .media-chip__dot { background: var(--lc-accent); box-shadow: 0 0 0 3px rgba(255,107,74,0.18); }
+
+  /* Soft tinted "why" section */
+  .why {
+    background:
+      linear-gradient(180deg, #F9FBFD 0%, #F3F4F6 100%);
+  }
+
+  /* Quick stats strip */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .stat {
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .stat__num {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--lc-primary-dark);
+    line-height: 1.05;
+    font-feature-settings: "tnum";
+  }
+  .stat__label {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--lc-text-light);
+    line-height: 1.4;
+  }
+
+  /* CTA block */
+  .cta {
+    background:
+      radial-gradient(700px 320px at 100% 0%, rgba(255,107,74,0.18) 0%, transparent 60%),
+      linear-gradient(135deg, #5E6590 0%, #767EB5 60%, #599FD0 110%);
+    color: #fff;
+    padding: 40px 48px;
+    text-align: left;
+    position: relative;
+    overflow: hidden;
+  }
+  .cta__title {
+    margin: 0 0 8px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: #fff;
+    max-width: 500px;
+    text-wrap: balance;
+  }
+  .cta__desc {
+    margin: 0 0 22px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.86);
+    max-width: 500px;
+  }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 14px 22px;
+    border-radius: 12px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform 150ms var(--lc-ease-standard), box-shadow 150ms var(--lc-ease-standard), background 150ms var(--lc-ease-standard);
+    cursor: pointer;
+  }
+  .btn--primary {
+    background: #fff;
+    color: var(--lc-primary-dark);
+    box-shadow: 0 10px 30px -10px rgba(10,14,26,0.4);
+  }
+  .btn--primary:hover { transform: translateY(-1px); box-shadow: 0 14px 34px -10px rgba(10,14,26,0.5); }
+  .btn--ghost {
+    background: transparent;
+    color: #fff;
+    border-color: rgba(255,255,255,0.4);
+  }
+  .btn--ghost:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.6); }
+
+  /* Whisper signature */
+  .signoff {
+    padding: 28px 48px 36px;
+    border-top: 1px solid var(--lc-border-soft);
+    color: var(--lc-text-light);
+    font-size: 14.5px;
+    line-height: 1.65;
+  }
+  .signoff p { margin: 0 0 8px; color: inherit; font-size: inherit; }
+  .signoff__name { color: var(--lc-text-ink); font-weight: 600; }
+  .signoff__role { color: var(--lc-text-muted); font-size: 13px; }
+
+  /* PS line */
+  .ps {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: var(--lc-primary-tint);
+    border-radius: 12px;
+    font-size: 13.5px;
+    color: var(--lc-primary-dark);
+    line-height: 1.55;
+  }
+  .ps b { font-weight: 700; }
+
+  /* Footer */
+  .footer {
+    background: #F3F4F6;
+    padding: 24px 48px 28px;
+    border-top: 1px solid var(--lc-border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--lc-text-muted);
+    font-size: 12.5px;
+  }
+  .footer__logo img { height: 20px; opacity: 0.7; }
+  .footer__links { display: flex; gap: 16px; flex-wrap: wrap; }
+  .footer__links a {
+    color: var(--lc-text-light);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .footer__links a:hover { color: var(--lc-primary-dark); text-decoration: underline; }
+  .footer__legal { font-size: 11.5px; color: var(--lc-text-muted); }
+
+  /* responsive */
+  @media (max-width: 720px) {
+    .page { padding: 18px 12px 60px; }
+    .hero { padding: 30px 24px 32px; }
+    .hero__title { font-size: 28px; }
+    .hero__sparkline { width: 170px; height: 78px; right: 12px; opacity: 0.55; }
+    .section, .intro { padding: 28px 24px; }
+    .intro { padding-bottom: 0; }
+    .feat { grid-template-columns: 1fr; gap: 18px; padding: 18px; }
+    .feat--reverse .feat__media { order: 0; }
+    .feat__body { padding: 0; }
+    .who-grid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr; }
+    .cta { padding: 32px 24px; }
+    .signoff, .footer { padding-left: 24px; padding-right: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Mock mail-client header -->
+  <div class="mail-meta">
+    <div class="mail-meta__avatar">LC</div>
+    <div>
+      <div class="mail-meta__from-line">
+        <span class="mail-meta__from-name">Jakub Stadnik · LaChart</span>
+        <span>&lt;jakub@lachart.net&gt;</span>
+      </div>
+      <div class="mail-meta__subject">A better home for your lactate tests and training zones</div>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+      <span class="mail-meta__date">May 25, 2026 · 10:24 AM</span>
+      <span class="mail-meta__pill">Outreach</span>
+    </div>
+  </div>
+
+  <article class="email">
+
+    <!-- HERO -->
+    <header class="hero">
+      <div class="hero__grid"></div>
+
+      <div class="hero__logo">
+        <img src="https://lachart.net/images/email/outreach-02.png" alt="LaChart">
+      </div>
+
+      <div class="hero__eyebrow">Introducing · LaChart for testing centers</div>
+      <h1 class="hero__title">Lactate tests, thresholds, zones.<br><em>Finally in one place.</em></h1>
+      <p class="hero__lede">
+        LaChart is a web and mobile app for testing centers and coaches working with endurance athletes. Enter the stages of a test — we compute LT1, LT2 and zones, and produce a clean PDF report you can hand to the athlete before they hit the shower.
+      </p>
+
+      <!-- mini lactate curve, references the brand motif -->
+      <svg class="hero__sparkline" viewBox="0 0 240 110" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="g1" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#7BC2EB"></stop>
+            <stop offset="1" stop-color="#FFE6DF"></stop>
+          </linearGradient>
+          <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="rgba(255,255,255,0.18)"></stop>
+            <stop offset="1" stop-color="rgba(255,255,255,0)"></stop>
+          </linearGradient>
+        </defs>
+        <g stroke="rgba(255,255,255,0.16)" stroke-width="1">
+          <line x1="0" y1="30" x2="240" y2="30"></line>
+          <line x1="0" y1="60" x2="240" y2="60"></line>
+          <line x1="0" y1="90" x2="240" y2="90"></line>
+        </g>
+        <path d="M0,92 C40,90 70,85 100,76 C130,67 150,55 175,40 C200,25 220,12 240,8 L240,110 L0,110 Z" fill="url(#g2)"></path>
+        <path d="M0,92 C40,90 70,85 100,76 C130,67 150,55 175,40 C200,25 220,12 240,8" stroke="url(#g1)" stroke-width="3" stroke-linecap="round"></path>
+        <g>
+          <circle cx="110" cy="73" r="5" fill="#fff" stroke="#7BC2EB" stroke-width="2"></circle>
+          <text x="118" y="68" fill="rgba(255,255,255,0.85)" font-size="10" font-weight="700" font-family="Hind Vadodara, sans-serif">LT1</text>
+        </g>
+        <g>
+          <circle cx="178" cy="38" r="5" fill="#FFE6DF" stroke="#FF6B4A" stroke-width="2"></circle>
+          <text x="184" y="33" fill="rgba(255,255,255,0.95)" font-size="10" font-weight="700" font-family="Hind Vadodara, sans-serif">LT2</text>
+        </g>
+      </svg>
+    </header>
+
+    <!-- ============================== -->
+    <!-- INTRO — personal opener        -->
+    <!-- ============================== -->
+    <div class="intro">
+      <p>Hi {{name}},</p>
+      <p>
+        I'm <strong>Jakub Stadnik</strong> — and I'm reaching out because you run a place where lactate testing is taken seriously. That's exactly who we built LaChart for.
+      </p>
+      <p>
+        LaChart started because as a racer and a coach myself I could never accept that lactate values, FTP and training zones end up living in a spreadsheet or a paper folder. This is the tool where a testing center and a coach run the entire athlete record — <strong>from a single finger-prick on the bench to a full season plan</strong>.
+      </p>
+    </div>
+
+    <!-- ============================== -->
+    <!-- SECTION 1 — What it does       -->
+    <!-- ============================== -->
+    <section class="section">
+      <span class="section__eyebrow">What LaChart does</span>
+      <h2 class="section__title">From raw stages to a finished report in minutes.</h2>
+      <p class="section__desc">
+        You enter the stages of a test — power or pace, heart rate, lactate — and LaChart fits multiple models in parallel. You pick the one that matches your protocol, or move the thresholds by hand.
+      </p>
+
+      <!-- Feature row 1: Lactate analysis -->
+      <div class="feat">
+        <div class="feat__media">
+          <span class="media-chip">
+            <span class="media-chip__dot"></span>
+            Curve &amp; thresholds
+          </span>
+          <img src="https://lachart.net/images/email/outreach-03.png" alt="Lactate curve with LT1 and LT2 thresholds">
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Test analysis</span>
+          <h3 class="feat__title">LT1 and LT2 from multiple methods at once</h3>
+          <p class="feat__desc">
+            Dmax, log-log, fixed 2.0 and 4.0&nbsp;mmol/L, OBLA 2.0–3.5, LTP1/LTP2. See them all side by side, pick the method that matches your protocol — zones recompute instantly.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Multiple threshold methods</b> — choose the one you trust</span></li>
+            <li><span><b>Manual override</b> — drag a point on the curve or type a value</span></li>
+            <li><span><b>Compare against the last test</b> right in the chart</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Feature row 2: PDF report -->
+      <div class="feat feat--reverse">
+        <div class="feat__media feat__media--contain">
+          <span class="media-chip media-chip--coral">
+            <span class="media-chip__dot"></span>
+            Your branding
+          </span>
+          <img src="https://lachart.net/images/email/outreach-01.jpg" alt="PDF test report">
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker feat__kicker--coral">PDF report</span>
+          <h3 class="feat__title">A report you'll be happy to hand over</h3>
+          <p class="feat__desc">
+            Clean layout, readable typography, stage-by-stage table, curve with thresholds and your zones drawn in. Your testing center's logo and colors in the header — the athlete gets a document worth what they paid for the test.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Custom logo and colors</b> in the header</span></li>
+            <li><span><b>Athlete and coach versions</b> in one click</span></li>
+            <li><span><b>Stage-by-stage table</b> with lactate, power and heart rate</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Feature row 3: Zones -->
+      <div class="feat">
+        <div class="feat__media feat__media--shot">
+          <img src="https://lachart.net/images/email/outreach-06.png" alt="Training zones generator">
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Training zones</span>
+          <h3 class="feat__title">Zones tailored to the athlete, not a formula</h3>
+          <p class="feat__desc">
+            5, 7, or your own split. LaChart keeps separate values for power, pace and heart rate — so running, cycling and swimming each get their own zones, done right.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Cycling, running, swimming</b> — each sport has its own zones</span></li>
+            <li><span><b>Change history</b> — see how an athlete's zones have moved</span></li>
+            <li><span><b>Export</b> to TrainingPeaks, Garmin, Wahoo or PDF</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== -->
+    <!-- SECTION 2 — Who it's for       -->
+    <!-- ============================== -->
+    <section class="section why">
+      <span class="section__eyebrow">Who it's built for</span>
+      <h2 class="section__title">Built for testing centers and coaches — not a hobbyist app.</h2>
+      <p class="section__desc">
+        LaChart covers both roles at once. The testing center keeps the database of athletes and completed tests; the coach takes that data straight into a training plan. When an athlete works with both, they see each other's data — without anyone emailing PDFs around.
+      </p>
+
+      <div class="who-grid">
+
+        <div class="who-card">
+          <div class="who-card__icon">
+            <svg viewBox="0 0 24 24"><path d="M3 12h3l2-7 4 14 2-7h7"></path></svg>
+          </div>
+          <h3>For testing centers and labs</h3>
+          <p>Your own athlete database with every test in it. Generate a branded PDF in a minute — instead of fiddling with an Excel template.</p>
+          <ul>
+            <li>Your logo and branding on every report</li>
+            <li>Athletes see their full test history with you</li>
+            <li>Invite the athlete's coach to view the data</li>
+            <li>Cloud backup — tests don't get lost in a spreadsheet</li>
+          </ul>
+        </div>
+
+        <div class="who-card">
+          <div class="who-card__icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.5"></circle><path d="M5 21c0-4 3-7 7-7s7 3 7 7"></path></svg>
+          </div>
+          <h3>For endurance coaches</h3>
+          <p>All your athletes on one dashboard. Plan structured intervals, track session compliance and follow form, fatigue and fitness over time.</p>
+          <ul>
+            <li>Interval planning down to the rep</li>
+            <li>A weekly calendar across all athletes</li>
+            <li>Lactate logged against a specific interval</li>
+            <li>Fitness / fatigue / form computed automatically</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat__num">12+</div>
+          <div class="stat__label">threshold methods for LT1 / LT2 in one app</div>
+        </div>
+        <div class="stat">
+          <div class="stat__num">~&nbsp;2&nbsp;min</div>
+          <div class="stat__label">from the last stage to a finished PDF report</div>
+        </div>
+        <div class="stat">
+          <div class="stat__num">3 sports</div>
+          <div class="stat__label">cycling, running and swimming — each with its own zones</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== -->
+    <!-- SECTION 3 — Training           -->
+    <!-- ============================== -->
+    <section class="section">
+      <span class="section__eyebrow">And not just tests</span>
+      <h2 class="section__title">Training, calendar and form — the whole season together.</h2>
+      <p class="section__desc">
+        LaChart doesn't stop at the test. The test is just the input — the app then runs the day-to-day work of training, intervals and tracking form.
+      </p>
+
+      <div class="feat">
+        <div class="feat__media feat__media--shot">
+          <span class="media-chip">
+            <span class="media-chip__dot"></span>
+            Interval planner
+          </span>
+          <img src="https://lachart.net/images/email/outreach-04.png" alt="Structured interval workout planner">
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Planning</span>
+          <h3 class="feat__title">Structured intervals built on the athlete's zones</h3>
+          <p class="feat__desc">
+            Warm-up, work blocks, recoveries and cool-down. LaChart rolls up expected time in zones and sends the session to the athlete's phone.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Templates</b> — VO2max, threshold, sweet spot, sprints</span></li>
+            <li><span><b>Block repeats</b> — 4×(3×2′ / 1′ easy)</span></li>
+            <li><span><b>Send to athlete</b> with one click</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="feat feat--reverse">
+        <div class="feat__media">
+          <img src="https://lachart.net/images/email/outreach-05.png" alt="Training calendar">
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Calendar</span>
+          <h3 class="feat__title">A season on a single page</h3>
+          <p class="feat__desc">
+            Drop sessions onto the calendar, drag between days, color them by load type. Coaches see all of their athletes in one weekly view.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Week and month views</b></span></li>
+            <li><span><b>Drag &amp; drop sessions</b> between days</span></li>
+            <li><span><b>Multi-athlete view</b> for coaches</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== -->
+    <!-- CTA                            -->
+    <!-- ============================== -->
+    <section class="cta">
+      <h2 class="cta__title">Take a look — it's free to start.</h2>
+      <p class="cta__desc">
+        Create an account and you can run a test, generate a report and try the planner straight away. No credit card, no setup call required.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn--primary" href="https://lachart.net/register">
+          Register for free
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </a>
+        <a class="btn btn--ghost" href="https://lachart.net">More about LaChart</a>
+      </div>
+    </section>
+
+    <!-- Sign-off -->
+    <div class="signoff">
+      <p>Thanks for reading this far. If LaChart isn't a fit for you, no worries — just reply and I'll take you off the next round.</p>
+      <p>And if it is, hit reply with any question and I'll get back to you personally.</p>
+      <p style="margin-top: 14px;">
+        Good training —<br>
+        <span class="signoff__name">Jakub Stadnik</span><br>
+        <span class="signoff__role">Founder, LaChart · lachart.net</span>
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="footer__logo">
+        <img src="https://lachart.net/images/email/outreach-02.png" alt="LaChart">
+      </div>
+      <div class="footer__links">
+        <a href="https://lachart.net">lachart.net</a>
+        <a href="https://lachart.net/for-centers">For testing centers</a>
+        <a href="https://lachart.net/for-coaches">For coaches</a>
+        <a href="#unsub">Unsubscribe</a>
+      </div>
+      <div class="footer__legal">© 2026 LaChart s.r.o. · Prague</div>
+    </footer>
+
+  </article>
+
+</div>
+
+
+
+</body></html>

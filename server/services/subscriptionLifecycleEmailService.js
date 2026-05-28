@@ -86,20 +86,25 @@ async function sendTrialEndingEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>Your free trial of <strong>${label}</strong> ends on <strong>${trialEndStr}</strong>.</p>
-    <p>If you keep your plan, we'll automatically charge ${amountStr}/month using the card you have on file. Nothing to do — your premium features stay on.</p>
-    <p>If LaChart isn't for you, you can cancel anytime before ${trialEndStr} and you won't be billed. One click in Settings → Subscription.</p>
-    <p style="margin-top:20px;">Either way, thanks for trying it out 🙏</p>
-    <p>— Jakub @ LaChart</p>
+    <p>Quick heads-up — your free <strong>${label}</strong> trial wraps up on <strong>${trialEndStr}</strong>.</p>
+    <p>If you stay on, we'll charge ${amountStr}/month to the card on file. Nothing else to do — every feature stays on, your tests, zones and Strava sync all keep flowing.</p>
+    <p>If LaChart isn't clicking for you, cancel any time before ${trialEndStr} and you won't be billed a cent. One click in Settings → Subscription.</p>
+    <p style="margin-top: 18px; padding: 12px 16px; background-color: #E9ECF6; border-radius: 10px; font-size: 14.5px; color: #1D2C4C;">
+      <strong>Used the trial yet?</strong> Try the <a href="${getClientUrl()}/workout-planner" style="color: #767EB5; font-weight: 600; text-decoration: none;">workout planner</a> or run an
+      <a href="${getClientUrl()}/lactate-curve-calculator" style="color: #767EB5; font-weight: 600; text-decoration: none;">interval-tagged lactate test</a>
+      before you decide. They're the two features paying users use most.
+    </p>
+    <p style="margin-top: 18px;">Either way — thanks for giving it a real go.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `Your ${label} free trial ends ${trialEndStr}`,
-    title: `Your free trial is ending soon`,
+    subject: `${label} trial ends ${trialEndStr} — keep going?`,
+    title: `Trial ends ${trialEndStr}`,
     content,
     buttonText: 'Manage subscription',
     buttonUrl: portalUrl,
-    footerText: `Cancel anytime before ${trialEndStr} to avoid being charged.`,
+    footerText: `Cancel any time before ${trialEndStr} and you won't be charged.`,
   });
 }
 
@@ -129,18 +134,19 @@ async function sendPaymentReceiptEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>We just charged <strong>${amountStr}</strong> for your ${label} subscription. Thanks for sticking with us!</p>
-    ${periodStr ? `<p style="color:#6B7280; font-size:13px;">Your plan is paid through <strong>${periodStr}</strong>.</p>` : ''}
+    <p>Your ${label} subscription renewed. Charged <strong>${amountStr}</strong> to the card on file — thanks for sticking around.</p>
+    ${periodStr ? `<p style="color: #4A5E82; font-size: 14.5px;">Your plan is paid through <strong>${periodStr}</strong>.</p>` : ''}
     ${invoiceBlock}
-    <p style="margin-top:20px;">Any questions about your bill? Just reply to this email.</p>
-    <p>— Jakub @ LaChart</p>
+    <p style="margin-top: 22px;">Questions about the bill, or wrong amount? Reply to this email — it lands straight in my inbox.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `Receipt for ${amountStr} — ${label}`,
-    title: `Payment received — ${amountStr}`,
+    subject: `Receipt — ${amountStr} for ${label}`,
+    title: `Thanks — payment received`,
     content,
-    buttonText: 'Open LaChart',
+    buttonText: 'Open my dashboard',
+    buttonUrl: `${getClientUrl()}/dashboard`,
   });
 }
 
@@ -156,15 +162,18 @@ async function sendPaymentFailedEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>We couldn't charge your card for ${amountStr} (${label} subscription).</p>
-    <p>This usually means the card expired, the bank blocked the transaction, or there weren't enough funds. We'll automatically retry a few times over the next week.</p>
-    <p>To fix it now, open <strong>Settings → Subscription → Manage billing</strong> and update your card. Your premium access stays on while we retry.</p>
-    <p>— Jakub @ LaChart</p>
+    <p>Heads-up — we couldn't charge your card for ${amountStr} on your ${label} subscription.</p>
+    <p>Most common reasons: the card expired, the bank declined, or insufficient funds. We'll automatically retry a few times over the next week, so your premium access stays on for now.</p>
+    <p style="margin-top: 18px; padding: 12px 16px; background-color: #FFE6DF; border-radius: 10px; border-left: 4px solid #FF6B4A; color: #1D2C4C; font-size: 14.5px;">
+      <strong style="color: #0A0E1A;">Fix it in 30 seconds:</strong> open Settings → Subscription → Manage billing and update your card. We'll retry the charge immediately.
+    </p>
+    <p style="margin-top: 22px;">Stuck on the billing portal? Reply to this email — I'll sort it manually.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `Payment failed for ${label}`,
-    title: `We couldn't process your payment`,
+    subject: `Action needed — payment failed for ${label}`,
+    title: `Card on file didn't work`,
     content,
     buttonText: 'Update payment method',
     buttonUrl: portalUrl,
@@ -181,17 +190,23 @@ async function sendSubscriptionCanceledEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>Your <strong>${label}</strong> subscription ended on <strong>${endedStr}</strong>. Your account is back on the Free plan — you can still log in and view everything you've already created.</p>
-    <p>If you change your mind, you can resubscribe in one click from Settings → Subscription. We'd love to hear what's not working — replies to this email come straight to me.</p>
-    <p>Thanks for giving LaChart a try.</p>
-    <p>— Jakub @ LaChart</p>
+    <p>Your <strong>${label}</strong> subscription wrapped up on <strong>${endedStr}</strong>. Your account is back on the Free plan — every test, every zone, every workout you've already created stays in the account. Nothing deleted.</p>
+    <p>If something specific drove the decision, I'd genuinely want to hear it. Replies to this email come straight to my inbox — even one line helps.</p>
+    <p style="margin-top: 18px; padding: 12px 16px; background-color: #E9ECF6; border-radius: 10px; font-size: 14.5px; color: #1D2C4C;">
+      <strong style="color: #0A0E1A;">Changed your mind?</strong> One click from Settings → Subscription gets you back on ${label} with the same price you had before.
+    </p>
+    <p style="margin-top: 22px;">Thanks for trying LaChart.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `Your ${label} subscription has ended`,
-    title: `${label} subscription ended`,
+    subject: `${label} ended — your data is still here`,
+    title: `${label} ended`,
     content,
-    buttonText: 'Open LaChart',
+    buttonText: 'Reactivate any time',
+    buttonUrl: `${getClientUrl()}/settings?tab=subscription`,
+    loginButtonText: 'Open my dashboard',
+    loginButtonUrl: `${getClientUrl()}/dashboard`,
   });
 }
 
@@ -209,19 +224,21 @@ async function sendCancelScheduledEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>Your <strong>${label}</strong> subscription is now set to cancel on <strong>${endStr}</strong>. You'll keep full access to every premium feature until then — nothing changes for now.</p>
-    <p>If you change your mind, you can reactivate with one click from Settings → Subscription any time before that date and we won't charge you anything extra.</p>
-    <p>Was something missing or frustrating? Just reply to this email — replies come straight to me and I read every one.</p>
-    <p>— Jakub @ LaChart</p>
+    <p>Cancel is on the books — your <strong>${label}</strong> subscription will end on <strong>${endStr}</strong>. Until then nothing changes: every premium feature stays on, your data stays put.</p>
+    <p>Change of heart? One click from Settings → Subscription before ${endStr} and the cancel is undone, no extra charges, same price.</p>
+    <p style="margin-top: 18px; padding: 12px 16px; background-color: #E9ECF6; border-radius: 10px; font-size: 14.5px; color: #1D2C4C;">
+      <strong style="color: #0A0E1A;">If you have 30 seconds:</strong> what made you cancel? Reply with one sentence — replies land directly with me, and feedback like yours is how LaChart actually improves.
+    </p>
+    <p style="margin-top: 22px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `Cancellation scheduled for your ${label} subscription`,
-    title: `Cancellation scheduled`,
+    subject: `Cancel scheduled — ${label} ends ${endStr}`,
+    title: `Cancel scheduled`,
     content,
     buttonText: 'Manage subscription',
     buttonUrl: portalUrl,
-    footerText: `You'll keep premium access until ${endStr}.`,
+    footerText: `Premium access stays on until ${endStr}.`,
   });
 }
 
@@ -236,18 +253,27 @@ async function sendReactivatedEmail(user, opts = {}) {
 
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>You reactivated your <strong>${label}</strong> subscription — welcome back!</p>
-    ${renewStr ? `<p>Your plan will renew automatically on <strong>${renewStr}</strong>. No action needed from you.</p>` : ''}
-    <p>If you ever want to cancel again, you'll find the option in Settings → Subscription. No questions asked.</p>
-    <p>— Jakub @ LaChart</p>
+    <p>Welcome back. Your <strong>${label}</strong> subscription is active again — every premium feature is back on, no charges in between.</p>
+    ${renewStr ? `<p>Next renewal is set for <strong>${renewStr}</strong>. Same card, same price.</p>` : ''}
+    <p style="margin-top: 18px;">Quick reminder of what we shipped while you were away:</p>
+    <ul style="color: #4A5E82; font-size: 14.5px; line-height: 1.7;">
+      <li><a href="${getClientUrl()}/workout-planner" style="color: #767EB5; font-weight: 600; text-decoration: none;">Structured workout planner</a> in the calendar</li>
+      <li><a href="${getClientUrl()}/training-calendar" style="color: #767EB5; font-weight: 600; text-decoration: none;">Per-interval lactate</a> on any saved workout</li>
+      <li>Auto-categorize workouts from Strava / FIT uploads</li>
+      <li>Form / fitness / TSB tracking over weeks</li>
+    </ul>
+    <p style="margin-top: 18px;">Cancelling again is one click from Settings → Subscription any time, no questions.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   return send(user, {
-    subject: `${label} reactivated — welcome back`,
-    title: `Subscription reactivated`,
+    subject: `Welcome back — ${label} reactivated`,
+    title: `Back on ${label}`,
     content,
-    buttonText: 'Open LaChart',
-    buttonUrl: portalUrl,
+    buttonText: 'Open my dashboard',
+    buttonUrl: `${getClientUrl()}/dashboard`,
+    loginButtonText: 'Manage subscription',
+    loginButtonUrl: portalUrl,
   });
 }
 

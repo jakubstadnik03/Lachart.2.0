@@ -222,17 +222,36 @@ function buildStagesSvg({ results, sport, unitSystem, inputMode }) {
  * Falls back to an SVG data URL if sharp fails (e.g. missing librsvg).
  * Result is safe to use as <img src="..."> in HTML emails.
  *
+ * Tuning rationale (2026-05): when both the lactate curve and the brand
+ * wrapper are embedded as base64, the lactate-report email crosses Gmail's
+ * 102 KB "Message clipped" threshold — the user has to click "View entire
+ * message" to see the bottom of the email. That kills the read-rate of any
+ * CTA below the chart.
+ *
+ * Trade-off: rendering at 1.5× instead of 2× drops chart resolution slightly
+ * but keeps the curve crisp on retina (the chart is ~560 px wide and the
+ * lines are 1.5–2 px stroked — 1.5× scale ≈ 840 px is more than enough for
+ * any current display). Combined with PNG level-9 compression + 8-bit
+ * palette quantization (only ~12 distinct colours in the chart anyway —
+ * background, grid, data line, two threshold lines, label text), we cut
+ * the PNG roughly in half with no visible quality loss.
+ *
  * @param {string} svgString - The raw SVG markup
- * @param {number} [scale=2] - Device-pixel ratio for sharpness (2 = 2× retina)
+ * @param {number} [scale=1.5] - Device-pixel ratio for sharpness (1.5 = retina-safe)
  * @returns {Promise<string>} data URL like "data:image/png;base64,..."
  */
-async function svgToEmailImgSrc(svgString, scale = 2) {
+async function svgToEmailImgSrc(svgString, scale = 1.5) {
   if (!svgString) return '';
   try {
     const sharp = require('sharp');
     const buf = Buffer.from(svgString, 'utf8');
     const pngBuf = await sharp(buf, { density: 144 * scale })
-      .png({ compressionLevel: 8 })
+      .png({
+        compressionLevel: 9,    // max zlib effort (slower encode, smallest output)
+        adaptiveFiltering: true, // per-row filter pick — saves ~5-10% on charts
+        palette: true,           // quantize to 8-bit indexed PNG — biggest win
+        effort: 10,              // libimagequant max effort (still fast on the server)
+      })
       .toBuffer();
     return `data:image/png;base64,${pngBuf.toString('base64')}`;
   } catch (err) {

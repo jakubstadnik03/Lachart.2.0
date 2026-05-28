@@ -28,63 +28,72 @@ async function sendEmailVerificationEmail(user, verificationToken) {
   const clientUrl = getClientUrl();
   const verificationUrl = `${clientUrl}/verify-email/${verificationToken}`;
 
-  // Image URLs - using absolute URLs for email clients
-  const imageBaseUrl = clientUrl;
-  const lactateTestingImage = `${imageBaseUrl}/images/lactate_testing.png`;
-  const lachartTrainingImage = `${imageBaseUrl}/images/lachart_training.png`;
-  const formFitnessChartImage = `${imageBaseUrl}/images/Form-fitness-chart.png`;
+  // Single hero image — the old mail had three product screenshots stacked
+  // which pushed the verify button below the fold and felt like a sales pitch
+  // rather than a transactional mail. One image at the top sets the visual
+  // tone without burying the CTA.
+  const lactateTestingImage = `${clientUrl}/images/lactate_testing.png`;
 
   const userName = user.name || 'there';
-  const userSurname = user.surname || '';
+  const stravaConnectUrl = `${clientUrl}/settings?tab=integrations`;
 
+  // Refreshed copy (2026-05) — replaces the old "here are 3 generic screenshots"
+  // verification mail with a tighter intro that explains what LaChart can do
+  // for a new signup, paired with a single hero image and a Strava-connect
+  // callout. The latter is intentionally visible BEFORE the user has even
+  // verified, because most users skim the email, click verify, and never come
+  // back — the Strava connect callout is the highest-leverage post-verify
+  // action, so we tease it here.
   const emailContent = `
-    <p>Hi <strong>${userName} ${userSurname}</strong>,</p>
-    
-    <p>Thank you for registering with <strong>LaChart</strong>! We're excited to have you on board.</p>
-    
-    <p>To complete your registration and start using all features, please verify your email address by clicking the button below:</p>
-    
-    <div style="margin: 30px 0;">
-      <div style="text-align: center; margin: 20px 0;">
-        <img src="${lactateTestingImage}" alt="Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-      </div>
-      <p style="text-align: center; color: #6b7280; font-size: 14px; margin-top: 10px;">
-        <strong>Lactate Testing & Analysis</strong><br/>
-        Track your performance with advanced lactate curve analysis
-      </p>
+    <p>Hi <strong>${userName}</strong>,</p>
+
+    <p>Welcome to LaChart — the home for blood-lactate tests, training zones, and the data that actually tells you whether you're getting faster.</p>
+
+    <p>One click and you're in:</p>
+
+    <div style="margin: 22px 0; text-align: center;">
+      <img src="${lactateTestingImage}" alt="" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);" />
     </div>
-    
-    <div style="margin: 30px 0;">
-      <div style="text-align: center; margin: 20px 0;">
-        <img src="${lachartTrainingImage}" alt="Training Analytics" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-      </div>
-      <p style="text-align: center; color: #6b7280; font-size: 14px; margin-top: 10px;">
-        <strong>Training Analytics</strong><br/>
-        Analyze your training data and track your progress
-      </p>
-    </div>
-    
-    <div style="margin: 30px 0;">
-      <div style="text-align: center; margin: 20px 0;">
-        <img src="${formFitnessChartImage}" alt="Fitness Charts" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-      </div>
-      <p style="text-align: center; color: #6b7280; font-size: 14px; margin-top: 10px;">
-        <strong>Comprehensive Fitness Tracking</strong><br/>
-        Monitor your fitness metrics and training zones
-      </p>
-    </div>
-    
-    <p style="margin-top: 30px;">Once verified, you'll be able to:</p>
-    <ul style="color: #4b5563; line-height: 1.8;">
-      <li>Create and analyze lactate threshold tests</li>
-      <li>Track your training activities and performance</li>
-      <li>Connect with Strava and other fitness platforms</li>
-      <li>Access personalized training zones and recommendations</li>
-      <li>View detailed analytics and progress reports</li>
-    </ul>
-    
-    <p style="margin-top: 30px; color: #6b7280; font-size: 14px;">
-      <strong>Note:</strong> This verification link will expire in 24 hours. If you didn't create an account, you can safely ignore this email.
+
+    <p style="margin-top: 26px; font-size: 15.5px; color: #1D2C4C;"><strong>Here's what's waiting for you once you verify:</strong></p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 14px 0; border-collapse: separate; border-spacing: 0 8px;">
+      <tr>
+        <td style="background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #0A0E1A; font-size: 15px;">📈 Lactate curve from any step test</div>
+          <div style="color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;">Paste your test values, instantly get LT1, LT2, OBLA, IAT, D-max — and matching training zones.</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #0A0E1A; font-size: 15px;">📅 Plan structured workouts in the calendar</div>
+          <div style="color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;">Warm-up · intervals with target zones · recoveries · cooldown — drop them on any day and run them from the app.</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #0A0E1A; font-size: 15px;">💧 Add lactate samples to any interval</div>
+          <div style="color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;">Tag any interval of a workout with a blood lactate value. Each sample re-builds your curve.</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #0A0E1A; font-size: 15px;">❤️ Form, fitness & fatigue tracking</div>
+          <div style="color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;">CTL · ATL · TSB charted over weeks. See when you're peaking and when to back off.</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background-color: #FFE6DF; border-radius: 10px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #0A0E1A; font-size: 15px;">⚡ Auto-import every workout from Strava</div>
+          <div style="color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;">Connect once — every ride, run and swim flows in automatically with power, HR, pace and laps. <a href="${stravaConnectUrl}" style="color: #E85535; font-weight: 600; text-decoration: none;">Set it up after verifying →</a></div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin-top: 24px;">Verify your email below, then sign in and you're set.</p>
+
+    <p style="margin-top: 22px; color: #6B7280; font-size: 13.5px;">
+      <strong>Note:</strong> this link expires in 24 hours. Didn't sign up for LaChart? You can ignore this — we won't email you again.
     </p>
   `;
 
@@ -95,13 +104,13 @@ async function sendEmailVerificationEmail(user, verificationToken) {
         address: process.env.EMAIL_USER
       },
       to: user.email,
-      subject: 'Verify your LaChart email address',
+      subject: 'One click and you\'re in — verify your LaChart email',
       html: generateEmailTemplate({
-        title: 'Verify Your Email Address',
+        title: 'Confirm your email and let\'s go',
         content: emailContent,
-        buttonText: 'Verify Email Address',
+        buttonText: 'Verify my email',
         buttonUrl: verificationUrl,
-        footerText: 'If the button doesn\'t work, copy and paste this link into your browser: ' + verificationUrl
+        footerText: 'Button not working? Copy &amp; paste this link into your browser: ' + verificationUrl
       })
     });
 

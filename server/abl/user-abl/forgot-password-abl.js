@@ -54,23 +54,26 @@ class ForgotPasswordAbl {
             const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
             
             const emailContent = `
-                <p>We received a request to reset the password for your account.</p>
-                <p>To reset your password, please click the button below.</p>
+                <p>Someone — hopefully you — asked to reset the password on this LaChart account.</p>
+                <p>Click the button below to set a new one. The link works once and expires in <strong>60 minutes</strong>.</p>
+                <p style="margin-top: 18px; color: #6B7280; font-size: 14px;">
+                  Didn't request this? You can safely ignore the email — your password stays unchanged. (For your peace of mind: nobody can see your existing password, even from this screen.)
+                </p>
             `;
-            
+
             const mailOptions = {
                 from: {
                     name: 'LaChart',
                     address: process.env.EMAIL_USER
                 },
                 to: user.email,
-                subject: 'Reset Your Password - LaChart',
+                subject: 'Reset your LaChart password',
                 html: generateEmailTemplate({
-                    title: 'Reset Your Password',
+                    title: 'Reset your password',
                     content: emailContent,
-                    buttonText: 'Reset Password',
+                    buttonText: 'Set a new password',
                     buttonUrl: resetUrl,
-                    footerText: 'This link is valid for 1 hour.'
+                    footerText: 'For security, this link works once and expires after 60 minutes.'
                 })
             };
 

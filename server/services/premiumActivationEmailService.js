@@ -55,44 +55,83 @@ async function sendPremiumActivationEmail(user, options = {}) {
   // Tailor copy depending on whether they're in a trial or paid outright.
   const intro = inTrial
     ? `<p>Hi <strong>${userName}</strong>,</p>
-       <p>Welcome to <strong>${planLabel}</strong>! Your 2-month free trial is active and you now have full access to every paid feature.</p>`
+       <p>Welcome to <strong>${planLabel}</strong>. Your free trial just kicked off — every paid feature is unlocked, nothing else to set up.</p>`
     : `<p>Hi <strong>${userName}</strong>,</p>
-       <p>Thanks for upgrading to <strong>${planLabel}</strong>! Your subscription is active and every paid feature is unlocked.</p>`;
+       <p>Welcome to <strong>${planLabel}</strong>. Your subscription is active and every paid feature is unlocked.</p>`;
 
   const trialBlock = inTrial && trialEndStr
-    ? `<p style="margin-top:16px; padding:12px 16px; background:#FEF3C7; border-left:4px solid #F59E0B; border-radius:4px;">
-         <strong>Free until ${trialEndStr}.</strong> We'll email you a few days before your trial ends.
-         ${amount ? `After that, billing starts at <strong>${currency === 'EUR' ? '€' : ''}${amount}/month</strong>.` : ''}
-         You can cancel anytime from Settings → Subscription, no questions asked.
+    ? `<p style="margin: 18px 0; padding: 14px 18px; background-color: #FFE6DF; border-radius: 10px; border-left: 4px solid #FF6B4A; color: #1D2C4C; font-size: 15px;">
+         <strong style="color: #0A0E1A;">Free until ${trialEndStr}.</strong> We'll send a heads-up a few days before the trial ends so nothing surprises you.
+         ${amount ? `After that, billing is <strong>${currency === 'EUR' ? '€' : ''}${amount}/month</strong>.` : ''}
+         Cancel any time from Settings → Subscription, no friction.
        </p>`
     : '';
 
-  const featureList = options.plan === 'coach'
-    ? `<ul>
-         <li>Unlimited athletes</li>
-         <li>Plan workouts for your athletes</li>
-         <li>Unlimited PDF report generation</li>
-         <li>PDF branding — your logo, title &amp; address</li>
-         <li>Coach dashboard &amp; overview</li>
-         <li>Everything in Pro</li>
-       </ul>`
-    : `<ul>
-         <li>Unlimited lactate tests</li>
-         <li>Plan workouts in the calendar</li>
-         <li>Start trainings from the app</li>
-         <li>Connect to your smart trainer</li>
-         <li>Advanced analytics &amp; charts</li>
-         <li>PDF export of test reports</li>
-         <li>Priority support</li>
-       </ul>`;
+  // Feature cards — visually richer than a bare <ul>. Calls out the
+  // newer features (workout planner, per-interval lactate, auto-categorize,
+  // form/fitness, branding for coaches) that paying users care about most.
+  const cardStyle = 'background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;';
+  const accentCardStyle = 'background-color: #FFE6DF; border-radius: 10px; padding: 14px 16px;';
+  const cardTitleStyle = 'font-weight: 700; color: #0A0E1A; font-size: 15px;';
+  const cardBodyStyle = 'color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;';
+
+  const coachFeatures = `
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">🎨 PDF reports with your branding</div>
+      <div style="${cardBodyStyle}">Upload your logo, set studio name + address. Every test PDF goes out as your branded handout.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">👥 Unlimited athletes</div>
+      <div style="${cardBodyStyle}">Add as many athletes as you coach. Plan their workouts, track their curves, compare their progress.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">📅 Build &amp; assign structured workouts</div>
+      <div style="${cardBodyStyle}">Design intervals with target zones once, drop on any day for any athlete.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">📊 Coach dashboard</div>
+      <div style="${cardBodyStyle}">One view across all your athletes — who tested when, who's overdue, who's overreaching.</div>
+    </td></tr>
+    <tr><td style="${accentCardStyle}">
+      <div style="${cardTitleStyle}">⚡ Strava auto-sync for every athlete</div>
+      <div style="${cardBodyStyle}">Each athlete connects once — every workout flows in with power, HR, pace and laps.</div>
+    </td></tr>
+  `;
+
+  const proFeatures = `
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">📅 Plan workouts in the calendar</div>
+      <div style="${cardBodyStyle}">Warm-up · intervals with target zones · recoveries · cooldown — drop them on any day and run them live from the app.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">💧 Lactate on any interval</div>
+      <div style="${cardBodyStyle}">Tag any interval of any workout with a blood-lactate sample. Each one feeds straight back into your curve and zones.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">❤️ Form, fitness &amp; fatigue tracking</div>
+      <div style="${cardBodyStyle}">CTL · ATL · TSB charted over weeks. See when you peak, when you overreach, when to back off.</div>
+    </td></tr>
+    <tr><td style="${cardStyle}">
+      <div style="${cardTitleStyle}">⚡ Auto-categorize every workout</div>
+      <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted automatically from intervals, zones and titles.</div>
+    </td></tr>
+    <tr><td style="${accentCardStyle}">
+      <div style="${cardTitleStyle}">🔗 Strava auto-sync</div>
+      <div style="${cardBodyStyle}">Connect once — every ride, run and swim flows in automatically. <a href="${clientUrl}/settings?tab=integrations" style="color: #E85535; font-weight: 600; text-decoration: none;">Set up now →</a></div>
+    </td></tr>
+  `;
+
+  const featureCards = options.plan === 'coach' ? coachFeatures : proFeatures;
 
   const emailContent = `
     ${intro}
     ${trialBlock}
-    <p style="margin-top:16px;"><strong>What's included:</strong></p>
-    ${featureList}
-    <p style="margin-top:16px;">Need anything? Just reply to this email — I read every message.</p>
-    <p>— Jakub @ LaChart</p>
+    <p style="margin-top: 22px; font-size: 15.5px;"><strong>What's unlocked for you:</strong></p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 12px 0 18px; border-collapse: separate; border-spacing: 0 8px;">
+      ${featureCards}
+    </table>
+    <p style="margin-top: 22px;">If you hit a wall or want to send feedback, just reply to this email. It comes straight to me.</p>
+    <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
   `;
 
   try {
@@ -100,14 +139,16 @@ async function sendPremiumActivationEmail(user, options = {}) {
       from: { name: 'LaChart', address: process.env.EMAIL_USER },
       to: user.email,
       subject: inTrial
-        ? `Your ${planLabel} free trial is active`
-        : `Welcome to ${planLabel}!`,
+        ? `${planLabel} unlocked — your trial just started`
+        : `You're in — ${planLabel} is active`,
       html: generateEmailTemplate({
-        title: inTrial ? `Welcome to ${planLabel}` : `You're a ${planLabel} member now`,
+        title: inTrial ? `${planLabel} is yours to try` : `You're on ${planLabel}`,
         content: emailContent,
-        buttonText: 'Open LaChart',
+        buttonText: 'Open my dashboard',
         buttonUrl: `${clientUrl}/dashboard`,
-        footerText: 'Manage your subscription anytime in Settings → Subscription.',
+        loginButtonText: 'Connect Strava',
+        loginButtonUrl: `${clientUrl}/settings?tab=integrations`,
+        footerText: 'Manage your subscription any time in Settings → Subscription. Cancel takes one click.',
       }),
     });
     return { sent: true };
