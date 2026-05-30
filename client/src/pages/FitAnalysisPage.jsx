@@ -3289,6 +3289,26 @@ const FitAnalysisPage = () => {
     }
   }, [selectedAthleteId, user, loadTrainings, loadExternalActivities, loadRegularTrainings]);
 
+  // Live refresh on Strava sync (2026-05). Without this, a webhook-delivered
+  // activity or a manual /strava/auto-sync click only shows up after the
+  // user hard-reloads the page — exactly the bug Honza reported. The custom
+  // event is dispatched from services/api.js (manual sync) and from the
+  // NotificationBell (when a 'strava_import' bell notif arrives via polling).
+  // Both paths funnel here so the calendar updates in seconds, not on reload.
+  useEffect(() => {
+    if (!user) return;
+    const onStravaSynced = () => {
+      // Refresh the three collections any Strava-imported activity might
+      // land in. Cheaper than a full route remount and preserves the user's
+      // current scroll / selected day in the calendar.
+      loadExternalActivities();
+      loadRegularTrainings();
+      loadTrainings();
+    };
+    window.addEventListener('strava:synced', onStravaSynced);
+    return () => window.removeEventListener('strava:synced', onStravaSynced);
+  }, [user, loadExternalActivities, loadRegularTrainings, loadTrainings]);
+
 
   const [calendarPeriod, setCalendarPeriod] = useState(null);
   const handleCalendarPeriodChange = useCallback((info) => {

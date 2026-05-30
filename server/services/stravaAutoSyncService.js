@@ -7,6 +7,10 @@ const { recordStravaSyncLogSafe } = require('./stravaSyncLogService');
 // route module. The old local copy aggressively wiped user.strava on every
 // 4xx, which caused users to be silently disconnected by transient errors.
 const { getValidStravaToken } = require('../utils/stravaToken');
+const {
+  STRAVA_AUTO_SYNC_MIN_USER_AGE_MS,
+  STRAVA_AUTO_SYNC_PAGE_DELAY_MS,
+} = require('../config/stravaAutoSyncConfig');
 
 // Helper function to delay execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -101,7 +105,7 @@ async function syncStravaForUser(user, opts = {}) {
       params.after = new Date(since).getTime() / 1000;
     }
 
-    const delayBetweenRequests = 2000; // 2 seconds between requests
+    const delayBetweenRequests = STRAVA_AUTO_SYNC_PAGE_DELAY_MS;
 
     // Track whether we drained the window cleanly. We only advance
     // lastSyncDate on a clean run — a 429/network error must NOT advance
@@ -331,9 +335,7 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
     // Only sync users whose lastSyncDate is older than (intervalMs - 2 min buffer).
     // This prevents hammering Strava when the scheduler fires more often than expected
     // (e.g. multiple server instances, restarts).
-    const syncIntervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 15 * 60 * 1000);
-    const minAgeMs = Math.max(syncIntervalMs - 2 * 60 * 1000, 5 * 60 * 1000); // at least 5 min
-    const cutoff = new Date(Date.now() - minAgeMs);
+    const cutoff = new Date(Date.now() - STRAVA_AUTO_SYNC_MIN_USER_AGE_MS);
 
     // Skip users whose webhook is healthy — if Strava pushed an event within
     // the last 24 hours, real-time sync is doing its job and polling them
@@ -363,7 +365,7 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
       }],
     })
       .select('_id strava email name')
-      .sort({ 'strava.lastSyncDate': 1 }) // oldest first → fair rotation
+      .sort({ 'strava.webhookLastEventAt': 1, 'strava.lastSyncDate': 1 })
       .limit(batchSize)
       .lean();
     

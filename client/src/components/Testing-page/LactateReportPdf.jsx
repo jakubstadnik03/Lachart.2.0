@@ -927,6 +927,81 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             </View>
           </View>
 
+          {/* Protocol & conditions card (2026-05) ─────────────────────────
+              Surfaces the optional "Protocol & pre/post values" section the
+              athlete or coach filled in on TestingForm. We render two
+              side-by-side columns only when at least one field has a value
+              — otherwise the card is suppressed entirely to avoid pages
+              full of em-dashes.
+
+              Pre/post values: resting HR, pre-load HR, max HR, max lactate,
+              recovery HR @3min, recovery lactate @3min.
+              Protocol: stage duration, stage distance, rest between, plus
+              environmental conditions (specifics + weather).
+
+              Helper `fmt(n, unit)` keeps every entry consistent: trims, drops
+              empties, prepends the unit. Null/blank values cause the row to
+              be skipped via .filter(Boolean). */}
+          {(() => {
+            const rawFmt = (val, unit) => {
+              if (val == null) return null;
+              const s = String(val).trim();
+              if (!s) return null;
+              return unit ? `${s} ${unit}` : s;
+            };
+            // Stage duration is stored as seconds — render as MM:SS so it
+            // matches what the user typed in TestingForm.
+            const fmtStageDur = (sec) => {
+              const n = Number(sec);
+              if (!Number.isFinite(n) || n <= 0) return null;
+              const m = Math.floor(n / 60);
+              const ss = Math.round(n % 60);
+              return `${m}:${String(ss).padStart(2, '0')} (${n}s)`;
+            };
+
+            const pre = [
+              ['Resting HR',           rawFmt(test.restingHR, 'bpm')],
+              ['Pre-load HR',          rawFmt(test.preLoadHR, 'bpm')],
+              ['Max HR',               rawFmt(test.maxHR, 'bpm')],
+              ['Max lactate',          rawFmt(test.maxLactate, 'mmol/L')],
+              ['Recovery HR (+3min)',  rawFmt(test.recoveryHR3min, 'bpm')],
+              ['Recovery La (+3min)',  rawFmt(test.recoveryLactate3min, 'mmol/L')],
+            ].filter(([, v]) => v != null);
+
+            const proto = [
+              ['Stage duration',  fmtStageDur(test.stageDurationSec)],
+              ['Stage distance',  rawFmt(test.stageDistance, 'm')],
+              ['Rest between',    fmtStageDur(test.restBetweenStagesSec)],
+              ['Conditions',      rawFmt(test.specifics?.specific)],
+              ['Weather',         rawFmt(test.specifics?.weather)],
+            ].filter(([, v]) => v != null);
+
+            // Render nothing if BOTH columns are empty — the section just
+            // would be visual noise (a header with two empty cards).
+            if (pre.length === 0 && proto.length === 0) return null;
+
+            const renderColumn = (title, rows) => (
+              <View style={s.infoCard}>
+                <Text style={s.cardLabel}>{title}</Text>
+                {rows.length > 0 ? rows.map(([k, v]) => (
+                  <View key={k} style={s.cardRow}>
+                    <Text style={s.cardKey}>{k}</Text>
+                    <Text style={s.cardVal}>{v}</Text>
+                  </View>
+                )) : (
+                  <Text style={[s.cardVal, { color: '#9ca3af', fontStyle: 'italic' }]}>—</Text>
+                )}
+              </View>
+            );
+
+            return (
+              <View style={[s.athleteCard, { marginTop: 8 }]}>
+                {renderColumn('Pre / Post Values', pre)}
+                {renderColumn('Protocol & Conditions', proto)}
+              </View>
+            );
+          })()}
+
           {/* Lactate curve */}
           <SectionHeader title="Lactate Curve" color={brandPrimary} />
 

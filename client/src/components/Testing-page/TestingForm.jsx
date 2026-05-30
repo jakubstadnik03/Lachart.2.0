@@ -905,11 +905,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       setHighlightedField('sport');
     }
     
-    // Validate baseLactate - should be a positive number
-    const baseLaNum = baseLaRaw ? parseFloat(baseLaRaw.replace(',', '.')) : 0;
-    if (!baseLaRaw || isNaN(baseLaNum) || baseLaNum <= 0) {
-      errors.push('Base lactate is required and must be greater than 0');
-      setHighlightedField('baseLa');
+    // Base lactate is OPTIONAL (2026-05) — many testers don't take a
+    // resting sample. Only validate that the value PARSES if it was
+    // provided; empty silently passes through to the save flow.
+    if (baseLaRaw) {
+      const baseLaNum = parseFloat(baseLaRaw.replace(',', '.'));
+      if (isNaN(baseLaNum) || baseLaNum <= 0) {
+        errors.push('Base lactate must be a positive number (or leave empty).');
+        setHighlightedField('baseLa');
+      }
     }
     
     if (errors.length > 0) {
@@ -1095,39 +1099,40 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const handleApplyStepWizard = () => {
     const sport = formData.sport;
     const isPaceSport = sport === 'run' || sport === 'swim';
-    const isSwim = sport === 'swim';
     const isSpeedInput = isPaceSport && wizardInputMode === 'speed';
     const stepsN = Math.max(1, Math.min(30, parseInt(stepWizard.steps, 10) || 0));
 
-    // Convert a speed value (km/h, optionally entered as mph in imperial
-    // mode) to the matching pace in seconds:
-    //   run  → seconds per kilometre
-    //   swim → seconds per 100 metres
-    const speedToPaceSec = (rawSpeed) => {
-      let kmh = Number(rawSpeed);
-      if (!Number.isFinite(kmh) || kmh <= 0) return NaN;
-      if (unitSystem === 'imperial') kmh = kmh * 1.609344; // mph → km/h
-      if (isSwim) return 360 / kmh;        // sec / 100 m
-      return 3600 / kmh;                    // sec / km
-    };
+    // Trim early — same reason as in the preview: an empty input ("")
+    // turns into Number("") = 0 and used to silently produce a flat ladder
+    // (every stage identical). Require a real value and reject zero step.
+    const startStr = String(stepWizard.start ?? '').trim();
+    const incStr = String(stepWizard.increment ?? '').trim();
+    if (!startStr || !incStr) {
+      addNotification('Fill in both Start and Step before generating.', 'warning');
+      return;
+    }
 
     let startN, incN;
     if (isPaceSport && !isSpeedInput) {
       // Pace input: MM:SS strings. Increment in SECONDS (negative = faster).
-      startN = parsePaceInput(stepWizard.start);
-      incN = Number(String(stepWizard.increment).replace(',', '.'));
+      startN = parsePaceInput(startStr);
+      incN = Number(incStr.replace(',', '.'));
     } else if (isSpeedInput) {
       // Speed input: km/h (or mph). Both numeric. Pace gets faster as speed
       // grows → flip the sign when projecting to pace-seconds below.
-      startN = Number(String(stepWizard.start).replace(',', '.'));
-      incN = Number(String(stepWizard.increment).replace(',', '.'));
+      startN = Number(startStr.replace(',', '.'));
+      incN = Number(incStr.replace(',', '.'));
     } else {
       // Bike: watts. Both are numeric.
-      startN = Number(String(stepWizard.start).replace(',', '.'));
-      incN = Number(String(stepWizard.increment).replace(',', '.'));
+      startN = Number(startStr.replace(',', '.'));
+      incN = Number(incStr.replace(',', '.'));
     }
     if (!Number.isFinite(startN) || !Number.isFinite(incN) || stepsN < 1) {
       addNotification('Fill in start, increment and step count first.', 'warning');
+      return;
+    }
+    if (incN === 0) {
+      addNotification('Step can\'t be 0 — every stage would have the same value.', 'warning');
       return;
     }
     const stageSec = Number(stepWizard.stageDurationSec) || 0;
@@ -1136,10 +1141,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const v = startN + incN * i;
       let powerValue;
       if (isSpeedInput) {
-        // Convert each speed value to its pace-seconds and format MM:SS,
-        // so the row stores pace consistently with the table.
-        const paceSec = speedToPaceSec(v);
-        powerValue = Number.isFinite(paceSec) && paceSec > 0 ? formatPaceSeconds(paceSec) : '';
+        // Keep the wizard's speed values AS speed (e.g. "12.0", "13.0", …)
+        // and flip the form's inputMode to 'speed' below so the table
+        // column header and units match. Previously we silently converted
+        // to MM:SS pace, which surprised users who picked Speed mode
+        // deliberately and then saw paces.
+        powerValue = Number.isFinite(v) && v > 0 ? Number(v).toFixed(1) : '';
       } else if (isPaceSport) {
         powerValue = formatPaceSeconds(v);
       } else {
@@ -1160,12 +1167,23 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       };
     });
     setRows(generated);
-    // Also propagate stage duration to the test-level metadata so the curve
-    // calculator (and exports) can apply stage-duration corrections later.
+    // Sync the parent form's display mode to the wizard's input mode so the
+    // table header (Pace vs Speed) and the row values match. Without this,
+    // generating speed rows would leave the form in Pace mode and the
+    // useEffect at line ~284 would re-convert "12.0" → "05:00" pace — which
+    // is exactly the data-loss the user reported.
+    if (isPaceSport) {
+      setInputMode(isSpeedInput ? 'speed' : 'pace');
+    }
+    // Also propagate stage duration AND the chosen inputMode to the
+    // test-level metadata so the curve calculator (and exports) read the
+    // right axis. Without `inputMode`, a saved test would forget whether
+    // its `power` column held pace seconds or km/h.
     onTestDataChange({
       ...testData,
       ...formData,
       stageDurationSec: Number(stepWizard.stageDurationSec) || undefined,
+      inputMode: isPaceSport ? (isSpeedInput ? 'speed' : 'pace') : (testData?.inputMode || undefined),
       results: generated.map(r => ({ ...r })),
     });
     setStepWizardOpen(false);
@@ -1230,13 +1248,22 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const bad = new Set();
     if (!Array.isArray(rows) || rows.length < 3) return bad;
     const isPace = formData.sport === 'run' || formData.sport === 'swim';
+    // Direction of "harder" depends on BOTH the sport AND the input mode:
+    //   • bike (watts)      → higher W = harder       → score = +p
+    //   • run/swim, pace    → lower sec/km = harder   → score = −p
+    //   • run/swim, SPEED   → higher km/h = harder    → score = +p
+    // Without the inputMode check, the detector previously flagged a perfectly
+    // valid ascending speed ladder (12, 13, 14, 15, 16, 17 km/h on a Run test)
+    // as anomalous from the midpoint onwards — the fix is to invert the sign
+    // only when we're actually reading pace-seconds.
+    const isPaceMode = isPace && inputMode === 'pace';
     const parseRowPower = (r) => {
       if (r?.intervalType === 'recovery') return null;
       const raw = r?.power;
       if (raw == null || raw === '') return null;
       const str = String(raw).trim().replace(',', '.');
       // For pace inputs we may get "MM:SS" — convert to seconds to compare.
-      if (isPace && str.includes(':')) {
+      if (isPaceMode && str.includes(':')) {
         const [m, s] = str.split(':').map(Number);
         if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
         return null;
@@ -1244,9 +1271,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const n = Number(str);
       return Number.isFinite(n) ? n : null;
     };
-    // For bike higher power = harder; for pace lower seconds = harder.
-    // We normalise so "harder" is always a HIGHER number.
-    const hardnessScore = (p) => (p == null ? null : (isPace ? -p : p));
+    // Normalise so "harder" is always a HIGHER number — see comment above.
+    const hardnessScore = (p) => (p == null ? null : (isPaceMode ? -p : p));
     let maxHardness = -Infinity;
     const half = Math.floor(rows.length / 2);
     for (let i = 0; i < rows.length; i++) {
@@ -1259,7 +1285,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       }
     }
     return bad;
-  }, [rows, formData.sport]);
+    // inputMode added 2026-05: anomaly detection inverts hardness sign for
+    // pace mode vs speed/watts mode (see isPaceMode inside) — so the memo
+    // must re-run when the user toggles between Pace and Speed displays.
+  }, [rows, formData.sport, inputMode]);
 
   // Update the input field in the table
   const renderInput = (index, field, value, placeholder) => {
@@ -1299,7 +1328,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const baseLaValue = formData.baseLa === null || formData.baseLa === undefined ? '' : String(formData.baseLa);
   const baseLaTrimmed = baseLaValue.trim();
   const baseLaParsed = baseLaTrimmed ? parseFloat(baseLaTrimmed.replace(',', '.')) : 0;
-  const isBaseLaInvalid = !baseLaTrimmed || Number.isNaN(baseLaParsed) || baseLaParsed <= 0;
+  // Base lactate is OPTIONAL (2026-05): not every lab takes a resting sample
+  // and some testers prefer to omit it rather than enter a fake "1.0" zero.
+  // Empty is fine — only flag as invalid when the user has TYPED something
+  // that isn't a positive number (catches typos like "abc" or negative values).
+  const isBaseLaInvalid = baseLaTrimmed !== '' && (Number.isNaN(baseLaParsed) || baseLaParsed <= 0);
 
   return (
     <div className="flex flex-col w-full min-w-0 max-w-full overflow-x-hidden p-2 sm:p-4 bg-white rounded-xl relative h-full">
@@ -1669,8 +1702,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
                   <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">
                     <div className="space-y-1">
-                      <p>⚠️ <strong>Base lactate is required</strong></p>
-                      <p>for accurate threshold calculations</p>
+                      <p>⚠️ <strong>Must be a positive number</strong></p>
+                      <p>Leave blank if you didn't measure resting lactate.</p>
                     </div>
                     <div className="absolute -top-1 left-4 w-2 h-2 bg-red-600 transform rotate-45"></div>
                   </div>
@@ -2129,14 +2162,82 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               type="button"
               onClick={() => {
                 logClick('Open Step Wizard');
-                // Default the wizard with sensible per-sport seeds.
-                const isPace = formData.sport === 'run' || formData.sport === 'swim';
-                setStepWizard({
-                  start: isPace ? (formData.sport === 'swim' ? '02:00' : '06:00') : '100',
-                  increment: isPace ? '-10' : '25',
-                  steps: 6,
-                  stageDurationSec: 180,
-                });
+                // Smart re-open (2026-05): if there are existing rows we infer
+                // the wizard fields FROM them so re-opening the wizard shows
+                // exactly what's already in the table — not stale defaults
+                // that don't match (e.g. table has 12-17 km/h in Speed mode
+                // but wizard shows 06:00 pace). Falls back to per-sport seeds
+                // only when the table is empty.
+                const sport = formData.sport;
+                const isPace = sport === 'run' || sport === 'swim';
+
+                // Helper: read a row's "power" cell as a clean number, taking
+                // into account whether it's stored as MM:SS pace or a plain
+                // number (watts / km/h).
+                const readRow = (idx) => {
+                  const raw = rows?.[idx]?.power;
+                  if (raw == null || raw === '') return null;
+                  const str = String(raw).trim().replace(',', '.');
+                  if (isPace && inputMode === 'pace' && str.includes(':')) {
+                    const [m, s] = str.split(':').map(Number);
+                    if (Number.isFinite(m) && Number.isFinite(s)) return m * 60 + s;
+                    return null;
+                  }
+                  const n = Number(str);
+                  return Number.isFinite(n) ? n : null;
+                };
+
+                // Build wizard seed from existing rows when at least 2 valid
+                // power values are present (need 2 to know the increment).
+                const r0 = readRow(0);
+                const r1 = readRow(1);
+                const hasInferableRows = Number.isFinite(r0) && Number.isFinite(r1);
+
+                let seed;
+                if (hasInferableRows) {
+                  // Increment is row[1] − row[0]. For pace seconds that's
+                  // typically negative (getting faster); for speed/watts it's
+                  // typically positive. Either way we just copy what's there.
+                  const incRaw = r1 - r0;
+                  // Round to keep the input clean — sub-second pace deltas
+                  // and 0.05 km/h speed deltas aren't realistic.
+                  const inc = isPace && inputMode === 'pace'
+                    ? Math.round(incRaw)
+                    : Math.round(incRaw * 10) / 10;
+                  const startStr = isPace && inputMode === 'pace'
+                    ? formatPaceSeconds(r0)
+                    : (Math.round(r0 * 10) / 10).toString();
+                  // Stage duration: read the first row's `duration` cell, parse
+                  // MM:SS → seconds. Fall back to test-level stageDurationSec
+                  // → 180 default.
+                  const durStr = String(rows[0]?.duration || '').trim();
+                  const durMmss = durStr.match(/^(\d+):(\d{1,2})$/);
+                  const durSec = durMmss
+                    ? Number(durMmss[1]) * 60 + Number(durMmss[2])
+                    : (Number(testData?.stageDurationSec) || 180);
+                  seed = {
+                    start: startStr,
+                    increment: String(inc),
+                    steps: rows.length || 6,
+                    stageDurationSec: durSec,
+                  };
+                } else {
+                  // No rows yet — default the wizard with sensible per-sport
+                  // seeds (kept identical to the original behaviour).
+                  seed = {
+                    start: isPace ? (sport === 'swim' ? '02:00' : '06:00') : '100',
+                    increment: isPace ? '-10' : '25',
+                    steps: 6,
+                    stageDurationSec: 180,
+                  };
+                }
+                setStepWizard(seed);
+                // Wizard mode should mirror the form's current inputMode so
+                // re-opening the wizard while in Speed mode doesn't reset to
+                // Pace mode and re-show MM:SS labels for km/h data.
+                if (isPace) {
+                  setWizardInputMode(inputMode === 'speed' ? 'speed' : 'pace');
+                }
                 setStepWizardOpen(true);
               }}
               className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-colors whitespace-nowrap"
@@ -2217,109 +2318,233 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 <X size={18} />
               </button>
             </div>
+            {/* Single shared scope for all wizard fields. Previously the
+                description IIFE owned isPaceSport/isSpeed/speedUnit while
+                the field-grid + preview each re-derived (sometimes
+                differently). Hoisted here so labels, placeholders, preview
+                hint and helper text all read from the same signal — fixes
+                the 2026-05 bug where a shared-link test with no sport set
+                showed `(MM:SS)` labels but a watts preview. */}
             {(() => {
               const isPaceSport = formData.sport === 'run' || formData.sport === 'swim';
+              const isSwim = formData.sport === 'swim';
               const isSpeed = isPaceSport && wizardInputMode === 'speed';
               const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+              // Hard guard: with no sport selected we don't know whether the
+              // user means watts or pace — both interpretations produce
+              // confusing previews. Show an inline warning + disable Generate
+              // until the parent form's Sport field is filled.
+              const noSport = !formData.sport;
+              // Pace ↔ Speed helpers for the toggle below. Auto-convert when
+              // switching modes so values the user already typed don't get
+              // wiped — previously the toggle just blanked the inputs which
+              // surprised users and made the wizard feel buggy.
+              //
+              //   Run  pace ↔ speed:   sec/km = 3600 / kmh
+              //   Swim pace ↔ speed:   sec/100m = 360 / kmh
+              const convertStartToSpeed = (paceStr) => {
+                const sec = parsePaceInput(paceStr);
+                if (!Number.isFinite(sec) || sec <= 0) return '';
+                const k = isSwim ? 360 / sec : 3600 / sec;
+                let display = k;
+                if (unitSystem === 'imperial') display = k / 1.609344;
+                return display.toFixed(1);
+              };
+              const convertStartToPace = (speedStr) => {
+                let k = Number(String(speedStr).replace(',', '.'));
+                if (!Number.isFinite(k) || k <= 0) return '';
+                if (unitSystem === 'imperial') k = k * 1.609344;
+                const sec = isSwim ? 360 / k : 3600 / k;
+                return formatPaceSeconds(sec);
+              };
+              // The increment unit changes too (pace = Δseconds, speed = Δkm/h)
+              // so we can't meaningfully convert — clearing is the right call.
+              // Negative pace increment means "getting faster" which maps to
+              // positive speed increment; can't preserve sign without value.
+
+              // Three sport chips for the no-sport state. Clicking sets the
+              // parent form's sport field AND seeds reasonable wizard defaults
+              // so the user doesn't see a blank wizard staring back at them.
+              // Mirrors the seed logic used when the wizard opens with a sport
+              // already set (see button at line ~2134) — keeps the two entry
+              // points equivalent.
+              //
+              // Seeds per sport:
+              //   run  → 6:00 pace, −10 s/stage, 6 stages, 180 s each
+              //   swim → 2:00 / 100 m, −10 s/stage, 6 stages, 180 s each
+              //   bike → 100 W start, +25 W per stage, 6 stages, 180 s each
+              const pickSport = (sport) => {
+                setFormData(prev => ({ ...prev, sport }));
+                const seed = sport === 'bike'
+                  ? { start: '100',  increment: '25'  }
+                  : sport === 'swim'
+                    ? { start: '02:00', increment: '-10' }
+                    : { start: '06:00', increment: '-10' }; // run
+                setStepWizard(s => ({
+                  ...s,
+                  ...seed,
+                  steps: s.steps || 6,
+                  stageDurationSec: s.stageDurationSec || 180,
+                }));
+                // Run/swim share the Pace mode default; bike has no pace/
+                // speed toggle so the mode doesn't matter for it.
+                if (sport === 'run' || sport === 'swim') {
+                  setWizardInputMode('pace');
+                }
+              };
               return (
                 <>
+                  {noSport && (
+                    <div className="mb-3 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                      <p className="text-[12px] text-amber-900 leading-snug mb-2">
+                        <strong>Pick a sport first.</strong> The wizard adapts its units (watts vs pace) to the sport.
+                      </p>
+                      <div className="flex gap-1.5">
+                        {[
+                          { id: 'run',  label: 'Run' },
+                          { id: 'bike', label: 'Bike' },
+                          { id: 'swim', label: 'Swim' },
+                        ].map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => pickSport(s.id)}
+                            className="flex-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors"
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <p className="text-xs text-gray-500 mb-3">
                     Generates intervals automatically. Existing rows will be replaced.
-                    {formData.sport === 'bike'
+                    {!isPaceSport
                       ? ' Start watts + increment in watts.'
                       : isSpeed
                         ? ` Speed in ${speedUnit}; increment positive = getting faster.`
                         : ' Pace as MM:SS; increment in seconds (negative = getting faster).'}
                   </p>
 
-                  {/* Pace ↔ Speed toggle for run/swim — bike has no equivalent. */}
+                  {/* Pace ↔ Speed toggle for run/swim — bike has no equivalent.
+                      Switching now CONVERTS the start value instead of clearing
+                      it (e.g. 06:00 pace ↔ 10.0 km/h). The increment can't be
+                      auto-converted because its unit (Δs vs Δkm/h) and sign
+                      convention flip — we still wipe that so the user is
+                      prompted to fill it in deliberately. */}
                   {isPaceSport && (
                     <div className="mb-3 bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
                       <button
                         type="button"
-                        onClick={() => { setWizardInputMode('pace'); setStepWizard(s => ({ ...s, start: '', increment: '' })); }}
+                        onClick={() => {
+                          if (wizardInputMode === 'pace') return;
+                          setWizardInputMode('pace');
+                          setStepWizard(s => ({
+                            ...s,
+                            start: convertStartToPace(s.start),
+                            increment: '',
+                          }));
+                        }}
                         className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${wizardInputMode === 'pace' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900'}`}
                       >
                         Pace (MM:SS)
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setWizardInputMode('speed'); setStepWizard(s => ({ ...s, start: '', increment: '' })); }}
+                        onClick={() => {
+                          if (wizardInputMode === 'speed') return;
+                          setWizardInputMode('speed');
+                          setStepWizard(s => ({
+                            ...s,
+                            start: convertStartToSpeed(s.start),
+                            increment: '',
+                          }));
+                        }}
                         className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${wizardInputMode === 'speed' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900'}`}
                       >
                         Speed ({speedUnit})
                       </button>
                     </div>
                   )}
+
+                  {/* Field grid — labels, placeholders and the preview hint
+                      below all share isPaceSport / isSpeed / speedUnit from
+                      this IIFE so they stay in sync. */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                        Start {!isPaceSport ? '(W)' : isSpeed ? `(${speedUnit})` : '(MM:SS)'}
+                      </label>
+                      <input
+                        type="text"
+                        value={stepWizard.start}
+                        onChange={(e) => setStepWizard(s => ({ ...s, start: e.target.value }))}
+                        placeholder={
+                          !isPaceSport ? '100'
+                          : isSpeed ? (isSwim ? '4.0' : '10')
+                          : '06:00'
+                        }
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    {/* Renamed 2026-05: was "Step (seconds)" which read like
+                        the duration of each step (the literal stage length).
+                        It's actually the INCREMENT — how much the pace/power
+                        changes between stages. New label spells out direction
+                        ("+ slower / − faster") so users can't misread the
+                        sign convention. */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                        {!isPaceSport
+                          ? 'Power step (W)'
+                          : isSpeed
+                            ? `Speed step (${speedUnit})`
+                            : 'Pace step (Δs)'}
+                      </label>
+                      <input
+                        type="text"
+                        value={stepWizard.increment}
+                        onChange={(e) => setStepWizard(s => ({ ...s, increment: e.target.value }))}
+                        placeholder={!isPaceSport ? '25' : isSpeed ? '1' : '-10'}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      {/* Inline direction reminder — pace-mode is the one that
+                          confuses people (negative = getting faster is counter-
+                          intuitive on first sight). Watts and speed both have
+                          + = harder which matches the usual mental model. */}
+                      {isPaceSport && !isSpeed && (
+                        <p className="text-[10.5px] text-gray-400 mt-1 leading-tight">
+                          <span className="font-semibold">−</span> faster · <span className="font-semibold">+</span> slower
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Number of stages</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={stepWizard.steps}
+                        onChange={(e) => setStepWizard(s => ({ ...s, steps: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Stage duration (sec)</label>
+                      <input
+                        type="number"
+                        min={30}
+                        max={900}
+                        step={30}
+                        value={stepWizard.stageDurationSec}
+                        onChange={(e) => setStepWizard(s => ({ ...s, stageDurationSec: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
                 </>
               );
             })()}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                  Start {formData.sport === 'bike'
-                    ? '(W)'
-                    : wizardInputMode === 'speed'
-                      ? `(${unitSystem === 'imperial' ? 'mph' : 'km/h'})`
-                      : '(MM:SS)'}
-                </label>
-                <input
-                  type="text"
-                  value={stepWizard.start}
-                  onChange={(e) => setStepWizard(s => ({ ...s, start: e.target.value }))}
-                  placeholder={
-                    formData.sport === 'bike' ? '100'
-                    : wizardInputMode === 'speed' ? (formData.sport === 'swim' ? '4.0' : '10')
-                    : '06:00'
-                  }
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                  Step {formData.sport === 'bike'
-                    ? '(W)'
-                    : wizardInputMode === 'speed'
-                      ? `(+${unitSystem === 'imperial' ? 'mph' : 'km/h'})`
-                      : '(seconds)'}
-                </label>
-                <input
-                  type="text"
-                  value={stepWizard.increment}
-                  onChange={(e) => setStepWizard(s => ({ ...s, increment: e.target.value }))}
-                  placeholder={
-                    formData.sport === 'bike' ? '25'
-                    : wizardInputMode === 'speed' ? '1'
-                    : '-10'
-                  }
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Steps</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={stepWizard.steps}
-                  onChange={(e) => setStepWizard(s => ({ ...s, steps: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Stage (sec)</label>
-                <input
-                  type="number"
-                  min={30}
-                  max={900}
-                  step={30}
-                  value={stepWizard.stageDurationSec}
-                  onChange={(e) => setStepWizard(s => ({ ...s, stageDurationSec: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-            </div>
-
             <div className="mt-3 rounded-lg bg-gray-50 border border-gray-100 p-2 text-[11px] text-gray-600">
               {(() => {
                 const isPaceSport = formData.sport === 'run' || formData.sport === 'swim';
@@ -2327,11 +2552,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 const isSpeed = isPaceSport && wizardInputMode === 'speed';
                 const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                 const stepsN = Math.max(1, Math.min(30, parseInt(stepWizard.steps, 10) || 0));
+                // Treat blank inputs explicitly as "not filled in" — vanilla
+                // Number("") returns 0, which used to slip through the
+                // Number.isFinite() guard and silently produce 6 stages with
+                // zero progression (every stage at the same speed). Trim
+                // first so leading/trailing spaces don't masquerade as data.
+                const startStr = String(stepWizard.start ?? '').trim();
+                const incStr = String(stepWizard.increment ?? '').trim();
+                if (!startStr) return 'Enter a start value to preview.';
+                if (!incStr) return 'Enter a step/increment to preview.';
                 const startN = (isPaceSport && !isSpeed)
-                  ? parsePaceInput(stepWizard.start)
-                  : Number(String(stepWizard.start).replace(',', '.'));
-                const incN = Number(String(stepWizard.increment).replace(',', '.'));
+                  ? parsePaceInput(startStr)
+                  : Number(startStr.replace(',', '.'));
+                const incN = Number(incStr.replace(',', '.'));
                 if (!Number.isFinite(startN) || !Number.isFinite(incN)) return 'Fill all fields to preview.';
+                // A zero step is technically "finite" but produces an
+                // identical ladder — refuse it so users don't ship a flat
+                // step-test by accident.
+                if (incN === 0) return 'Step can\'t be 0 — stages would all be the same.';
 
                 const fmt = (n) => {
                   if (!isPaceSport) return `${Math.round(n)} W`;
@@ -2358,10 +2596,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               >
                 Cancel
               </button>
+              {/* Generate is gated on a sport being set in the parent form —
+                  without it we can't reliably interpret the values (watts vs
+                  pace). The amber warning banner above tells the user why. */}
               <button
                 type="button"
                 onClick={handleApplyStepWizard}
-                className="flex-1 px-3 py-2 text-sm text-white bg-indigo-500 rounded-lg hover:bg-indigo-600"
+                disabled={!formData.sport}
+                className={`flex-1 px-3 py-2 text-sm rounded-lg transition-colors ${
+                  !formData.sport
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'text-white bg-indigo-500 hover:bg-indigo-600'
+                }`}
+                title={!formData.sport ? 'Pick a sport in the form first' : 'Replace existing rows with the generated ladder'}
               >
                 Generate
               </button>

@@ -1,6 +1,13 @@
 const { syncStravaForAllUsers } = require('./stravaAutoSyncService');
 const stravaBudget = require('../utils/stravaBudget');
 const { recordStravaSyncLogSafe } = require('./stravaSyncLogService');
+const {
+  STRAVA_AUTO_SYNC_INTERVAL_MS,
+  STRAVA_AUTO_SYNC_BATCH_SIZE,
+  STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS,
+  STRAVA_AUTO_SYNC_INITIAL_TICK_MS,
+  STRAVA_AUTO_SYNC_BUDGET_SKIP_PCT,
+} = require('../config/stravaAutoSyncConfig');
 
 /**
  * Start the Strava auto-sync scheduler
@@ -21,28 +28,14 @@ function startStravaAutoSyncScheduler() {
     return;
   }
 
-  // Interval — webhook delivers activities in real-time; this is a fallback
-  // safety net only. Default 60 minutes keeps daily API usage well under
-  // Strava's 6 000/day limit even with many connected users.
-  // Default poll cadence: 15 min (was 60). Real-time push is supposed to come
-  // via the Strava webhook, but in practice subscriptions go silent (network
-  // hiccup, callback URL change after redeploy, Strava-side throttle) and
-  // users are stuck waiting an hour for the next tick. 15 min is still well
-  // inside Strava's 600-req / 15-min quota — batch=6 users × ~3 pages per
-  // user × 4 ticks/hour ≈ 72 req/hour for the whole app.
-  const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 15 * 60 * 1000);
-
-  // 6 users per tick is enough: at 60-min cadence the whole base of ~60 users
-  // rotates every ~10 ticks = 10 hours, well inside Strava's daily window.
-  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 6);
-
-  // 15 s between users — plenty of breathing room at the reduced rate.
-  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 15000);
+  const intervalMs = STRAVA_AUTO_SYNC_INTERVAL_MS;
+  const batchSize = STRAVA_AUTO_SYNC_BATCH_SIZE;
+  const delayBetweenUsers = STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS;
 
   const tick = async () => {
     try {
       // Defence against budget exhaustion — if the local Strava token bucket
-      // is already > 60 % used for the current 15-min window (typically
+      // is already > 85 % used for the current 15-min window (typically
       // because a historical backfill is in flight, or a morning upload
       // burst has fired a lot of webhook detail fetches), skip this tick
       // entirely. The next tick will see a fresher window and try again.
@@ -50,7 +43,7 @@ function startStravaAutoSyncScheduler() {
       // for the same finite budget and trigger 429s.
       const snap = stravaBudget.snapshot();
       const usedPct = snap.windowLimit > 0 ? snap.windowUsed / snap.windowLimit : 0;
-      if (usedPct > 0.6) {
+      if (usedPct > STRAVA_AUTO_SYNC_BUDGET_SKIP_PCT) {
         console.log(`[StravaAutoSyncScheduler] Skipping tick — budget ${snap.windowUsed}/${snap.windowLimit} (${Math.round(usedPct * 100)}%) used.`);
         recordStravaSyncLogSafe({
           source: 'scheduler',
@@ -82,7 +75,10 @@ function startStravaAutoSyncScheduler() {
   };
 
   // Initial delayed tick + interval ticks
-  setTimeout(() => tick().catch(e => console.error('[StravaAutoSyncScheduler] Initial tick error', e)), 30 * 1000); // Start after 30 seconds
+  setTimeout(
+    () => tick().catch(e => console.error('[StravaAutoSyncScheduler] Initial tick error', e)),
+    STRAVA_AUTO_SYNC_INITIAL_TICK_MS,
+  );
   setInterval(() => tick().catch(e => console.error('[StravaAutoSyncScheduler] Interval tick error', e)), intervalMs);
 
   console.log('[StravaAutoSyncScheduler] Started.', {

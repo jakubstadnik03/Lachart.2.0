@@ -1688,7 +1688,7 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
     // "Sync now" button tap — set `force: true` and bypass the gap so the
     // user always sees fresh data, even right after a webhook event.
     const isForced = req.body && req.body.force === true;
-    const MIN_AUTO_SYNC_GAP_MS = 60 * 1000; // 1 min for background syncs (was 5 min)
+    const { STRAVA_AUTO_SYNC_API_GAP_MS: MIN_AUTO_SYNC_GAP_MS } = require('../config/stravaAutoSyncConfig');
     if (!isForced && user.strava?.lastSyncDate) {
       const msSinceLast = Date.now() - new Date(user.strava.lastSyncDate).getTime();
       if (msSinceLast < MIN_AUTO_SYNC_GAP_MS) {

@@ -380,7 +380,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // Strava auto-sync — fires on every login/session start, then on tab focus.
   // sessionStorage key → syncs on every new login/page load regardless of when
   // the last localStorage sync happened.  Within the same session visibility
-  // events use a 15-min cooldown so quota isn't burned on rapid tab switches.
+  // events use a short cooldown so quota isn't burned on rapid tab switches.
   useEffect(() => {
     if (!user?._id) return undefined;
     const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
@@ -405,22 +405,18 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    // On login / session start: sync immediately (only 2-min safety guard so a
-    // hard-refresh doesn't double-fire; sessionStorage resets on every new login).
     const sessionKey = `strava_session_synced_${user._id}`;
     const run = async () => {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 1500));
       if (cancelled) return;
       const alreadyThisSession = sessionStorage.getItem(sessionKey);
       sessionStorage.setItem(sessionKey, '1');
-      // First mount this session → 2-min cooldown; subsequent mounts → 15-min
-      await runStrava(alreadyThisSession ? 15 * 60 * 1000 : 2 * 60 * 1000);
+      await runStrava(alreadyThisSession ? 3 * 60 * 1000 : 60 * 1000);
     };
 
-    // Tab becomes visible again — use 15-min cooldown to avoid hammering
     const onForeground = async () => {
       if (cancelled) return;
-      await runStrava(15 * 60 * 1000);
+      await runStrava(3 * 60 * 1000);
     };
 
     let capacitorCleanup = null;

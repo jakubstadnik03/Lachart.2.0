@@ -98,20 +98,25 @@ function getStravaSyncHealth(status) {
     return {
       tone: 'green',
       label: 'Real-time sync active',
-      description: 'Strava webhook is receiving activity events. New uploads should appear automatically.',
+      description: 'Strava is pushing new activities to LaChart within seconds of upload.',
     };
   }
   if (subscriptionState === 'active') {
     return {
       tone: 'amber',
-      label: 'Webhook active, waiting for next event',
-      description: 'Subscription exists, but no recent Strava webhook event was seen. Polling fallback is still active.',
+      label: 'Webhook ready — waiting for your next upload',
+      description:
+        'The server is registered with Strava, but no activity event has arrived yet. ' +
+        'That is normal until you save a new workout on Strava after connecting. ' +
+        'Until then, background sync runs about every 5 minutes (or when you open the app). ' +
+        'Use Sync now for an immediate pull.',
     };
   }
   return {
     tone: 'amber',
     label: 'Polling fallback active',
-    description: 'Could not confirm real-time webhook health. New activities may take up to 15 minutes.',
+    description:
+      'Real-time webhook could not be confirmed. New activities are checked in the background every ~5 minutes, or when you open the app. Use Sync now if you need them immediately.',
   };
 }
 
@@ -3147,7 +3152,7 @@ const SettingsPage = () => {
                                 <div className={`grid ${isMobile ? 'grid-cols-1 gap-1' : 'grid-cols-2 gap-2'} ${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
                                   <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
                                   <div><span className="font-semibold">Last sync:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}</div>
-                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 15 min)' : 'off'}</div>
+                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 5 min)' : 'off'}</div>
                                   <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
                                 </div>
 

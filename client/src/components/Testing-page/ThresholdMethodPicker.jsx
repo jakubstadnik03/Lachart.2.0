@@ -231,6 +231,11 @@ export default function ThresholdMethodPicker({
   onPinMethod = null,
   onClearOverride = null,
   defaultExpanded = false,
+  // `compact` (2026-05): collapse the fat 80px header strip into a single
+  // chip-sized button that sits inline with the other "Pre-test training"
+  // / "Test coach" toggles. Used by LactateCurveCalculator on test-detail
+  // view so the row of toggles takes one line instead of three.
+  compact = false,
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [infoMethod, setInfoMethod] = useState(null);
@@ -385,31 +390,71 @@ export default function ThresholdMethodPicker({
   const activeLabel = activeRow ? activeRow.label : 'Ensemble (default)';
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-      {/* Collapsed header — always visible. Tap to expand. */}
-      <button
-        type="button"
-        onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-gray-900">
-            Threshold methods
-            <span className="ml-2 text-[11px] font-medium text-gray-500">
-              · active: <span className="font-semibold text-gray-700">{activeLabel}</span>
-            </span>
+    <div className={
+      compact
+        // In compact mode we drop the card chrome around the header (the
+        // parent already provides the row container). Body still gets the
+        // card look when expanded, see below.
+        ? ''
+        : 'bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden'
+    }>
+      {compact ? (
+        // Chip-sized toggle — matches the visual weight of the sibling
+        // "Pre-test training" / "Test coach" chips so they line up cleanly.
+        <button
+          type="button"
+          onClick={() => setExpanded((x) => !x)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+            expanded
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+          }`}
+          title={`Active method: ${activeLabel}`}
+        >
+          <svg className={`w-3 h-3 transition-transform ${expanded ? '' : '-rotate-90'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Threshold methods
+        </button>
+      ) : (
+        /* Original fat header — always visible. Tap to expand. */
+        <button
+          type="button"
+          onClick={() => setExpanded((x) => !x)}
+          className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3 hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-gray-900">
+              Threshold methods
+              <span className="ml-2 text-[11px] font-medium text-gray-500">
+                · active: <span className="font-semibold text-gray-700">{activeLabel}</span>
+              </span>
+            </div>
+            <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
+              All candidates LaChart computes from this test. Tap to compare and optionally pin one.
+            </div>
           </div>
-          <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-            All candidates LaChart computes from this test. Tap to compare and optionally pin one.
-          </div>
-        </div>
-        <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-          <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
+          <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
 
       {expanded && (
-        <div className="px-4 sm:px-5 pb-4">
+        <div className={
+          compact
+            // In compact mode the outer wrapper is bare, so the body needs
+            // its own card chrome. Adds a small top margin so it visually
+            // detaches from the chip row above. Matches the "Pre-test
+            // training" / "Test coach" body styling.
+            ? 'mt-2 bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5'
+            : 'px-4 sm:px-5 pb-4'
+        }>
+          {compact && (
+            <div className="text-[11px] text-gray-500 mb-3 leading-snug">
+              All candidates LaChart computes from this test · active: <strong className="text-gray-700">{activeLabel}</strong>. Tap a row to compare and optionally pin one.
+            </div>
+          )}
           {/* Header row */}
           <div className="hidden sm:grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 px-2 mb-1 mt-2">
             <div className="col-span-1">Pick</div>

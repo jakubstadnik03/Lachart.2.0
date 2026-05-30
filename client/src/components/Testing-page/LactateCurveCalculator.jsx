@@ -2915,55 +2915,50 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           </div>
         </div>
 
-        {/* Multi-method threshold picker — shows every LT1/LT2 candidate
-            LaChart computes internally, with radio-button to pin a specific
-            method (writes through the same thresholdOverrides mechanism
-            the manual panel below uses). Collapsed by default to keep
-            the test detail tidy; tap to expand and audit individual
-            methods. */}
-        {!demoMode && (
-          <div className="mt-4">
-            <ThresholdMethodPicker
-              mockData={mockData}
-              thresholds={thresholds}
-              currentOverride={ltOverrides}
-              defaultExpanded={false}
-              onPinMethod={async ({ LTP1, LTP2, LTP1_lactate, LTP2_lactate }) => {
-                const testId = mockData?._id;
-                if (!testId) return;
-                const overrides = { LTP1, LTP2, LTP1_lactate, LTP2_lactate };
-                try {
-                  setSavingLtOverride(true);
-                  await api.put(`/test/${testId}`, { thresholdOverrides: overrides });
-                  setLtOverrides(overrides);
-                  setLtEditValues({
-                    LTP1: LTP1 != null ? String(Math.round(LTP1)) : '',
-                    LTP2: LTP2 != null ? String(Math.round(LTP2)) : '',
-                  });
-                  setLtEditLactates({
-                    LTP1: LTP1_lactate != null ? LTP1_lactate.toFixed(2) : '',
-                    LTP2: LTP2_lactate != null ? LTP2_lactate.toFixed(2) : '',
-                  });
-                  setLtOverrideStatus({ type: 'success', msg: 'Pinned to method' });
-                  setTimeout(() => setLtOverrideStatus(null), 3000);
-                } catch (e) {
-                  setLtOverrideStatus({ type: 'error', msg: e?.response?.data?.error || 'Save failed' });
-                } finally {
-                  setSavingLtOverride(false);
-                }
-              }}
-              onClearOverride={handleClearLtOverrides}
-            />
-          </div>
-        )}
-
-        {/* ── Pre-test training + Test coach ─────────────────────────────────
-             Both panels are collapsible and sit side-by-side on desktop (lg+). */}
+        {/* ── Compact toggle row (2026-05) ─────────────────────────────────
+             Threshold methods, Pre-test training and Test coach used to live
+             in three separate stacked rows that together ate ~200 px of
+             vertical space above the curve. Honza's feedback: collapse them
+             onto a single chip row. Each panel renders below the row when
+             expanded; multiple can be open at once so users can cross-
+             reference (e.g. pre-test training vs threshold methods). */}
         {!demoMode && (
           <div className="mt-4 space-y-3">
 
-            {/* Toggle row */}
+            {/* Single row of three chips */}
             <div className="flex items-center gap-2 flex-wrap">
+              <ThresholdMethodPicker
+                mockData={mockData}
+                thresholds={thresholds}
+                currentOverride={ltOverrides}
+                defaultExpanded={false}
+                compact
+                onPinMethod={async ({ LTP1, LTP2, LTP1_lactate, LTP2_lactate }) => {
+                  const testId = mockData?._id;
+                  if (!testId) return;
+                  const overrides = { LTP1, LTP2, LTP1_lactate, LTP2_lactate };
+                  try {
+                    setSavingLtOverride(true);
+                    await api.put(`/test/${testId}`, { thresholdOverrides: overrides });
+                    setLtOverrides(overrides);
+                    setLtEditValues({
+                      LTP1: LTP1 != null ? String(Math.round(LTP1)) : '',
+                      LTP2: LTP2 != null ? String(Math.round(LTP2)) : '',
+                    });
+                    setLtEditLactates({
+                      LTP1: LTP1_lactate != null ? LTP1_lactate.toFixed(2) : '',
+                      LTP2: LTP2_lactate != null ? LTP2_lactate.toFixed(2) : '',
+                    });
+                    setLtOverrideStatus({ type: 'success', msg: 'Pinned to method' });
+                    setTimeout(() => setLtOverrideStatus(null), 3000);
+                  } catch (e) {
+                    setLtOverrideStatus({ type: 'error', msg: e?.response?.data?.error || 'Save failed' });
+                  } finally {
+                    setSavingLtOverride(false);
+                  }
+                }}
+                onClearOverride={handleClearLtOverrides}
+              />
               <button
                 type="button"
                 onClick={() => setShowPreTest(v => !v)}
@@ -2994,7 +2989,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               </button>
             </div>
 
-            {/* Content — side-by-side on lg when both visible */}
+            {/* Pre-test training + Test coach bodies — side-by-side on lg
+                when both visible. Threshold methods body renders itself
+                directly under its chip (handled inside ThresholdMethodPicker
+                via the `compact` prop), so it's not in this grid. */}
             {(showPreTest || showCoach) && (
               <div className={`grid gap-3 ${showPreTest && showCoach ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
                 {showPreTest && (

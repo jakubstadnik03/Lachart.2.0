@@ -151,16 +151,58 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     window.requestAnimationFrame(() => safeResizeChart());
   }, [isMobile, mockData?.results?.length, safeResizeChart]);
   
-  // Get unit system and input mode from user profile, mockData, or default to metric/pace.
-  // User's live trainingPreferences.paceDisplay takes priority so switching the setting
-  // immediately updates every chart without re-saving each test.
+  // Get unit system and input mode from user profile, mockData, or default
+  // to metric/pace. User's live trainingPreferences.paceDisplay takes
+  // priority for DISPLAY so switching the setting immediately updates every
+  // chart without re-saving each test.
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
+  // displayMode = how the user wants to SEE values (pace vs speed)
   const inputMode = (() => {
     const pd = user?.trainingPreferences?.paceDisplay;
     if (pd === 'kmh')    return 'speed';
     if (pd === 'minpkm') return 'pace';
     return mockData?.inputMode || 'pace';
   })();
+
+  // ── Critical separation (2026-05) ────────────────────────────────────────
+  // `inputMode` above tells us how the user wants the axis LABELED, but it
+  // says nothing about how the underlying `power` numbers are STORED. A test
+  // recorded in Pace mode keeps pace-seconds (300, 290, …); a test recorded
+  // in Speed mode keeps km/h (12.0, 13.0, …). If we don't distinguish, the
+  // two combinations that involve a mismatch produce the famous "300 km/h"
+  // bug Honza saw — pace-second data labelled as raw km/h.
+  //
+  // `dataIsSpeed` = the underlying storage mode of THIS test. We trust the
+  // saved mockData.inputMode flag (set by TestingForm when the test was
+  // entered). Older tests without the flag fall through to 'pace' which
+  // matches the original behaviour of the form.
+  const dataIsSpeed = mockData?.inputMode === 'speed';
+
+  // Always return the X value as a numeric speed (km/h or mph), regardless
+  // of how it's stored. Two paths:
+  //   1. dataIsSpeed → power IS the speed number (no maths needed)
+  //   2. dataIsPace → power is sec/km (or sec/100m for swim); convert.
+  const powerAsSpeed = (power) => {
+    if (dataIsSpeed) {
+      const n = Number(power);
+      return Number.isFinite(n) ? n : 0;
+    }
+    return convertSecondsToSpeed(power, unitSystem, mockData.sport);
+  };
+
+  // Always return the X value as an MM:SS pace string, regardless of storage.
+  // Symmetric counterpart to powerAsSpeed — when the test was recorded in
+  // Speed mode but the user wants Pace display (or vice versa), we still
+  // need a coherent label. Converts km/h → sec/km (or sec/100m for swim)
+  // before formatting.
+  const powerAsPaceStr = (power) => {
+    if (!dataIsSpeed) return convertSecondsToPace(power);
+    let kmh = Number(power);
+    if (!Number.isFinite(kmh) || kmh <= 0) return '0:00';
+    if (unitSystem === 'imperial') kmh = kmh * 1.609344; // mph → km/h
+    const sec = mockData.sport === 'swim' ? 360 / kmh : 3600 / kmh;
+    return convertSecondsToPace(sec);
+  };
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (
@@ -407,10 +449,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           return `${power}W`;
         } else if (mockData.sport === 'run' || mockData.sport === 'swim') {
           if (inputMode === 'pace') {
-            return convertSecondsToPace(power);
+            // Use powerAsPaceStr so we render correctly even when the test
+            // was stored as Speed (km/h) but the user wants Pace display.
+            return powerAsPaceStr(power);
           } else {
             // Speed mode - convert seconds to speed
-            const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
+            const speed = powerAsSpeed(power);
             const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
             return `${speed.toFixed(1)} ${unit}`;
           }
@@ -521,10 +565,10 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                 return `${label}: ${valueStr} ${valueUnit} | ${power}W`;
               } else if (mockData.sport === 'run' || mockData.sport === 'swim') {
                 if (inputMode === 'pace') {
-                  const pace = convertSecondsToPace(power);
+                  const pace = powerAsPaceStr(power);
                   return `${label}: ${valueStr} ${valueUnit} | ${pace}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
+                  const speed = powerAsSpeed(power);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return `${label}: ${valueStr} ${valueUnit} | ${speed.toFixed(1)} ${unit}`;
                 }
@@ -655,27 +699,27 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                 return isMobile ? `${power}` : `${power}W`;
               } else if (mockData.sport === 'swim') {
                 if (inputMode === 'pace') {
-                  const minutes = Math.floor(power / 60);
-                  const seconds = Math.floor(power % 60);
-                  const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                  // powerAsPaceStr handles both stored modes — for
+                  // speed-stored data it converts km/h → sec/100m first
+                  // instead of treating the km/h number as seconds.
+                  const timeStr = powerAsPaceStr(power);
                   if (isMobile) return timeStr;
                   const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
                   return `${timeStr}${unit}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
+                  const speed = powerAsSpeed(power);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return isMobile ? `${speed.toFixed(1)}` : `${speed.toFixed(1)} ${unit}`;
                 }
               } else {
                 if (inputMode === 'pace') {
-                  const minutes = Math.floor(power / 60);
-                  const seconds = Math.floor(power % 60);
-                  const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                  // See swim branch above for why we use powerAsPaceStr.
+                  const timeStr = powerAsPaceStr(power);
                   if (isMobile) return timeStr;
                   const unit = unitSystem === 'imperial' ? '/mile' : '/km';
                   return `${timeStr}${unit}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
+                  const speed = powerAsSpeed(power);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return isMobile ? `${speed.toFixed(1)}` : `${speed.toFixed(1)} ${unit}`;
                 }

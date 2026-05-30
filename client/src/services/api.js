@@ -1342,6 +1342,18 @@ export const autoSyncStravaActivities = async ({ force = false } = {}) => {
     });
     // Clear lockout on success
     localStorage.removeItem(unlockKey);
+    // Broadcast that fresh Strava data is on disk so any open Training
+    // Calendar / activity-list view refetches without the user having to
+    // hard-reload. Always fired (even when imported=0), since the server
+    // also marks "updated" rows the calendar should refresh from. Carries
+    // the import counts as detail so listeners can show a quick toast.
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('strava:synced', {
+          detail: { imported: data?.imported || 0, updated: data?.updated || 0, source: 'manual' },
+        }));
+      }
+    } catch (_) { /* dispatch is best-effort, never block return */ }
     return data; // { imported, updated }
   } catch (error) {
     // Handle 429 (Too Many Requests) gracefully — honour Retry-After when
