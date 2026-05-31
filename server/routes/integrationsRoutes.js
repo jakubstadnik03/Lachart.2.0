@@ -159,6 +159,23 @@ const activitiesCacheMiddleware = (req, res, next) => {
   next();
 };
 
+// Bust every cached `/activities` response for a single user. Called from
+// every mutation endpoint (title edit, category, lactate update, delete)
+// so the next GET /activities returns fresh data immediately instead of
+// the 2-min stale snapshot. Honza reported (2026-05): "v kalendáři jsem mu
+// změnil titel ... ale v Training History ten trénink nevidím" — exactly
+// the failure mode this guards against.
+function invalidateActivitiesCacheForUser(userId) {
+  if (!userId) return;
+  const uid = String(userId);
+  // The cache key format is `${method}:${path}:${userId}:${query}` — there's
+  // no public "delete by prefix" so we walk every key and drop matches.
+  const keys = activitiesCache.keys();
+  for (const key of keys) {
+    if (key.includes(`:${uid}:`)) activitiesCache.del(key);
+  }
+}
+
 // Produkční API URL pro Strava redirect (callback musí směřovat na backend)
 const getStravaRedirectBase = () => {
   if (process.env.STRAVA_REDIRECT_URI) return process.env.STRAVA_REDIRECT_URI;
@@ -921,24 +938,36 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null, lates
     activity: activityDoc || null,
   }).catch((e) => console.error('[Strava sync push]', e.message || e));
 
-  // In-app notification (bell) — show sport + distance when available.
+  // In-app notification (bell) — when we have the full activity doc, use its
+  // NAME as the title (e.g. "Ranní plavání") and put the sport + distance in
+  // the body so the user can scan the bell at a glance and know what's
+  // waiting. When we only know "N new activities were imported" (batch case
+  // from polling) we fall back to a generic title.
   const { sendNotification } = require('../utils/notificationHelper');
+  let title = 'New training synced';
   let body;
+  const sportLabel = normalizeSportForNotif(latestSport || activityDoc?.sport);
   if (n === 1 && activityDoc) {
     const dist = activityDoc.distance >= 1000
       ? `${(activityDoc.distance / 1000).toFixed(1)} km`
       : activityDoc.distance > 0 ? `${Math.round(activityDoc.distance)} m` : null;
-    const sport = normalizeSportForNotif(activityDoc.sport) || 'activity';
-    body = dist ? `New ${sport} logged — ${dist}.` : `New ${sport} logged.`;
+    // Activity name when present — fall back to "New {sport} synced" so we
+    // never produce an empty / "Untitled" title.
+    const actName = activityDoc.name && String(activityDoc.name).trim();
+    title = actName || `New ${sportLabel || 'activity'} synced`;
+    const sport = sportLabel || 'activity';
+    body = dist
+      ? `${sport.charAt(0).toUpperCase() + sport.slice(1)} · ${dist} · Tap to add lactate`
+      : `${sport.charAt(0).toUpperCase() + sport.slice(1)} · Tap to add lactate`;
   } else {
     body = n === 1 ? '1 new activity imported from Strava.' : `${n} new activities imported from Strava.`;
   }
   sendNotification(String(userId), {
     type: 'strava_import',
-    title: 'New training synced',
+    title,
     body,
     resourceType: 'strava',
-    sport: normalizeSportForNotif(latestSport),
+    sport: sportLabel,
     skipPush: true,
     ...(latestStravaId ? { resourceId: String(latestStravaId) } : {}),
   }).catch((e) => console.error('[Strava sync notification]', e.message || e));
@@ -949,12 +978,18 @@ function notifyStravaImportedPush(userId, imported, latestStravaId = null, lates
 // updates an activity; we fetch it and store it immediately so users don't
 // have to wait for the periodic auto-sync tick.
 
-async function fetchAndSaveStravaActivity(user, stravaActivityId) {
+async function fetchAndSaveStravaActivity(user, stravaActivityId, opts = {}) {
+  const { bypassBudget = false } = opts;
   const token = await getValidStravaToken(user);
   if (!token) throw new Error('No valid Strava token');
   // Wait for a budget slot — a single morning upload burst from many users
   // used to fire ~300 of these in 15 min and tip us over Strava's limit.
-  await stravaBudget.take();
+  // Webhook calls pass `bypassBudget: true` because (a) they're 1 request
+  // each, (b) Strava itself will return 429 if we're truly over, and (c) a
+  // stuck conservative estimate was silently dropping real-time syncs even
+  // though the actual quota was fine. Counters still increment so the next
+  // non-bypass call sees the up-to-date estimate.
+  await stravaBudget.take({ bypass: bypassBudget });
   const resp = await axios.get(
     `https://www.strava.com/api/v3/activities/${stravaActivityId}`,
     { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
@@ -1043,7 +1078,7 @@ async function prewarmStravaActivityExtras(user, stravaActivityId, token) {
   //         — tag each lap with its intervalType in the same write.
   //    Best-effort: a failure in lap typing must not stop the prewarm.
   try {
-    await stravaBudget.take();
+    await stravaBudget.take({ bypass: true });
     const lapsResp = await axios.get(
       `https://www.strava.com/api/v3/activities/${stravaActivityId}/laps`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 },
@@ -1093,7 +1128,7 @@ async function prewarmStravaActivityExtras(user, stravaActivityId, token) {
   // the next manual user-open will retry lazily.
   const tryStreams = async () => {
     try {
-      const streams = await fetchStravaActivityStreams(token, stravaActivityId);
+      const streams = await fetchStravaActivityStreams(token, stravaActivityId, { bypass: true });
       if (streams && Object.keys(streams).length > 0) {
         await StravaStream.updateOne(
           { userId: user._id, stravaId: stravaActivityId },
@@ -1180,7 +1215,7 @@ router.post('/strava/webhook', async (req, res) => {
     }
 
     if (aspect_type === 'create' || aspect_type === 'update') {
-      const { activity, isNew } = await fetchAndSaveStravaActivity(webhookUser, object_id);
+      const { activity, isNew } = await fetchAndSaveStravaActivity(webhookUser, object_id, { bypassBudget: true });
       // Update lastSyncDate so the scheduler doesn't redundantly re-fetch this
       // activity on its next tick (the webhook already handled it).
       // Also stamp webhookLastEventAt so the UI / /strava/status endpoint can
@@ -1262,6 +1297,25 @@ router.post('/strava/webhook/subscribe', verifyToken, async (req, res) => {
   } catch (e) {
     console.error('[StravaWebhook] subscribe error:', e.response?.data || e.message);
     res.status(500).json({ error: 'subscribe_failed', details: e.response?.data || e.message });
+  }
+});
+
+// POST /api/integrations/strava/webhook/rebootstrap — re-run the boot-time
+// bootstrap without restarting the Node process. Handy after fixing an env
+// var on Render (SERVER_PUBLIC_URL etc.) when the initial bootstrap landed
+// in `dead` state — you'd otherwise have to wait for the next deploy.
+router.post('/strava/webhook/rebootstrap', verifyToken, async (req, res) => {
+  try {
+    const u = await User.findById(req.user.userId).select('admin role').lean();
+    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { bootstrapStravaWebhook, getWebhookStatus } = require('../services/stravaWebhookBootstrap');
+    await bootstrapStravaWebhook();
+    res.json({ ok: true, status: getWebhookStatus() });
+  } catch (e) {
+    console.error('[StravaWebhook] rebootstrap error:', e.message);
+    res.status(500).json({ error: 'rebootstrap_failed', message: e.message });
   }
 });
 
@@ -3270,6 +3324,10 @@ router.delete('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Activity not found' });
     }
 
+    // Bust /activities list cache so the deleted activity disappears
+    // from the calendar / training-history view immediately.
+    invalidateActivitiesCacheForUser(targetUserId);
+
     // Bust the in-process detail cache so a subsequent GET doesn't
     // resurrect the doc from memory.
     invalidateStravaActivityCache(targetUserId, stravaId);
@@ -3902,6 +3960,11 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     }
 
     await activity.save();
+    // Bust the 2-min server cache so the next /activities GET returns the
+    // updated title/category immediately instead of the stale snapshot.
+    // Without this, Training History (which re-fetches /activities) won't
+    // see the new titleManual for up to 2 minutes after the edit.
+    invalidateActivitiesCacheForUser(user._id);
 
     // Update Training records with the same title
     if (title !== undefined && title && typeof title === 'string' && title.trim()) {
@@ -3992,6 +4055,10 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
 
     await activity.save();
     console.log('Activity saved. Laps with lactate:', activity.laps?.map((lap, idx) => ({ idx, lactate: lap.lactate })).filter(l => l.lactate !== null && l.lactate !== undefined));
+    // Bust /activities cache so the activity-with-new-lactate shows up in
+    // Training History / "ready for lactate" / wherever activities are
+    // listed, without waiting 2 minutes for the cache to expire.
+    invalidateActivitiesCacheForUser(user._id);
 
     // Sync to Training model - sync all intervals (not just those with lactate)
     try {
@@ -4428,6 +4495,7 @@ router.delete('/strava/activities/:id/laps/:lapIndex', verifyToken, async (req, 
     });
 
     await activity.save();
+    invalidateActivitiesCacheForUser(user._id);
 
     res.json({
       success: true,

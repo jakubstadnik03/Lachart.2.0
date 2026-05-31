@@ -108,7 +108,7 @@ function getStravaSyncHealth(status) {
       description:
         'The server is registered with Strava, but no activity event has arrived yet. ' +
         'That is normal until you save a new workout on Strava after connecting. ' +
-        'Until then, background sync runs about every 5 minutes (or when you open the app). ' +
+        'Until then, background sync runs about every 10 minutes (or when you open the app). ' +
         'Use Sync now for an immediate pull.',
     };
   }
@@ -116,7 +116,7 @@ function getStravaSyncHealth(status) {
     tone: 'amber',
     label: 'Polling fallback active',
     description:
-      'Real-time webhook could not be confirmed. New activities are checked in the background every ~5 minutes, or when you open the app. Use Sync now if you need them immediately.',
+      'Real-time webhook could not be confirmed. New activities are checked in the background every ~10 minutes, or when you open the app. Use Sync now if you need them immediately.',
   };
 }
 
@@ -3152,7 +3152,7 @@ const SettingsPage = () => {
                                 <div className={`grid ${isMobile ? 'grid-cols-1 gap-1' : 'grid-cols-2 gap-2'} ${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
                                   <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
                                   <div><span className="font-semibold">Last sync:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}</div>
-                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 5 min)' : 'off'}</div>
+                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 10 min)' : 'off'}</div>
                                   <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
                                 </div>
 
@@ -3168,6 +3168,13 @@ const SettingsPage = () => {
                                         Set `SERVER_PUBLIC_URL` or `STRAVA_WEBHOOK_CALLBACK_URL` on the backend and restart the server.
                                       </div>
                                     )}
+                                    <button
+                                      onClick={handleResetStravaBudget}
+                                      title="Reset the server's Strava rate-limit estimator. Use when webhooks fail with 'Strava local budget exhausted'."
+                                      className={`mt-1.5 ${isMobile ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-[11px]'} rounded-md bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-semibold transition-colors`}
+                                    >
+                                      Reset budget
+                                    </button>
                                   </div>
                                 )}
                               </div>

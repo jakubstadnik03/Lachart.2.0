@@ -146,18 +146,23 @@ function reconcileFromHeaders(headers = {}) {
   if (!headers || typeof headers !== 'object') return;
   // Header names are case-insensitive — axios normalises to lowercase.
   const readUsage = headers['x-readratelimit-usage'] || headers['X-ReadRateLimit-Usage'];
-  const overallUsage = headers['x-ratelimit-usage'] || headers['X-RateLimit-Usage'];
-  const raw = readUsage || overallUsage;
-  if (!raw || typeof raw !== 'string') return;
-  const parts = raw.split(',').map((s) => Number(s.trim()));
+  // Never fall back to X-RateLimit-Usage (overall 600/15m bucket). Snapping that
+  // into our 90-cap read estimator falsely marks the budget exhausted and breaks
+  // webhooks + scheduler for the rest of the window.
+  if (!readUsage || typeof readUsage !== 'string') return;
+  const parts = readUsage.split(',').map((s) => Number(s.trim()));
   if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return;
   const [stravaWindowUsed, stravaDayUsed] = parts;
   rollWindowsIfDue();
   // Snap UP if Strava knows about more usage than we counted. Never snap DOWN
   // — our counter might have just bumped for a request still in flight that
-  // Strava hasn't logged yet.
-  if (stravaWindowUsed > windowUsed) windowUsed = stravaWindowUsed;
-  if (stravaDayUsed > dayUsed) dayUsed = stravaDayUsed;
+  // Strava hasn't logged yet. Cap to our local limits (Strava read cap is 200).
+  if (stravaWindowUsed > windowUsed) {
+    windowUsed = Math.min(stravaWindowUsed, MAX_PER_WINDOW);
+  }
+  if (stravaDayUsed > dayUsed) {
+    dayUsed = Math.min(stravaDayUsed, MAX_PER_DAY);
+  }
 }
 
 /** Snapshot for /strava/status diagnostics. */

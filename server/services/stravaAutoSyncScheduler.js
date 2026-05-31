@@ -7,6 +7,8 @@ const {
   STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS,
   STRAVA_AUTO_SYNC_INITIAL_TICK_MS,
   STRAVA_AUTO_SYNC_BUDGET_SKIP_PCT,
+  STRAVA_AUTO_SYNC_WEBHOOK_RESERVE,
+  STRAVA_AUTO_SYNC_CALLS_PER_USER,
 } = require('../config/stravaAutoSyncConfig');
 
 /**
@@ -54,10 +56,26 @@ function startStravaAutoSyncScheduler() {
         });
         return;
       }
+      const headroom = Math.max(0, snap.windowLimit - snap.windowUsed);
+      const dynamicBatch = Math.min(
+        batchSize,
+        Math.floor(Math.max(0, headroom - STRAVA_AUTO_SYNC_WEBHOOK_RESERVE) / STRAVA_AUTO_SYNC_CALLS_PER_USER),
+      );
+      if (dynamicBatch < 1) {
+        console.log(`[StravaAutoSyncScheduler] Skipping tick — headroom ${headroom} (reserve ${STRAVA_AUTO_SYNC_WEBHOOK_RESERVE})`);
+        recordStravaSyncLogSafe({
+          source: 'scheduler',
+          status: 'skipped',
+          message: 'Scheduler skipped — budget reserved for webhooks',
+          budgetSnapshot: snap,
+        });
+        return;
+      }
       console.log('[StravaAutoSyncScheduler] Starting scheduled sync...', {
         windowBudget: `${snap.windowUsed}/${snap.windowLimit}`,
+        dynamicBatch,
       });
-      const result = await syncStravaForAllUsers({ batchSize, delayBetweenUsers });
+      const result = await syncStravaForAllUsers({ batchSize: dynamicBatch, delayBetweenUsers });
       console.log('[StravaAutoSyncScheduler] Scheduled sync completed:', {
         total: result.total,
         synced: result.synced,
