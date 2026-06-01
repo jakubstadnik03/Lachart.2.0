@@ -469,10 +469,23 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             })}
           </div>
 
-          {/* ─── LT2 Trend — same component as PC dashboard, sport-synced. ─── */}
-          <div style={{ ...cardEntry(2), ...snap }}>
-            <LT2TrendSparkline tests={tests} sport={selectedSport} />
-          </div>
+          {/* ─── LT2 Trend — same component as PC dashboard, sport-synced. ───
+              Hidden when the athlete has fewer than 2 tests of the currently
+              selected sport — a single-point "trend" reads as broken UX, and
+              the empty-state copy ("Enter more tests…") added vertical noise
+              for new users who only have one test logged. */}
+          {(() => {
+            const sportTestCount = (Array.isArray(tests) ? tests : []).filter(t => {
+              const s = String(t?.sport || '').toLowerCase();
+              return selectedSport === 'all' ? true : s === selectedSport;
+            }).length;
+            if (sportTestCount < 2) return null;
+            return (
+              <div style={{ ...cardEntry(2), ...snap }}>
+                <LT2TrendSparkline tests={tests} sport={selectedSport} />
+              </div>
+            );
+          })()}
 
           {/* ─── Selected test (top) — shows curve + KPIs when one is picked ─── */}
           {selected && selectedTh && (

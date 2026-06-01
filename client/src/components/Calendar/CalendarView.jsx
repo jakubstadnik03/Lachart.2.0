@@ -2,6 +2,8 @@ import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useR
 import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
+import TimeInZonesBar from '../training/TimeInZonesBar';
+import ActivityShareSheet from '../sharing/ActivityShareSheet';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -678,7 +680,26 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // selected bar gets more breathing room. Threshold = 0 means zoom always
   // activates on selection. On deselect the chart snaps back to full-width.
   const ZOOM_THRESHOLD = 0;
-  const MIN_BAR_PX     = 36; // px per lap when zoomed — bigger = more focused
+  // Target: when zoomed, roughly TARGET_VISIBLE_LAPS show on screen at
+  // once — wide enough to read the focused lap clearly, narrow enough to
+  // give the neighbours context. Honza's feedback (2026-05): when a
+  // 5×10min workout had one short 0:40 reset lap alongside a 24-minute
+  // endurance block, the old "MIN_BAR_PX × longest/shortest" formula made
+  // the container so wide that only ONE lap was visible after zoom. New
+  // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
+  // of the viewport, with capped weights so a single huge lap can't
+  // monopolise the row.
+  const TARGET_VISIBLE_LAPS = 5;
+  // Bar widths are STRICTLY proportional to weight (distance for swim/run,
+  // duration for bike). A 2-km lap renders 4× as wide as a 500-m lap, no
+  // capping. Honza's feedback (2026-05): "vždy at je to poměrově prostě"
+  // — capping made dominant endurance laps fit a bit better but it broke
+  // the "scale read" of the chart for swim sets where everyone expects
+  // each interval bar to be proportional to actual distance.
+  //
+  // When a single lap really is dominant (e.g. a 4-hour ride with one
+  // 1-min sprint), it still gets scrolled into view via the zoom logic
+  // below — just no longer compressed to a fake size.
 
   const entries = laps.map((lap) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -704,16 +725,28 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // again (proportionally), no scrolling needed.
   const isZoomed = entries.length > ZOOM_THRESHOLD && selectedLap != null;
 
-  // When zoomed, scale the container so that bars remain proportional to their
-  // weight (distance / duration) while giving the shortest non-pause lap at
-  // least MIN_BAR_PX pixels of width.
-  const totalWeight    = entries.reduce((a, e) => a + e.weight, 0) || 1;
-  const minNonPauseW   = Math.min(...entries.filter(e => !e.isPause && e.weight > 0).map(e => e.weight)) || 1;
-  // Container width = scale factor × MIN_BAR_PX, where scale factor = totalWeight / minLapWeight.
-  // This guarantees proportionality: every bar's flex-grow (= weight) / totalWeight × containerW
-  // gives the shortest bar exactly MIN_BAR_PX and longer bars proportionally more.
-  const zoomedTotalW   = isZoomed
-    ? Math.round((totalWeight / minNonPauseW) * MIN_BAR_PX)
+  // ── Strict-proportional weights (2026-05) ─────────────────────────────────
+  // No capping: bar widths are 1:1 proportional to weight (distance for
+  // swim/run, duration for bike). `capWeight` is kept as an identity
+  // function so scroll-to-lap math reads from the same helper and stays
+  // self-consistent if we ever re-introduce capping in the future.
+  const capWeight   = (w) => Math.max(w, 1);
+  const totalWeight = entries.reduce((a, e) => a + capWeight(e.weight), 0) || 1;
+
+  // ── Zoom-width calculation ────────────────────────────────────────────────
+  // Old formula: container = (totalWeight / shortestLapWeight) × MIN_BAR_PX
+  // → broke badly when shortestLapWeight was tiny (a rest or stop lap),
+  //   producing a container 30-60× wider than the viewport so only one
+  //   bar fit at a time after zoom.
+  // New formula: viewport-driven. Sized so the average non-pause lap takes
+  // 1 / TARGET_VISIBLE_LAPS of the visible width. Falls back to 360 px (a
+  // typical phone width) when we don't have a measured container yet —
+  // the auto-scroll useEffect below re-measures once mounted.
+  const viewportEstimate = Math.max(chartScrollRef?.current?.clientWidth || 360, 280);
+  // entries.length / TARGET_VISIBLE_LAPS = number of viewport-widths to
+  // span the whole row. Multiply by viewport to get total container width.
+  const zoomedTotalW = isZoomed
+    ? Math.round(Math.max(1, entries.length / TARGET_VISIBLE_LAPS) * viewportEstimate)
     : 0;
 
   // Auto-scroll: center the selected lap when zoomed.
@@ -727,8 +760,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     }
     const containerW = container.clientWidth;
     const innerW     = Math.max(zoomedTotalW, containerW);
-    const cumW       = entries.slice(0, selectedLap).reduce((a, e) => a + e.weight, 0);
-    const barCenterX = (cumW + entries[selectedLap].weight / 2) / totalWeight * innerW;
+    // Use the CAPPED weight here too — layout flex uses capWeight() per bar,
+    // so a cumulative-sum of raw weights would land the scroll on the wrong
+    // pixel for any row where capping kicked in. Both numerator and
+    // denominator must come from the same scale.
+    const cumW       = entries.slice(0, selectedLap).reduce((a, e) => a + capWeight(e.weight), 0);
+    const barCenterX = (cumW + capWeight(entries[selectedLap].weight) / 2) / totalWeight * innerW;
     container.scrollTo({ left: Math.max(0, barCenterX - containerW / 2), behavior: 'smooth' });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLap, isZoomed]);
@@ -768,42 +805,56 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const q1 = sorted[Math.floor(sorted.length * 0.25)];
     const q3 = sorted[Math.floor(sorted.length * 0.75)];
     const iqr = q3 - q1;
-    // Tukey fences — 1.5× IQR is standard; for pace (inverted) the slow
-    // outliers are at the HIGH end, for power (non-inverted) at the LOW end.
-    const lo = q1 - 1.5 * iqr;
-    const hi = q3 + 1.5 * iqr;
+    // Tighter Tukey fence (2026-05): standard is 1.5× IQR but for swim
+    // step-test data and run tempo intervals that's too permissive — odd
+    // sprint laps and wall-touches sit just inside the fence, then drag
+    // the chart range out so the typical data cluster only occupies the
+    // middle 50 % of the chart. 1.0× IQR rejects them more aggressively,
+    // and the chart range below picks up the slack so they still appear
+    // (clamped to the chart edge).
+    const lo = q1 - 1.0 * iqr;
+    const hi = q3 + 1.0 * iqr;
     const filtered = scaleValues.filter(v => v >= lo && v <= hi);
     if (filtered.length >= 2) scaleValues = filtered;
   }
 
   const maxVal   = Math.max(...scaleValues);
   const minVal   = Math.min(...scaleValues);
-  // Centre the Y-axis around the average of the scale values so the "typical"
-  // bar sits in the middle of the chart and differences between laps are easy
-  // to read. We compute the max deviation from the average, add 30 % padding,
-  // and use that as a symmetric spread on both sides.
-  //   e.g. 8×800 m at 3:06–3:12/km  → avg ≈ 3:09, spread ≈ ±15 s
-  //        chart range 2:54 – 3:24  → all bars clearly differentiated
-  // Y-axis is fixed regardless of selection — selecting a lap never changes the scale.
+  // Y-axis range — centre the chart around the AVERAGE of the filtered
+  // values so the "typical" bar sits at the middle line and the spread
+  // above/below is visible at a glance. Range is symmetric around the
+  // centre, sized from the actual max-deviation in the data plus a 40 %
+  // padding factor (gives bars some headroom without leaving the top of
+  // the chart visibly empty).
+  //
+  // Tuning history (2026-05):
+  //   - Original: `spread = max(IQR × 1.5, centre × 6%)` — too generous,
+  //     swim test ended up with chart range 1:11 ↔ 1:23 while real data
+  //     only covered 1:14–1:20. Honza: "nahoře byl nesmysl".
+  //   - First fix: anchored on filtered min/max + 15 % pad — too tight,
+  //     lost the centred-on-average feel. Honza: "chci větší range".
+  //   - Current: centre + max-deviation × 1.4 — keeps avg in the middle,
+  //     bars use ~70 % of the chart height, with ~15 % padding above and
+  //     below the actual data extremes for clean readability.
   let chartMin, chartMax;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
   } else {
-    const center = scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
-    const sorted = [...scaleValues].sort((a, b) => a - b);
-    let spread;
-    if (sorted.length >= 4) {
-      const q1 = sorted[Math.floor(sorted.length * 0.25)];
-      const q3 = sorted[Math.floor(sorted.length * 0.75)];
-      const iqr = q3 - q1;
-      spread = Math.max(iqr * 1.5, center * 0.06);
-    } else {
-      const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - center)));
-      spread = (maxDev || center * 0.06) * 1.2;
-    }
-    chartMin = Math.max(0, center - spread);
-    chartMax = center + spread;
+    const centre = scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
+    // Symmetric distance from centre that covers the farthest filtered bar.
+    const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - centre)));
+    // Range scales DIRECTLY with how variable the lap times are — no
+    // sport-specific floor. Honza's swim feedback (2026-05): "podle toho
+    // jak moc rozdílný jsou ty časy tech lapů". So a tight 1×400 m repeat
+    // set zooms close, while a mixed swim of sprints + cooldowns spreads
+    // the axis out automatically. Padding multiplier 1.5 = 50 % visual
+    // headroom beyond the most extreme bar. Tiny absolute floor (2 % of
+    // centre) so a near-zero-deviation cluster still shows a visible axis
+    // tick spacing instead of all bars touching the centre line.
+    const spread = Math.max(maxDev * 1.5, centre * 0.02);
+    chartMin = Math.max(0, centre - spread);
+    chartMax = centre + spread;
   }
   const range    = chartMax - chartMin || 1;
 
@@ -1041,7 +1092,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 barBg = color + alpha;
               }
 
-              const itemStyle = { flex: `${ent.weight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
+              // Use the CAPPED weight for layout so one giant lap can't push
+              // the rest of the row into a 2-pixel hairline. Raw `ent.weight`
+              // is still preserved for tooltips, scroll-to-lap math (above)
+              // and any downstream consumers that care about actual time/dist.
+              const layoutWeight = capWeight(ent.weight);
+              const itemStyle = { flex: `${layoutWeight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -1518,21 +1574,86 @@ function CompareContent({ merged, athleteId, onOpen }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLaps]);
 
+  // Title token-overlap helper: extracts meaningful words (≥3 chars, lowercased)
+  // so "5x10min LT2" and "5x10min LT2 power" share tokens {"5x10min","lt2"}.
+  // Drops short connectors ("a", "do", "on") that would otherwise inflate
+  // the overlap score for any two titles in the same language.
+  const titleTokens = (s) => new Set(
+    String(s || '').toLowerCase()
+      .replace(/[·\-_,/;:!?@#]/g, ' ')
+      .split(/\s+/)
+      .filter(t => t.length >= 3)
+  );
+
+  const currentTitle    = String(merged?.titleManual || merged?.title || merged?.name || '').trim();
+  const currentCategory = merged?.category || null;
+  const currentTokens   = useMemo(() => titleTokens(currentTitle), [currentTitle]);
+
   const similarityScore = useCallback((r) => {
+    let score = 0;
+
+    // ── Title match — strongest signal that this is the same workout.
+    //    Exact match weighted highest, substring next, then token overlap.
+    const rTitle = String(r.titleManual || r.title || r.name || '').trim();
+    if (currentTitle && rTitle) {
+      const a = currentTitle.toLowerCase();
+      const b = rTitle.toLowerCase();
+      if (a === b) {
+        score += 0.40;                                       // exact
+      } else if (a.includes(b) || b.includes(a)) {
+        score += 0.25;                                       // substring
+      } else if (currentTokens.size > 0) {
+        const rTok = titleTokens(rTitle);
+        let common = 0;
+        currentTokens.forEach(t => { if (rTok.has(t)) common += 1; });
+        const overlap = common / currentTokens.size;         // 0..1
+        if (overlap >= 0.5) score += 0.15 * overlap;         // ≥50% tokens shared
+      }
+    }
+
+    // ── Category match — second-strongest signal (e.g. both LT2 sessions).
+    if (currentCategory && r.category && currentCategory === r.category) {
+      score += 0.20;
+    }
+
+    // ── Duration similarity (down-weighted vs old formula: 0.60 → 0.15).
+    //    Two workouts can hit the same duration by coincidence; title +
+    //    category should beat it for ranking purposes.
     const dur = Number(r.duration || r.elapsed_time || r.totalElapsedTime || 0);
+    if (currentDurSec > 0 && dur > 0) {
+      const durScore = Math.max(0, 1 - Math.abs(currentDurSec - dur) / Math.max(currentDurSec, dur));
+      score += durScore * 0.15;
+    }
+
+    // ── Work-lap-count similarity (0.40 → 0.15).
     const laps = Array.isArray(r.laps) ? r.laps : [];
     const wlCount = laps.filter((l, i) => detectLapType(l, i, laps.length) === 'work').length;
-    // Duration score: 1 = identical, 0 = completely different (>2× off)
-    const durScore = currentDurSec > 0 && dur > 0
-      ? Math.max(0, 1 - Math.abs(currentDurSec - dur) / Math.max(currentDurSec, dur))
-      : 0.5;
-    // Work-lap-count score
-    const lapScore = currentWorkLapCount > 0 && wlCount > 0
-      ? Math.max(0, 1 - Math.abs(currentWorkLapCount - wlCount) / Math.max(currentWorkLapCount, wlCount))
-      : 0.5;
-    return (durScore * 0.6 + lapScore * 0.4);
+    if (currentWorkLapCount > 0 && wlCount > 0) {
+      const lapScore = Math.max(0, 1 - Math.abs(currentWorkLapCount - wlCount) / Math.max(currentWorkLapCount, wlCount));
+      score += lapScore * 0.15;
+    }
+
+    // ── Typical work-lap duration similarity (new). Two "5×10min" workouts
+    //    score higher than a "5×10min" + "10×5min" combo even though both
+    //    have 5 (or 10) work laps — captures the workout STRUCTURE.
+    if (currentWorkLapCount > 0 && wlCount > 0 && currentLaps.length > 0 && laps.length > 0) {
+      const avgDur = (arr) => {
+        const works = arr.filter((l, i) => detectLapType(l, i, arr.length) === 'work');
+        if (works.length === 0) return 0;
+        const sum = works.reduce((a, l) => a + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
+        return sum / works.length;
+      };
+      const myAvg = avgDur(currentLaps);
+      const rAvg  = avgDur(laps);
+      if (myAvg > 0 && rAvg > 0) {
+        const avgScore = Math.max(0, 1 - Math.abs(myAvg - rAvg) / Math.max(myAvg, rAvg));
+        score += avgScore * 0.10;
+      }
+    }
+
+    return score;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDurSec, currentWorkLapCount]);
+  }, [currentDurSec, currentWorkLapCount, currentTitle, currentCategory, currentTokens, currentLaps]);
 
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
@@ -2585,6 +2706,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   });
   const [savingPlan, setSavingPlan] = useState(false);
 
+  // Strava-style share sheet — opens from the header arrow-up icon. Carousel
+  // of 1080×1920 templates → PNG → Capacitor Share / Web Share API.
+  const [shareOpen, setShareOpen] = useState(false);
+
   // Compare panel (desktop)
   const [showCompareDesktop, setShowCompareDesktop] = useState(false);
   const [nestedActivity, setNestedActivity] = useState(null);
@@ -2599,7 +2724,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // ── Activity data (use merged = summary + full detail) ──
   const { user: authUser } = useAuth() || {};
   const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
-  const dur = Number(merged.duration || merged.elapsed_time || merged.movingTime || merged.moving_time || merged.totalTimerTime || merged.totalElapsedTime || merged.elapsedTime || 0);
+  // Prefer *moving* time (excludes pauses / auto-stop) over elapsed time so
+  // a Strava ride with 30 min of coffee-stop pauses reports the actual saddle
+  // time. Falls back to elapsed only when moving is missing (very old uploads,
+  // some manually-logged trainings). Matters for pace / TSS / Edit-form prefill.
+  const dur = Number(
+    merged.movingTime || merged.moving_time || merged.totalTimerTime ||
+    merged.duration || merged.elapsed_time || merged.totalElapsedTime || merged.elapsedTime ||
+    0
+  );
   const dist = Number(merged.distance || merged.totalDistance || 0);
   // TSS — prefer the stored value (FIT uploads include it), fall back to
   // a client-side calculation using the user's thresholds (FTP / threshold
@@ -2887,6 +3020,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
+          <button
+            onClick={() => setShareOpen(true)}
+            title="Share activity"
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+          </button>
           {stravaIdForDelete && (
             <button
               onClick={handleDeleteTap}
@@ -3178,6 +3322,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             ) : null}
 
+            {/* Time in zones — derived from per-second records */}
+            {chartTraining?.records?.length > 30 && (
+              <TimeInZonesBar
+                records={chartTraining.records}
+                sport={merged?.sport}
+                authUser={authUser}
+              />
+            )}
+
             {/* Description / notes */}
             {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
               <div className="px-4 py-3 space-y-2 border-b border-gray-50">
@@ -3207,96 +3360,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <TrainingComments trainingId={String(a.id || a._id || '')} isMobile={true} />
             </div>
 
-            {/* Planned section */}
-            <div className="px-4 py-4 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
-                <div className="flex gap-2">
-                  {plannedWorkout && !editingPlanned && (
-                    <button onClick={() => setEditingPlanned(true)}
-                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50">
-                      <PencilIcon className="w-3 h-3" /> Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {editingPlanned ? (
-                <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                  <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
-                  <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
-                    className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Duration</div>
-                    <input type="text" value={planForm.durationDisplay}
-                      onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                      onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
-                      placeholder="1:30" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Distance</div>
-                    <input type="text" value={planForm.distanceDisplay}
-                      onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                      onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
-                      placeholder="10 km" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">TSS</div>
-                    <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder=""
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Description</div>
-                  <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} rows={2}
-                    placeholder="Workout description…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes</div>
-                  <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-                    placeholder="Coach notes, instructions…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
-                </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                  <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Completed notes</div>
-                  <input type="text" value={completedForm.title} onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))} placeholder="Activity title"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  <textarea value={completedForm.description} onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))} rows={2}
-                    placeholder="How did it go?" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
-                </div>
-                <div className="flex gap-2 pt-1">
-                  {plannedWorkout && (
-                    <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50">Cancel</button>
-                  )}
-                  <button onClick={async () => { await Promise.all([handleSavePlan(), handleSaveCompleted()]); setEditingPlanned(false); }}
-                    disabled={savingPlan || savingCompleted}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: color }}>
-                    {(savingPlan || savingCompleted) ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              plannedWorkout ? (
-                <div className="rounded-xl bg-gray-50 p-3 space-y-2">
-                  {plannedWorkout?.title && <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>}
-                  <div className="flex flex-wrap gap-3">
-                    {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
-                    {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
-                    {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
-                  </div>
-                </div>
-              ) : (
-                <button onClick={() => setEditingPlanned(true)}
+            {/* Planned section moved → Edit tab. Quick "Add planned" shortcut
+                when there's no plan yet, so Summary doesn't lose discoverability. */}
+            {!plannedWorkout && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <button onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
                   className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-400 active:bg-gray-50">
                   + Add planned workout
                 </button>
-              )
+              </div>
             )}
-          </div>
 
-          {/* Lactate footer — only shown when no laps tab (button moves to header when laps exist) */}
+            {/* Lactate footer — only shown when no laps tab (button moves to header when laps exist) */}
           {onAddLactate && !hasLaps && (
             <div className="px-4 pb-6">
               <button onClick={() => { onAddLactate(merged); onClose(); }}
@@ -3599,7 +3674,95 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {/* ── EDIT TAB ── */}
         {mobileView === 'edit' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+
+            {/* ── Planned section (moved here from Summary) ── */}
+            <div className="px-4 py-4 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
+                {plannedWorkout && !editingPlanned && (
+                  <button onClick={() => setEditingPlanned(true)}
+                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50">
+                    <PencilIcon className="w-3 h-3" /> Edit
+                  </button>
+                )}
+              </div>
+              {editingPlanned ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
+                    <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
+                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Duration</div>
+                      <input type="text" value={planForm.durationDisplay}
+                        onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                        onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
+                        placeholder="1:30" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Distance</div>
+                      <input type="text" value={planForm.distanceDisplay}
+                        onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                        onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
+                        placeholder="10 km" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">TSS</div>
+                      <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder=""
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Description</div>
+                    <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} rows={2}
+                      placeholder="Workout description…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes</div>
+                    <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} rows={2}
+                      placeholder="Coach notes, instructions…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    {plannedWorkout && (
+                      <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50">Cancel</button>
+                    )}
+                    <button onClick={async () => { await handleSavePlan(); setEditingPlanned(false); }}
+                      disabled={savingPlan}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: color }}>
+                      {savingPlan ? 'Saving…' : plannedWorkout ? 'Save plan' : 'Add Planned'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                plannedWorkout ? (
+                  <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+                    {plannedWorkout?.title && <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>}
+                    <div className="flex flex-wrap gap-3">
+                      {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
+                      {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
+                      {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
+                    </div>
+                    {plannedWorkout?.description && <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>}
+                    {plannedWorkout?.notes && (
+                      <div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase mb-0.5">Coach notes</div>
+                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button onClick={() => setEditingPlanned(true)}
+                    className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-400 active:bg-gray-50">
+                    + Add planned workout
+                  </button>
+                )
+              )}
+            </div>
+
             <div className="px-4 py-4 space-y-4">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Completed</div>
               <div>
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
                 <input type="text" value={completedForm.title}
@@ -3614,6 +3777,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   rows={3} placeholder="How did it go?"
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
+              <div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Category</div>
+                <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Distance (km)</div>
@@ -3623,7 +3790,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration</div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration <span className="text-gray-300 normal-case font-medium">(moving)</span></div>
                   <input type="text" value={completedForm.durationDisplay}
                     onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
                     placeholder="1:30:00"
@@ -3668,6 +3835,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     );
     return <>
       {mobilePortal}
+      <ActivityShareSheet
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        activity={merged}
+        gpsPoints={gpsData}
+        laps={laps}
+        records={chartTraining?.records}
+        accent={color}
+      />
       {nestedActivity && (() => {
         const na = nestedActivity;
         const fakeActivity = {
@@ -4194,6 +4370,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // tab, normalising the compare-result shape to the expected activity shape.
   return <>
     {desktopPortal}
+    <ActivityShareSheet
+      open={shareOpen}
+      onClose={() => setShareOpen(false)}
+      activity={merged}
+      gpsPoints={gpsData}
+      laps={laps}
+      records={chartTraining?.records}
+      accent={color}
+    />
     {nestedActivity && (() => {
       const na = nestedActivity;
       const fakeActivity = {

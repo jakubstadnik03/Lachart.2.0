@@ -253,7 +253,33 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 leading-snug truncate">{n.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{n.body}</p>
+                    {/* Sport chip + time on a single row beneath the title.
+                        The chip shows up only for notifications with a known
+                        sport (Strava imports, FIT uploads, training reminders)
+                        — gives a fast at-a-glance "Run / Bike / Swim" filter
+                        and the colour matches the rest of the calendar UI. */}
+                    {n.sport && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide"
+                          style={{
+                            // Sport colours mirror CalendarView's per-sport
+                            // tint so the bell + calendar look consistent.
+                            backgroundColor:
+                              n.sport === 'run' ? '#FEF3C7' :
+                              n.sport === 'bike' ? '#DBEAFE' :
+                              n.sport === 'swim' ? '#CFFAFE' : '#F3F4F6',
+                            color:
+                              n.sport === 'run' ? '#92400E' :
+                              n.sport === 'bike' ? '#1E40AF' :
+                              n.sport === 'swim' ? '#155E75' : '#4B5563',
+                          }}
+                        >
+                          {n.sport}
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">{n.body}</p>
                     {n.fromName && <p className="text-[11px] text-gray-400 mt-0.5">from {n.fromName}</p>}
                     <p className="text-[11px] text-gray-400 mt-1">{fmtNotifTime(n.createdAt)}</p>
                   </div>

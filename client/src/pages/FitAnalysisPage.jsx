@@ -1643,7 +1643,19 @@ const FitAnalysisPage = () => {
     let cancelled = false;
     const loadUserProfile = async () => {
       try {
-        const response = await api.get('/user/profile');
+        // Coach viewing an athlete? Fetch *that athlete's* zones — otherwise
+        // Period Summary / per-activity zone bucketing reuses the coach's
+        // power & HR thresholds and every Z2/Z3 ride collapses into Z1
+        // because the athlete's avg watts sit well below the coach's FTP.
+        // Self-view falls through to /user/profile.
+        const role = String(user?.role || '').toLowerCase();
+        const isCoachLike = ['coach', 'admin', 'tester', 'testing'].includes(role);
+        const viewingOtherAthlete = isCoachLike && selectedAthleteId
+          && String(selectedAthleteId) !== String(user?._id || user?.id || '');
+        const url = viewingOtherAthlete
+          ? `/user/athlete/${selectedAthleteId}/profile`
+          : '/user/profile';
+        const response = await api.get(url);
         if (cancelled) return;
         const profileData = response.data;
         setUserProfile(profileData);
@@ -1679,8 +1691,12 @@ const FitAnalysisPage = () => {
       cancelled = true;
       window.removeEventListener('userUpdated', onUserUpdated);
     };
-  }, []);
-  
+    // Re-run when the coach switches to a different athlete — otherwise the
+    // zones panel keeps using the previously-loaded profile and the new
+    // athlete's avg power lands in the wrong bucket.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAthleteId, user?._id, user?.role]);
+
   // Check if Strava activity is running
   const stravaSport = selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '';
   const isStravaRun = stravaSport.toLowerCase().includes('run') || stravaSport.toLowerCase() === 'walk' || stravaSport.toLowerCase() === 'hike';

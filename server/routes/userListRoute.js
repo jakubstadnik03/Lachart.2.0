@@ -931,9 +931,15 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
 
-        // Snapshot zones history if coach updates zones for athlete (optional – future use)
-        if (req.body.powerZones || req.body.heartRateZones) {
-            if (athlete.powerZones && Object.keys(athlete.powerZones || {}).length > 0 && req.body.powerZones) {
+        // Snapshot zones history if coach updates zones for athlete.
+        // Previously this was gated on the athlete *already* having zones,
+        // which meant a coach couldn't set the initial zones for a new
+        // athlete from the profile UI — saves silently no-op'd. Now we
+        // always accept the new zones; the history snapshot is only added
+        // when there's prior state worth preserving.
+        if (req.body.powerZones) {
+            const hasPriorPZ = athlete.powerZones && Object.keys(athlete.powerZones || {}).length > 0;
+            if (hasPriorPZ) {
                 athlete.powerZonesHistory = athlete.powerZonesHistory || [];
                 athlete.powerZonesHistory.push({
                     zones: athlete.powerZones,
@@ -942,9 +948,12 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
                     createdAt: new Date()
                 });
                 updateData.powerZonesHistory = athlete.powerZonesHistory;
-                updateData.powerZones = req.body.powerZones;
             }
-            if (athlete.heartRateZones && Object.keys(athlete.heartRateZones || {}).length > 0 && req.body.heartRateZones) {
+            updateData.powerZones = req.body.powerZones;
+        }
+        if (req.body.heartRateZones) {
+            const hasPriorHR = athlete.heartRateZones && Object.keys(athlete.heartRateZones || {}).length > 0;
+            if (hasPriorHR) {
                 athlete.heartRateZonesHistory = athlete.heartRateZonesHistory || [];
                 athlete.heartRateZonesHistory.push({
                     zones: athlete.heartRateZones,
@@ -953,8 +962,8 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
                     createdAt: new Date()
                 });
                 updateData.heartRateZonesHistory = athlete.heartRateZonesHistory;
-                updateData.heartRateZones = req.body.heartRateZones;
             }
+            updateData.heartRateZones = req.body.heartRateZones;
         }
 
         console.log('Coach updating athlete profile:', { coachId, athleteId, updateData });
@@ -1058,22 +1067,27 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
 
         const roleLower = String(user.role || '').toLowerCase();
 
-        // Allow access either to the athlete's coach/tester or to the athlete for their own profile
-        if (['coach', 'tester', 'testing'].includes(roleLower)) {
-            // Check for coach
-            const athlete = await userDao.findById(athleteId);
-            if (!athlete) {
-                return res.status(404).json({ error: "Athlete not found" });
+        // Allow access either to:
+        //  1. The user looking at their own profile (covers coaches too —
+        //     previously a coach hitting /user/athlete/<own-id> 403'd because
+        //     the team-membership check fails when they're the same person).
+        //  2. Their assigned coach / tester.
+        //  3. The athlete for their own profile.
+        if (uid !== aid) {
+            if (['coach', 'tester', 'testing'].includes(roleLower)) {
+                const athlete = await userDao.findById(athleteId);
+                if (!athlete) {
+                    return res.status(404).json({ error: "Athlete not found" });
+                }
+                if (hasPendingInviteFromCoach(athlete, user)) {
+                    return res.status(403).json({ error: "Athlete invitation is pending confirmation" });
+                }
+                if (!athleteHasCoachUser(athlete, userId)) {
+                    return res.status(403).json({ error: "This athlete does not belong to your team" });
+                }
+            } else if (roleLower === 'athlete') {
+                return res.status(403).json({ error: "You are not authorized to view this profile" });
             }
-            if (hasPendingInviteFromCoach(athlete, user)) {
-                return res.status(403).json({ error: "Athlete invitation is pending confirmation" });
-            }
-            if (!athleteHasCoachUser(athlete, userId)) {
-                return res.status(403).json({ error: "This athlete does not belong to your team" });
-            }
-        } else if (roleLower === 'athlete' && uid !== aid) {
-            // Athlete can only see their own profile
-            return res.status(403).json({ error: "You are not authorized to view this profile" });
         }
 
         const athlete = await userDao.findById(athleteId);

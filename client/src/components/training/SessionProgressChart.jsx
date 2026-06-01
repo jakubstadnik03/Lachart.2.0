@@ -72,10 +72,26 @@ function getDate(a) {
   return new Date(a.date || a.startDate || a.timestamp || 0);
 }
 
-function sessionShade(idx, total) {
+// Per-metric colour ramps: light (oldest session) → saturated (newest).
+// Power=violet, HR=red, Lactate=amber, RPE=green.
+const METRIC_RAMP = {
+  power:     [[196, 181, 253], [109,  88, 217]], // violet
+  heartRate: [[254, 202, 202], [185,  28,  28]], // red
+  lactate:   [[253, 230, 138], [180,  83,   9]], // amber
+  RPE:       [[187, 247, 208], [ 22, 101,  52]], // green
+};
+
+function sessionShade(idx, total, metric = 'power') {
   const t = total <= 1 ? 1 : idx / (total - 1);
   const lerp = (a, b) => Math.round(a + (b - a) * t);
-  return `rgb(${lerp(196, 109)},${lerp(181, 88)},${lerp(253, 217)})`;
+  const [lo, hi] = METRIC_RAMP[metric] || METRIC_RAMP.power;
+  return `rgb(${lerp(lo[0], hi[0])},${lerp(lo[1], hi[1])},${lerp(lo[2], hi[2])})`;
+}
+
+// Saturated reference colour per metric (for line stroke + lactate accent).
+function metricColor(metric) {
+  const hi = (METRIC_RAMP[metric] || METRIC_RAMP.power)[1];
+  return `rgb(${hi[0]},${hi[1]},${hi[2]})`;
 }
 
 function isWarmupOrCooldown(iv, idx, total) {
@@ -114,12 +130,17 @@ function isNonWorkLap(iv, idx, total) {
   return false;
 }
 
-function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false }) {
+function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false, metric = 'power' }) {
   const t = String(intervalType || '').toLowerCase();
   if (t === 'warmup')   return isSelected ? '#d97706' : '#fbbf24';
   if (t === 'cooldown') return isSelected ? '#0284c7' : '#38bdf8';
   if (t === 'recovery') return isSelected ? '#6b7280' : '#d1d5db';
-  if (lactate != null)  return isSelected ? '#7c3aed' : '#a78bfa';
+  if (lactate != null) {
+    // Lactate-annotated lap: emphasise with metric's saturated colour so the
+    // accent stays in the same colour family as the surrounding work bars
+    // (red bars → darker red accent, violet bars → violet accent, etc.).
+    return metricColor(metric);
+  }
   return shade;
 }
 
@@ -332,7 +353,9 @@ export default function SessionProgressChart({
   const isPace = sportIsPace && metric === 'power';
 
   const [selected, setSelected] = useState(null);
+  const [chartType, setChartType] = useState('bars'); // 'bars' | 'line'
   const clearSelection = () => setSelected(null);
+  const metricStroke = metricColor(isPace ? 'power' : metric);
 
   const data = useMemo(() => {
     return sessions.map((s, i) => {
@@ -356,7 +379,7 @@ export default function SessionProgressChart({
         const rpe    = Number(iv.RPE ?? iv.rpe) || null;
         return { idx, value: v, lactate: intervalLactate(iv), intervalType: iv?.intervalType || null, durationSec: durSec, hr, dist, pace, power, rpe };
       }).filter(l => l.value != null && l.value > 0);
-      return { id: activityKey(s), date: getDate(s), laps, color: sessionShade(i, sessions.length), meta: s };
+      return { id: activityKey(s), date: getDate(s), laps, color: sessionShade(i, sessions.length, isPace ? 'power' : metric), meta: s };
     }).filter(s => s.laps.length > 0);
   }, [sessions, metric, isPace, sport, hideWarmCool, workOnly]);
 
@@ -417,8 +440,33 @@ export default function SessionProgressChart({
 
   return (
     <div style={{ position: 'relative', width: '100%' }}
-      onClick={(e) => { if (e.target.tagName !== 'rect') clearSelection(); }}
+      onClick={(e) => { if (e.target.tagName !== 'rect' && e.target.tagName !== 'circle') clearSelection(); }}
     >
+      {/* Chart-type toggle (bars ↔ line) */}
+      <div style={{ position: 'absolute', top: 54, right: 6, zIndex: 2, display: 'flex', gap: 2,
+        padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
+        {[
+          { k: 'bars', label: 'Bars', d: 'M3 18V9 M9 18V4 M15 18V11 M21 18V7' },
+          { k: 'line', label: 'Line', d: 'M3 16 L9 9 L14 13 L21 5' },
+        ].map(opt => {
+          const active = chartType === opt.k;
+          return (
+            <button key={opt.k} onClick={(e) => { e.stopPropagation(); setChartType(opt.k); clearSelection(); }}
+              title={opt.label}
+              style={{
+                padding: '3px 6px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                background: active ? '#fff' : 'transparent',
+                color: active ? metricStroke : '#9CA3AF',
+                boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
+                display: 'flex', alignItems: 'center', WebkitTapHighlightColor: 'transparent',
+              }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d={opt.d} />
+              </svg>
+            </button>
+          );
+        })}
+      </div>
       <SelectedLapInfo
         selected={selected}
         onOpen={() => { if (!selected) return; clearSelection(); onSessionTap && onSessionTap(selected.session); }}
@@ -459,16 +507,58 @@ export default function SessionProgressChart({
             }
             const isHighlight = highlightId && s.id === highlightId;
             const dimmed      = highlightId && !isHighlight;
+            // Pre-compute per-lap geometry (used by both bars and line modes).
+            const lapGeom = s.laps.map((l, li) => {
+              const lapW = lapWs[li];
+              const x    = clusterX + lapWs.slice(0, li).reduce((a, b) => a + b + lapGap, 0);
+              const cx   = x + lapW / 2;
+              const top  = py(l.value);
+              return { l, li, lapW, x, cx, top };
+            });
+            const selectLap = (l, li) => ({
+              sessionId: s.id, session: s.meta,
+              sessionDate: s.date,
+              sessionTitle: s.meta?.title || s.meta?.titleManual || s.meta?.name || 'Training',
+              sessionColor: s.color,
+              lapIdx: li + 1, lapCount: s.laps.length,
+              value: l.value, lactate: l.lactate,
+              durationSec: l.durationSec, hr: l.hr, dist: l.dist,
+              pace: l.pace, power: l.power, rpe: l.rpe,
+              sport, isPace, metric,
+            });
             return (
               <g key={s.id} style={{ opacity: dimmed ? 0.2 : 1, transition: 'opacity .25s ease' }}>
-                {s.laps.map((l, li) => {
-                  const lapW  = lapWs[li];
-                  const x     = clusterX + lapWs.slice(0, li).reduce((a, b) => a + b + lapGap, 0);
-                  const top   = py(l.value);
+                {chartType === 'line' && lapGeom.length >= 2 && (
+                  <polyline
+                    fill="none" stroke={s.color} strokeWidth={isHighlight ? 2.2 : 1.6}
+                    strokeLinejoin="round" strokeLinecap="round"
+                    points={lapGeom.map(g => `${g.cx},${g.top}`).join(' ')}
+                    pointerEvents="none"
+                  />
+                )}
+                {lapGeom.map(({ l, li, lapW, x, cx, top }) => {
                   const baseY = H - padBottom;
                   const h     = Math.abs(baseY - top);
                   const isSel = selected && selected.sessionId === s.id && selected.lapIdx === li + 1;
-                  const fill  = lapBarColor({ intervalType: l.intervalType, lactate: l.lactate, sessionShade: s.color, isSelected: isSel });
+                  const fill  = lapBarColor({ intervalType: l.intervalType, lactate: l.lactate, sessionShade: s.color, isSelected: isSel, metric: isPace ? 'power' : metric });
+                  if (chartType === 'line') {
+                    const r = isSel ? 4 : (isHighlight ? 3 : 2.4);
+                    return (
+                      <g key={li}>
+                        <circle cx={cx} cy={top} r={r} fill={fill} stroke="#fff" strokeWidth={1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isSel) { clearSelection(); return; }
+                            setSelected(selectLap(l, li));
+                          }}
+                          style={{ cursor: 'pointer', filter: selected && !isSel ? 'opacity(0.45)' : 'none', transition: 'filter .2s ease' }}
+                        />
+                        {isSel && (
+                          <circle cx={cx} cy={top} r={r + 3} fill="none" stroke={fill} strokeWidth={1.2} pointerEvents="none" />
+                        )}
+                      </g>
+                    );
+                  }
                   return (
                     <g key={li}>
                       <rect x={x} y={Math.min(top, baseY)} width={lapW} height={Math.max(1.5, h)} rx={Math.min(2, lapW / 2)}
@@ -476,17 +566,7 @@ export default function SessionProgressChart({
                         onClick={(e) => {
                           e.stopPropagation();
                           if (isSel) { clearSelection(); return; }
-                          setSelected({
-                            sessionId: s.id, session: s.meta,
-                            sessionDate: s.date,
-                            sessionTitle: s.meta?.title || s.meta?.titleManual || s.meta?.name || 'Training',
-                            sessionColor: s.color,
-                            lapIdx: li + 1, lapCount: s.laps.length,
-                            value: l.value, lactate: l.lactate,
-                            durationSec: l.durationSec, hr: l.hr, dist: l.dist,
-                            pace: l.pace, power: l.power, rpe: l.rpe,
-                            sport, isPace, metric,
-                          });
+                          setSelected(selectLap(l, li));
                         }}
                         style={{ cursor: 'pointer', filter: selected && !isSel ? 'opacity(0.45)' : 'none', transition: 'filter .2s ease' }}
                       />

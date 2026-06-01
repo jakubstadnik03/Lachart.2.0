@@ -228,6 +228,22 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   // Week offset: 0 = current, +1 = next, -1 = previous, etc. Lets the user
   // peek at next-week planned totals without leaving the dashboard.
   const [weekOffset, setWeekOffset] = useState(0);
+  // Horizontal swipe → change week. Threshold 45px and vertical lock so
+  // it doesn't fight with vertical page scroll.
+  const swipeRef = React.useRef({ x: 0, y: 0, active: false });
+  const onTouchStart = (e) => {
+    const t = e.touches?.[0]; if (!t) return;
+    swipeRef.current = { x: t.clientX, y: t.clientY, active: true };
+  };
+  const onTouchEnd = (e) => {
+    const s = swipeRef.current; if (!s.active) return;
+    const t = e.changedTouches?.[0]; if (!t) { s.active = false; return; }
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    s.active = false;
+    if (Math.abs(dx) < 45 || Math.abs(dy) > Math.abs(dx)) return; // not a horizontal swipe
+    setWeekOffset(w => w + (dx < 0 ? 1 : -1));
+  };
   const today    = new Date();
   const refDate  = new Date(today);
   refDate.setDate(today.getDate() + weekOffset * 7);
@@ -270,6 +286,43 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     return sparkleTssMap[key] || 0;
   });
+
+  // ── Form / Fitness / Fatigue snapshot for the selected week ────────────────
+  // Use the *last* day of the week that has data (capped at today for the
+  // current week — future days have no data yet). Delta is vs the day before
+  // the week started, so users can see how the week shifted things.
+  const sparkByDate = {};
+  for (const pt of sparklineData) {
+    if (pt?.date) sparkByDate[pt.date.slice(0, 10)] = pt;
+  }
+  const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // Walk back from Sunday (or today, whichever is sooner) until we hit a date with data
+  const cutoff = sunday < today ? sunday : today;
+  let endSnap = null;
+  for (let i = 0; i < 14; i++) {
+    const probe = new Date(cutoff);
+    probe.setDate(cutoff.getDate() - i);
+    const s = sparkByDate[dateKey(probe)];
+    if (s) { endSnap = s; break; }
+  }
+  // Reference snapshot: day before this week's Monday
+  const refProbe = new Date(monday);
+  refProbe.setDate(monday.getDate() - 1);
+  let startSnap = null;
+  for (let i = 0; i < 14; i++) {
+    const p = new Date(refProbe);
+    p.setDate(refProbe.getDate() - i);
+    const s = sparkByDate[dateKey(p)];
+    if (s) { startSnap = s; break; }
+  }
+  const ffStats = endSnap ? {
+    fitness: Math.round(endSnap.Fitness || 0),
+    fatigue: Math.round(endSnap.Fatigue || 0),
+    form:    Math.round(endSnap.Form    || 0),
+    dFitness: startSnap ? Math.round((endSnap.Fitness || 0) - (startSnap.Fitness || 0)) : 0,
+    dFatigue: startSnap ? Math.round((endSnap.Fatigue || 0) - (startSnap.Fatigue || 0)) : 0,
+    dForm:    startSnap ? Math.round((endSnap.Form    || 0) - (startSnap.Form    || 0)) : 0,
+  } : null;
 
   // ── totals ─────────────────────────────────────────────────────────────────
   const totalSecs    = weekActs.reduce((s, a) => s + actSecs(a), 0);
@@ -338,7 +391,11 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   })();
 
   return (
-    <div style={styles.card}>
+    <div
+      style={styles.card}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       {/* ── Week navigator ── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -416,6 +473,59 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
           </div>
         ))}
       </div>
+
+      {/* ── Form / Fitness / Fatigue snapshot for this week ── */}
+      {ffStats && (
+        <div
+          key={`ff-${weekOffset}`}
+          style={{
+            display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginBottom: 12,
+            animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
+          }}
+        >
+          {[
+            { label: 'Form',    value: ffStats.form,    delta: ffStats.dForm,    accent: ffStats.form >= 0 ? '#15803D' : '#B45309' },
+            { label: 'Fitness', value: ffStats.fitness, delta: ffStats.dFitness, accent: '#5E6590' },
+            { label: 'Fatigue', value: ffStats.fatigue, delta: ffStats.dFatigue, accent: '#B84238' },
+          ].map(({ label, value, delta, accent }) => {
+            // Delta tinting:
+            //  - Fitness ↑ = good (green), ↓ = warn (amber)
+            //  - Fatigue ↑ = warn (red),   ↓ = good (green)
+            //  - Form    ↑ = green,        ↓ = red
+            const deltaGood =
+              label === 'Fatigue' ? delta < 0 :
+              label === 'Form'    ? delta >= 0 :
+                                    delta >= 0;
+            const deltaCol = delta === 0 ? '#9CA3AF' : (deltaGood ? '#15803D' : '#B91C1C');
+            const sign = delta > 0 ? '+' : '';
+            return (
+              <div
+                key={label}
+                style={{
+                  ...styles.kpi,
+                  padding: '7px 8px',
+                  display: 'flex', flexDirection: 'column', gap: 2,
+                }}
+              >
+                <span style={{ ...styles.kpiLabel, color: accent }}>{label}</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                  <span style={{ ...styles.kpiValue, color: accent }}>
+                    {label === 'Form' && value > 0 ? `+${value}` : value}
+                  </span>
+                  {delta !== 0 && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, color: deltaCol,
+                      fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em',
+                    }}>
+                      {sign}{delta}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Divider + toggle ── */}
       <div style={{ borderTop: '1px solid rgba(118,126,181,.14)', paddingTop: 10 }}>

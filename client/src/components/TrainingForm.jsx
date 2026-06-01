@@ -1678,8 +1678,14 @@ const TrainingForm = ({
                     }`}
                   >
                     {!isWork ? (
-                      /* ── Compact row: warmup / cooldown / recovery ── */
-                      <div className="flex items-center gap-2 px-3 py-1.5">
+                      /* ── Compact row: warmup / cooldown / recovery ──
+                         flex-wrap so that on narrow phones (≤375 px) the
+                         TypePicker + delete-X don't get pushed off the
+                         right edge by the dur/hr/la pills. Honza reported
+                         the delete button being completely invisible on
+                         iOS — fix is to wrap the trailing actions to a
+                         second line when there's no horizontal room. */
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-1.5 px-3 py-1.5">
                         <span className={`text-xs shrink-0 ${tc.text}`}>{tc.icon}</span>
                         <span className={`text-[11px] font-medium shrink-0 ${tc.text}`}>
                           {tc.label} {index + 1}
@@ -1757,12 +1763,19 @@ const TrainingForm = ({
                             className="w-10 text-[11px] text-primary font-semibold bg-transparent outline-none placeholder-gray-300"
                           />
                         </div>
-                        <div className="flex-1" />
-                        <TypePicker />
-                        <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}
-                          className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors ml-1">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
+                        {/* Trailing actions group — stays together even when
+                            wrapped onto a 2nd line. `ml-auto` pushes the
+                            group to the right edge whether wrapped or not,
+                            replacing the old flex-1 spacer (which collapsed
+                            to 0 when content overflowed and let the X get
+                            clipped offscreen). */}
+                        <div className="flex items-center gap-1 ml-auto">
+                          <TypePicker />
+                          <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}
+                            className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <>

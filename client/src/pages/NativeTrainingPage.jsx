@@ -1413,14 +1413,25 @@ export default function NativeTrainingPage({
       m[k].sort((a, b) => getDate(a) - getDate(b));
     });
     return Object.entries(m)
-      .filter(([, arr]) => arr.length >= 2)
-      // Prioritise titles that have lactate measurements — these are the
-      // user's "tested" repeated workouts which are most valuable to compare.
+      // Show every titled session with laps — even single occurrences. The
+      // chart still works with 1 session (just one bar cluster), and dropping
+      // single-session titles confused users who expected to see every recent
+      // workout listed (e.g. a fresh "5×10min LT2" that they only did once).
+      .filter(([, arr]) => arr.length >= 1)
+      // Prioritise titles that have lactate measurements first, then repeats,
+      // so the most "valuable to compare" sessions surface at the top of the
+      // workout selector dropdown.
       .sort((a, b) => {
         const aHasLac = a[1].some(hasLactate);
         const bHasLac = b[1].some(hasLactate);
         if (aHasLac !== bHasLac) return aHasLac ? -1 : 1;
-        return b[1].length - a[1].length;
+        const aRepeats = a[1].length;
+        const bRepeats = b[1].length;
+        if (aRepeats !== bRepeats) return bRepeats - aRepeats;
+        // Equal repeats — show the most recently performed first
+        const aLatest = Math.max(...a[1].map(getDate).map(d => d.getTime()));
+        const bLatest = Math.max(...b[1].map(getDate).map(d => d.getTime()));
+        return bLatest - aLatest;
       });
   }, [filtered]);
 
@@ -1463,26 +1474,43 @@ export default function NativeTrainingPage({
     // them for performance). If the user opens the form for one without the
     // detail having been fetched yet, the form would render empty. Fetch the
     // detail now so we always end up with usable laps.
+    //
+    // Detection has to be broad: depending on which list the activity was
+    // tapped from (assignment sheet, lactate-tested grid, annotate queue), the
+    // shape varies — `type`, `stravaId`, `source`, even just a bare numeric id
+    // are all possible signals. Previously the narrow check missed activities
+    // whose `type` was 'Ride' (raw Strava sport type) and no `stravaId`/`id`
+    // prefix, so the form would open completely empty.
+    const idStr = String(clean.id || clean._id || clean.stravaId || '');
     const isStravaActivity =
-      clean.type === 'strava' || !!clean.stravaId ||
-      /^strava-/i.test(String(clean.id || ''));
+      clean.type === 'strava' ||
+      clean.source === 'strava' ||
+      !!clean.stravaId ||
+      /^strava-/i.test(idStr) ||
+      // bare numeric id (>8 digits) with sport-type field set — Strava-ish
+      (/^\d{8,}$/.test(idStr) && !clean._id);
     const hasUsableLaps = Array.isArray(clean.laps) && clean.laps.length > 0;
     const hasUsableResults = Array.isArray(clean.results) && clean.results.length > 0;
     if (isStravaActivity && !hasUsableLaps && !hasUsableResults) {
       try {
-        const rawId = String(clean.stravaId || clean.id || '').replace(/^strava-/i, '');
+        const rawId = String(clean.stravaId || clean.id || clean._id || '').replace(/^strava-/i, '');
         if (rawId) {
           const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
           const integAthleteId = isCoachViewing ? String(athleteId) : null;
           const data = await getStravaActivityDetail(rawId, integAthleteId);
           if (Array.isArray(data?.laps) && data.laps.length > 0) {
             clean.laps = data.laps;
+          } else {
+            console.warn('[openTrainingForm] Strava detail returned no laps for id', rawId, data);
           }
           if (data?.titleManual && !clean.titleManual) clean.titleManual = data.titleManual;
           if (data?.category && !clean.category) clean.category = data.category;
           if (data?.description && !clean.description) clean.description = data.description;
+          // Capture sport for the laps→results mapper below
+          if (data?.sport && !clean.sport) clean.sport = data.sport;
         }
-      } catch (_) {
+      } catch (e) {
+        console.error('[openTrainingForm] Failed to fetch Strava detail:', e?.message || e);
         // Fall through — form will open empty, user can still add rows manually
       }
     }
@@ -2949,15 +2977,38 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
   // Build lap details list for the expanded view
   const lapDetails = (() => {
     const intervals = getIntervals(t);
-    return intervals.map((iv, i) => {
+    // Preserve original 1-based interval number even after filtering — so the
+    // user sees real lap positions (e.g. "4, 6, 8, 12, 14") not a re-numbered
+    // "1, 2, 3, 4, 5" sequence that hides the warm-up / rest context.
+    const all = intervals.map((iv, i) => {
       const power = Number(iv.power || iv.average_watts || iv.avgPower) || null;
       const hr    = Number(iv.heartRate || iv.average_heartrate || iv.avgHeartRate) || null;
       const lac   = intervalLactate(iv);
       const dur   = parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0;
       const pace  = isPaceSport ? intervalPaceSec(iv, sport) : null;
       const intervalType = iv.intervalType || null;
-      return { idx: i + 1, power, hr, lac, dur, pace, intervalType };
+      // Distance in metres — supports both Strava (distance) and FIT
+      // (distanceMeters / totalDistance) field names, and the in-app
+      // workout form (distanceMeters). Coerced to integer metres so the
+      // formatter below can do a single km-vs-m switch.
+      const dist  = Math.round(
+        Number(iv.distance ?? iv.distanceMeters ?? iv.totalDistance ?? 0) || 0
+      );
+      return { idx: i + 1, power, hr, lac, dur, pace, dist, intervalType };
     });
+    // Hide warm-up / cool-down / rest / recovery laps from the summary
+    // card — Honza's feedback: "ať tam ani nejsou ty rest a warmup a
+    // cooldown lapy, ať se to dá pak rozkliknout ten trénink kde je vše".
+    // The "Open full training" button below still shows everything.
+    const isNonWork = (lap) => {
+      const t = String(lap.intervalType || '').toLowerCase();
+      return t === 'warmup' || t === 'cooldown' || t === 'rest' || t === 'recovery';
+    };
+    const workOnly = all.filter(lap => !isNonWork(lap));
+    // Safety net: if NO laps were tagged with intervalType (raw Strava
+    // imports often arrive untyped) keep showing everything — otherwise
+    // the card would render an empty table.
+    return workOnly.length > 0 ? workOnly : all;
   })();
 
   return (
@@ -3044,7 +3095,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
               {/* Header row */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '24px 1fr 50px 50px 50px',
+                gridTemplateColumns: '20px 1fr 44px 44px 38px 40px',
                 gap: 6, padding: '6px 4px 4px',
                 fontSize: 8.5, fontWeight: 800, color: '#9CA3AF',
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -3053,6 +3104,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
               }}>
                 <span>#</span>
                 <span>Dur</span>
+                <span style={{ textAlign: 'right' }}>Dist</span>
                 <span style={{ textAlign: 'right' }}>{isPaceSport ? 'Pace' : 'W'}</span>
                 <span style={{ textAlign: 'right' }}>HR</span>
                 <span style={{ textAlign: 'right', color: '#B45309' }}>mmol</span>
@@ -3070,7 +3122,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
                       key={l.idx}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '24px 1fr 50px 50px 50px',
+                        gridTemplateColumns: '20px 1fr 44px 44px 38px 40px',
                         gap: 6, padding: '5px 4px',
                         fontSize: 11, fontWeight: 600,
                         color: labelColor,
@@ -3087,6 +3139,16 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
                           : '—'}
                         {isWork && <span style={{ marginLeft: 4, fontSize: 9, color: tint, fontWeight: 800 }}>WORK</span>}
                         {isRecovery && <span style={{ marginLeft: 4, fontSize: 9, color: '#9CA3AF', fontWeight: 700 }}>rec</span>}
+                      </span>
+                      {/* Distance — formatted compact: ≥1 km shows "2.4km",
+                          <1 km shows raw metres ("400m"). Em-dash when zero
+                          (e.g. erg / indoor cycling laps with no distance). */}
+                      <span style={{ textAlign: 'right', color: '#6B7280' }}>
+                        {l.dist > 0
+                          ? (l.dist >= 1000
+                              ? `${(l.dist / 1000).toFixed(l.dist >= 10000 ? 0 : 1)}km`
+                              : `${l.dist}m`)
+                          : '—'}
                       </span>
                       <span style={{ textAlign: 'right', fontWeight: 800 }}>{value}</span>
                       <span style={{ textAlign: 'right' }}>{l.hr ? Math.round(l.hr) : '—'}</span>

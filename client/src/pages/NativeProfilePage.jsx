@@ -5,7 +5,7 @@ import {
   SportTile, LacValueChip, ThresholdChip, KpiTile, GlassCard, SectionTitle,
   normSport, SPORT_TINT, NativeSkeletonRows,
 } from '../components/native/shared/Tiles';
-import api, { getTestingsByAthleteId, updateUserProfile } from '../services/api';
+import api, { getTestingsByAthleteId, updateUserProfile, updateAthleteProfile } from '../services/api';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
@@ -116,7 +116,10 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
   useEffect(() => {
     if (!isViewingOtherAthlete) { setAthleteProfile(null); return; }
     let active = true;
-    api.get(`/user/athlete/${effectiveAthleteId}`)
+    // Hit the /profile variant so we receive powerZones + heartRateZones —
+    // the bare /user/athlete/:id endpoint strips them, which is why FTP,
+    // MAX HR and the training-zones panel read empty for coach-viewed athletes.
+    api.get(`/user/athlete/${effectiveAthleteId}/profile`)
       .then(res => { if (active) setAthleteProfile(res?.data || null); })
       .catch(() => { if (active) setAthleteProfile(null); });
     return () => { active = false; };
@@ -221,27 +224,9 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
     <>
       <style>{NATIVE_DASHBOARD_KEYFRAMES}</style>
       <div ref={pageRef} style={styles.page}>
-        {/* "Viewing athlete" indicator — only when coach is viewing another athlete */}
-        {isViewingOtherAthlete && (
-          <div style={{
-            margin: '6px 14px 0',
-            padding: '6px 12px', borderRadius: 9999,
-            background: 'rgba(118,126,181,.14)',
-            border: '1px solid rgba(118,126,181,.22)',
-            color: '#5E6590',
-            fontSize: 10.5, fontWeight: 700,
-            letterSpacing: '0.04em', textTransform: 'uppercase',
-            display: 'inline-flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
-            animation: 'ndPopIn .4s cubic-bezier(.22,1.4,.36,1) both',
-          }}>
-            {/* Eye icon — "Viewing athlete" */}
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            Viewing athlete
-          </div>
-        )}
+        {/* "Viewing athlete" pill removed — the active avatar in the
+            top NativeAthleteBar already signals which athlete you're
+            looking at, so this was visual noise. */}
 
         {/* ─── Header — avatar + name + role ─── */}
         <div style={{ ...styles.header, ...cardEntry(0), ...snap }}>
@@ -477,12 +462,17 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
             </GlassCard>
           </div>
 
-          {/* ─── Training zones per sport (editable) ─── */}
-          {!isViewingOtherAthlete && (
-            <div style={{ ...cardEntry(4), ...snap }}>
-              <TrainingZonesSection user={u} tests={tests} />
-            </div>
-          )}
+          {/* ─── Training zones per sport (editable) ───
+              Now visible to coaches viewing their athletes too — save flow
+              routes through PUT /user/coach/edit-athlete/:id when an athleteId
+              is supplied, so changes persist on the right user document. */}
+          <div style={{ ...cardEntry(4), ...snap }}>
+            <TrainingZonesSection
+              user={u}
+              tests={tests}
+              athleteId={isViewingOtherAthlete ? effectiveAthleteId : null}
+            />
+          </div>
 
           <div style={{ height: 32 }} />
         </div>
@@ -644,13 +634,13 @@ function fmtPaceVal(sec) {
   return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 }
 
-function TrainingZonesSection({ user, tests }) {
+function TrainingZonesSection({ user, tests, athleteId = null }) {
   const [openSport, setOpenSport] = useState(null); // 'bike' | 'run' | 'swim' | null
   const [overrides, setOverrides] = useState({});  // { bike: {primary, heartRateZones}, ... } — applied locally after save
   return (
     <GlassCard>
       <div style={{ marginBottom: 9 }}>
-        <SectionTitle>Training zones</SectionTitle>
+        <SectionTitle>{athleteId ? "Athlete's training zones" : 'Training zones'}</SectionTitle>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {['bike', 'run', 'swim'].map(sport => (
@@ -659,6 +649,7 @@ function TrainingZonesSection({ user, tests }) {
             sport={sport}
             user={user}
             tests={tests}
+            athleteId={athleteId}
             override={overrides[sport]}
             isOpen={openSport === sport}
             onToggle={() => setOpenSport(prev => (prev === sport ? null : sport))}
@@ -673,7 +664,7 @@ function TrainingZonesSection({ user, tests }) {
   );
 }
 
-function SportZonesBlock({ sport, user, tests, override, isOpen, onToggle, onSaved }) {
+function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpen, onToggle, onSaved }) {
   const isPace = isPaceSport(sport);
   const tint = SPORT_TINT[sport];
   const initial = useMemo(() => pickInitialThresholds(user, tests, sport), [user, tests, sport]);
@@ -784,6 +775,8 @@ function SportZonesBlock({ sport, user, tests, override, isOpen, onToggle, onSav
           sport={sport}
           initial={initial}
           tint={tint}
+          user={user}
+          athleteId={athleteId}
           onCancel={onToggle}
           onSaved={onSaved}
         />
@@ -792,7 +785,7 @@ function SportZonesBlock({ sport, user, tests, override, isOpen, onToggle, onSav
   );
 }
 
-function ZonesEditor({ sport, initial, tint, onCancel, onSaved }) {
+function ZonesEditor({ sport, initial, tint, user = null, athleteId = null, onCancel, onSaved }) {
   const isPace = isPaceSport(sport);
   // Pace inputs use MM:SS, power inputs use raw numbers
   const fmtIn = (v) => {
@@ -829,12 +822,28 @@ function ZonesEditor({ sport, initial, tint, onCancel, onSaved }) {
       const hr2v = Number(hr2) || null;
       const computed = computeZonesFromThresholds({ sport, lt1: lt1v, lt2: lt2v, hr1: hr1v, hr2: hr2v });
       const longKey = SHORT_TO_LONG[sport];
+      // Merge with the *existing* zones for the other sports so we don't
+      // overwrite them — both endpoints replace the whole `powerZones` /
+      // `heartRateZones` object, and previously editing the bike block would
+      // wipe the run + swim zones for that user.
+      const existingPZ = user?.powerZones || {};
+      const existingHR = user?.heartRateZones || {};
       const payload = {
-        powerZones: { [longKey]: { ...(computed.primary || {}), lastUpdated: new Date() } },
-        heartRateZones: { [longKey]: { ...(computed.heartRateZones || {}), lastUpdated: new Date() } },
+        powerZones: {
+          ...existingPZ,
+          [longKey]: { ...(computed.primary || {}), lastUpdated: new Date() },
+        },
+        heartRateZones: {
+          ...existingHR,
+          [longKey]: { ...(computed.heartRateZones || {}), lastUpdated: new Date() },
+        },
         zonesSource: 'profile-mobile',
       };
-      await updateUserProfile(payload);
+      if (athleteId) {
+        await updateAthleteProfile(athleteId, payload);
+      } else {
+        await updateUserProfile(payload);
+      }
       onSaved(computed);
     } catch (e) {
       setErr(e?.response?.data?.message || e?.message || 'Save failed');

@@ -672,6 +672,20 @@ export const updateUserProfile = async (userData) => {
   }
 };
 
+// Coach-side update for one of their athletes. Mirrors updateUserProfile but
+// targets the coach-only endpoint so a coach can adjust an athlete's zones,
+// weight, height, etc. from the athlete profile view.
+export const updateAthleteProfile = async (athleteId, userData) => {
+  try {
+    const response = await api.put(`/user/coach/edit-athlete/${athleteId}`, userData);
+    invalidateProfileCaches();
+    return response;
+  } catch (error) {
+    console.error('Error updating athlete profile:', error);
+    throw error;
+  }
+};
+
 export const changePassword = async (passwordData) => {
   try {
     const response = await api.post('/user/change-password', passwordData);

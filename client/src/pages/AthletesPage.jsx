@@ -10,6 +10,7 @@ import Modal from '../components/Modal';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const AthletesPage = () => {
   const { user } = useAuth();
@@ -110,7 +111,14 @@ const AthletesPage = () => {
       return;
     }
     setSelectedAthleteId(athleteId);
-    navigate(`/athlete/${athleteId}`);
+    // On iOS native, Profile tap should drop the user into the swipeable
+    // NativeProfilePage (the one with FTP / training-zones / lab-test cards).
+    // Web/desktop keeps the dedicated /athlete/:id dashboard.
+    if (isCapacitorNative()) {
+      navigate('/profile');
+    } else {
+      navigate(`/athlete/${athleteId}`);
+    }
   };
 
   const handleInputChange = (e) => {

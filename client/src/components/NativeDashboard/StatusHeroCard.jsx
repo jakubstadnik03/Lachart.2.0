@@ -67,6 +67,27 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // past days to see how their TSB / fitness evolved.
   const [dayOffset, setDayOffset] = useState(0);
 
+  // Horizontal swipe to scrub days (status view only — form chart has its own
+  // range toggle and shouldn't compete with it). Vertical lock so it doesn't
+  // hijack page scroll. Threshold 45 px feels right on iOS — anything smaller
+  // triggers on accidental thumb drags during normal scrolling.
+  const swipeRef = React.useRef({ x: 0, y: 0, active: false });
+  const onTouchStart = (e) => {
+    const t = e.touches?.[0]; if (!t) return;
+    swipeRef.current = { x: t.clientX, y: t.clientY, active: true };
+  };
+  const onTouchEnd = (e) => {
+    const s = swipeRef.current; if (!s.active) return;
+    s.active = false;
+    if (heroView !== 'status') return; // only scrub days when on Status view
+    const t = e.changedTouches?.[0]; if (!t) return;
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (Math.abs(dx) < 45 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0 && canGoForward) { setDayOffset(o => o + 1); setAnimTick(t => t + 1); }
+    else if (dx > 0 && canGoBack) { setDayOffset(o => o - 1); setAnimTick(t => t + 1); }
+  };
+
   // Build a date → sparkline-point lookup so we can resolve metrics for any day.
   const sparkByDate = React.useMemo(() => {
     const map = {};
@@ -141,7 +162,12 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   const circ = 2 * Math.PI * r;
   const dash = ringPct * circ * 0.82; // 82% of circumference = full
 
-  const W = 320, H_SPARK = 52, H_FORM = 150;
+  // H_SPARK bumped from 52 → 120 and H_FORM 150 → 170 so both views fill
+  // the card uniformly. Previously the Status sparkline sat tiny at the
+  // bottom with a fat empty band above it, and toggling to Form chart
+  // shifted everything around. Card minHeight stays in sync via the body
+  // wrapper below.
+  const W = 320, H_SPARK = 120, H_FORM = 170;
 
   // Shared y-domain for form chart: all three series + 0
   const allFormVals = [...ctlSeries, ...atlSeries, ...tsbSeries, 0];
@@ -180,7 +206,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   }
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {/* Inject keyframes once */}
       <style>{`
         @keyframes ndFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -243,6 +269,10 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
         </div>
       </div>
 
+      {/* Body — fixed min-height so Status ↔ Form chart toggle doesn't shrink
+          or grow the surrounding layout. Picked to fit the taller of the two
+          views (Form chart with H_FORM=150 + header + footer ≈ 220 px). */}
+      <div style={{ minHeight: 250 }}>
       {heroView === 'status' ? (
         <>
           {/* Ring + stats */}
@@ -570,6 +600,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
