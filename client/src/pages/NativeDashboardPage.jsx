@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
 import WeekStrip         from '../components/NativeDashboard/WeekStrip';
+import WidgetDebugBanner from '../components/NativeDashboard/WidgetDebugBanner';
 import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
@@ -991,6 +992,12 @@ export default function NativeDashboardPage({
 
         {/* ── Cards (staggered fade-in) ── */}
         <div style={styles.body}>
+
+          {/* DEBUG: widget pipeline probe — auto-runs on mount, shows the
+              exact failure (plugin missing / app-group missing / OK) right
+              at the top of the dashboard. Remove this block when the
+              widget is confirmed working. */}
+          <WidgetDebugBanner />
 
           {/* 1 · Week strip */}
           <div style={{ ...cardEntry(1), ...snapStyle }}>

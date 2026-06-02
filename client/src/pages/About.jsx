@@ -53,13 +53,33 @@ const LC = {
   green:        '#10B981',
 };
 
-/* ─── Reveal — single IntersectionObserver hook ───────────────────────── */
+/* ─── Reveal — single IntersectionObserver hook ─────────────────────────
+   `will-change: transform, opacity` is only set on elements that are
+   actually animating. We add `.lc-arming` just before flipping `.lc-in`
+   (so the compositor promotes the layer for the duration of the fade),
+   then clear it once the transition ends. Without this trick, a permanent
+   `will-change` on every reveal element created ~40 persistent GPU layers
+   that Safari struggles to schedule — the visible result was the sticky
+   nav "skipping" on every scroll frame. */
 function useReveal(refs) {
   const reduce = useReducedMotion();
   useEffect(() => {
     if (reduce) return;
+    const onEnd = (e) => {
+      if (e.propertyName !== 'opacity') return;
+      e.currentTarget.classList.remove('lc-arming');
+      e.currentTarget.removeEventListener('transitionend', onEnd);
+    };
     const io = new IntersectionObserver(
-      (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('lc-in'); }),
+      (entries) => entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        const el = e.target;
+        el.classList.add('lc-arming');
+        // Next frame: flip to .lc-in so the browser has the layer ready.
+        requestAnimationFrame(() => el.classList.add('lc-in'));
+        el.addEventListener('transitionend', onEnd);
+        io.unobserve(el);
+      }),
       { threshold: 0.15, rootMargin: '0px 0px -10% 0px' }
     );
     refs.forEach((el) => { if (el) io.observe(el); });
@@ -119,7 +139,15 @@ const STYLE = `
 
   /* Reveal: y-translate / x-translate / scale variants, generous stagger.
      Left/right use clip-safe translate so they never cause overflow-x scroll. */
-  .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform 1s cubic-bezier(.2,.7,.2,1); will-change: transform, opacity; }
+  /* Reveal animation. will-change was previously on every single reveal
+     element — there are 40+ of them on this page, so the compositor was
+     allocating 40+ GPU layers up front, which Safari handles particularly
+     badly (visible as scroll jank + the sticky nav stuttering). will-change
+     is now only set when the element is actually about to animate
+     (.lc-arming) and cleared once it lands (.lc-in), so we keep the perf
+     hint where it pays off but stop creating permanent layers everywhere. */
+  .lc-reveal { opacity: 0; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform 1s cubic-bezier(.2,.7,.2,1); }
+  .lc-reveal.lc-arming { will-change: transform, opacity; }
   .lc-reveal.left  { transform: translate3d(-28px, 0, 0); }
   .lc-reveal.right { transform: translate3d(28px, 0, 0); }
   .lc-reveal.scale { transform: scale(.94); }
@@ -167,7 +195,24 @@ const STYLE = `
      create a scroll container and break sticky. Sections also use clip
      so a card with a negative margin or wide background doesn't kick the
      page sideways while keeping sticky alive throughout the tree. */
-  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); background-attachment: fixed; min-height: 100vh; overflow-x: clip; }
+  /* Page background. We used to have background-attachment: fixed here so
+     the radial gradients stayed parked while content scrolled — Safari
+     however repaints the *entire* viewport on every scroll frame in that
+     mode, which combined with the sticky nav's backdrop-filter caused the
+     stuttering scroll + jumping nav. Drop the fixed attachment and pin the
+     gradients to a ::before pseudo with position: fixed instead — same
+     visual but isolated from the scroll repaint path. */
+  .lc-page { font-family: 'Hind Vadodara', system-ui, -apple-system, sans-serif; color: ${LC.text}; background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%); min-height: 100vh; overflow-x: clip; position: relative; }
+  .lc-page::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 40% 30% at 80% 0%, rgba(123,194,235,.18) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 40% at 0% 30%, rgba(118,126,181,.16) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .lc-page > * { position: relative; z-index: 1; }
   .lc-page section { scroll-margin-top: 80px; overflow-x: clip; }
   .lc-sectpad { padding: 80px 24px; max-width: 1280px; margin: 0 auto; }
   @media (max-width: 1024px) { .lc-sectpad { padding: 60px 20px; } }
@@ -295,6 +340,108 @@ const STYLE = `
     transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
   }
   .lc-timeline-item:hover::before { transform: scale(1.15); background: ${LC.primary}; box-shadow: 0 0 0 6px rgba(118,126,181,.18); }
+
+  /* ── Global mobile responsive safety net ───────────────────────────────
+     About.jsx has ~27 inline grids (gridTemplateColumns: '1fr 1fr', '1fr 2fr',
+     'repeat(3, 1fr)', etc.) and ~22 sections with hardcoded gaps and large
+     paddings. Rather than hunt down each one, this block uses attribute
+     selectors to force any inline grid to single-column on phones, scales
+     down hardcoded gaps, and tightens section padding via .lc-sectpad.
+     Only kicks in ≤ 720 px so desktop layout is unaffected. */
+  @media (max-width: 720px) {
+    /* All inline grid-template-columns → single col */
+    section [style*="grid-template-columns"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* Tame large gaps coded for desktop spacing */
+    section [style*="gap: 60"] { gap: 24px !important; }
+    section [style*="gap: 50"] { gap: 22px !important; }
+    section [style*="gap: 40"] { gap: 20px !important; }
+    section [style*="gap: 36"] { gap: 18px !important; }
+    section [style*="gap: 32"] { gap: 16px !important; }
+    section [style*="gap: 30"] { gap: 16px !important; }
+    /* Section vertical rhythm */
+    .lc-sectpad { padding: 36px 16px !important; }
+    /* Avoid huge maxWidths on phones causing weird inner overflow */
+    section [style*="max-width: 1280"] { max-width: 100% !important; }
+    /* Two-up button rows should wrap nicely instead of squashing */
+    section [style*="display: flex"][style*="gap"] { flex-wrap: wrap; }
+    /* Hero / huge text already uses clamp() but the inner H1 inline
+       sometimes overrides. Cap font scaling on phones via attribute. */
+    section h1[style*="font-size: 56"],
+    section h1[style*="font-size: 48"],
+    section h2[style*="font-size: 44"] {
+      font-size: clamp(28px, 8vw, 38px) !important;
+    }
+    section h3[style*="font-size: 28"],
+    section h3[style*="font-size: 24"] {
+      font-size: 19px !important;
+    }
+    /* Inline padding 60px, 80px → squeeze */
+    section [style*="padding: 80px"] { padding: 36px 16px !important; }
+    section [style*="padding: 60px"] { padding: 30px 16px !important; }
+    section [style*="padding: 40px"] { padding: 22px 16px !important; }
+    /* Inline margin-bottom for big spacers → halve */
+    section [style*="margin-bottom: 60"] { margin-bottom: 28px !important; }
+    section [style*="margin-bottom: 50"] { margin-bottom: 24px !important; }
+    section [style*="margin-bottom: 40"] { margin-bottom: 20px !important; }
+    /* Carousel + image media items: never exceed viewport width */
+    section img, section video, section iframe { max-width: 100%; height: auto; }
+  }
+
+  /* ── Back-to-top floating button with scroll-progress ring ────────
+     Implementation: an outer rounded square holds a conic-gradient
+     "ring" pseudo-element. --p (0..1) is set inline from JS on every
+     scroll frame and controls the gradient's stop angle. A second
+     pseudo punches a hole in the middle (the actual button surface),
+     leaving just a thin progress arc visible around the edge. */
+  .lc-totop {
+    --p: 0;                     /* scroll progress, written from JS  */
+    --ring: 3px;                /* progress-arc thickness            */
+    position: fixed; bottom: 22px; right: 22px;
+    width: 50px; height: 50px; border-radius: 999px;
+    background: transparent;    /* the ::before pseudo holds the colour */
+    color: #fff; border: none; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    z-index: 200;
+    opacity: 0; pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity .25s ease, transform .25s ease;
+    -webkit-tap-highlight-color: transparent;
+    isolation: isolate;
+  }
+  /* The progress ring — conic-gradient driven by --p, masked into a
+     thin band by an inner-padding inset cut-out. */
+  .lc-totop::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    background:
+      conic-gradient(${LC.primary} calc(var(--p) * 360deg), rgba(255,255,255,0.55) 0);
+    -webkit-mask:
+      radial-gradient(farthest-side, transparent calc(100% - var(--ring) - 1px), #000 calc(100% - var(--ring)));
+            mask:
+      radial-gradient(farthest-side, transparent calc(100% - var(--ring) - 1px), #000 calc(100% - var(--ring)));
+    z-index: 0;
+  }
+  /* The solid filled button surface sitting INSIDE the ring. */
+  .lc-totop::after {
+    content: '';
+    position: absolute; inset: calc(var(--ring) + 2px);
+    border-radius: inherit;
+    background: ${LC.primaryDark};
+    box-shadow: 0 10px 24px -8px rgba(94,101,144,0.55),
+                0 2px 4px rgba(10,14,26,0.08);
+    transition: background .2s ease;
+    z-index: 1;
+  }
+  .lc-totop > svg { position: relative; z-index: 2; }
+  .lc-totop:hover::after { background: ${LC.primary}; }
+  .lc-totop.lc-show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  @media (max-width: 520px) {
+    .lc-totop { bottom: 16px; right: 16px; width: 46px; height: 46px; --ring: 2.5px; }
+  }
 `;
 
 export default function About() {
@@ -307,13 +454,60 @@ export default function About() {
   const pushRef = (el) => { if (el && !revealRefs.current.includes(el)) revealRefs.current.push(el); };
   useReveal(revealRefs.current);
 
-  // Nav-shadow on scroll
+  // Nav-shadow on scroll + Back-to-top visibility. One scroll listener
+  // drives both + a scroll progress ratio (0..1) that the back-to-top
+  // button reads as a conic-gradient `--p` to render a filling border.
+  // Visibility kicks in early (~120 px) so the button appears as soon as
+  // the user starts scrolling, not deep into the page.
   const [navScrolled, setNavScrolled] = useState(false);
+  const [showToTop, setShowToTop] = useState(false);
+  const toTopRef = useRef(null);
   useEffect(() => {
-    const onScroll = () => setNavScrolled(window.scrollY > 8);
+    const onScroll = () => {
+      const y = window.scrollY;
+      setNavScrolled(y > 8);
+      setShowToTop(y > 120);
+      // Compute scroll progress (0 → 1). max scroll = doc height − viewport.
+      const max = Math.max(1,
+        (document.documentElement.scrollHeight || document.body.scrollHeight) - window.innerHeight);
+      const ratio = Math.min(1, Math.max(0, y / max));
+      // Write to CSS variable instead of state so we don't re-render on every
+      // scroll frame — the conic-gradient picks it up directly.
+      if (toTopRef.current) {
+        toTopRef.current.style.setProperty('--p', String(ratio));
+      }
+    };
+    onScroll(); // seed the variable before first scroll event
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
   }, []);
+
+  const scrollToTop = () => {
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      // Some Safari versions throw on the options object — fall back.
+      window.scrollTo(0, 0);
+    }
+  };
+
+  // Mobile-nav (hamburger) — only used on ≤880 px viewports. The desktop
+  // nav-link row is hidden by CSS at that breakpoint, leaving users with
+  // just the logo + "Start free"; this dropdown surfaces the same anchor
+  // links so phones get full navigation. Closes on link click (anchor
+  // navigation flips activeSection but doesn't unmount the menu) and on
+  // Escape for keyboard users.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setMobileNavOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mobileNavOpen]);
 
   // Feature filter
   const [featCat, setFeatCat] = useState('All');
@@ -476,12 +670,18 @@ export default function About() {
           }}>Try demo</Link>
         </div>
 
-        {/* ── 2. Sticky nav ────────────────────────────────────────────── */}
+        {/* ── 2. Sticky nav ──────────────────────────────────────────────
+            Was using a 20 px backdrop-filter blur with saturate(170%). Safari
+            re-rasterises that blur on every single scroll frame while content
+            slides under it — visible as the nav stuttering / "skipping" when
+            you scroll a Mac trackpad. Bumped the background opacity from
+            .95 → .92 and dropped to a much cheaper 8 px blur with no
+            saturate — visually almost identical, ~3× cheaper on the GPU. */}
         <nav style={{
           position: 'sticky', top: 0, zIndex: 100,
-          background: 'rgba(255,255,255,.95)',
-          backdropFilter: 'blur(20px) saturate(170%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(170%)',
+          background: 'rgba(255,255,255,.92)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           borderBottom: '1px solid rgba(180,190,210,.18)',
           boxShadow: navScrolled ? '0 4px 18px -8px rgba(15,23,41,.12)' : 'none',
           transition: 'box-shadow .25s',
@@ -513,9 +713,103 @@ export default function About() {
                 textDecoration: 'none', fontSize: 14, fontWeight: 700,
                 boxShadow: '0 4px 12px -4px rgba(118,126,181,.5)',
               }}>Start free</Link>
+              {/* Hamburger — visible only on mobile via CSS below. The
+                  desktop nav-link row is hidden at the same breakpoint, so
+                  this is the only way phone visitors reach the in-page
+                  anchors (For whom, Features, App, Pricing, …). */}
+              <button
+                type="button"
+                aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={mobileNavOpen}
+                onClick={() => setMobileNavOpen(o => !o)}
+                className="lc-nav-burger"
+                style={{
+                  display: 'none', // shown via media query below
+                  alignItems: 'center', justifyContent: 'center',
+                  width: 40, height: 40, borderRadius: 10,
+                  background: mobileNavOpen ? LC.primaryTint : 'transparent',
+                  border: '1px solid ' + (mobileNavOpen ? LC.primary + '55' : 'rgba(180,190,210,.25)'),
+                  color: LC.primaryDark,
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  {mobileNavOpen ? (
+                    <>
+                      <path d="M6 6l12 12" />
+                      <path d="M18 6L6 18" />
+                    </>
+                  ) : (
+                    <>
+                      <path d="M3 6h18" />
+                      <path d="M3 12h18" />
+                      <path d="M3 18h18" />
+                    </>
+                  )}
+                </svg>
+              </button>
             </div>
           </div>
-          <style>{`@media (max-width: 880px) { .lc-nav-links, .lc-nav-ghost { display: none !important; } }`}</style>
+
+          {/* Mobile dropdown panel — slides down under the sticky nav when
+              the hamburger is open. Same link list as the desktop row, but
+              full-width tap targets and an explicit "Sign in" entry since
+              the top-bar ghost link is hidden on mobile. */}
+          {mobileNavOpen && (
+            <div
+              className="lc-mobile-nav"
+              style={{
+                background: '#fff',
+                borderTop: '1px solid rgba(180,190,210,.18)',
+                padding: '8px 16px 14px',
+                boxShadow: '0 8px 20px -10px rgba(10,14,26,0.12)',
+              }}
+            >
+              {[
+                ['solutions',   'For whom'],
+                ['workspaces',  'For coaches'],
+                ['features',    'Features'],
+                ['methodology', 'Science'],
+                ['download',    'App'],
+                ['/how-to-use', 'Tutorials'],
+                ['pricing',     'Pricing'],
+              ].map(([id, label]) => {
+                const isRoute = id.startsWith('/');
+                const baseStyle = {
+                  display: 'block',
+                  padding: '12px 10px',
+                  borderRadius: 10,
+                  color: LC.text,
+                  textDecoration: 'none',
+                  fontSize: 15, fontWeight: 600,
+                };
+                const onClick = () => setMobileNavOpen(false);
+                return isRoute
+                  ? <Link key={id} to={id} style={baseStyle} onClick={onClick}>{label}</Link>
+                  : <a key={id} href={`#${id}`} style={baseStyle} onClick={onClick}>{label}</a>;
+              })}
+              <div style={{ height: 1, background: 'rgba(180,190,210,.18)', margin: '8px 0' }} />
+              <Link
+                to="/login"
+                onClick={() => setMobileNavOpen(false)}
+                style={{
+                  display: 'block', padding: '12px 10px', borderRadius: 10,
+                  color: LC.primaryDark, textDecoration: 'none',
+                  fontSize: 15, fontWeight: 700,
+                }}
+              >
+                Sign in
+              </Link>
+            </div>
+          )}
+
+          <style>{`
+            @media (max-width: 880px) {
+              .lc-nav-links, .lc-nav-ghost { display: none !important; }
+              .lc-nav-burger { display: inline-flex !important; }
+            }
+          `}</style>
         </nav>
 
         {/* ── 3. Hero ──────────────────────────────────────────────────── */}
@@ -527,7 +821,12 @@ export default function About() {
             <div style={{ position: 'absolute', bottom: 100, right: 200, width: 280, height: 280, borderRadius: '50%', background: `radial-gradient(circle, ${LC.accent}30 0%, transparent 70%)`, filter: 'blur(40px)' }} />
             <div style={{ position: 'absolute', inset: 0, opacity: 0.035, backgroundImage: 'linear-gradient(0deg, transparent 79px, rgba(15,23,41,.5) 80px), linear-gradient(90deg, transparent 79px, rgba(15,23,41,.5) 80px)', backgroundSize: '80px 80px' }} />
           </div>
-          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '80px 24px', position: 'relative', zIndex: 1 }}>
+          {/* Hero container padding was hardcoded 80px / 24px, which on a
+              390 px iPhone viewport wasted nearly a quarter of the screen
+              height on whitespace before any content showed up. `clamp()`
+              scales smoothly: ~28 px top/bottom + ~12 px left/right on the
+              narrowest phones, full 80/24 on desktop. */}
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: 'clamp(24px, 7vw, 80px) clamp(12px, 4vw, 24px)', position: 'relative', zIndex: 1 }}>
             <div className="lc-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
               {/* Left column */}
               <div ref={pushRef} className="lc-reveal">
@@ -882,18 +1181,62 @@ export default function About() {
             {/* Responsive collapse:
                   ≥1100 px  → 6-col bento as above
                   900-1099  → 4-col, hero becomes 4×1, others 2×1
-                  ≤899 px   → single column, everything stacks
-                And bump tile min-heights on small screens so images stay
-                photographically meaningful. */}
+                  ≤899 px   → 2-col compact (two small tiles side-by-side)
+                  ≤520 px   → single column, full-width photo cards
+
+                The previous version stayed at the asymmetric 6-col grid all
+                the way up to 720 px and then dumped everything to 1 col with
+                a hard `minmax(280px, auto)` row — so on phones the cards
+                were 280 px tall with white space + tiny text. Now image
+                heights, card padding and gap all scale down. */}
             <style>{`
               @media (max-width: 1099px) {
                 .lc-bento { grid-template-columns: repeat(4, 1fr) !important; }
                 .lc-bento .lc-bento-hero { grid-column: span 4 !important; grid-row: span 1 !important; }
                 .lc-bento > article:not(.lc-bento-hero) { grid-column: span 2 !important; }
               }
-              @media (max-width: 720px) {
-                .lc-bento { grid-template-columns: 1fr !important; grid-auto-rows: auto !important; }
-                .lc-bento > article { grid-column: span 1 !important; grid-row: span 1 !important; }
+              @media (max-width: 899px) {
+                .lc-bento {
+                  grid-template-columns: repeat(2, 1fr) !important;
+                  grid-auto-rows: auto !important;
+                  gap: 14px !important;
+                }
+                .lc-bento .lc-bento-hero {
+                  grid-column: span 2 !important;
+                }
+                .lc-bento > article:not(.lc-bento-hero) {
+                  grid-column: span 1 !important;
+                }
+                /* Tame the hero — full-width 280 px photo was 60% of the
+                   viewport height on a phone. Cap it relative to width. */
+                .lc-bento-hero > div:first-child { min-height: 0 !important; aspect-ratio: 16 / 9; }
+              }
+              @media (max-width: 520px) {
+                .lc-bento {
+                  grid-template-columns: 1fr !important;
+                  grid-auto-rows: auto !important;
+                  gap: 12px !important;
+                }
+                .lc-bento > article {
+                  grid-column: span 1 !important;
+                  grid-row: auto !important;
+                  border-radius: 18px !important;
+                }
+                /* Image-header cards only — :has(img) skips the no-image
+                   chips card (#4 Strava + FIT + Apple Health) which keeps
+                   its own inline padding. The selector tames the inline
+                   140 px / 280 px image heights to a 16:9 box so phones
+                   don't see 60 %-tall hero photos. */
+                .lc-bento > article > div:first-child:has(> img) {
+                  height: auto !important;
+                  aspect-ratio: 16 / 9;
+                  min-height: 0 !important;
+                }
+                .lc-bento > article:has(img) > div:last-child {
+                  padding: 14px 16px 16px !important;
+                }
+                .lc-bento h3 { font-size: 15px !important; }
+                .lc-bento p  { font-size: 12.5px !important; }
               }
             `}</style>
           </div>
@@ -1858,6 +2201,24 @@ export default function About() {
           </div>
           <style>{`@media (max-width: 720px) { .lc-footer-grid { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 480px) { .lc-footer-grid { grid-template-columns: 1fr !important; } }`}</style>
         </footer>
+
+        {/* Back-to-top floating button with a scroll-progress ring around
+            the edge. Shows as soon as the user scrolls past ~120 px. The
+            ring fills clockwise as the page is scrolled — `--p` (0..1) is
+            written on every scroll frame and the conic-gradient mask in
+            CSS turns that into the visible progress arc. */}
+        <button
+          ref={toTopRef}
+          type="button"
+          aria-label="Back to top"
+          onClick={scrollToTop}
+          className={`lc-totop${showToTop ? ' lc-show' : ''}`}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5" />
+            <path d="M5 12l7-7 7 7" />
+          </svg>
+        </button>
       </div>
     </>
   );

@@ -1,19 +1,24 @@
 /**
- * IOSGalleryCarousel — slideshow for the "Real screens, not mockups"
- * gallery on the About page. Replaces the static 8-up grid that previously
- * sat there. One phone at a time front-and-center, the previous + next
- * shots peek in on the sides so users see there's more to browse without
- * a separate "X of N" chrome.
+ * IOSGalleryCarousel — coverflow slideshow for the "Real screens, not
+ * mockups" section. Mirrors the visual treatment of AboutGallerySection
+ * ("More views of LaChart") below so the page reads as one consistent
+ * gallery pattern: multiple phones visible at once, the active one
+ * front-and-center, neighbours scaled down + rotated for depth.
  *
- * Auto-advances every `autoMs` ms, pauses on hover / focus / active touch.
- * Honours prefers-reduced-motion by disabling auto-advance entirely (still
- * works manually via arrows / dots / swipe).
+ * Uses Swiper (already a dep — see AboutGallerySection). Autoplay 4.5 s,
+ * pauses on hover (touch is handled natively by Swiper).
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { EffectCoverflow, Pagination, Navigation, Autoplay } from 'swiper/modules';
+import 'swiper/css';
+import 'swiper/css/navigation';
+import 'swiper/css/pagination';
+import 'swiper/css/effect-coverflow';
+import 'swiper/css/autoplay';
 
 const COLORS = {
   primary:     '#5E6590',
-  primaryDark: '#4B5278',
   primaryTint: '#EEF0F8',
   ink:         '#0A0E1A',
   muted:       '#6B7280',
@@ -25,144 +30,105 @@ export default function IOSGalleryCarousel({
   autoMs = 4500,
   onAppStoreClick,
 }) {
-  const safe = useMemo(() => (Array.isArray(shots) && shots.length ? shots : []), [shots]);
-  const [idx, setIdx] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const touchRef = useRef({ x: 0, y: 0, active: false });
-
-  // Honour prefers-reduced-motion — kills auto-advance only, manual controls
-  // continue to work.
-  const reducedMotion = useMemo(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return false;
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
-
-  // Preload neighbours so the next swipe is instant.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    safe.forEach((s) => {
-      if (!s?.src) return;
-      const img = new Image();
-      img.src = s.src;
-    });
-  }, [safe]);
-
-  useEffect(() => {
-    if (paused || reducedMotion || safe.length <= 1) return;
-    const t = window.setInterval(() => setIdx((i) => (i + 1) % safe.length), autoMs);
-    return () => window.clearInterval(t);
-  }, [paused, autoMs, safe.length, reducedMotion]);
-
-  const go = useCallback((next) => {
-    const n = safe.length;
-    if (!n) return;
-    setIdx(((next % n) + n) % n);
-  }, [safe.length]);
-
-  const onTouchStart = (e) => {
-    const t = e.touches?.[0]; if (!t) return;
-    touchRef.current = { x: t.clientX, y: t.clientY, active: true };
-    setPaused(true);
-  };
-  const onTouchEnd = (e) => {
-    const s = touchRef.current; if (!s.active) return;
-    s.active = false;
-    setPaused(false);
-    const t = e.changedTouches?.[0]; if (!t) return;
-    const dx = t.clientX - s.x;
-    const dy = t.clientY - s.y;
-    // Horizontal swipe of at least 40 px, mostly horizontal
-    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return;
-    if (dx < 0) go(idx + 1); else go(idx - 1);
-  };
-
-  if (!safe.length) return null;
-
-  const current = safe[idx];
-  const prev = safe[(idx - 1 + safe.length) % safe.length];
-  const next = safe[(idx + 1) % safe.length];
+  if (!Array.isArray(shots) || shots.length === 0) return null;
 
   return (
-    <div
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      style={{ position: 'relative' }}
-    >
-      {/* ── Stage ───────────────────────────────────────────────────── */}
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        style={{
-          position: 'relative',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 'clamp(380px, 60vw, 580px)',
-          padding: '12px 0',
-          overflow: 'hidden',
+    <div className="lc-ios-gallery-wrap" style={{ position: 'relative' }}>
+      <Swiper
+        effect="coverflow"
+        grabCursor
+        centeredSlides
+        loop
+        initialSlide={Math.min(1, shots.length - 1)}
+        slidesPerView="auto"
+        coverflowEffect={{
+          rotate: 6,
+          stretch: 0,
+          depth: 140,
+          modifier: 2.2,
+          slideShadows: false,
         }}
+        autoplay={{
+          delay: autoMs,
+          disableOnInteraction: false,
+          pauseOnMouseEnter: true,
+        }}
+        pagination={{ clickable: true }}
+        navigation
+        modules={[EffectCoverflow, Pagination, Navigation, Autoplay]}
+        className="lcIosSwiper !pb-12"
       >
-        {/* Side peeks — only render on wider viewports via the side classes;
-            on phone they're hidden by CSS below so the center phone has
-            room to breathe. */}
-        <PhoneCard shot={prev} role="prev" onClick={() => go(idx - 1)} />
-        <PhoneCard shot={current} role="current" />
-        <PhoneCard shot={next} role="next" onClick={() => go(idx + 1)} />
+        {shots.map((shot) => (
+          <SwiperSlide
+            key={shot.src}
+            className="!w-[210px] sm:!w-[260px] md:!w-[300px]"
+          >
+            {({ isActive }) => (
+              <figure
+                style={{
+                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  textAlign: 'center',
+                  transition: 'transform .4s ease, opacity .4s ease',
+                  opacity: isActive ? 1 : 0.85,
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    aspectRatio: '9 / 16',
+                    background: `linear-gradient(160deg, #F4F5FA 0%, ${COLORS.primaryTint} 100%)`,
+                    borderRadius: 24,
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: 14,
+                    border: `1px solid ${COLORS.border}`,
+                    overflow: 'hidden',
+                    boxShadow: isActive
+                      ? '0 24px 60px -24px rgba(94,101,144,0.45)'
+                      : '0 10px 30px -16px rgba(10,14,26,0.25)',
+                  }}
+                >
+                  <img
+                    src={shot.src}
+                    alt={`LaChart iOS — ${shot.title}`}
+                    loading="lazy"
+                    draggable={false}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      filter: 'drop-shadow(0 18px 28px rgba(10,14,26,0.18))',
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                    }}
+                  />
+                </div>
+                <figcaption
+                  style={{
+                    marginTop: 14,
+                    minHeight: 48,
+                    opacity: isActive ? 1 : 0.7,
+                    transition: 'opacity .3s ease',
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.ink, letterSpacing: '-0.005em' }}>
+                    {shot.title}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: COLORS.muted, lineHeight: 1.5, marginTop: 4, maxWidth: 260, marginInline: 'auto' }}>
+                    {shot.caption}
+                  </div>
+                </figcaption>
+              </figure>
+            )}
+          </SwiperSlide>
+        ))}
+      </Swiper>
 
-        {/* Arrows */}
-        {safe.length > 1 && (
-          <>
-            <ArrowButton
-              dir="prev"
-              onClick={() => go(idx - 1)}
-              aria-label="Previous screen"
-            />
-            <ArrowButton
-              dir="next"
-              onClick={() => go(idx + 1)}
-              aria-label="Next screen"
-            />
-          </>
-        )}
-      </div>
-
-      {/* ── Caption (fades w/ slide) ───────────────────────────────── */}
-      <div style={{ textAlign: 'center', marginTop: 18, minHeight: 56 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.ink, letterSpacing: '-0.005em' }}>
-          {current.title}
-        </div>
-        <div style={{ fontSize: 13, color: COLORS.muted, lineHeight: 1.5, marginTop: 4, maxWidth: 460, marginInline: 'auto' }}>
-          {current.caption}
-        </div>
-      </div>
-
-      {/* ── Dots ──────────────────────────────────────────────────── */}
-      {safe.length > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 14 }}>
-          {safe.map((s, i) => (
-            <button
-              key={s.src}
-              type="button"
-              onClick={() => go(i)}
-              aria-label={`Go to ${s.title}`}
-              style={{
-                height: 6, width: i === idx ? 24 : 6,
-                borderRadius: 999,
-                background: i === idx ? COLORS.primary : 'rgba(94,101,144,0.25)',
-                border: 'none', padding: 0,
-                cursor: 'pointer',
-                transition: 'width .25s ease, background .2s ease',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* App Store CTA */}
-      <div style={{ textAlign: 'center', marginTop: 26 }}>
+      {/* App Store CTA — same black badge as the rest of the page */}
+      <div style={{ textAlign: 'center', marginTop: 18 }}>
         <a
           href="https://apps.apple.com/cz/app/lachart/id6764768876?l=cs"
           target="_blank"
@@ -182,112 +148,26 @@ export default function IOSGalleryCarousel({
         </a>
       </div>
 
+      {/* Swiper nav arrows live inside the slideshow box by default — tint
+          them to LaChart purple instead of the swiper blue default. */}
       <style>{`
-        @media (max-width: 720px) {
-          /* Hide the side-peek phones on phone-width screens so the active
-             phone has the full stage. Arrows + swipe still drive navigation. */
-          .lc-gallery-side { display: none !important; }
-          .lc-gallery-current { transform: scale(1) !important; }
+        .lcIosSwiper .swiper-button-prev,
+        .lcIosSwiper .swiper-button-next {
+          color: ${COLORS.primary};
+        }
+        .lcIosSwiper .swiper-button-prev::after,
+        .lcIosSwiper .swiper-button-next::after {
+          font-size: 22px;
+          font-weight: 800;
+        }
+        .lcIosSwiper .swiper-pagination-bullet {
+          background: ${COLORS.primary};
+          opacity: 0.35;
+        }
+        .lcIosSwiper .swiper-pagination-bullet-active {
+          opacity: 1;
         }
       `}</style>
     </div>
-  );
-}
-
-function PhoneCard({ shot, role, onClick }) {
-  if (!shot) return null;
-  const isCurrent = role === 'current';
-  const side = role === 'prev' ? 'left' : role === 'next' ? 'right' : null;
-
-  // Side phones peek in at reduced scale + opacity to suggest "swipeable".
-  const transform = isCurrent
-    ? 'scale(1)'
-    : side === 'left'
-      ? 'translateX(-72%) scale(0.78)'
-      : 'translateX(72%) scale(0.78)';
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      tabIndex={isCurrent ? -1 : 0}
-      aria-hidden={!isCurrent}
-      aria-label={isCurrent ? undefined : `Show ${shot.title}`}
-      className={isCurrent ? 'lc-gallery-current' : 'lc-gallery-side'}
-      style={{
-        position: isCurrent ? 'relative' : 'absolute',
-        top: isCurrent ? undefined : '50%',
-        left: side === 'left' ? '50%' : undefined,
-        right: side === 'right' ? '50%' : undefined,
-        transform: isCurrent
-          ? transform
-          : `translate(${side === 'left' ? '-50%' : '50%'}, -50%) ${transform.replace(/translateX\([^)]+\)\s*/, '')}`,
-        background: 'none', border: 'none', padding: 0,
-        cursor: isCurrent ? 'default' : 'pointer',
-        zIndex: isCurrent ? 2 : 1,
-        filter: isCurrent ? 'none' : 'blur(1px)',
-        opacity: isCurrent ? 1 : 0.55,
-        transition: 'transform .45s cubic-bezier(.2,.7,.3,1), opacity .35s ease, filter .35s ease',
-        WebkitTapHighlightColor: 'transparent',
-      }}
-    >
-      <div
-        style={{
-          width: 'clamp(220px, 30vw, 320px)',
-          aspectRatio: '9 / 16',
-          background: 'linear-gradient(160deg, #F4F5FA 0%, ' + COLORS.primaryTint + ' 100%)',
-          borderRadius: 24,
-          display: 'grid',
-          placeItems: 'center',
-          padding: 14,
-          border: '1px solid ' + COLORS.border,
-          overflow: 'hidden',
-          boxShadow: isCurrent
-            ? '0 24px 60px -24px rgba(94,101,144,0.45)'
-            : '0 10px 30px -16px rgba(10,14,26,0.25)',
-        }}
-      >
-        <img
-          src={shot.src}
-          alt={`LaChart iOS — ${shot.title}`}
-          loading="lazy"
-          style={{
-            maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
-            filter: 'drop-shadow(0 18px 28px rgba(10,14,26,0.18))',
-          }}
-        />
-      </div>
-    </button>
-  );
-}
-
-function ArrowButton({ dir, onClick, ...aria }) {
-  const isPrev = dir === 'prev';
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      {...aria}
-      style={{
-        position: 'absolute',
-        top: '50%', transform: 'translateY(-50%)',
-        [isPrev ? 'left' : 'right']: 'clamp(4px, 2vw, 24px)',
-        width: 40, height: 40, borderRadius: 999,
-        background: '#fff',
-        border: '1px solid ' + COLORS.border,
-        color: COLORS.primary,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 6px 20px -8px rgba(10,14,26,0.18)',
-        cursor: 'pointer',
-        zIndex: 3,
-        WebkitTapHighlightColor: 'transparent',
-      }}
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-        {isPrev
-          ? <path d="M15 19l-7-7 7-7" />
-          : <path d="M9 5l7 7-7 7" />}
-      </svg>
-    </button>
   );
 }

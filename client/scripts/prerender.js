@@ -144,14 +144,39 @@ async function prerenderRoute(browser, route) {
 }
 
 (async () => {
+  // Allow CI environments to skip prerender entirely. Vercel's build image
+  // periodically loses Chromium runtime deps (e.g. libnspr4.so), which used
+  // to hard-fail the whole deploy. SKIP_PRERENDER=true exits successfully
+  // so the SPA still ships — SEO falls back to runtime React.
+  if (process.env.SKIP_PRERENDER === 'true' || process.env.SKIP_PRERENDER === '1') {
+    console.log('[prerender] SKIP_PRERENDER set — skipping prerender, exiting 0.');
+    process.exit(0);
+  }
+
   console.log(`[prerender] Starting static server on :${PORT}…`);
   const server = await startServer();
 
   console.log('[prerender] Launching headless Chromium…');
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+  } catch (e) {
+    // Chromium failed to launch (missing libnspr4.so on Vercel, /tmp full,
+    // sandbox disabled, …). Treat as non-fatal: log and exit 0 so the build
+    // ships. Pre-rendered HTML is purely an SEO layer — without it the SPA
+    // still works, Google just falls back to executing JS. To re-enable
+    // prerender on Vercel, install @sparticuz/chromium and rewrite this
+    // launch call to use its executablePath().
+    console.warn(
+      '[prerender] ⚠ Chromium failed to launch — shipping SPA without pre-rendered HTML.\n' +
+      '            Underlying error:', e?.message || e
+    );
+    try { server.close(); } catch {}
+    process.exit(0);
+  }
 
   try {
     for (const route of PRERENDER_ROUTES) {
