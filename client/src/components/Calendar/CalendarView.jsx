@@ -2641,7 +2641,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
 
   // Completed metadata edit state
-  const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', calories: '', rpe: '', lactate: '' });
+  const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '' });
   const [savingCompleted, setSavingCompleted] = useState(false);
 
   // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
@@ -2874,11 +2874,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       description: notes || '',
       distanceKm: distKm,
       durationDisplay: durDisplay,
+      tss: tss > 0 ? String(Math.round(tss)) : '',
       calories: calories > 0 ? String(Math.round(calories)) : '',
       rpe: rpe > 0 ? String(rpe) : '',
       lactate: sessionLactate != null ? String(sessionLactate) : '',
     });
-  }, [title, notes, dist, dur, calories, rpe, sessionLactate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [title, notes, dist, dur, tss, calories, rpe, sessionLactate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist a category change immediately (no submit button — quick tag).
   const handleCategoryChange = useCallback(async (nextCategory) => {
@@ -2939,30 +2940,92 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
   }, [merged, plannedWorkout, athleteId, onPlannedSaved]);
 
+  // Accept "1:30:00", "1:30", "90", "90m", "1h30", "1h 30m" → seconds.
+  // Whatever the user typed in the Duration field, we always end up with an
+  // integer number of seconds for the API. Returns null on parse failure
+  // so we can fall back to "don't change it" instead of sending NaN.
+  const parseDurationToSeconds = (raw) => {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    // Classic HH:MM:SS / MM:SS form.
+    if (s.includes(':')) {
+      const parts = s.split(':').map(p => Number(p.trim()));
+      if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 1) return parts[0] * 60;
+      return null;
+    }
+    // "1h30" / "1h 30m" / "45m" / "90" (assume minutes).
+    const m = s.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/i);
+    if (m) {
+      const h = Number(m[1] || 0);
+      const min = Number(m[2] || 0);
+      if (h > 0 || min > 0) return h * 3600 + min * 60;
+    }
+    return null;
+  };
+
   const handleSaveCompleted = async () => {
     setSavingCompleted(true);
     try {
       const id = String(merged.id || merged._id || '');
+      // Build the "what's editable from this form" payload. Distance,
+      // duration and TSS are now first-class — they're written to the
+      // activity record AND the local `detail` state below so the
+      // dashboard / week strip / calendar cards re-render immediately
+      // instead of waiting for the next refetch.
       const extraFields = {};
       if (completedForm.calories !== '') extraFields.calories = Number(completedForm.calories) || 0;
-      if (completedForm.rpe !== '') extraFields.rpe = Number(completedForm.rpe) || 0;
-      if (completedForm.lactate !== '') extraFields.lactate = Number(completedForm.lactate) || 0;
+      if (completedForm.rpe !== '')      extraFields.rpe = Number(completedForm.rpe) || 0;
+      if (completedForm.lactate !== '')  extraFields.lactate = Number(completedForm.lactate) || 0;
+      if (completedForm.tss !== '')      extraFields.tss = Number(completedForm.tss) || 0;
+      // Distance is stored in metres on the backend; the form is km.
+      if (completedForm.distanceKm !== '') {
+        const km = Number(completedForm.distanceKm);
+        if (Number.isFinite(km) && km >= 0) extraFields.distance = Math.round(km * 1000);
+      }
+      // Duration is stored as seconds (movingTime / duration); convert from
+      // the human-readable display the user typed.
+      if (completedForm.durationDisplay !== '') {
+        const secs = parseDurationToSeconds(completedForm.durationDisplay);
+        if (secs != null) {
+          extraFields.movingTime = secs;
+          extraFields.duration   = secs;
+        }
+      }
       const basePayload = { title: completedForm.title, description: completedForm.description };
       const isStravaC = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
       const isFitC    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStravaC && !merged._id);
+      // Strava + FIT branches used to send only `basePayload` (title +
+      // description) and silently drop manual overrides for distance /
+      // duration / TSS / calories / RPE / lactate. That meant the user
+      // could edit those fields, see the input update, hit Save, but the
+      // numbers never propagated. Now extraFields go on all branches.
       if (isStravaC) {
         const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
         const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(stravaId, basePayload);
+        await updateStravaActivity(stravaId, { ...basePayload, ...extraFields });
       } else if (isFitC) {
         const fitId = String(merged._id || id.replace(/^fit-/, ''));
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(fitId, basePayload);
+        await updateFitTraining(fitId, { ...basePayload, ...extraFields });
       } else if (merged._id) {
         const { updateTraining } = await import('../../services/api.js');
         await updateTraining(String(merged._id), { ...basePayload, ...extraFields });
       }
+      // Mirror the edited fields back into `merged` (via setDetail) so the
+      // header chips ("3h 40m · 109.6 km · 160 TSS") update immediately
+      // without waiting for the parent's next refetch. Also broadcast a
+      // generic event the dashboard / weekly card / calendar grids listen
+      // for, so they can patch their own copies of this activity in-place.
       setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description, ...extraFields }));
+      try {
+        window.dispatchEvent(new CustomEvent('activityMetricsUpdated', {
+          detail: { id, ...extraFields },
+        }));
+      } catch { /* ignore */ }
       try {
         window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id, title: completedForm.title } }));
       } catch { /* ignore */ }
@@ -3799,6 +3862,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   <input type="text" value={completedForm.durationDisplay}
                     onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
                     placeholder="1:30:00"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">TSS</div>
+                  <input type="number" inputMode="numeric" value={completedForm.tss}
+                    onChange={e => setCompletedForm(p => ({ ...p, tss: e.target.value }))}
+                    placeholder="e.g. 160" min="0"
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>

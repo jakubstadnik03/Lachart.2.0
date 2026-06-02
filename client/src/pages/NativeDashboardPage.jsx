@@ -197,7 +197,7 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, onOpenPlanned }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, onOpenPlanned, onPlanWorkout }) {
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
@@ -244,16 +244,43 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
 
   return (
     <div style={cardStyle}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasContent ? 10 : 4 }}>
+      {/* Header — title on the left, session count + plan-workout shortcut
+          on the right. The "+" used to live in the WeekStrip but the tap
+          target there was tiny and stuck inside a nested-button anti-
+          pattern; here it's a full pill button next to the count, which
+          reads as the obvious place to add a workout for this day. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasContent ? 10 : 4, gap: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {label}
         </span>
-        {dayActs.length > 0 && (
-          <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
-            {dayActs.length} session{dayActs.length !== 1 ? 's' : ''}
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {dayActs.length > 0 && (
+            <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
+              {dayActs.length} session{dayActs.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {onPlanWorkout && (
+            <button
+              type="button"
+              onClick={() => onPlanWorkout(date)}
+              aria-label="Plan workout for this day"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 9px', borderRadius: 999,
+                background: 'rgba(94,101,144,0.12)',
+                color: '#5E6590',
+                border: '1px solid rgba(94,101,144,0.22)',
+                fontSize: 11, fontWeight: 800, lineHeight: 1,
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+              }}
+            >
+              <span style={{ fontSize: 13, lineHeight: 1, fontWeight: 800 }}>+</span>
+              <span>Plan</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Paired planned+activity (green merged card like calendar) ── */}
@@ -983,6 +1010,7 @@ export default function NativeDashboardPage({
                 date={selectedDate}
                 activities={activities}
                 plannedWorkouts={plannedWorkouts}
+                onPlanWorkout={onPlanWorkout}
                 onOpenActivity={openActivity}
                 onOpenPlanned={(pw, linkedAct) => {
                   // If the planned workout is paired with a completed activity,

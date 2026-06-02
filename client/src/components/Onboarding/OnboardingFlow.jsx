@@ -22,16 +22,44 @@ const isCoach = (u) =>
 const DISMISS_KEY = (uid) => `lachart:onboardingSetupDone:${uid}`;
 const STRAVA_SKIP_KEY = (uid) => `stravaConnectModalDone_${uid}`;
 
-/** Returns true when the onboarding flow should be shown for this user. */
+/** Returns true when the onboarding flow should be shown for this user.
+ *
+ *  History: the original gate insisted on `dateOfBirth && height && weight
+ *  && sport` AND `unitsDone`. `height` was added later, and `unitsDone` only
+ *  gets persisted after a user explicitly completes the units step. The net
+ *  effect was that long-time users who'd already configured everything kept
+ *  getting bounced through the welcome carousel every visit. The check
+ *  below adds three "you're clearly an existing user, stop nagging" outs:
+ *    • explicit `onboarding.basicProfileDone` flag (the canonical signal)
+ *    • basic profile fields present (no longer demanding `height`)
+ *    • configured training zones, which can only exist if the user finished
+ *      setup at some point
+ *    • account older than 7 days — established account, never bother them
+ */
 export function shouldShowOnboarding(user) {
   if (!user?._id) return false;
   // Never show again once dismissed/completed
   if (localStorage.getItem(DISMISS_KEY(user._id)) === 'true') return false;
-  // Show if any required step is unfinished
+
+  // "I'm an old account, leave me alone" — accounts older than a week have
+  // already chosen whether to onboard; don't keep showing them the welcome.
+  const created = user.createdAt ? new Date(user.createdAt).getTime() : null;
+  if (created && Date.now() - created > 7 * 24 * 60 * 60 * 1000) return false;
+
+  // Configured zones → user has clearly completed setup at some point.
+  const hasZones =
+    (Array.isArray(user.trainingZones) && user.trainingZones.length > 0) ||
+    (user.zones && Object.keys(user.zones).length > 0);
+  if (hasZones) return false;
+
+  // Standard signals — drop the height requirement (newer field, missing
+  // on older accounts).
   const profileDone =
     user.onboarding?.basicProfileDone ||
-    (user.dateOfBirth && user.height && user.weight && user.sport);
-  const unitsDone = user.onboarding?.unitsDone;
+    (user.dateOfBirth && user.weight && user.sport);
+  const unitsDone =
+    user.onboarding?.unitsDone ||
+    !!(user.preferredUnits || user.units); // implicit signal: units chosen elsewhere
   return !profileDone || !unitsDone;
 }
 
@@ -1181,7 +1209,14 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
   const handleFinish = useCallback(() => {
     if (didFinishRef.current) return;
     didFinishRef.current = true;
-    if (user?._id) localStorage.setItem(INTRO_SEEN_KEY(user._id), 'true');
+    if (user?._id) {
+      // Mark BOTH the intro slides AND the whole onboarding flow as seen.
+      // Without DISMISS_KEY here, closing the welcome slides only suppresses
+      // them temporarily — `shouldShowOnboarding` would re-trigger the entire
+      // flow on the next visit, looping the user back into the same modal.
+      localStorage.setItem(INTRO_SEEN_KEY(user._id), 'true');
+      localStorage.setItem(DISMISS_KEY(user._id), 'true');
+    }
     setExiting(true);
     finishTimerRef.current = setTimeout(() => onDone(), 300);
   }, [onDone, user?._id]);

@@ -1814,29 +1814,46 @@ export default function DashboardPage() {
 
   // ── Mobile/Native: render the redesigned native dashboard ──────────────────
   if (isCapacitorNative()) return (
-    <NativeDashboardPage
-      activities={calendarData}
-      plannedWorkouts={plannedWorkouts}
-      tests={tests}
-      todayMetrics={todayMetrics}
-      sparklineData={sparklineData}
-      loading={loading}
-      user={user}
-      athleteId={dashboardDataAthleteId}
-      onPlannedWorkoutChanged={({ type, planned, id }) => {
-        if (type === 'updated' && planned?._id) {
-          setPlannedWorkouts(prev => prev.map(p => p._id === planned._id ? planned : p));
-        } else if (type === 'deleted' && id) {
-          setPlannedWorkouts(prev => prev.filter(p => p._id !== id));
-        }
-      }}
-      onPlanWorkout={(date) => {
-        if (!isPremium) { gate('Workout Planning', 'pro'); return; }
-        setPlanModal({ date, workout: null });
-      }}
-      stravaConnected={stravaConnected}
-      onRequestStravaSync={performManualStravaSync}
-    />
+    <>
+      <NativeDashboardPage
+        activities={calendarData}
+        plannedWorkouts={plannedWorkouts}
+        tests={tests}
+        todayMetrics={todayMetrics}
+        sparklineData={sparklineData}
+        loading={loading}
+        user={user}
+        athleteId={dashboardDataAthleteId}
+        onPlannedWorkoutChanged={({ type, planned, id }) => {
+          if (type === 'updated' && planned?._id) {
+            setPlannedWorkouts(prev => prev.map(p => p._id === planned._id ? planned : p));
+          } else if (type === 'deleted' && id) {
+            setPlannedWorkouts(prev => prev.filter(p => p._id !== id));
+          }
+        }}
+        onPlanWorkout={(date) => {
+          if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+          setPlanModal({ date, workout: null });
+        }}
+        stravaConnected={stravaConnected}
+        onRequestStravaSync={performManualStravaSync}
+      />
+      {/* WorkoutPlanModal must render in the native branch too — the early
+          return above used to skip it, so tapping "+ Plan" on the iOS
+          Today card flipped `planModal` state but the modal itself never
+          mounted. The full <WorkoutPlanModal/> below the non-native branch
+          would only render in the web path. */}
+      {planModal && (
+        <WorkoutPlanModal
+          date={planModal.date}
+          workout={planModal.workout}
+          athleteId={selectedAthleteId}
+          onSave={handleDashboardPlanSave}
+          onDelete={handleDashboardPlanDelete}
+          onClose={() => setPlanModal(null)}
+        />
+      )}
+    </>
   );
 
   if (error) return (

@@ -367,20 +367,14 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
               {indicatorContent()}
             </div>
 
-            {/* Daily totals + plan-workout shortcut.
-                The "+" used to live in the top-right corner as a nested
-                <button> — invalid HTML (button-in-button) which the iOS
-                WebView silently de-activates. Now it's rendered as a
-                <span role="button"> inline beside the TSS/duration totals
-                on the SELECTED day, where the touch target is unambiguous
-                and the day cell's onClick can't swallow it
-                (stopPropagation on the span). */}
+            {/* Daily totals (TSS + duration). The "+" plan-workout shortcut
+                used to live here but was moved out — it now sits next to
+                the "3 sessions" count in the TODAY card below, which is a
+                bigger, unambiguous tap target and reads more naturally. */}
             {(() => {
               const tot = dailyTotals(activities, plannedWorkouts, d);
               const durStr = fmtDur(tot.secs);
-              const hasTotals = tot.tss > 0 || !!durStr;
-              const showPlusBtn = isSelected && !!onPlanWorkout;
-              if (!hasTotals && !showPlusBtn) return null;
+              if (!tot.tss && !durStr) return null;
 
               const totalsColor = isSelected
                 ? 'rgba(255,255,255,.85)'
@@ -388,49 +382,14 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
 
               return (
                 <div style={{
-                  marginTop: 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  gap: 4,
+                  fontSize: 8.5, fontWeight: 800, color: totalsColor,
+                  fontVariantNumeric: 'tabular-nums', lineHeight: 1.15,
+                  marginTop: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', gap: 0,
+                  fontStyle: tot.planned ? 'italic' : 'normal',
                 }}>
-                  {hasTotals && (
-                    <div style={{
-                      fontSize: 8.5, fontWeight: 800, color: totalsColor,
-                      fontVariantNumeric: 'tabular-nums', lineHeight: 1.15,
-                      display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      fontStyle: tot.planned ? 'italic' : 'normal',
-                    }}>
-                      {tot.tss > 0 && <span>{tot.tss}</span>}
-                      {durStr && <span style={{ fontSize: 7.5, opacity: 0.75, fontWeight: 700 }}>{durStr}</span>}
-                    </div>
-                  )}
-                  {showPlusBtn && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Plan workout for this day"
-                      onClick={(e) => { e.stopPropagation(); onPlanWorkout(d); }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); onPlanWorkout(d); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.stopPropagation(); e.preventDefault(); onPlanWorkout(d);
-                        }
-                      }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 16, height: 16, borderRadius: '50%',
-                        background: isSelected ? 'rgba(255,255,255,.32)' : 'rgba(94,101,144,.18)',
-                        color: isSelected ? '#fff' : '#5E6590',
-                        fontSize: 12, fontWeight: 800, lineHeight: 1,
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
-                      }}
-                    >
-                      +
-                    </span>
-                  )}
+                  {tot.tss > 0 && <span>{tot.tss}</span>}
+                  {durStr && <span style={{ fontSize: 7.5, opacity: 0.75, fontWeight: 700 }}>{durStr}</span>}
                 </div>
               );
             })()}

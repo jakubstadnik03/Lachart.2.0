@@ -2539,7 +2539,18 @@ const WeeklyCalendar = ({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-8 gap-2 sm:gap-3">
+          /* 7 day columns + 1 stats column. The previous grid-cols-8 gave
+             the stats column the same width as a day column, which wasn't
+             enough room for "163.37 km · 182" rows — those forced the row
+             to overflow and the dashboard card scrolled horizontally. New
+             template: each day column collapses freely [minmax 0 to 1fr],
+             stats column gets a 158px floor plus a 1.25fr growth weight. */
+          <div
+            className="grid gap-2 sm:gap-3"
+            style={{
+              gridTemplateColumns: 'repeat(7, minmax(0, 1fr)) minmax(158px, 1.25fr)',
+            }}
+          >
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
               const allActivities = activitiesByDay.get(key) || [];

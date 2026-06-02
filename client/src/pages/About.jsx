@@ -35,6 +35,7 @@ import { trackEvent } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
+const IOSGalleryCarousel = React.lazy(() => import('../components/About/IOSGalleryCarousel'));
 
 /* ─── design-handoff palette mapped to short JS constants ─────────────── */
 const LC = {
@@ -1511,109 +1512,25 @@ export default function About() {
               </p>
             </div>
 
-            <div
-              className="lc-ios-gallery"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                gap: 18,
-              }}
-            >
-              {[
-                { src: '/images/ios-launch/gallery/dashboard-fff.png',     title: 'Dashboard',         caption: 'Form, Fitness, Fatigue + week TSS at a glance.' },
-                { src: '/images/ios-launch/gallery/lactate-test-pre-season.png', title: 'Lactate test',      caption: 'LT1 / LT2 with last test details and full training zones.' },
-                { src: '/images/ios-launch/gallery/lactate-test-entry.png',title: 'Live recording',    caption: 'Capture stages, lactate + HR right on the bike.' },
-                { src: '/images/ios-launch/gallery/laps-table.png',        title: 'Per-interval data', caption: 'Power, HR and lactate side-by-side per lap.' },
-                { src: '/images/ios-launch/gallery/laps-power.png',        title: 'Lap power chart',   caption: 'Smart lap detection works on Strava + FIT.' },
-                { src: '/images/ios-launch/gallery/plan-workout.png',      title: 'Plan workouts',     caption: 'Zone-aware builder with TSS preview.' },
-                { src: '/images/ios-launch/gallery/calendar.png',          title: 'Calendar',          caption: 'Planned & completed sessions in one view.' },
-                { src: '/images/ios-launch/gallery/charts-analytics.png',  title: 'Analytics',         caption: 'Week-by-week load, volume by sport, trends.' },
-              ].map((shot, i) => (
-                <figure
-                  key={shot.src}
-                  ref={pushRef}
-                  className={`lc-reveal d${(i % 4) + 1}`}
-                  style={{
-                    margin: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '100%',
-                      aspectRatio: '9 / 16',
-                      background: 'linear-gradient(160deg, #F4F5FA 0%, ' + LC.primaryTint + ' 100%)',
-                      borderRadius: 20,
-                      display: 'grid',
-                      placeItems: 'center',
-                      padding: 12,
-                      border: '1px solid ' + LC.border,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <img
-                      src={shot.src}
-                      alt={`LaChart iOS — ${shot.title}`}
-                      loading="lazy"
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '100%',
-                        objectFit: 'contain',
-                        filter: 'drop-shadow(0 18px 28px rgba(10,14,26,0.18))',
-                      }}
-                    />
-                  </div>
-                  <figcaption style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: LC.ink, letterSpacing: '-0.005em' }}>{shot.title}</div>
-                    <div style={{ fontSize: 12, color: LC.muted, lineHeight: 1.4, marginTop: 4 }}>{shot.caption}</div>
-                  </figcaption>
-                </figure>
-              ))}
+            {/* Slideshow carousel — one phone front and centre, the previous
+                and next phones peek in on the sides to telegraph "swipe for
+                more". Auto-advances every 4.5 s, pauses on hover / touch.
+                Dot indicators + side arrows + swipe drive manual navigation. */}
+            <div ref={pushRef} className="lc-reveal">
+              <IOSGalleryCarousel
+                shots={[
+                  { src: '/images/ios-launch/gallery/dashboard-fff.png',           title: 'Dashboard',         caption: 'Form, Fitness, Fatigue + week TSS at a glance.' },
+                  { src: '/images/ios-launch/gallery/lactate-test-pre-season.png', title: 'Lactate test',      caption: 'LT1 / LT2 with last test details and full training zones.' },
+                  { src: '/images/ios-launch/gallery/lactate-test-entry.png',      title: 'Live recording',    caption: 'Capture stages, lactate + HR right on the bike.' },
+                  { src: '/images/ios-launch/gallery/laps-table.png',              title: 'Per-interval data', caption: 'Power, HR and lactate side-by-side per lap.' },
+                  { src: '/images/ios-launch/gallery/laps-power.png',              title: 'Lap power chart',   caption: 'Smart lap detection works on Strava + FIT.' },
+                  { src: '/images/ios-launch/gallery/plan-workout.png',            title: 'Plan workouts',     caption: 'Zone-aware builder with TSS preview.' },
+                  { src: '/images/ios-launch/gallery/calendar.png',                title: 'Calendar',          caption: 'Planned & completed sessions in one view.' },
+                  { src: '/images/ios-launch/gallery/charts-analytics.png',        title: 'Analytics',         caption: 'Week-by-week load, volume by sport, trends.' },
+                ]}
+                onAppStoreClick={() => track('ios_gallery_appstore_click')}
+              />
             </div>
-
-            <div style={{ textAlign: 'center', marginTop: 28 }}>
-              <a
-                href="https://apps.apple.com/cz/app/lachart/id6764768876?l=cs"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => track('ios_gallery_appstore_click')}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 10,
-                  padding: '12px 22px', borderRadius: 12,
-                  background: '#000', color: '#fff', textDecoration: 'none',
-                }}
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/></svg>
-                <span style={{ fontWeight: 700 }}>Get it on the App Store</span>
-              </a>
-            </div>
-
-            {/* Responsive grid: 4 → 3 → 2 → horizontal scroll on phone. */}
-            <style>{`
-              @media (max-width: 1080px) {
-                .lc-ios-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-              }
-              @media (max-width: 780px) {
-                .lc-ios-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-              }
-              @media (max-width: 480px) {
-                .lc-ios-gallery {
-                  grid-template-columns: none !important;
-                  grid-auto-flow: column !important;
-                  grid-auto-columns: 70% !important;
-                  overflow-x: auto !important;
-                  scroll-snap-type: x mandatory;
-                  padding-bottom: 8px;
-                  margin: 0 -16px;
-                  padding-left: 16px;
-                  padding-right: 16px;
-                }
-                .lc-ios-gallery > figure { scroll-snap-align: start; }
-              }
-            `}</style>
           </div>
         </section>
 
@@ -1760,23 +1677,33 @@ export default function About() {
           </div>
         </section>
 
-        {/* ── 20. Pricing — kept from prior About ──────────────────────── */}
+        {/* ── 20. Pricing ──────────────────────────────────────────────
+            Top padding intentionally tightened (was 80 px from .lc-sectpad)
+            so the section meets the iOS gallery below without a half-empty
+            gap. Until LaChart's paid plans actually charge cards, the lead
+            banner says everything is free — kept the price cards visible
+            below as a "this is what the tiers will look like" preview. */}
         <section id="pricing" style={{ background: '#fff', borderTop: '1px solid ' + LC.border }}>
-          <div className="lc-sectpad">
-            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 40px' }}>
+          <div className="lc-sectpad" style={{ paddingTop: 36 }}>
+            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 28px' }}>
               <Eyebrow>Pricing</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Try every paid feature — <em>2 months free</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>Start with a <b style={{ color: LC.text }}>60-day free trial</b> on Pro or Coach. No charge until the trial ends — cancel any time from your account settings.</p>
+              <h2 className="lc-big" style={{ margin: '14px 0 12px' }}>Everything is <em>free right now</em></h2>
+              <p className="lc-lead" style={{ margin: '0 auto' }}>
+                LaChart is in launch mode — every feature on every plan is unlocked at <b style={{ color: LC.text }}>€0</b>.
+                Paid tiers go live later in 2026; we'll email you at least 30 days before that happens.
+              </p>
             </div>
-            <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 24, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" /></svg>
+            <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 20, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7H8a2 2 0 1 1 0-4 4 4 0 0 1 4 4M12 7h4a2 2 0 1 0 0-4 4 4 0 0 0-4 4" /></svg>
               </div>
               <div style={{ flex: 1, minWidth: 240 }}>
-                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 2 months free on every paid plan</p>
-                <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>Pick Pro or Coach, enter your card, and use the full app for 60 days at no cost. We email you 7 days before the trial ends — cancel anytime, no questions asked.</p>
+                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 All features included — no card needed</p>
+                <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>
+                  Free, Pro and Coach features are all unlocked during the launch period. Sign up with an email and you're in — no payment screen.
+                </p>
               </div>
-              <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free trial →</Link>
+              <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free →</Link>
             </div>
             <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
               {/* IMPORTANT: keep this feature list in sync with PLANS_UI in
