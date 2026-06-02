@@ -180,6 +180,19 @@ function AppRoutes() {
     }
   }, [location.pathname, location.search]);
 
+  // Browser-style scroll-to-top on route change. Without this, clicking
+  // "Sign up" from the bottom of /about lands /signup pre-scrolled to the
+  // same Y offset, which reads as "the page didn't load". Skip when the URL
+  // includes a `#hash` — those navigations are explicitly targeting an
+  // anchor on the same page (e.g. About's "App", "Pricing" nav links).
+  React.useEffect(() => {
+    if (location.hash) return;
+    // RAF so the scroll happens after React has committed the new route's
+    // DOM — otherwise the browser scrolls the OUTGOING page right before
+    // it unmounts, which is invisible to the user.
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  }, [location.pathname, location.hash]);
+
   // Save current route to localStorage (only for protected routes)
   React.useEffect(() => {
     const publicRoutes = [
