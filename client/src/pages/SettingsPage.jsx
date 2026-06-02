@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
@@ -12,6 +12,7 @@ import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
+import AppleHealthCard from '../components/Settings/AppleHealthCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -108,7 +109,7 @@ function getStravaSyncHealth(status) {
       description:
         'The server is registered with Strava, but no activity event has arrived yet. ' +
         'That is normal until you save a new workout on Strava after connecting. ' +
-        'Until then, background sync runs about every 10 minutes (or when you open the app). ' +
+        'Until then, background sync runs about every 5 minutes (or when you open the app). ' +
         'Use Sync now for an immediate pull.',
     };
   }
@@ -116,7 +117,7 @@ function getStravaSyncHealth(status) {
     tone: 'amber',
     label: 'Polling fallback active',
     description:
-      'Real-time webhook could not be confirmed. New activities are checked in the background every ~10 minutes, or when you open the app. Use Sync now if you need them immediately.',
+      'Real-time webhook could not be confirmed. New activities are checked in the background every ~5 minutes, or when you open the app. Use Sync now if you need them immediately.',
   };
 }
 
@@ -309,6 +310,40 @@ const SettingsPage = () => {
       setStravaWebhookStatusLoading(false);
     }
   }, [stravaConnected]);
+
+  // If sync is hours stale, pull immediately when the user opens Integrations
+  // (server also queues sync on GET /strava/status — this gives instant UI feedback).
+  const stravaStaleSyncTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== 'integrations' || !stravaConnected || !stravaAutoSync) return;
+    if (stravaStaleSyncTriggeredRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const status = await refreshStravaWebhookStatus(true);
+      if (cancelled || !status?.connected) return;
+      const lastMs = status.lastSyncDate ? new Date(status.lastSyncDate).getTime() : 0;
+      const ageMs = lastMs ? Date.now() - lastMs : Number.POSITIVE_INFINITY;
+      if (ageMs < 20 * 60 * 1000) return;
+      if (stravaStaleSyncTriggeredRef.current) return;
+      stravaStaleSyncTriggeredRef.current = true;
+      try {
+        const res = await autoSyncStravaActivities({ force: true });
+        if (cancelled) return;
+        if (res?.imported > 0 || res?.updated > 0) {
+          addNotification(
+            `Strava: ${res.imported} new, ${res.updated} updated`,
+            'success',
+          );
+        } else if (res?.error) {
+          addNotification(res.error, 'warning');
+        }
+        await refreshStravaWebhookStatus(true);
+      } catch (e) {
+        console.warn('[Strava] settings stale sync failed:', e?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, stravaConnected, stravaAutoSync, refreshStravaWebhookStatus, addNotification]);
 
   const fetchMyCoaches = useCallback(async () => {
     try {
@@ -3152,7 +3187,7 @@ const SettingsPage = () => {
                                 <div className={`grid ${isMobile ? 'grid-cols-1 gap-1' : 'grid-cols-2 gap-2'} ${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
                                   <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
                                   <div><span className="font-semibold">Last sync:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}</div>
-                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 10 min)' : 'off'}</div>
+                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 5 min)' : 'off'}</div>
                                   <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
                                 </div>
 
@@ -3520,7 +3555,7 @@ const SettingsPage = () => {
                   )}
                 </div>
 
-                {/* Apple Health integration removed from iOS build. */}
+                <AppleHealthCard isMobile={isMobile} />
 
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>

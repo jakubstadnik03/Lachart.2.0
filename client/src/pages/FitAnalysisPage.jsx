@@ -14,7 +14,7 @@ import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan } from '../services/workoutPlannerApi';
 import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
 import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModal';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
@@ -1567,6 +1567,10 @@ const FitAnalysisPage = () => {
   const [externalActivitiesLoading, setExternalActivitiesLoading] = useState(false);
   const [externalActivitiesError, setExternalActivitiesError] = useState(null);
   const [plannedWorkoutsCalendar, setPlannedWorkoutsCalendar] = useState([]);
+  // Day-level themes (e.g. "Threshold day", "Recovery") — distinct from
+  // planned workouts. Loaded alongside planned workouts so the calendar
+  // can render the theme badge / mini-grid dot for each day in one pass.
+  const [dayPlans, setDayPlans] = useState([]);
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
   const [compareModal, setCompareModal] = useState(null); // PlannedWorkout object with executionData
   const [mobileStravaTab, setMobileStravaTab] = useState('summary'); // 'summary' | 'laps'
@@ -2290,12 +2294,17 @@ const FitAnalysisPage = () => {
 
       const targetId = selectedAthleteId || user?._id;
 
-      const [data, tpls] = await Promise.all([
+      const [data, tpls, dps] = await Promise.all([
         getPlannedWorkouts(opts),
         getWorkoutTemplates().catch(() => []),
+        // Day-level theme labels ("Threshold day", "Recovery", …) — drives
+        // the badge in the mobile calendar's day-list header and the
+        // colour-coded dot in the mini month grid.
+        getDayPlans(opts).catch(() => []),
       ]);
       setPlannedWorkoutsCalendar(Array.isArray(data) ? data : []);
       setPlanTemplates(Array.isArray(tpls) ? tpls : []);
+      setDayPlans(Array.isArray(dps) ? dps : []);
 
       // Enrich planContext with latest test-derived thresholds (zones come from userProfile effect above)
       if (targetId) {
@@ -2323,6 +2332,7 @@ const FitAnalysisPage = () => {
       }
     } catch (_) {
       setPlannedWorkoutsCalendar([]);
+      setDayPlans([]);
     }
   }, [selectedAthleteId, user?.role, user?._id]);
 
@@ -2330,6 +2340,37 @@ const FitAnalysisPage = () => {
   useEffect(() => {
     loadPlannedWorkoutsForCalendar();
   }, [loadPlannedWorkoutsForCalendar]);
+
+  /** Day-plan handlers — used by CalendarView's mobile + button menu. */
+  const handleDayPlanSave = useCallback(async (dateStr, payload) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      // Empty payload → server treats it as delete (returns {deleted: true});
+      // either way we re-sync local cache against the response.
+      const result = await apiSetDayPlan(dateStr, payload || {}, coachAthleteId);
+      setDayPlans(prev => {
+        const without = prev.filter(p => p.date !== dateStr);
+        if (result?.deleted) return without;
+        return [...without, result];
+      });
+      return result;
+    } catch (e) {
+      console.error('[DayPlan] save failed', e);
+      return null;
+    }
+  }, [selectedAthleteId, user?.role]);
+
+  const handleDayPlanDelete = useCallback(async (dateStr) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      await apiDeleteDayPlan(dateStr, coachAthleteId);
+      setDayPlans(prev => prev.filter(p => p.date !== dateStr));
+    } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
 
   /** CRUD for planned workouts from the calendar */
   const handlePlanSave = useCallback(async (data) => {
@@ -4306,6 +4347,9 @@ const FitAnalysisPage = () => {
           user={user}
           commentCounts={commentCounts}
           plannedWorkouts={plannedWorkoutsCalendar}
+          dayPlans={dayPlans}
+          onDayPlanSave={handleDayPlanSave}
+          onDayPlanDelete={handleDayPlanDelete}
           onActivityUpdate={(updated) => {
             setExternalActivities(prev => prev.map(a => {
               const aId = String(a.stravaId || a.id || a._id || '');

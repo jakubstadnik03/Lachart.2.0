@@ -1,6 +1,7 @@
 require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
 
-platform :ios, '14.0'
+platform :ios, '15.0'  # bumped from 14.0 — CapgoCapacitorHealth requires iOS 15+
+
 use_frameworks!
 
 # Suppress deprecation warnings from third-party pods (AppAuth, etc.)
@@ -17,10 +18,13 @@ def capacitor_pods
   pod 'CapacitorCommunityAppleSignIn', :path => '../../node_modules/@capacitor-community/apple-sign-in'
   pod 'CapacitorCommunityBluetoothLe', :path => '../../node_modules/@capacitor-community/bluetooth-le'
   pod 'CapacitorApp', :path => '../../node_modules/@capacitor/app'
+  pod 'CapacitorFilesystem', :path => '../../node_modules/@capacitor/filesystem'
   pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
   pod 'CapacitorPushNotifications', :path => '../../node_modules/@capacitor/push-notifications'
+  pod 'CapacitorShare', :path => '../../node_modules/@capacitor/share'
   pod 'CapacitorSplashScreen', :path => '../../node_modules/@capacitor/splash-screen'
   pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
+  pod 'CapgoCapacitorHealth', :path => '../../node_modules/@capgo/capacitor-health'
   pod 'CodetrixStudioCapacitorGoogleAuth', :path => '../../node_modules/@codetrix-studio/capacitor-google-auth'
 end
 

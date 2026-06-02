@@ -59,8 +59,18 @@
 	<string>LaChart uses the camera only if you choose "Take Photo or Video" while attaching a FIT/workout file. We don't capture photos for any other purpose.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>LaChart accesses Photos only if you pick "Photo Library" when attaching a workout file or profile picture. Nothing is read automatically.</string>
+	<!-- Required so Save / Share Activity can write the generated PNG into
+	     the camera roll (so the user can then share it from Photos to
+	     Instagram Stories / Strava / wherever). Without this key iOS denies
+	     the write silently and the share button looks like it does nothing. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>LaChart saves your shareable activity image (route, stats, lap breakdown) to Photos so you can post it to Instagram, Strava, or any other app.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LaChart doesn't record audio. iOS may request microphone permission only when you choose "Take Photo or Video" from a file picker.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>LaChart reads resting heart rate, sleep and heart-rate variability from Apple Health to show recovery on your dashboard and keep training data in one place.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>LaChart does not write health data to Apple Health unless you explicitly save a metric.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
@@ -91,6 +101,20 @@
 				<string>com.googleusercontent.apps.962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a</string>
 			</array>
 		</dict>
+	</array>
+	<!-- Apps we want to detect / hand off to. iOS 9+ requires every URL
+	     scheme we call canOpenURL: on (or that a third-party SDK uses) to be
+	     declared here, otherwise the call silently returns false. Strava
+	     does the same trick to make its "Share to Instagram Stories" button
+	     work — without `instagram-stories` listed, the share extension
+	     refuses to launch Instagram from our PNG. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
+		<string>instagram-stories</string>
+		<string>strava</string>
+		<string>fb</string>
+		<string>whatsapp</string>
 	</array>
 	<!-- ATS: all API and asset traffic is HTTPS — no arbitrary loads needed -->
 	<key>NSAppTransportSecurity</key>

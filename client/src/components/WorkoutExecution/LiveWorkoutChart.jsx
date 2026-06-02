@@ -1,43 +1,6 @@
 /**
- * LiveWorkoutChart
- * ────────────────
- * Lightweight, dependency-free SVG chart for live workout execution.
- *
- * Renders:
- *   • Filled area for power over time (purple/primary)
- *   • Line for heart rate over time (rose, right axis)
- *   • Vertical dashed lines at step boundaries
- *   • Coloured horizontal band for the planned target of the currently
- *     visible step (so the athlete can eyeball "am I above/below target?")
- *   • Lactate sample markers (flask glyph at the timestamp)
- *
- * Performance design choices:
- *   • SVG path strings are rebuilt from a memoised slice of the sample
- *     buffer — never from the full multi-thousand-point array unless the
- *     user scrolls all the way out.
- *   • At 1Hz sampling a 90-minute workout = ~5400 points. To stay smooth,
- *     we downsample on the fly when the visible window exceeds 600 points
- *     (every Nth sample, where N = ceil(visible / 600)). Lossless for the
- *     view because adjacent samples are visually indistinguishable past
- *     that density.
- *
- * Interaction:
- *   • Default mode: auto-follow — slides to keep the latest sample on the
- *     right edge. `windowSec` controls how much history is visible.
- *   • Drag horizontally (mouse or touch) to scroll back. Releasing near
- *     the right edge resumes auto-follow.
- *   • "Live" pill in the top-right when not following — tap to re-snap.
- *
- * Props:
- *   samples            — array of { t, power, hr, stepIdx }, t in seconds
- *   currentT           — current workout elapsed seconds (used to draw the
- *                        right edge in auto-follow mode)
- *   stepBoundaries     — array of { t, label } at each step boundary
- *   lactateMarks       — array of { t, value } at each recorded sample
- *   currentStepTarget  — { min, max } planned watts for the visible step
- *                        (drawn as a coloured band)
- *   windowSec          — default 300 (5 min); -1 for "show all"
- *   height             — px height of the chart
+ * LiveWorkoutChart — live workout metrics over time (SVG, no Recharts).
+ * Supports power, HR, cadence, CORE; stack or side-by-side layout.
  */
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 
@@ -45,6 +8,8 @@ const COL = {
   power: '#a78bfa',
   powerFill: 'rgba(167, 139, 250, 0.18)',
   hr: '#fb7185',
+  cadence: '#38bdf8',
+  core: '#f97316',
   axis: '#4b5563',
   axisText: '#9ca3af',
   grid: 'rgba(255,255,255,0.04)',
@@ -54,15 +19,24 @@ const COL = {
   lactate: '#fbbf24',
 };
 
+const SERIES_META = {
+  power: { label: 'W', color: COL.power, fill: true, scale: 'power' },
+  hr: { label: 'BPM', color: COL.hr, fill: false, scale: 'hr' },
+  cadence: { label: 'RPM', color: COL.cadence, fill: false, scale: 'cadence' },
+  coreTemp: { label: 'CORE °C', color: COL.core, fill: false, scale: 'core' },
+};
+
 function buildPath(points, x, y) {
   if (!points.length) return '';
   let d = '';
+  let started = false;
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
     if (!Number.isFinite(p.v)) continue;
     const px = x(p.t);
     const py = y(p.v);
-    d += i === 0 || !Number.isFinite(points[i - 1]?.v) ? `M ${px} ${py}` : ` L ${px} ${py}`;
+    d += started ? ` L ${px} ${py}` : `M ${px} ${py}`;
+    started = true;
   }
   return d;
 }
@@ -74,6 +48,236 @@ function fmtTime(s) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
+function sliceVisible(samples, xMin) {
+  if (!samples.length) return [];
+  let lo = 0;
+  let hi = samples.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].t < xMin) lo = mid + 1;
+    else hi = mid;
+  }
+  const visible = samples.slice(Math.max(0, lo - 1));
+  const stride = Math.max(1, Math.ceil(visible.length / 400));
+  const out = [];
+  for (let i = 0; i < visible.length; i += stride) out.push(visible[i]);
+  if (visible.length && (visible.length - 1) % stride !== 0) out.push(visible[visible.length - 1]);
+  return out;
+}
+
+function computeScales(samples, currentStepTarget) {
+  let pMax = 200;
+  let hMin = 60;
+  let hMax = 200;
+  let cMax = 120;
+  let coreMin = 36;
+  let coreMax = 40;
+
+  for (const s of samples) {
+    if (Number.isFinite(s.power) && s.power > pMax) pMax = s.power;
+    if (Number.isFinite(s.hr)) {
+      if (s.hr > hMax) hMax = s.hr;
+      if (s.hr > 0 && s.hr < hMin) hMin = s.hr;
+    }
+    if (Number.isFinite(s.cadence) && s.cadence > cMax) cMax = s.cadence;
+    if (Number.isFinite(s.coreTemp)) {
+      if (s.coreTemp > coreMax) coreMax = s.coreTemp;
+      if (s.coreTemp < coreMin) coreMin = s.coreTemp;
+    }
+  }
+  if (currentStepTarget?.max && currentStepTarget.max > pMax) pMax = currentStepTarget.max;
+  pMax = Math.ceil(pMax * 1.1 / 20) * 20;
+  cMax = Math.ceil(cMax * 1.1 / 10) * 10;
+  const corePad = Math.max(0.5, (coreMax - coreMin) * 0.15);
+  return {
+    powerYMax: pMax,
+    hrYMin: Math.max(50, hMin - 5),
+    hrYMax: hMax + 5,
+    cadenceYMax: Math.max(100, cMax),
+    coreYMin: coreMin - corePad,
+    coreYMax: coreMax + corePad,
+  };
+}
+
+function SeriesChart({
+  seriesKey,
+  points,
+  w,
+  height,
+  xMin,
+  xMax,
+  scales,
+  pad,
+  showXLabels,
+  currentStepTarget,
+  stepBoundaries,
+  lactateMarks,
+}) {
+  const meta = SERIES_META[seriesKey];
+  const innerW = Math.max(10, w - pad.left - pad.right);
+  const innerH = Math.max(10, height - pad.top - pad.bottom);
+
+  const x = useCallback(
+    (t) => pad.left + ((t - xMin) / Math.max(1, xMax - xMin)) * innerW,
+    [pad.left, xMin, xMax, innerW],
+  );
+
+  const y = useCallback(
+    (v) => {
+      if (meta.scale === 'power') return pad.top + (1 - v / scales.powerYMax) * innerH;
+      if (meta.scale === 'hr') {
+        return pad.top + (1 - (v - scales.hrYMin) / Math.max(1, scales.hrYMax - scales.hrYMin)) * innerH;
+      }
+      if (meta.scale === 'cadence') return pad.top + (1 - v / scales.cadenceYMax) * innerH;
+      return pad.top + (1 - (v - scales.coreYMin) / Math.max(0.1, scales.coreYMax - scales.coreYMin)) * innerH;
+    },
+    [meta.scale, pad.top, innerH, scales],
+  );
+
+  const linePath = useMemo(() => buildPath(points, x, y), [points, x, y]);
+  const areaPath = useMemo(() => {
+    if (!meta.fill || !points.length) return '';
+    const firstX = x(points[0].t);
+    const lastX = x(points[points.length - 1].t);
+    const baseY = pad.top + innerH;
+    return `${linePath} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
+  }, [meta.fill, points, linePath, x, pad.top, innerH]);
+
+  const yTicks = useMemo(() => {
+    if (meta.scale === 'power') {
+      const step = Math.ceil(scales.powerYMax / 3 / 50) * 50;
+      const arr = [];
+      for (let v = step; v < scales.powerYMax; v += step) arr.push(v);
+      return arr;
+    }
+    if (meta.scale === 'hr') return [scales.hrYMin, Math.round((scales.hrYMin + scales.hrYMax) / 2), scales.hrYMax];
+    if (meta.scale === 'cadence') {
+      const step = Math.ceil(scales.cadenceYMax / 3 / 20) * 20;
+      const arr = [];
+      for (let v = step; v < scales.cadenceYMax; v += step) arr.push(v);
+      return arr;
+    }
+    const mid = (scales.coreYMin + scales.coreYMax) / 2;
+    return [scales.coreYMin, mid, scales.coreYMax];
+  }, [meta.scale, scales]);
+
+  return (
+    <svg width={w} height={height} style={{ display: 'block' }}>
+      {yTicks.map((v) => (
+        <g key={`${seriesKey}-${v}`}>
+          <line
+            x1={pad.left}
+            x2={w - pad.right}
+            y1={y(v)}
+            y2={y(v)}
+            stroke={COL.grid}
+            strokeDasharray="2 4"
+          />
+          <text x={pad.left - 4} y={y(v) + 3} fontSize="8" textAnchor="end" fill={COL.axisText}>
+            {meta.scale === 'core' ? v.toFixed(1) : Math.round(v)}
+          </text>
+        </g>
+      ))}
+
+      {seriesKey === 'power' && currentStepTarget?.min != null && currentStepTarget?.max != null && (
+        <>
+          <rect
+            x={pad.left}
+            y={y(currentStepTarget.max)}
+            width={innerW}
+            height={Math.max(1, y(currentStepTarget.min) - y(currentStepTarget.max))}
+            fill={COL.targetBand}
+          />
+          <line
+            x1={pad.left}
+            x2={w - pad.right}
+            y1={y(currentStepTarget.max)}
+            y2={y(currentStepTarget.max)}
+            stroke={COL.targetEdge}
+            strokeDasharray="4 3"
+            strokeWidth="0.8"
+          />
+          <line
+            x1={pad.left}
+            x2={w - pad.right}
+            y1={y(currentStepTarget.min)}
+            y2={y(currentStepTarget.min)}
+            stroke={COL.targetEdge}
+            strokeDasharray="4 3"
+            strokeWidth="0.8"
+          />
+        </>
+      )}
+
+      {stepBoundaries
+        .filter((b) => b.t >= xMin && b.t <= xMax)
+        .map((b, i) => (
+          <line
+            key={`b-${seriesKey}-${i}`}
+            x1={x(b.t)}
+            x2={x(b.t)}
+            y1={pad.top}
+            y2={pad.top + innerH}
+            stroke={COL.stepBoundary}
+            strokeDasharray="2 3"
+            strokeWidth="0.8"
+          />
+        ))}
+
+      {meta.fill && areaPath && <path d={areaPath} fill={COL.powerFill} />}
+      {linePath && (
+        <path d={linePath} fill="none" stroke={meta.color} strokeWidth="1.5" strokeLinejoin="round" />
+      )}
+
+      {seriesKey === 'power' &&
+        lactateMarks
+          .filter((m) => m.t >= xMin && m.t <= xMax)
+          .map((m, i) => (
+            <g key={`la-${i}`} transform={`translate(${x(m.t)} ${pad.top + 2})`}>
+              <circle cx={0} cy={0} r={4} fill={COL.lactate} stroke="#0f172a" strokeWidth="1" />
+              <text x={6} y={3} fontSize="8" fontWeight="700" fill={COL.lactate}>
+                {Number(m.value).toFixed(1)}
+              </text>
+            </g>
+          ))}
+
+      <line
+        x1={pad.left}
+        x2={w - pad.right}
+        y1={pad.top + innerH}
+        y2={pad.top + innerH}
+        stroke={COL.axis}
+        strokeWidth="0.5"
+      />
+
+      {showXLabels &&
+        [xMin, (xMin + xMax) / 2, xMax].map((t, i) => (
+          <text
+            key={`t-${i}`}
+            x={x(t)}
+            y={pad.top + innerH + 11}
+            fontSize="8"
+            textAnchor={i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}
+            fill={COL.axisText}
+          >
+            {fmtTime(t)}
+          </text>
+        ))}
+
+      <text
+        x={w - pad.right}
+        y={pad.top + 10}
+        fontSize="8"
+        fontWeight="700"
+        textAnchor="end"
+        fill={meta.color}
+      >
+        {meta.label}
+      </text>
+    </svg>
+  );
+}
+
 export default function LiveWorkoutChart({
   samples = [],
   currentT = 0,
@@ -82,25 +286,26 @@ export default function LiveWorkoutChart({
   currentStepTarget = null,
   windowSec: windowSecProp = 300,
   height = 160,
+  layout = 'stack',
+  showCadence = true,
+  showCore = true,
 }) {
-  // ── Container width: measure with ResizeObserver so the chart adapts ─────
   const wrapRef = useRef(null);
   const [w, setW] = useState(600);
   useEffect(() => {
     if (!wrapRef.current) return;
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
-      if (cr?.width) setW(Math.max(280, Math.floor(cr.width)));
+      if (cr?.width) setW(Math.max(200, Math.floor(cr.width)));
     });
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
   }, []);
 
-  // ── Window state: auto-follow vs scrolled back ───────────────────────────
   const [followLive, setFollowLive] = useState(true);
   const [windowEnd, setWindowEnd] = useState(currentT);
   const [showAll, setShowAll] = useState(windowSecProp === -1);
-  // When auto-following, keep windowEnd glued to currentT.
+
   useEffect(() => {
     if (followLive) setWindowEnd(currentT);
   }, [currentT, followLive]);
@@ -108,100 +313,48 @@ export default function LiveWorkoutChart({
   const windowSec = showAll ? Math.max(60, currentT) : windowSecProp;
   const xMax = windowEnd;
   const xMin = Math.max(0, xMax - windowSec);
+  const pad = { top: 14, right: 8, bottom: showAll ? 18 : 18, left: 32 };
 
-  // ── Y axes ───────────────────────────────────────────────────────────────
-  // Power 0..max(target*1.4, observedMax*1.1); HR 60..200 hardcoded but
-  // widens if data exceeds.
-  const pad = { top: 8, right: 36, bottom: 22, left: 36 };
-  const innerW = Math.max(10, w - pad.left - pad.right);
-  const innerH = Math.max(10, height - pad.top - pad.bottom);
+  const scales = useMemo(
+    () => computeScales(samples, currentStepTarget),
+    [samples, currentStepTarget],
+  );
 
-  const { powerYMax, hrYMin, hrYMax } = useMemo(() => {
-    let pMax = 200;
-    let hMin = 60;
-    let hMax = 200;
-    for (const s of samples) {
-      if (Number.isFinite(s.power) && s.power > pMax) pMax = s.power;
-      if (Number.isFinite(s.hr)) {
-        if (s.hr > hMax) hMax = s.hr;
-        if (s.hr > 0 && s.hr < hMin) hMin = s.hr;
-      }
+  const activeSeries = useMemo(() => {
+    const keys = ['power', 'hr'];
+    const has = (k) => samples.some((s) => Number.isFinite(s[k]));
+    if (showCadence && has('cadence')) keys.push('cadence');
+    if (showCore && has('coreTemp')) keys.push('coreTemp');
+    return keys;
+  }, [samples, showCadence, showCore]);
+
+  const seriesPoints = useMemo(() => {
+    const visible = sliceVisible(samples, xMin);
+    const out = {};
+    for (const key of activeSeries) {
+      out[key] = visible.map((s) => ({ t: s.t, v: s[key] }));
     }
-    if (currentStepTarget?.max && currentStepTarget.max > pMax) pMax = currentStepTarget.max;
-    pMax = Math.ceil(pMax * 1.1 / 20) * 20;
-    return { powerYMax: pMax, hrYMin: Math.max(50, hMin - 5), hrYMax: hMax + 5 };
-  }, [samples, currentStepTarget]);
+    return out;
+  }, [samples, xMin, activeSeries]);
 
-  const x = useCallback(
-    (t) => pad.left + ((t - xMin) / Math.max(1, xMax - xMin)) * innerW,
-    [pad.left, xMin, xMax, innerW],
-  );
-  const yPower = useCallback(
-    (v) => pad.top + (1 - v / powerYMax) * innerH,
-    [pad.top, powerYMax, innerH],
-  );
-  const yHr = useCallback(
-    (v) => pad.top + (1 - (v - hrYMin) / Math.max(1, hrYMax - hrYMin)) * innerH,
-    [pad.top, hrYMin, hrYMax, innerH],
-  );
+  const isRow = layout === 'row';
+  const count = Math.max(1, activeSeries.length);
+  const gap = isRow ? 6 : 4;
+  const chartH = isRow
+    ? height
+    : Math.max(56, Math.floor((height - gap * (count - 1)) / count));
 
-  // ── Slice samples to visible window + downsample ─────────────────────────
-  const { powerPoints, hrPoints } = useMemo(() => {
-    if (!samples.length) return { powerPoints: [], hrPoints: [] };
-    // Binary-search start of window — samples are ordered by t.
-    let lo = 0;
-    let hi = samples.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (samples[mid].t < xMin) lo = mid + 1;
-      else hi = mid;
-    }
-    const visible = samples.slice(Math.max(0, lo - 1));
-    const stride = Math.max(1, Math.ceil(visible.length / 600));
-    const out = [];
-    for (let i = 0; i < visible.length; i += stride) out.push(visible[i]);
-    // Always include the very last sample so the right edge sticks to "now".
-    if (visible.length && (visible.length - 1) % stride !== 0) out.push(visible[visible.length - 1]);
-    return {
-      powerPoints: out.map((s) => ({ t: s.t, v: s.power })),
-      hrPoints:    out.map((s) => ({ t: s.t, v: s.hr })),
-    };
-  }, [samples, xMin]);
-
-  // Build the filled area for power (closes down to baseline).
-  const powerLinePath = useMemo(() => buildPath(powerPoints, x, yPower), [powerPoints, x, yPower]);
-  const powerAreaPath = useMemo(() => {
-    if (!powerPoints.length) return '';
-    const firstX = x(powerPoints[0].t);
-    const lastX  = x(powerPoints[powerPoints.length - 1].t);
-    const baseY  = pad.top + innerH;
-    return `${powerLinePath} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
-  }, [powerLinePath, powerPoints, x, pad.top, innerH]);
-
-  const hrLinePath = useMemo(() => buildPath(hrPoints, x, yHr), [hrPoints, x, yHr]);
-
-  // ── Y-axis tick labels ───────────────────────────────────────────────────
-  const powerTicks = useMemo(() => {
-    const step = Math.ceil(powerYMax / 4 / 50) * 50;
-    const arr = [];
-    for (let v = step; v < powerYMax; v += step) arr.push(v);
-    return arr;
-  }, [powerYMax]);
-
-  // ── Touch / mouse pan ────────────────────────────────────────────────────
   const dragRef = useRef(null);
   const onPointerDown = (e) => {
-    dragRef.current = {
-      startX: e.clientX,
-      startWindowEnd: windowEnd,
-    };
+    dragRef.current = { startX: e.clientX, startWindowEnd: windowEnd };
     setFollowLive(false);
     if (e.currentTarget.setPointerCapture && e.pointerId != null) {
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* */ }
     }
   };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
+    const innerW = Math.max(10, w - pad.left - 8);
     const dx = e.clientX - dragRef.current.startX;
     const secPerPx = (xMax - xMin) / innerW;
     let next = dragRef.current.startWindowEnd - dx * secPerPx;
@@ -210,146 +363,57 @@ export default function LiveWorkoutChart({
   };
   const onPointerUp = () => {
     dragRef.current = null;
-    // If user released near the right edge, resume live follow.
     if (Math.abs(windowEnd - currentT) < 4) setFollowLive(true);
   };
 
+  const gridClass = isRow
+    ? 'grid grid-cols-2 gap-1.5 w-full'
+    : 'flex flex-col gap-1 w-full';
+
   return (
     <div ref={wrapRef} className="w-full select-none" style={{ touchAction: 'pan-y' }}>
-      <div className="relative">
-        <svg
-          width={w}
-          height={height}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          style={{ display: 'block', cursor: dragRef.current ? 'grabbing' : 'grab' }}
-        >
-          {/* Grid + power Y-axis labels (left) */}
-          {powerTicks.map((v) => (
-            <g key={`p-${v}`}>
-              <line
-                x1={pad.left} x2={w - pad.right}
-                y1={yPower(v)} y2={yPower(v)}
-                stroke={COL.grid} strokeDasharray="2 4"
+      <div
+        className="relative"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{ cursor: dragRef.current ? 'grabbing' : 'grab' }}
+      >
+        <div className={gridClass} style={{ minHeight: height }}>
+          {activeSeries.map((key, idx) => (
+            <div key={key} className="min-w-0 min-h-0 rounded-lg overflow-hidden">
+              <SeriesChart
+                seriesKey={key}
+                points={seriesPoints[key] || []}
+                w={isRow ? Math.max(120, Math.floor((w - gap) / 2)) : w}
+                height={chartH}
+                xMin={xMin}
+                xMax={xMax}
+                scales={scales}
+                pad={pad}
+                showXLabels={idx === activeSeries.length - 1}
+                currentStepTarget={key === 'power' ? currentStepTarget : null}
+                stepBoundaries={stepBoundaries}
+                lactateMarks={key === 'power' ? lactateMarks : []}
               />
-              <text
-                x={pad.left - 4} y={yPower(v) + 3}
-                fontSize="9" textAnchor="end" fill={COL.axisText}
-              >
-                {v}
-              </text>
-            </g>
+            </div>
           ))}
-          {/* HR Y-axis labels (right) */}
-          {[hrYMin, Math.round((hrYMin + hrYMax) / 2), hrYMax].map((v) => (
-            <text
-              key={`h-${v}`}
-              x={w - pad.right + 4} y={yHr(v) + 3}
-              fontSize="9" textAnchor="start" fill={COL.hr + 'aa'}
-            >
-              {v}
-            </text>
-          ))}
+        </div>
 
-          {/* Current-step target band */}
-          {currentStepTarget?.min != null && currentStepTarget?.max != null && (
-            <>
-              <rect
-                x={pad.left}
-                y={yPower(currentStepTarget.max)}
-                width={innerW}
-                height={Math.max(1, yPower(currentStepTarget.min) - yPower(currentStepTarget.max))}
-                fill={COL.targetBand}
-              />
-              <line
-                x1={pad.left} x2={w - pad.right}
-                y1={yPower(currentStepTarget.max)} y2={yPower(currentStepTarget.max)}
-                stroke={COL.targetEdge} strokeDasharray="4 3" strokeWidth="0.8"
-              />
-              <line
-                x1={pad.left} x2={w - pad.right}
-                y1={yPower(currentStepTarget.min)} y2={yPower(currentStepTarget.min)}
-                stroke={COL.targetEdge} strokeDasharray="4 3" strokeWidth="0.8"
-              />
-            </>
-          )}
-
-          {/* Step boundary lines */}
-          {stepBoundaries
-            .filter((b) => b.t >= xMin && b.t <= xMax)
-            .map((b, i) => (
-              <line
-                key={`b-${i}`}
-                x1={x(b.t)} x2={x(b.t)}
-                y1={pad.top} y2={pad.top + innerH}
-                stroke={COL.stepBoundary} strokeDasharray="2 3" strokeWidth="0.8"
-              />
-            ))}
-
-          {/* Power area */}
-          <path d={powerAreaPath} fill={COL.powerFill} />
-          <path d={powerLinePath} fill="none" stroke={COL.power} strokeWidth="1.5" strokeLinejoin="round" />
-
-          {/* HR line */}
-          <path d={hrLinePath} fill="none" stroke={COL.hr} strokeWidth="1.5" strokeLinejoin="round" />
-
-          {/* Lactate sample markers */}
-          {lactateMarks
-            .filter((m) => m.t >= xMin && m.t <= xMax)
-            .map((m, i) => {
-              const px = x(m.t);
-              return (
-                <g key={`la-${i}`} transform={`translate(${px} ${pad.top + 2})`}>
-                  <line x1={0} x2={0} y1={0} y2={innerH - 4} stroke={COL.lactate + '66'} strokeDasharray="1 2" />
-                  <circle cx={0} cy={0} r={4.5} fill={COL.lactate} stroke="#0f172a" strokeWidth="1" />
-                  <text
-                    x={6} y={3}
-                    fontSize="8.5" fontWeight="700"
-                    fill={COL.lactate}
-                  >
-                    {Number(m.value).toFixed(1)}
-                  </text>
-                </g>
-              );
-            })}
-
-          {/* X-axis baseline */}
-          <line
-            x1={pad.left} x2={w - pad.right}
-            y1={pad.top + innerH} y2={pad.top + innerH}
-            stroke={COL.axis} strokeWidth="0.5"
-          />
-
-          {/* X-axis time labels — start / mid / end of window */}
-          {[xMin, (xMin + xMax) / 2, xMax].map((t, i) => (
-            <text
-              key={`t-${i}`}
-              x={x(t)} y={pad.top + innerH + 12}
-              fontSize="9" textAnchor={i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}
-              fill={COL.axisText}
-            >
-              {fmtTime(t)}
-            </text>
-          ))}
-        </svg>
-
-        {/* Live / scroll-to-end pill */}
         {!followLive && (
           <button
+            type="button"
             onClick={() => { setFollowLive(true); setWindowEnd(currentT); }}
-            className="absolute top-1.5 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30"
+            className="absolute top-1 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
           >
             Live
           </button>
         )}
-
-        {/* Window-size toggle */}
         <button
+          type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="absolute top-1.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 text-gray-300 border border-white/15 hover:bg-white/20"
-          title={showAll ? 'Show last 5 minutes' : 'Show entire workout'}
+          className="absolute top-1 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 text-gray-300 border border-white/15"
         >
           {showAll ? 'All' : '5 min'}
         </button>

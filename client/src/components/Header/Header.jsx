@@ -3,8 +3,10 @@ import { SearchInput } from "./SearchInput";
 import { UserDropdown } from "./UserDropdown";
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
+import { isCapacitorNative } from '../../utils/isNativeApp';
 import NotificationBell from './NotificationBell';
 import WhatsNewButton from './WhatsNewButton';
+import DownloadAppButton from './DownloadAppButton';
 
 const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -40,6 +42,10 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
           <div className="hidden lg:block flex-1 max-w-xl">
             <SearchInput />
           </div>
+          {/* "Download iPhone app" — visible to logged-out AND logged-in
+              users on web. Hidden inside the Capacitor native build (those
+              users obviously already have the app). */}
+          {!isCapacitorNative() && <DownloadAppButton />}
           {user?.role && <WhatsNewButton />}
           {user?.role && <NotificationBell />}
           <UserDropdown

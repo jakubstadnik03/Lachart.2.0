@@ -379,4 +379,78 @@ function _synthesiseFromMeasurements(session) {
   return ff.toBuffer();
 }
 
-module.exports = { generateFitFile };
+/**
+ * Build fitFile.fitData from a completed structured workout execution payload.
+ */
+function buildWorkoutFitData({
+  sport = 'bike',
+  startedAt,
+  completedAt,
+  totalDuration = 0,
+  timeSeries = [],
+  steps = [],
+}) {
+  const start = new Date(startedAt || completedAt || Date.now());
+  const totalSec = Math.max(1, Number(totalDuration) || 0);
+
+  const records = (Array.isArray(timeSeries) ? timeSeries : []).map((s) => ({
+    timestamp: new Date(start.getTime() + (Number(s.t) || 0) * 1000),
+    power: Number.isFinite(s.power) ? s.power : null,
+    heartRate: Number.isFinite(s.hr) ? s.hr : null,
+    cadence: Number.isFinite(s.cadence) ? s.cadence : null,
+    step: Number.isFinite(s.stepIdx) ? s.stepIdx : 0,
+    totalTime: Number(s.t) || 0,
+  }));
+
+  const laps = (Array.isArray(steps) ? steps : []).map((step, i) => {
+    const seg = records.filter((r) => r.step === i);
+    const duration = seg.length > 1
+      ? Math.max(1, seg[seg.length - 1].totalTime - seg[0].totalTime + 1)
+      : Math.max(1, Number(step.durationSeconds) || 0);
+    const pVals = seg.map((r) => r.power).filter((v) => Number.isFinite(v) && v > 0);
+    const hVals = seg.map((r) => r.heartRate).filter((v) => Number.isFinite(v) && v > 0);
+    const avgPower = pVals.length
+      ? Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length)
+      : (step.actualAvgWatts ?? null);
+    const avgHeartRate = hVals.length
+      ? Math.round(hVals.reduce((a, b) => a + b, 0) / hVals.length)
+      : (step.actualAvgHr ?? null);
+    return {
+      lapNumber: i + 1,
+      totalElapsedTime: duration,
+      avgPower,
+      avgHeartRate,
+      maxPower: pVals.length ? Math.max(...pVals) : avgPower,
+      maxHeartRate: hVals.length ? Math.max(...hVals) : avgHeartRate,
+      label: step.label || step.stepType,
+    };
+  });
+
+  const sportKey = String(sport || 'bike').toLowerCase();
+  const fitSport = sportKey === 'run' || sportKey === 'walk'
+    ? 'run'
+    : sportKey === 'swim'
+      ? 'swim'
+      : 'bike';
+
+  return {
+    sport: fitSport,
+    totalElapsedTime: totalSec,
+    records,
+    laps,
+  };
+}
+
+/** Binary .fit for a completed planned workout (laps = workout steps). */
+function generateWorkoutExecutionFit(payload) {
+  const fitData = buildWorkoutFitData(payload);
+  return generateFitFile({
+    sport: fitData.sport,
+    startedAt: payload.startedAt || payload.completedAt,
+    completedAt: payload.completedAt,
+    fitFile: { fitData },
+    measurements: [],
+  });
+}
+
+module.exports = { generateFitFile, buildWorkoutFitData, generateWorkoutExecutionFit };

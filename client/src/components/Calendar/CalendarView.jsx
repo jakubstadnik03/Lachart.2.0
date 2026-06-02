@@ -2998,7 +2998,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const hasLaps = laps.length > 0;
 
     const mobilePortal = ReactDOM.createPortal(
-      <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: 'auto' }}>
+      // When the share sheet is open we disable pointer-events on the
+      // underlying activity modal — iOS WKWebView occasionally lets the
+      // touch hit-test land on the lower of two stacked position:fixed
+      // overlays even when the higher one has a bigger z-index, which
+      // was making Copy/Save/Share buttons unresponsive.
+      <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: shareOpen ? 'none' : 'auto' }}>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
@@ -3861,7 +3866,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }
 
   const desktopPortal = ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: shareOpen ? 'none' : 'auto' }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
@@ -5222,6 +5227,189 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   );
 }
 
+// ─── DayPlanEditSheet — bottom sheet to assign / clear a day-level theme ───
+// Lightweight (no FIT pickers, no steps), portal'd so it sits above the
+// activity modal stack. Used by the mobile day-list header.
+function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
+  const { categories } = useCategories();
+  const [title, setTitle]       = useState(plan?.title || '');
+  const [category, setCategory] = useState(plan?.category || null);
+  const [notes, setNotes]       = useState(plan?.notes || '');
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState(null);
+  // Drag-to-dismiss state — same pattern as ActivityShareSheet.
+  const [dragY, setDragY] = useState(0);
+  const dragRef = useRef({ y: 0, active: false });
+
+  const dateObj = useMemo(() => {
+    const [y, m, d] = String(date).split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }, [date]);
+  const niceDate = dateObj.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      console.log('[DayPlan] saving', { date, title, category, notes });
+      const result = await onSave({ title: title.trim(), category: category || null, notes: notes.trim() });
+      console.log('[DayPlan] save result', result);
+    } catch (e) {
+      // Surface API errors inline so the user knows WHY nothing changed
+      // instead of just watching the sheet stay open.
+      console.error('[DayPlan] save failed', e);
+      setError(e?.response?.data?.error || e?.message || 'Failed to save day theme');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleDelete = async () => {
+    setSaving(true);
+    setError(null);
+    try { await onDelete(); }
+    catch (e) {
+      console.error('[DayPlan] delete failed', e);
+      setError(e?.response?.data?.error || e?.message || 'Failed to delete day theme');
+    }
+    finally { setSaving(false); }
+  };
+
+  // Swipe-down-to-close on the drag handle
+  const onDragStart = (e) => {
+    const t = e.touches?.[0]; if (!t) return;
+    dragRef.current = { y: t.clientY, active: true };
+  };
+  const onDragMove = (e) => {
+    const s = dragRef.current; if (!s.active) return;
+    const t = e.touches?.[0]; if (!t) return;
+    const dy = t.clientY - s.y;
+    if (dy > 0) setDragY(dy);
+  };
+  const onDragEnd = (e) => {
+    const s = dragRef.current; if (!s.active) return;
+    s.active = false;
+    const t = e.changedTouches?.[0];
+    const dy = t ? t.clientY - s.y : dragY;
+    if (dy > 120) { onClose(); return; }
+    setDragY(0);
+  };
+
+  return ReactDOM.createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        // Force the sheet above EVERYTHING — the calendar uses position:fixed
+        // headers/sticky elements that iOS WKWebView occasionally hit-tests
+        // before the portal layer, swallowing taps that should land on the
+        // sheet. pointerEvents + touchAction are explicit so iOS routes
+        // touches here directly without the synthesised-click 300 ms delay.
+        position: 'fixed', inset: 0, zIndex: 2147483646,
+        pointerEvents: 'auto',
+        background: 'rgba(0,0,0,.55)', WebkitBackdropFilter: 'blur(4px)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        touchAction: 'manipulation',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        onTouchStart={e => e.stopPropagation()}
+        className="w-full max-w-md bg-white rounded-t-3xl flex flex-col"
+        style={{
+          padding: '14px 0 calc(28px + env(safe-area-inset-bottom, 0px))',
+          maxHeight: '90vh',
+          fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif',
+          pointerEvents: 'auto',
+          touchAction: 'manipulation',
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          transition: dragY > 0 ? 'none' : 'transform .25s cubic-bezier(.22,1,.36,1)',
+        }}
+      >
+        {/* Drag handle — swipe down to close */}
+        <div
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+          style={{
+            alignSelf: 'stretch', display: 'flex', justifyContent: 'center',
+            paddingTop: 4, paddingBottom: 8, cursor: 'grab',
+            touchAction: 'none',
+          }}
+        >
+          <div className="w-11 h-[5px] rounded-full bg-gray-300" />
+        </div>
+        <div className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-700">Cancel</button>
+          <div className="text-center">
+            <div className="text-base font-bold text-gray-900">Day theme</div>
+            <div className="text-xs text-gray-400">{niceDate}</div>
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="text-sm font-bold text-primary disabled:opacity-50"
+          >{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+        {error && (
+          <div className="mx-5 mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[11px] font-semibold text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="px-5 py-4 overflow-y-auto space-y-4">
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Threshold, Easy spin, Long run"
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Category</div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setCategory(null)}
+                className={`text-[11px] uppercase tracking-wide px-2.5 py-1 rounded-md font-bold border leading-none ${category === null ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200'}`}
+              >None</button>
+              {(categories || []).filter(c => c && c.id).map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setCategory(c.id)}
+                  className="text-[11px] uppercase tracking-wide px-2.5 py-1 rounded-md font-bold border leading-none"
+                  style={category === c.id ? { background: c.color, color: '#fff', borderColor: c.color } : { background: hexToRgba(c.color, 0.1), color: c.color, borderColor: hexToRgba(c.color, 0.3) }}
+                >{c.label || c.id}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes <span className="text-gray-300 normal-case font-medium">(optional)</span></div>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Focus, intent, coach instructions…"
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+
+          {plan && (
+            <button
+              onClick={handleDelete}
+              disabled={saving}
+              className="w-full py-2.5 text-sm font-semibold text-red-500 rounded-xl border border-red-200 bg-red-50/50 active:bg-red-50 disabled:opacity-50"
+            >Remove day theme</button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.getElementById('app-modal-root') || document.body
+  );
+}
+
 export default function CalendarView({
   activities = [],
   onSelectActivity,
@@ -5238,6 +5426,15 @@ export default function CalendarView({
   commentCounts = {},
   /** Array of PlannedWorkout objects: { _id, date (YYYY-MM-DD), title, sport, steps, status } */
   plannedWorkouts = [],
+  /** Array of DayPlan objects: { _id, date (YYYY-MM-DD), title, category, notes }
+   *  Day-level themes ("Threshold day", "Recovery") rendered as a small
+   *  badge next to the day header. Independent of planned workouts so
+   *  a coach can outline the week before filling in specific sessions. */
+  dayPlans = [],
+  /** Called with (dateStr, { title, category, notes }) to upsert the day theme. */
+  onDayPlanSave = null,
+  /** Called with dateStr to remove the day theme. */
+  onDayPlanDelete = null,
   /** Called with the PlannedWorkout object when the user clicks on a planned card */
   onSelectPlannedWorkout = null,
   /** Called with the PlannedWorkout object when the user clicks "Start" */
@@ -5346,6 +5543,17 @@ export default function CalendarView({
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
+  // Day-theme editor — open by tapping the badge area in the day header
+  // (or via the "+" menu when no theme is set yet). Holds the date string
+  // that's being edited; null means closed.
+  const [dayPlanEditDate, setDayPlanEditDate] = useState(null);
+  // Lookup: dateStr (YYYY-MM-DD) → dayPlan object. Built once per dayPlans
+  // change so each day-header render is O(1).
+  const dayPlanByDate = useMemo(() => {
+    const m = new Map();
+    (dayPlans || []).forEach(p => { if (p?.date) m.set(p.date, p); });
+    return m;
+  }, [dayPlans]);
   // Add completed workout sheet
   const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
 
@@ -6534,9 +6742,17 @@ export default function CalendarView({
             </>)}
           </div>
 
-          {/* ── Calendar tab: day list (page scrolls) ── */}
+          {/* ── Calendar tab: day list (page scrolls) ──
+              Swipe left/right on the list to flip months — same gesture as
+              the mini grid above, so the user doesn't have to scroll back
+              up to navigate when they're deep in a long day list. */}
           {mobileTab === 'calendar' && (
-            <div ref={dayListRef} className="px-3 pt-2">
+            <div
+              ref={dayListRef}
+              className="px-3 pt-2"
+              onTouchStart={handleCalSwipeStart}
+              onTouchEnd={handleCalSwipeEnd}
+            >
               {days.filter(d => d.getMonth() === anchorDate.getMonth()).map(dayDate => {
                 const key = getLocalDateString(dayDate);
                 const acts = activitiesByDay.get(key) || [];
@@ -6555,12 +6771,35 @@ export default function CalendarView({
                     className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
                     onClick={() => setSelectedMobileDay(key)}
                   >
-                    {/* Day header */}
+                    {/* Day header (compact — bigger info goes on the
+                        trainings inside, not the date strip).
+                        The day-theme badge ("Threshold", "Recovery", …) sits
+                        next to the date and is tappable to edit. Tapping
+                        the empty area opens the theme editor too. */}
+                    {(() => { const _dayPlan = dayPlanByDate.get(key); return (
                     <div className={`flex items-center justify-between px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-gray-400'}`}>{dayNames[dayDate.getDay()]}</span>
                         <span className={`text-base font-extrabold ${isToday ? 'text-primary' : 'text-gray-800'}`}>{dayDate.getDate()}</span>
                         {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
+                        {_dayPlan && (_dayPlan.title || _dayPlan.category) && (
+                          <button
+                            onClick={e => { e.stopPropagation(); if (onDayPlanSave) setDayPlanEditDate(key); }}
+                            className="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-md font-bold border leading-none truncate max-w-[40vw]"
+                            style={_dayPlan.category ? catBadgeStyle(_dayPlan.category) : { background: 'rgba(118,126,181,.12)', color: '#5E6590', borderColor: 'rgba(118,126,181,.25)' }}
+                            title={_dayPlan.notes || _dayPlan.title || catLabel(_dayPlan.category)}
+                          >
+                            {_dayPlan.title || catLabel(_dayPlan.category)}
+                          </button>
+                        )}
+                        {!_dayPlan && onDayPlanSave && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
+                            className="text-[10px] text-gray-300 active:text-primary touch-manipulation px-1"
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                            title="Add day theme"
+                          >+ theme</button>
+                        )}
                       </div>
                       {(onPlanWorkout || onAddCompletedWorkout) && (
                         onAddCompletedWorkout ? (
@@ -6585,9 +6824,10 @@ export default function CalendarView({
                         )
                       )}
                     </div>
+                    ); })()}
                     {/* Content */}
                     {hasItems ? (
-                      <div className="px-2 pb-1.5 pt-1 flex flex-col gap-1">
+                      <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-1.5">
                         {(() => {
                           // Use the shared pairPlannedWithActivities() so we get:
                           // 1) completedTrainingId respected (explicit links win)
@@ -6629,33 +6869,33 @@ export default function CalendarView({
                                   return (
                                     <button key={`pw-${pi}`}
                                       onClick={e => { e.stopPropagation(); handleActivityClick(act, null); }}
-                                      className="w-full text-left flex flex-col px-2 py-2 rounded-lg border touch-manipulation active:opacity-70 gap-1"
+                                      className="w-full text-left flex flex-col px-3 py-2.5 rounded-xl border touch-manipulation active:opacity-70 gap-1.5"
                                       style={{
                                         borderStyle: 'solid',
                                         borderColor: cc.color,          // top/right/bottom = green
                                         borderLeftColor: planColor,     // left = sport color
-                                        borderLeftWidth: 3,
+                                        borderLeftWidth: 4,
                                         backgroundColor: cc.bg,
                                         WebkitTapHighlightColor: 'transparent'
                                       }}>
                                       {/* Row 1: green dot + planned title + Done/compliance badge */}
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: cc.color }} />
-                                        <span className="text-[10px] font-semibold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
-                                        <span className="text-[10px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cc.color }} />
+                                        <span className="text-sm font-bold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
+                                        <span className="text-[11px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
                                       {/* Row 2: sport icon + stats (dur · dist · pace/power · HR) + category */}
-                                      <div className="flex items-center gap-1.5 pl-0.5">
-                                        <SportIcon sport={act.sport || pwSport} className="w-3.5 h-3.5 flex-shrink-0" />
-                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-1 min-w-0 flex-wrap">
-                                          {actDurStr && <span>{actDurStr}</span>}
-                                          {actDistStr && <><span className="text-gray-300">·</span><span>{actDistStr}</span></>}
-                                          {actPaceStr && <><span className="text-gray-300">·</span><span className="font-medium">{actPaceStr}</span></>}
-                                          {actIsBike && actPower > 0 && <><span className="text-gray-300">·</span><span className="font-medium">{Math.round(actPower)}W</span></>}
+                                      <div className="flex items-center gap-2 pl-0.5">
+                                        <SportIcon sport={act.sport || pwSport} className="w-4 h-4 flex-shrink-0" />
+                                        <div className="flex items-center gap-1.5 text-[12px] text-gray-600 flex-1 min-w-0 flex-wrap">
+                                          {actDurStr && <span className="font-semibold">{actDurStr}</span>}
+                                          {actDistStr && <><span className="text-gray-300">·</span><span className="font-semibold">{actDistStr}</span></>}
+                                          {actPaceStr && <><span className="text-gray-300">·</span><span className="font-bold">{actPaceStr}</span></>}
+                                          {actIsBike && actPower > 0 && <><span className="text-gray-300">·</span><span className="font-bold">{Math.round(actPower)}W</span></>}
                                           {actHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(actHr)}</span></>}
                                         </div>
                                         {act.category && (
-                                          <div className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
+                                          <div className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
                                             style={catBadgeStyle(act.category)}
                                             title={catLabel(act.category)}>
                                             {catLabel(act.category)}
@@ -6671,28 +6911,28 @@ export default function CalendarView({
                                 return (
                                   <button key={`pw-${pi}`}
                                     onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
-                                    className="w-full text-left flex flex-col gap-1 px-2 py-2 rounded-lg border touch-manipulation active:opacity-70"
+                                    className="w-full text-left flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border touch-manipulation active:opacity-70"
                                     style={{
                                       borderStyle: isMissed ? 'solid' : 'dashed',
                                       borderColor: isMissed ? '#fca5a5' : planColor + '55',
                                       borderLeftColor: isMissed ? '#ef4444' : planColor,
-                                      borderLeftWidth: 3,
+                                      borderLeftWidth: 4,
                                       borderLeftStyle: 'solid',
                                       backgroundColor: isMissed ? '#fef2f2' : planColor + '10',
                                       WebkitTapHighlightColor: 'transparent'
                                     }}>
                                     {/* Title row */}
                                     <div className="flex items-center gap-2 min-w-0">
-                                      <SportIcon sport={pwSport} className="w-3.5 h-3.5 flex-shrink-0 opacity-80" style={{ color: isMissed ? '#ef4444' : planColor }} />
-                                      <span className="text-xs font-semibold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : isMissed ? '#991b1b' : planColor }}>{pw.title || 'Planned workout'}</span>
+                                      <SportIcon sport={pwSport} className="w-4 h-4 flex-shrink-0 opacity-80" style={{ color: isMissed ? '#ef4444' : planColor }} />
+                                      <span className="text-sm font-bold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : isMissed ? '#991b1b' : planColor }}>{pw.title || 'Planned workout'}</span>
                                       {isMissed && (
-                                        <span className="text-[10px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
+                                        <span className="text-[11px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
                                       )}
-                                      {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={36} height={12} />}
+                                      {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={42} height={14} />}
                                     </div>
                                     {/* Stats row */}
                                     {(duration > 0 || plannedDistKmMobile > 0 || pw.targetTss > 0) && (
-                                      <div className="flex items-center gap-1.5 text-[10px] pl-0.5" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
+                                      <div className="flex items-center gap-1.5 text-[12px] font-semibold pl-0.5" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
                                         {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
                                         {plannedDistKmMobile > 0 && <><span className="opacity-40">·</span><span>{plannedDistKmMobile >= 1 ? `${plannedDistKmMobile % 1 === 0 ? plannedDistKmMobile : plannedDistKmMobile.toFixed(1)} km` : `${Math.round(plannedDistKmMobile * 1000)} m`}</span></>}
                                         {pw.targetTss > 0 && <><span className="opacity-40">·</span><span>{pw.targetTss} TSS</span></>}
@@ -6727,14 +6967,14 @@ export default function CalendarView({
                                 return (
                                   <button key={`act-${i}`}
                                     onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                                    className={`w-full text-left flex flex-col gap-0.5 px-2 py-2 rounded-lg border transition-all touch-manipulation min-h-[40px] ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
-                                    style={{ borderLeftColor: color, borderLeftWidth: 3, WebkitTapHighlightColor: 'transparent' }}>
+                                    className={`w-full text-left flex flex-col gap-1 px-3 py-2.5 rounded-xl border transition-all touch-manipulation ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
+                                    style={{ borderLeftColor: color, borderLeftWidth: 4, WebkitTapHighlightColor: 'transparent' }}>
                                     <div className="flex items-center gap-2 min-w-0">
-                                      <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
-                                      <span className="text-xs font-semibold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                                      <SportIcon sport={a.sport} className="w-5 h-5 flex-shrink-0" />
+                                      <span className="text-sm font-bold text-gray-800 flex-1 truncate min-w-0">{title}</span>
                                       {a.category && (
                                         <span
-                                          className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md flex-shrink-0 font-bold border leading-tight"
+                                          className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
                                           style={catBadgeStyle(a.category)}
                                           title={catLabel(a.category)}
                                         >
@@ -6742,13 +6982,13 @@ export default function CalendarView({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-1 text-[10px] text-gray-500 pl-6 flex-wrap">
-                                      {durStr && <span>{durStr}</span>}
-                                      {distStr && <><span className="text-gray-300">·</span><span>{distStr}</span></>}
-                                      {mPaceStr && <><span className="text-gray-300">·</span><span className="font-medium">{mPaceStr}</span></>}
-                                      {mIsBike && mPower > 0 && <><span className="text-gray-300">·</span><span className="font-medium">{Math.round(mPower)}W</span></>}
+                                    <div className="flex items-center gap-1.5 text-[12px] text-gray-600 pl-7 flex-wrap">
+                                      {durStr && <span className="font-semibold">{durStr}</span>}
+                                      {distStr && <><span className="text-gray-300">·</span><span className="font-semibold">{distStr}</span></>}
+                                      {mPaceStr && <><span className="text-gray-300">·</span><span className="font-bold">{mPaceStr}</span></>}
+                                      {mIsBike && mPower > 0 && <><span className="text-gray-300">·</span><span className="font-bold">{Math.round(mPower)}W</span></>}
                                       {mHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(mHr)}</span></>}
-                                      {tss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(tss)}</span></>}
+                                      {tss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(tss)} TSS</span></>}
                                     </div>
                                   </button>
                                 );
@@ -6758,7 +6998,7 @@ export default function CalendarView({
                         })()}
                       </div>
                     ) : (
-                      <div className="px-3 py-2 text-xs text-gray-300">Rest day</div>
+                      <div className="px-4 py-3 text-sm text-gray-300">Rest day</div>
                     )}
                   </div>
                   {/* Weekly summary card — shown after each Sunday */}
@@ -7502,6 +7742,22 @@ export default function CalendarView({
           onSaved={() => {
             setAddCompletedDate(null);
             onAddCompletedWorkout?.();
+          }}
+        />
+      )}
+      {/* Day-theme editor (mobile) */}
+      {dayPlanEditDate && onDayPlanSave && (
+        <DayPlanEditSheet
+          date={dayPlanEditDate}
+          plan={dayPlanByDate.get(dayPlanEditDate)}
+          onClose={() => setDayPlanEditDate(null)}
+          onSave={async (payload) => {
+            await onDayPlanSave(dayPlanEditDate, payload);
+            setDayPlanEditDate(null);
+          }}
+          onDelete={async () => {
+            if (onDayPlanDelete) await onDayPlanDelete(dayPlanEditDate);
+            setDayPlanEditDate(null);
           }}
         />
       )}

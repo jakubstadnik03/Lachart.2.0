@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTrainer } from './useTrainer';
 
 /** Detect Capacitor native platform (iOS/Android) */
@@ -39,23 +40,31 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
     connect,
     disconnect,
     setErgWatts,
+    setErgWattsImmediate,
     requestControl,
     start,
   } = trainerProp ?? internalTrainer;
 
-  const [targetWatts, setTargetWatts] = useState(100);
+  const [targetWatts, setTargetWatts] = useState(200);
   const [isScanning, setIsScanning] = useState(false);
+  const [ergSetting, setErgSetting] = useState(false);
+  const [ergFeedback, setErgFeedback] = useState(null);
 
   // Detect platform once
   const isNative = isNativePlatform();
   const isBluetoothAvailable = isNative || hasWebBluetooth();
 
-  // Auto-close modal when connection is established
+  // Auto-close only on first connect (not when already in ERG — user may tap "Set ERG").
+  const didAutoCloseRef = React.useRef(false);
   useEffect(() => {
-    if (isOpen && (status === 'controlled' || status === 'ready' || status === 'erg_active') && connectedDevice) {
-      const timer = setTimeout(() => {
-        onClose();
-      }, 1000);
+    if (!isOpen) {
+      didAutoCloseRef.current = false;
+      return;
+    }
+    if (didAutoCloseRef.current) return;
+    if ((status === 'ready' || status === 'controlled') && connectedDevice) {
+      didAutoCloseRef.current = true;
+      const timer = setTimeout(() => onClose(), 800);
       return () => clearTimeout(timer);
     }
   }, [isOpen, status, connectedDevice, onClose]);
@@ -81,9 +90,36 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
     }
   };
 
-  const handleSetErg = () => {
-    if (setErgWatts) {
-      setErgWatts(targetWatts);
+  const handleSetErg = async () => {
+    const watts = Math.round(Number(targetWatts));
+    if (!Number.isFinite(watts) || watts < 0) {
+      setErgFeedback('Zadej platný výkon (W).');
+      return;
+    }
+    const send = setErgWattsImmediate || setErgWatts;
+    if (!send) {
+      setErgFeedback('ERG není k dispozici.');
+      return;
+    }
+    setErgSetting(true);
+    setErgFeedback(null);
+    try {
+      if (status !== 'erg_active') {
+        if (requestControl && status === 'ready') {
+          await requestControl();
+        }
+        if (start && (status === 'ready' || status === 'controlled')) {
+          try { await start(); } catch { /* optional */ }
+        }
+      }
+      await send(watts);
+      setErgFeedback(`Odesláno ${watts} W — sleduj konzoli / odpor na trenažéru.`);
+      console.log('[TrainerConnectModal] Set ERG', watts, 'W');
+    } catch (e) {
+      console.error('[TrainerConnectModal] Set ERG failed:', e);
+      setErgFeedback(e?.message || 'Nepodařilo se nastavit ERG.');
+    } finally {
+      setErgSetting(false);
     }
   };
 
@@ -116,8 +152,8 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10010] p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
@@ -250,25 +286,25 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
               {/* Live telemetry */}
               {telemetry && (
                 <div className="grid grid-cols-2 gap-2">
-                  {telemetry.power !== undefined && (
+                  {telemetry.power != null && Number.isFinite(telemetry.power) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{Math.round(telemetry.power)}</div>
                       <div className="text-xs text-gray-400">W</div>
                     </div>
                   )}
-                  {telemetry.cadence !== undefined && (
+                  {telemetry.cadence != null && Number.isFinite(telemetry.cadence) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{Math.round(telemetry.cadence)}</div>
                       <div className="text-xs text-gray-400">rpm</div>
                     </div>
                   )}
-                  {telemetry.speed !== undefined && (
+                  {telemetry.speed != null && Number.isFinite(telemetry.speed) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{telemetry.speed.toFixed(1)}</div>
                       <div className="text-xs text-gray-400">km/h</div>
                     </div>
                   )}
-                  {telemetry.hr !== undefined && (
+                  {telemetry.hr != null && Number.isFinite(telemetry.hr) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{telemetry.hr}</div>
                       <div className="text-xs text-gray-400">bpm</div>
@@ -287,17 +323,28 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
                       min={capabilities.powerRange?.min || 0}
                       max={capabilities.powerRange?.max || 2000}
                       value={targetWatts}
-                      onChange={(e) => setTargetWatts(Number(e.target.value))}
+                      onChange={(e) => {
+                        setTargetWatts(Number(e.target.value));
+                        setErgFeedback(null);
+                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSetErg(); }}
                       className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     <span className="flex items-center text-sm text-gray-500 font-medium">W</span>
                     <button
-                      onClick={handleSetErg}
-                      className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+                      type="button"
+                      onClick={() => { handleSetErg(); }}
+                      disabled={ergSetting}
+                      className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50"
                     >
-                      Set ERG
+                      {ergSetting ? '…' : 'Set ERG'}
                     </button>
                   </div>
+                  {ergFeedback && (
+                    <p className={`text-xs ${ergFeedback.startsWith('Odesláno') ? 'text-green-600' : 'text-red-600'}`}>
+                      {ergFeedback}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -314,6 +361,7 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

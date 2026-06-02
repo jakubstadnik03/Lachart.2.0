@@ -26,6 +26,8 @@ const CPS_MEAS      = '00002a63-0000-1000-8000-00805f9b34fb'; // Cycling Power M
 const CSC_MEAS      = '00002a5b-0000-1000-8000-00805f9b34fb'; // CSC Measurement
 const SC_CTRL       = '00002a55-0000-1000-8000-00805f9b34fb'; // SC Control Point (FE-C)
 const TACX_FEC_SERVICE = '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e'; // Tacx/Garmin FE-C over BLE
+const TACX_FEC_CHAR2   = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e';
+const TACX_FEC_CHAR3   = '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e';
 
 export class CapacitorBleAdapter {
   constructor() {
@@ -36,9 +38,14 @@ export class CapacitorBleAdapter {
     this._state           = 'disconnected';
     this._ctrlServiceUUID = null;
     this._ctrlCharUUID    = null;
-    this._ctrlType        = null; // 'ftms' | 'fec'
+    this._ctrlType        = null; // 'ftms' | 'fec' | 'tacx-fec'
     this._ctrlRequested   = false;
     this._pendingDevice   = null;
+    this._tacxFecFallbackChar = null;
+    this._fecKeepAliveTimer = null;
+    this._fecLastTargetWatts = null;
+    this._fecLastCscCommand = null; // last 6-byte CSC FE-C write (legacy path)
+    this._ftmsLastWatts = null;
 
     // CSC delta tracking
     this._cscWheelRevs = null;
@@ -57,6 +64,63 @@ export class CapacitorBleAdapter {
 
   /** Expose internal state so useTrainer.js can read adapterRef.current.state */
   get state() { return this._state; }
+
+  /** ANT+ broadcast wrapper for Tacx FE-C BLE (trainer ignores bare 8-byte pages). */
+  _buildFecAntPacket(pageData) {
+    const packet = new Uint8Array(13);
+    packet[0] = 0xa4;
+    packet[1] = 0x09;
+    packet[2] = 0x4e;
+    packet[3] = 0x05;
+    packet.set(pageData.slice(0, 8), 4);
+    let checksum = 0;
+    for (let i = 0; i < 12; i++) checksum ^= packet[i];
+    packet[12] = checksum;
+    return packet;
+  }
+
+  _stopErgKeepalive() {
+    if (this._fecKeepAliveTimer) {
+      clearInterval(this._fecKeepAliveTimer);
+      this._fecKeepAliveTimer = null;
+    }
+    this._fecLastTargetWatts = null;
+    this._fecLastCscCommand = null;
+    this._ftmsLastWatts = null;
+  }
+
+  /** Tacx FE-C expects ~4 Hz target-power frames; burst on change so the bike reacts quickly. */
+  async _burstTacxFecTarget(writeFec, buildPage49, watts, charUuid, repeats = 4) {
+    const packet = buildPage49(watts);
+    for (let i = 0; i < repeats; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 60));
+      await writeFec(packet, charUuid);
+    }
+  }
+
+  _startFecKeepalive(writeFn, buildPayload) {
+    if (this._fecKeepAliveTimer) return;
+    this._fecKeepAliveTimer = setInterval(async () => {
+      if (this._fecLastTargetWatts == null || !this._deviceId) return;
+      try {
+        await writeFn(buildPayload(this._fecLastTargetWatts));
+      } catch {
+        // silent — avoid log spam
+      }
+    }, 250);
+    console.log('[CapacitorBLE] FE-C keepalive started (250 ms / ~4 Hz)');
+  }
+
+  _startFtmsErgKeepalive(write) {
+    this._fecKeepAliveTimer = setInterval(async () => {
+      if (this._ftmsLastWatts == null || !this._deviceId) return;
+      try {
+        const w = this._ftmsLastWatts;
+        await write(new Uint8Array([0x05, w & 0xFF, (w >> 8) & 0xFF]));
+      } catch { /* silent */ }
+    }, 1000);
+    console.log('[CapacitorBLE] FTMS ERG keepalive started (1 s interval)');
+  }
 
   async scan() {
     const BleClient = await getBleClient();
@@ -221,6 +285,35 @@ export class CapacitorBleAdapter {
       this._ctrlType        = 'fec';
     }
 
+    // Tacx / Garmin FE-C BLE when FTMS control point is not available
+    if (!this._ctrlServiceUUID) {
+      try {
+        try {
+          await BleClient.startNotifications(deviceId, TACX_FEC_SERVICE, TACX_FEC_CHAR3, () => {});
+        } catch { /* optional */ }
+
+        const probePage = this._buildFecAntPacket(new Uint8Array([
+          0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+        ]));
+        let primary = TACX_FEC_CHAR3;
+        let fallback = TACX_FEC_CHAR2;
+        try {
+          await BleClient.write(deviceId, TACX_FEC_SERVICE, TACX_FEC_CHAR3, new DataView(probePage.buffer));
+        } catch {
+          await BleClient.write(deviceId, TACX_FEC_SERVICE, TACX_FEC_CHAR2, new DataView(probePage.buffer));
+          primary = TACX_FEC_CHAR2;
+          fallback = TACX_FEC_CHAR3;
+        }
+        this._ctrlServiceUUID = TACX_FEC_SERVICE;
+        this._ctrlCharUUID = primary;
+        this._tacxFecFallbackChar = fallback;
+        this._ctrlType = 'tacx-fec';
+        console.log('[CapacitorBLE] Tacx FE-C ERG path enabled');
+      } catch (e) {
+        console.warn('[CapacitorBLE] Tacx FE-C not available:', e.message);
+      }
+    }
+
     this._capabilities = {
       erg:                 !!(this._ctrlServiceUUID),
       resistance:          false,
@@ -240,6 +333,7 @@ export class CapacitorBleAdapter {
   }
 
   async disconnect() {
+    this._stopErgKeepalive();
     if (this._deviceId) {
       const BleClient = await getBleClient();
       try { await BleClient.disconnect(this._deviceId); } catch (_) {}
@@ -247,6 +341,7 @@ export class CapacitorBleAdapter {
     }
     this._state = 'disconnected';
     this._ctrlRequested = false;
+    this._tacxFecFallbackChar = null;
     this._telemetryCbs.forEach(cb => cb({ ts: Date.now(), connected: false }));
   }
 
@@ -288,12 +383,14 @@ export class CapacitorBleAdapter {
       } catch (e) {
         console.warn('[CapacitorBLE] FTMS REQUEST_CONTROL skipped:', e.message);
       }
-    } else if (this._ctrlType === 'fec') {
-      try {
-        await write(new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
-        await new Promise(r => setTimeout(r, 300));
-      } catch (e) {
-        console.warn('[CapacitorBLE] FE-C request control skipped:', e.message);
+    } else if (this._ctrlType === 'fec' || this._ctrlType === 'tacx-fec') {
+      if (this._ctrlType === 'fec') {
+        try {
+          await write(new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+          await new Promise(r => setTimeout(r, 300));
+        } catch (e) {
+          console.warn('[CapacitorBLE] FE-C request control skipped:', e.message);
+        }
       }
     }
 
@@ -333,8 +430,10 @@ export class CapacitorBleAdapter {
     if (this._ctrlType === 'ftms') {
       if (!this._ctrlRequested) {
         await this.requestControl();
+        await this.start();
+      } else if (this._state !== 'erg_active') {
+        await this.start();
       }
-      await this.start();
 
       // FTMS opcode 0x05 = Set Target Power (uint16 LE, watts)
       const cmd = new Uint8Array([
@@ -343,29 +442,83 @@ export class CapacitorBleAdapter {
         (clamped >> 8) & 0xFF,
       ]);
       await write(cmd);
+      this._ftmsLastWatts = clamped;
+      if (!this._fecKeepAliveTimer) {
+        this._startFtmsErgKeepalive(write);
+      } else if (this._state === 'erg_active') {
+        try { await write(cmd); } catch { /* repeat target for trainers that miss the first write */ }
+      }
+    } else if (this._ctrlType === 'tacx-fec') {
+      const writeFec = async (packet, charUuid) => {
+        await BleClient.write(this._deviceId, this._ctrlServiceUUID, charUuid, new DataView(packet.buffer));
+      };
+      const buildPage49 = (watts) => {
+        const qw = Math.round(watts * 4);
+        return this._buildFecAntPacket(new Uint8Array([
+          0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, qw & 0xFF, (qw >> 8) & 0xFF,
+        ]));
+      };
+
+      this._fecLastTargetWatts = clamped;
+      let charUuid = this._ctrlCharUUID;
+      try {
+        await this._burstTacxFecTarget(writeFec, buildPage49, clamped, charUuid);
+      } catch (e) {
+        if (this._tacxFecFallbackChar) {
+          try {
+            await this._burstTacxFecTarget(writeFec, buildPage49, clamped, this._tacxFecFallbackChar);
+            [this._ctrlCharUUID, this._tacxFecFallbackChar] = [this._tacxFecFallbackChar, this._ctrlCharUUID];
+            charUuid = this._ctrlCharUUID;
+          } catch {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
+
+      this._startFecKeepalive(
+        (packet) => writeFec(packet, charUuid),
+        (watts) => buildPage49(watts),
+      );
+      console.log(`[CapacitorBLE] ERG set to ${clamped}W (Tacx FE-C burst + keepalive)`);
     } else if (this._ctrlType === 'fec') {
-      // FE-C via CSC Control Point
+      // FE-C via CSC Control Point (legacy 6-byte commands)
+      const enteringErg = this._state !== 'erg_active';
       if (!this._ctrlRequested) {
         await write(new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
         await new Promise(r => setTimeout(r, 300));
         this._ctrlRequested = true;
       }
 
-      // Set ERGO mode (opcode 0x05, mode 0x04)
-      await write(new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]));
-      await new Promise(r => setTimeout(r, 500));
+      if (enteringErg) {
+        await write(new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]));
+        await new Promise(r => setTimeout(r, 500));
+      }
 
-      // Set Target Power (opcode 0x01, power in 0.1 W units)
       const pTenths = Math.round(clamped * 10);
-      await write(new Uint8Array([
+      const powerCmd = new Uint8Array([
         0x01, 0x00, 0x00, 0x00,
         pTenths & 0xFF,
         (pTenths >> 8) & 0xFF,
-      ]));
+      ]);
+      await write(powerCmd);
+
+      this._fecLastTargetWatts = clamped;
+      this._fecLastCscCommand = powerCmd;
+      if (!this._fecKeepAliveTimer) {
+        this._startFecKeepalive(
+          (cmd) => write(cmd),
+          () => this._fecLastCscCommand,
+        );
+      }
+      console.log(`[CapacitorBLE] ERG set to ${clamped}W (CSC FE-C + keepalive)`);
     }
 
     this._state = 'erg_active';
-    console.log(`[CapacitorBLE] ERG set to ${clamped}W (${this._ctrlType})`);
+    if (this._ctrlType === 'ftms') {
+      console.log(`[CapacitorBLE] ERG set to ${clamped}W (FTMS)`);
+    }
   }
 
   async setResistance(_level) {

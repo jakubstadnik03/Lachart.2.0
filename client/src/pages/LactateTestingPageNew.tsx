@@ -1,7 +1,6 @@
 // src/pages/LactateTestingPageNew.tsx
 import React, { useState } from "react";
-import { useTrainerSession } from "../hooks/useTrainerSession";
-import { TrainerSample } from "../bluetoothTrainer";
+import { useTrainerSession, TrainerSample } from "../hooks/useTrainerSession";
 import {
   LineChart,
   Line,

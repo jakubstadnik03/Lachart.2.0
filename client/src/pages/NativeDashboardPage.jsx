@@ -8,6 +8,7 @@ import WeekStrip         from '../components/NativeDashboard/WeekStrip';
 import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
+import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
@@ -519,6 +520,7 @@ export default function NativeDashboardPage({
   athleteId       = null,         // selected athlete id (coach view) or own id
   stravaConnected = false,        // gates the manual-sync refresh button
   onRequestStravaSync = null,     // () => Promise<{imported,updated,...}> — bypasses autoSync flag
+  onPlanWorkout = null,           // (date) => void — opens planned-workout form for that date
 }) {
   const navigate      = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -970,6 +972,7 @@ export default function NativeDashboardPage({
               plannedWorkouts={plannedWorkouts}
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
+              onPlanWorkout={onPlanWorkout}
             />
           </div>
 
@@ -1001,8 +1004,13 @@ export default function NativeDashboardPage({
             />
           </div>
 
-          {/* 4 · Weekly summary */}
+          {/* 4 · Apple Health wellness (iOS, when connected) */}
           <div style={{ ...cardEntry(4), ...snapStyle }}>
+            <AppleHealthWellnessCard loading={loading} />
+          </div>
+
+          {/* 5 · Weekly summary */}
+          <div style={{ ...cardEntry(5), ...snapStyle }}>
             <WeeklySummaryCard
               activities={activities}
               plannedWorkouts={plannedWorkouts}
@@ -1011,15 +1019,15 @@ export default function NativeDashboardPage({
             />
           </div>
 
-          {/* 5 · Zone distribution */}
-          <div style={{ ...cardEntry(5), ...snapStyle }}>
+          {/* 6 · Zone distribution */}
+          <div style={{ ...cardEntry(6), ...snapStyle }}>
             <ZoneDistCard athleteId={athleteId || null} />
           </div>
 
-          {/* 6 · Last lab test — drop snap-align on the last card so its tail
+          {/* 7 · Last lab test — drop snap-align on the last card so its tail
               isn't clipped by scroll-snap when the content is tall (zones table
               pushes the card past one viewport on smaller phones). */}
-          <div style={{ ...cardEntry(6) }}>
+          <div style={{ ...cardEntry(7) }}>
             <LastTestCard tests={tests} />
           </div>
 

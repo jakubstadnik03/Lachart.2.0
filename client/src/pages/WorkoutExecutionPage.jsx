@@ -24,7 +24,12 @@ import {
 } from '@heroicons/react/24/outline';
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getPlannedWorkout, updatePlannedWorkout } from '../services/workoutPlannerApi';
+import {
+  getPlannedWorkout,
+  completePlannedWorkout,
+  downloadPlannedWorkoutFit,
+} from '../services/workoutPlannerApi';
+import { getIntegrationStatus } from '../services/api';
 import * as audioCoach from '../utils/audioCoach';
 import { useWorkoutSession } from '../context/WorkoutSessionContext';
 import LiveWorkoutChart from '../components/WorkoutExecution/LiveWorkoutChart';
@@ -277,6 +282,20 @@ export default function WorkoutExecutionPage() {
   const [lactateInput, setLactateInput] = useState('');
   const [lactateNote, setLactateNote] = useState('');
   const [lactateSubmitting, setLactateSubmitting] = useState(false);
+  const [finishSaving, setFinishSaving] = useState(false);
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [uploadToStrava, setUploadToStrava] = useState(false);
+  const [savedWorkoutId, setSavedWorkoutId] = useState(null);
+
+  useEffect(() => {
+    getIntegrationStatus({ athleteId: athleteId || undefined })
+      .then((s) => {
+        const on = !!s?.stravaConnected;
+        setStravaConnected(on);
+        if (on) setUploadToStrava(true);
+      })
+      .catch(() => {});
+  }, [athleteId]);
 
   // ── Live chart re-render signal ─────────────────────────────────────────
   // The actual 1Hz samples buffer lives in the context (samplesRef from
@@ -284,11 +303,19 @@ export default function WorkoutExecutionPage() {
   // chart component to re-render with the latest samples in the ref.
   const [chartTick, setChartTick] = useState(0);
   const [showChart, setShowChart] = useState(true);
+  const [chartLayout, setChartLayout] = useState(() => {
+    try { return localStorage.getItem('wo_chart_layout') === 'row' ? 'row' : 'stack'; } catch { return 'stack'; }
+  });
   useEffect(() => {
-    if (!isRunning) return;
-    const id = setInterval(() => setChartTick((x) => x + 1), 1000);
+    try { localStorage.setItem('wo_chart_layout', chartLayout); } catch { /* */ }
+  }, [chartLayout]);
+
+  // Tick while workout is active — must not depend on trainer.connected (HR strap / CORE only still need charts).
+  useEffect(() => {
+    if (!hasStarted || isFinished) return;
+    const id = setInterval(() => setChartTick((x) => x + 1), 500);
     return () => clearInterval(id);
-  }, [isRunning]);
+  }, [hasStarted, isFinished]);
 
   // Sidebar panel showing all laps with running averages. Toggle-driven so
   // mobile users with small screens can hide it; auto-shown on first render
@@ -434,6 +461,32 @@ export default function WorkoutExecutionPage() {
     return { min: Math.round(center * 0.95), max: Math.round(center * 1.05) };
   }, [currentStep, context]);
 
+  const liveChartProps = useMemo(
+    () => ({
+      samples: samplesRef.current.slice(),
+      currentT: totalElapsed,
+      stepBoundaries,
+      lactateMarks,
+      currentStepTarget: currentTargetRange,
+      windowSec: 300,
+      layout: chartLayout,
+      showCadence: trainer.status === 'connected',
+      showCore: coreTemp.status === 'connected',
+    }),
+    // chartTick — samples live in a ref; slice() gives a new array when tick updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      chartTick,
+      totalElapsed,
+      stepBoundaries,
+      lactateMarks,
+      currentTargetRange,
+      chartLayout,
+      trainer.status,
+      coreTemp.status,
+    ],
+  );
+
   // NOTE: ERG sending, per-step power/HR accumulation, step-idx ref sync
   // and effectiveErgWatts now all live in WorkoutSessionContext. Don't
   // re-implement here — that caused double-accumulation when the page
@@ -488,12 +541,14 @@ export default function WorkoutExecutionPage() {
   const handlePlayPause = playPause;
 
   // ── Finish ───────────────────────────────────────────────────────────────────
-  const handleFinish = useCallback(async () => {
-    try {
-      const executionData = {
-        totalDuration: totalElapsed,
-        completedAt: new Date().toISOString(),
-        steps: expandedSteps.map((s, i) => {
+  const buildExecutionPayload = useCallback(() => {
+    const completedAt = new Date().toISOString();
+    const startedAt = new Date(Date.now() - totalElapsed * 1000).toISOString();
+    return {
+      totalDuration: totalElapsed,
+      completedAt,
+      startedAt,
+      steps: expandedSteps.map((s, i) => {
           const p = stepPowerRef.current[i];
           const h = stepHrRef.current[i];
           // Lactate values recorded *during* this step (might be more than one
@@ -525,14 +580,60 @@ export default function WorkoutExecutionPage() {
           if (arr.length && (arr.length - 1) % stride !== 0) out.push(arr[arr.length - 1]);
           return out;
         })(),
-      };
-      await updatePlannedWorkout(plannedWorkoutId, { status: 'completed', executionData });
-      addNotification('Workout completed! Great job!', 'success');
-    } catch (_) {}
-    // Tear down BLE, timer, snapshot, ERG release — all in context.
+    };
+  }, [totalElapsed, expandedSteps, context, stepPowerRef, stepHrRef, lactateLogRef, samplesRef]);
+
+  const handleFinish = useCallback(async () => {
+    if (!plannedWorkoutId || finishSaving) return;
+    setFinishSaving(true);
+    try {
+      const executionData = buildExecutionPayload();
+      const result = await completePlannedWorkout(plannedWorkoutId, {
+        executionData,
+        uploadToStrava: uploadToStrava && stravaConnected,
+        athleteId,
+      });
+      setSavedWorkoutId(plannedWorkoutId);
+      try {
+        await downloadPlannedWorkoutFit(plannedWorkoutId, {
+          athleteId,
+          suggestedName: workout?.title || 'workout',
+        });
+      } catch (dlErr) {
+        console.warn('[workout] FIT download failed:', dlErr);
+      }
+      if (result?.strava?.activityId) {
+        addNotification('Workout saved and uploaded to Strava.', 'success');
+      } else if (result?.strava?.error) {
+        addNotification(`Saved. Strava upload failed: ${result.strava.error}`, 'warning');
+      } else if (uploadToStrava && stravaConnected) {
+        addNotification('Workout saved. Strava is processing the upload.', 'success');
+      } else {
+        addNotification('Workout saved with FIT file (laps included).', 'success');
+      }
+    } catch (e) {
+      console.error('[workout] complete failed:', e);
+      addNotification(e?.response?.data?.message || 'Failed to save workout', 'error');
+      setFinishSaving(false);
+      return;
+    }
     endSession();
     navigate(athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner');
-  }, [plannedWorkoutId, athleteId, navigate, addNotification, totalElapsed, expandedSteps, context, endSession, stepPowerRef, stepHrRef, lactateLogRef, samplesRef]);
+  }, [
+    plannedWorkoutId, finishSaving, buildExecutionPayload, uploadToStrava, stravaConnected,
+    athleteId, workout?.title, addNotification, endSession, navigate,
+  ]);
+
+  const handleDownloadFitOnly = useCallback(async () => {
+    const id = savedWorkoutId || plannedWorkoutId;
+    if (!id) return;
+    try {
+      await downloadPlannedWorkoutFit(id, { athleteId, suggestedName: workout?.title || 'workout' });
+      addNotification('FIT file downloaded.', 'success');
+    } catch {
+      addNotification('Could not download FIT file.', 'error');
+    }
+  }, [savedWorkoutId, plannedWorkoutId, athleteId, workout?.title, addNotification]);
 
   // ── Abandon ──────────────────────────────────────────────────────────────────
   // "Abandon" ends the session for real (vs. just navigating away, which
@@ -666,6 +767,26 @@ export default function WorkoutExecutionPage() {
         )}
         <div className="flex items-center gap-0.5">
           {/* Chart toggle — 44 × 44 tap target on phones */}
+          {!isFinished && showChart && (
+            <button
+              type="button"
+              onClick={() => setChartLayout((l) => (l === 'stack' ? 'row' : 'stack'))}
+              aria-label={chartLayout === 'stack' ? 'Charts side by side' : 'Charts stacked'}
+              className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:bg-white/10 active:bg-white/15 transition-all"
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+              title={chartLayout === 'stack' ? 'Side by side' : 'Stacked'}
+            >
+              {chartLayout === 'stack' ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h7v7H4V5zm9 0h7v7h-7V5zM4 14h7v7H4v-7zm9 0h7v7h-7v-7z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
+          )}
           {!isFinished && (
             <button
               onClick={() => setShowChart((s) => !s)}
@@ -801,23 +922,48 @@ export default function WorkoutExecutionPage() {
             {samplesRef.current.length > 0 && (
               <div className="w-full max-w-2xl lg:max-w-4xl mx-auto mb-6 rounded-2xl border border-white/5 bg-white/[0.02] px-2 py-2">
                 <LiveWorkoutChart
-                  samples={samplesRef.current}
-                  currentT={totalElapsed}
-                  stepBoundaries={stepBoundaries}
-                  lactateMarks={lactateMarks}
+                  {...liveChartProps}
                   currentStepTarget={null}
                   windowSec={-1}
-                  height={170}
+                  height={chartLayout === 'row' ? 220 : 280}
                 />
               </div>
             )}
 
-            <button
-              onClick={handleFinish}
-              className="px-8 py-3 bg-primary rounded-2xl text-white font-bold text-lg hover:bg-primary/80 transition-colors"
-            >
-              Save & Finish
-            </button>
+            {stravaConnected && (
+              <label className="flex items-center justify-center gap-2 mb-4 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={uploadToStrava}
+                  onChange={(e) => setUploadToStrava(e.target.checked)}
+                  className="rounded border-white/30"
+                />
+                Upload to Strava after save
+              </label>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              {savedWorkoutId && (
+                <button
+                  type="button"
+                  onClick={handleDownloadFitOnly}
+                  className="px-6 py-3 rounded-2xl border border-white/20 text-white font-semibold hover:bg-white/10"
+                >
+                  Download FIT
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleFinish}
+                disabled={finishSaving}
+                className="px-8 py-3 bg-primary rounded-2xl text-white font-bold text-lg hover:bg-primary/80 transition-colors disabled:opacity-50"
+              >
+                {finishSaving ? 'Saving…' : 'Save & Finish'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-3 max-w-sm mx-auto">
+              Saves a .fit with one lap per workout step. You can upload to Garmin, TrainingPeaks, or Strava.
+            </p>
           </motion.div>
         ) : !hasStarted ? (
           /* ── PRE-START SCREEN — Tacx-style hero card + metric tiles ──── */
@@ -1163,15 +1309,7 @@ export default function WorkoutExecutionPage() {
                     <div className="h-full flex flex-col px-2 py-2 gap-1.5">
                       <div className="flex-1 min-h-0 rounded-2xl border border-white/5 bg-white/[0.02] px-1 py-1" data-tick={chartTick}>
                         {samplesRef.current.length > 0 ? (
-                          <LiveWorkoutChart
-                            samples={samplesRef.current}
-                            currentT={totalElapsed}
-                            stepBoundaries={stepBoundaries}
-                            lactateMarks={lactateMarks}
-                            currentStepTarget={currentTargetRange}
-                            windowSec={300}
-                            height={300}
-                          />
+                          <LiveWorkoutChart {...liveChartProps} height={chartLayout === 'row' ? 340 : 300} />
                         ) : (
                           <div className="flex items-center justify-center text-xs text-gray-500 h-full">
                             Chart starts after the first second of data.
@@ -1342,15 +1480,7 @@ export default function WorkoutExecutionPage() {
                 </div>
                 <div className="flex-1 min-h-0 rounded-2xl border border-white/5 bg-white/[0.02] px-1 py-1" data-tick={chartTick}>
                   {samplesRef.current.length > 0 ? (
-                    <LiveWorkoutChart
-                      samples={samplesRef.current}
-                      currentT={totalElapsed}
-                      stepBoundaries={stepBoundaries}
-                      lactateMarks={lactateMarks}
-                      currentStepTarget={currentTargetRange}
-                      windowSec={300}
-                      height={420}
-                    />
+                    <LiveWorkoutChart {...liveChartProps} height={chartLayout === 'row' ? 460 : 420} />
                   ) : (
                     <div className="flex items-center justify-center text-xs text-gray-500 h-full">
                       Chart starts after the first second of data.
@@ -1679,13 +1809,8 @@ export default function WorkoutExecutionPage() {
                 >
                   {samplesRef.current.length > 0 ? (
                     <LiveWorkoutChart
-                      samples={samplesRef.current}
-                      currentT={totalElapsed}
-                      stepBoundaries={stepBoundaries}
-                      lactateMarks={lactateMarks}
-                      currentStepTarget={currentTargetRange}
-                      windowSec={300}
-                      height={isNative ? 200 : 280}
+                      {...liveChartProps}
+                      height={chartLayout === 'row' ? (isNative ? 260 : 320) : (isNative ? 200 : 280)}
                     />
                   ) : (
                     <div className="flex items-center justify-center text-xs text-gray-500" style={{ height: 180 }}>
@@ -2101,7 +2226,6 @@ export default function WorkoutExecutionPage() {
                   onClick={() => {
                     setShowSaveModal(false);
                     setIsFinished(true);
-                    handleFinish();
                   }}
                   className="flex-[2] py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white font-bold text-sm shadow-lg"
                   style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}

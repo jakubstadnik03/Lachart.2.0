@@ -17,7 +17,7 @@ import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
-import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, autoSyncStravaActivities } from '../../services/api';
+import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import NotifIcon from '../Notifications/NotifIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
@@ -100,7 +100,7 @@ const fmtNotifTime = (d) => {
 };
 
 // ─── Notifications bottom sheet ────────────────────────────────────────────────
-function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick, onDelete, onMarkAllRead }) {
+function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick, onDelete, onMarkAllRead, onClearAll }) {
   const unread = notifs.filter(n => !n.read).length;
 
   // Swipe-to-close
@@ -190,8 +190,8 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="text-base font-semibold text-gray-900">Notifications</span>
                 {unread > 0 && (
                   <span className="min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -199,16 +199,28 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                   </span>
                 )}
               </div>
-              {unread > 0 && (
-                <button
-                  onPointerDown={e => e.stopPropagation()}
-                  onClick={onMarkAllRead}
-                  style={{ touchAction: 'manipulation' }}
-                  className="text-xs text-primary font-semibold active:opacity-60"
-                >
-                  Mark all read
-                </button>
-              )}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {unread > 0 && (
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={onMarkAllRead}
+                    style={{ touchAction: 'manipulation' }}
+                    className="text-xs text-primary font-semibold active:opacity-60"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                {notifs.length > 0 && onClearAll && (
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={onClearAll}
+                    style={{ touchAction: 'manipulation' }}
+                    className="text-xs text-red-500 font-semibold active:opacity-60"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* List — allow internal scroll; stop touch propagation so swipe only fires at top */}
@@ -863,6 +875,20 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     } catch {}
   };
 
+  const handleClearAllNotifs = async () => {
+    // Optimistic: clear the UI immediately so the empty-state appears
+    // even before the network round-trip lands. If the API call fails
+    // we restore the list so the user can retry.
+    const prevSnapshot = notifs;
+    setNotifs([]);
+    try {
+      await clearAllNotifications();
+    } catch (e) {
+      console.error('[Notifs] clear-all failed, restoring:', e);
+      setNotifs(prevSnapshot);
+    }
+  };
+
   // Lock html/body scroll — WKWebView ignores overflow:hidden on a div
   useEffect(() => {
     const html = document.documentElement;
@@ -1031,6 +1057,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         onNotifClick={handleNotifClick}
         onDelete={handleNotifDelete}
         onMarkAllRead={handleMarkAllRead}
+        onClearAll={handleClearAllNotifs}
       />
 
     </div>

@@ -76,6 +76,41 @@ export const deletePlannedWorkout = async (id, athleteId = null) => {
  * instance — auth headers + base URL are handled the same way as every
  * other request.
  */
+/**
+ * Complete a live workout: save execution data, generate FIT + FitTraining,
+ * optionally upload to Strava.
+ */
+export const completePlannedWorkout = async (id, { executionData, uploadToStrava = false, athleteId = null } = {}) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.post(`${BASE}/planned/${id}/complete`, { executionData, uploadToStrava }, { params });
+  return data;
+};
+
+/** Download the recorded workout as .fit (after complete). */
+export const downloadPlannedWorkoutFit = async (id, { athleteId = null, suggestedName = null } = {}) => {
+  const params = athleteId ? { athleteId } : {};
+  const res = await api.get(`${BASE}/planned/${id}/download-fit`, {
+    params,
+    responseType: 'blob',
+  });
+  let filename = `${suggestedName || 'workout'}.fit`;
+  const cd = res.headers?.['content-disposition'] || res.headers?.['Content-Disposition'];
+  if (cd) {
+    const m = /filename="?([^";]+)"?/i.exec(cd);
+    if (m) filename = m[1];
+  }
+  const blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: 'application/vnd.ant.fit' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+};
+
 export const exportPlannedWorkout = async (id, { format = 'tcx', athleteId = null, suggestedName = null } = {}) => {
   const params = { format };
   if (athleteId) params.athleteId = athleteId;
@@ -103,4 +138,36 @@ export const exportPlannedWorkout = async (id, { format = 'tcx', athleteId = nul
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return true;
+};
+
+// ── Day Plans ──────────────────────────────────────────────────────────────
+// High-level theme assigned to a single calendar day ("Threshold", "Recovery",
+// …). Lives next to PlannedWorkouts but is a distinct concept — a day can have
+// a theme without any concrete workout, and a concrete workout without a
+// theme. Both are surfaced in the mobile calendar's day header.
+
+/**
+ * @param {{ from?: string, to?: string, athleteId?: string }} opts
+ */
+export const getDayPlans = async (opts = {}) => {
+  const { data } = await api.get(`${BASE}/day-plans`, { params: opts });
+  return data;
+};
+
+/**
+ * Upsert the theme for a single day.
+ * @param {string} date  YYYY-MM-DD
+ * @param {{ title?: string, category?: string|null, notes?: string }} payload
+ * @param {string} [athleteId]  optional — for coach setting on athlete
+ */
+export const setDayPlan = async (date, payload, athleteId) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.put(`${BASE}/day-plans/${date}`, payload, { params });
+  return data;
+};
+
+export const deleteDayPlan = async (date, athleteId) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.delete(`${BASE}/day-plans/${date}`, { params });
+  return data;
 };

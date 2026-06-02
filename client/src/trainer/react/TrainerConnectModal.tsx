@@ -103,7 +103,7 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10010] p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
@@ -237,25 +237,25 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
               {/* Live telemetry */}
               {telemetry && (
                 <div className="grid grid-cols-2 gap-2">
-                  {telemetry.power !== undefined && (
+                  {telemetry.power != null && Number.isFinite(telemetry.power) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
-                      <div className="text-lg font-bold text-gray-900">{telemetry.power.toFixed(0)}</div>
+                      <div className="text-lg font-bold text-gray-900">{Math.round(telemetry.power)}</div>
                       <div className="text-xs text-gray-400">W</div>
                     </div>
                   )}
-                  {telemetry.cadence !== undefined && (
+                  {telemetry.cadence != null && Number.isFinite(telemetry.cadence) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
-                      <div className="text-lg font-bold text-gray-900">{telemetry.cadence.toFixed(0)}</div>
+                      <div className="text-lg font-bold text-gray-900">{Math.round(telemetry.cadence)}</div>
                       <div className="text-xs text-gray-400">rpm</div>
                     </div>
                   )}
-                  {telemetry.speed !== undefined && (
+                  {telemetry.speed != null && Number.isFinite(telemetry.speed) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{telemetry.speed.toFixed(1)}</div>
                       <div className="text-xs text-gray-400">km/h</div>
                     </div>
                   )}
-                  {telemetry.hr !== undefined && (
+                  {telemetry.hr != null && Number.isFinite(telemetry.hr) && (
                     <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
                       <div className="text-lg font-bold text-gray-900">{telemetry.hr}</div>
                       <div className="text-xs text-gray-400">bpm</div>

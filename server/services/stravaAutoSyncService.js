@@ -120,6 +120,7 @@ async function syncStravaForUser(user, opts = {}) {
     // it, otherwise the missed page's activities are permanently lost.
     let cleanRun = true;
     let newestStartDate = null;
+    let pagesFetched = 0;
 
     console.log(`[StravaAutoSync] Starting sync for user ${user._id}, since: ${since}`);
 
@@ -136,7 +137,8 @@ async function syncStravaForUser(user, opts = {}) {
         try { stravaBudget.reconcileFromHeaders(resp.headers); } catch (_) { /* swallow */ }
 
         const arr = resp.data || [];
-        
+        pagesFetched += 1;
+
         if (arr.length === 0) {
           break;
         }
@@ -248,7 +250,9 @@ async function syncStravaForUser(user, opts = {}) {
     // Advance when the run finished cleanly, or when we hit budget/429 after
     // at least one successful list page (otherwise users retry the same window
     // every tick and amplify partial failures).
-    const shouldAdvanceSyncDate = cleanRun || (rateLimited && page > 1);
+    // Always advance after at least one successful list page so a budget blip
+    // on page 2 does not leave lastSyncDate stuck for days (736 partial failures).
+    const shouldAdvanceSyncDate = cleanRun || pagesFetched > 0;
     if (shouldAdvanceSyncDate) {
       let newAnchor;
       if (newestStartDate) {

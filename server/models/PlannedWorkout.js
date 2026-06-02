@@ -66,6 +66,10 @@ const plannedWorkoutSchema = new mongoose.Schema({
   plannedDistance: Number,       // metres — used when no structured steps
   isLactateTest:   Boolean,
   category:        String,       // category id from CategoryContext
+  // Completed workout payload from live execution (time series, per-step averages).
+  executionData:   { type: mongoose.Schema.Types.Mixed, default: null },
+  fitTrainingId:   String,
+  stravaActivityId: String,
 }, { timestamps: true });
 
 plannedWorkoutSchema.index({ athleteId: 1, date: -1 });

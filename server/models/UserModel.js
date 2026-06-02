@@ -165,6 +165,11 @@ const userSchema = new mongoose.Schema({
     autoSync: { type: Boolean, default: false }, // Enable automatic sync
     lastSyncDate: { type: Date, default: null } // Last successful sync date
   },
+  appleHealth: {
+    connectedAt: { type: Date, default: null },
+    lastWellnessSyncAt: { type: Date, default: null },
+    lastWorkoutSyncAt: { type: Date, default: null },
+  },
   // Power zones from lactate tests
   powerZones: {
     cycling: {

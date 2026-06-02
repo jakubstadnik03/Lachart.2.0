@@ -20,6 +20,11 @@ const {
   CAMPAIGN_KEY,
 } = require('../services/whatsNewCampaignService');
 
+// iOS launch campaign (June 2026) — same shape, separate state key so
+// re-running the May campaign doesn't double-send to anyone who already
+// got the launch email and vice versa.
+const ios = require('../services/iosLaunchCampaignService');
+
 async function requireAdmin(req, res) {
   const me = await User.findById(req.user.userId).select('admin role').lean();
   if (!me || !(me.admin === true || String(me.role || '').toLowerCase() === 'admin')) {
@@ -121,6 +126,94 @@ router.post('/campaigns/whats-new-2026-05/reset', verifyToken, async (req, res) 
     const filter = targetEmail ? { email: targetEmail } : {};
     const result = await User.updateMany(filter, {
       $set: { [`retentionEmails.${CAMPAIGN_KEY}`]: null },
+    });
+    res.json({ matched: result.matchedCount, modified: result.modifiedCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── iOS launch campaign (Jun 2026) — admin endpoints ───────────────────────
+//
+// Mirrors the May-2026 endpoints exactly, just with a different prefix and
+// service module. Keep the two sets of routes side-by-side so it's obvious
+// which campaign each one drives.
+
+router.get('/campaigns/ios-launch-2026-06/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const [pending, sent, totalEligible] = await Promise.all([
+      ios.getPendingCount(),
+      User.countDocuments({ [`retentionEmails.${ios.CAMPAIGN_KEY}`]: { $ne: null, $exists: true } }),
+      User.countDocuments({
+        email: { $exists: true, $ne: null, $ne: '' },
+        isActive: { $ne: false },
+        'notifications.emailNotifications': { $ne: false },
+      }),
+    ]);
+    res.json({ pending, sent, totalEligible });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/ios-launch-2026-06/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const recipient = targetEmail
+      ? await User.findOne({ email: targetEmail }).lean()
+      : await User.findById(req.user.userId).lean();
+    if (!recipient || !recipient.email) {
+      return res.status(404).json({ error: 'No matching user with an email address' });
+    }
+    const draft = { ...recipient, retentionEmails: { ...(recipient.retentionEmails || {}), [ios.CAMPAIGN_KEY]: null } };
+    const result = await ios.sendOne(draft);
+    if (result.sent) {
+      await User.updateOne(
+        { _id: recipient._id },
+        { $set: { [`retentionEmails.${ios.CAMPAIGN_KEY}`]: null } }
+      );
+    }
+    res.json({ to: recipient.email, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/ios-launch-2026-06/run', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const {
+      batchSize = 1,
+      batchIntervalMs = 5 * 60 * 1000,
+      maxBatches = 1000,
+      maxEmailsPerRun = 20,
+      dryRun = false,
+    } = req.body || {};
+
+    const stats = await ios.runCampaign({
+      batchSize: Math.max(1, Math.min(50, Number(batchSize) || 1)),
+      batchIntervalMs: Math.max(5_000, Number(batchIntervalMs) || 5 * 60_000),
+      maxBatches: Math.max(1, Math.min(10_000, Number(maxBatches) || 1000)),
+      maxEmailsPerRun: maxEmailsPerRun === null ? null : Math.max(1, Math.min(1000, Number(maxEmailsPerRun) || 20)),
+      dryRun: !!dryRun,
+    });
+    res.json({ ok: true, stats });
+  } catch (e) {
+    console.error('[iosLaunchCampaign run] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/ios-launch-2026-06/reset', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const filter = targetEmail ? { email: targetEmail } : {};
+    const result = await User.updateMany(filter, {
+      $set: { [`retentionEmails.${ios.CAMPAIGN_KEY}`]: null },
     });
     res.json({ matched: result.matchedCount, modified: result.modifiedCount });
   } catch (e) {

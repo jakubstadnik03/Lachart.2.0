@@ -356,6 +356,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const isNewTest = !testData?._id;
 
   const [rows, setRows] = useState([]);
+  // Map of row-index → human-readable error message for invalid pace inputs.
+  // Drives the red border + tooltip on the row's power input so a typo like
+  // "5.75" doesn't silently disappear from the curve.
+  const [paceInputErrors, setPaceInputErrors] = useState({});
   
   // Store original test data when entering edit mode for cancel functionality
   const [originalTestData, setOriginalTestData] = useState(null);
@@ -1229,10 +1233,82 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
 
-  // Removed automatic formatting on blur - let user type whatever they want
+  // Normalise common pace shorthand (5.30, 5,30, 530) to the canonical
+  // "MM:SS" form expected by the lactate-curve parser. Honza Kubeš
+  // (beta tester, 2026-05) typed "5.30" expecting min:sec — the value got
+  // stored as the float 5.30 (≈ 5 sec/km), which downstream code rejected
+  // by silently dropping that point from the curve. The graph then turned
+  // red and the user had to play "guess the typo" with no inline signal.
+  //
+  // Behaviour (pace mode only, run/swim):
+  //   "5:30"  → "5:30"                       (already canonical)
+  //   "5.30"  → "5:30"                       (dot → colon)
+  //   "5,30"  → "5:30"                       (comma → colon)
+  //   "530"   → "5:30"                       (3-digit shortcut)
+  //   "5:7"   → "5:07"                       (pad seconds)
+  //   "5:75"  → keep raw + flag as error     (seconds > 59)
+  //   "abc"   → keep raw + flag as error     (non-numeric)
+  // Errors are surfaced via paceInputErrors so the row's input gets a
+  // red border + tooltip with the explanation instead of failing silently.
   const handlePowerBlur = (index, value) => {
-    // Do nothing - keep the value exactly as user typed it
-    return;
+    const sport = formData.sport;
+    if (sport !== 'run' && sport !== 'swim') return;
+    if (inputMode !== 'pace') return;
+    const raw = String(value ?? '').trim();
+    if (!raw) {
+      setPaceInputErrors(prev => { const n = { ...prev }; delete n[index]; return n; });
+      return;
+    }
+
+    // Already canonical MM:SS / M:SS — validate seconds 0–59 and pad
+    const colonMatch = raw.match(/^(\d+):(\d{1,2})$/);
+    if (colonMatch) {
+      const mins = Number(colonMatch[1]);
+      const secs = Number(colonMatch[2]);
+      if (secs > 59) {
+        setPaceInputErrors(prev => ({ ...prev, [index]: `Seconds must be 0–59 (got "${colonMatch[2]}")` }));
+        return;
+      }
+      const padded = `${mins}:${String(secs).padStart(2, '0')}`;
+      setPaceInputErrors(prev => { const n = { ...prev }; delete n[index]; return n; });
+      if (padded !== raw) handleValueChange(index, 'power', padded);
+      return;
+    }
+
+    // mm.ss or mm,ss — convert separator → colon, pad seconds
+    const sepMatch = raw.match(/^(\d+)[.,](\d{1,2})$/);
+    if (sepMatch) {
+      const mins = Number(sepMatch[1]);
+      const secs = Number(sepMatch[2]);
+      if (secs > 59) {
+        setPaceInputErrors(prev => ({ ...prev, [index]: `Seconds must be 0–59 (got "${sepMatch[2]}")` }));
+        return;
+      }
+      const fixed = `${mins}:${String(secs).padStart(2, '0')}`;
+      setPaceInputErrors(prev => { const n = { ...prev }; delete n[index]; return n; });
+      handleValueChange(index, 'power', fixed);
+      return;
+    }
+
+    // Bare 3- or 4-digit shorthand: 530 → 5:30, 1030 → 10:30
+    const bareMatch = raw.match(/^(\d{3,4})$/);
+    if (bareMatch) {
+      const digits = bareMatch[1];
+      const secs = Number(digits.slice(-2));
+      const mins = Number(digits.slice(0, -2));
+      if (secs > 59) {
+        setPaceInputErrors(prev => ({ ...prev, [index]: `Seconds must be 0–59 (got "${String(secs)}")` }));
+        return;
+      }
+      const fixed = `${mins}:${String(secs).padStart(2, '0')}`;
+      setPaceInputErrors(prev => { const n = { ...prev }; delete n[index]; return n; });
+      handleValueChange(index, 'power', fixed);
+      return;
+    }
+
+    // Anything else — flag as error so the input lights up red and the
+    // user sees WHY before the lactate curve breaks
+    setPaceInputErrors(prev => ({ ...prev, [index]: `Use MM:SS format (e.g. 5:30) — "${raw}" isn't valid pace` }));
   };
 
   // Detect rows whose POWER (or pace) is non-monotonic compared to the
@@ -1294,6 +1370,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const renderInput = (index, field, value, placeholder) => {
     const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === `${field}_${index}`;
     const isAnomalous = field === 'power' && anomalousPowerRowIndices.has(index);
+    const paceErr = field === 'power' ? paceInputErrors[index] : null;
     let displayValue = value;
 
     // NO AUTOMATIC CONVERSIONS - let user type anything
@@ -1306,6 +1383,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           value={displayValue === undefined || displayValue === null ? '' : String(displayValue)}
           onChange={(e) => {
             handleValueChange(index, field, e.target.value);
+            // Clear stale pace error as soon as user edits — re-validated on blur
+            if (field === 'power' && paceInputErrors[index]) {
+              setPaceInputErrors(prev => { const n = { ...prev }; delete n[index]; return n; });
+            }
           }}
           onBlur={(e) => {
             if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
@@ -1313,14 +1394,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
           }}
           disabled={!isNewTest && !isEditMode}
-          title={isAnomalous ? 'This value is lower than an earlier stage — likely a typo (e.g. 196 typed instead of 296). It will be excluded from the lactate curve.' : undefined}
+          title={paceErr || (isAnomalous ? 'This value is lower than an earlier stage — likely a typo (e.g. 196 typed instead of 296). It will be excluded from the lactate curve.' : undefined)}
           className={`w-full min-w-0 max-w-full box-border p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
           } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''} ${
-            isAnomalous ? 'border-red-500 bg-red-50 text-red-700 font-semibold ring-1 ring-red-300' : ''
+            (isAnomalous || paceErr) ? 'border-red-500 bg-red-50 text-red-700 font-semibold ring-1 ring-red-300' : ''
           }`}
           placeholder={placeholder}
         />
+        {paceErr && (
+          <div className="absolute left-0 right-0 top-full mt-0.5 z-10 text-[9px] leading-tight text-red-600 font-medium bg-red-50 border border-red-200 rounded px-1 py-0.5 pointer-events-none whitespace-normal">
+            {paceErr}
+          </div>
+        )}
       </div>
     );
   };

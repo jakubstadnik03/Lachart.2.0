@@ -24,6 +24,7 @@ import api from '../services/api';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import RecordLactateModal from '../components/training/RecordLactateModal';
+import { SearchableSelect } from '../components/SearchableSelect';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -2060,38 +2061,20 @@ export default function NativeTrainingPage({
                   </div>
                 </div>
 
-                {/* Workout selector — full width, big and clear */}
+                {/* Workout selector — searchable dropdown shared with the
+                    Training Comparison block, so a coach with hundreds of
+                    titled workouts can just type "LT2" and pick. Native
+                    <select> hit the iOS picker which couldn't filter. */}
                 <div style={{ marginBottom: 10 }}>
-                  <select
+                  <SearchableSelect
                     value={selectedTitle || ''}
-                    onChange={(e) => setSelectedTitle(e.target.value)}
-                    style={{
-                      width: '100%',
-                      fontFamily: 'inherit', fontSize: 16, fontWeight: 800,
-                      color: '#0A0E1A',
-                      letterSpacing: '-0.02em',
-                      padding: '6px 28px 6px 0',
-                      borderRadius: 0,
-                      border: 'none',
-                      borderBottom: '1.5px solid rgba(118,126,181,.18)',
-                      background: 'transparent',
-                      outline: 'none',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      cursor: 'pointer',
-                      backgroundImage:
-                        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235E6590' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 4px center',
-                      backgroundSize: '14px 14px',
-                    }}
-                  >
-                    {grouped.map(([title, list]) => (
-                      <option key={title} value={title}>
-                        {title} · ×{list.length}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedTitle(val)}
+                    options={grouped.map(([title, list]) => ({
+                      value: title,
+                      label: `${title} · ×${list.length}`,
+                    }))}
+                    placeholder="Pick a workout title"
+                  />
                 </div>
 
                 {/* Filter row — date range + hide warmup/cooldown toggle */}

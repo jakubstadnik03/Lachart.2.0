@@ -1,20 +1,18 @@
 /**
  * TimeInZonesBar — compact 5-zone breakdown for a single activity.
  *
- * Renders a horizontal stacked bar + small legend showing what % of the
- * activity was spent in each HR / power zone. Designed for the Summary
- * tab of the activity detail modal — small, readable, no Chart.js.
+ * Reads the user's *configured* zones from their profile (powerZones,
+ * heartRateZones, paceZones / runningZones, …) when they exist, so the
+ * breakdown matches what Coach setup in Settings rather than a generic
+ * % of FTP / LT2 split. Falls back to band-based splits when the user
+ * has nothing configured for the sport.
  *
- * Picks metric automatically:
- *   • bike + power records → power zones (% of FTP-style thresholds from user)
- *   • else → HR zones (% of LT2 HR, falling back to highest sustained HR
- *            in the activity itself when user has no thresholds set up)
- *
- * Records-based seconds-per-zone (not lap averages) so threshold sessions
- * that cross zones show up correctly.
+ * Metric picker: Power / HR / Pace. The default tries Power for bike,
+ * HR for run/swim, but the user can toggle to any metric for which the
+ * activity has data AND the profile has zones (or a sensible fallback).
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 
 const ZONE_DEFS = [
   { id: 'Z1', label: 'Recovery',  color: '#60a5fa' },
@@ -24,39 +22,88 @@ const ZONE_DEFS = [
   { id: 'Z5', label: 'VO₂max',    color: '#ef4444' },
 ];
 
-// HR thresholds expressed as a fraction of LT2 HR (or max HR proxy when no
-// LT2). Mirrors a standard 5-zone Coggan-ish split for endurance sports.
-const HR_BANDS_OF_LT2 = [0.81, 0.89, 0.96, 1.02]; // Z1<.81, Z2<.89, Z3<.96, Z4<1.02, Z5≥1.02
-// Power bands as fraction of FTP (LT2 power).
+// Fallback bands when the user hasn't configured zones yet.
+const HR_BANDS_OF_LT2    = [0.81, 0.89, 0.96, 1.02];
 const POWER_BANDS_OF_FTP = [0.55, 0.75, 0.90, 1.05];
+// Pace bands as fraction of LT2 pace (sec/km). Faster = lower seconds, so
+// the bands are < 1.0 for "harder than LT2" and > 1.0 for "easier".
+const PACE_BANDS_OF_LT2  = [1.30, 1.15, 1.05, 0.97]; // Z1>1.30, Z2>1.15, …
 
+// ── Record getters ─────────────────────────────────────────────────────────
 function pickValue(rec, keys) {
   for (const k of keys) {
     const v = rec?.[k];
-    if (v != null && Number.isFinite(Number(v)) && Number(v) > 0) return Number(v);
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
   }
   return null;
 }
-
-function recordHr(r) {
-  return pickValue(r, ['heartRate', 'heart_rate', 'hr']);
-}
-function recordPower(r) {
-  return pickValue(r, ['power', 'watts']);
-}
+function recordHr(r)    { return pickValue(r, ['heartRate', 'heart_rate', 'hr']); }
+function recordPower(r) { return pickValue(r, ['power', 'watts']); }
+function recordSpeed(r) { return pickValue(r, ['speed', 'velocity', 'enhancedSpeed']); }
 function recordSec(r, prev) {
   if (!r) return 1;
-  // Try delta from previous timestamp; fall back to 1 s (typical sample rate)
   if (prev?.timestamp && r.timestamp) {
     const dt = (new Date(r.timestamp).getTime() - new Date(prev.timestamp).getTime()) / 1000;
-    if (dt > 0 && dt < 30) return dt; // ignore long gaps (pause / signal loss)
+    if (dt > 0 && dt < 30) return dt;
   }
   return 1;
 }
 
-// Derive a max-HR estimate when the user has no thresholds. Use the 98th
-// percentile of HR samples in the activity itself — robust against a one-
-// sample spike but still pinned to "this athlete's actual range".
+// ── Sport normalisation ────────────────────────────────────────────────────
+function sportKey(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'cycling';
+  if (s.includes('swim')) return 'swimming';
+  return 'running'; // includes run, walk, hike, trail
+}
+
+// Read configured zones for a given sport + metric. Returns an array of
+// numbers — the 4 upper bounds dividing 5 zones — or null when zones aren't
+// configured for that combo.
+function readUserZones(authUser, sport, metric) {
+  if (!authUser) return null;
+  const key = sportKey(sport);
+  const root = metric === 'power' ? authUser.powerZones
+             : metric === 'hr'    ? authUser.heartRateZones
+             :                      (authUser.paceZones || authUser.powerZones); // pace stored on powerZones for run/swim
+  const z = root?.[key];
+  if (!z) return null;
+  const bands = [];
+  for (let i = 1; i <= 4; i++) {
+    const zone = z[`zone${i}`];
+    if (!zone) return null;
+    // For pace zones the user typically stores `max` as the upper bound
+    // (slower threshold). For power/HR `max` is the upper-watts bound.
+    const max = Number(zone.max);
+    if (!Number.isFinite(max)) return null;
+    bands.push(max);
+  }
+  return bands;
+}
+
+// Read the reference threshold (LT2 / FTP) the user has configured. Used in
+// the header and in the band-fallback path.
+function readUserReference(authUser, sport, metric) {
+  if (!authUser) return null;
+  const key = sportKey(sport);
+  if (metric === 'power') {
+    const lt2 = Number(authUser?.powerZones?.[key]?.lt2);
+    return Number.isFinite(lt2) && lt2 > 0 ? lt2 : null;
+  }
+  if (metric === 'hr') {
+    const lt2 = Number(
+      authUser?.heartRateZones?.[key]?.lt2 ??
+      authUser?.heartRateZones?.[key]?.lt2Hr ??
+      authUser?.powerZones?.[key]?.lt2Hr
+    );
+    return Number.isFinite(lt2) && lt2 > 0 ? lt2 : null;
+  }
+  // pace stored as LT2 sec/km on the same powerZones object for run/swim
+  const lt2 = Number(authUser?.powerZones?.[key]?.lt2);
+  return Number.isFinite(lt2) && lt2 > 0 ? lt2 : null;
+}
+
 function estimateMaxHr(records) {
   const vals = records.map(recordHr).filter(v => v != null);
   if (vals.length < 30) return null;
@@ -64,95 +111,178 @@ function estimateMaxHr(records) {
   return vals[Math.floor(vals.length * 0.98)];
 }
 
-function zoneIndexFromBands(value, bands) {
+// 0-based zone index, where bands has 4 thresholds → 5 zones. For pace mode
+// the comparison is inverted (lower seconds = harder = higher zone).
+function zoneIndex(value, bands, invert) {
+  if (invert) {
+    // Faster (lower seconds) wins higher zone
+    for (let i = bands.length - 1; i >= 0; i--) {
+      if (value <= bands[i]) return i + 1 > 4 ? 4 : (4 - i);
+    }
+    return 0;
+  }
   for (let i = 0; i < bands.length; i++) {
     if (value < bands[i]) return i;
   }
-  return bands.length; // last zone
+  return bands.length;
 }
 
+// ── Component ──────────────────────────────────────────────────────────────
+
 export default function TimeInZonesBar({ records, sport, authUser }) {
+  // Detect which metrics are usable in this activity
+  const available = useMemo(() => {
+    if (!Array.isArray(records) || records.length < 10) return [];
+    const flags = { power: false, hr: false, pace: false };
+    for (const r of records) {
+      if (!flags.power && recordPower(r) != null) flags.power = true;
+      if (!flags.hr    && recordHr(r)    != null) flags.hr = true;
+      if (!flags.pace  && recordSpeed(r) != null) flags.pace = true;
+      if (flags.power && flags.hr && flags.pace) break;
+    }
+    const isBike = sportKey(sport) === 'cycling';
+    // Order: most relevant first per sport
+    const order = isBike ? ['power', 'hr', 'pace'] : ['pace', 'hr', 'power'];
+    return order.filter(m => flags[m]);
+  }, [records, sport]);
+
+  const defaultMetric = available[0] || 'hr';
+  const [metric, setMetric] = useState(defaultMetric);
+
+  // Reset metric if the activity changes and the current pick isn't available
+  useEffect(() => {
+    if (!available.includes(metric) && available.length > 0) {
+      setMetric(available[0]);
+    }
+  }, [available, metric]);
+
   const result = useMemo(() => {
     if (!Array.isArray(records) || records.length < 10) return null;
 
-    const isBike = String(sport || '').toLowerCase().includes('bike') ||
-                   String(sport || '').toLowerCase().includes('ride');
+    // Prefer user-configured zones; fall back to band-derived from LT2.
+    let bands = readUserZones(authUser, sport, metric);
+    let reference = readUserReference(authUser, sport, metric);
+    let usedProfileZones = !!bands;
 
-    // Prefer power for bike, HR for everything else
-    let metric = 'hr';
-    if (isBike) {
-      const hasPower = records.some(r => recordPower(r) != null);
-      if (hasPower) metric = 'power';
+    if (!bands) {
+      // Band fallback path
+      if (metric === 'power') {
+        if (!(reference > 0)) return null;
+        bands = POWER_BANDS_OF_FTP.map(b => b * reference);
+      } else if (metric === 'hr') {
+        const ref = reference > 0 ? reference : estimateMaxHr(records);
+        if (!(ref > 0)) return null;
+        const factor = reference > 0 ? 1 : 0.92;
+        bands = HR_BANDS_OF_LT2.map(b => b * ref * factor);
+        reference = ref;
+      } else if (metric === 'pace') {
+        if (!(reference > 0)) return null;
+        bands = PACE_BANDS_OF_LT2.map(b => b * reference);
+      }
     }
+    if (!bands) return null;
 
-    // Pull reference thresholds from the user profile when available
-    const ftp = Number(authUser?.ftp || authUser?.cyclingFtp || 0);
-    const lt2Hr = Number(
-      authUser?.cyclingLt2Hr || authUser?.runningLt2Hr ||
-      authUser?.thresholds?.cyclingLt2Hr || authUser?.thresholds?.runningLt2Hr || 0
-    );
+    const invert = metric === 'pace';
+    const isSwim = sportKey(sport) === 'swimming';
+    const getSpeedAsPace = (r) => {
+      const speed = recordSpeed(r); // m/s
+      if (speed == null) return null;
+      // Swim → sec/100m. Run → sec/km.
+      return isSwim ? 100 / speed : 1000 / speed;
+    };
 
-    let bands, reference;
-    if (metric === 'power') {
-      if (!(ftp > 0)) return null; // need FTP to break into zones
-      bands = POWER_BANDS_OF_FTP.map(b => b * ftp);
-      reference = ftp;
-    } else {
-      const refHr = lt2Hr > 0 ? lt2Hr : estimateMaxHr(records);
-      if (!(refHr > 0)) return null;
-      // When using max-HR proxy (no LT2 set), shift bands lower so max-HR
-      // proxy ≈ LT2 + 5% gives a sensible split.
-      const factor = lt2Hr > 0 ? 1 : 0.92; // 92% of estimated max ≈ LT2
-      bands = HR_BANDS_OF_LT2.map(b => b * refHr * factor);
-      reference = refHr;
-    }
-
-    // Bin seconds into zones
     const zoneSecs = new Array(5).fill(0);
     let prev = null;
     for (const r of records) {
       const dt = recordSec(r, prev);
       prev = r;
-      const v = metric === 'power' ? recordPower(r) : recordHr(r);
+      const v = metric === 'power' ? recordPower(r)
+              : metric === 'hr'    ? recordHr(r)
+              :                      getSpeedAsPace(r);
       if (v == null) continue;
-      const idx = Math.min(4, zoneIndexFromBands(v, bands));
+      const idx = Math.min(4, Math.max(0, zoneIndex(v, bands, invert)));
       zoneSecs[idx] += dt;
     }
     const totalSec = zoneSecs.reduce((a, b) => a + b, 0);
     if (totalSec < 30) return null;
 
     return {
-      metric,                 // 'hr' | 'power'
-      reference,              // FTP or LT2 HR (or estimated)
-      derivedFromActivity: metric === 'hr' && !(lt2Hr > 0),
+      metric,
+      reference,
+      usedProfileZones,
       zoneSecs,
       totalSec,
     };
-  }, [records, sport, authUser]);
+  }, [records, sport, authUser, metric]);
 
-  if (!result) return null;
+  if (!result) {
+    // Render nothing if no metric works, BUT keep the toggle visible when at
+    // least one metric is computable so the user can flip to it.
+    if (available.length === 0) return null;
+  }
 
-  const { metric, reference, derivedFromActivity, zoneSecs, totalSec } = result;
+  const { reference, usedProfileZones, zoneSecs = [], totalSec = 0 } = result || {};
+
   const fmtTime = (s) => {
     const m = Math.floor(s / 60);
     if (m < 60) return `${m}m`;
     return `${Math.floor(m / 60)}h ${m % 60}m`;
   };
+  const fmtPace = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  const refLabel = (() => {
+    if (!reference) return null;
+    if (metric === 'power') return `FTP ${Math.round(reference)} W`;
+    if (metric === 'hr')    return `LT2 HR ${Math.round(reference)} bpm`;
+    const unit = sportKey(sport) === 'swimming' ? '/100m' : '/km';
+    return `LT2 ${fmtPace(reference)}${unit}`;
+  })();
+
+  const METRIC_LABELS = { power: 'Power', hr: 'HR', pace: 'Pace' };
 
   return (
     <div className="px-4 py-3 border-b border-gray-50">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 gap-2">
         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Time in Zones</div>
-        <div className="text-[9px] font-semibold text-gray-400 tabular-nums">
-          {metric === 'power' ? 'FTP' : 'LT2 HR'} {Math.round(reference)}{metric === 'power' ? ' W' : ' bpm'}
-          {derivedFromActivity && <span className="text-amber-500 ml-1">· est.</span>}
+        <div className="flex items-center gap-2">
+          {refLabel && (
+            <div className="text-[9px] font-semibold text-gray-400 tabular-nums">
+              {refLabel}
+              {!usedProfileZones && <span className="text-amber-500 ml-1">· est.</span>}
+            </div>
+          )}
+          {/* Metric toggle — only renders when ≥2 metrics are computable. */}
+          {available.length > 1 && (
+            <div className="inline-flex p-0.5 rounded-md bg-gray-100">
+              {available.map(m => (
+                <button
+                  key={m}
+                  onClick={() => setMetric(m)}
+                  className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded transition-colors ${metric === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {METRIC_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
+      {!result ? (
+        <div className="text-[10px] text-gray-400 italic py-2">
+          No {METRIC_LABELS[metric].toLowerCase()} zones configured — set them in Profile to see the breakdown.
+        </div>
+      ) : (
+      <>
       {/* Stacked bar */}
       <div className="flex w-full h-6 rounded-md overflow-hidden bg-gray-100">
         {zoneSecs.map((sec, i) => {
-          const pct = (sec / totalSec) * 100;
+          const pct = totalSec > 0 ? (sec / totalSec) * 100 : 0;
           if (pct < 0.5) return null;
           return (
             <div
@@ -179,7 +309,7 @@ export default function TimeInZonesBar({ records, sport, authUser }) {
       <div className="grid grid-cols-5 gap-1 mt-2">
         {ZONE_DEFS.map((z, i) => {
           const sec = zoneSecs[i];
-          const pct = (sec / totalSec) * 100;
+          const pct = totalSec > 0 ? (sec / totalSec) * 100 : 0;
           return (
             <div key={z.id} className="flex flex-col items-center text-center">
               <div className="flex items-center gap-1">
@@ -196,6 +326,8 @@ export default function TimeInZonesBar({ records, sport, authUser }) {
           );
         })}
       </div>
+      </>
+      )}
     </div>
   );
 }

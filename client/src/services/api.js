@@ -1479,7 +1479,36 @@ export const getIntegrationStatus = async (opts = {}) => {
   if (timeout != null) cfg.timeout = timeout;
   if (athleteId) cfg.params = { athleteId };
   const { data } = await api.get('/api/integrations/status', cfg);
-  return data; // { stravaConnected, garminConnected }
+  return data; // { stravaConnected, garminConnected, appleHealthConnected, ... }
+};
+
+export const syncAppleHealth = async (payload) => {
+  const { data } = await api.post('/api/integrations/apple-health/sync', payload);
+  return data;
+};
+
+export const syncAppleHealthWellness = async (payload) => {
+  const { data } = await api.post('/api/integrations/apple-health/wellness-sync', payload);
+  return data;
+};
+
+/** @param {{ days?: number; signal?: AbortSignal }} [opts] */
+export const getAppleHealthWellness = async (opts = {}) => {
+  const cfg = { params: {} };
+  if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.signal) cfg.signal = opts.signal;
+  const { data } = await api.get('/api/integrations/apple-health/wellness', cfg);
+  return data;
+};
+
+export const getAppleHealthStatus = async () => {
+  const { data } = await api.get('/api/integrations/apple-health/status');
+  return data;
+};
+
+export const disconnectAppleHealth = async () => {
+  const { data } = await api.delete('/api/integrations/apple-health');
+  return data;
 };
 
 /**
@@ -1734,6 +1763,7 @@ export const getNotifications = () => api.get('/api/notifications');
 export const markAllNotificationsRead = () => api.patch('/api/notifications/read');
 export const markNotificationRead = (id) => api.patch(`/api/notifications/${id}/read`);
 export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`);
+export const clearAllNotifications = () => api.delete('/api/notifications');
 
 // Mobile push token registration (Capacitor / Expo)
 export const registerPushToken = (expoPushToken) =>

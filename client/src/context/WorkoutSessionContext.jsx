@@ -74,6 +74,23 @@ function resolveTargetWatts(target, ctx = {}) {
   return null;
 }
 
+/** ERG target for a step — explicit target, or Z1/Z2 fallback for recovery/warmup without watts. */
+function resolveErgWattsForStep(step, ctx = {}, bias = 1) {
+  if (!step) return null;
+  const raw = step.powerTarget ? resolveTargetWatts(step.powerTarget, ctx) : null;
+  if (raw != null) return Math.max(0, Math.round(raw * bias));
+  const st = String(step.stepType || '').toLowerCase();
+  if (st === 'recovery' || st === 'cooldown') {
+    const z1 = resolveTargetWatts({ type: 'zone', value: 1 }, ctx);
+    if (z1 != null) return Math.max(0, Math.round(z1 * bias));
+  }
+  if (st === 'warmup') {
+    const z2 = resolveTargetWatts({ type: 'zone', value: 2 }, ctx);
+    if (z2 != null) return Math.max(0, Math.round(z2 * bias));
+  }
+  return null;
+}
+
 /** Expand grouped repeat blocks into a flat list of execution steps.
  *  Header is a real step (typically the work interval). See
  *  WorkoutExecutionPage.expandSteps for the rationale. */
@@ -209,9 +226,12 @@ export function WorkoutSessionProvider({ children }) {
     // needed and debounces rapid calls (e.g. step-change + bias change
     // arriving in the same tick).  Returns a Promise<true> to match the
     // useBluetoothTrainer.setPower(w) → Promise<bool> contract.
-    setPower: async (w) => {
+    setPower: async (w, { immediate = false } = {}) => {
       try {
-        await trainerHook.setErgWatts(w);
+        const fn = immediate && trainerHook.setErgWattsImmediate
+          ? trainerHook.setErgWattsImmediate
+          : trainerHook.setErgWatts;
+        await fn(w);
         return true;
       } catch {
         return false;
@@ -234,6 +254,7 @@ export function WorkoutSessionProvider({ children }) {
     trainerHook.requestControl,
     trainerHook.disconnect,
     trainerHook.setErgWatts,
+    trainerHook.setErgWattsImmediate,
     trainerHook.error,
   ]);
 
@@ -257,7 +278,13 @@ export function WorkoutSessionProvider({ children }) {
   const currentStepIdxRef = useRef(0);
   const timerRef = useRef(null);
   const ergSentRef = useRef(null);
+  const ergGenRef = useRef(0);
+  const ergRetryTimersRef = useRef([]);
+  const ergModeRef = useRef(ergMode);
+  const ergBiasRef = useRef(ergBias);
   useEffect(() => { currentStepIdxRef.current = currentStepIdx; }, [currentStepIdx]);
+  useEffect(() => { ergModeRef.current = ergMode; }, [ergMode]);
+  useEffect(() => { ergBiasRef.current = ergBias; }, [ergBias]);
 
   // Mirror "live" data into refs so the interval below can read them
   // without rebuilding every BLE notification.
@@ -304,10 +331,10 @@ export function WorkoutSessionProvider({ children }) {
     () => expandedSteps.reduce((s, st) => s + (st.durationSeconds || 0), 0),
     [expandedSteps],
   );
-  const effectiveErgWatts = useMemo(() => {
-    if (currentTargetWatts == null) return null;
-    return Math.max(0, Math.round(currentTargetWatts * ergBias));
-  }, [currentTargetWatts, ergBias]);
+  const effectiveErgWatts = useMemo(
+    () => resolveErgWattsForStep(currentStep, context, ergBias),
+    [currentStep, context, ergBias],
+  );
 
   // ── Auto-enable ERG when trainer supports it + workout has power targets ──
   // Riders kept asking "why doesn't the trainer change resistance?" and the
@@ -319,14 +346,14 @@ export function WorkoutSessionProvider({ children }) {
   useEffect(() => {
     if (ergAutoEnabledRef.current) return;
     if (trainer.status !== 'connected') return;
-    if (trainer.protocol !== 'ftms') return;
+    if (!trainer.ergCapable) return;
     if (!Array.isArray(expandedSteps) || expandedSteps.length === 0) return;
     const hasPowerTarget = expandedSteps.some((s) => s?.powerTarget && s.powerTarget.type !== 'open');
     if (!hasPowerTarget) return;
     ergAutoEnabledRef.current = true;
     setErgMode(true);
-    console.log('[ERG] auto-enabled — FTMS trainer + workout has power targets');
-  }, [trainer.status, trainer.protocol, expandedSteps]);
+    console.log('[ERG] auto-enabled — ERG-capable trainer + workout has power targets');
+  }, [trainer.status, trainer.ergCapable, expandedSteps]);
 
   // ── ERG send ───────────────────────────────────────────────────────────
   // Fires when ergMode is on AND effectiveErgWatts changes. Also fires on
@@ -334,6 +361,82 @@ export function WorkoutSessionProvider({ children }) {
   // re-sent — needed because toggling ERG off mid-workout typically leaves
   // the trainer in its last ERG state).
   const prevErgModeRef = useRef(ergMode);
+  const prevErgStepRef = useRef(currentStepIdx);
+  const prevIsRunningRef = useRef(isRunning);
+
+  const clearErgRetries = useCallback(() => {
+    ergRetryTimersRef.current.forEach((id) => clearTimeout(id));
+    ergRetryTimersRef.current = [];
+  }, []);
+
+  const pushErgTarget = useCallback((watts, reason, { stepIdx = null, retry = false } = {}) => {
+    const tr = trainerRef.current;
+    if (!ergModeRef.current || tr.status !== 'connected' || !tr.ergCapable) return;
+
+    let targetWatts = watts;
+    if (stepIdx != null) {
+      const step = expandedStepsRef.current[stepIdx];
+      targetWatts = resolveErgWattsForStep(step, contextRef.current, ergBiasRef.current);
+    }
+    if (targetWatts == null) {
+      console.log(`[ERG] ${reason} — no watts for step ${stepIdx ?? '?'} (open interval, ERG unchanged)`);
+      return;
+    }
+
+    const gen = ++ergGenRef.current;
+    ergSentRef.current = targetWatts;
+    clearErgRetries();
+    console.log(`[ERG] ${reason} → ${targetWatts} W${retry ? ' (with retry)' : ''}`);
+
+    const sendOnce = () => {
+      if (gen !== ergGenRef.current) return;
+      const live = trainerRef.current;
+      if (!ergModeRef.current || live.status !== 'connected' || !live.ergCapable) return;
+      live.setPower(targetWatts, { immediate: true }).then((ok) => {
+        if (gen !== ergGenRef.current) return;
+        if (!ok) {
+          console.warn(`[ERG] ${reason} setPower returned false`);
+          ergSentRef.current = null;
+        }
+      }).catch((e) => {
+        if (gen !== ergGenRef.current) return;
+        console.warn(`[ERG] ${reason} setPower failed:`, e?.message || e);
+        ergSentRef.current = null;
+      });
+    };
+
+    sendOnce();
+    if (retry) {
+      ergRetryTimersRef.current.push(setTimeout(sendOnce, 450));
+      ergRetryTimersRef.current.push(setTimeout(sendOnce, 1200));
+      ergRetryTimersRef.current.push(setTimeout(sendOnce, 2500));
+    }
+  }, [clearErgRetries]);
+
+  const pushErgRef = useRef(pushErgTarget);
+  pushErgRef.current = pushErgTarget;
+
+  // Start / resume → always push current lap (manual ERG in modal may have left a different target).
+  useEffect(() => {
+    const wasRunning = prevIsRunningRef.current;
+    prevIsRunningRef.current = isRunning;
+    if (!isRunning || wasRunning || isFinished) return;
+    ergSentRef.current = null;
+    pushErgTarget(null, 'workout started', { stepIdx: currentStepIdx, retry: true });
+  }, [isRunning, isFinished, currentStepIdx, pushErgTarget]);
+
+  // Lap / step change → resolve target from the NEW step (not a stale closure).
+  useEffect(() => {
+    if (prevErgStepRef.current === currentStepIdx) return;
+    prevErgStepRef.current = currentStepIdx;
+    ergSentRef.current = null;
+
+    if (!ergMode || trainer.status !== 'connected' || !trainer.ergCapable) return;
+
+    const label = expandedSteps[currentStepIdx]?.label || expandedSteps[currentStepIdx]?.stepType || `step ${currentStepIdx + 1}`;
+    pushErgTarget(null, `lap change (${label})`, { stepIdx: currentStepIdx, retry: true });
+  }, [currentStepIdx, ergMode, trainer.status, trainer.ergCapable, expandedSteps, pushErgTarget]); // eslint-disable-line
+
   useEffect(() => {
     // ergMode transitioned off→on: force resend the target.
     if (ergMode && !prevErgModeRef.current) {
@@ -344,8 +447,8 @@ export function WorkoutSessionProvider({ children }) {
     // Saris H3 do); others stay in their last state but visibly drop the
     // resistance. Better than leaving the rider stuck on the last target.
     if (!ergMode && prevErgModeRef.current) {
-      if (trainer.status === 'connected' && trainer.protocol === 'ftms') {
-        trainer.setPower(0).catch(() => { /* swallow — trainer may be in fault */ });
+      if (trainer.status === 'connected' && trainer.ergCapable) {
+        trainer.setPower(0, { immediate: true }).catch(() => { /* swallow */ });
         console.log('[ERG] disabled — released trainer with setPower(0)');
       }
       ergSentRef.current = null;
@@ -353,42 +456,22 @@ export function WorkoutSessionProvider({ children }) {
     prevErgModeRef.current = ergMode;
 
     if (!ergMode || trainer.status !== 'connected') return;
-    if (trainer.protocol !== 'ftms') {
-      // CPS-only — log once so the dev can see why ERG silently does nothing.
+    if (!trainer.ergCapable) {
       if (ergSentRef.current !== 'cps-noop') {
-        console.warn('[ERG] trainer is CPS-only (read-only power), ERG writes will be no-ops. Connect via FTMS for ERG support.');
+        console.warn('[ERG] trainer has no ERG control — power read-only.');
         ergSentRef.current = 'cps-noop';
       }
       return;
     }
 
-    // Step has no power target (warmup, cool-down, free-ride, rest) —
-    // release the trainer from its previous ERG hold so resistance drops.
-    // Only send the 0 W if we previously held a non-zero target (avoids
-    // a redundant write when two consecutive free steps follow each other).
-    if (effectiveErgWatts == null) {
-      if (ergSentRef.current != null && ergSentRef.current !== 0 && ergSentRef.current !== 'cps-noop') {
-        console.log('[ERG] no power target for this step — releasing trainer with setPower(0)');
-        ergSentRef.current = 0;
-        trainer.setPower(0).catch(() => {});
-      }
-      return;
-    }
+    if (!isRunning || isFinished) return;
 
-    if (ergSentRef.current === effectiveErgWatts) return;
-    ergSentRef.current = effectiveErgWatts;
-    console.log(`[ERG] setPower(${effectiveErgWatts}) — bias ${Math.round(ergBias * 100)} %`);
-    trainer.setPower(effectiveErgWatts).then((ok) => {
-      if (!ok) {
-        console.warn('[ERG] setPower returned false — write may have failed; will retry on next target change.');
-        // Reset so a subsequent same-value change still tries to write.
-        ergSentRef.current = null;
-      }
-    }).catch((e) => {
-      console.warn('[ERG] setPower threw:', e?.message || e);
-      ergSentRef.current = null;
-    });
-  }, [ergMode, effectiveErgWatts, trainer.status, trainer.protocol]); // eslint-disable-line
+    const stepWatts = resolveErgWattsForStep(expandedSteps[currentStepIdx], context, ergBias);
+    if (stepWatts == null) return;
+
+    if (ergSentRef.current === stepWatts) return;
+    pushErgTarget(stepWatts, `target change (bias ${Math.round(ergBias * 100)} %)`);
+  }, [ergMode, effectiveErgWatts, trainer.status, trainer.ergCapable, ergBias, isRunning, isFinished, currentStepIdx, expandedSteps, context, pushErgTarget]); // eslint-disable-line
 
   // ── Timer tick ─────────────────────────────────────────────────────────
   // Wall-clock based: each tick computes how many seconds elapsed since
@@ -458,14 +541,19 @@ export function WorkoutSessionProvider({ children }) {
               return idx;
             }
             ergSentRef.current = null;
+            currentStepIdxRef.current = nextIdx;
             const ns = xs[nextIdx];
             if (ns) {
-              const nsT = ns.powerTarget ? resolveTargetWatts(ns.powerTarget, cn) : null;
+              const nsT = resolveErgWattsForStep(ns, cn, ergBiasRef.current)
+                ?? (ns.powerTarget ? resolveTargetWatts(ns.powerTarget, cn) : null);
               const m = Math.floor((ns.durationSeconds || 0) / 60);
               const s = (ns.durationSeconds || 0) % 60;
               const dur = m > 0 ? (s > 0 ? `${m} minute${m > 1 ? 's' : ''} ${s} seconds` : `${m} minute${m > 1 ? 's' : ''}`) : `${s} seconds`;
               audioCoach.beep(1320, 180, 0.5);
               audioCoach.speak(`${ns.label || ns.stepType || 'next step'}, ${dur}${nsT ? ` at ${nsT} watts` : ''}`);
+            }
+            if (pushErgRef.current) {
+              pushErgRef.current(null, 'auto lap (timer)', { stepIdx: nextIdx, retry: true });
             }
             return nextIdx;
           });
@@ -478,10 +566,20 @@ export function WorkoutSessionProvider({ children }) {
         const trNow = trainerRef.current;
         const hrNow = liveHrRef.current;
         const ctNow = coreTempRef.current;
+        const p = trNow.data.power;
+        const cd = trNow.data.cadence;
+        const lastSample = samplesRef.current[samplesRef.current.length - 1];
+        const powerSample = p != null
+          ? Math.round(p)
+          : (lastSample?.power != null ? lastSample.power : null);
+        const cadenceSample = cd != null
+          ? Math.round(cd)
+          : (lastSample?.cadence != null ? lastSample.cadence : null);
         samplesRef.current.push({
           t: next,
-          power: trNow.data.power != null ? Math.round(trNow.data.power) : null,
-          hr: hrNow != null ? Math.round(hrNow) : null,
+          power: powerSample,
+          cadence: cadenceSample,
+          hr: hrNow != null ? Math.round(hrNow) : (lastSample?.hr ?? null),
           coreTemp: ctNow.data?.coreTemp != null ? Number(ctNow.data.coreTemp.toFixed(2)) : null,
           hsi: ctNow.data?.hsi != null ? Number(ctNow.data.hsi.toFixed(1)) : null,
           stepIdx: currentStepIdxRef.current,
@@ -559,10 +657,14 @@ export function WorkoutSessionProvider({ children }) {
     lactateLogRef.current = [];
     stallSecRef.current = 0;
     ergSentRef.current = null;
+    ergGenRef.current += 1;
+    clearErgRetries();
     ergAutoEnabledRef.current = false; // allow auto-enable to re-fire on the new session
-  }, []);
+  }, [clearErgRetries]);
 
   const endSession = useCallback(() => {
+    ergGenRef.current += 1;
+    clearErgRetries();
     if (timerRef.current) clearInterval(timerRef.current);
     if (trainer.status === 'connected') trainer.disconnect();
     if (hrStrap.status === 'connected') hrStrap.disconnect();
@@ -583,7 +685,7 @@ export function WorkoutSessionProvider({ children }) {
     stepHrRef.current = {};
     lactateLogRef.current = [];
     try { localStorage.removeItem(SNAPSHOT_KEY); } catch {}
-  }, [trainer, hrStrap, coreTemp]);
+  }, [trainer, hrStrap, coreTemp, clearErgRetries]);
 
   const playPause = useCallback(() => {
     if (isFinished) return;
@@ -596,20 +698,29 @@ export function WorkoutSessionProvider({ children }) {
   const nextStep = useCallback(() => {
     if (currentStepIdx >= expandedSteps.length - 1) return;
     ergSentRef.current = null;
-    setCurrentStepIdx((i) => i + 1);
+    setCurrentStepIdx((i) => {
+      const n = i + 1;
+      currentStepIdxRef.current = n;
+      return n;
+    });
     setStepElapsed(0);
   }, [currentStepIdx, expandedSteps.length]);
 
   const prevStep = useCallback(() => {
     if (currentStepIdx === 0) { setStepElapsed(0); return; }
     ergSentRef.current = null;
-    setCurrentStepIdx((i) => i - 1);
+    setCurrentStepIdx((i) => {
+      const n = i - 1;
+      currentStepIdxRef.current = n;
+      return n;
+    });
     setStepElapsed(0);
   }, [currentStepIdx]);
 
   const jumpToStep = useCallback((i) => {
     if (i < 0 || i >= expandedSteps.length) return;
     ergSentRef.current = null;
+    currentStepIdxRef.current = i;
     setCurrentStepIdx(i);
     setStepElapsed(0);
   }, [expandedSteps.length]);
@@ -701,4 +812,4 @@ export function useHasActiveSession() {
   };
 }
 
-export { expandSteps, resolveTargetWatts };
+export { expandSteps, resolveTargetWatts, resolveErgWattsForStep };

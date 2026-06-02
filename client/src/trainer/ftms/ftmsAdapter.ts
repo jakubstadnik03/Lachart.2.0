@@ -610,33 +610,45 @@ export class FTMSAdapter implements TrainerAdapter {
           }
         }
 
-        // Set up the response promise BEFORE writing
-        const ergResponsePromise = new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            // Treat as success on timeout — many trainers don't send a response for every
-            // power update. Use a short 1s window so step transitions aren't delayed.
-            resolve();
-          }, 1000);
-
-          this.pendingErgResolve = () => {
-            clearTimeout(timer);
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            resolve();
-          };
-          this.pendingErgReject = (err: Error) => {
-            clearTimeout(timer);
-            this.pendingErgResolve = null;
-            this.pendingErgReject = null;
-            reject(err);
-          };
-        });
-
         const command = buildSetTargetPowerCommand(clampedWatts);
-        await this.controlPointChar.writeValueWithResponse(command);
-        await ergResponsePromise;
+        const alreadyErg = this.state === 'erg_active';
+
+        if (alreadyErg) {
+          // Repeat targets: skip 1 s response wait — many trainers never ACK every write.
+          try {
+            if (this.controlPointChar.properties.writeWithoutResponse) {
+              await this.controlPointChar.writeValueWithoutResponse(command);
+            } else {
+              await this.controlPointChar.writeValueWithResponse(command);
+            }
+          } catch (e: any) {
+            logger.warn('FTMS ERG repeat write failed:', e?.message || e);
+          }
+        } else {
+          const ergResponsePromise = new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              resolve();
+            }, 300);
+
+            this.pendingErgResolve = () => {
+              clearTimeout(timer);
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              resolve();
+            };
+            this.pendingErgReject = (err: Error) => {
+              clearTimeout(timer);
+              this.pendingErgResolve = null;
+              this.pendingErgReject = null;
+              reject(err);
+            };
+          });
+
+          await this.controlPointChar.writeValueWithResponse(command);
+          await ergResponsePromise;
+        }
 
         this.state = 'erg_active';
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
@@ -684,48 +696,50 @@ export class FTMSAdapter implements TrainerAdapter {
         // The Tacx BLE service passes ANT+ frames verbatim — the trainer ignores
         // bare 8-byte page writes and replies with CommandStatus page 71 = 0xFF
         // ("not applicable"). Wrapping adds: SYNC(a4) LEN(09) MSG(4e) CHAN(05) + XOR checksum.
-        const page = this.buildFecAntPacket(buildFecPage49());
-        let ok = await writeFec(this.tacxFecTxChar, page);
+        const burstFec = async (char: BluetoothRemoteGATTCharacteristic): Promise<boolean> => {
+          const page = this.buildFecAntPacket(buildFecPage49());
+          let anyOk = false;
+          for (let i = 0; i < 4; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, 60));
+            if (await writeFec(char, page)) anyOk = true;
+          }
+          return anyOk;
+        };
 
-        // If primary char rejected the write, swap to the fallback char automatically
+        this.fecLastTargetWatts = clampedWatts;
+        let ok = await burstFec(this.tacxFecTxChar);
+
         if (!ok && this.tacxFecFallbackChar) {
           logger.warn(`Primary FE-C char failed — trying fallback char ${this.tacxFecFallbackChar.uuid}`);
-          ok = await writeFec(this.tacxFecFallbackChar, page);
+          ok = await burstFec(this.tacxFecFallbackChar);
           if (ok) {
-            logger.info(`Fallback char works — making it primary for future writes`);
+            logger.info('Fallback char works — making it primary for future writes');
             [this.tacxFecTxChar, this.tacxFecFallbackChar] = [this.tacxFecFallbackChar, this.tacxFecTxChar];
           }
         }
 
-        // Store target and start keepalive.
-        // ANT+ FE-C protocol expects continuous commands at ~4 Hz or the trainer
-        // reverts to free-wheel. We send at 2 Hz (every 500 ms) as a safe default.
-        // Each keepalive is a full ANT+ packet (same framing as the initial command).
-        this.fecLastTargetWatts = clampedWatts;
+        const sendKeepalive = async () => {
+          if (this.fecLastTargetWatts == null || !this.tacxFecTxChar) return;
+          const qw = Math.round(this.fecLastTargetWatts * 4);
+          const rawPage = new Uint8Array([
+            0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            qw & 0xFF, (qw >> 8) & 0xFF,
+          ]);
+          const ka = this.buildFecAntPacket(rawPage);
+          try {
+            await this.tacxFecTxChar.writeValueWithoutResponse(ka);
+          } catch {
+            try { await this.tacxFecTxChar.writeValueWithResponse(ka); } catch { /* silent */ }
+          }
+        };
+
         if (!this.fecKeepAliveTimer) {
-          this.fecKeepAliveTimer = setInterval(async () => {
-            if (this.fecLastTargetWatts == null || !this.tacxFecTxChar) return;
-            const qw = Math.round(this.fecLastTargetWatts * 4);
-            const rawPage = new Uint8Array([
-              0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-              qw & 0xFF, (qw >> 8) & 0xFF,
-            ]);
-            const ka = this.buildFecAntPacket(rawPage);
-            try {
-              if (this.tacxFecTxChar.properties.write) {
-                await this.tacxFecTxChar.writeValueWithResponse(ka);
-              } else {
-                await this.tacxFecTxChar.writeValueWithoutResponse(ka);
-              }
-            } catch {
-              // Keepalive failed silently — avoid log spam
-            }
-          }, 500);
-          logger.info('FE-C keepalive started (500 ms interval, full ANT+ framing)');
+          this.fecKeepAliveTimer = setInterval(() => { sendKeepalive(); }, 250);
+          logger.info('FE-C keepalive started (250 ms / ~4 Hz, without-response)');
         }
 
         this.state = 'erg_active';
-        logger.info(`ERG power set to ${clampedWatts}W (Tacx FE-C${ok ? '' : ' — write may have failed'})`);
+        logger.info(`ERG power set to ${clampedWatts}W (Tacx FE-C burst${ok ? '' : ' — write may have failed'})`);
       } else if (this.wahooControlChar) {
         // Wahoo KICKR / KICKR CORE / KICKR SNAP proprietary ERG command.
         // Opcode 0x42 = Set ERG Target Power, payload = uint16 LE watts.

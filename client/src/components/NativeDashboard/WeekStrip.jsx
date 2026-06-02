@@ -86,7 +86,40 @@ function hasLactate(activities, date) {
   });
 }
 
-export default function WeekStrip({ activities = [], plannedWorkouts = [], selectedDate, onSelectDate }) {
+// ── Daily totals (TSS + duration) ──────────────────────────────────────────
+// Aggregates completed activities for the day. Falls back to planned totals
+// for future days where nothing's been done yet — gives the user a feel for
+// the workload on each cell at a glance, TrainingPeaks-style.
+function dailyTotals(activities, plannedWorkouts, date) {
+  const acts = activities.filter(a => isSameDay(new Date(a.date || a.startDate || a.timestamp || 0), date));
+  let tss = 0, secs = 0;
+  for (const a of acts) {
+    tss  += Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0) || 0;
+    secs += Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0) || 0;
+  }
+  if (acts.length === 0) {
+    // No activities → fall back to planned for future days
+    const dateStr = toLocalDateStr(date);
+    const pws = (plannedWorkouts || []).filter(p => String(p.date || '').slice(0, 10) === dateStr);
+    for (const p of pws) {
+      tss  += Number(p.targetTss || 0) || 0;
+      secs += Number(p.plannedDuration || 0) || 0;
+    }
+    return { tss: Math.round(tss), secs, planned: tss > 0 || secs > 0 };
+  }
+  return { tss: Math.round(tss), secs, planned: false };
+}
+
+function fmtDur(secs) {
+  if (!secs || secs < 60) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h${m}`;
+}
+
+export default function WeekStrip({ activities = [], plannedWorkouts = [], selectedDate, onSelectDate, onPlanWorkout = null }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -277,6 +310,7 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
             onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
             onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
             style={{
+              position: 'relative',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
               padding: '7px 0 8px', borderRadius: 12,
               background: dayBg,
@@ -332,6 +366,74 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 6 }}>
               {indicatorContent()}
             </div>
+
+            {/* Daily totals + plan-workout shortcut.
+                The "+" used to live in the top-right corner as a nested
+                <button> — invalid HTML (button-in-button) which the iOS
+                WebView silently de-activates. Now it's rendered as a
+                <span role="button"> inline beside the TSS/duration totals
+                on the SELECTED day, where the touch target is unambiguous
+                and the day cell's onClick can't swallow it
+                (stopPropagation on the span). */}
+            {(() => {
+              const tot = dailyTotals(activities, plannedWorkouts, d);
+              const durStr = fmtDur(tot.secs);
+              const hasTotals = tot.tss > 0 || !!durStr;
+              const showPlusBtn = isSelected && !!onPlanWorkout;
+              if (!hasTotals && !showPlusBtn) return null;
+
+              const totalsColor = isSelected
+                ? 'rgba(255,255,255,.85)'
+                : tot.planned ? '#9CA3AF' : '#5E6590';
+
+              return (
+                <div style={{
+                  marginTop: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 4,
+                }}>
+                  {hasTotals && (
+                    <div style={{
+                      fontSize: 8.5, fontWeight: 800, color: totalsColor,
+                      fontVariantNumeric: 'tabular-nums', lineHeight: 1.15,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center',
+                      fontStyle: tot.planned ? 'italic' : 'normal',
+                    }}>
+                      {tot.tss > 0 && <span>{tot.tss}</span>}
+                      {durStr && <span style={{ fontSize: 7.5, opacity: 0.75, fontWeight: 700 }}>{durStr}</span>}
+                    </div>
+                  )}
+                  {showPlusBtn && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Plan workout for this day"
+                      onClick={(e) => { e.stopPropagation(); onPlanWorkout(d); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); onPlanWorkout(d); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation(); e.preventDefault(); onPlanWorkout(d);
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: isSelected ? 'rgba(255,255,255,.32)' : 'rgba(94,101,144,.18)',
+                        color: isSelected ? '#fff' : '#5E6590',
+                        fontSize: 12, fontWeight: 800, lineHeight: 1,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                      }}
+                    >
+                      +
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </button>
         );
       })}

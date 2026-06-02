@@ -9,6 +9,7 @@ const router     = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const WorkoutTemplate = require('../models/WorkoutTemplate');
 const PlannedWorkout  = require('../models/PlannedWorkout');
+const DayPlan         = require('../models/DayPlan');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
 
@@ -218,7 +219,8 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
 
     const fields = ['date','sport','title','description','steps','status',
                     'completedTrainingId','coachNotes','comment','targetTss',
-                    'plannedDuration','plannedDistance','isLactateTest','category'];
+                    'plannedDuration','plannedDistance','isLactateTest','category',
+                    'executionData','fitTrainingId','stravaActivityId'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
     if (req.body.date) pw.date = new Date(req.body.date);
 
@@ -326,6 +328,164 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/workout-planner/planned/:id/complete
+ * Save execution stats, generate a .fit with laps, create FitTraining for calendar,
+ * optional Strava upload.
+ */
+router.post('/planned/:id/complete', verifyToken, async (req, res) => {
+  try {
+    const FitTraining = require('../models/fitTraining');
+    const { generateWorkoutExecutionFit, buildWorkoutFitData } = require('../utils/fitGenerator');
+    const { uploadFitToStrava } = require('../utils/stravaFitUpload');
+    const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
+
+    const { athleteId, me } = await resolveAthleteId(req);
+    const pw = await PlannedWorkout.findById(req.params.id);
+    if (!pw) return res.status(404).json({ error: 'Not found' });
+    if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
+
+    const executionData = req.body?.executionData || req.body;
+    const uploadToStrava = req.body?.uploadToStrava === true;
+
+    const completedAt = executionData?.completedAt || new Date().toISOString();
+    const totalDuration = Number(executionData?.totalDuration) || 0;
+    const startedAt = executionData?.startedAt
+      || new Date(new Date(completedAt).getTime() - totalDuration * 1000).toISOString();
+
+    const fitPayload = {
+      sport: pw.sport,
+      startedAt,
+      completedAt,
+      totalDuration,
+      timeSeries: executionData?.timeSeries || [],
+      steps: executionData?.steps || [],
+    };
+
+    const fitData = buildWorkoutFitData(fitPayload);
+    const fitBuffer = generateWorkoutExecutionFit(fitPayload);
+
+    const sportMap = {
+      run: 'running', walk: 'running', bike: 'cycling', mtbike: 'cycling',
+      swim: 'swimming', rowing: 'generic', other: 'generic',
+    };
+
+    const pwrRecs = fitData.records.filter((r) => r.power > 0);
+    const hrRecs = fitData.records.filter((r) => r.heartRate > 0);
+
+    const trainingDoc = {
+      athleteId: String(pw.athleteId),
+      sport: sportMap[pw.sport] || 'cycling',
+      timestamp: new Date(startedAt),
+      totalElapsedTime: totalDuration || fitData.totalElapsedTime,
+      titleManual: pw.title || 'Structured workout',
+      description: pw.description || pw.coachNotes || 'Completed in LaChart',
+      records: fitData.records.map((r) => ({
+        timestamp: r.timestamp,
+        power: r.power,
+        heartRate: r.heartRate,
+        cadence: r.cadence,
+      })),
+      laps: fitData.laps.map((lap, i) => ({
+        lapNumber: lap.lapNumber || i + 1,
+        totalElapsedTime: lap.totalElapsedTime,
+        avgPower: lap.avgPower,
+        maxPower: lap.maxPower,
+        avgHeartRate: lap.avgHeartRate,
+        maxHeartRate: lap.maxHeartRate,
+      })),
+      avgPower: pwrRecs.length
+        ? Math.round(pwrRecs.reduce((s, r) => s + r.power, 0) / pwrRecs.length)
+        : null,
+      maxPower: pwrRecs.length ? Math.max(...pwrRecs.map((r) => r.power)) : null,
+      avgHeartRate: hrRecs.length
+        ? Math.round(hrRecs.reduce((s, r) => s + r.heartRate, 0) / hrRecs.length)
+        : null,
+      maxHeartRate: hrRecs.length ? Math.max(...hrRecs.map((r) => r.heartRate)) : null,
+      analysisComplete: false,
+    };
+
+    const fitTraining = await FitTraining.create(trainingDoc);
+    invalidateFitCacheForUser(pw.athleteId);
+
+    pw.status = 'completed';
+    pw.executionData = executionData;
+    pw.fitTrainingId = String(fitTraining._id);
+    pw.completedTrainingId = String(fitTraining._id);
+
+    let strava = null;
+    if (uploadToStrava) {
+      try {
+        const user = me || await User.findById(athleteId).lean();
+        strava = await uploadFitToStrava(user, fitBuffer, {
+          name: pw.title || 'LaChart workout',
+          description: `Structured workout · ${Math.round(totalDuration / 60)} min · LaChart`,
+        });
+        if (strava.activityId) {
+          pw.stravaActivityId = String(strava.activityId);
+        }
+      } catch (e) {
+        console.warn('[workout complete] Strava upload failed:', e.message);
+        strava = { error: e.message, status: 'failed' };
+      }
+    }
+
+    await pw.save();
+
+    res.json({
+      success: true,
+      plannedWorkoutId: String(pw._id),
+      fitTrainingId: String(fitTraining._id),
+      strava,
+    });
+  } catch (e) {
+    console.error('[workout-planner] POST complete error:', e);
+    res.status(500).json({ error: 'Failed to complete workout', message: e.message });
+  }
+});
+
+/**
+ * GET /api/workout-planner/planned/:id/download-fit
+ * Download the recorded workout as a binary .fit (laps = steps).
+ */
+router.get('/planned/:id/download-fit', verifyToken, async (req, res) => {
+  try {
+    const { generateWorkoutExecutionFit } = require('../utils/fitGenerator');
+    const { athleteId } = await resolveAthleteId(req);
+    const pw = await PlannedWorkout.findById(req.params.id).lean();
+    if (!pw) return res.status(404).json({ error: 'Not found' });
+    if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
+    if (!pw.executionData) {
+      return res.status(400).json({ error: 'Workout has no recorded execution data' });
+    }
+
+    const ex = pw.executionData;
+    const totalDuration = Number(ex.totalDuration) || 0;
+    const completedAt = ex.completedAt || pw.updatedAt;
+    const startedAt = ex.startedAt
+      || new Date(new Date(completedAt).getTime() - totalDuration * 1000).toISOString();
+
+    const fitBuffer = generateWorkoutExecutionFit({
+      sport: pw.sport,
+      startedAt,
+      completedAt,
+      totalDuration,
+      timeSeries: ex.timeSeries || [],
+      steps: ex.steps || [],
+    });
+
+    const dateStr = new Date(completedAt).toISOString().slice(0, 10);
+    const safeName = (pw.title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="lachart-${safeName}-${dateStr}.fit"`);
+    res.setHeader('Content-Length', fitBuffer.length);
+    res.send(fitBuffer);
+  } catch (e) {
+    console.error('[workout-planner] download-fit error:', e);
+    res.status(500).json({ error: 'Failed to generate FIT file', message: e.message });
+  }
+});
+
 /** DELETE /api/workout-planner/planned/:id */
 router.delete('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
@@ -337,6 +497,72 @@ router.delete('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res)
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete planned workout' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DAY PLANS — high-level "theme of the day" tags ("Threshold", "Recovery", …)
+// distinct from individual planned workouts. One per (athlete, date).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** GET /api/workout-planner/day-plans?from=YYYY-MM-DD&to=YYYY-MM-DD&athleteId= */
+router.get('/day-plans', verifyToken, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const from = req.query.from || null;
+    const to   = req.query.to   || null;
+    const query = { athleteId };
+    if (from || to) {
+      query.date = {};
+      if (from) query.date.$gte = from;
+      if (to)   query.date.$lte = to;
+    }
+    const plans = await DayPlan.find(query).sort({ date: 1 }).lean();
+    res.json(plans);
+  } catch (e) {
+    console.error('[WorkoutPlanner] GET /day-plans error:', e);
+    res.status(500).json({ error: 'Failed to load day plans' });
+  }
+});
+
+/** PUT /api/workout-planner/day-plans/:date  body: { title, category, notes }
+ *  Upserts the day plan for YYYY-MM-DD. Pass empty body or `{ clear: true }`
+ *  to delete instead (use the DELETE endpoint for clarity though). */
+router.put('/day-plans/:date', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const date = String(req.params.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
+    }
+    const { title = '', category = null, notes = '' } = req.body || {};
+    // Nothing meaningful supplied → drop any existing plan to keep the
+    // collection sparse. Saves having to write a separate "clear" call.
+    if (!title && !category && !notes) {
+      await DayPlan.deleteOne({ athleteId, date });
+      return res.json({ ok: true, deleted: true });
+    }
+    const plan = await DayPlan.findOneAndUpdate(
+      { athleteId, date },
+      { athleteId, date, title, category, notes, createdBy: req.user.userId },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    res.json(plan);
+  } catch (e) {
+    console.error('[WorkoutPlanner] PUT /day-plans error:', e);
+    res.status(500).json({ error: 'Failed to save day plan' });
+  }
+});
+
+/** DELETE /api/workout-planner/day-plans/:date */
+router.delete('/day-plans/:date', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const date = String(req.params.date || '');
+    await DayPlan.deleteOne({ athleteId, date });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete day plan' });
   }
 });
 

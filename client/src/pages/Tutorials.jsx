@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthProvider';
 
 const LC = {
   primary:      '#767EB5',
@@ -220,6 +221,14 @@ export default function Tutorials() {
   const active = videoTutorials.find(t => t.id === activeId) || videoTutorials[0];
   const activeIdx = videoTutorials.findIndex(t => t.id === activeId);
 
+  // Route "Back to home" to the user's real home: dashboard for signed-in
+  // users (otherwise they bounce to the marketing page and feel stuck with
+  // no app nav), About for everyone else.
+  const { user, isAuthenticated } = useAuth();
+  const isSignedIn = !!(isAuthenticated && user?._id);
+  const homeHref = isSignedIn ? '/dashboard' : '/';
+  const homeLabel = isSignedIn ? '← Back to dashboard' : '← Back to home';
+
   const pageStyle = {
     fontFamily: "'Hind Vadodara', system-ui, -apple-system, sans-serif",
     color: LC.text,
@@ -247,15 +256,19 @@ export default function Tutorials() {
           borderBottom: '1px solid rgba(180,190,210,.18)',
         }}>
           <div style={{ maxWidth: 1280, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontWeight: 700, color: LC.primaryDark, fontSize: 18, textDecoration: 'none' }}>
+            <Link to={homeHref} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontWeight: 700, color: LC.primaryDark, fontSize: 18, textDecoration: 'none' }}>
               <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 32 }} />
               <span>LaChart</span>
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Link to="/" style={{ color: LC.muted, fontSize: 14, fontWeight: 500, textDecoration: 'none' }}>← Back to home</Link>
-              <Link to="/signup" style={{ padding: '10px 18px', borderRadius: 10, background: LC.primaryDark, color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 12px -4px rgba(118,126,181,.5)' }}>
-                Start free
-              </Link>
+              <Link to={homeHref} style={{ color: LC.muted, fontSize: 14, fontWeight: 500, textDecoration: 'none' }}>{homeLabel}</Link>
+              {/* Hide the "Start free" CTA for already-signed-in users — it
+                  bounces them to /signup which adds another dead-end loop. */}
+              {!isSignedIn && (
+                <Link to="/signup" style={{ padding: '10px 18px', borderRadius: 10, background: LC.primaryDark, color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 12px -4px rgba(118,126,181,.5)' }}>
+                  Start free
+                </Link>
+              )}
             </div>
           </div>
         </nav>

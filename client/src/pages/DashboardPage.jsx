@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { writeFormFitnessToWidget } from '../utils/widgetCache';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,6 +9,7 @@ import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
 import WhatsNewModal, { whatsNewSeenKey } from '../components/WhatsNewModal';
+import IOSLaunchModal, { iosLaunchSeenKey } from '../components/IOSLaunchModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
 // import SportsSelector from "../components/Header/SportsSelector";
@@ -25,7 +27,7 @@ import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalcu
 import DateSelector from "../components/DateSelector";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
@@ -45,6 +47,77 @@ import { motion, AnimatePresence } from 'framer-motion';
 // } from '@heroicons/react/24/outline';
 
 /** API může vrátit { error } nebo objekt místo pole — ochrana před .map/.forEach */
+function isSameLocalDay(d, today = new Date()) {
+  if (!d) return false;
+  const x = new Date(d);
+  return x.getFullYear() === today.getFullYear()
+      && x.getMonth()    === today.getMonth()
+      && x.getDate()     === today.getDate();
+}
+
+function normaliseSportForWidget(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s.includes('swim')) return 'swim';
+  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
+  if (s.includes('strength') || s.includes('gym')) return 'strength';
+  if (s.includes('yoga')) return 'yoga';
+  return 'bike';
+}
+
+/** Build the array the widget renders under "DONE" — completed activities
+ *  done today. Sorted newest-first, max 4 entries. */
+function pickTodaysCompleted(activities) {
+  if (!Array.isArray(activities)) return [];
+  const today = new Date();
+  return activities
+    .filter(a => isSameLocalDay(a?.date || a?.startDate || a?.timestamp, today))
+    .sort((a, b) => new Date(b?.date || b?.startDate || 0) - new Date(a?.date || a?.startDate || 0))
+    .slice(0, 4)
+    .map(a => {
+      const durSec = Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0);
+      const distM  = Number(a.distance || a.totalDistance || 0);
+      const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
+                    : distM > 0      ? `${Math.round(distM)} m` : null;
+      const power  = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
+      const hr     = Number(a.averageHeartRate || a.average_heartrate || a.avgHeartRate || 0);
+      const sub    = [fmtDist, power > 0 ? `${Math.round(power)} W` : null, hr > 0 ? `${Math.round(hr)} bpm` : null]
+                       .filter(Boolean).join(' · ');
+      return {
+        title:       a.title || a.name || a.titleManual || 'Activity',
+        sport:       normaliseSportForWidget(a.sport),
+        durationSec: durSec || null,
+        category:    a.category || null,
+        subtitle:    sub || null,
+      };
+    });
+}
+
+/** Build the array under "PLANNED" — today's planned workouts that haven't
+ *  been completed yet. Sorted by longest planned duration first. */
+function pickTodaysPlanned(plannedWorkouts) {
+  if (!Array.isArray(plannedWorkouts)) return [];
+  const today = new Date();
+  return plannedWorkouts
+    .filter(p => isSameLocalDay(p?.date, today))
+    .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
+    .slice(0, 4)
+    .map(p => {
+      const dist = Number(p.plannedDistance || 0);
+      const fmtDist = dist > 0
+        ? (dist >= 1 ? `${dist % 1 === 0 ? dist : dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`)
+        : null;
+      const tss = Number(p.targetTss || 0);
+      const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
+      return {
+        title:       p.title || p.name || 'Workout',
+        sport:       normaliseSportForWidget(p.sport),
+        durationSec: Number(p.plannedDuration || 0) || null,
+        category:    p.category || null,
+        subtitle:    sub || null,
+      };
+    });
+}
+
 function normalizeApiList(payload) {
   if (Array.isArray(payload)) return payload;
   if (payload && Array.isArray(payload.trainings)) return payload.trainings;
@@ -153,6 +226,52 @@ export default function DashboardPage() {
       localStorage.setItem(whatsNewSeenKey(user._id), '1');
     }
     setShowWhatsNew(false);
+  }, [user?._id]);
+
+  /**
+   * iOS launch announcement (June 2026).
+   *
+   * Two-track trigger:
+   *   1. Default idle-after-mount with 1.4 s delay — first-time-ever dashboard
+   *      mount per user (gated by localStorage[iosLaunchSeenKey]).
+   *   2. "Just logged in" — AuthProvider sets a sessionStorage flag on every
+   *      fresh login. When present we surface the modal immediately AND skip
+   *      the persistent one-shot gate so it re-appears on every login session
+   *      until the user takes action.
+   *
+   * Skipped on Capacitor native — those users obviously already have the
+   * iPhone app installed if they're seeing the dashboard. Queues AFTER
+   * WhatsNew / welcome paywall so we never stack two overlays.
+   */
+  const [showIOSLaunch, setShowIOSLaunch] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return;
+    if (isCapacitorNative()) return;
+    if (showWelcomePaywall || showWhatsNew) return;
+
+    let justLoggedIn = false;
+    try { justLoggedIn = sessionStorage.getItem('iosLaunch_justLoggedIn') === '1'; } catch {}
+
+    // Persistent "user already dismissed forever" gate. Skip the gate when
+    // this is the post-login mount — we want the announcement to greet the
+    // user every time they sign back in until they explicitly act on it.
+    if (!justLoggedIn && localStorage.getItem(iosLaunchSeenKey(user._id))) return;
+
+    const delay = justLoggedIn ? 350 : 1400;
+    const t = setTimeout(() => {
+      setShowIOSLaunch(true);
+      // Consume the one-shot flag so navigating around the app inside the
+      // same session doesn't re-pop the modal.
+      try { sessionStorage.removeItem('iosLaunch_justLoggedIn'); } catch {}
+    }, delay);
+    return () => clearTimeout(t);
+  }, [isAuthenticated, user?._id, showWelcomePaywall, showWhatsNew]);
+
+  const dismissIOSLaunch = useCallback(() => {
+    if (user?._id) {
+      localStorage.setItem(iosLaunchSeenKey(user._id), '1');
+    }
+    setShowIOSLaunch(false);
   }, [user?._id]);
 
   /**
@@ -1249,18 +1368,45 @@ export default function DashboardPage() {
     }
   }, [user, addNotification, loadTrainings, loadCalendarData]);
 
-  // ── Planned workouts for dashboard calendar ───────────────────────────────
+  // ── Planned workouts + day themes for dashboard calendar ──────────────────
+  const [dayPlans, setDayPlans] = useState([]);
   const loadDashboardPlannedWorkouts = useCallback(async () => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
-      const data = await getPlannedWorkouts(opts);
-      setPlannedWorkouts(Array.isArray(data) ? data : []);
+      const [pw, dp] = await Promise.all([
+        getPlannedWorkouts(opts),
+        getDayPlans(opts).catch(() => []),
+      ]);
+      setPlannedWorkouts(Array.isArray(pw) ? pw : []);
+      setDayPlans(Array.isArray(dp) ? dp : []);
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);
 
   useEffect(() => { loadDashboardPlannedWorkouts(); }, [loadDashboardPlannedWorkouts]);
+
+  // ── Day theme save / delete ───────────────────────────────────────────────
+  const handleDayPlanSave = useCallback(async (dateStr, payload) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    const result = await apiSetDayPlan(dateStr, payload || {}, coachAthleteId);
+    setDayPlans(prev => {
+      const without = prev.filter(p => p.date !== dateStr);
+      if (result?.deleted) return without;
+      return [...without, result];
+    });
+    return result;
+  }, [selectedAthleteId, user?.role]);
+
+  const handleDayPlanDelete = useCallback(async (dateStr) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    await apiDeleteDayPlan(dateStr, coachAthleteId);
+    setDayPlans(prev => prev.filter(p => p.date !== dateStr));
+  }, [selectedAthleteId, user?.role]);
 
   // ── Native dashboard: fitness/form metrics (only fetched when native) ─────
   const loadFormFitness = useCallback(async (targetId) => {
@@ -1271,12 +1417,66 @@ export default function DashboardPage() {
         getFormFitnessData(targetId, 90, 'all').catch(() => ({ data: [] })),
       ]);
       if (todayRes?.data) setTodayMetrics(todayRes.data);
-      if (sparkRes?.data) {
-        const raw = Array.isArray(sparkRes.data) ? sparkRes.data : (sparkRes.data?.data || []);
-        setSparklineData(raw);
+      const raw = sparkRes?.data
+        ? (Array.isArray(sparkRes.data) ? sparkRes.data : (sparkRes.data?.data || []))
+        : [];
+      if (raw.length > 0) setSparklineData(raw);
+
+      // iOS home-screen widget: write the same numbers the dashboard just
+      // rendered into the shared App Group cache so the widget refreshes
+      // on its next paint. No-op on web / Android.
+      if (todayRes?.data) {
+        const tm = todayRes.data;
+        const tsb14 = raw
+          .slice(-14)
+          .map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
+
+        // Push today's DONE + PLANNED lists into the widget so the home-screen
+        // tile matches what the dashboard shows. Both lists come from refs so
+        // this callback can stay [] deps without going stale.
+        writeFormFitnessToWidget({
+          fitness:   tm.fitness,
+          fatigue:   tm.fatigue,
+          form:      tm.form,
+          formDelta: tm.formChange,
+          sparkline: tsb14,
+          todayCompleted: pickTodaysCompleted(calendarDataRef.current),
+          todayPlanned:   pickTodaysPlanned(plannedWorkoutsRef.current),
+        });
       }
     } catch (_) {}
   }, []);
+
+  // Mirror plannedWorkouts into a ref so loadFormFitness (which has [] deps
+  // to avoid re-running on every plan change) can still read fresh values.
+  const plannedWorkoutsRef = useRef([]);
+  useEffect(() => { plannedWorkoutsRef.current = plannedWorkouts; }, [plannedWorkouts]);
+
+  // Same trick for completed activities — loadFormFitness reads through the
+  // ref so the DONE list is fresh without re-creating the callback.
+  const calendarDataRef = useRef([]);
+  useEffect(() => { calendarDataRef.current = calendarData; }, [calendarData]);
+
+  // When the planned workout list itself changes (athlete plans a new
+  // session today, drag-drops one onto today, etc.) re-push the widget
+  // payload so it doesn't stay stuck on yesterday's plan.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const tm = todayMetrics || {};
+    if (tm.fitness == null && tm.fatigue == null && tm.form == null) return;
+    const tsb14 = (sparklineData || [])
+      .slice(-14)
+      .map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
+    writeFormFitnessToWidget({
+      fitness:   tm.fitness,
+      fatigue:   tm.fatigue,
+      form:      tm.form,
+      formDelta: tm.formChange,
+      sparkline: tsb14,
+      todayCompleted: pickTodaysCompleted(calendarData),
+      todayPlanned:   pickTodaysPlanned(plannedWorkouts),
+    });
+  }, [plannedWorkouts, calendarData, todayMetrics, sparklineData]);
 
   useEffect(() => {
     if (!isCapacitorNative()) return;
@@ -1630,6 +1830,10 @@ export default function DashboardPage() {
           setPlannedWorkouts(prev => prev.filter(p => p._id !== id));
         }
       }}
+      onPlanWorkout={(date) => {
+        if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+        setPlanModal({ date, workout: null });
+      }}
       stravaConnected={stravaConnected}
       onRequestStravaSync={performManualStravaSync}
     />
@@ -1666,6 +1870,11 @@ export default function DashboardPage() {
     <WhatsNewModal
       open={showWhatsNew}
       onClose={dismissWhatsNew}
+      userName={user?.name}
+    />
+    <IOSLaunchModal
+      open={showIOSLaunch}
+      onClose={dismissIOSLaunch}
       userName={user?.name}
     />
     <motion.div
@@ -1929,6 +2138,9 @@ export default function DashboardPage() {
               localStorage.removeItem(cacheTimestampKey);
             }}
             plannedWorkouts={plannedWorkouts}
+            dayPlans={dayPlans}
+            onDayPlanSave={handleDayPlanSave}
+            onDayPlanDelete={handleDayPlanDelete}
             onPlanWorkout={(date) => {
               if (!isPremium) { gate('Workout Planning', 'pro'); return; }
               setPlanModal({ date, workout: null });

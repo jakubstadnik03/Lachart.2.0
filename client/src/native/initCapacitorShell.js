@@ -66,10 +66,8 @@ export async function initCapacitorShell() {
       }
     });
 
-    // Apple HealthKit integration was removed from the iOS build (signing
-    // capability mismatch with the App ID provisioning profile, and the
-    // App Store review repeatedly flagged related guidelines). Strava
-    // remains the primary activity source on iOS.
+    // Apple Health: connect + sync from Settings → Integrations (AppleHealthCard).
+    // Requires HealthKit capability on the App ID and a native rebuild after cap sync.
   } catch {
     // ignore
   }

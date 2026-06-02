@@ -9,7 +9,9 @@ const {
   STRAVA_AUTO_SYNC_BUDGET_SKIP_PCT,
   STRAVA_AUTO_SYNC_WEBHOOK_RESERVE,
   STRAVA_AUTO_SYNC_CALLS_PER_USER,
+  STRAVA_AUTO_SYNC_STALE_FORCE_MS,
 } = require('../config/stravaAutoSyncConfig');
+const User = require('../models/UserModel');
 
 /**
  * Start the Strava auto-sync scheduler
@@ -61,21 +63,39 @@ function startStravaAutoSyncScheduler() {
         batchSize,
         Math.floor(Math.max(0, headroom - STRAVA_AUTO_SYNC_WEBHOOK_RESERVE) / STRAVA_AUTO_SYNC_CALLS_PER_USER),
       );
-      if (dynamicBatch < 1) {
-        console.log(`[StravaAutoSyncScheduler] Skipping tick — headroom ${headroom} (reserve ${STRAVA_AUTO_SYNC_WEBHOOK_RESERVE})`);
-        recordStravaSyncLogSafe({
-          source: 'scheduler',
-          status: 'skipped',
-          message: 'Scheduler skipped — budget reserved for webhooks',
-          budgetSnapshot: snap,
+      let effectiveBatch = dynamicBatch;
+      if (effectiveBatch < 1) {
+        // Never starve users who have not synced in hours — run one anyway.
+        const staleCutoff = new Date(Date.now() - STRAVA_AUTO_SYNC_STALE_FORCE_MS);
+        const veryStale = await User.countDocuments({
+          'strava.accessToken': { $exists: true, $ne: null },
+          'strava.autoSync': true,
+          isActive: { $ne: false },
+          $or: [
+            { 'strava.lastSyncDate': { $exists: false } },
+            { 'strava.lastSyncDate': null },
+            { 'strava.lastSyncDate': { $lt: staleCutoff } },
+          ],
         });
-        return;
+        if (veryStale > 0) {
+          effectiveBatch = 1;
+          console.log(`[StravaAutoSyncScheduler] Forcing batch=1 — ${veryStale} user(s) stale >2h, headroom ${headroom}`);
+        } else {
+          console.log(`[StravaAutoSyncScheduler] Skipping tick — headroom ${headroom} (reserve ${STRAVA_AUTO_SYNC_WEBHOOK_RESERVE})`);
+          recordStravaSyncLogSafe({
+            source: 'scheduler',
+            status: 'skipped',
+            message: 'Scheduler skipped — budget reserved for webhooks',
+            budgetSnapshot: snap,
+          });
+          return;
+        }
       }
       console.log('[StravaAutoSyncScheduler] Starting scheduled sync...', {
         windowBudget: `${snap.windowUsed}/${snap.windowLimit}`,
-        dynamicBatch,
+        effectiveBatch,
       });
-      const result = await syncStravaForAllUsers({ batchSize: dynamicBatch, delayBetweenUsers });
+      const result = await syncStravaForAllUsers({ batchSize: effectiveBatch, delayBetweenUsers });
       console.log('[StravaAutoSyncScheduler] Scheduled sync completed:', {
         total: result.total,
         synced: result.synced,

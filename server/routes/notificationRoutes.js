@@ -48,6 +48,24 @@ router.patch('/:id/read', verifyToken, async (req, res) => {
   }
 });
 
+// DELETE /api/notifications — clear all notifications for the current user.
+// Backs the "Clear all" button in the iOS notifications sheet. We restrict
+// to recipientId = userId so a stray request can't wipe someone else's
+// inbox even if the auth token leaked into a different shell.
+router.delete('/', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await Notification.deleteMany({ recipientId: userId });
+    return res.status(200).json({
+      message: 'All notifications cleared',
+      deleted: result.deletedCount || 0,
+    });
+  } catch (err) {
+    console.error('DELETE /api/notifications error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/notifications/:id - delete a notification
 router.delete('/:id', verifyToken, async (req, res) => {
   try {

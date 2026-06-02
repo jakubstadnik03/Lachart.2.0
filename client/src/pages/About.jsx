@@ -335,7 +335,7 @@ export default function About() {
   // Scroll-spy — highlight the nav link whose section is currently in view.
   const [activeSection, setActiveSection] = useState('hero');
   useEffect(() => {
-    const ids = ['hero', 'solutions', 'workspaces', 'headline-features', 'anatomy', 'features', 'methodology', 'connect', 'voices', 'try-it-now', 'pricing', 'faq'];
+    const ids = ['hero', 'solutions', 'workspaces', 'headline-features', 'anatomy', 'features', 'methodology', 'connect', 'voices', 'download', 'ios-gallery', 'try-it-now', 'pricing', 'faq'];
     const sections = ids
       .map(id => document.getElementById(id))
       .filter(Boolean);
@@ -493,14 +493,12 @@ export default function About() {
             <div className="lc-nav-links" style={{ display: 'flex', gap: 4 }}>
               {[
                 ['solutions',   'For whom'],
-                ['workspaces',  'Workspaces'],
+                ['workspaces',  'For coaches'],   // anchors to the Athlete/Coach/Tester tabs
                 ['features',    'Features'],
                 ['methodology', 'Science'],
-                ['connect',     'Connect'],
-                ['voices',      'Voices'],
+                ['download',    'App'],           // iOS launch hero section
                 ['/how-to-use', 'Tutorials'],
                 ['pricing',     'Pricing'],
-                ['faq',         'FAQ'],
               ].map(([id, label]) => (
                 id.startsWith('/')
                   ? <Link key={id} to={id} className="lc-nav-link">{label}</Link>
@@ -1171,6 +1169,7 @@ export default function About() {
               </p>
             </div>
             <div
+              ref={pushRef}
               className="lc-reveal"
               style={{
                 display: 'grid',
@@ -1338,6 +1337,7 @@ export default function About() {
             </div>
             <div className="lc-timeline" style={{ maxWidth: 720 }}>
               {[
+                { date: 'Jun 2026',  title: 'iOS app — now on the App Store',             title2: 'Mobile',     body: 'LaChart for iPhone is live. Native dashboard widget, today\'s training, Apple Health sync, push notifications and on-device lactate recording — free download.', cta: 'Download from the App Store →', href: 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs' },
                 { date: 'May 2026',  title: 'iOS app — public TestFlight',                title2: 'Mobile',     body: 'Native iOS shell with pull-to-refresh, push notifications, Apple Health import and on-device lactate recording.', cta: 'Open mobile app', href: '/download' },
                 { date: 'Mar 2026',  title: 'Professional PDF reports from lactate tests', title2: 'Reports',    body: 'Generate branded PDFs with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graphs and training recommendations.', cta: 'Try the calculator →', href: '/lactate-curve-calculator' },
                 { date: 'Nov 2025',  title: 'Bulk Strava interval detection',              title2: 'Integration',body: 'Detect every power fluctuation, auto-create Strava laps, and analyze threshold blocks instantly. Works on a whole month of activities at once.', cta: 'See FIT analysis →', href: '/training-calendar' },
@@ -1366,30 +1366,254 @@ export default function About() {
           </div>
         </section>
 
-        {/* ── 19. App download badges ──────────────────────────────────── */}
+        {/* ── 19. App download — iOS launch hero (June 2026) ───────────────
+            Replaces the previous "Coming soon" badge block with a proper
+            launch announcement. Real App Store link, two phone mockups for
+            credibility, "Just launched" pill so returning visitors notice. */}
         <section id="download">
           <div className="lc-sectpad" style={{ paddingTop: 0 }}>
-            <div ref={pushRef} className="lc-reveal lc-card" style={{ background: 'linear-gradient(135deg, #fff, ' + LC.primaryTint + ')', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 32, textAlign: 'center', borderRadius: 20 }}>
-              <Eyebrow>Get the app</Eyebrow>
-              <h3 className="lc-big" style={{ margin: 0 }}>Take your training <em>with you</em></h3>
-              <p className="lc-lead" style={{ margin: 0 }}>Native iOS app with Apple Health sync, pull-to-refresh and push notifications. Android coming soon.</p>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 6 }}>
-                <a href="https://apps.apple.com/app/lachart" onClick={() => track('app_store_badge')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 12, background: '#000', color: '#fff', textDecoration: 'none' }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/></svg>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
-                    <span style={{ fontSize: 10, opacity: 0.75 }}>Download on the</span>
-                    <span style={{ fontSize: 18, fontWeight: 700 }}>App Store</span>
-                  </span>
-                </a>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 12, background: '#fff', color: LC.muted, textDecoration: 'none', border: '1px solid ' + LC.border, opacity: 0.7 }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.07l9.21-9.21 3.05 3.05-9.13 5.27-3.13-1.11zm9.91-10l9.36-5.4c.43-.25.85-.25.85.59l.05 12.06c0 .85-.42.85-.85.59l-9.36-5.4 4.31-2.44-4.36-2.44v2.44zM3.18.93l9.13 5.27-3.05 3.05L3.18 23.07v-22.14zm9.91 10l-3.05 3.05L7 11l3.05-2.95 3.04 2.88z"/></svg>
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
-                    <span style={{ fontSize: 10, opacity: 0.75 }}>Coming to</span>
-                    <span style={{ fontSize: 18, fontWeight: 700 }}>Google Play</span>
-                  </span>
+            <div
+              ref={pushRef}
+              className="lc-reveal lc-card"
+              style={{
+                background: 'linear-gradient(135deg, #fff 0%, ' + LC.primaryTint + ' 100%)',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                gap: 28,
+                padding: 32,
+                borderRadius: 20,
+                alignItems: 'center',
+              }}
+            >
+              {/* Copy column */}
+              <div style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '4px 10px', borderRadius: 9999,
+                    background: LC.primary, color: '#fff',
+                    fontSize: 10.5, fontWeight: 800, letterSpacing: '0.1em',
+                    textTransform: 'uppercase', marginBottom: 12,
+                  }}
+                >
+                  <span style={{
+                    width: 6, height: 6, borderRadius: 9999,
+                    background: '#fff', boxShadow: '0 0 0 4px rgba(255,255,255,0.35)',
+                  }} />
+                  Just launched
                 </span>
+                <Eyebrow>Get the app</Eyebrow>
+                <h3 className="lc-big" style={{ margin: '14px 0 12px' }}>
+                  LaChart for iPhone is <em>here</em>
+                </h3>
+                <p className="lc-lead" style={{ margin: '0 0 18px' }}>
+                  Free on the App Store. Today's training, Form / Fitness / Fatigue
+                  home-screen widget, Apple Health sync, push notifications, and
+                  on-device lactate recording. Android is next.
+                </p>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <a
+                    href="https://apps.apple.com/cz/app/lachart/id6764768876?l=cs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => track('app_store_badge')}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 10,
+                      padding: '12px 22px', borderRadius: 12,
+                      background: '#000', color: '#fff', textDecoration: 'none',
+                    }}
+                  >
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/></svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
+                      <span style={{ fontSize: 10, opacity: 0.75 }}>Download on the</span>
+                      <span style={{ fontSize: 18, fontWeight: 700 }}>App Store</span>
+                    </span>
+                  </a>
+                  <span
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '12px 22px', borderRadius: 12,
+                      background: '#fff', color: LC.muted,
+                      border: '1px solid ' + LC.border, opacity: 0.7,
+                    }}
+                  >
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.07l9.21-9.21 3.05 3.05-9.13 5.27-3.13-1.11zm9.91-10l9.36-5.4c.43-.25.85-.25.85.59l.05 12.06c0 .85-.42.85-.85.59l-9.36-5.4 4.31-2.44-4.36-2.44v2.44zM3.18.93l9.13 5.27-3.05 3.05L3.18 23.07v-22.14zm9.91 10l-3.05 3.05L7 11l3.05-2.95 3.04 2.88z"/></svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
+                      <span style={{ fontSize: 10, opacity: 0.75 }}>Coming to</span>
+                      <span style={{ fontSize: 18, fontWeight: 700 }}>Google Play</span>
+                    </span>
+                  </span>
+                </div>
+                <p style={{ fontSize: 12, color: LC.muted, margin: '14px 0 0' }}>
+                  Requires iOS 16 or later · Free · Premium features unlock with your existing account.
+                </p>
+              </div>
+
+              {/* Phone-mockup column */}
+              <div
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  minHeight: 320,
+                }}
+              >
+                <img
+                  src="/images/ios-launch/iphone-dashboard.png"
+                  alt="LaChart iOS — today's training"
+                  loading="lazy"
+                  style={{
+                    position: 'absolute',
+                    left: '-2%',
+                    top: '8%',
+                    width: '58%',
+                    maxWidth: 260,
+                    filter: 'drop-shadow(0 24px 36px rgba(94,101,144,0.22))',
+                  }}
+                />
+                <img
+                  src="/images/ios-launch/iphone-lactate-test.png"
+                  alt="LaChart iOS — lactate test with zones"
+                  loading="lazy"
+                  style={{
+                    position: 'relative',
+                    right: '-6%',
+                    width: '62%',
+                    maxWidth: 280,
+                    filter: 'drop-shadow(0 30px 40px rgba(10,14,26,0.2))',
+                  }}
+                />
               </div>
             </div>
+            {/* Mobile stack: phone goes below copy on narrow screens. */}
+            <style>{`
+              @media (max-width: 720px) {
+                #download .lc-card { grid-template-columns: 1fr !important; }
+                #download .lc-card > div:last-child { min-height: 360px !important; }
+              }
+            `}</style>
+          </div>
+        </section>
+
+        {/* ── 19.25 iOS app screenshot gallery ──────────────────────────
+            Live screenshots of the iPhone app — not stylised illustrations
+            — so visitors see exactly what they'll get on day one. Captions
+            map each screen to a concrete job-to-be-done. Horizontal scroll
+            on mobile, 4-up grid on desktop. */}
+        <section id="ios-gallery">
+          <div className="lc-sectpad" style={{ paddingTop: 0 }}>
+            <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 720, marginBottom: 24 }}>
+              <Eyebrow>Inside the iPhone app</Eyebrow>
+              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Real screens, <em>not mockups</em></h2>
+              <p className="lc-lead" style={{ margin: 0 }}>
+                Every shot below is from the build that's live on the App Store right now — dashboard, lactate testing, planning, calendar and analytics.
+              </p>
+            </div>
+
+            <div
+              className="lc-ios-gallery"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                gap: 18,
+              }}
+            >
+              {[
+                { src: '/images/ios-launch/gallery/dashboard-fff.png',     title: 'Dashboard',         caption: 'Form, Fitness, Fatigue + week TSS at a glance.' },
+                { src: '/images/ios-launch/gallery/lactate-test-pre-season.png', title: 'Lactate test',      caption: 'LT1 / LT2 with last test details and full training zones.' },
+                { src: '/images/ios-launch/gallery/lactate-test-entry.png',title: 'Live recording',    caption: 'Capture stages, lactate + HR right on the bike.' },
+                { src: '/images/ios-launch/gallery/laps-table.png',        title: 'Per-interval data', caption: 'Power, HR and lactate side-by-side per lap.' },
+                { src: '/images/ios-launch/gallery/laps-power.png',        title: 'Lap power chart',   caption: 'Smart lap detection works on Strava + FIT.' },
+                { src: '/images/ios-launch/gallery/plan-workout.png',      title: 'Plan workouts',     caption: 'Zone-aware builder with TSS preview.' },
+                { src: '/images/ios-launch/gallery/calendar.png',          title: 'Calendar',          caption: 'Planned & completed sessions in one view.' },
+                { src: '/images/ios-launch/gallery/charts-analytics.png',  title: 'Analytics',         caption: 'Week-by-week load, volume by sport, trends.' },
+              ].map((shot, i) => (
+                <figure
+                  key={shot.src}
+                  ref={pushRef}
+                  className={`lc-reveal d${(i % 4) + 1}`}
+                  style={{
+                    margin: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      aspectRatio: '9 / 16',
+                      background: 'linear-gradient(160deg, #F4F5FA 0%, ' + LC.primaryTint + ' 100%)',
+                      borderRadius: 20,
+                      display: 'grid',
+                      placeItems: 'center',
+                      padding: 12,
+                      border: '1px solid ' + LC.border,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <img
+                      src={shot.src}
+                      alt={`LaChart iOS — ${shot.title}`}
+                      loading="lazy"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        filter: 'drop-shadow(0 18px 28px rgba(10,14,26,0.18))',
+                      }}
+                    />
+                  </div>
+                  <figcaption style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: LC.ink, letterSpacing: '-0.005em' }}>{shot.title}</div>
+                    <div style={{ fontSize: 12, color: LC.muted, lineHeight: 1.4, marginTop: 4 }}>{shot.caption}</div>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: 28 }}>
+              <a
+                href="https://apps.apple.com/cz/app/lachart/id6764768876?l=cs"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => track('ios_gallery_appstore_click')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  padding: '12px 22px', borderRadius: 12,
+                  background: '#000', color: '#fff', textDecoration: 'none',
+                }}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/></svg>
+                <span style={{ fontWeight: 700 }}>Get it on the App Store</span>
+              </a>
+            </div>
+
+            {/* Responsive grid: 4 → 3 → 2 → horizontal scroll on phone. */}
+            <style>{`
+              @media (max-width: 1080px) {
+                .lc-ios-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+              }
+              @media (max-width: 780px) {
+                .lc-ios-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+              }
+              @media (max-width: 480px) {
+                .lc-ios-gallery {
+                  grid-template-columns: none !important;
+                  grid-auto-flow: column !important;
+                  grid-auto-columns: 70% !important;
+                  overflow-x: auto !important;
+                  scroll-snap-type: x mandatory;
+                  padding-bottom: 8px;
+                  margin: 0 -16px;
+                  padding-left: 16px;
+                  padding-right: 16px;
+                }
+                .lc-ios-gallery > figure { scroll-snap-align: start; }
+              }
+            `}</style>
           </div>
         </section>
 

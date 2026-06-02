@@ -262,6 +262,11 @@ export const AuthProvider = ({ children }) => {
         saveUserToStorage(loginUser);
         setIsAuthenticated(true);
         clearApiCache();
+        // One-shot session flag picked up by DashboardPage to surface the
+        // iOS-launch announcement modal immediately on the next dashboard
+        // mount (rather than waiting on the normal idle-after-mount delay).
+        // Cleared by the modal effect itself.
+        try { sessionStorage.setItem('iosLaunch_justLoggedIn', '1'); } catch {}
         // Auto-popup of WelcomeModal disabled 2026-05 — felt too pushy on every
         // session start. The modal component + setShowWelcome state are kept
         // wired up so it can still be triggered manually (e.g. from a help menu

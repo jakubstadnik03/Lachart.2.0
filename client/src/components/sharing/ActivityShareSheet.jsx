@@ -26,8 +26,16 @@ import StatsOnlyTemplate from './templates/StatsOnlyTemplate';
 import LapsElevationLactateTemplate from './templates/LapsElevationLactateTemplate';
 import LactateCurveTemplate from './templates/LactateCurveTemplate';
 
-const TEMPLATE_W = 1080;
-const TEMPLATE_H = 1920;
+// Templates internally use a 1080×1920 viewBox (IG Story native) but we
+// rasterise to 720×1280. Why: on iOS the Capacitor JS↔Native bridge
+// serialises file payloads via JSON.stringify, which on a 450 kB base64
+// string blocks the WebView main thread for ~600 ms — visible as a "frozen
+// app" after tapping Save / Share. At 720×1280 the PNG drops to ~140 kB
+// (base64 ~190 kB), bridge transfer is <100 ms, and the visual loss is
+// invisible on phones because IG itself downsamples shared stories to
+// roughly this resolution before display anyway.
+const TEMPLATE_W = 720;
+const TEMPLATE_H = 1280;
 const PREVIEW_W = 252;
 const PREVIEW_H = 448;
 
@@ -79,6 +87,14 @@ async function svgMarkupToPng(rawMarkup) {
   canvas.width = TEMPLATE_W;
   canvas.height = TEMPLATE_H;
   const ctx = canvas.getContext('2d');
+  // Paint an opaque background BEFORE drawing the SVG. The share templates
+  // render their own visual content over transparency (so the SVG itself
+  // doesn't carry a background fill), which historically produced a PNG
+  // with alpha — visible as a checkerboard in the preview, Instagram, etc.
+  // The dark slate matches the in-template surface so visible joins are
+  // imperceptible even if a template ever leaves a hairline gap.
+  ctx.fillStyle = '#0F172A';
+  ctx.fillRect(0, 0, TEMPLATE_W, TEMPLATE_H);
   ctx.drawImage(img, 0, 0, TEMPLATE_W, TEMPLATE_H);
   const pngDataUrl = canvas.toDataURL('image/png');
   console.log('[share] svgToPng: PNG dataUrl length=', pngDataUrl.length);
@@ -138,6 +154,34 @@ export default function ActivityShareSheet({
   // Sync guard so a single tap can't double-invoke (touchEnd → synthesised
   // click both firing handleShare). Cleared in finally blocks.
   const inflightRef = useRef(false);
+
+  // Drag-to-dismiss state for the bottom sheet — track the vertical
+  // distance dragged so we can both animate the sheet down with the
+  // finger and fire onClose past a threshold (≈ 120 px).
+  const [dragY, setDragY] = useState(0);
+  const sheetTouchRef = useRef({ y: 0, active: false });
+  const onSheetTouchStart = (e) => {
+    const t = e.touches?.[0]; if (!t) return;
+    sheetTouchRef.current = { y: t.clientY, active: true };
+  };
+  const onSheetTouchMove = (e) => {
+    const s = sheetTouchRef.current; if (!s.active) return;
+    const t = e.touches?.[0]; if (!t) return;
+    const dy = t.clientY - s.y;
+    if (dy > 0) setDragY(dy);
+  };
+  const onSheetTouchEnd = (e) => {
+    const s = sheetTouchRef.current; if (!s.active) return;
+    s.active = false;
+    const t = e.changedTouches?.[0]; if (!t) { setDragY(0); return; }
+    const dy = t.clientY - s.y;
+    // Dismiss if dragged > 120 px OR thrown fast (rough velocity check via
+    // total displacement — touchend doesn't give us velocity directly).
+    if (dy > 120) {
+      onClose();
+    }
+    setDragY(0);
+  };
 
   // Reset state when the sheet (re)opens. Revoke any cached blob URLs from
   // the previous session — leaving them around would leak the underlying
@@ -351,10 +395,17 @@ export default function ActivityShareSheet({
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 10010,
-        background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(4px)',
+        // Sit above EVERYTHING — Activity full-modal lives at z-10001 and on
+        // iOS WKWebView two stacked position:fixed overlays sometimes lose
+        // touch hit-testing for the upper one. Maxing the z-index plus the
+        // explicit pointerEvents:auto below forces iOS to route touches to
+        // the share sheet, not the modal that's painted underneath.
+        position: 'fixed', inset: 0, zIndex: 2147483647,
+        pointerEvents: 'auto',
+        background: 'rgba(0,0,0,.55)', WebkitBackdropFilter: 'blur(4px)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
         animation: 'shareFadeIn .2s ease both',
+        touchAction: 'manipulation',
       }}
     >
       <style>{`
@@ -373,13 +424,32 @@ export default function ActivityShareSheet({
           // looked unresponsive.
           padding: '12px 0 calc(32px + env(safe-area-inset-bottom, 0px))',
           maxHeight: '92vh', display: 'flex', flexDirection: 'column',
-          animation: 'shareSlideUp .28s cubic-bezier(.22,1,.36,1) both',
+          // Slide in once, then follow the finger when dragging; spring back
+          // when released below the dismiss threshold.
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          transition: dragY > 0 ? 'none' : 'transform .25s cubic-bezier(.22,1,.36,1)',
+          animation: dragY === 0 ? 'shareSlideUp .28s cubic-bezier(.22,1,.36,1) both' : undefined,
           fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif',
           position: 'relative',
         }}
       >
-        {/* Drag handle */}
-        <div style={{ alignSelf: 'center', width: 38, height: 4, borderRadius: 2, background: 'rgba(0,0,0,.18)', marginBottom: 10 }} />
+        {/* Drag handle area — swipe down anywhere on the top strip to
+            dismiss. The visible pill is just a hint; the whole header is
+            the actual gesture target so it's easy to grab. */}
+        <div
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
+          style={{
+            alignSelf: 'stretch',
+            paddingTop: 6, paddingBottom: 6,
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            cursor: 'grab',
+            touchAction: 'none', // we handle the gesture ourselves
+          }}
+        >
+          <div style={{ width: 44, height: 5, borderRadius: 3, background: 'rgba(0,0,0,.22)' }} />
+        </div>
 
         {/* Header */}
         <div style={{

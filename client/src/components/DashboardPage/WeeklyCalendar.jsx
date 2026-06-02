@@ -892,6 +892,12 @@ const WeeklyCalendar = ({
    *  shared ActivityFullModal — dashboard refreshes its activity feed. */
   onActivityDeleted = null,
   plannedWorkouts = [],
+  /** Day-level themes ("Threshold day" etc.) — { date, title, category, notes } */
+  dayPlans = [],
+  /** Called with (dateStr, { title, category, notes }) to upsert a day theme. */
+  onDayPlanSave = null,
+  /** Called with dateStr to remove a day theme. */
+  onDayPlanDelete = null,
   onPlanWorkout = null,
   onSelectPlannedWorkout = null,
   onStartWorkout = null,
@@ -1156,6 +1162,14 @@ const WeeklyCalendar = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // dateStr → dayPlan lookup — drives the small theme chip rendered in each
+  // day cell. Falls back to empty Map when dayPlans is undefined so the
+  // component doesn't crash on web where the parent hasn't wired it yet.
+  const dayPlanByDate = useMemo(() => {
+    const m = new Map();
+    (dayPlans || []).forEach(p => { if (p?.date) m.set(p.date, p); });
+    return m;
+  }, [dayPlans]);
   const weekDays = useMemo(() => {
     const start = startOfWeek(currentWeek);
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
@@ -2455,13 +2469,31 @@ const WeeklyCalendar = ({
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <div>
-                    <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
-                      {day.getDate()}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div>
+                      <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                        {day.getDate()}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {dayNames[idx].substring(0, 3)}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {dayNames[idx].substring(0, 3)}
-                    </div>
+                    {(() => {
+                      const dp = dayPlanByDate.get(key);
+                      if (!dp || (!dp.title && !dp.category)) return null;
+                      const cat = dp.category ? getCategory(dp.category) : null;
+                      // Display-only chip on Dashboard. Editing happens on the
+                      // Calendar tab where the full DayPlanEditSheet lives.
+                      return (
+                        <span
+                          className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[80px]"
+                          style={cat ? { background: hexToRgba(cat.color, 0.12), color: cat.color, borderColor: hexToRgba(cat.color, 0.35) } : { background: 'rgba(118,126,181,.12)', color: '#5E6590', borderColor: 'rgba(118,126,181,.25)' }}
+                          title={dp.notes || dp.title || (cat?.label || dp.category)}
+                        >
+                          {dp.title || cat?.label || dp.category}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {onPlanWorkout && (
                     <button onClick={() => onPlanWorkout(day)}

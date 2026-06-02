@@ -18,7 +18,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
-import { TrainerConnectModal } from '../../trainer/react/TrainerConnectModal';
+import { TrainerConnectModal } from '../../trainer/react/TrainerConnectModal.jsx';
 
 function DevicePill({ label, sublabel, color, connected, connecting, onConnect, onDisconnect, icon }) {
   return (
@@ -177,7 +177,10 @@ export default function WorkoutSettingsSheet({
                   icon={<BoltSolid className="w-5 h-5" />}
                   connected={trainer.status === 'connected'}
                   connecting={trainer.status === 'connecting'}
-                  onConnect={() => setShowTrainerModal(true)}
+                  onConnect={() => {
+                    onClose();
+                    setTimeout(() => setShowTrainerModal(true), 50);
+                  }}
                   onDisconnect={trainer.disconnect}
                 />
                 <DevicePill

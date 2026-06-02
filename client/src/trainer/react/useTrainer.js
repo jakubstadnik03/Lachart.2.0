@@ -33,22 +33,26 @@ export function useTrainer(options) {
     // connection drops on component re-renders.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Subscribe to telemetry
+  // Subscribe once — re-subscribing on every status change dropped BLE notifications
+  // and made power / charts flicker (connecting → ready → controlled → erg_active).
   useEffect(() => {
     if (!adapterRef.current) return;
 
     unsubscribeTelemetryRef.current = adapterRef.current.subscribeTelemetry((t) => {
-      setTelemetry(t);
-      // Only update status if we actually had a connection before
-      // Don't reset status during scan, when already disconnected, or if no device was connected
-      // Also don't reset if status indicates we're still connected (ready, controlled, erg_active)
-      if (!t.connected && connectedDevice && 
-          (status === 'ready' || status === 'controlled' || status === 'erg_active' || status === 'connecting')) {
-        // Only disconnect if we're sure the device is actually disconnected
-        // Don't disconnect just because telemetry says connected: false (could be temporary)
-        // Wait for actual disconnection event
-      }
-      // Don't change status if we're scanning, already disconnected, or never had a device connected
+      if (!t) return;
+      setTelemetry((prev) => {
+        if (!t.connected && prev?.connected) {
+          return { ...prev, connected: false, ts: t.ts ?? Date.now() };
+        }
+        return {
+          ts: t.ts ?? Date.now(),
+          connected: t.connected !== false,
+          power: t.power ?? prev?.power ?? null,
+          cadence: t.cadence ?? prev?.cadence ?? null,
+          speed: t.speed ?? prev?.speed ?? null,
+          hr: t.hr ?? prev?.hr ?? null,
+        };
+      });
     });
 
     return () => {
@@ -57,7 +61,7 @@ export function useTrainer(options) {
         unsubscribeTelemetryRef.current = null;
       }
     };
-  }, [status, connectedDevice]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scan = useCallback(async () => {
     if (!adapterRef.current) {
@@ -124,6 +128,7 @@ export function useTrainer(options) {
       await adapterRef.current.disconnect();
       setConnectedDevice(null);
       setCapabilities(null);
+      setTelemetry(null);
       setStatus('disconnected');
       setError(null);
       logger.info('Disconnected');
@@ -169,11 +174,11 @@ export function useTrainer(options) {
     }
   }, []);
 
-  // Debounced ERG setter (200ms)
-  const setErgWattsRef = useRef(null);
+  const ergWriteCoreRef = useRef(null);
+  const setErgWattsDebouncedRef = useRef(null);
 
   useEffect(() => {
-    setErgWattsRef.current = debounce(async (watts) => {
+    const writeErg = async (watts) => {
       if (!adapterRef.current) {
         setError('Adapter not initialized');
         return;
@@ -182,12 +187,9 @@ export function useTrainer(options) {
       try {
         setError(null);
 
-        // Auto-request control if the adapter isn't ready to accept ERG commands yet.
-        // This handles cases where requestControl() timed out on initial connect, or where
-        // the trainer silently re-entered 'ready' state after an ERG gap.
         const adapterState = adapterRef.current.state;
-        if (adapterState && adapterState !== 'controlled' && adapterState !== 'erg_active') {
-          logger.info('setErgWatts: adapter not controlled, auto-requesting control first');
+        if (adapterState === 'ready') {
+          logger.info('setErgWatts: requesting control before first ERG write');
           try {
             if (adapterRef.current.requestControl) {
               await adapterRef.current.requestControl();
@@ -198,27 +200,39 @@ export function useTrainer(options) {
             setStatus('controlled');
           } catch (ctrlErr) {
             logger.warn('Auto-requestControl in setErgWatts failed:', ctrlErr);
-            // Continue anyway — some trainers (FE-C, Wahoo) don't need explicit control
           }
         }
+        // erg_active / controlled: skip RESET + REQUEST_CONTROL (adds ~500 ms on Tacx).
 
         const clamped = clampWatts(watts, capabilities);
         await adapterRef.current.setErgWatts(clamped);
         setStatus('erg_active');
-        logger.debug('ERG set to', clamped, 'W');
+        logger.info(`[FTMS] ERG power set to ${clamped} W`);
       } catch (err) {
-        setError(err.message || 'Failed to set ERG power');
+        const msg = err?.message || 'Failed to set ERG power';
+        setError(msg);
         logger.error('Set ERG error:', err);
+        throw err;
       }
-    }, 200);
+    };
+
+    ergWriteCoreRef.current = writeErg;
+    setErgWattsDebouncedRef.current = debounce(writeErg, 120);
   }, [capabilities]);
 
-  // Returns the Promise from the debounced call so callers can await / catch
   const setErgWatts = useCallback((watts) => {
-    if (setErgWattsRef.current) {
-      return setErgWattsRef.current(watts);
+    if (setErgWattsDebouncedRef.current) {
+      return setErgWattsDebouncedRef.current(watts);
     }
-    return Promise.resolve();
+    return Promise.reject(new Error('Trainer not ready for ERG'));
+  }, []);
+
+  /** Lap / step changes — no debounce so Tacx FE-C gets the new target immediately. */
+  const setErgWattsImmediate = useCallback((watts) => {
+    if (ergWriteCoreRef.current) {
+      return ergWriteCoreRef.current(watts);
+    }
+    return Promise.reject(new Error('Trainer not ready for ERG'));
   }, []);
 
   const setResistance = useCallback(async (level) => {
@@ -266,6 +280,7 @@ export function useTrainer(options) {
     connect,
     disconnect,
     setErgWatts,
+    setErgWattsImmediate,
     setResistance: adapterRef.current?.setResistance ? setResistance : undefined,
     setSlope: adapterRef.current?.setSlope ? setSlope : undefined,
     requestControl,

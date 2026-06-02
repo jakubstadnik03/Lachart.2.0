@@ -6,6 +6,7 @@ const { JWT_SECRET } = require('../config/jwt.config');
 const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
 const AppleHealthActivity = require('../models/AppleHealthActivity');
+const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
@@ -708,6 +709,17 @@ router.get('/strava/status', verifyToken, async (req, res) => {
       const { getWebhookStatus } = require('../services/stravaWebhookBootstrap');
       webhookSubscription = getWebhookStatus();
     } catch (_) { /* optional */ }
+    // Stale auto-sync users: queue a background pull when they open Settings
+    // (webhook "Never" + last sync hours ago is the common failure mode).
+    if (connected && s.autoSync) {
+      const lastMs = s.lastSyncDate ? new Date(s.lastSyncDate).getTime() : 0;
+      const { STRAVA_AUTO_SYNC_STALE_USER_MS } = require('../config/stravaAutoSyncConfig');
+      if (!lastMs || Date.now() - lastMs > STRAVA_AUTO_SYNC_STALE_USER_MS) {
+        const { maybeQueueStravaAutoSync } = require('../services/stravaAutoSyncQueue');
+        maybeQueueStravaAutoSync(req.user.userId);
+      }
+    }
+
     res.json({
       connected,
       autoSync: !!s.autoSync,
@@ -3254,18 +3266,21 @@ router.get('/status', verifyToken, async (req, res) => {
       const requesterRole = String(requester?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) || requester?.admin === true;
       if (isCoachLike) {
-        const athlete = await User.findById(req.query.athleteId).select('strava garmin');
+        const athlete = await User.findById(req.query.athleteId).select('strava garmin appleHealth');
         if (athlete) targetUser = athlete;
       }
     }
 
     const stravaConnected = Boolean(targetUser?.strava?.accessToken);
     const garminConnected = Boolean(targetUser?.garmin?.accessToken);
+    const appleHealthConnected = Boolean(targetUser?.appleHealth?.connectedAt);
     res.json({
       stravaConnected,
       garminConnected,
       garminAutoSync: Boolean(targetUser?.garmin?.autoSync),
       garminLastSync: targetUser?.garmin?.lastSyncDate || null,
+      appleHealthConnected,
+      appleHealthLastWellnessSync: targetUser?.appleHealth?.lastWellnessSyncAt || null,
     });
   } catch (e) {
     res.status(500).json({ error: 'status_failed' });
@@ -5522,9 +5537,94 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       // Coaches are not notified on Apple Health sync — only lactate/comments trigger coach notifications.
     }
 
+    await User.updateOne(
+      { _id: userId },
+      { $set: { 'appleHealth.lastWorkoutSyncAt': new Date(), 'appleHealth.connectedAt': new Date() } }
+    );
+
     res.json({ imported, total: workouts.length });
   } catch (err) {
     console.error('[apple-health] sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/integrations/apple-health/wellness-sync
+ * Body: { wellness: [{ date, restingHeartRate?, sleepMinutes?, hrvMs? }], markConnected?: boolean }
+ */
+router.post('/apple-health/wellness-sync', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { wellness, markConnected } = req.body;
+    if (!Array.isArray(wellness)) {
+      return res.status(400).json({ error: 'wellness array required' });
+    }
+
+    let upserted = 0;
+    for (const row of wellness) {
+      if (!row?.date || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) continue;
+      const patch = {
+        restingHeartRate: row.restingHeartRate != null ? Number(row.restingHeartRate) : null,
+        sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : null,
+        hrvMs: row.hrvMs != null ? Number(row.hrvMs) : null,
+        respiratoryRate: row.respiratoryRate != null ? Number(row.respiratoryRate) : null,
+        source: 'apple_health',
+      };
+      const result = await AppleHealthWellness.updateOne(
+        { userId, date: row.date },
+        { $set: patch },
+        { upsert: true }
+      );
+      if (result.upsertedCount > 0 || result.modifiedCount > 0) upserted++;
+    }
+
+    const userPatch = { 'appleHealth.lastWellnessSyncAt': new Date() };
+    if (markConnected || upserted > 0) {
+      userPatch['appleHealth.connectedAt'] = new Date();
+    }
+    await User.updateOne({ _id: userId }, { $set: userPatch });
+
+    res.json({ upserted, total: wellness.length });
+  } catch (err) {
+    console.error('[apple-health] wellness-sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/integrations/apple-health/wellness?days=14
+ */
+router.get('/apple-health/wellness', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 90);
+    const user = await User.findById(userId).select('appleHealth').lean();
+    const connected = Boolean(user?.appleHealth?.connectedAt);
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceKey = since.toISOString().slice(0, 10);
+
+    const rows = await AppleHealthWellness.find({
+      userId,
+      date: { $gte: sinceKey },
+    })
+      .sort({ date: 1 })
+      .lean();
+
+    res.json({
+      connected,
+      lastWellnessSync: user?.appleHealth?.lastWellnessSyncAt ?? null,
+      days: rows.map((r) => ({
+        date: r.date,
+        restingHeartRate: r.restingHeartRate,
+        sleepMinutes: r.sleepMinutes,
+        hrvMs: r.hrvMs,
+      })),
+    });
+  } catch (err) {
+    console.error('[apple-health] wellness get error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5536,12 +5636,22 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
 router.get('/apple-health/status', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const count = await AppleHealthActivity.countDocuments({ userId });
+    const user = await User.findById(userId).select('appleHealth').lean();
+    const workoutCount = await AppleHealthActivity.countDocuments({ userId });
     const last = await AppleHealthActivity.findOne({ userId })
       .sort({ createdAt: -1 })
       .select('createdAt startDate')
       .lean();
-    res.json({ count, lastSync: last?.createdAt ?? null, lastActivity: last?.startDate ?? null });
+    const wellnessCount = await AppleHealthWellness.countDocuments({ userId });
+    res.json({
+      connected: Boolean(user?.appleHealth?.connectedAt),
+      workoutCount,
+      wellnessCount,
+      lastSync: last?.createdAt ?? null,
+      lastActivity: last?.startDate ?? null,
+      lastWellnessSync: user?.appleHealth?.lastWellnessSyncAt ?? null,
+      lastWorkoutSync: user?.appleHealth?.lastWorkoutSyncAt ?? null,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5562,8 +5672,25 @@ router.get('/apple-health/status', verifyToken, async (req, res) => {
 router.delete('/apple-health', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const result = await AppleHealthActivity.deleteMany({ userId });
-    res.json({ deleted: result?.deletedCount ?? 0 });
+    const [workouts, wellness] = await Promise.all([
+      AppleHealthActivity.deleteMany({ userId }),
+      AppleHealthWellness.deleteMany({ userId }),
+    ]);
+    await User.updateOne(
+      { _id: userId },
+      {
+        $unset: {
+          'appleHealth.connectedAt': '',
+          'appleHealth.lastWellnessSyncAt': '',
+          'appleHealth.lastWorkoutSyncAt': '',
+        },
+      }
+    );
+    res.json({
+      deleted: (workouts?.deletedCount ?? 0) + (wellness?.deletedCount ?? 0),
+      workoutsDeleted: workouts?.deletedCount ?? 0,
+      wellnessDeleted: wellness?.deletedCount ?? 0,
+    });
   } catch (err) {
     console.error('[apple-health] disconnect error:', err.message);
     res.status(500).json({ error: err.message });

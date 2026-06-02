@@ -21,10 +21,10 @@ function fmtPace(secPerKm) {
 export default function LactateCurveTemplate({ test = {}, thresholds = null, accent = '#7C3AED' }) {
   const sport   = String(test.sport || '').toLowerCase();
   const isPace  = sport.includes('run') || sport.includes('swim');
-  const results = Array.isArray(test.results) ? test.results : [];
 
   // Build (x, lactate) pairs. x = power (watts) or pace (sec/km)
   const points = useMemo(() => {
+    const results = Array.isArray(test.results) ? test.results : [];
     return results
       .map(r => {
         const lac = Number(r?.lactate ?? r?.lactateValue);
@@ -41,7 +41,7 @@ export default function LactateCurveTemplate({ test = {}, thresholds = null, acc
       })
       .filter(Boolean)
       .sort((a, b) => (isPace ? b.x - a.x : a.x - b.x));
-  }, [results, isPace]);
+  }, [test, isPace]);
 
   const lt1 = Number(thresholds?.lt1) || null;
   const lt2 = Number(thresholds?.lt2) || null;
