@@ -86,38 +86,82 @@ function fmtPlanDuration(s) {
 function PlanMiniChart({ steps, color, width = 60, height = 16 }) {
   if (!steps?.length) return null;
   const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
-  const expanded = [];
+  const FLOOR = 0.12;
+
+  // Build segment list: individual steps stay as-is; repeat groups become one
+  // "compressed" segment that renders a capped number of visible cycles so the
+  // chart stays readable even in a 60px-wide thumbnail.
+  const segments = []; // { kind:'step', step } | { kind:'group', workDur, recDur, reps, totalDur }
   const visited = new Set();
   steps.forEach(s => {
-    if (!s.groupId) { expanded.push(s); return; }
+    if (!s.groupId) { segments.push({ kind:'step', step:s }); return; }
     if (visited.has(s.groupId)) return;
     visited.add(s.groupId);
     const group = steps.filter(x => x.groupId === s.groupId);
-    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    group.filter(x => !x.isGroupHeader).forEach(gs => {
-      for (let r = 0; r < reps; r++) expanded.push(gs);
-    });
+    const header = group.find(x => x.isGroupHeader);
+    const reps = header?.groupRepeat || 1;
+    const workDur = header?.durationSeconds || 0;
+    const recDur  = group.filter(x => !x.isGroupHeader).reduce((a, g) => a + (g.durationSeconds || 0), 0);
+    segments.push({ kind:'group', workDur, recDur, reps, totalDur:(workDur + recDur) * reps });
   });
-  const total = expanded.reduce((s, st) => s + (st.durationSeconds || 30), 0);
+
+  const total = segments.reduce((s, seg) =>
+    s + (seg.kind === 'step' ? (seg.step.durationSeconds || 30) : seg.totalDur), 0);
   if (!total) return null;
-  const FLOOR = 0.12;
+
+  const elems = [];
   let cx = 0;
+
+  segments.forEach((seg, si) => {
+    if (seg.kind === 'step') {
+      const s = seg.step;
+      const w  = Math.max(1.5, (s.durationSeconds || 30) / total * width);
+      const intensity = s.stepType==='work' ? 1 : s.stepType==='warmup' ? 0.55 : s.stepType==='cooldown' ? 0.4 : s.stepType==='recovery' ? 0.3 : 0.15;
+      const bh = Math.max(FLOOR * height, intensity * height);
+      const bw = Math.max(1, w - 0.5);
+      const fill = STEP_COLORS[s.stepType] || color || '#767EB5';
+      const sx = cx; cx += w;
+      if (s.isRamp && s.stepType === 'warmup') {
+        elems.push(<polygon key={si} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85}/>);
+      } else if (s.isRamp && s.stepType === 'cooldown') {
+        elems.push(<polygon key={si} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85}/>);
+      } else {
+        elems.push(<rect key={si} x={sx} y={height-bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85}/>);
+      }
+    } else {
+      // Repeat group — render as a compressed "comb" of work/recovery stripes.
+      // Limit visible cycles so each stripe is at least 2px wide.
+      const { workDur, recDur, reps, totalDur } = seg;
+      const gw = Math.max(6, totalDur / total * width);
+      const sx = cx; cx += gw;
+      const cycleTotalDur = workDur + (recDur || 0);
+      // How many cycles fit given minimum stripe width of 2px
+      const maxCycles = Math.max(1, Math.floor(gw / 2));
+      const visCycles = Math.min(reps, maxCycles);
+      const cycleW    = gw / visCycles;
+      const workFrac  = cycleTotalDur > 0 ? workDur / cycleTotalDur : 1;
+      const workW     = cycleW * workFrac;
+      const recW      = cycleW * (1 - workFrac);
+      const workH     = height; // full height
+      const recH      = Math.max(FLOOR * height, 0.32 * height);
+
+      for (let r = 0; r < visCycles; r++) {
+        const x0 = sx + r * cycleW;
+        // Work stripe
+        const ww = Math.max(1, workW - 0.5);
+        elems.push(<rect key={`${si}w${r}`} x={x0} y={0} width={ww} height={workH} fill={STEP_COLORS.work} rx={r===0&&visCycles===1?1:0} opacity={0.85}/>);
+        // Recovery stripe
+        if (recW >= 1 && recDur > 0) {
+          const rw = Math.max(1, recW - 0.5);
+          elems.push(<rect key={`${si}r${r}`} x={x0 + workW} y={height - recH} width={rw} height={recH} fill={STEP_COLORS.recovery} rx={0} opacity={0.80}/>);
+        }
+      }
+    }
+  });
+
   return (
     <svg width={width} height={height} style={{ display:'block', flexShrink:0 }}>
-      {expanded.map((step, i) => {
-        const w = Math.max(1, ((step.durationSeconds || 30) / total) * width);
-        const intensity = step.stepType === 'work' ? 1 : step.stepType === 'warmup' ? 0.55 : step.stepType === 'cooldown' ? 0.4 : step.stepType === 'recovery' ? 0.3 : 0.15;
-        const bh = Math.max(FLOOR * height, intensity * height);
-        const bw = Math.max(1, w - 0.5);
-        const fill = STEP_COLORS[step.stepType] || color || '#767EB5';
-        const sx = cx; cx += w;
-        if (step.isRamp && step.stepType === 'warmup') {
-          return <polygon key={i} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
-        } else if (step.isRamp && step.stepType === 'cooldown') {
-          return <polygon key={i} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
-        }
-        return <rect key={i} x={sx} y={height - bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85} />;
-      })}
+      {elems}
     </svg>
   );
 }
@@ -284,6 +328,9 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const plannedDistStr = (!linkedActivity && plannedDistKm > 0)
     ? (plannedDistKm >= 1 ? `${plannedDistKm % 1 === 0 ? plannedDistKm : plannedDistKm.toFixed(1)} km` : `${Math.round(plannedDistKm * 1000)} m`)
     : null;
+  // Category: prefer linked activity's category (user may set it after completing)
+  // over the planned workout's category
+  const effectiveCategory = linkedActivity?.category || pw.category || null;
 
   if (compact) {
     const isCompletedPair = pairingState === 'completed' || isCompleted;
@@ -361,15 +408,15 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             )}
           </div>
           {/* Category + duration + stats row */}
-          {(pw.category || duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
+          {(effectiveCategory || duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
             <div className="flex items-center gap-1.5 text-[10px] mt-0.5 flex-wrap">
-              {pw.category && getCategory(pw.category) && (
+              {effectiveCategory && getCategory(effectiveCategory) && (
                 <span
                   className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
-                  style={getCatStyle(pw.category)}
-                  title={getCategory(pw.category)?.label}
+                  style={getCatStyle(effectiveCategory)}
+                  title={getCategory(effectiveCategory)?.label}
                 >
-                  {getCategory(pw.category)?.label}
+                  {getCategory(effectiveCategory)?.label}
                 </span>
               )}
               {duration > 0 && (

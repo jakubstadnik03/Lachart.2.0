@@ -17,6 +17,9 @@
 		5C0355742FCDE7D90045BD7A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C0355512FCDE6790045BD7A /* WidgetKit.framework */; };
 		5C0355752FCDE7D90045BD7A /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C0355532FCDE6790045BD7A /* SwiftUI.framework */; };
 		5C0355842FCDE7DB0045BD7A /* LaChartWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5C0355732FCDE7D90045BD7A /* LaChartWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5C0355C22FD049C60045BD7A /* LaChartWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5C0356162FD050C20045BD7A /* LaChartSharedPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0356142FD050C10045BD7A /* LaChartSharedPlugin.swift */; };
+		5C0356172FD050C20045BD7A /* LaChartSharedPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C0356152FD050C20045BD7A /* LaChartSharedPlugin.m */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 /* End PBXBuildFile section */
 
@@ -27,6 +30,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 5C0355722FCDE7D90045BD7A;
 			remoteInfo = LaChartWidgetExtension;
+		};
+		5C0355C32FD049C60045BD7A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5C0355C02FD049C60045BD7A;
+			remoteInfo = "LaChartWatch Watch App";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -40,6 +50,27 @@
 				5C0355842FCDE7DB0045BD7A /* LaChartWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355B62FD0495D0045BD7A /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355CF2FD049C70045BD7A /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				5C0355C22FD049C60045BD7A /* LaChartWatch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -58,6 +89,12 @@
 		5C0355532FCDE6790045BD7A /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		5C0355732FCDE7D90045BD7A /* LaChartWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LaChartWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C03559F2FCE0B590045BD7A /* LaChartWidgetExtensionDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LaChartWidgetExtensionDebug.entitlements; sourceTree = "<group>"; };
+		5C0355A02FD038310045BD7A /* LaChartWidgetExtensionRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LaChartWidgetExtensionRelease.entitlements; sourceTree = "<group>"; };
+		5C0355A32FD0495C0045BD7A /* LaChartWidget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LaChartWidget.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C0355BC2FD049C60045BD7A /* LaChartWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LaChartWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LaChartWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C0356142FD050C10045BD7A /* LaChartSharedPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaChartSharedPlugin.swift; path = App/Plugins/LaChartSharedPlugin.swift; sourceTree = "<group>"; };
+		5C0356152FD050C20045BD7A /* LaChartSharedPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LaChartSharedPlugin.m; path = App/Plugins/LaChartSharedPlugin.m; sourceTree = "<group>"; };
 		5C68A3262FAC8A82009ED39F /* AppRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppRelease.entitlements; sourceTree = "<group>"; };
 		5CD969062FB2FC9A00A50C51 /* AppDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppDebug.entitlements; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,18 +112,12 @@
 			);
 			target = 5C0355722FCDE7D90045BD7A /* LaChartWidgetExtension */;
 		};
-		5C03559E2FCE0B200045BD7A /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				LaChartSharedPlugin.m,
-				LaChartSharedPlugin.swift,
-			);
-			target = 504EC3031FED79650016851F /* App */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		5C0355762FCDE7D90045BD7A /* LaChartWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (5C03559E2FCE0B200045BD7A /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 5C0355852FCDE7DB0045BD7A /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LaChartWidget; sourceTree = "<group>"; };
+		5C0355762FCDE7D90045BD7A /* LaChartWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (5C0355852FCDE7DB0045BD7A /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LaChartWidget; sourceTree = "<group>"; };
+		5C0355AC2FD0495C0045BD7A /* LaChartWidget Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "LaChartWidget Watch App"; sourceTree = "<group>"; };
+		5C0355C52FD049C60045BD7A /* LaChartWatch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "LaChartWatch Watch App"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,6 +138,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5C0355BE2FD049C60045BD7A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -123,9 +161,14 @@
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
+				5C0356152FD050C20045BD7A /* LaChartSharedPlugin.m */,
+				5C0356142FD050C10045BD7A /* LaChartSharedPlugin.swift */,
+				5C0355A02FD038310045BD7A /* LaChartWidgetExtensionRelease.entitlements */,
 				5C03559F2FCE0B590045BD7A /* LaChartWidgetExtensionDebug.entitlements */,
 				504EC3061FED79650016851F /* App */,
 				5C0355762FCDE7D90045BD7A /* LaChartWidget */,
+				5C0355AC2FD0495C0045BD7A /* LaChartWidget Watch App */,
+				5C0355C52FD049C60045BD7A /* LaChartWatch Watch App */,
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
@@ -137,6 +180,9 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				5C0355732FCDE7D90045BD7A /* LaChartWidgetExtension.appex */,
+				5C0355A32FD0495C0045BD7A /* LaChartWidget.app */,
+				5C0355BC2FD049C60045BD7A /* LaChartWatch.app */,
+				5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -213,6 +259,65 @@
 			productReference = 5C0355732FCDE7D90045BD7A /* LaChartWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		5C0355A22FD0495C0045BD7A /* LaChartWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C0355B72FD0495D0045BD7A /* Build configuration list for PBXNativeTarget "LaChartWidget" */;
+			buildPhases = (
+				5C0355A12FD0495C0045BD7A /* Resources */,
+				5C0355B62FD0495D0045BD7A /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LaChartWidget;
+			packageProductDependencies = (
+			);
+			productName = LaChartWidget;
+			productReference = 5C0355A32FD0495C0045BD7A /* LaChartWidget.app */;
+			productType = "com.apple.product-type.application.watchapp2-container";
+		};
+		5C0355BB2FD049C60045BD7A /* LaChartWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C0355D02FD049C70045BD7A /* Build configuration list for PBXNativeTarget "LaChartWatch" */;
+			buildPhases = (
+				5C0355BA2FD049C60045BD7A /* Resources */,
+				5C0355CF2FD049C70045BD7A /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5C0355C42FD049C60045BD7A /* PBXTargetDependency */,
+			);
+			name = LaChartWatch;
+			packageProductDependencies = (
+			);
+			productName = LaChartWatch;
+			productReference = 5C0355BC2FD049C60045BD7A /* LaChartWatch.app */;
+			productType = "com.apple.product-type.application.watchapp2-container";
+		};
+		5C0355C02FD049C60045BD7A /* LaChartWatch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C0355CC2FD049C70045BD7A /* Build configuration list for PBXNativeTarget "LaChartWatch Watch App" */;
+			buildPhases = (
+				5C0355BD2FD049C60045BD7A /* Sources */,
+				5C0355BE2FD049C60045BD7A /* Frameworks */,
+				5C0355BF2FD049C60045BD7A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5C0355C52FD049C60045BD7A /* LaChartWatch Watch App */,
+			);
+			name = "LaChartWatch Watch App";
+			packageProductDependencies = (
+			);
+			productName = "LaChartWatch Watch App";
+			productReference = 5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -229,6 +334,15 @@
 						ProvisioningStyle = Automatic;
 					};
 					5C0355722FCDE7D90045BD7A = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					5C0355A22FD0495C0045BD7A = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					5C0355BB2FD049C60045BD7A = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					5C0355C02FD049C60045BD7A = {
 						CreatedOnToolsVersion = 26.5;
 					};
 				};
@@ -250,6 +364,9 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				5C0355722FCDE7D90045BD7A /* LaChartWidgetExtension */,
+				5C0355A22FD0495C0045BD7A /* LaChartWidget */,
+				5C0355BB2FD049C60045BD7A /* LaChartWatch */,
+				5C0355C02FD049C60045BD7A /* LaChartWatch Watch App */,
 			);
 		};
 /* End PBXProject section */
@@ -269,6 +386,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		5C0355712FCDE7D90045BD7A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355A12FD0495C0045BD7A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355BA2FD049C60045BD7A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355BF2FD049C60045BD7A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -318,11 +456,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5C0356162FD050C20045BD7A /* LaChartSharedPlugin.swift in Sources */,
+				5C0356172FD050C20045BD7A /* LaChartSharedPlugin.m in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		5C03556F2FCDE7D90045BD7A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C0355BD2FD049C60045BD7A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -336,6 +483,11 @@
 			isa = PBXTargetDependency;
 			target = 5C0355722FCDE7D90045BD7A /* LaChartWidgetExtension */;
 			targetProxy = 5C0355822FCDE7DB0045BD7A /* PBXContainerItemProxy */;
+		};
+		5C0355C42FD049C60045BD7A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5C0355C02FD049C60045BD7A /* LaChartWatch Watch App */;
+			targetProxy = 5C0355C32FD049C60045BD7A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -580,6 +732,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = LaChartWidgetExtensionRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 255PBXWZSR;
@@ -610,6 +763,189 @@
 			};
 			name = Release;
 		};
+		5C0355B82FD0495D0045BD7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWidget;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5C0355B92FD0495D0045BD7A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWidget;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5C0355CD2FD049C70045BD7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LaChartWatch-Watch-App-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWatch;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "LaChart uses Bluetooth to connect to Stryd, CORE and HR strap sensors during workouts.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "LaChart reads heart rate and workout data during runs.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LaChart saves your workouts to Health.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LaChart tracks your GPS route during outdoor runs.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKWatchOnly = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWatch.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		5C0355CE2FD049C70045BD7A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = "LaChartWatch Watch App/LaChartWatch Watch AppRelease.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LaChartWatch-Watch-App-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWatch;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "LaChart uses Bluetooth to connect to Stryd, CORE and HR strap sensors during workouts.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "LaChart reads heart rate and workout data during runs.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "LaChart saves your workouts to Health.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LaChart tracks your GPS route during outdoor runs.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKWatchOnly = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWatch.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
+		5C0355D12FD049C70045BD7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWatch;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWatch;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5C0355D22FD049C70045BD7A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 255PBXWZSR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				INFOPLIST_KEY_CFBundleDisplayName = LaChartWatch;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app.LaChartWatch;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -636,6 +972,33 @@
 			buildConfigurations = (
 				5C0355872FCDE7DB0045BD7A /* Debug */,
 				5C0355882FCDE7DB0045BD7A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5C0355B72FD0495D0045BD7A /* Build configuration list for PBXNativeTarget "LaChartWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C0355B82FD0495D0045BD7A /* Debug */,
+				5C0355B92FD0495D0045BD7A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5C0355CC2FD049C70045BD7A /* Build configuration list for PBXNativeTarget "LaChartWatch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C0355CD2FD049C70045BD7A /* Debug */,
+				5C0355CE2FD049C70045BD7A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5C0355D02FD049C70045BD7A /* Build configuration list for PBXNativeTarget "LaChartWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C0355D12FD049C70045BD7A /* Debug */,
+				5C0355D22FD049C70045BD7A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

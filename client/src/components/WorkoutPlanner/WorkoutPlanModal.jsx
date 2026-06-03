@@ -109,54 +109,83 @@ export function toLocalISO(d) {
   return `${safe.getFullYear()}-${String(safe.getMonth()+1).padStart(2,'0')}-${String(safe.getDate()).padStart(2,'0')}`;
 }
 
-// Mini SVG chart for template cards (with ramp support)
+// Mini SVG chart for template cards (with ramp + compressed group support)
 export function MiniWorkoutChart({ steps, height = 20, width = 120 }) {
   if (!steps?.length) return null;
-  const expanded = [];
+  const ZONE_COLORS = ['#93c5fd','#86efac','#fde68a','#fb923c','#f87171'];
+  const W = width, H = height;
+  const FLOOR = 0.12;
+
+  // Build segments — groups → compressed blocks, others → individual
+  const segments = [];
   const visited = new Set();
   steps.forEach(s => {
-    if (!s.groupId) { expanded.push(s); return; }
+    if (!s.groupId) { segments.push({ kind:'step', step:s }); return; }
     if (visited.has(s.groupId)) return;
     visited.add(s.groupId);
     const group = steps.filter(x => x.groupId === s.groupId);
-    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    for (let r = 0; r < reps; r++) group.filter(x => !x.isGroupHeader).forEach(gs => expanded.push(gs));
+    const header = group.find(x => x.isGroupHeader);
+    const reps = header?.groupRepeat || 1;
+    const workDur = header?.durationSeconds || 0;
+    const recDur  = group.filter(x => !x.isGroupHeader).reduce((a, g) => a + (g.durationSeconds || 0), 0);
+    const workPt  = header?.powerTarget;
+    segments.push({ kind:'group', workDur, recDur, reps, totalDur:(workDur+recDur)*reps, workPt });
   });
-  const total = expanded.reduce((s, x) => s + (x.durationSeconds || 0), 0);
+
+  const total = segments.reduce((s, seg) =>
+    s + (seg.kind==='step' ? (seg.step.durationSeconds || 0) : seg.totalDur), 0);
   if (!total) return null;
-  const ZONE_COLORS = ['#93c5fd','#86efac','#fde68a','#fb923c','#f87171'];
-  const W = width, H = height;
-  const FLOOR = 0.12; // minimum bar height as fraction
-  // Compute step heights
-  const stepIntensities = expanded.map(s => {
-    const type = s.stepType;
-    if (type === 'work') return 1;
-    if (type === 'warmup' || type === 'cooldown') return 0.55;
-    if (type === 'recovery') return 0.28;
-    if (type === 'rest') return 0.12;
-    return 0.4;
-  });
+
   let cx = 0;
+  const elems = [];
+
+  segments.forEach((seg, si) => {
+    if (seg.kind === 'step') {
+      const s = seg.step;
+      const w = Math.max(1, (s.durationSeconds / total) * W);
+      let fill = STEP_COLORS[s.stepType] || '#94a3b8';
+      if (s.powerTarget?.type === 'zone') fill = ZONE_COLORS[Math.min((s.powerTarget.value || 1) - 1, 4)];
+      const intensity = s.stepType==='work' ? 1 : s.stepType==='warmup'||s.stepType==='cooldown' ? 0.55 : s.stepType==='recovery' ? 0.28 : 0.12;
+      const barH = Math.max(FLOOR, intensity) * H;
+      const bw = Math.max(1, w - 0.5);
+      const x = cx; cx += w;
+      let shape;
+      if (s.isRamp && s.stepType === 'warmup') {
+        shape = <polygon key={si} points={`${x},${H} ${x+bw},${H-barH} ${x+bw},${H}`} fill={fill} opacity={0.85} />;
+      } else if (s.isRamp && s.stepType === 'cooldown') {
+        shape = <polygon key={si} points={`${x},${H-barH} ${x},${H} ${x+bw},${H}`} fill={fill} opacity={0.85} />;
+      } else {
+        shape = <rect key={si} x={x} y={H - barH} width={bw} height={barH} fill={fill} rx={1} opacity={0.85} />;
+      }
+      elems.push(shape);
+    } else {
+      // Repeat group — compressed comb (same algorithm as PlanMiniChart)
+      const { workDur, recDur, reps, totalDur, workPt } = seg;
+      const gw = Math.max(6, totalDur / total * W);
+      const sx = cx; cx += gw;
+      let workFill = STEP_COLORS.work;
+      if (workPt?.type === 'zone') workFill = ZONE_COLORS[Math.min((workPt.value || 1) - 1, 4)];
+      const cycleTotalDur = workDur + (recDur || 0);
+      const maxCycles = Math.max(1, Math.floor(gw / 2));
+      const visCycles = Math.min(reps, maxCycles);
+      const cycleW   = gw / visCycles;
+      const workFrac = cycleTotalDur > 0 ? workDur / cycleTotalDur : 1;
+      const workW    = cycleW * workFrac;
+      const recW     = cycleW * (1 - workFrac);
+      for (let r = 0; r < visCycles; r++) {
+        const x0 = sx + r * cycleW;
+        elems.push(<rect key={`${si}w${r}`} x={x0} y={0} width={Math.max(1, workW - 0.5)} height={H} fill={workFill} rx={0} opacity={0.85} />);
+        if (recW >= 1 && recDur > 0) {
+          const recH = Math.max(FLOOR * H, 0.32 * H);
+          elems.push(<rect key={`${si}r${r}`} x={x0 + workW} y={H - recH} width={Math.max(1, recW - 0.5)} height={recH} fill={STEP_COLORS.recovery} rx={0} opacity={0.80} />);
+        }
+      }
+    }
+  });
+
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-      {expanded.map((s, i) => {
-        const w = Math.max(1, (s.durationSeconds / total) * W);
-        let fill = STEP_COLORS[s.stepType] || '#94a3b8';
-        if (s.powerTarget?.type === 'zone') fill = ZONE_COLORS[Math.min((s.powerTarget.value || 1) - 1, 4)];
-        const pct = Math.max(FLOOR, stepIntensities[i]);
-        const barH = pct * H;
-        const bw = Math.max(1, w - 0.5);
-        const x = cx; cx += w;
-        let shape;
-        if (s.isRamp && s.stepType === 'warmup') {
-          shape = <polygon key={i} points={`${x},${H} ${x+bw},${H-barH} ${x+bw},${H}`} fill={fill} opacity={0.85} />;
-        } else if (s.isRamp && s.stepType === 'cooldown') {
-          shape = <polygon key={i} points={`${x},${H-barH} ${x},${H} ${x+bw},${H}`} fill={fill} opacity={0.85} />;
-        } else {
-          shape = <rect key={i} x={x} y={H - barH} width={bw} height={barH} fill={fill} rx={1} opacity={0.85} />;
-        }
-        return shape;
-      })}
+      {elems}
     </svg>
   );
 }

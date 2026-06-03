@@ -933,20 +933,28 @@ async function getTrainingsWithLactate(req, res) {
         String(athleteIdParam).trim() !== '' &&
         athleteIdParam !== null &&
         athleteIdParam !== undefined) {
-      if (user.role === 'coach') {
+      // Keep in sync with analyzeTrainingsByMonth: coach-like roles may view their athletes' data.
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(user.role) || user.admin;
+      if (isCoachLike) {
         if (String(athleteIdParam) === String(userId)) {
           targetAthleteId = String(userId);
         } else {
-          const athlete = await User.findById(athleteIdParam);
+          const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || String(athlete.coachId) !== String(userId)) {
+          // Support both coachId (singular) and coachIds (array)
+          const athleteCoachIds = [
+            ...(Array.isArray(athlete.coachIds) ? athlete.coachIds.map(String) : []),
+            ...(athlete.coachId ? [String(athlete.coachId)] : []),
+          ];
+          if (!athleteCoachIds.includes(String(userId))) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetAthleteId = String(athleteIdParam);
         }
-      } else if (user.role === 'athlete') {
+      } else {
+        // Athletes (and any other role) can only ever see their own data.
         targetAthleteId = String(userId);
       }
     } else {
@@ -1080,7 +1088,9 @@ async function analyzeTrainingsByMonth(req, res) {
         String(athleteIdParam).trim() !== '' &&
         athleteIdParam !== null &&
         athleteIdParam !== undefined) {
-      if (user.role === 'coach' || user.role === 'admin') {
+      // Keep in sync with getRunMetrics: coach-like roles may view their athletes' data.
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(user.role) || user.admin;
+      if (isCoachLike) {
         if (String(athleteIdParam) === String(userId)) {
           targetAthleteId = String(userId);
         } else {
@@ -1098,7 +1108,8 @@ async function analyzeTrainingsByMonth(req, res) {
           }
           targetAthleteId = String(athleteIdParam);
         }
-      } else if (user.role === 'athlete') {
+      } else {
+        // Athletes (and any other role) can only ever see their own data.
         targetAthleteId = String(userId);
       }
     } else {

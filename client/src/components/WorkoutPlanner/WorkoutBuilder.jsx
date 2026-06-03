@@ -431,10 +431,23 @@ function TargetEditor({ value = {}, onChange, label = 'Power target' }) {
         {TARGET_TYPES.map(tt=><option key={tt.value} value={tt.value}>{tt.label}</option>)}
       </select>
       {t.type==='zone' && (
-        <select value={t.value||2} onChange={e=>set('value',Number(e.target.value))}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
-          {[1,2,3,4,5].map(z=><option key={z} value={z}>Z{z}</option>)}
-        </select>
+        <>
+          <select value={t.value||2} onChange={e=>set('value',Number(e.target.value))}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
+            {[1,2,3,4,5].map(z=><option key={z} value={z}>Z{z}</option>)}
+          </select>
+          <input
+            type="number" step={1} min={1}
+            className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="W"
+            value={t.override != null ? t.override : ''}
+            onChange={e => {
+              const w = e.target.value === '' ? undefined : Number(e.target.value);
+              set('override', w != null && w > 0 ? w : undefined);
+            }}
+          />
+          {t.override > 0 && <span className="text-xs text-slate-400">W</span>}
+        </>
       )}
       {['percent_ftp','percent_lt1','percent_lt2'].includes(t.type) && (
         <div className="flex items-center gap-1">
@@ -763,34 +776,23 @@ function WorkoutSummary({ steps, context }) {
 }
 
 // ─── Quick Interval Block Builder ────────────────────────────────────────────
-function QuickIntervalAdder({ context, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const [reps, setReps] = useState(5);
-  const [workDur, setWorkDur] = useState('5:00');
-  const [workTarget, setWorkTarget] = useState({ type: 'lt2' });
-  const [recDur, setRecDur] = useState('2:00');
-  const [recTarget, setRecTarget] = useState({ type: 'zone', value: 1 });
 
-  const wSecs = parseDuration(workDur);
-  const rSecs = parseDuration(recDur);
-
-  const handleAdd = () => {
-    if (!wSecs || reps < 1) return;
-    const gid = uid();
-    const newSteps = [
-      { clientId:uid(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work', durationSeconds:wSecs, powerTarget:{...workTarget} },
-      ...(rSecs > 0 ? [{ clientId:uid(), groupId:gid, stepType:'recovery', durationSeconds:rSecs, powerTarget:{...recTarget} }] : []),
-    ];
-    onAdd(newSteps);
-    setOpen(false);
-  };
-
-  const TargetRow = ({ label, color, dur, setDur, target, setTarget }) => {
-    // Types that resolve to a calculated watt/pace value the user may want to tweak
-    const showOverride = ['lt1', 'lt2', 'zone', 'percent_ftp', 'percent_lt1', 'percent_lt2'].includes(target.type);
-    const calcW = showOverride ? Math.round(resolveTargetWatts(target, context)) : null;
-    const hasOverride = target.override != null;
-    return (
+/**
+ * TargetRow renders the "Work / Recovery" line in the Quick Interval Block
+ * builder. CRITICAL: this component MUST live at module scope, not inside
+ * QuickIntervalAdder. When it was nested as a local function, every keystroke
+ * triggered a parent re-render, which created a brand-new TargetRow function
+ * reference, which React treated as a different component type → it
+ * unmounted the entire row and remounted it. Each remount blew away the
+ * focused <input>, so after typing one character the cursor jumped out.
+ * Hoisting it here keeps the function identity stable across renders, so
+ * inputs keep their focus and selection while you type.
+ */
+function TargetRow({ context, label, color, dur, setDur, target, setTarget }) {
+  const showOverride = ['lt1', 'lt2', 'zone', 'percent_ftp', 'percent_lt1', 'percent_lt2'].includes(target.type);
+  const calcW = showOverride ? Math.round(resolveTargetWatts(target, context)) : null;
+  const hasOverride = target.override != null;
+  return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className={`text-xs font-semibold w-16 shrink-0 ${color}`}>{label}</span>
       <input type="text" value={dur} onChange={e=>setDur(e.target.value)}
@@ -850,7 +852,29 @@ function QuickIntervalAdder({ context, onAdd }) {
         </div>
       )}
     </div>
-    );
+  );
+}
+
+function QuickIntervalAdder({ context, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [reps, setReps] = useState(5);
+  const [workDur, setWorkDur] = useState('5:00');
+  const [workTarget, setWorkTarget] = useState({ type: 'lt2' });
+  const [recDur, setRecDur] = useState('2:00');
+  const [recTarget, setRecTarget] = useState({ type: 'zone', value: 1 });
+
+  const wSecs = parseDuration(workDur);
+  const rSecs = parseDuration(recDur);
+
+  const handleAdd = () => {
+    if (!wSecs || reps < 1) return;
+    const gid = uid();
+    const newSteps = [
+      { clientId:uid(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work', durationSeconds:wSecs, powerTarget:{...workTarget} },
+      ...(rSecs > 0 ? [{ clientId:uid(), groupId:gid, stepType:'recovery', durationSeconds:rSecs, powerTarget:{...recTarget} }] : []),
+    ];
+    onAdd(newSteps);
+    setOpen(false);
   };
 
   if (!open) return (
@@ -876,8 +900,8 @@ function QuickIntervalAdder({ context, onAdd }) {
           className="w-14 text-xs text-center border border-violet-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400 bg-white"/>
         <span className="text-xs text-slate-400">x times</span>
       </div>
-      <TargetRow label="Work" color="text-violet-600" dur={workDur} setDur={setWorkDur} target={workTarget} setTarget={setWorkTarget}/>
-      <TargetRow label="Recovery" color="text-emerald-600" dur={recDur} setDur={setRecDur} target={recTarget} setTarget={setRecTarget}/>
+      <TargetRow context={context} label="Work" color="text-violet-600" dur={workDur} setDur={setWorkDur} target={workTarget} setTarget={setWorkTarget}/>
+      <TargetRow context={context} label="Recovery" color="text-emerald-600" dur={recDur} setDur={setRecDur} target={recTarget} setTarget={setRecTarget}/>
       {wSecs > 0 && (() => {
         const wW = resolveTargetWatts(workTarget, context);
         const rW = resolveTargetWatts(recTarget, context);
@@ -1172,8 +1196,8 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         </div>
       )}
 
-      {/* Resolved preview */}
-      {t.type !== 'open' && (
+      {/* Resolved preview — skip for watts (value already shown in the label) */}
+      {t.type !== 'open' && t.type !== 'watts' && (
         paceInfo
           ? <span className="text-[10px] text-slate-400 ml-1">~{paceInfo.label}{paceInfo.unit}</span>
           : context.ftp && <span className="text-[10px] text-slate-400 ml-1">~{watts} W</span>
@@ -1295,7 +1319,7 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
                 {powerLabel}
                 {paceInfo
                   ? <span className={`font-normal ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>· ~{paceInfo.label}{paceInfo.unit}</span>
-                  : isBike && context.ftp
+                  : isBike && context.ftp && step.powerTarget?.type !== 'watts'
                     ? <span className={`font-normal ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>· ~{Math.round(watts)}W</span>
                     : null
                 }
@@ -1306,16 +1330,6 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
           </button>
         </div>
 
-        {(step.stepType==='warmup'||step.stepType==='cooldown') && (
-          <button onClick={()=>onUpdate({...step,isRamp:!step.isRamp})}
-            title={step.isRamp?'Ramp on':'Enable ramp'}
-            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg text-[10px] font-semibold border transition-all ${step.isRamp?'bg-amber-50 border-amber-300 text-amber-600':'bg-white border-slate-200 text-slate-300 hover:border-slate-300 hover:text-slate-500'}`}>
-            <svg viewBox="0 0 14 10" className="w-3 h-2" fill="currentColor">
-              {step.stepType==='warmup'?<polygon points="0,10 14,0 14,10"/>:<polygon points="0,0 0,10 14,10"/>}
-            </svg>
-            Ramp
-          </button>
-        )}
         <div className="flex items-center gap-0.5 shrink-0">
           {/* Inline note button */}
           <button onClick={()=>{ setNoteOpen(v=>!v); setPowerOpen(false); setExpanded(false); }}
@@ -1390,18 +1404,48 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
 
   const notify = useCallback((newSteps) => { setSteps(newSteps); onChange?.(newSteps); }, [onChange]);
 
-  // Drag-and-drop reorder state
+  // Drag-and-drop reorder state.
+  //
+  // `dragIdx` is either:
+  //   • a number — dragging a single (non-group) step at that index
+  //   • a string "g:<groupId>" — dragging an entire repeat block as one unit
+  //
+  // Treating groups as a single draggable block keeps `groupId` cohesion
+  // intact — if we only moved the header step, the recovery sibling would
+  // get left behind and the group would silently fall apart.
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
 
-  const handleDragStart = useCallback((idx) => setDragIdx(idx), []);
-  const handleDragOver  = useCallback((idx) => setDragOverIdx(idx), []);
-  const handleDrop      = useCallback((dropIdx) => {
-    if (dragIdx == null || dragIdx === dropIdx) { setDragIdx(null); setDragOverIdx(null); return; }
-    const n = [...steps];
-    const [moved] = n.splice(dragIdx, 1);
-    n.splice(dropIdx, 0, moved);
-    notify(n);
+  const handleDragStart = useCallback((id) => setDragIdx(id), []);
+  const handleDragOver  = useCallback((id) => setDragOverIdx(id), []);
+  const handleDrop      = useCallback((dropId) => {
+    if (dragIdx == null || dragIdx === dropId) { setDragIdx(null); setDragOverIdx(null); return; }
+
+    // Helper: contiguous indices for a given drag target. For a single step
+    // that's just [idx]; for a group it's every step sharing the groupId.
+    const idsOf = (target) => {
+      if (typeof target === 'string' && target.startsWith('g:')) {
+        const gid = target.slice(2);
+        return steps.map((x, i) => x.groupId === gid ? i : -1).filter(i => i >= 0);
+      }
+      return [Number(target)];
+    };
+
+    const srcIdxs = idsOf(dragIdx);
+    const dstIdxs = idsOf(dropId);
+    if (srcIdxs.length === 0 || dstIdxs.length === 0) {
+      setDragIdx(null); setDragOverIdx(null); return;
+    }
+
+    // Pull the moving slice out, then splice it back in at the destination.
+    // Destination is computed AFTER removal so the index lines up cleanly.
+    const moved = srcIdxs.map(i => steps[i]);
+    const remaining = steps.filter((_, i) => !srcIdxs.includes(i));
+    const dstFirst  = dstIdxs[0];
+    const removedBeforeDst = srcIdxs.filter(i => i < dstFirst).length;
+    const insertAt = dstFirst - removedBeforeDst;
+    remaining.splice(insertAt, 0, ...moved);
+    notify(remaining);
     setDragIdx(null);
     setDragOverIdx(null);
   }, [dragIdx, steps, notify]);
@@ -1517,9 +1561,29 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                 const gIdxs = steps.map((x,i)=>x.groupId===s.groupId?i:-1).filter(i=>i>=0);
                 const reps  = steps.find(x=>x.groupId===s.groupId&&x.isGroupHeader)?.groupRepeat||1;
                 const lapSecs = gIdxs.reduce((sum,gi)=>sum+(steps[gi].durationSeconds||0),0);
-                rendered.push(
-                  <div key={`g-${s.groupId}`} className="rounded-xl border-2 border-dashed border-violet-200 bg-violet-50/20">
-                    <div className="flex items-center gap-2 py-1.5 px-3">
+                {
+                  const dragId = `g:${s.groupId}`;
+                  const isBeingDragged = dragIdx === dragId;
+                  const isDropTarget = dragOverIdx === dragId && dragIdx !== dragId;
+                  rendered.push(
+                  <div
+                    key={`g-${s.groupId}`}
+                    className={`rounded-xl border-2 border-dashed border-violet-200 bg-violet-50/20 transition-opacity ${isBeingDragged ? 'opacity-40' : ''} ${isDropTarget ? 'ring-2 ring-primary/40' : ''}`}
+                    onDragOver={e => { e.preventDefault(); handleDragOver(dragId); }}
+                    onDrop={() => handleDrop(dragId)}
+                  >
+                    {/* Repeat header IS the drag handle for the whole group.
+                        Grabbing here picks up every child step + the header
+                        as one cohesive block (handleDrop expands g:<id> to
+                        all member indices). */}
+                    <div
+                      className="flex items-center gap-2 py-1.5 px-3 cursor-grab active:cursor-grabbing select-none"
+                      draggable
+                      onDragStart={() => handleDragStart(dragId)}
+                      onDragEnd={handleDragEnd}
+                      title="Drag to reorder the entire repeat block"
+                    >
+                      <span className="text-slate-300 hover:text-slate-400 shrink-0 leading-none" aria-hidden>⠿</span>
                       <ArrowPathIcon className="w-3.5 h-3.5 text-violet-400 shrink-0"/>
                       <span className="text-xs font-bold text-violet-600">Repeat</span>
                       <input type="number" min={1} max={99} value={reps}
@@ -1543,6 +1607,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                     </div>
                   </div>
                 );
+                }
               }
             } else {
               rendered.push(

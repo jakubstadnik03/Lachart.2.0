@@ -1645,17 +1645,17 @@ const FitAnalysisPage = () => {
   const [userProfile, setUserProfile] = React.useState(null);
   React.useEffect(() => {
     let cancelled = false;
+    // Coach viewing an athlete? Fetch *that athlete's* zones — otherwise
+    // Period Summary / per-activity zone bucketing reuses the coach's
+    // power & HR thresholds and every Z2/Z3 ride collapses into Z1
+    // because the athlete's avg watts sit well below the coach's FTP.
+    // Self-view falls through to /user/profile.
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'admin', 'tester', 'testing'].includes(role);
+    const viewingOtherAthlete = isCoachLike && selectedAthleteId
+      && String(selectedAthleteId) !== String(user?._id || user?.id || '');
     const loadUserProfile = async () => {
       try {
-        // Coach viewing an athlete? Fetch *that athlete's* zones — otherwise
-        // Period Summary / per-activity zone bucketing reuses the coach's
-        // power & HR thresholds and every Z2/Z3 ride collapses into Z1
-        // because the athlete's avg watts sit well below the coach's FTP.
-        // Self-view falls through to /user/profile.
-        const role = String(user?.role || '').toLowerCase();
-        const isCoachLike = ['coach', 'admin', 'tester', 'testing'].includes(role);
-        const viewingOtherAthlete = isCoachLike && selectedAthleteId
-          && String(selectedAthleteId) !== String(user?._id || user?.id || '');
         const url = viewingOtherAthlete
           ? `/user/athlete/${selectedAthleteId}/profile`
           : '/user/profile';
@@ -1679,6 +1679,14 @@ const FitAnalysisPage = () => {
     const onUserUpdated = (e) => {
       const fresh = e?.detail;
       if (cancelled) return;
+      // The 'userUpdated' event always carries the logged-in user (the coach).
+      // While viewing another athlete we must NOT overwrite the athlete's
+      // profile with the coach's — that reintroduces the Z1-collapse bug.
+      // Refetch the athlete's profile instead.
+      if (viewingOtherAthlete) {
+        loadUserProfile();
+        return;
+      }
       if (fresh && typeof fresh === 'object') {
         setUserProfile(fresh);
         const ftp = fresh.powerZones?.cycling?.lt2 ||
@@ -3260,16 +3268,16 @@ const FitAnalysisPage = () => {
     const isCoachLike = ['coach', 'admin', 'tester', 'testing'].includes(user?.role) ||
       (user?.admin === true && user?.role !== 'athlete');
     if (isCoachLike) {
-      // Always check localStorage first when component mounts or when location changes (returning to page)
-      const savedAthleteId = localStorage.getItem('trainingCalendar_selectedAthleteId');
-      if (savedAthleteId) {
-        // Always use saved value if it exists
-        setSelectedAthleteId(savedAthleteId);
-      } else {
-        // If no saved athleteId, default to own ID
-        setSelectedAthleteId(user._id);
-        localStorage.setItem('trainingCalendar_selectedAthleteId', user._id);
-      }
+      // Prefer the app-wide selection (global_selectedAthleteId) set on Home /
+      // dashboard so the calendar follows the athlete chosen elsewhere. The
+      // calendar's own key is only a fallback (it's bridged via window events
+      // while mounted, but a fresh mount must read the global key — otherwise
+      // a coach who picks an athlete on Home lands on stale/own data here).
+      const globalAthleteId = localStorage.getItem('global_selectedAthleteId');
+      const savedAthleteId  = localStorage.getItem('trainingCalendar_selectedAthleteId');
+      const resolved = globalAthleteId || savedAthleteId || user._id;
+      setSelectedAthleteId(resolved);
+      localStorage.setItem('trainingCalendar_selectedAthleteId', resolved);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, location.pathname]); // Run when user changes or when pathname changes (returning to page)

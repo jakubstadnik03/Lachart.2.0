@@ -1032,15 +1032,17 @@ function BarGroupChart({ sessions, metric, highlightId, onBarTap }) {
 // ─── multi-line SVG chart ─────────────────────────────────────────────────────
 // Each session is a colored polyline; X = interval index (1..n), Y = metric.
 
-function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCool = false }) {
+function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPointTap, hideWarmCool = false }) {
   const W = 320, H = 170, padX = 26, padY = 18;
 
-  // Selection state — same pattern as SessionBarChart: tapped point shows
-  // its details ABOVE the chart in a fixed info row.
+  // For run/swim the 'power' slot stores pace in seconds — same logic as SessionBarChart.
+  const isPace = (sport === 'run' || sport === 'swim') && metric === 'power';
+
   const [selected, setSelected] = useState(null);
   const clearSelection = () => setSelected(null);
   const fmtTooltipValue = (v) => {
-    const unit = metric === 'power' ? 'W' : metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : '';
+    if (isPace) return fmtPace(v);
+    const unit = metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : metric === 'power' ? 'W' : '';
     return `${Math.round(v)}${unit ? ' ' + unit : ''}`;
   };
 
@@ -1088,7 +1090,7 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCoo
   if (allXs.length === 0 || allYs.length === 0) {
     return (
       <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 11 }}>
-        No {metric === 'RPE' ? 'RPE' : metric} data in these sessions
+        No {metric === 'RPE' ? 'RPE' : isPace ? 'pace' : metric} data in these sessions
       </div>
     );
   }
@@ -1097,12 +1099,16 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCoo
   const xMax = Math.max(...allXs, 2);
   const yMin = Math.min(...allYs);
   const yMax = Math.max(...allYs);
-  const yPad = (yMax - yMin) * 0.1 || 1;
-  const yLo = Math.max(0, yMin - yPad);
-  const yHi = yMax + yPad;
+  const yPad = (yMax - yMin) * 0.1 || (isPace ? 5 : 1);
+  // For pace: higher value = slower, so invert domain (fast at top, slow at bottom)
+  const yLo = isPace ? yMin - yPad : Math.max(0, yMin - yPad);
+  const yHi = isPace ? yMax + yPad : yMax + yPad;
 
   const px = (x) => padX + ((x - xMin) / (xMax - xMin || 1)) * (W - padX * 2);
-  const py = (y) => H - padY - ((y - yLo) / (yHi - yLo || 1)) * (H - padY * 2);
+  // For pace: invert Y so faster (lower seconds) = higher on chart, same as SessionBarChart
+  const py = isPace
+    ? (y) => padY + ((y - yLo) / (yHi - yLo || 1)) * (H - padY * 2)
+    : (y) => H - padY - ((y - yLo) / (yHi - yLo || 1)) * (H - padY * 2);
 
   // Y-axis ticks (3)
   const ticks = [yLo, (yLo + yHi) / 2, yHi];
@@ -1145,7 +1151,7 @@ function MultiLineChart({ sessions, metric, highlightId, onPointTap, hideWarmCoo
           <text x={padX - 4} y={py(t)} dy="3"
             textAnchor="end"
             style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {Math.round(t)}
+            {isPace ? fmtPace(t) : Math.round(t)}
           </text>
         </g>
       ))}
@@ -2278,6 +2284,7 @@ export default function NativeTrainingPage({
                       : <MultiLineChart
                           sessions={visibleSessions}
                           metric={selectedMetric}
+                          sport={currentSport}
                           highlightId={safeHighlight}
                           hideWarmCool={hideWarmCool}
                           onPointTap={(s) => openActivity(s)}

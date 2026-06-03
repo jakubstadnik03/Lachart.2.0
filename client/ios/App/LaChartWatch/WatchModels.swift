@@ -1,0 +1,159 @@
+// WatchModels.swift
+// LaChartWatch
+//
+// Data models shared across the watch app.
+
+import Foundation
+import SwiftUI
+
+// MARK: - App Screen Enum
+
+enum AppScreen: Equatable {
+    case face
+    case select
+    case sensors
+    case ready
+    case countdown(Int)   // remaining seconds: 3, 2, 1, 0 = "GO!"
+    case run
+    case pause
+    case lock
+    case summary
+    case saved
+}
+
+// MARK: - Workout Type
+
+struct WorkoutType: Identifiable, Equatable {
+    let id:           String
+    let name:         String
+    let sub:          String
+    let icon:         String   // SF Symbol name
+    let hasGPS:       Bool
+    let isStructured: Bool
+
+    static let all: [WorkoutType] = [
+        WorkoutType(id: "outdoor",    name: "Outdoor Run",  sub: "GPS · Venku",      icon: "figure.run",          hasGPS: true,  isStructured: false),
+        WorkoutType(id: "indoor",     name: "Indoor Run",   sub: "Běžecký pás",      icon: "figure.run.treadmill", hasGPS: false, isStructured: false),
+        WorkoutType(id: "track",      name: "Track Run",    sub: "Tartanová dráha",  icon: "oval",                hasGPS: true,  isStructured: false),
+        WorkoutType(id: "intervals",  name: "Intervaly",    sub: "Strukturovaný",    icon: "waveform.path",       hasGPS: true,  isStructured: true),
+    ]
+}
+
+// MARK: - Sensor Device
+
+struct SensorDevice: Identifiable {
+    let id:          String
+    var name:        String
+    var sub:         String
+    var icon:        String   // SF Symbol name
+    var isConnected: Bool
+    var battery:     Int?     // 0–100 %
+    var liveValue:   String?  // e.g. "247 W"
+}
+
+// MARK: - Structured Workout Step
+
+enum StepKind: String {
+    case warmup, work, rest, cooldown
+}
+
+struct StructuredStep: Identifiable {
+    let id:       UUID = UUID()
+    let kind:     StepKind
+    let label:    String
+    let target:   String      // e.g. "4:20 /km" or "280 W"
+    let duration: TimeInterval
+    let zone:     Int         // 1–5
+}
+
+// MARK: - Lap Data
+
+struct LapData: Identifiable {
+    let id:     UUID = UUID()
+    let number: Int
+    let pace:   TimeInterval   // sec/km
+    let time:   TimeInterval   // elapsed lap time seconds
+    let zoneId: Int
+}
+
+// MARK: - Live Metrics
+
+struct LiveMetrics {
+    var elapsed:      TimeInterval = 0
+    var hr:           Int          = 0
+    var pace:         TimeInterval = 0    // sec/km
+    var avgPace:      TimeInterval = 0    // sec/km
+    var distance:     Double       = 0    // metres
+    var power:        Int          = 0    // watts
+    var cadence:      Int          = 0    // spm
+    var coreTemp:     Double       = 0    // °C
+    var skinTemp:     Double       = 0    // °C
+    var hsi:          Double       = 0    // Heat Strain Index 0–10
+    var elevation:    Double       = 0    // metres gained
+    var calories:     Int          = 0
+    var zone:         Int          = 1    // 1–5
+    var lap:          Int          = 1
+    var lapHistory:   [LapData]    = []
+    var stepIndex:    Int          = 0    // for structured workouts
+    var vertOsc:      Double       = 0    // cm
+    var groundContact: Int         = 0    // ms
+    var legSpring:    Double       = 0    // kN/m
+
+    // Summary computed from history
+    var zoneSeconds: [Int: TimeInterval] {
+        var d: [Int: TimeInterval] = [1:0, 2:0, 3:0, 4:0, 5:0]
+        for lap in lapHistory {
+            d[lap.zoneId, default: 0] += lap.time
+        }
+        return d
+    }
+}
+
+// MARK: - Workout Summary (sent to iPhone)
+
+struct WorkoutSummary: Codable {
+    let title:            String
+    let date:             Date
+    let distance:         Double          // metres
+    let duration:         TimeInterval
+    let avgPace:          TimeInterval    // sec/km
+    let avgHR:            Int
+    let avgPower:         Int
+    let maxHR:            Int
+    let calories:         Int
+    let elevation:        Double
+    let zoneDistribution: [String: Double] // "Z1"…"Z5" → fraction 0–1
+    let laps:             [LapSummary]
+    let lactateReadings:  [LactateReading]
+    let aiInsight:        String?
+}
+
+struct LapSummary: Codable {
+    let number: Int
+    let pace:   TimeInterval
+    let time:   TimeInterval
+    let zoneId: Int
+}
+
+struct LactateReading: Codable {
+    let timestamp: Date
+    let mmol:      Double
+    let hr:        Int
+    let pace:      TimeInterval
+}
+
+// MARK: - Helpers
+
+extension TimeInterval {
+    /// Format as mm:ss
+    var mmss: String {
+        let total = Int(self)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// Format as sec/km → "/km" pace string  e.g. "4:32"
+    var paceString: String {
+        guard self > 0 else { return "--:--" }
+        return mmss
+    }
+}

@@ -5,7 +5,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
 import WeekStrip         from '../components/NativeDashboard/WeekStrip';
-import WidgetDebugBanner from '../components/NativeDashboard/WidgetDebugBanner';
 import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
@@ -135,9 +134,9 @@ function PlanMiniChart({ steps, color, width = 88, height = 16 }) {
     visited.add(s.groupId);
     const group = steps.filter(x => x.groupId === s.groupId);
     const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    group.filter(x => !x.isGroupHeader).forEach(gs => {
-      for (let r = 0; r < reps; r++) expanded.push(gs);
-    });
+    // Header IS the work step — include it; sort header first so each rep renders [work, recovery].
+    const ordered = [...group.filter(x => x.isGroupHeader), ...group.filter(x => !x.isGroupHeader)];
+    for (let r = 0; r < reps; r++) ordered.forEach(gs => expanded.push(gs));
   });
   const total = expanded.reduce((s, st) => s + (st.durationSeconds || 30), 0);
   if (!total) return null;
@@ -993,11 +992,6 @@ export default function NativeDashboardPage({
         {/* ── Cards (staggered fade-in) ── */}
         <div style={styles.body}>
 
-          {/* DEBUG: widget pipeline probe — auto-runs on mount, shows the
-              exact failure (plugin missing / app-group missing / OK) right
-              at the top of the dashboard. Remove this block when the
-              widget is confirmed working. */}
-          <WidgetDebugBanner />
 
           {/* 1 · Week strip */}
           <div style={{ ...cardEntry(1), ...snapStyle }}>

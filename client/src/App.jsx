@@ -316,15 +316,15 @@ function AppRoutes() {
           <Route
             path="/training-calendar/:athleteId/:activityId"
             element={
-              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+              <ProtectedRoute allowedRoles={['coach', 'athlete', 'tester', 'testing']}>
                 <FitAnalysisPage />
               </ProtectedRoute>
             }
           />
-          <Route 
-            path="/training-calendar/:activityId?" 
+          <Route
+            path="/training-calendar/:activityId?"
             element={
-              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+              <ProtectedRoute allowedRoles={['coach', 'athlete', 'tester', 'testing']}>
                 <FitAnalysisPage />
               </ProtectedRoute>
             }

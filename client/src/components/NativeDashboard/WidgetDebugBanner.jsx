@@ -68,6 +68,11 @@ export default function WidgetDebugBanner() {
 
   if (dismissed) return null;
   if (!isCapacitorNative()) return null;
+  // The widget pipeline is iOS-only — LaChartShared is the WidgetKit bridge
+  // and no equivalent exists on Android (no home-screen widget there yet).
+  // Show the banner only on iOS so Android doesn't display a confusing
+  // "plugin missing" error for something that's intentionally absent.
+  if (Capacitor.getPlatform() !== 'ios') return null;
 
   const palette = {
     idle:           { bg: '#EEF0F8', fg: '#5E6590', accent: '#5E6590' },

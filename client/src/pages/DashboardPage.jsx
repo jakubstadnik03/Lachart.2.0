@@ -182,97 +182,89 @@ export default function DashboardPage() {
    * Store guideline 3.1.1) and for users who already have a paid plan.
    * Persistence is local-only (localStorage) so the user gets exactly one
    * pitch and we don't need a server-side flag for it.
-   */
-  const [showWelcomePaywall, setShowWelcomePaywall] = useState(false);
-  useEffect(() => {
-    if (!isAuthenticated || !user?._id) return;
-    if (isCapacitorNative()) return;
-    if (isPremium) return; // already paying — no pitch needed
-    const flagKey = `welcomePaywall_seen_${user._id}`;
-    if (localStorage.getItem(flagKey)) return;
-    // Small delay so the dashboard renders first and the modal feels like
-    // an intentional welcome step instead of an interrupting popup.
-    const t = setTimeout(() => setShowWelcomePaywall(true), 800);
-    return () => clearTimeout(t);
-  }, [isAuthenticated, user?._id, isPremium]);
-
-  const dismissWelcomePaywall = useCallback(() => {
-    if (user?._id) {
-      localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
-    }
-    setShowWelcomePaywall(false);
-  }, [user?._id]);
-
-  /**
-   * 'What's new' announcement — shown to every logged-in user on the web,
-   * once per RELEASE_TAG. Closable via Got it / Esc / ✕ / backdrop.
-   * Mutually exclusive with WelcomePaywallModal so brand-new accounts see
-   * the paywall first; the What's New slides on their next session. iOS
-   * native build skipped (some deep-links point to web-only flows).
-   */
-  const [showWhatsNew, setShowWhatsNew] = useState(false);
-  useEffect(() => {
-    if (!isAuthenticated || !user?._id) return;
-    if (isCapacitorNative()) return;
-    if (showWelcomePaywall) return;
-    const flagKey = whatsNewSeenKey(user._id);
-    if (localStorage.getItem(flagKey)) return;
-    const t = setTimeout(() => setShowWhatsNew(true), 1200);
-    return () => clearTimeout(t);
-  }, [isAuthenticated, user?._id, showWelcomePaywall]);
-
-  const dismissWhatsNew = useCallback(() => {
-    if (user?._id) {
-      localStorage.setItem(whatsNewSeenKey(user._id), '1');
-    }
-    setShowWhatsNew(false);
-  }, [user?._id]);
-
-  /**
-   * iOS launch announcement (June 2026).
    *
-   * Two-track trigger:
-   *   1. Default idle-after-mount with 1.4 s delay — first-time-ever dashboard
-   *      mount per user (gated by localStorage[iosLaunchSeenKey]).
-   *   2. "Just logged in" — AuthProvider sets a sessionStorage flag on every
-   *      fresh login. When present we surface the modal immediately AND skip
-   *      the persistent one-shot gate so it re-appears on every login session
-   *      until the user takes action.
-   *
-   * Skipped on Capacitor native — those users obviously already have the
-   * iPhone app installed if they're seeing the dashboard. Queues AFTER
-   * WhatsNew / welcome paywall so we never stack two overlays.
+   * ─── Modal queue ──────────────────────────────────────────────────────────
+   * All login-time modals (WelcomePaywall, WhatsNew, IOSLaunch) are managed
+   * through a single queue so they can NEVER stack on top of each other.
+   * Priority: welcomePaywall → whatsNew → iosLaunch.
+   * The first eligible modal appears after MODAL_FIRST_DELAY ms. After one is
+   * dismissed, the next (if any) appears after MODAL_NEXT_DELAY ms.
    */
-  const [showIOSLaunch, setShowIOSLaunch] = useState(false);
+  const MODAL_FIRST_DELAY = 2500; // ms before the first modal appears
+  const MODAL_NEXT_DELAY  = 800;  // ms gap between consecutive modals
+
+  // Which modal is currently open: null | 'welcomePaywall' | 'whatsNew' | 'iosLaunch'
+  const [activeModal, setActiveModal] = useState(null);
+  // Ref so timer callbacks always see the latest queue without stale closure
+  const modalQueueRef = useRef([]);
+
+  // Build & schedule the queue once when the user is known.
   useEffect(() => {
     if (!isAuthenticated || !user?._id) return;
     if (isCapacitorNative()) return;
-    if (showWelcomePaywall || showWhatsNew) return;
 
+    const uid = user._id;
+    const queue = [];
+
+    // 1. Welcome paywall — free users, first time only
+    if (!isPremium && !localStorage.getItem(`welcomePaywall_seen_${uid}`)) {
+      queue.push('welcomePaywall');
+    }
+
+    // 2. What's new — web only, once per release tag
+    if (!localStorage.getItem(whatsNewSeenKey(uid))) {
+      queue.push('whatsNew');
+    }
+
+    // 3. iOS launch announcement — not native Capacitor, not already dismissed
+    //    (or "just logged in" session flag overrides the persistent dismiss)
     let justLoggedIn = false;
     try { justLoggedIn = sessionStorage.getItem('iosLaunch_justLoggedIn') === '1'; } catch {}
+    if (justLoggedIn || !localStorage.getItem(iosLaunchSeenKey(uid))) {
+      queue.push('iosLaunch');
+      if (justLoggedIn) {
+        try { sessionStorage.removeItem('iosLaunch_justLoggedIn'); } catch {}
+      }
+    }
 
-    // Persistent "user already dismissed forever" gate. Skip the gate when
-    // this is the post-login mount — we want the announcement to greet the
-    // user every time they sign back in until they explicitly act on it.
-    if (!justLoggedIn && localStorage.getItem(iosLaunchSeenKey(user._id))) return;
+    if (!queue.length) return;
+    modalQueueRef.current = queue;
 
-    const delay = justLoggedIn ? 350 : 1400;
     const t = setTimeout(() => {
-      setShowIOSLaunch(true);
-      // Consume the one-shot flag so navigating around the app inside the
-      // same session doesn't re-pop the modal.
-      try { sessionStorage.removeItem('iosLaunch_justLoggedIn'); } catch {}
-    }, delay);
+      const next = modalQueueRef.current.shift();
+      if (next) setActiveModal(next);
+    }, MODAL_FIRST_DELAY);
     return () => clearTimeout(t);
-  }, [isAuthenticated, user?._id, showWelcomePaywall, showWhatsNew]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?._id, isPremium]);
+
+  // Advance to the next queued modal after the current one is dismissed.
+  const advanceModalQueue = useCallback(() => {
+    setActiveModal(null);
+    const next = modalQueueRef.current.shift();
+    if (!next) return;
+    setTimeout(() => setActiveModal(next), MODAL_NEXT_DELAY);
+  }, []);
+
+  // Derived booleans — keep the same prop names so JSX below is unchanged.
+  const showWelcomePaywall = activeModal === 'welcomePaywall';
+  const showWhatsNew       = activeModal === 'whatsNew';
+  const showIOSLaunch      = activeModal === 'iosLaunch';
+
+  const dismissWelcomePaywall = useCallback(() => {
+    if (user?._id) localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
+    advanceModalQueue();
+  }, [user?._id, advanceModalQueue]);
+
+  const dismissWhatsNew = useCallback(() => {
+    if (user?._id) localStorage.setItem(whatsNewSeenKey(user._id), '1');
+    advanceModalQueue();
+  }, [user?._id, advanceModalQueue]);
 
   const dismissIOSLaunch = useCallback(() => {
-    if (user?._id) {
-      localStorage.setItem(iosLaunchSeenKey(user._id), '1');
-    }
-    setShowIOSLaunch(false);
-  }, [user?._id]);
+    if (user?._id) localStorage.setItem(iosLaunchSeenKey(user._id), '1');
+    advanceModalQueue();
+  }, [user?._id, advanceModalQueue]);
 
   /**
    * One-shot self-healing sync on dashboard mount.
