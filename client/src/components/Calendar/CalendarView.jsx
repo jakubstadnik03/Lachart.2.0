@@ -737,7 +737,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
-  const TARGET_VISIBLE_LAPS = 8;
+  const TARGET_VISIBLE_LAPS = 12;
   // Bar widths are STRICTLY proportional to weight (distance for swim/run,
   // duration for bike). A 2-km lap renders 4× as wide as a 500-m lap, no
   // capping. Honza's feedback (2026-05): "vždy at je to poměrově prostě"
@@ -1054,22 +1054,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
         )}
       </div>
 
-      <div className="flex gap-1">
-        {/* Y-axis */}
-        <div className="relative flex-shrink-0" style={{ width: Y_AXIS_W, height: CHART_H + X_LABEL_H }}>
-          {yTicks.map((v, i) => (
-            <span key={i} className="absolute right-1 text-[9px] text-gray-400 leading-none select-none"
-              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
-              {fmtTick(v)}
-            </span>
-          ))}
-          <span className="absolute right-1 bottom-0 text-[9px] text-gray-400 leading-none select-none">{unitLabel}</span>
-        </div>
-
-        {/* Bars — scroll horizontally when there are many laps */}
+      <div className="relative">
+        {/* Bars — full width; scroll horizontally when zoomed. The Y-axis
+            labels float on top (rendered after this block) so the bars stay
+            full-width and slide BEHIND the labels as you scroll — like Strava. */}
         <div
           ref={chartScrollRef}
-          className="flex-1 min-w-0"
+          className="w-full"
           style={{ overflowX: isZoomed ? 'auto' : 'hidden', overflowY: 'hidden' }}
           onScroll={handleChartScroll}
         >
@@ -1180,7 +1171,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                       width: '100%',
                       height: barH,
                       backgroundColor: barBg,
-                      borderRadius: '3px 3px 0 0',
+                      // Softly rounded top — moderate, not full-pill.
+                      borderRadius: '5px 5px 0 0',
                           boxShadow: isSelected ? `0 0 0 2px ${hasLactate ? '#7c3aed' : color}, 0 2px 8px ${hasLactate ? '#7c3aed' : color}60` : undefined,
                       transition: 'height 0.2s ease, opacity 0.15s ease',
                           position: 'relative', overflow: 'hidden',
@@ -1204,8 +1196,25 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             })}
             </div>{/* end flex items-end bars */}
           </div>{/* end relative elevation wrapper */}
+        </div>{/* end scroll container */}
+        {/* Y-axis labels — float above the scrolling bars (Strava-style). A
+            soft white gradient keeps them legible over the bars underneath. */}
+        <div
+          className="absolute left-0 top-0 pointer-events-none"
+          style={{
+            width: Y_AXIS_W, height: CHART_H + X_LABEL_H, zIndex: 5,
+            background: 'linear-gradient(to right, rgba(255,255,255,0.9) 55%, rgba(255,255,255,0))',
+          }}
+        >
+          {yTicks.map((v, i) => (
+            <span key={i} className="absolute left-0 text-[9px] text-gray-400 leading-none select-none"
+              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
+              {fmtTick(v)}
+            </span>
+          ))}
+          <span className="absolute left-0 text-[9px] text-gray-400 leading-none select-none" style={{ top: CHART_H + 2 }}>{unitLabel}</span>
         </div>
-      </div>
+      </div>{/* end relative wrapper */}
     </div>
   );
 }

@@ -3730,21 +3730,33 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     if (savedLapsPlain.length > 0) {
       // Build helper function for lap key matching (same as deduplication)
       // Must be defined before deduplication to use consistent key format
+      // Stable UNIQUE id for laps that lack a reliable identity. Keyed by the
+      // lap object so repeated calls on the same object return the same id.
+      const lapUid = new WeakMap();
+      let lapUidCounter = 0;
       const buildLapKeyForMatching = (lap) => {
         const startTime = lap.startTime || lap.start_date;
         if (startTime) {
           const time = new Date(startTime).getTime();
+          // Exact ms (not floored to seconds) so two laps starting in the same
+          // second never collapse into one.
           if (!Number.isNaN(time)) {
-            return `time_${Math.floor(time / 1000)}`;
+            return `time_${time}`;
           }
         }
         if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
           return `lap_${lap.lapNumber}`;
         }
-        const elapsedTime = Math.round(lap.elapsed_time || 0);
-        const distance = Math.round((lap.distance || 0) * 10) / 10;
-        const power = Math.round((lap.average_watts || 0) * 10) / 10;
-        return `fallback_t${elapsedTime}_d${distance}_p${power}`;
+        // No reliable identity (e.g. a pool swim's 10×50 m where every lap has
+        // identical distance/time/power and no per-lap timestamp). A
+        // content-based key would make all of them collapse into one during
+        // deduplication, which is exactly the "lost laps vs Strava" bug. Treat
+        // each such lap as UNIQUE so none are ever dropped.
+        if (lap && typeof lap === 'object') {
+          if (!lapUid.has(lap)) lapUid.set(lap, `uid_${lapUidCounter++}`);
+          return lapUid.get(lap);
+        }
+        return `uid_${lapUidCounter++}`;
       };
       
       // Deduplicate saved laps first to prevent duplicates using the same key format
@@ -3841,35 +3853,17 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         // Skip if already matched during merge phase
         if (matchedApiLapIndicesForMerge.has(apiIdx)) return;
         
-        // Check if this API lap matches any already merged lap using the same key logic
+        // Check if this API lap is already represented (by reliable key only).
+        // We must NOT fall back to content matching (time/distance/power) here:
+        // repeated identical intervals — e.g. a swim's 10×50 m — share those
+        // values and would be wrongly dropped as "duplicates". Key matching
+        // (exact timestamp / lapNumber / unique id) is the source of truth.
         const apiLapKey = buildLapKeyForMatching(apiLap);
-        
         if (mergedLapKeys.has(apiLapKey)) {
-          // This API lap is already represented in mergedLaps, skip it
           return;
         }
-        
-        // Also try to match by elapsed_time, distance, and power (in case keys differ slightly)
-        const alreadyMerged = mergedLaps.some(mergedLap => {
-          // If both have the same key, they're already matched
-          if (buildLapKeyForMatching(mergedLap) === apiLapKey) {
-            return true;
-          }
-          
-          // Fallback: match by elapsed_time, distance, and power (strict matching)
-          const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (mergedLap.elapsed_time || 0)) < 1;
-          const distMatch = Math.abs((apiLap.distance || 0) - (mergedLap.distance || 0)) < 0.1;
-          const powerMatch = Math.abs((apiLap.average_watts || 0) - (mergedLap.average_watts || 0)) < 1;
-          
-          // Only match if all three match (strict matching to avoid false positives)
-          return timeMatch && distMatch && powerMatch;
-        });
-        
-        if (!alreadyMerged) {
-          // Only add if it's truly a new lap
-          mergedLaps.push(apiLap);
-          mergedLapKeys.add(apiLapKey);
-        }
+        mergedLaps.push(apiLap);
+        mergedLapKeys.add(apiLapKey);
       });
       
       // Sort laps by startTime to ensure chronological order
