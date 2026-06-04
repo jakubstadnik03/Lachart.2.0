@@ -12,29 +12,27 @@ struct RunPageTotals: View {
     private var live: LiveMetrics { appState.live }
 
     var body: some View {
-        ZStack {
-            Color.lcBg.ignoresSafeArea()
-
-            VStack(spacing: LC.s6) {
-                Text("Celkové statistiky")
-                    .font(.system(size: 11, weight: .semibold))
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: LC.s4) {
+                Text("Totals")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.lcText3)
-                    .padding(.top, LC.s6)
 
-                // 2-column grid
+                // 2-column grid — 6 tiles inevitably overflow short watches,
+                // so wrap in ScrollView so users can flick to the bottom row.
                 let tiles = makeTiles()
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
-                          spacing: LC.s6) {
+                          spacing: LC.s4) {
                     ForEach(tiles, id: \.label) { tile in
                         TileView(icon: tile.icon, label: tile.label,
                                  value: tile.value, color: tile.color)
                     }
                 }
-
-                Spacer()
             }
-            .padding(.horizontal, LC.s8)
+            .padding(.horizontal, 2)
+            .padding(.bottom, LC.s4)
         }
+        .background(Color.lcBg)
     }
 
     private struct TileItem {
@@ -43,11 +41,11 @@ struct RunPageTotals: View {
 
     private func makeTiles() -> [TileItem] {[
         TileItem(icon: "arrow.up.forward",
-                 label: "Převýšení",
+                 label: "Elevation",
                  value: String(format: "+%.0f m", live.elevation),
                  color: .lcTertiary),
         TileItem(icon: "metronome",
-                 label: "Kadence",
+                 label: "Cadence",
                  value: live.cadence > 0 ? "\(live.cadence) spm" : "—",
                  color: .lcPrimaryLite),
         TileItem(icon: "thermometer.medium",
@@ -55,15 +53,15 @@ struct RunPageTotals: View {
                  value: live.coreTemp > 0 ? String(format: "%.1f°C", live.coreTemp) : "—",
                  color: .lcAccent),
         TileItem(icon: "bolt.fill",
-                 label: "Výkon",
+                 label: "Power",
                  value: live.power > 0 ? "\(live.power) W" : "—",
                  color: .lcPrimaryLite),
         TileItem(icon: "heart.fill",
-                 label: "Tep",
+                 label: "HR",
                  value: "\(live.hr) bpm",
                  color: .lcAccent),
         TileItem(icon: "flame.fill",
-                 label: "Kalorie",
+                 label: "Calories",
                  value: "\(live.calories) kcal",
                  color: .lcWarning),
     ]}

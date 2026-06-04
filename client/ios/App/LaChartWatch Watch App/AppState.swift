@@ -51,6 +51,17 @@ final class AppState: ObservableObject {
     private var bleObservers:    Set<AnyCancellable> = []
     private var hkObservers:     Set<AnyCancellable> = []
 
+    // ── Sensor sampling for sync ─────────────────────────────────────
+    // While a workout is running we snapshot CORE + Stryd values every
+    // ~5 s into these buffers. Anything denser would explode the WCSession
+    // message size (which has a 65 KB practical limit) for runs longer
+    // than ~20 minutes. The iPhone side resamples for charts.
+    private var coreBuffer:  [CoreTempSample] = []
+    private var strydBuffer: [StrydSample]    = []
+    private var sampleTask:  Task<Void, Never>? = nil
+    private var workoutStartedAt: Date? = nil
+    private var hsiPeak: Double = 0
+
     // MARK: - Init
 
     init() {
@@ -105,30 +116,128 @@ final class AppState: ObservableObject {
     func markLap() {
         workoutManager.markLap()
         live.lap += 1
-        // Append a running lap entry with current data
-        let lapEntry = LapData(
+
+        // Window for this lap = [previous lap end → now]. We use it to
+        // average BLE sensor samples that fell within the lap so the
+        // training detail page can show per-lap heat / power / cadence
+        // without re-deriving from the full time-series.
+        let lapEndT   = Double(elapsed)
+        let lapStartT = live.lapHistory.last.map { Double($0.cumulativeEnd) } ?? 0
+        let coreInLap = coreBuffer.filter { $0.t >= lapStartT && $0.t <= lapEndT }
+        let strydInLap = strydBuffer.filter { $0.t >= lapStartT && $0.t <= lapEndT }
+
+        func avg<T: BinaryFloatingPoint>(_ vs: [T]) -> Double {
+            vs.isEmpty ? 0 : Double(vs.reduce(0, +)) / Double(vs.count)
+        }
+        func avgInt(_ vs: [Int]) -> Int {
+            vs.isEmpty ? 0 : Int((vs.reduce(0, +)) / vs.count)
+        }
+
+        var lapEntry = LapData(
             number: live.lap,
             pace:   live.pace,
-            time:   live.elapsed,
+            time:   lapEndT - lapStartT,
             zoneId: live.zone
         )
+        lapEntry.cumulativeEnd = lapEndT
+        lapEntry.avgHR        = live.hr
+        lapEntry.avgPower     = avgInt(strydInLap.map { $0.power })
+        lapEntry.avgCadence   = avgInt(strydInLap.map { $0.cadence })
+        lapEntry.avgCoreTemp  = avg(coreInLap.map { $0.core })
+        lapEntry.peakHSI      = coreInLap.map { $0.hsi }.max() ?? 0
+        // distance for this lap = total distance - sum of previous laps
+        let priorDistance = live.lapHistory.reduce(0.0) { $0 + $1.distance }
+        lapEntry.distance     = max(0, live.distance - priorDistance)
+
         live.lapHistory.append(lapEntry)
         showToast("Lap \(live.lap)")
     }
 
     func endWorkout() async {
         timerTask?.cancel()
+        sampleTask?.cancel()
         paused = false
         elapsed = 0
 
-        let s = await workoutManager.endWorkout()
-        summary = s
+        // Capture one final snapshot at the moment the workout ends so the
+        // tail of the run isn't missing CORE / Stryd values.
+        captureSensorSnapshot()
 
-        if let sum = s {
+        let baseSummary = await workoutManager.endWorkout()
+
+        // Splice the captured sensor buffers + idempotency id + the
+        // user-marked laps (live.lapHistory) onto the summary that
+        // WorkoutManager produced. We prefer `live.lapHistory` over
+        // `base.laps` because:
+        //   • lapHistory entries carry per-lap sensor averages (CORE,
+        //     Stryd power, cadence, peak HSI, lap distance) computed
+        //     by markLap() — WorkoutManager only sees pace + zone.
+        //   • lapHistory honours the user's double-tap markers; the
+        //     base laps are HK's auto-splits which may not match.
+        // If the user never tapped a lap, fall back to WorkoutManager's
+        // auto-laps so the summary always has at least the rough split.
+        let mappedLaps: [LapSummary] = {
+            if !live.lapHistory.isEmpty {
+                return live.lapHistory.map { lap in
+                    LapSummary(
+                        number:      lap.number,
+                        pace:        lap.pace,
+                        time:        lap.time,
+                        zoneId:      lap.zoneId,
+                        avgHR:       lap.avgHR,
+                        avgPower:    lap.avgPower,
+                        avgCadence:  lap.avgCadence,
+                        avgCoreTemp: lap.avgCoreTemp,
+                        peakHSI:     lap.peakHSI,
+                        distance:    lap.distance
+                    )
+                }
+            }
+            return baseSummary?.laps ?? []
+        }()
+
+        let enriched: WorkoutSummary? = baseSummary.map { base in
+            WorkoutSummary(
+                title:            base.title,
+                sport:            base.sport,
+                date:             base.date,
+                distance:         base.distance,
+                duration:         base.duration,
+                avgPace:          base.avgPace,
+                avgHR:            base.avgHR,
+                avgPower:         base.avgPower,
+                maxHR:            base.maxHR,
+                calories:         base.calories,
+                elevation:        base.elevation,
+                zoneDistribution: base.zoneDistribution,
+                laps:             mappedLaps,
+                lactateReadings:  base.lactateReadings,
+                aiInsight:        base.aiInsight,
+                watchActivityId:  watchActivityId(for: workoutStartedAt ?? Date()),
+                coreTempSeries:   coreBuffer,
+                strydSeries:      strydBuffer,
+                hsiPeak:          hsiPeak
+            )
+        }
+        summary = enriched
+
+        if let sum = enriched {
             await connectManager.sendWorkoutSummary(sum)
         }
 
+        // Reset buffers so the next session starts clean.
+        workoutStartedAt = nil
+        coreBuffer.removeAll(keepingCapacity: true)
+        strydBuffer.removeAll(keepingCapacity: true)
+        hsiPeak = 0
+
         screen = .summary
+    }
+
+    /// Deterministic id derived from the workout start time. Stable across
+    /// WCSession retries, so the iPhone-side upsert collapses dupes.
+    private func watchActivityId(for start: Date) -> String {
+        "watch-\(Int(start.timeIntervalSince1970))"
     }
 
     func saveSummary() {
@@ -167,6 +276,52 @@ final class AppState: ObservableObject {
                     self.updateZone()
                 }
             }
+        }
+        // Begin BLE sampling alongside the elapsed timer. Stored start
+        // time anchors every sample's `t` (seconds since workout begin).
+        workoutStartedAt = Date()
+        coreBuffer.removeAll(keepingCapacity: true)
+        strydBuffer.removeAll(keepingCapacity: true)
+        hsiPeak = 0
+        startSensorSampling()
+    }
+
+    /// Push a CORE + Stryd snapshot into the sync buffers every 5 s while
+    /// the workout is running. Cancelled on pause/end so we don't sample
+    /// stale BLE values.
+    private func startSensorSampling() {
+        sampleTask?.cancel()
+        sampleTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { break }
+                await MainActor.run { self.captureSensorSnapshot() }
+            }
+        }
+    }
+
+    private func captureSensorSnapshot() {
+        guard let started = workoutStartedAt else { return }
+        let t = Date().timeIntervalSince(started)
+
+        if bleManager.coreTemp > 0 {
+            coreBuffer.append(CoreTempSample(
+                t: t,
+                core: bleManager.coreTemp,
+                skin: bleManager.skinTemp,
+                hsi:  bleManager.hsi
+            ))
+            if bleManager.hsi > hsiPeak { hsiPeak = bleManager.hsi }
+        }
+        if bleManager.strydPower > 0 {
+            strydBuffer.append(StrydSample(
+                t:       t,
+                power:   bleManager.strydPower,
+                cadence: bleManager.cadence,
+                gct:     bleManager.groundContact,
+                vosc:    bleManager.vertOscillation,
+                lss:     bleManager.legSpring
+            ))
         }
     }
 
@@ -240,6 +395,26 @@ final class AppState: ObservableObject {
         bleManager.$hrConnected
             .receive(on: RunLoop.main)
             .sink { [weak self] v in self?.connected["hr"] = v }
+            .store(in: &bleObservers)
+
+        // Live previews so the Senzory screen shows values before a workout starts
+        // (during a workout syncBLEtoLive() refreshes these every tick as well).
+        bleManager.$strydPower
+            .receive(on: RunLoop.main)
+            .sink { [weak self] v in self?.live.power = v }
+            .store(in: &bleObservers)
+
+        bleManager.$coreTemp
+            .receive(on: RunLoop.main)
+            .sink { [weak self] v in self?.live.coreTemp = v }
+            .store(in: &bleObservers)
+
+        bleManager.$bleHR
+            .receive(on: RunLoop.main)
+            .sink { [weak self] v in
+                guard let self else { return }
+                if self.bleManager.hrConnected { self.live.hr = v }
+            }
             .store(in: &bleObservers)
     }
 

@@ -33,11 +33,11 @@ struct LockView: View {
                         )
                     )
 
-                Text("Zamknuto")
+                Text("Locked")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.lcText)
 
-                Text("Otočte Digital Crown\npro odemknutí")
+                Text("Turn Digital Crown\nto unlock")
                     .font(.system(size: 11))
                     .foregroundColor(.lcText3)
                     .multilineTextAlignment(.center)
@@ -58,7 +58,7 @@ struct LockView: View {
 
                 Spacer()
 
-                Text("Kolo pokračuje")
+                Text("Lap continues")
                     .font(.system(size: 10))
                     .foregroundColor(.lcText3)
                     .padding(.bottom, LC.s12)

@@ -33,6 +33,8 @@ struct ContentView: View {
                 .animation(.spring(), value: toast)
             }
         }
+        // Modern rounded SF font across the whole app
+        .fontDesign(.rounded)
         // Dim in always-on mode
         .opacity(isLuminanceReduced ? 0.35 : 1.0)
         .animation(.easeInOut(duration: 0.3), value: isLuminanceReduced)

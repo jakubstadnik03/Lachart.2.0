@@ -13,12 +13,12 @@ struct RunPageStructured: View {
 
     // Hardcoded sample steps — in production loaded from App Group / WCSession
     private let steps: [StructuredStep] = [
-        StructuredStep(kind: .warmup,  label: "Rozehřátí",   target: "Z1–Z2",  duration: 600,  zone: 2),
-        StructuredStep(kind: .work,    label: "4' Práh",     target: "4:15 /km", duration: 240, zone: 4),
-        StructuredStep(kind: .rest,    label: "2' Klid",     target: "Z1",      duration: 120, zone: 1),
-        StructuredStep(kind: .work,    label: "4' Práh",     target: "4:15 /km", duration: 240, zone: 4),
-        StructuredStep(kind: .rest,    label: "2' Klid",     target: "Z1",      duration: 120, zone: 1),
-        StructuredStep(kind: .cooldown, label: "Vyklusání",  target: "Z1",      duration: 600, zone: 1),
+        StructuredStep(kind: .warmup,  label: "Warm-up",   target: "Z1–Z2",  duration: 600,  zone: 2),
+        StructuredStep(kind: .work,    label: "4' Threshold",     target: "4:15 /km", duration: 240, zone: 4),
+        StructuredStep(kind: .rest,    label: "2' Easy",     target: "Z1",      duration: 120, zone: 1),
+        StructuredStep(kind: .work,    label: "4' Threshold",     target: "4:15 /km", duration: 240, zone: 4),
+        StructuredStep(kind: .rest,    label: "2' Easy",     target: "Z1",      duration: 120, zone: 1),
+        StructuredStep(kind: .cooldown, label: "Cool-down",  target: "Z1",      duration: 600, zone: 1),
     ]
 
     private var currentStep: StructuredStep {
@@ -42,10 +42,8 @@ struct RunPageStructured: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.lcBg.ignoresSafeArea()
-
-            VStack(spacing: LC.s8) {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: LC.s4) {
                 // Ring timer
                 ZStack {
                     RingTimerView(
@@ -53,62 +51,68 @@ struct RunPageStructured: View {
                         remaining: stepRemaining,
                         color: Color.lcZone(currentStep.zone)
                     )
-                    .frame(width: 90, height: 90)
+                    .frame(width: 78, height: 78)
 
-                    VStack(spacing: 2) {
+                    VStack(spacing: 1) {
                         Text(stepRemaining.mmss)
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundColor(.lcText)
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                         Text(currentStep.label)
-                            .font(.system(size: 10))
+                            .font(.system(size: 9))
                             .foregroundColor(.lcText2)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.top, LC.s8)
 
                 // Target + zone badge
-                HStack(spacing: LC.s8) {
+                HStack(spacing: LC.s6) {
                     Text(currentStep.target)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundColor(Color.lcZone(currentStep.zone))
 
                     Text("Z\(currentStep.zone)")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Color.lcZone(currentStep.zone))
-                        .padding(.horizontal, LC.s6)
-                        .padding(.vertical, LC.s2)
+                        .padding(.horizontal, LC.s4)
+                        .padding(.vertical, 1)
                         .background(Color.lcZone(currentStep.zone).opacity(0.2))
                         .cornerRadius(LC.r6)
                 }
 
                 // Current metric (pace)
-                MetricView(label: "Tempo", value: live.pace.paceString, unit: "/km",
-                           valueColor: .lcSecondary, size: 28)
+                MetricView(label: "Pace", value: live.pace.paceString, unit: "/km",
+                           valueColor: .lcSecondary, size: 22)
 
                 // Next step
                 if let next = nextStep {
-                    HStack(spacing: LC.s6) {
-                        Text("Dále:")
-                            .font(.system(size: 10))
+                    HStack(spacing: LC.s4) {
+                        Text("Next:")
+                            .font(.system(size: 9))
                             .foregroundColor(.lcText3)
                         Text(next.label)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(Color.lcZone(next.zone))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         Text(next.target)
-                            .font(.system(size: 10))
+                            .font(.system(size: 9))
                             .foregroundColor(.lcText3)
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, LC.s8)
-                    .padding(.vertical, LC.s4)
+                    .padding(.horizontal, LC.s6)
+                    .padding(.vertical, LC.s2)
                     .background(Color.lcCard.opacity(0.7))
-                    .cornerRadius(LC.r8)
+                    .cornerRadius(LC.r6)
                 }
-
-                Spacer()
             }
-            .padding(.horizontal, LC.s8)
+            .padding(.horizontal, 2)
+            .padding(.bottom, LC.s4)
         }
+        .background(Color.lcBg)
     }
 }

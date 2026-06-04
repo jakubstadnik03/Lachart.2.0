@@ -172,8 +172,24 @@ final class WorkoutManager: NSObject, ObservableObject {
             let avgPaceV: TimeInterval = distance > 10
                 ? dur / (distance / 1000) : 0
 
+            // Sport label maps from HKWorkoutActivityType so the iPhone /
+            // backend can categorise the saved training correctly. Default
+            // to "run" because this Watch app is run-first.
+            let sport: String = {
+                switch workoutType {
+                case .running:      return "run"
+                case .cycling:      return "bike"
+                case .swimming:     return "swim"
+                case .walking, .hiking: return "walk"
+                case .traditionalStrengthTraining,
+                     .functionalStrengthTraining: return "strength"
+                default:            return "other"
+                }
+            }()
+
             let summary = WorkoutSummary(
                 title:            "Run \(DateFormatter.localizedString(from: start, dateStyle: .short, timeStyle: .none))",
+                sport:            sport,
                 date:             start,
                 distance:         distance,
                 duration:         dur,
@@ -186,7 +202,16 @@ final class WorkoutManager: NSObject, ObservableObject {
                 zoneDistribution: zoneFracs,
                 laps:             laps.map { LapSummary(number: $0.number, pace: $0.pace, time: $0.time, zoneId: $0.zoneId) },
                 lactateReadings:  [],
-                aiInsight:        aiInsightText(distance: distance, avgHR: avgHR, dur: dur)
+                aiInsight:        aiInsightText(distance: distance, avgHR: avgHR, dur: dur),
+                // These three are placeholders — AppState.endWorkout()
+                // overwrites them with the real BLE buffers + idempotency
+                // key it accumulated during the run. Keeping them on the
+                // struct here means WorkoutManager doesn't need to know
+                // about BLE / WCSession.
+                watchActivityId:  "watch-\(Int(start.timeIntervalSince1970))",
+                coreTempSeries:   [],
+                strydSeries:      [],
+                hsiPeak:          0
             )
 
             isRunning = false
@@ -228,7 +253,7 @@ final class WorkoutManager: NSObject, ObservableObject {
     private func aiInsightText(distance: Double, avgHR: Int, dur: TimeInterval) -> String {
         let km = distance / 1000
         let mins = Int(dur / 60)
-        return "Dobrý výkon! Uběhl/a jsi \(String(format: "%.2f", km)) km za \(mins) minut s průměrnou tepovou frekvencí \(avgHR) BPM. Zůstaň v Z2 pro optimální rozvoj aerobní kapacity."
+        return "Good effort! You ran \(String(format: "%.2f", km)) km in \(mins) min at an average heart rate of \(avgHR) BPM. Stay in Z2 for optimal aerobic development."
     }
 }
 

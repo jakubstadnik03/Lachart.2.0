@@ -45,7 +45,10 @@ const trainingSchema = new mongoose.Schema({
     },
     sport: {
         type: String,
-        enum: ['run', 'bike', 'swim'],
+        // Widened from run|bike|swim to accommodate the Apple Watch
+        // workout types — without this Mongoose rejects "walk", "strength",
+        // etc. that the Watch sends, dropping otherwise valid sessions.
+        enum: ['run', 'bike', 'swim', 'walk', 'strength', 'mtb', 'other'],
         required: true
     },
     type: String,
@@ -83,7 +86,75 @@ const trainingSchema = new mongoose.Schema({
     sourceStravaActivityId: {
         type: String,
         default: null
-    }
+    },
+
+    // ── Apple Watch sync ──────────────────────────────────────────────
+    // Idempotency key for /training/from-watch. Re-receiving the same
+    // WCSession transfer (rare but happens when iPhone wakes from sleep
+    // mid-transfer) updates instead of duplicating.
+    sourceWatchActivityId: {
+        type: String,
+        default: null,
+        index: true,
+    },
+
+    // Watch-side rollups so the training list / dashboard can show the
+    // same numbers without recomputing from `results`. All optional.
+    avgHR:     { type: Number, default: 0 },
+    maxHR:     { type: Number, default: 0 },
+    avgPower:  { type: Number, default: 0 },
+    avgPace:   { type: Number, default: 0 },   // seconds per km
+    calories:  { type: Number, default: 0 },
+    elevation: { type: Number, default: 0 },   // metres climbed
+    distance:  { type: Number, default: 0 },   // metres
+
+    // Apple Watch zone time-share (Z1..Z5, fractions 0..1)
+    zoneDistribution: {
+        type: Map,
+        of: Number,
+        default: undefined,
+    },
+
+    // Per-lap summary captured by the watch — kept separate from
+    // `results` (which is the rich interval data with W/HR/lactate).
+    // The watch fills in sensor averages when the matching BLE pod was
+    // paired at the time of the lap; otherwise these fields stay 0.
+    laps: [{
+        number:      Number,
+        pace:        Number,   // seconds per km
+        time:        Number,   // seconds (this lap)
+        zoneId:      Number,
+        avgHR:       Number,   // bpm averaged over lap
+        avgPower:    Number,   // W — Stryd
+        avgCadence:  Number,   // spm — Stryd
+        avgCoreTemp: Number,   // °C — CORE pod
+        peakHSI:     Number,   // 0..10
+        distance:    Number,   // metres covered in this lap
+    }],
+
+    // ── Advanced sensor time-series (Apple Watch BLE: CORE + Stryd) ───
+    // Sampled ~every 5 s during the run. Each point is `t` seconds since
+    // workout start. Empty array when the matching sensor isn't paired.
+    coreTempSeries: [{
+        t:    Number,
+        core: Number,   // °C
+        skin: Number,   // °C
+        hsi:  Number,   // Heat Strain Index 0..10
+    }],
+    strydSeries: [{
+        t:       Number,
+        power:   Number,   // W
+        cadence: Number,   // spm
+        gct:     Number,   // ground contact (ms)
+        vosc:    Number,   // vertical oscillation (cm)
+        lss:     Number,   // leg spring stiffness (kN/m)
+    }],
+    hsiPeak: { type: Number, default: 0 },
+
+    // Optional AI-generated insight text — kept so the watch's natural
+    // language summary survives the round-trip and renders on the detail
+    // page even if the user never opens it on the watch.
+    aiInsight: { type: String, default: null },
 }, {
     timestamps: true,
 });

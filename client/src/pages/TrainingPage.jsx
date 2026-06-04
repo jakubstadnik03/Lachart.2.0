@@ -849,6 +849,11 @@ export default function TrainingPage() {
         user={user}
         trainings={trainings}
         athleteId={selectedAthleteId || user?._id}
+        // Re-fetch the trainings list after a save. Without this the
+        // user's just-saved edits stay only in the form's local state —
+        // closing & re-opening the same activity would re-derive results
+        // from the bare Strava laps and lose what they typed.
+        onTrainingsChanged={() => loadTrainings(selectedAthleteId || user?._id)}
       />
     );
   }

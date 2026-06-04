@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { syncWidgetFromApi } from '../../utils/widgetCache';
 import NotifIcon from '../Notifications/NotifIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 import { Skeleton } from '../common/Skeleton';
@@ -963,6 +964,19 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       capacitorHandle?.remove?.();
     };
   }, [user?._id, user?.strava?.autoSync, user?.strava?.accessToken]);
+
+  // Home-screen widget insurance: push the form/fitness numbers to the iOS
+  // App Group cache on app launch and after every Strava sync — independent of
+  // whether the user ever opens the Home/dashboard tab (which writes the full
+  // payload). Without this the widget can sit empty forever if Home is unused.
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return undefined;
+    const targetId = effectiveAthleteId || user._id;
+    syncWidgetFromApi(targetId);
+    const onSync = () => syncWidgetFromApi(targetId);
+    window.addEventListener('stravaSyncComplete', onSync);
+    return () => window.removeEventListener('stravaSyncComplete', onSync);
+  }, [isAuthenticated, user?._id, effectiveAthleteId]);
 
   // Create modal portal root as a sibling of the NativeLayout container so it
   // sits in the same stacking context as body and above the bottom tab bar.

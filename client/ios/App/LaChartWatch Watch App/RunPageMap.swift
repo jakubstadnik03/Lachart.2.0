@@ -165,7 +165,7 @@ struct MapPlaceholderGrid: View {
             Image(systemName: "location.slash")
                 .font(.system(size: 20))
                 .foregroundColor(.lcText3)
-            Text("Čekám na GPS")
+            Text("Waiting for GPS")
                 .font(.system(size: 11))
                 .foregroundColor(.lcText3)
         }

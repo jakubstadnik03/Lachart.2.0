@@ -30,7 +30,6 @@ import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
-import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
@@ -2216,7 +2215,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.29 }}
-          className="lg:col-span-5 md:col-span-2"
+          className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
           {isPremium ? (
             <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
@@ -2229,28 +2228,11 @@ export default function DashboardPage() {
           )}
         </motion.div>
 
-        {/* LT2 Trend Sparkline + Zone Distribution — side by side on large screens */}
+        {/* Zone Distribution — sits next to Intensity distribution */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.32 }}
-          className="lg:col-span-3 md:col-span-2 flex flex-col"
-        >
-          {isPremium ? (
-            <LT2TrendSparkline tests={tests} sport={selectedSport} />
-          ) : (
-            <PremiumLockedCard
-              title="LT2 Trend"
-              description="Track your lactate threshold progression across tests."
-              onUpgrade={() => gate('LT2 Trend', 'pro')}
-            />
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.34 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col"
         >
           {isPremium ? (

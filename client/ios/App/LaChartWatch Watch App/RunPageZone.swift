@@ -17,8 +17,42 @@ struct RunPageZone: View {
     }
 
     var body: some View {
-        ZStack {
-            // Full zone-colour radial background
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: LC.s4) {
+                // Zone number badge
+                Text("Z\(zone.id)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(zone.color)
+                    .padding(.horizontal, LC.s6)
+                    .padding(.vertical, 1)
+                    .background(zone.color.opacity(0.2))
+                    .cornerRadius(LC.r6)
+
+                // Zone Czech name — scales aggressively (was a hard 92 pt)
+                Text(zone.name)
+                    .font(.system(size: 38, weight: .black, design: .rounded))
+                    .foregroundColor(.lcText)
+                    .minimumScaleFactor(0.3)
+                    .lineLimit(1)
+
+                // Lactate range
+                Text(zone.lactateLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(zone.color.opacity(0.9))
+
+                // Zone scale bar
+                ZoneScaleView(activeZone: live.zone)
+                    .padding(.horizontal, LC.s8)
+                    .padding(.vertical, LC.s4)
+
+                // Primary metric (pace or power depending on zoneBasis)
+                primaryMetric
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 2)
+            .padding(.bottom, LC.s4)
+        }
+        .background(
             RadialGradient(
                 colors: [zone.color.opacity(0.55), Color.lcBg],
                 center: .center,
@@ -26,55 +60,20 @@ struct RunPageZone: View {
                 endRadius: 105
             )
             .ignoresSafeArea()
-
-            VStack(spacing: LC.s4) {
-                // Zone number badge
-                Text("Z\(zone.id)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(zone.color)
-                    .padding(.horizontal, LC.s8)
-                    .padding(.vertical, LC.s2)
-                    .background(zone.color.opacity(0.2))
-                    .cornerRadius(LC.r8)
-                    .padding(.top, LC.s8)
-
-                // Zone Czech name — 92pt
-                Text(zone.nameCZ)
-                    .font(.system(size: LC.zoneNameSize, weight: .black, design: .rounded))
-                    .foregroundColor(.lcText)
-                    .minimumScaleFactor(0.4)
-                    .lineLimit(1)
-
-                // Lactate range
-                Text(zone.lactateLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(zone.color.opacity(0.9))
-
-                // Zone scale bar
-                ZoneScaleView(activeZone: live.zone)
-                    .padding(.horizontal, LC.s12)
-                    .padding(.vertical, LC.s6)
-
-                // Primary metric (pace or power depending on zoneBasis)
-                primaryMetric
-
-                Spacer()
-            }
-            .padding(.horizontal, LC.s8)
-        }
+        )
     }
 
     @ViewBuilder
     private var primaryMetric: some View {
         switch appState.zoneBasis {
         case .power:
-            MetricView(label: "Výkon", value: "\(live.power)", unit: "W",
+            MetricView(label: "Power", value: "\(live.power)", unit: "W",
                        valueColor: .lcPrimaryLite, size: 34)
         case .hr:
-            MetricView(label: "Tep", value: "\(live.hr)", unit: "bpm",
+            MetricView(label: "HR", value: "\(live.hr)", unit: "bpm",
                        valueColor: .lcAccent, size: 34)
         case .pace, .lactate:
-            MetricView(label: "Tempo", value: live.pace.paceString, unit: "/km",
+            MetricView(label: "Pace", value: live.pace.paceString, unit: "/km",
                        valueColor: .lcSecondary, size: 34)
         }
     }

@@ -365,6 +365,48 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
     };
   }, [athleteId, sportMode]);
 
+  // Real time-in-intensity histograms (second-by-second streams) per window.
+  // Replaces the per-activity-average KDE so the curve reflects how long you
+  // actually spent at each power / pace. Falls back to the KDE while loading or
+  // when no stream data exists for a window.
+  const [streamHist, setStreamHist] = useState({ token: null, windows: [] });
+  const histToken = `${presetId}|${sportMode}`;
+  useEffect(() => {
+    if (!athleteId) {
+      setStreamHist({ token: null, windows: [] });
+      return undefined;
+    }
+    let cancelled = false;
+    const sportParam = sportMode === 'bike' ? 'cycling' : 'running';
+    const dayMs = 86400000;
+    const nowMs = Date.now();
+    (async () => {
+      try {
+        const windows = await Promise.all(
+          activePreset.windows.map(async (win) => {
+            const startDate = new Date(nowMs - win.daysStart * dayMs).toISOString();
+            const endDate = new Date(nowMs - win.daysEnd * dayMs).toISOString();
+            const { data } = await api.get('/fit/intensity-histogram', {
+              params: { startDate, endDate, sport: sportParam, athleteId },
+            });
+            const map = new Map();
+            (data?.bins || []).forEach((b) => {
+              if (b && Number.isFinite(b.w)) map.set(Math.round(b.w * 10), b.seconds || 0);
+            });
+            return { key: win.key, totalSec: data?.totalSec || 0, map };
+          })
+        );
+        if (!cancelled) setStreamHist({ token: histToken, windows });
+      } catch {
+        if (!cancelled) setStreamHist({ token: histToken, windows: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteId, presetId, sportMode, activePreset]);
+
   const { chartData, meta, seriesKeys, minW, maxW, yMax, hasChart } = useMemo(() => {
     const now = new Date();
     const filteredActs = filterIntensityActivities(activities, sportMode);
@@ -441,13 +483,39 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
       }
     }
 
+    // Real stream histograms for the current preset+sport (null until loaded).
+    const histWindows = streamHist.token === histToken ? streamHist.windows : null;
+    const gridBinW = sportMode === 'bike' ? BIN_POWER : BIN_PACE;
+    const gridCenters = [];
+    for (let i = 0; ; i += 1) {
+      const c = minXCalc + i * gridBinW + gridBinW / 2;
+      if (c > maxXCalc) break;
+      gridCenters.push(c);
+    }
+
     const periodStats = windows.map((win, idx) => {
       const inP = filteredActs.filter((a) => {
         const d = activityDate(a);
         return d && inWindow(d, now, win.daysStart, win.daysEnd);
       });
       const windowDays = win.daysStart - win.daysEnd;
-      const { rows, totalSec, count } = buildPeriodHistogram(inP, minXCalc, maxXCalc, sportMode);
+
+      // Prefer the real time-in-intensity histogram; fall back to the KDE of
+      // per-activity averages while the stream fetch is in flight or empty.
+      const hw = histWindows?.find((h) => h.key === win.key);
+      let rows, totalSec, count;
+      if (hw && hw.totalSec > 0) {
+        rows = gridCenters.map((w) => ({
+          w,
+          pctRaw: (hw.map.get(Math.round(w * 10)) || 0) / hw.totalSec * 100,
+        }));
+        // Keep the "h / wk" label based on real activity duration, not just
+        // the seconds that carried a power/pace sample.
+        totalSec = inP.reduce((s, a) => s + (parseTotalSeconds(a) || 0), 0);
+        count = inP.length;
+      } else {
+        ({ rows, totalSec, count } = buildPeriodHistogram(inP, minXCalc, maxXCalc, sportMode));
+      }
       const smoothed = smoothSeries(rows);
       const style = CHART_SERIES_STYLES[idx] || CHART_SERIES_STYLES[0];
       return {
@@ -493,7 +561,7 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
       yMax: yMaxCalc,
       hasChart: hasChartCalc,
     };
-  }, [activities, ltProfile.lt1, ltProfile.lt2, activePreset, sportMode]);
+  }, [activities, ltProfile.lt1, ltProfile.lt2, activePreset, sportMode, streamHist, histToken]);
 
   const xAxisLabel = sportMode === 'bike' ? 'Power (W)' : 'Pace (min/km), slow to fast';
   const noLtHint =
@@ -523,16 +591,17 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
           <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-gray-500">
             {sportMode === 'bike' ? (
               <>
-                Share of time at each power level (cycling with a power meter), three periods. One value per activity:
-                Strava <span className="font-medium text-gray-700">weighted average power</span> when synced, otherwise
-                average power (not second-by-second streams). Dashed lines:{' '}
+                Share of time at each power level (cycling with a power meter), three periods. Computed from{' '}
+                <span className="font-medium text-gray-700">second-by-second power streams</span> (FIT + Strava), so the
+                curve shows how long you actually spent at each wattage. Dashed lines:{' '}
                 <span className="font-medium text-[#4BA87D]">LT1</span> and{' '}
                 <span className="font-medium text-[#E05347]">LT2</span> (watts from profile).
               </>
             ) : (
               <>
-                Share of time at each pace (running / walk / hike), three periods. One value per activity from speed or
-                distance/moving time. Dashed lines use the exact LT1 / LT2 values from this athlete profile:{' '}
+                Share of time at each pace (running / walk / hike), three periods. Computed from{' '}
+                <span className="font-medium text-gray-700">second-by-second pace streams</span> (FIT + Strava). Dashed
+                lines use the exact LT1 / LT2 values from this athlete profile:{' '}
                 <span className="font-medium text-[#4BA87D]">LT1</span> and{' '}
                 <span className="font-medium text-[#E05347]">LT2</span> (seconds per km).
               </>

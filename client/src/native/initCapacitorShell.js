@@ -8,6 +8,17 @@ let backListenerHandle;
 export async function initCapacitorShell() {
   if (!Capacitor.isNativePlatform()) return;
 
+  // ── Apple Watch sync ────────────────────────────────────────────────
+  // Wire the LaChart Watch app → iPhone WebView bridge so workouts
+  // recorded on the watch flow into the user's training log automatically.
+  // No-op on Android (no Watch counterpart).
+  try {
+    const { initWatchWorkoutSync } = await import('../utils/watchWorkoutSync');
+    await initWatchWorkoutSync();
+  } catch (err) {
+    console.warn('[Init] watch sync setup failed:', err?.message || err);
+  }
+
   try {
     const { SplashScreen } = await import('@capacitor/splash-screen');
     await SplashScreen.hide({ fadeOutDuration: 200 });

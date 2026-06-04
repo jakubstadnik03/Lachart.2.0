@@ -206,6 +206,10 @@ router.get('/trainings/with-lactate', verifyToken, routeCacheMiddleware, fitUplo
  */
 router.get('/trainings/monthly-analysis', verifyToken, routeCacheMiddleware, fitUploadController.analyzeTrainingsByMonth);
 
+// Real time-in-power/pace histogram for an exact date range, from second-by-second
+// streams (FIT records + Strava streams). Powers the dashboard Intensity Distribution.
+router.get('/intensity-histogram', verifyToken, routeCacheMiddleware, fitUploadController.getIntensityHistogram);
+
 /**
  * @swagger
  * /api/fit/power-metrics:

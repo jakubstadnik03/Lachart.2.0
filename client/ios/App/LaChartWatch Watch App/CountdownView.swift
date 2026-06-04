@@ -32,7 +32,7 @@ struct CountdownView: View {
                     .shadow(color: .white.opacity(0.3), radius: 20)
 
                 if count == 0 {
-                    Text("JDEME!")
+                    Text("GO!")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
                         .opacity(opacity)

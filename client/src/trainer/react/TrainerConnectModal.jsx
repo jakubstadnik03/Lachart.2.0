@@ -52,7 +52,7 @@ export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainer
 
   // Detect platform once
   const isNative = isNativePlatform();
-  const isBluetoothAvailable = isNative || hasWebBluetooth();
+  const isBluetoothAvailable = isNative || hasWebBluetooth() || (typeof window !== 'undefined' && window.__USE_COMPANION__); // __TEMP_SCREENSHOT__
 
   // Auto-close only on first connect (not when already in ERG — user may tap "Set ERG").
   const didAutoCloseRef = React.useRef(false);

@@ -37,6 +37,12 @@ function isCapacitorNative(): boolean {
 export function createTrainerClient(options: TrainerClientOptions = {}): TrainerAdapter {
   const { preferred = 'auto', companionUrl, antBridgeUrl } = options;
 
+  // __TEMP_SCREENSHOT__ force companion transport for headless screenshot capture
+  if (typeof window !== 'undefined' && (window as any).__USE_COMPANION__) {
+    logger.info('Using Companion adapter (forced via __USE_COMPANION__)');
+    return new CompanionAdapter(companionUrl);
+  }
+
   logger.info('Creating trainer client', { preferred, hasWebBluetooth: hasWebBluetooth(), isNative: isCapacitorNative() });
 
   // On Capacitor native (iOS/Android), use the native BLE adapter

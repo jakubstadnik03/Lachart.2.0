@@ -32,10 +32,10 @@ struct WorkoutType: Identifiable, Equatable {
     let isStructured: Bool
 
     static let all: [WorkoutType] = [
-        WorkoutType(id: "outdoor",    name: "Outdoor Run",  sub: "GPS · Venku",      icon: "figure.run",          hasGPS: true,  isStructured: false),
-        WorkoutType(id: "indoor",     name: "Indoor Run",   sub: "Běžecký pás",      icon: "figure.run.treadmill", hasGPS: false, isStructured: false),
-        WorkoutType(id: "track",      name: "Track Run",    sub: "Tartanová dráha",  icon: "oval",                hasGPS: true,  isStructured: false),
-        WorkoutType(id: "intervals",  name: "Intervaly",    sub: "Strukturovaný",    icon: "waveform.path",       hasGPS: true,  isStructured: true),
+        WorkoutType(id: "outdoor",    name: "Outdoor Run",  sub: "GPS · Outdoor",      icon: "figure.run",          hasGPS: true,  isStructured: false),
+        WorkoutType(id: "indoor",     name: "Indoor Run",   sub: "Treadmill",      icon: "figure.run.treadmill", hasGPS: false, isStructured: false),
+        WorkoutType(id: "track",      name: "Track Run",    sub: "Track",  icon: "oval",                hasGPS: true,  isStructured: false),
+        WorkoutType(id: "intervals",  name: "Intervals",    sub: "Structured",    icon: "waveform.path",       hasGPS: true,  isStructured: true),
     ]
 }
 
@@ -74,6 +74,20 @@ struct LapData: Identifiable {
     let pace:   TimeInterval   // sec/km
     let time:   TimeInterval   // elapsed lap time seconds
     let zoneId: Int
+
+    // Averages captured by AppState.markLap() over the BLE samples that
+    // fell within this lap's time window. Zero when the matching sensor
+    // wasn't paired during the lap.
+    var avgHR:        Int    = 0
+    var avgPower:     Int    = 0      // Stryd watts
+    var avgCadence:   Int    = 0      // Stryd spm
+    var avgCoreTemp:  Double = 0      // °C
+    var peakHSI:      Double = 0
+    var distance:     Double = 0      // metres (lap segment)
+
+    /// Absolute time of the lap end (seconds since workout start).
+    /// Used internally by AppState to window BLE samples for the next lap.
+    var cumulativeEnd: TimeInterval = 0
 }
 
 // MARK: - Live Metrics
@@ -113,6 +127,7 @@ struct LiveMetrics {
 
 struct WorkoutSummary: Codable {
     let title:            String
+    let sport:            String          // run | bike | swim | walk | strength | mtb | other
     let date:             Date
     let distance:         Double          // metres
     let duration:         TimeInterval
@@ -126,6 +141,33 @@ struct WorkoutSummary: Codable {
     let laps:             [LapSummary]
     let lactateReadings:  [LactateReading]
     let aiInsight:        String?
+
+    /// Idempotency key — generated from session start timestamp so
+    /// re-sending the same workout via WCSession produces the same id.
+    let watchActivityId:  String
+
+    /// BLE sensor time-series, sampled ~every 5 s during the workout.
+    /// Empty arrays when the matching sensor isn't paired (e.g. user
+    /// runs without CORE or without Stryd).
+    let coreTempSeries:   [CoreTempSample]
+    let strydSeries:      [StrydSample]
+    let hsiPeak:          Double
+}
+
+struct CoreTempSample: Codable {
+    let t:    TimeInterval   // seconds since workout start
+    let core: Double         // °C
+    let skin: Double         // °C
+    let hsi:  Double         // Heat Strain Index 0..10
+}
+
+struct StrydSample: Codable {
+    let t:       TimeInterval
+    let power:   Int         // W
+    let cadence: Int         // spm
+    let gct:     Int         // ground contact (ms)
+    let vosc:    Double      // vertical oscillation (cm)
+    let lss:     Double      // leg spring stiffness (kN/m)
 }
 
 struct LapSummary: Codable {
@@ -133,6 +175,17 @@ struct LapSummary: Codable {
     let pace:   TimeInterval
     let time:   TimeInterval
     let zoneId: Int
+
+    // Per-lap sensor averages — let the iPhone-side training detail
+    // page show "lap 3 ran at 285 W avg / 178 spm / 37.4 °C core" without
+    // needing to scrub the time-series. Zero when the sensor wasn't
+    // paired during this lap.
+    var avgHR:       Int    = 0
+    var avgPower:    Int    = 0
+    var avgCadence:  Int    = 0
+    var avgCoreTemp: Double = 0
+    var peakHSI:     Double = 0
+    var distance:    Double = 0   // metres covered in this lap
 }
 
 struct LactateReading: Codable {

@@ -9,6 +9,7 @@ import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
+import WidgetDebugBanner from '../components/NativeDashboard/WidgetDebugBanner';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
@@ -964,6 +965,11 @@ export default function NativeDashboardPage({
             </div>
           </div>
         )}
+
+        {/* Widget pipeline diagnostic — tells you on-device exactly which layer
+            of the home-screen widget fails (plugin / app group / write). Safe to
+            remove once the widget is confirmed working. */}
+        <WidgetDebugBanner />
 
         {/* ── Greeting — title slides in, wave-icon animates on cycle ── */}
         <div style={{ ...styles.greetingRow, ...cardEntry(0), ...snapStyle }}>

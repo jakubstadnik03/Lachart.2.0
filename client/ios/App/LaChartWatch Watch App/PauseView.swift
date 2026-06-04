@@ -22,7 +22,7 @@ struct PauseView: View {
                     .monospacedDigit()
                     .padding(.top, LC.s8)
 
-                Text("Pozastaveno")
+                Text("Paused")
                     .font(.system(size: 11))
                     .foregroundColor(.lcText3)
 
@@ -31,17 +31,17 @@ struct PauseView: View {
                 // Action buttons grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
                           spacing: LC.s8) {
-                    PauseButton(icon: "play.fill", label: "Pokračovat", color: .lcSuccess) {
+                    PauseButton(icon: "play.fill", label: "Resume", color: .lcSuccess) {
                         appState.resumeWorkout()
                     }
-                    PauseButton(icon: "flag.fill", label: "Kolo", color: .lcSecondary) {
+                    PauseButton(icon: "flag.fill", label: "Lap", color: .lcSecondary) {
                         appState.markLap()
                         appState.resumeWorkout()
                     }
-                    PauseButton(icon: "lock.fill", label: "Zamknout", color: .lcPrimary) {
+                    PauseButton(icon: "lock.fill", label: "Lock", color: .lcPrimary) {
                         appState.lockScreen()
                     }
-                    PauseButton(icon: "stop.fill", label: "Ukončit", color: .lcDanger) {
+                    PauseButton(icon: "stop.fill", label: "End", color: .lcDanger) {
                         showEndConfirm = true
                     }
                 }
@@ -50,11 +50,11 @@ struct PauseView: View {
             }
             .padding(.horizontal, LC.s10)
         }
-        .confirmationDialog("Ukončit trénink?", isPresented: $showEndConfirm) {
-            Button("Uložit a ukončit", role: .destructive) {
+        .confirmationDialog("End workout?", isPresented: $showEndConfirm) {
+            Button("Save & End", role: .destructive) {
                 Task { await appState.endWorkout() }
             }
-            Button("Zrušit", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         }
     }
 }

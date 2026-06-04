@@ -12,40 +12,39 @@ struct RunPageCore: View {
     private var live: LiveMetrics { appState.live }
 
     var body: some View {
-        ZStack {
-            Color.lcBg.ignoresSafeArea()
-
-            VStack(spacing: LC.s6) {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: LC.s4) {
                 // CORE branding
                 HStack(spacing: LC.s4) {
                     Image(systemName: "thermometer.high")
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                         .foregroundColor(.lcAccent)
                     Text("CORE")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                         .tracking(2)
                         .foregroundColor(.lcText3)
                 }
-                .padding(.top, LC.s6)
 
-                // Core temperature — large
+                // Core temperature — scales with .minimumScaleFactor
                 VStack(spacing: 0) {
                     Text(live.coreTemp > 0 ? String(format: "%.1f", live.coreTemp) : "—")
-                        .font(.system(size: LC.coreTempSize, weight: .thin, design: .rounded))
+                        .font(.system(size: 58, weight: .thin, design: .rounded))
                         .foregroundColor(.lcAccent)
                         .monospacedDigit()
-                    Text("°C jádrová")
-                        .font(.system(size: 11))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text("°C core")
+                        .font(.system(size: 10))
                         .foregroundColor(.lcText3)
                 }
 
                 // Skin temp
-                HStack {
+                HStack(spacing: 4) {
                     Image(systemName: "hand.raised")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundColor(.lcTertiary)
-                    Text("Kožní: \(live.skinTemp > 0 ? String(format: "%.1f°C", live.skinTemp) : "—")")
-                        .font(.system(size: 12))
+                    Text("Skin: \(live.skinTemp > 0 ? String(format: "%.1f°C", live.skinTemp) : "—")")
+                        .font(.system(size: 11))
                         .foregroundColor(.lcText2)
                 }
 
@@ -62,12 +61,12 @@ struct RunPageCore: View {
                     }
                     HeatStrainGauge(value: live.hsi)
                 }
-                .padding(.horizontal, LC.s8)
-
-                Spacer()
+                .padding(.horizontal, LC.s4)
             }
-            .padding(.horizontal, LC.s8)
+            .padding(.horizontal, 2)
+            .padding(.bottom, LC.s4)
         }
+        .background(Color.lcBg)
     }
 
     private var hsiColor: Color {

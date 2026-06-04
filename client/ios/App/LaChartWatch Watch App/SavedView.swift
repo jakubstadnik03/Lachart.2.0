@@ -30,7 +30,7 @@ struct SavedView: View {
                         .opacity(checkOpacity)
                 }
 
-                Text("Uloženo")
+                Text("Saved")
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundColor(.lcText)
                     .opacity(checkOpacity)
@@ -40,7 +40,7 @@ struct SavedView: View {
                     Image(systemName: "checkmark.icloud.fill")
                         .font(.system(size: 11))
                         .foregroundColor(.lcSecondary)
-                    Text("Synchronizováno · lachart.net")
+                    Text("Synced · lachart.net")
                         .font(.system(size: 10))
                         .foregroundColor(.lcText3)
                 }

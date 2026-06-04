@@ -14,6 +14,7 @@
  *   • the call succeeded             → `[widgetCache] wrote N bytes`
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { getTodayMetrics, getFormFitnessData } from '../services/api';
 
 const LaChartShared = registerPlugin('LaChartShared');
 
@@ -82,6 +83,43 @@ function sanitiseWorkouts(arr) {
     subtitle:    w?.subtitle    ? String(w.subtitle).slice(0, 64) : null,
     durationSec: Number.isFinite(Number(w?.durationSec)) ? Math.round(Number(w.durationSec)) : null,
   }));
+}
+
+/**
+ * Insurance writer — fetches the form/fitness numbers straight from the API and
+ * pushes them to the widget WITHOUT needing the dashboard to be mounted.
+ *
+ * The dashboard still writes the full payload (incl. today's done/planned
+ * workout lists) whenever the Home tab is open; this lighter writer guarantees
+ * the widget shows *something* current even if the user never opens Home —
+ * called on app launch and after a Strava sync from the always-mounted shell.
+ */
+export async function syncWidgetFromApi(athleteId) {
+  if (Capacitor.getPlatform() !== 'ios' || !athleteId) return;
+  try {
+    const [todayRes, sparkRes] = await Promise.all([
+      getTodayMetrics(athleteId).catch(() => ({ data: {} })),
+      getFormFitnessData(athleteId, 90, 'all').catch(() => ({ data: [] })),
+    ]);
+    const tm = todayRes?.data || {};
+    // Nothing meaningful to write — don't clobber a richer cache with zeros.
+    if (tm.fitness == null && tm.fatigue == null && tm.form == null) return;
+    const raw = Array.isArray(sparkRes?.data) ? sparkRes.data : (sparkRes?.data?.data || []);
+    const sparkline = raw.slice(-14).map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
+    await writeFormFitnessToWidget({
+      fitness:   tm.fitness,
+      fatigue:   tm.fatigue,
+      form:      tm.form,
+      formDelta: tm.formChange,
+      sparkline,
+      // Workout lists are filled by the dashboard's richer write; keep empty
+      // here so this insurance path stays cheap (no calendar/plan fetch).
+      todayCompleted: [],
+      todayPlanned:   [],
+    });
+  } catch (e) {
+    console.warn('[widgetCache] syncWidgetFromApi failed:', e?.message || e);
+  }
 }
 
 export async function reloadWidgets() {

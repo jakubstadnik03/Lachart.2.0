@@ -13,55 +13,49 @@ struct RunPageLap: View {
     private var live: LiveMetrics { appState.live }
 
     var body: some View {
-        ZStack {
-            Color.lcBg.ignoresSafeArea()
-
-            VStack(spacing: 0) {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: LC.s2) {
                 // Current lap header
-                VStack(spacing: 2) {
-                    Text("KM \(live.lap)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.lcText3)
+                Text("KM \(live.lap)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.lcText3)
 
-                    Text(live.elapsed.mmss)
-                        .font(.system(size: LC.lapTimeSize, weight: .thin, design: .rounded))
-                        .foregroundColor(.lcText)
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.5)
+                Text(live.elapsed.mmss)
+                    .font(.system(size: 44, weight: .thin, design: .rounded))
+                    .foregroundColor(.lcText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
 
-                    HStack(spacing: LC.s12) {
-                        MetricView(label: "Tempo", value: live.pace.paceString,
-                                   unit: "/km", valueColor: .lcSecondary, size: 22)
-                        MetricView(label: "Tep", value: "\(live.hr)",
-                                   unit: "bpm", valueColor: .lcAccent, size: 22)
-                    }
+                HStack(spacing: LC.s8) {
+                    MetricView(label: "Pace", value: live.pace.paceString,
+                               unit: "/km", valueColor: .lcSecondary, size: 20)
+                    MetricView(label: "HR", value: "\(live.hr)",
+                               unit: "bpm", valueColor: .lcAccent, size: 20)
                 }
-                .padding(.top, LC.s8)
 
                 Divider()
                     .background(Color.lcLine)
-                    .padding(.vertical, LC.s6)
+                    .padding(.vertical, LC.s4)
 
-                // Lap history list
+                // Lap history list — flows into the page's own ScrollView
                 if live.lapHistory.isEmpty {
-                    Text("Žádné kola zatím")
+                    Text("No laps yet")
                         .font(.system(size: 11))
                         .foregroundColor(.lcText3)
-                        .padding(.top, LC.s8)
+                        .padding(.top, LC.s4)
                 } else {
-                    ScrollView {
-                        VStack(spacing: LC.s4) {
-                            ForEach(live.lapHistory.reversed()) { lap in
-                                LapRow(lap: lap)
-                            }
+                    VStack(spacing: LC.s2) {
+                        ForEach(live.lapHistory.reversed()) { lap in
+                            LapRow(lap: lap)
                         }
                     }
                 }
-
-                Spacer()
             }
-            .padding(.horizontal, LC.s10)
+            .padding(.horizontal, 2)
+            .padding(.bottom, LC.s4)
         }
+        .background(Color.lcBg)
     }
 }
 

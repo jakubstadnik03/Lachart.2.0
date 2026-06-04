@@ -87,10 +87,21 @@ const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
   if (dataPoint.rpe && dataPoint.rpe !== 0)
     metrics.push({ label: 'RPE', formattedValue: `${dataPoint.rpe}`, color: '#F97316' });
 
+  // Edge-aware horizontal anchoring so the tooltip never overflows the chart
+  // card (which has overflow-hidden and would otherwise clip it). caretX is
+  // relative to the chart canvas; compare it against the chart width to decide
+  // whether to grow right (near left edge), left (near right edge) or center.
+  const chartWidth = tooltip.chart?.width ?? tooltip.chart?.chartArea?.right ?? 0;
+  const ratio = chartWidth ? tooltip.caretX / chartWidth : 0.5;
+  let translateX = '-50%';
+  let arrowLeft = '50%';
+  if (ratio < 0.22)      { translateX = '0%';    arrowLeft = '14px'; }
+  else if (ratio > 0.78) { translateX = '-100%'; arrowLeft = 'calc(100% - 14px)'; }
+
   return (
     <div
       className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-xs border border-slate-100"
-      style={{ left: tooltip.caretX, top: tooltip.caretY, transform: 'translate(-50%, -120%)', position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 50 }}
+      style={{ left: tooltip.caretX, top: tooltip.caretY, transform: `translate(${translateX}, -120%)`, position: 'absolute', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 50 }}
     >
       <div className="font-semibold text-slate-800 mb-1.5">Interval {label}</div>
       {metrics.map((m, i) => (
@@ -100,7 +111,7 @@ const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
           <span className="font-medium text-slate-800">{m.formattedValue}</span>
         </div>
       ))}
-      <div className="absolute w-0 h-0" style={{ left: '50%', bottom: '-6px', transform: 'translateX(-50%)', borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '6px solid white' }} />
+      <div className="absolute w-0 h-0" style={{ left: arrowLeft, bottom: '-6px', transform: 'translateX(-50%)', borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '6px solid white' }} />
     </div>
   );
 };
@@ -179,6 +190,23 @@ function parsePowerToNumber(value, isRun) {
     return isFinite(n) && n > 0 ? n : null;
   }
   return null;
+}
+
+// ── Keep only the "work" intervals for the chart ──────────────────────────────
+// Lactate / interval sessions include warm-up, recovery and cool-down laps. The
+// graph should plot only the actual work intervals. If the training has any
+// explicitly tagged interval, drop the ones tagged warmup / recovery / cooldown
+// / rest (keeping 'work' and untagged). If nothing is tagged, leave the data as
+// is so non-interval trainings still render.
+function filterWorkResults(results) {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+  const tagged = results.some(r => r && r.intervalType);
+  if (!tagged) return results;
+  const workOnly = results.filter(r => {
+    const t = String(r?.intervalType || '').toLowerCase();
+    return t !== 'warmup' && t !== 'recovery' && t !== 'cooldown' && t !== 'rest';
+  });
+  return workOnly.length > 0 ? workOnly : results;
 }
 
 // ── Main component ──────────────────────────────────────────────────────────
@@ -440,7 +468,7 @@ const TrainingGraph = ({
   useEffect(() => {
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
-      const resultsArr = selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []);
+      const resultsArr = filterWorkResults(selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []));
       if (resultsArr.length > 0) {
         setRanges(computeRanges(resultsArr, selectedData?.sport));
       } else {
@@ -520,10 +548,14 @@ const TrainingGraph = ({
 
   const selectedTrainingData = trainingList.find(t => matchesId(t, selectedTraining));
 
-  // Use fetched Strava laps when the activity has no local results
-  const effectiveResults = (selectedTrainingData?.results?.length > 0)
-    ? selectedTrainingData.results
-    : (fetchedLaps?.results ?? []);
+  // Use fetched Strava laps when the activity has no local results.
+  // Only the work intervals are plotted — warm-up / recovery / cool-down / rest
+  // laps are filtered out (see filterWorkResults).
+  const effectiveResults = filterWorkResults(
+    (selectedTrainingData?.results?.length > 0)
+      ? selectedTrainingData.results
+      : (fetchedLaps?.results ?? [])
+  );
 
   // Sentinel option that lists every lactate-tagged training regardless of
   // its title — same idea as the mobile "Lactate-tested" panel.

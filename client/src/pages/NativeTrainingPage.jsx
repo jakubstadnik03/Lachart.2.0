@@ -1265,6 +1265,7 @@ export default function NativeTrainingPage({
   trainings = [],
   athleteId = null,
   onPlannedWorkoutChanged,
+  onTrainingsChanged,
 }) {
   const navigate = useNavigate();
   const [selectedSport, setSelectedSport] = useState('all');
@@ -1399,8 +1400,29 @@ export default function NativeTrainingPage({
   useEffect(() => { setAnnotateLimit(PAGE_SIZE); setAnnotatedPage(0); }, [selectedSport]);
 
   // ── Lactate annotation queue (full list — pagination happens at render) ──
+  //
+  // De-duplicate first. A single workout can land in `trainings` twice when
+  // the Strava import created one record and the user later renamed it
+  // (which writes a fresh training row instead of updating the existing
+  // one). `activityKey()` returns a different key for each so the basic
+  // filter shows both. Group by "same start time (within 90 s) + same
+  // sport", keep the most recently updated copy. Without this, renaming a
+  // workout caused the list to show the OLD title AND the NEW title side
+  // by side until the user manually deleted one.
+  const dedupBySession = (rows) => {
+    const buckets = new Map();
+    for (const t of rows) {
+      const when  = getDate(t)?.getTime?.() ?? 0;
+      const bucket = `${normSport(t.sport)}|${Math.round(when / 90000)}`; // 90 s window
+      const score = new Date(t.updatedAt || t.modifiedAt || t.createdAt || when).getTime();
+      const prev = buckets.get(bucket);
+      if (!prev || score > prev.score) buckets.set(bucket, { row: t, score });
+    }
+    return [...buckets.values()].map(b => b.row);
+  };
+
   const annotateQueueAll = useMemo(
-    () => filtered.filter(t => hasLaps(t) && !hasLactate(t)),
+    () => dedupBySession(filtered.filter(t => hasLaps(t) && !hasLactate(t))),
     [filtered]
   );
   const annotateQueue = annotateQueueAll.slice(0, annotateLimit);
@@ -1476,6 +1498,65 @@ export default function NativeTrainingPage({
     if (!act) return;
     // Strip native-only / runtime fields and ensure date is parseable
     const { _animDelay, _ndKey, ...clean } = act;
+
+    // Stamp `sourceStravaActivityId` BEFORE the saved-training lookup so
+    // even the very first save persists the cross-reference. Without this
+    // the first save created a Training row with no sourceStravaActivityId
+    // → next time the user opened the same Strava activity, our lookup
+    // couldn't find the saved record by the strongest key and the user's
+    // edits silently disappeared behind a freshly-mapped laps→results.
+    {
+      const sid = String(clean.stravaId || clean.id || clean._id || '').replace(/^strava-/i, '');
+      const looksLikeStrava =
+        clean.type === 'strava' || clean.source === 'strava' || !!clean.stravaId || /^strava-/i.test(String(clean.id || clean._id || ''));
+      if (sid && looksLikeStrava && !clean.sourceStravaActivityId) {
+        clean.sourceStravaActivityId = sid;
+      }
+    }
+
+    // Re-hydrate from a previously saved Training when one matches.
+    //
+    // Without this step, tapping a Strava activity row in "Add lactate" or
+    // "Lactate-tested" always rebuilt `results` from the raw Strava laps,
+    // which silently threw away any lactate / RPE / power overrides the user
+    // had already typed and saved on a previous visit. Look up the saved
+    // Training that corresponds to this activity by:
+    //   1. `sourceStravaActivityId` — strongest signal (only the form saves
+    //      this on its way to the backend, so a match means "yes, this
+    //      Strava activity has already been annotated").
+    //   2. Fallback: stravaId match on the same record (older trainings).
+    //   3. Last-resort: same sport + start within 90 s (covers FIT imports
+    //      + manual trainings created via the calendar).
+    // The matched Training carries `results` with the user's edits, so we
+    // splice it on top of the activity payload — keeping the rich Strava
+    // laps array for re-import if the user wants to refresh metrics.
+    if (Array.isArray(trainings) && trainings.length > 0) {
+      const actStravaId = String(clean.stravaId || clean.id || clean._id || '').replace(/^strava-/i, '');
+      const actStart    = getDate(clean)?.getTime?.() ?? 0;
+      const actSport    = normSport(clean.sport || clean.sportType);
+      const saved = trainings.find(t => {
+        if (!t) return false;
+        if (actStravaId && String(t.sourceStravaActivityId || '').replace(/^strava-/i, '') === actStravaId) return true;
+        if (actStravaId && String(t.stravaId || '').replace(/^strava-/i, '') === actStravaId) return true;
+        const tStart = getDate(t)?.getTime?.() ?? 0;
+        return tStart && actStart && Math.abs(tStart - actStart) < 90_000 && normSport(t.sport) === actSport;
+      });
+      if (saved && Array.isArray(saved.results) && saved.results.length > 0) {
+        // The saved record IS what the user worked on before. Use its _id
+        // so the form's submit handler goes down the `updateTraining` path
+        // instead of trying to create a new duplicate.
+        clean._id      = saved._id || clean._id;
+        clean.results  = saved.results;
+        clean.title    = saved.title || clean.title;
+        clean.description = saved.description ?? clean.description;
+        clean.category = saved.category || clean.category;
+        clean.specifics = saved.specifics || clean.specifics;
+        clean.sport    = saved.sport || clean.sport;
+        if (saved.sourceStravaActivityId && !clean.sourceStravaActivityId) {
+          clean.sourceStravaActivityId = saved.sourceStravaActivityId;
+        }
+      }
+    }
 
     // Strava activities from the listing payload have no `laps` (server omits
     // them for performance). If the user opens the form for one without the
@@ -1694,6 +1775,12 @@ export default function NativeTrainingPage({
 
     closeTrainingForm();
     onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'training-updated' });
+    // Re-fetch the trainings list in the parent so the very next
+    // openTrainingForm() call sees the row we just wrote — including the
+    // updated title, work/rest toggles and sourceStravaActivityId link.
+    // Without this the user would re-open the same activity and the
+    // saved-training lookup would still see the pre-save snapshot.
+    onTrainingsChanged && onTrainingsChanged();
   };
 
   // When the user taps a training in the workout-progress chart, prefer to open
@@ -1740,6 +1827,18 @@ export default function NativeTrainingPage({
     // directly — findRelatedRichActivity would replace it with a same-day Strava
     // run that doesn't carry the lactate values from those results.
     const hasManualResults = Array.isArray(act?.results) && act.results.length > 0;
+
+    // Lactate-tested trainings live in the Training model (results[] hold the
+    // lactate values). Even when such a training cross-references a Strava
+    // activity (stravaId), detectActivityKind would route to `strava-…` and the
+    // detail page would load the bare Strava activity — which has no lactate
+    // results, so it renders empty. Open the Training record directly instead.
+    if (hasManualResults && act?._id) {
+      const qs = athleteId ? `?athleteId=${athleteId}` : '';
+      navigate(`/training-calendar/${encodeURIComponent(`regular-${act._id}`)}${qs}`);
+      return;
+    }
+
     const rich = hasManualResults ? null : findRelatedRichActivity(act);
     const target = rich || act;
 
@@ -2527,11 +2626,18 @@ export default function NativeTrainingPage({
                       />
                     ))}
                   </div>
-                  {annotateQueue.length < annotateQueueAll.length && (
+                  {/* Render the button whenever the list could be paginated
+                      (more than one page worth of items). When the user has
+                      already revealed everything, the button flips to
+                      "Show less" so they can collapse back to the first
+                      page. Without the collapse path the only way to tame
+                      the giant list was to reload the page. */}
+                  {annotateQueueAll.length > PAGE_SIZE && (
                     <ShowMoreButton
                       shown={annotateQueue.length}
                       total={annotateQueueAll.length}
                       onClick={() => setAnnotateLimit(l => l + PAGE_SIZE * 2)}
+                      onCollapse={() => setAnnotateLimit(PAGE_SIZE)}
                     />
                   )}
                 </>
@@ -2586,7 +2692,7 @@ export default function NativeTrainingPage({
                         delay={idx * 30}
                         expanded={isExpanded}
                         onToggle={() => toggleExpanded(id)}
-                        onOpenFull={() => openActivity(t)}
+                        onOpenFull={() => setActivityModal({ activity: enrichForModal(t), plannedWorkout: null })}
                       />
                     );
                   })}
@@ -2950,6 +3056,16 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
   const title = t.title || t.name || t.titleManual || `${sport.charAt(0).toUpperCase() + sport.slice(1)} workout`;
   const isPaceSport = sport === 'run' || sport === 'swim';
 
+  // Lactate-tested trainings often have no totalTime/duration on the activity
+  // itself — derive the duration by summing the intervals/laps instead so the
+  // card shows the real workout length instead of "0m".
+  const intervalsAll = getIntervals(t);
+  const summedSecs = intervalsAll.reduce(
+    (a, iv) => a + (parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0),
+    0
+  );
+  const displaySecs = secs > 0 ? secs : summedSecs;
+
   // Get headline lactate value
   const lactateValue = (() => {
     if (t.lactate != null) return Number(t.lactate);
@@ -3001,6 +3117,14 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
     return workOnly.length > 0 ? workOnly : all;
   })();
 
+  // Average power across the work intervals (falls back to the activity's own
+  // avgPower) so cyclists see the average watts of the test at a glance.
+  const avgW = (() => {
+    if (t.avgPower != null && Number(t.avgPower) > 0) return Math.round(Number(t.avgPower));
+    const ps = lapDetails.map(l => l.power).filter(v => v != null && v > 0);
+    return ps.length ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length) : null;
+  })();
+
   return (
     <div
       style={{
@@ -3039,9 +3163,10 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
             {title}
           </div>
           <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-            {fmtRelativeDate(date)} · {fmtDuration(secs)}
+            {fmtRelativeDate(date)} · {fmtDuration(displaySecs)}
             {distStr ? ` · ${distStr}` : ''}
             {lapsCount > 1 ? ` · ${lapsCount} laps` : ''}
+            {avgW != null ? ` · ${avgW} W` : ''}
           </div>
         </div>
 
@@ -3354,11 +3479,19 @@ function ChevronBtn({ dir, onClick, disabled, small }) {
 }
 
 // ─── ShowMoreButton — pagination footer for the lactate cards ────────────────
+//
+// `onCollapse` is optional. When the list has been expanded past the initial
+// page size the parent passes it through, and we render an inverted variant
+// ("Show less · N of N") with an upward chevron instead of a downward one,
+// so the user has a way back to a tight list.
 
-function ShowMoreButton({ shown, total, onClick }) {
+function ShowMoreButton({ shown, total, onClick, onCollapse }) {
+  const isExpanded = typeof onCollapse === 'function' && shown >= total;
+  const label = isExpanded ? 'Show less' : 'Show more';
+  const handler = isExpanded ? onCollapse : onClick;
   return (
     <button
-      onClick={onClick}
+      onClick={handler}
       onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.985)'; }}
       onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
       onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
@@ -3379,9 +3512,11 @@ function ShowMoreButton({ shown, total, onClick }) {
       }}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="6 9 12 15 18 9" />
+        {isExpanded
+          ? <polyline points="6 15 12 9 18 15" />
+          : <polyline points="6 9 12 15 18 9" />}
       </svg>
-      Show more · <span style={{ color: '#9CA3AF', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+      {label} · <span style={{ color: '#9CA3AF', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
         {shown} of {total}
       </span>
     </button>

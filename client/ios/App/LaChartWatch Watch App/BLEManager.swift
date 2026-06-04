@@ -2,7 +2,7 @@
 // LaChartWatch
 //
 // CoreBluetooth manager that scans for:
-//   • Stryd running pod  — Running Power Service (0x1818)
+//   • Stryd running pod  — Cycling Power Service (0x1818), power via 0x2A63
 //   • CORE body temp     — custom service
 //   • HR strap           — Heart Rate Service (0x180D)
 //
@@ -17,7 +17,7 @@ import Combine
 private enum BLEUUID {
     // Standard services
     static let heartRateService      = CBUUID(string: "180D")
-    static let runningPowerService   = CBUUID(string: "1818")
+    static let cyclingPowerService   = CBUUID(string: "1818")  // Stryd reports power here
 
     // CORE body-temperature sensor (GREENTEK)
     static let coreService           = CBUUID(string: "00002000-0000-1000-8000-00805F9B34FB")
@@ -25,9 +25,9 @@ private enum BLEUUID {
     // Standard characteristics
     static let hrMeasurement         = CBUUID(string: "2A37")
 
-    // Running Power characteristics (GATT spec)
-    static let runningPowerMeasure   = CBUUID(string: "2A64")  // Running Power
-    static let runningCadence        = CBUUID(string: "2A5D")  // RSC Measurement (cadence fallback)
+    // Cycling Power characteristic (GATT spec) — Stryd broadcasts running power here
+    static let cyclingPowerMeasure   = CBUUID(string: "2A63")  // Cycling Power Measurement
+    static let runningCadence        = CBUUID(string: "2A53")  // RSC Measurement (cadence fallback)
 
     // CORE characteristics
     static let coreTempChar          = CBUUID(string: "00002001-0000-1000-8000-00805F9B34FB")
@@ -84,7 +84,7 @@ final class BLEManager: NSObject, ObservableObject {
         guard central.state == .poweredOn else { return }
         isScanning = true
         let services = [BLEUUID.heartRateService,
-                        BLEUUID.runningPowerService,
+                        BLEUUID.cyclingPowerService,
                         BLEUUID.coreService]
         central.scanForPeripherals(withServices: services,
                                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
@@ -123,7 +123,7 @@ extension BLEManager: CBCentralManagerDelegate {
         Task { @MainActor in
             let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
 
-            if serviceUUIDs.contains(BLEUUID.runningPowerService), self.strydPeripheral == nil {
+            if serviceUUIDs.contains(BLEUUID.cyclingPowerService), self.strydPeripheral == nil {
                 self.strydPeripheral = peripheral
                 central.connect(peripheral, options: nil)
             }
@@ -204,7 +204,7 @@ extension BLEManager: CBPeripheralDelegate {
             case BLEUUID.hrMeasurement:
                 self.parseHRMeasurement(data)
 
-            case BLEUUID.runningPowerMeasure:
+            case BLEUUID.cyclingPowerMeasure:
                 self.parseRunningPower(data)
 
             case BLEUUID.runningCadence:

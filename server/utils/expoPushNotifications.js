@@ -1,47 +1,22 @@
-const axios = require('axios');
 const User = require('../models/UserModel');
 
+// Capacitor's PushNotifications.register() returns raw 64-char APNs device
+// tokens, not Expo ExponentPushTokens, so the previous Expo relay rejected
+// every send with InvalidProviderToken. We now talk to APNs HTTP/2 directly
+// via the dedicated apnsPushNotifications module — but the rest of the
+// codebase still imports helpers from THIS file, so we keep this file as a
+// thin facade that delegates to the new module. No caller code changes.
+const { sendApnsToTokens } = require('./apnsPushNotifications');
+
 /**
- * Send Expo push messages (https://docs.expo.dev/push-notifications/sending-notifications/).
- * Fire-and-forget from Strava sync; errors are logged, not thrown to callers.
+ * Send push messages to a list of device tokens. Now routes through the
+ * APNs HTTP/2 sender — kept under the historical name so existing imports
+ * (notificationHelper, Strava sync, etc.) keep working untouched. Returns
+ * `{ sent, invalid }`; `invalid` lists tokens APNs reported as Gone so
+ * callers can prune them from user records.
  */
-async function sendExpoPushToTokens(tokens, { title, body, data = {} }) {
-  if (!Array.isArray(tokens) || tokens.length === 0) return { sent: 0 };
-  const clean = [...new Set(tokens.map((t) => String(t).trim()).filter(Boolean))];
-  if (clean.length === 0) return { sent: 0 };
-
-  const messages = clean.map((to) => ({
-    to,
-    sound: 'default',
-    title: title || 'LaChart',
-    body: body || '',
-    data: typeof data === 'object' && data !== null ? data : {},
-  }));
-
-  const chunkSize = 100;
-  let sent = 0;
-  for (let i = 0; i < messages.length; i += chunkSize) {
-    const chunk = messages.slice(i, i + chunkSize);
-    try {
-      const resp = await axios.post('https://exp.host/--/api/v2/push/send', chunk, {
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'Accept-Encoding': 'gzip, deflate',
-        },
-        validateStatus: () => true,
-        timeout: 15000,
-      });
-      if (resp.status >= 400) {
-        const text = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data || '');
-        console.warn('[ExpoPush] send batch failed', resp.status, text.slice(0, 200));
-      }
-    } catch (e) {
-      console.warn('[ExpoPush] send batch error:', e.message || e);
-    }
-    sent += chunk.length;
-  }
-  return { sent };
+async function sendExpoPushToTokens(tokens, opts) {
+  return sendApnsToTokens(tokens, opts);
 }
 
 /** Format metres → "10.2 km" or "800 m" */

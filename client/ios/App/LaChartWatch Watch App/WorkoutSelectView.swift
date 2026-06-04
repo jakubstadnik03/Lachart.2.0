@@ -12,7 +12,7 @@ struct WorkoutSelectView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LC.s8) {
-                Text("Vyberte trénink")
+                Text("Choose workout")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.lcText2)
                     .padding(.top, LC.s4)

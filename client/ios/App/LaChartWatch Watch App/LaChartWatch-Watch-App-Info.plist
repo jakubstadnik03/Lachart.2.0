@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>LaChartWatch</string>
+	<string>LaChart</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,13 +20,6 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
-	<key>WKApplication</key>
-	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>LaChart uses Bluetooth to connect to Stryd, CORE and HR strap sensors during workouts.</string>
 	<key>NSHealthShareUsageDescription</key>
@@ -35,5 +28,14 @@
 	<string>LaChart saves your workouts to Health.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>LaChart tracks your GPS route during outdoor runs.</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+	</array>
+	<key>WKApplication</key>
+	<true/>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.lachart.app</string>
 </dict>
 </plist>

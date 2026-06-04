@@ -3679,6 +3679,139 @@ async function getRunMetrics(req, res) {
   }
 }
 
+/**
+ * Real time-in-intensity histogram for an exact date range, computed from
+ * second-by-second streams (FIT records + cached Strava streams) — not from
+ * one average value per activity. Used by the dashboard Intensity Distribution
+ * chart so the curve reflects how long you actually spent at each power / pace.
+ *
+ * Query: startDate, endDate (ISO), sport ('cycling' | 'running'), athleteId?
+ * Returns: { sport, binW, totalSec, bins: [{ w, seconds }] }
+ *   • cycling → w = power bin centre (W), binW = 10
+ *   • running → w = pace bin centre (sec/km), binW = 5
+ */
+async function getIntensityHistogram(req, res) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'User not authenticated' });
+
+    const User = require('../models/UserModel');
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Resolve target athlete (mirror analyzeTrainingsByMonth's access rules).
+    let targetAthleteId = String(userId);
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && !['null', 'undefined', ''].includes(String(athleteIdParam).trim())) {
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(user.role) || user.admin;
+      if (isCoachLike) {
+        if (String(athleteIdParam) === String(userId)) {
+          targetAthleteId = String(userId);
+        } else {
+          const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
+          if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+          const coachIds = [
+            ...(Array.isArray(athlete.coachIds) ? athlete.coachIds.map(String) : []),
+            ...(athlete.coachId ? [String(athlete.coachId)] : []),
+          ];
+          if (!coachIds.includes(String(userId))) {
+            return res.status(403).json({ error: 'This athlete does not belong to your team' });
+          }
+          targetAthleteId = String(athleteIdParam);
+        }
+      }
+    }
+    const athleteIdStr = String(targetAthleteId);
+
+    const startDate = new Date(req.query.startDate);
+    const endDate = new Date(req.query.endDate);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid or missing startDate/endDate' });
+    }
+    const sport = (req.query.sport === 'running' || req.query.sport === 'run') ? 'running' : 'cycling';
+    const isBike = sport === 'cycling';
+    const binW = isBike ? 10 : 5; // 10 W or 5 s/km
+
+    const hist = new Map(); // bin start → seconds
+    let totalSec = 0;
+    const add = (metricVal, dt) => {
+      if (!(dt > 0) || dt > 10) return;                 // ignore gaps / paused stretches
+      if (metricVal == null || !isFinite(metricVal) || metricVal <= 0) return;
+      const bin = Math.floor(metricVal / binW) * binW;
+      hist.set(bin, (hist.get(bin) || 0) + dt);
+      totalSec += dt;
+    };
+    // running: convert speed (m/s) → pace (sec/km); ignore near-stationary
+    const speedToPace = (mps) => (mps > 0.3 ? 1000 / mps : null);
+
+    // ── 1. FIT trainings (per-second records) ──────────────────────────────────
+    const FitTraining = require('../models/fitTraining');
+    const fits = await FitTraining.find({
+      athleteId: athleteIdStr,
+      sport,
+      timestamp: { $gte: startDate, $lte: endDate },
+      records: { $exists: true, $ne: [] },
+    }).select('records').limit(300).lean();
+
+    for (const t of fits) {
+      const recs = Array.isArray(t.records) ? t.records : [];
+      let prev = null;
+      for (const r of recs) {
+        const ts = r.timestamp ? new Date(r.timestamp).getTime() : null;
+        let dt = 1;
+        if (ts != null && prev != null) dt = (ts - prev) / 1000;
+        if (ts != null) prev = ts;
+        const metric = isBike ? Number(r.power) : speedToPace(Number(r.speed));
+        add(metric, dt);
+      }
+    }
+
+    // ── 2. Strava cached streams ───────────────────────────────────────────────
+    const StravaActivity = require('../models/StravaActivity');
+    const StravaStream = require('../models/StravaStream');
+    const stravaSports = isBike
+      ? ['Ride', 'VirtualRide', 'EBikeRide', 'GravelRide', 'MountainBikeRide']
+      : ['Run', 'VirtualRun', 'TrailRun'];
+    const acts = await StravaActivity.find({
+      userId: athleteIdStr,
+      sport: { $in: stravaSports },
+      startDate: { $gte: startDate, $lte: endDate },
+    }).select('stravaId').limit(300).lean();
+    const ids = acts.map(a => a.stravaId);
+    if (ids.length) {
+      const streamDocs = await StravaStream.find({
+        userId: athleteIdStr,
+        stravaId: { $in: ids },
+      }).select('streams').lean();
+      for (const sd of streamDocs) {
+        const s = sd.streams || {};
+        const metricArr = isBike ? s.watts : s.velocity_smooth;
+        const timeArr = s.time;
+        if (!Array.isArray(metricArr)) continue;
+        let prevT = null;
+        for (let i = 0; i < metricArr.length; i += 1) {
+          let dt = 1;
+          if (Array.isArray(timeArr) && timeArr[i] != null) {
+            if (prevT != null) dt = timeArr[i] - prevT;
+            prevT = timeArr[i];
+          }
+          const metric = isBike ? Number(metricArr[i]) : speedToPace(Number(metricArr[i]));
+          add(metric, dt);
+        }
+      }
+    }
+
+    const bins = Array.from(hist.entries())
+      .map(([w, seconds]) => ({ w: w + binW / 2, seconds }))
+      .sort((a, b) => a.w - b.w);
+
+    return res.json({ sport, binW, totalSec, bins });
+  } catch (e) {
+    console.error('getIntensityHistogram error:', e);
+    return res.status(500).json({ error: 'Failed to compute intensity histogram' });
+  }
+}
+
 module.exports = {
   uploadFitFile,
   getFitTrainings,
@@ -3692,5 +3825,6 @@ module.exports = {
   analyzeTrainingsByMonth,
   getPowerMetrics,
   getRunMetrics,
+  getIntensityHistogram,
 };
 

@@ -21,17 +21,17 @@ struct SummaryView: View {
                         .font(.system(size: 24))
                         .foregroundColor(.lcSuccess)
                         .padding(.top, LC.s8)
-                    Text("Trénink dokončen")
+                    Text("Workout complete")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.lcText)
                 }
 
                 // Duration + Distance
                 HStack(spacing: LC.s12) {
-                    SummaryTopTile(label: "Čas",
+                    SummaryTopTile(label: "Time",
                                   value: (summary?.duration ?? appState.elapsed).mmss,
                                   color: .lcPrimary)
-                    SummaryTopTile(label: "Vzdálenost",
+                    SummaryTopTile(label: "Distance",
                                   value: String(format: "%.2f km",
                                                 (summary?.distance ?? appState.live.distance) / 1000),
                                   color: .lcSecondary)
@@ -39,7 +39,7 @@ struct SummaryView: View {
 
                 // Zone distribution bars
                 VStack(alignment: .leading, spacing: LC.s4) {
-                    Text("Zóny")
+                    Text("Zones")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.lcText3)
 
@@ -56,16 +56,16 @@ struct SummaryView: View {
                 // Stats grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
                           spacing: LC.s6) {
-                    StatTile(label: "Ø Tempo",
+                    StatTile(label: "Ø Pace",
                              value: (summary?.avgPace ?? appState.live.avgPace).paceString + "/km",
                              icon: "figure.run")
-                    StatTile(label: "Ø Tep",
+                    StatTile(label: "Ø HR",
                              value: "\(summary?.avgHR ?? appState.live.hr) bpm",
                              icon: "heart.fill")
-                    StatTile(label: "Kalorie",
+                    StatTile(label: "Calories",
                              value: "\(summary?.calories ?? appState.live.calories) kcal",
                              icon: "flame.fill")
-                    StatTile(label: "Převýšení",
+                    StatTile(label: "Elevation",
                              value: "+\(Int(summary?.elevation ?? appState.live.elevation)) m",
                              icon: "arrow.up.right")
                 }
@@ -97,7 +97,7 @@ struct SummaryView: View {
 
                 // Save button
                 Button(action: { appState.saveSummary() }) {
-                    Text("Uložit")
+                    Text("Save")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -125,7 +125,7 @@ struct SummaryView: View {
     }
 
     private var defaultInsight: String? {
-        "Výborný trénink! Zkontroluj distribuci zón pro optimalizaci příštího tréninku."
+        "Great workout! Check your zone distribution to optimize your next session."
     }
 }
 

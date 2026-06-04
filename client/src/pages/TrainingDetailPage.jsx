@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTrainings } from '../context/TrainingContext';
 import TrainingItem from '../components/Training-log/TrainingItem';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import WatchSensorCharts from '../components/training/WatchSensorCharts';
+import WatchLapTable from '../components/training/WatchLapTable';
 
 const TrainingDetailPage = () => {
   const { title } = useParams();
@@ -104,6 +106,17 @@ const TrainingDetailPage = () => {
           {new Date(selectedTraining.date).toLocaleDateString()} - {selectedTraining.sport}
         </p>
       </div>
+
+      {/* Advanced BLE sensor graphs (CORE temp + Stryd) — only render when
+          the watch supplied a time-series; Strava/FIT imports don't have
+          these fields so the component is a no-op for them. */}
+      <WatchSensorCharts training={selectedTraining} />
+
+      {/* Per-lap breakdown captured by the watch via the double-tap "mark
+          lap" gesture. Columns auto-hide when no sensor data is present
+          (e.g. for runs without a Stryd / CORE pod). Empty for trainings
+          imported from Strava/FIT — those use the legacy LapsTable. */}
+      <WatchLapTable training={selectedTraining} />
 
       {/* Metric selector for the chart */}
       <div className="mb-6">
