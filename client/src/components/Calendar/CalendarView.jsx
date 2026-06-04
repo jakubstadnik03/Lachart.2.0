@@ -797,12 +797,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     ? Math.round(Math.max(1, entries.length / TARGET_VISIBLE_LAPS) * viewportEstimate)
     : 0;
 
-  // Minimum on-screen width per bar so short / zero-distance (pause) laps stay
-  // visible and tappable instead of collapsing to a sliver. Adaptive: as wide
-  // as 7 px when there's room, shrinking toward 3 px for very long lap lists so
-  // every bar still fits the (non-scrolling) full-width row.
-  const GAP_PX = 1;
-  const MIN_BAR_PX = Math.max(3, Math.min(7, Math.floor(viewportEstimate / Math.max(1, entries.length) - GAP_PX)));
 
   // Auto-scroll: center the selected lap when zoomed.
   // On deselect, reset scroll to 0 before the container shrinks back.
@@ -1152,10 +1146,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // is still preserved for tooltips, scroll-to-lap math (above)
               // and any downstream consumers that care about actual time/dist.
               const layoutWeight = capWeight(ent.weight);
-              // flex-basis = MIN_BAR_PX guarantees every lap (incl. pauses) is
-              // at least MIN_BAR_PX wide; flex-grow stays proportional to weight
-              // so longer laps still read proportionally larger.
-              const itemStyle = { flex: `${layoutWeight} 0 ${MIN_BAR_PX}px`, minWidth: MIN_BAR_PX, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
+              // STRICTLY proportional: flex-basis 0 + flex-grow = weight means
+              // bar width is purely proportional to distance (a 200 m lap is 4×
+              // a 50 m lap). A small minWidth keeps zero-distance / pause laps
+              // from vanishing — those carry no distance so they'd otherwise be
+              // sub-pixel.
+              const itemStyle = { flex: `${layoutWeight} 0 0px`, minWidth: ent.isPause ? 4 : 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -5476,6 +5472,7 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
   const [error, setError]       = useState(null);
   // Drag-to-dismiss state — same pattern as ActivityShareSheet.
   const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false); // true while finger is down (disables transition so the sheet tracks the finger)
   const dragRef = useRef({ y: 0, active: false });
 
   const dateObj = useMemo(() => {
@@ -5533,10 +5530,12 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
     finally { setSaving(false); }
   };
 
-  // Swipe-down-to-close on the drag handle
+  // Swipe-down-to-close. Past the threshold the sheet animates fully off-screen
+  // (slide-down "close" effect) before unmounting, instead of vanishing.
   const onDragStart = (e) => {
     const t = e.touches?.[0]; if (!t) return;
     dragRef.current = { y: t.clientY, active: true };
+    setDragging(true);
   };
   const onDragMove = (e) => {
     const s = dragRef.current; if (!s.active) return;
@@ -5547,10 +5546,16 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
   const onDragEnd = (e) => {
     const s = dragRef.current; if (!s.active) return;
     s.active = false;
+    setDragging(false);
     const t = e.changedTouches?.[0];
     const dy = t ? t.clientY - s.y : dragY;
-    if (dy > 120) { onClose(); return; }
-    setDragY(0);
+    if (dy > 120) {
+      // Animate the sheet sliding down off-screen, then close.
+      setDragY(typeof window !== 'undefined' ? window.innerHeight : 800);
+      setTimeout(() => onClose(), 260);
+      return;
+    }
+    setDragY(0); // snap back
   };
 
   return ReactDOM.createPortal(
@@ -5579,8 +5584,8 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
           fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif',
           pointerEvents: 'auto',
           touchAction: 'manipulation',
-          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
-          transition: dragY > 0 ? 'none' : 'transform .25s cubic-bezier(.22,1,.36,1)',
+          transform: `translateY(${dragY}px)`,
+          transition: dragging ? 'none' : 'transform .28s cubic-bezier(.22,1,.36,1)',
         }}
       >
         {/* Drag handle — swipe down to close */}
@@ -5596,7 +5601,13 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
         >
           <div className="w-11 h-[5px] rounded-full bg-gray-300" />
         </div>
-        <div className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+        <div
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+          className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between"
+          style={{ touchAction: 'none' }}
+        >
           <button onClick={onClose} className="text-sm font-semibold text-gray-700">Cancel</button>
           <div className="text-center">
             <div className="text-base font-bold text-gray-900">Day theme</div>
@@ -5711,6 +5722,20 @@ export function PeriodEditSheet({ period, defaultDate, onClose, onSave, onDelete
   const [notes, setNotes]         = useState(period?.notes || '');
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState(null);
+  // Swipe-down-to-close (same pattern as DayPlanEditSheet).
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ y: 0, active: false });
+  const onDragStart = (e) => { const t = e.touches?.[0]; if (!t) return; dragRef.current = { y: t.clientY, active: true }; setDragging(true); };
+  const onDragMove = (e) => { const s = dragRef.current; if (!s.active) return; const t = e.touches?.[0]; if (!t) return; const dy = t.clientY - s.y; if (dy > 0) setDragY(dy); };
+  const onDragEnd = (e) => {
+    const s = dragRef.current; if (!s.active) return;
+    s.active = false; setDragging(false);
+    const t = e.changedTouches?.[0];
+    const dy = t ? t.clientY - s.y : dragY;
+    if (dy > 120) { setDragY(typeof window !== 'undefined' ? window.innerHeight : 800); setTimeout(() => onClose(), 260); return; }
+    setDragY(0);
+  };
 
   const selectedColor = (PERIOD_TYPES.find(p => p.type === type) || PERIOD_TYPES[0]).color;
 
@@ -5756,10 +5781,22 @@ export function PeriodEditSheet({ period, defaultDate, onClose, onSave, onDelete
         style={{
           padding: '14px 0 calc(28px + env(safe-area-inset-bottom, 0px))', maxHeight: '90vh',
           fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif', pointerEvents: 'auto',
+          transform: `translateY(${dragY}px)`,
+          transition: dragging ? 'none' : 'transform .28s cubic-bezier(.22,1,.36,1)',
         }}
       >
-        <div className="sm:hidden" style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 999, background: '#d1d5db', margin: '4px 0 8px' }} />
-        <div className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+        <div
+          className="sm:hidden"
+          onTouchStart={onDragStart} onTouchMove={onDragMove} onTouchEnd={onDragEnd}
+          style={{ alignSelf: 'stretch', display: 'flex', justifyContent: 'center', paddingTop: 4, paddingBottom: 8, touchAction: 'none' }}
+        >
+          <div style={{ width: 44, height: 5, borderRadius: 999, background: '#d1d5db' }} />
+        </div>
+        <div
+          onTouchStart={onDragStart} onTouchMove={onDragMove} onTouchEnd={onDragEnd}
+          style={{ touchAction: 'none' }}
+          className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between"
+        >
           <button onClick={onClose} className="text-sm font-semibold text-gray-700">Cancel</button>
           <div className="text-base font-bold text-gray-900">{period ? 'Edit period' : 'Add period'}</div>
           <button onClick={handleSave} disabled={saving} className="text-sm font-bold text-primary disabled:opacity-50">

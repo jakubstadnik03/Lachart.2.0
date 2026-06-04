@@ -93,6 +93,7 @@ private func sportSymbol(_ sport: String?) -> String {
 struct KPIRow: View {
     let snapshot: FormFitnessSnapshot
     var compact: Bool = false
+    var big: Bool = false   // medium/large widget — fill the width with larger numbers
 
     var body: some View {
         HStack(spacing: 0) {
@@ -110,15 +111,18 @@ struct KPIRow: View {
         }
     }
 
+    private var valueSize: CGFloat { big ? 32 : (compact ? 18 : 22) }
+    private var labelSize: CGFloat { big ? 10 : (compact ? 7 : 8) }
+
     private func kpi(value: String, label: String, color: Color) -> some View {
-        VStack(spacing: 1) {
+        VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: compact ? 18 : 22, weight: .bold))
+                .font(.system(size: valueSize, weight: .bold))
                 .foregroundColor(LaChartColor.ink)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
             Text(label)
-                .font(.system(size: compact ? 7 : 8, weight: .heavy))
+                .font(.system(size: labelSize, weight: .heavy))
                 .tracking(0.5)
                 .foregroundColor(color)
         }
@@ -141,6 +145,7 @@ struct WorkoutRow: View {
     let workout: WidgetWorkout
     let done: Bool       // true = completed (green check); false = planned (dashed)
     var compact: Bool = false
+    var large: Bool = false  // medium widget — bigger, roomier rows
 
     var body: some View {
         // Tapping a row deep-links straight into that training; rows without a
@@ -154,28 +159,35 @@ struct WorkoutRow: View {
         }
     }
 
+    private var circleD: CGFloat { large ? 34 : (compact ? 22 : 26) }
+    private var iconSize: CGFloat { large ? 16 : (compact ? 11 : 13) }
+    private var titleSize: CGFloat { large ? 16 : (compact ? 11 : 12.5) }
+    private var detailSize: CGFloat { large ? 12.5 : (compact ? 9 : 10) }
+    private var checkSize: CGFloat { large ? 18 : (compact ? 12 : 14) }
+
     private var rowContent: some View {
-        HStack(spacing: compact ? 6 : 8) {
+        HStack(spacing: large ? 10 : (compact ? 6 : 8)) {
             // Status indicator + sport icon
             ZStack {
                 Circle()
                     .fill(done ? LaChartColor.success.opacity(0.16)
                               : LaChartColor.forCategory(workout.category).opacity(0.14))
-                    .frame(width: compact ? 22 : 26, height: compact ? 22 : 26)
+                    .frame(width: circleD, height: circleD)
                 Image(systemName: sportSymbol(workout.sport))
-                    .font(.system(size: compact ? 11 : 13, weight: .bold))
+                    .font(.system(size: iconSize, weight: .bold))
                     .foregroundColor(done ? LaChartColor.success
                                           : LaChartColor.forCategory(workout.category))
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(workout.title)
-                    .font(.system(size: compact ? 11 : 12.5, weight: .semibold))
+                    .font(.system(size: titleSize, weight: .semibold))
                     .foregroundColor(LaChartColor.ink)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 if let line = composeDetailLine(), !line.isEmpty {
                     Text(line)
-                        .font(.system(size: compact ? 9 : 10, weight: .regular))
+                        .font(.system(size: detailSize, weight: .regular))
                         .foregroundColor(LaChartColor.muted)
                         .lineLimit(1)
                 }
@@ -184,7 +196,7 @@ struct WorkoutRow: View {
 
             if done {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: compact ? 12 : 14, weight: .bold))
+                    .font(.system(size: checkSize, weight: .bold))
                     .foregroundColor(LaChartColor.success)
             }
         }
@@ -285,15 +297,15 @@ struct MediumTodayView: View {
     let entry: FormFitnessEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("LaChart")
-                    .font(.system(size: 10, weight: .heavy))
+                    .font(.system(size: 12, weight: .heavy))
                     .tracking(0.4)
                     .foregroundColor(LaChartColor.mark)
                 if entry.isStale {
                     Text("STALE")
-                        .font(.system(size: 8, weight: .heavy))
+                        .font(.system(size: 9, weight: .heavy))
                         .foregroundColor(LaChartColor.warning)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(LaChartColor.warning.opacity(0.14))
@@ -307,17 +319,19 @@ struct MediumTodayView: View {
                 HStack { Spacer(); EmptyHint(); Spacer() }
                 Spacer(minLength: 0)
             } else {
-                // Compact KPI row sits tight under the header so the workout
-                // list below gets as much vertical room as possible.
-                KPIRow(snapshot: entry.snapshot, compact: true)
+                Spacer(minLength: 6)
+                // Big KPI row — fills the width with larger numbers.
+                KPIRow(snapshot: entry.snapshot, big: true)
+                Spacer(minLength: 6)
                 Divider().opacity(0.35)
+                Spacer(minLength: 6)
                 content
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
     }
 
     @ViewBuilder
@@ -328,49 +342,27 @@ struct MediumTodayView: View {
         if completed.isEmpty && planned.isEmpty {
             HStack(spacing: 8) {
                 Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(LaChartColor.muted)
                 Text("Rest day")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(LaChartColor.muted)
                 Spacer()
             }
         } else {
-            // Show as many rows as fit — the compact header frees room for ~4.
-            // Completed take priority, planned fill the remainder.
-            let maxRows = 4
+            // Bigger rows → fewer fit; show up to 3 and spread them to fill.
+            let maxRows = 3
             let doneShown = Array(completed.prefix(maxRows))
             let planShown = Array(planned.prefix(max(0, maxRows - doneShown.count)))
-            VStack(alignment: .leading, spacing: 4) {
-                if !doneShown.isEmpty {
-                    sectionLabel("DONE", count: completed.count)
-                    ForEach(doneShown) { w in
-                        WorkoutRow(workout: w, done: true)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(doneShown) { w in
+                    WorkoutRow(workout: w, done: true, large: true)
                 }
-                if !planShown.isEmpty {
-                    sectionLabel("PLANNED", count: planned.count)
-                    ForEach(planShown) { w in
-                        WorkoutRow(workout: w, done: false)
-                    }
+                ForEach(planShown) { w in
+                    WorkoutRow(workout: w, done: false, large: true)
                 }
             }
         }
-    }
-
-    private func sectionLabel(_ text: String, count: Int) -> some View {
-        HStack(spacing: 4) {
-            Text(text)
-                .font(.system(size: 8, weight: .heavy))
-                .tracking(0.6)
-                .foregroundColor(LaChartColor.muted)
-            if count > 1 {
-                Text("· \(count)")
-                    .font(.system(size: 8, weight: .heavy))
-                    .foregroundColor(LaChartColor.muted)
-            }
-        }
-        .padding(.top, 2)
     }
 }
 

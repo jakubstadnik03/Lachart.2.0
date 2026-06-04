@@ -264,8 +264,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           <span style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             {label}
           </span>
-          {onEditTheme && (
-            dayTheme && (dayTheme.title || dayTheme.category) ? (
+          {onEditTheme && dayTheme && (dayTheme.title || dayTheme.category) && (
               <button
                 type="button"
                 onClick={() => onEditTheme(date)}
@@ -285,19 +284,6 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                   cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
                 }}
               >{dayTheme.title || catLabel(dayTheme.category)}</button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onEditTheme(date)}
-                aria-label="Add day theme"
-                style={{
-                  fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
-                  padding: '3px 7px', borderRadius: 6, lineHeight: 1,
-                  background: 'transparent', color: '#9CA3AF', border: '1px dashed #D1D5DB',
-                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-                }}
-              >+ theme</button>
-            )
           )}
           {/* Period chips (tap to edit) + add-period affordance */}
           {onEditPeriod && dayPeriods.map((p) => (
@@ -316,19 +302,6 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               }}
             >{(p.notes && p.notes.trim()) || p.type}</button>
           ))}
-          {onEditPeriod && (
-            <button
-              type="button"
-              onClick={() => onEditPeriod({ defaultDate: dateStr })}
-              aria-label="Add period"
-              style={{
-                fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
-                padding: '3px 7px', borderRadius: 6, lineHeight: 1,
-                background: 'transparent', color: '#9CA3AF', border: '1px dashed #D1D5DB',
-                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-              }}
-            >+ period</button>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {dayActs.length > 0 && (

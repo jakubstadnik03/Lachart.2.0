@@ -1181,6 +1181,18 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 const valStr = isBike
                   ? `${Math.round(zd.min ?? 0)} – ${Math.round(zd.max ?? 0)} W`
                   : `${zd.min || '—'} – ${zd.max || '—'} /km`;
+                // Speed (km/h) line for pace sports — many athletes record speed,
+                // so show the km/h equivalent under the pace range. Pace "MM:SS"
+                // (sec per km) → km/h = 3600 / secPerKm. Slower pace = lower km/h.
+                const paceToKmh = (p) => {
+                  if (!p) return null;
+                  const parts = String(p).split(':').map(Number);
+                  const sec = parts.length === 2 ? parts[0] * 60 + parts[1] : Number(p);
+                  return sec > 0 ? 3600 / sec : null;
+                };
+                const kmhMin = isBike ? null : paceToKmh(zd.min);
+                const kmhMax = isBike ? null : paceToKmh(zd.max);
+                const speedStr = (kmhMin && kmhMax) ? `${kmhMin.toFixed(1)} – ${kmhMax.toFixed(1)} km/h` : null;
                 const hrStr = zh
                   ? `${Math.round(zh.min ?? 0)} – ${Math.round(zh.max ?? 0)} bpm`
                   : '—';
@@ -1189,7 +1201,10 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                     <View style={[s.zoneDot, { backgroundColor: color }]} />
                     <Text style={s.zoneLabel}>Z{z}</Text>
                     <Text style={s.zoneName}>{zoneNames[i]}</Text>
-                    <Text style={s.zoneVal}>{valStr}</Text>
+                    <View style={[s.zoneVal, { alignItems: 'flex-end' }]}>
+                      <Text>{valStr}</Text>
+                      {speedStr && <Text style={{ fontSize: 6.5, color: C.gray }}>{speedStr}</Text>}
+                    </View>
                     <Text style={s.zoneHr}>{hrStr}</Text>
                   </View>
                 );

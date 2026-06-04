@@ -228,6 +228,27 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [steps, setSteps]         = useState(workout?.steps || []);
   const [category, setCategory]   = useState(workout?.category || '');
   const [saving, setSaving]       = useState(false);
+  // Inline "Plan a race" form (opened from the Or-mark-this-day tile).
+  const [raceOpen, setRaceOpen]   = useState(false);
+  const [raceSaving, setRaceSaving] = useState(false);
+  const [raceForm, setRaceForm]   = useState({ name: '', sport: 'run', priority: 'A', targetCTL: '' });
+  const submitRace = async () => {
+    if (!raceForm.name) return;
+    setRaceSaving(true);
+    try {
+      const { createRaceEvent } = await import('../../services/api');
+      await createRaceEvent({
+        name: raceForm.name.trim(),
+        date: toLocalISO(date),
+        sport: raceForm.sport,
+        priority: raceForm.priority,
+        targetCTL: raceForm.targetCTL ? Number(raceForm.targetCTL) : null,
+      }, context?.athleteId || undefined);
+      setRaceOpen(false);
+      onClose();
+    } catch { /* ignore */ }
+    finally { setRaceSaving(false); }
+  };
   const [tab, setTab]             = useState('builder');
   const [presetSport, setPresetSport] = useState(workout?.sport || 'bike');
   // Build workout section: collapsed until user clicks "Build Workout"
@@ -433,22 +454,38 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               {(onAddDayTheme || onAddPeriod) && (
                 <div>
                   <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Or mark this day</p>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-3 gap-2.5">
                     {onAddDayTheme && (
                       <button
                         onClick={() => { onAddDayTheme(toLocalISO(date), null); onClose(); }}
                         className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
                       >
-                        <span className="text-xl leading-none">🎯</span>
+                        {/* Target — day theme */}
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round">
+                          <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.4" fill="#6366f1" stroke="none" />
+                        </svg>
                         <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Day theme</span>
                       </button>
                     )}
+                    <button
+                      onClick={() => setRaceOpen(true)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-red-300 hover:bg-red-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                    >
+                      {/* Checkered flag — race */}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 21V4" /><path d="M5 4c3-1.5 6 1.5 9 0s4 0 5 0v9c-1 0-2.5-1.5-5 0s-6-1.5-9 0" />
+                      </svg>
+                      <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Race</span>
+                    </button>
                     {onAddPeriod && (
                       <button
                         onClick={() => { onAddPeriod(toLocalISO(date)); onClose(); }}
                         className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-sky-300 hover:bg-sky-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
                       >
-                        <span className="text-xl leading-none">🏝️</span>
+                        {/* Calendar range — multi-day period */}
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 9h18M8 3v4M16 3v4M8 14h8" />
+                        </svg>
                         <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Period</span>
                       </button>
                     )}
@@ -862,6 +899,45 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         )}
         </>)}
       </motion.div>
+
+      {/* Inline "Plan a race" form */}
+      {raceOpen && (
+        <div
+          className="absolute inset-0 z-10 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setRaceOpen(false); }}
+        >
+          <div className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-slate-900">Plan a race</h3>
+              <button onClick={() => setRaceOpen(false)} className="text-sm font-semibold text-slate-400">Cancel</button>
+            </div>
+            <div className="flex flex-col gap-3">
+              <input autoFocus placeholder="Race name" value={raceForm.name}
+                onChange={e => setRaceForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-primary/40" />
+              <div className="flex gap-3">
+                <select value={raceForm.sport} onChange={e => setRaceForm(f => ({ ...f, sport: e.target.value }))}
+                  className="flex-1 text-sm px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 outline-none">
+                  {['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={raceForm.priority} onChange={e => setRaceForm(f => ({ ...f, priority: e.target.value }))}
+                  className="flex-1 text-sm px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 outline-none">
+                  <option value="A">A — goal</option>
+                  <option value="B">B race</option>
+                  <option value="C">C race</option>
+                </select>
+              </div>
+              <input type="number" placeholder="Target CTL (optional)" value={raceForm.targetCTL}
+                onChange={e => setRaceForm(f => ({ ...f, targetCTL: e.target.value }))}
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-primary/40" />
+              <button onClick={submitRace} disabled={raceSaving || !raceForm.name}
+                className="w-full py-3 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50">
+                {raceSaving ? 'Saving…' : 'Add race'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>,
     document.body
   );
