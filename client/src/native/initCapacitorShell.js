@@ -71,6 +71,19 @@ export async function initCapacitorShell() {
           }
         } else if (/strava-error/i.test(url)) {
           window.dispatchEvent(new CustomEvent('strava:error', { detail: { url } }));
+        } else if (/open-training/i.test(url)) {
+          // Home-screen widget tapped a specific training:
+          // com.lachart.app://open-training?id=<prefixed-id>. Route to the
+          // dashboard's openActivity flow, which resolves the id and opens the
+          // full training (same mechanism used by notification taps).
+          let id = null;
+          try { id = new URL(url).searchParams.get('id'); }
+          catch { const m = url.match(/[?&]id=([^&]+)/); id = m ? decodeURIComponent(m[1]) : null; }
+          if (id) {
+            window.location.replace(
+              `${window.location.origin}/?openActivity=${encodeURIComponent(id)}`
+            );
+          }
         }
       } catch (e) {
         console.warn('[deeplink] appUrlOpen handler failed:', e?.message || e);

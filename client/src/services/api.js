@@ -1051,10 +1051,23 @@ export const getFormFitnessData = (athleteId, days = 60, sport = 'all') =>
     cacheTtlMs: 60000, // 60s cache – avoids repeated heavy aggregation on quick navigations
   });
 
-export const getTodayMetrics = (athleteId) => 
+export const getTodayMetrics = (athleteId) =>
   api.get(`/user/athlete/${athleteId}/today-metrics`, {
     cacheTtlMs: 60000,
   });
+
+// ── Race / goal events (TrainingPeaks-style race planning) ───────────────────
+export const getRaceEvents = (athleteId, params = {}) =>
+  api.get('/race-events', { params: { ...(athleteId ? { athleteId } : {}), ...params } });
+
+export const createRaceEvent = (payload, athleteId) =>
+  api.post('/race-events', { ...payload, ...(athleteId ? { athleteId } : {}) });
+
+export const updateRaceEvent = (id, payload) =>
+  api.put(`/race-events/${id}`, payload);
+
+export const deleteRaceEvent = (id) =>
+  api.delete(`/race-events/${id}`);
 
 export const getTrainingStatus = (athleteId) => 
   api.get(`/user/athlete/${athleteId}/training-status`, {

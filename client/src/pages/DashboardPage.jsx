@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
 import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { writeFormFitnessToWidget } from '../utils/widgetCache';
@@ -27,13 +27,17 @@ import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalcu
 import DateSelector from "../components/DateSelector";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Lazy — avoids eagerly pulling the 4k-line CalendarView into the dashboard chunk.
+const DayPlanEditSheet = lazy(() => import("../components/Calendar/CalendarView").then(m => ({ default: m.DayPlanEditSheet })));
+const PeriodEditSheet  = lazy(() => import("../components/Calendar/CalendarView").then(m => ({ default: m.PeriodEditSheet })));
 //import { useNotification } from '../context/NotificationContext';
 // import { 
 //   CalendarIcon, 
@@ -87,6 +91,9 @@ function pickTodaysCompleted(activities) {
         durationSec: durSec || null,
         category:    a.category || null,
         subtitle:    sub || null,
+        // Prefixed activity id so the widget can deep-link straight into this
+        // training (handled by the appUrlOpen → ?openActivity route).
+        id:          a.id || a._id || (a.stravaId ? `strava-${a.stravaId}` : null) || null,
       };
     });
 }
@@ -113,6 +120,34 @@ function pickTodaysPlanned(plannedWorkouts) {
         durationSec: Number(p.plannedDuration || 0) || null,
         category:    p.category || null,
         subtitle:    sub || null,
+        id:          p._id || p.id || null,
+      };
+    });
+}
+
+/** Tomorrow's planned workouts — shown only on the large (tall) widget. */
+function pickTomorrowPlanned(plannedWorkouts) {
+  if (!Array.isArray(plannedWorkouts)) return [];
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return plannedWorkouts
+    .filter(p => isSameLocalDay(p?.date, tomorrow))
+    .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
+    .slice(0, 4)
+    .map(p => {
+      const dist = Number(p.plannedDistance || 0);
+      const fmtDist = dist > 0
+        ? (dist >= 1 ? `${dist % 1 === 0 ? dist : dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`)
+        : null;
+      const tss = Number(p.targetTss || 0);
+      const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
+      return {
+        title:       p.title || p.name || 'Workout',
+        sport:       normaliseSportForWidget(p.sport),
+        durationSec: Number(p.plannedDuration || 0) || null,
+        category:    p.category || null,
+        subtitle:    sub || null,
+        id:          p._id || p.id || null,
       };
     });
 }
@@ -502,6 +537,9 @@ export default function DashboardPage() {
   const [calendarError, setCalendarError] = useState(null);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [planModal, setPlanModal] = useState(null);
+  // Quick day-theme / period editors opened from the "Add a workout" modal tiles.
+  const [quickTheme, setQuickTheme] = useState(null);   // { date, preset }
+  const [quickPeriod, setQuickPeriod] = useState(null); // { defaultDate }
   // Native mobile dashboard — fitness metrics
   const [todayMetrics, setTodayMetrics] = useState({});
   const [sparklineData, setSparklineData] = useState([]);
@@ -1361,17 +1399,20 @@ export default function DashboardPage() {
 
   // ── Planned workouts + day themes for dashboard calendar ──────────────────
   const [dayPlans, setDayPlans] = useState([]);
+  const [periods, setPeriods] = useState([]);
   const loadDashboardPlannedWorkouts = useCallback(async () => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
-      const [pw, dp] = await Promise.all([
+      const [pw, dp, ps] = await Promise.all([
         getPlannedWorkouts(opts),
         getDayPlans(opts).catch(() => []),
+        getPeriods(opts).catch(() => []),
       ]);
       setPlannedWorkouts(Array.isArray(pw) ? pw : []);
       setDayPlans(Array.isArray(dp) ? dp : []);
+      setPeriods(Array.isArray(ps) ? ps : []);
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);
 
@@ -1397,6 +1438,27 @@ export default function DashboardPage() {
     const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
     await apiDeleteDayPlan(dateStr, coachAthleteId);
     setDayPlans(prev => prev.filter(p => p.date !== dateStr));
+  }, [selectedAthleteId, user?.role]);
+
+  // ── Calendar period save / delete ─────────────────────────────────────────
+  const handlePeriodSave = useCallback(async (payload) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    const result = await apiSavePeriod(payload, coachAthleteId);
+    setPeriods(prev => {
+      const without = prev.filter(p => String(p._id) !== String(result._id));
+      return [...without, result];
+    });
+    return result;
+  }, [selectedAthleteId, user?.role]);
+
+  const handlePeriodDelete = useCallback(async (periodId) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    await apiDeletePeriod(periodId, coachAthleteId);
+    setPeriods(prev => prev.filter(p => String(p._id) !== String(periodId)));
   }, [selectedAthleteId, user?.role]);
 
   // ── Native dashboard: fitness/form metrics (only fetched when native) ─────
@@ -1432,7 +1494,8 @@ export default function DashboardPage() {
           formDelta: tm.formChange,
           sparkline: tsb14,
           todayCompleted: pickTodaysCompleted(calendarDataRef.current),
-          todayPlanned:   pickTodaysPlanned(plannedWorkoutsRef.current),
+          todayPlanned:    pickTodaysPlanned(plannedWorkoutsRef.current),
+          tomorrowPlanned: pickTomorrowPlanned(plannedWorkoutsRef.current),
         });
       }
     } catch (_) {}
@@ -1465,7 +1528,8 @@ export default function DashboardPage() {
       formDelta: tm.formChange,
       sparkline: tsb14,
       todayCompleted: pickTodaysCompleted(calendarData),
-      todayPlanned:   pickTodaysPlanned(plannedWorkouts),
+      todayPlanned:    pickTodaysPlanned(plannedWorkouts),
+      tomorrowPlanned: pickTomorrowPlanned(plannedWorkouts),
     });
   }, [plannedWorkouts, calendarData, todayMetrics, sparklineData]);
 
@@ -1828,6 +1892,12 @@ export default function DashboardPage() {
         }}
         stravaConnected={stravaConnected}
         onRequestStravaSync={performManualStravaSync}
+        dayPlans={dayPlans}
+        onDayPlanSave={handleDayPlanSave}
+        onDayPlanDelete={handleDayPlanDelete}
+        periods={periods}
+        onPeriodSave={handlePeriodSave}
+        onPeriodDelete={handlePeriodDelete}
       />
       {/* WorkoutPlanModal must render in the native branch too — the early
           return above used to skip it, so tapping "+ Plan" on the iOS
@@ -1842,7 +1912,34 @@ export default function DashboardPage() {
           onSave={handleDashboardPlanSave}
           onDelete={handleDashboardPlanDelete}
           onClose={() => setPlanModal(null)}
+          onAddDayTheme={(iso, preset) => { setPlanModal(null); setQuickTheme({ date: iso, preset: preset || null }); }}
+          onAddPeriod={(iso) => { setPlanModal(null); setQuickPeriod({ defaultDate: iso }); }}
         />
+      )}
+      {quickTheme && (
+        <Suspense fallback={null}>
+          <DayPlanEditSheet
+            date={quickTheme.date}
+            plan={dayPlans.find(p => p.date === quickTheme.date) || (quickTheme.preset ? { title: quickTheme.preset } : undefined)}
+            onClose={() => setQuickTheme(null)}
+            onSave={async (payload, dates) => {
+              const list = Array.isArray(dates) && dates.length ? dates : [quickTheme.date];
+              for (const d of list) { await handleDayPlanSave(d, payload); }
+              setQuickTheme(null);
+            }}
+            onDelete={async () => { await handleDayPlanDelete(quickTheme.date); setQuickTheme(null); }}
+          />
+        </Suspense>
+      )}
+      {quickPeriod && (
+        <Suspense fallback={null}>
+          <PeriodEditSheet
+            defaultDate={quickPeriod.defaultDate}
+            onClose={() => setQuickPeriod(null)}
+            onSave={async (payload) => { await handlePeriodSave(payload); setQuickPeriod(null); }}
+            onDelete={null}
+          />
+        </Suspense>
       )}
     </>
   );
@@ -2149,6 +2246,7 @@ export default function DashboardPage() {
             dayPlans={dayPlans}
             onDayPlanSave={handleDayPlanSave}
             onDayPlanDelete={handleDayPlanDelete}
+            periods={periods}
             onPlanWorkout={(date) => {
               if (!isPremium) { gate('Workout Planning', 'pro'); return; }
               setPlanModal({ date, workout: null });
@@ -2189,6 +2287,7 @@ export default function DashboardPage() {
             />
           )}
         </motion.div>
+
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -2400,6 +2499,29 @@ export default function DashboardPage() {
         onSave={handleDashboardPlanSave}
         onDelete={handleDashboardPlanDelete}
         onClose={() => setPlanModal(null)}
+        onAddDayTheme={(iso, preset) => { setPlanModal(null); setQuickTheme({ date: iso, preset: preset || null }); }}
+        onAddPeriod={(iso) => { setPlanModal(null); setQuickPeriod({ defaultDate: iso }); }}
+      />
+    )}
+    {quickTheme && (
+      <DayPlanEditSheet
+        date={quickTheme.date}
+        plan={dayPlans.find(p => p.date === quickTheme.date) || (quickTheme.preset ? { title: quickTheme.preset } : undefined)}
+        onClose={() => setQuickTheme(null)}
+        onSave={async (payload, dates) => {
+          const list = Array.isArray(dates) && dates.length ? dates : [quickTheme.date];
+          for (const d of list) { await handleDayPlanSave(d, payload); }
+          setQuickTheme(null);
+        }}
+        onDelete={async () => { await handleDayPlanDelete(quickTheme.date); setQuickTheme(null); }}
+      />
+    )}
+    {quickPeriod && (
+      <PeriodEditSheet
+        defaultDate={quickPeriod.defaultDate}
+        onClose={() => setQuickPeriod(null)}
+        onSave={async (payload) => { await handlePeriodSave(payload); setQuickPeriod(null); }}
+        onDelete={null}
       />
     )}
 

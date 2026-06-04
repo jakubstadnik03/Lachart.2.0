@@ -53,8 +53,9 @@ export async function writeFormFitnessToWidget(metrics) {
     sparkline: Array.isArray(metrics.sparkline)
       ? metrics.sparkline.map(v => Math.round(Number(v) || 0)).slice(-14)
       : [],
-    todayCompleted: sanitiseWorkouts(metrics.todayCompleted),
-    todayPlanned:   sanitiseWorkouts(metrics.todayPlanned),
+    todayCompleted:  sanitiseWorkouts(metrics.todayCompleted),
+    todayPlanned:    sanitiseWorkouts(metrics.todayPlanned),
+    tomorrowPlanned: sanitiseWorkouts(metrics.tomorrowPlanned),
   };
   console.log('[widgetCache] writing →', {
     fitness: payload.fitness,
@@ -84,6 +85,9 @@ function sanitiseWorkouts(arr) {
     category:    w?.category    ? String(w.category)    : null,
     subtitle:    w?.subtitle    ? String(w.subtitle).slice(0, 64) : null,
     durationSec: Number.isFinite(Number(w?.durationSec)) ? Math.round(Number(w.durationSec)) : null,
+    // Deep-link target id (prefixed activity id / planned id) — lets the
+    // widget open this specific training when tapped.
+    id:          w?.id != null ? String(w.id) : null,
   }));
 }
 

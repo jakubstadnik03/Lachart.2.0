@@ -214,7 +214,7 @@ function secsToHMS(s) {
 }
 
 // ─── Main modal ────────────────────────────────────────────────────────────────
-export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [] }) {
+export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null }) {
   const isEdit = Boolean(workout?._id);
   const navigate = useNavigate();
   const { categories } = useCategories();
@@ -428,6 +428,33 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                   ))}
                 </div>
               </div>
+
+              {/* ── Or mark this day — day theme / race / multi-day period ── */}
+              {(onAddDayTheme || onAddPeriod) && (
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Or mark this day</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {onAddDayTheme && (
+                      <button
+                        onClick={() => { onAddDayTheme(toLocalISO(date), null); onClose(); }}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-indigo-300 hover:bg-indigo-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                      >
+                        <span className="text-xl leading-none">🎯</span>
+                        <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Day theme</span>
+                      </button>
+                    )}
+                    {onAddPeriod && (
+                      <button
+                        onClick={() => { onAddPeriod(toLocalISO(date)); onClose(); }}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-sky-300 hover:bg-sky-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                      >
+                        <span className="text-xl leading-none">🏝️</span>
+                        <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Period</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Templates shortcut */}
               {templates.length > 0 && (

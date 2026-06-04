@@ -48,8 +48,9 @@ public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Today's completed + planned workouts — each is an array of dicts
         // matching the WidgetWorkout Codable shape on the Swift side.
-        payload["todayCompleted"] = normaliseWorkouts(call.getArray("todayCompleted") ?? [])
-        payload["todayPlanned"]   = normaliseWorkouts(call.getArray("todayPlanned")   ?? [])
+        payload["todayCompleted"]  = normaliseWorkouts(call.getArray("todayCompleted")  ?? [])
+        payload["todayPlanned"]    = normaliseWorkouts(call.getArray("todayPlanned")    ?? [])
+        payload["tomorrowPlanned"] = normaliseWorkouts(call.getArray("tomorrowPlanned") ?? [])
 
         do {
             let data = try JSONSerialization.data(withJSONObject: payload, options: [])
@@ -85,6 +86,7 @@ public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
             out["sport"]    = (dict["sport"] as? String) ?? NSNull()
             out["category"] = (dict["category"] as? String) ?? NSNull()
             out["subtitle"] = (dict["subtitle"] as? String) ?? NSNull()
+            out["id"]       = (dict["id"] as? String) ?? NSNull()
             if let dur = dict["durationSec"] as? Int {
                 out["durationSec"] = dur
             } else if let durDouble = dict["durationSec"] as? Double {

@@ -9,18 +9,25 @@ import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
-import WidgetDebugBanner from '../components/NativeDashboard/WidgetDebugBanner';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
+import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
 // surfaced as "Cannot access 'ae' before initialization" at runtime.
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
+);
+// Same lazy strategy for the day-theme editor sheet (shared with the calendar).
+const DayPlanEditSheet = lazy(() =>
+  import('../components/Calendar/CalendarView').then(m => ({ default: m.DayPlanEditSheet }))
+);
+const PeriodEditSheet = lazy(() =>
+  import('../components/Calendar/CalendarView').then(m => ({ default: m.PeriodEditSheet }))
 );
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -198,12 +205,14 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, onOpenPlanned, onPlanWorkout }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout }) {
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
 
   const { getCategory } = useCategories();
+  const dayTheme = (dayPlans || []).find(p => p?.date === dateStr) || null;
+  const dayPeriods = buildPeriodsByDate(periods).get(dateStr) || [];
   const catStyle = (catId) => {
     const cat = getCategory(catId);
     if (!cat) return null;
@@ -251,9 +260,76 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, onOpenActivity, 
           pattern; here it's a full pill button next to the count, which
           reads as the obvious place to add a workout for this day. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasContent ? 10 : 4, gap: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          {label}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            {label}
+          </span>
+          {onEditTheme && (
+            dayTheme && (dayTheme.title || dayTheme.category) ? (
+              <button
+                type="button"
+                onClick={() => onEditTheme(date)}
+                title={dayTheme.notes || dayTheme.title || catLabel(dayTheme.category)}
+                style={{
+                  ...((() => {
+                    const tc = dayThemePresetColor(dayTheme.title);
+                    if (tc) return { background: hexToRgba(tc, 0.14), color: tc, border: `1px solid ${hexToRgba(tc, 0.32)}` };
+                    return catStyle(dayTheme.category) || {
+                      background: 'rgba(94,101,144,0.12)', color: '#5E6590',
+                      border: '1px solid rgba(94,101,144,0.25)',
+                    };
+                  })()),
+                  fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  padding: '3px 7px', borderRadius: 6, lineHeight: 1,
+                  maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}
+              >{dayTheme.title || catLabel(dayTheme.category)}</button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onEditTheme(date)}
+                aria-label="Add day theme"
+                style={{
+                  fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  padding: '3px 7px', borderRadius: 6, lineHeight: 1,
+                  background: 'transparent', color: '#9CA3AF', border: '1px dashed #D1D5DB',
+                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}
+              >+ theme</button>
+            )
+          )}
+          {/* Period chips (tap to edit) + add-period affordance */}
+          {onEditPeriod && dayPeriods.map((p) => (
+            <button
+              key={p._id}
+              type="button"
+              onClick={() => onEditPeriod({ period: p })}
+              title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
+              style={{
+                fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                padding: '3px 7px', borderRadius: 6, lineHeight: 1,
+                maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                background: hexToRgba(periodColor(p), 0.14), color: periodColor(p),
+                border: `1px solid ${hexToRgba(periodColor(p), 0.32)}`,
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+              }}
+            >{(p.notes && p.notes.trim()) || p.type}</button>
+          ))}
+          {onEditPeriod && (
+            <button
+              type="button"
+              onClick={() => onEditPeriod({ defaultDate: dateStr })}
+              aria-label="Add period"
+              style={{
+                fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                padding: '3px 7px', borderRadius: 6, lineHeight: 1,
+                background: 'transparent', color: '#9CA3AF', border: '1px dashed #D1D5DB',
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+              }}
+            >+ period</button>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {dayActs.length > 0 && (
             <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
@@ -549,6 +625,12 @@ export default function NativeDashboardPage({
   stravaConnected = false,        // gates the manual-sync refresh button
   onRequestStravaSync = null,     // () => Promise<{imported,updated,...}> — bypasses autoSync flag
   onPlanWorkout = null,           // (date) => void — opens planned-workout form for that date
+  dayPlans = [],                  // [{ date, title, category, notes }] — day-level themes
+  onDayPlanSave = null,           // (dateStr, payload) => Promise — upsert a day theme
+  onDayPlanDelete = null,         // (dateStr) => Promise — remove a day theme
+  periods = [],                   // [{ _id, startDate, endDate, type, color, notes }]
+  onPeriodSave = null,            // (payload) => Promise — upsert a period
+  onPeriodDelete = null,          // (periodId) => Promise — remove a period
 }) {
   const navigate      = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -557,6 +639,10 @@ export default function NativeDashboardPage({
 
   // Key for animation trigger — changes on date select
   const [animKey, setAnimKey] = useState(0);
+  // Day-theme editor: holds the YYYY-MM-DD string of the day being edited.
+  const [themeEditDate, setThemeEditDate] = useState(null);
+  // Period editor: { period } to edit an existing one, or { defaultDate } to create.
+  const [periodEdit, setPeriodEdit] = useState(null);
 
   const handleSelectDate = (d) => {
     setSelectedDate(d);
@@ -966,11 +1052,6 @@ export default function NativeDashboardPage({
           </div>
         )}
 
-        {/* Widget pipeline diagnostic — tells you on-device exactly which layer
-            of the home-screen widget fails (plugin / app group / write). Safe to
-            remove once the widget is confirmed working. */}
-        <WidgetDebugBanner />
-
         {/* ── Greeting — title slides in, wave-icon animates on cycle ── */}
         <div style={{ ...styles.greetingRow, ...cardEntry(0), ...snapStyle }}>
           <div style={styles.greetingText}>
@@ -1004,11 +1085,14 @@ export default function NativeDashboardPage({
             <WeekStrip
               activities={activities}
               plannedWorkouts={plannedWorkouts}
+              dayPlans={dayPlans}
+              periods={periods}
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               onPlanWorkout={onPlanWorkout}
             />
           </div>
+
 
           {/* 2 · Day activities — re-animates on date change */}
           <div style={snapStyle}>
@@ -1017,6 +1101,10 @@ export default function NativeDashboardPage({
                 date={selectedDate}
                 activities={activities}
                 plannedWorkouts={plannedWorkouts}
+                dayPlans={dayPlans}
+                periods={periods}
+                onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}
+                onEditPeriod={onPeriodSave ? (arg) => setPeriodEdit(arg) : null}
                 onPlanWorkout={onPlanWorkout}
                 onOpenActivity={openActivity}
                 onOpenPlanned={(pw, linkedAct) => {
@@ -1125,6 +1213,48 @@ export default function NativeDashboardPage({
             }
           }}
         />
+        </Suspense>
+      )}
+
+      {/* Day-theme editor (shared bottom sheet from the calendar) */}
+      {themeEditDate && onDayPlanSave && (
+        <Suspense fallback={null}>
+          <DayPlanEditSheet
+            date={themeEditDate}
+            plan={(dayPlans || []).find(p => p?.date === themeEditDate)}
+            onClose={() => setThemeEditDate(null)}
+            onSave={async (payload, dates) => {
+              const list = Array.isArray(dates) && dates.length ? dates : [themeEditDate];
+              let result = null;
+              for (const d of list) { result = await onDayPlanSave(d, payload); }
+              setThemeEditDate(null);
+              return result;
+            }}
+            onDelete={async () => {
+              if (onDayPlanDelete) await onDayPlanDelete(themeEditDate);
+              setThemeEditDate(null);
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Calendar period editor */}
+      {periodEdit && onPeriodSave && (
+        <Suspense fallback={null}>
+          <PeriodEditSheet
+            period={periodEdit.period || null}
+            defaultDate={periodEdit.defaultDate || null}
+            onClose={() => setPeriodEdit(null)}
+            onSave={async (payload) => {
+              const result = await onPeriodSave(payload);
+              setPeriodEdit(null);
+              return result;
+            }}
+            onDelete={onPeriodDelete ? async (id) => {
+              await onPeriodDelete(id);
+              setPeriodEdit(null);
+            } : null}
+          />
         </Suspense>
       )}
 

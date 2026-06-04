@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -119,7 +120,7 @@ function fmtDur(secs) {
   return `${h}h${m}`;
 }
 
-export default function WeekStrip({ activities = [], plannedWorkouts = [], selectedDate, onSelectDate, onPlanWorkout = null }) {
+export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], selectedDate, onSelectDate, onPlanWorkout = null }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -136,6 +137,14 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
   }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const weekDays = getWeekDays(weekRef);
+
+  // dateStr → day-theme lookup, drives the tiny theme label under each date.
+  const themeByDate = new Map();
+  (dayPlans || []).forEach(p => {
+    if (p?.date && (p.title || p.category)) themeByDate.set(p.date, p);
+  });
+  // dateStr → period[] lookup, drives the colored band on top of each day.
+  const periodsByDate = buildPeriodsByDate(periods);
 
   // Header label for the visible week — e.g. "May 5 — May 11"
   const monday = weekDays[0];
@@ -322,6 +331,18 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
               transition: 'background .18s ease, box-shadow .18s ease, transform .12s ease',
             }}
           >
+            {/* Period band(s) — thin colored stripe at the top of the day */}
+            {(() => {
+              const ps = periodsByDate.get(toLocalDateStr(d));
+              if (!ps || !ps.length) return null;
+              return (
+                <div style={{ position: 'absolute', top: 0, left: 6, right: 6, height: 3, display: 'flex', gap: 1, borderRadius: '0 0 2px 2px', overflow: 'hidden' }}>
+                  {ps.slice(0, 3).map((p, i) => (
+                    <div key={p._id || i} style={{ flex: 1, background: periodColor(p) }} />
+                  ))}
+                </div>
+              );
+            })()}
             {/* Day letter */}
             <span style={{
               fontSize: 9.5, fontWeight: 700, letterSpacing: '0.05em',
@@ -366,6 +387,27 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], selec
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 6 }}>
               {indicatorContent()}
             </div>
+
+            {/* Day-theme label (e.g. "LT2") — read-only here; edited in the
+                day card / calendar. */}
+            {(() => {
+              const theme = themeByDate.get(toLocalDateStr(d));
+              if (!theme) return null;
+              const text = theme.title || theme.category;
+              if (!text) return null;
+              const tc = dayThemePresetColor(theme.title);
+              const bg = isSelected ? 'rgba(255,255,255,.22)' : (tc ? `${tc}22` : 'rgba(94,101,144,.12)');
+              const fg = isSelected ? '#fff' : (tc || '#5E6590');
+              return (
+                <span style={{
+                  marginTop: 2, maxWidth: '100%', padding: '1px 4px', borderRadius: 4,
+                  fontSize: 7.5, fontWeight: 800, lineHeight: 1.1, letterSpacing: '0.02em',
+                  textTransform: 'uppercase',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  background: bg, color: fg,
+                }}>{text}</span>
+              );
+            })()}
 
             {/* Daily totals (TSS + duration). The "+" plan-workout shortcut
                 used to live here but was moved out — it now sits next to

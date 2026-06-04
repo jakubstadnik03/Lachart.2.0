@@ -31,6 +31,7 @@ import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 
 // ─── Planned workout helpers (mirrors CalendarView) ──────────────────────────
 
@@ -945,6 +946,9 @@ const WeeklyCalendar = ({
   onDayPlanSave = null,
   /** Called with dateStr to remove a day theme. */
   onDayPlanDelete = null,
+  /** Multi-day periods (Vacation, Training camp, …) — display-only bands here;
+   *  edited on the Calendar tab. */
+  periods = [],
   onPlanWorkout = null,
   onSelectPlannedWorkout = null,
   onStartWorkout = null,
@@ -1217,6 +1221,7 @@ const WeeklyCalendar = ({
     (dayPlans || []).forEach(p => { if (p?.date) m.set(p.date, p); });
     return m;
   }, [dayPlans]);
+  const periodsByDate = useMemo(() => buildPeriodsByDate(periods), [periods]);
   const weekDays = useMemo(() => {
     const start = startOfWeek(currentWeek);
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
@@ -2515,6 +2520,26 @@ const WeeklyCalendar = ({
                   isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
                 }`}
               >
+                {(() => {
+                  const ps = periodsByDate.get(key);
+                  if (!ps || !ps.length) return null;
+                  const starting = ps.filter(p => p.startDate === key);
+                  return (
+                    <div className="mb-1">
+                      <div className="flex gap-px" style={{ height: 4 }} title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}>
+                        {ps.slice(0, 3).map((p, i) => (
+                          <div key={p._id || i} style={{ flex: 1, background: periodColor(p), borderRadius: 2 }} />
+                        ))}
+                      </div>
+                      {starting.map(p => (
+                        <div key={`lbl-${p._id}`} className="mt-0.5 text-[9px] font-bold uppercase tracking-wide leading-none truncate"
+                          style={{ color: periodColor(p) }} title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}>
+                          {(p.notes && p.notes.trim()) || p.type}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <div>
@@ -2529,12 +2554,16 @@ const WeeklyCalendar = ({
                       const dp = dayPlanByDate.get(key);
                       if (!dp || (!dp.title && !dp.category)) return null;
                       const cat = dp.category ? getCategory(dp.category) : null;
+                      const tc = dayThemePresetColor(dp.title);
                       // Display-only chip on Dashboard. Editing happens on the
                       // Calendar tab where the full DayPlanEditSheet lives.
+                      const style = tc
+                        ? { background: hexToRgba(tc, 0.12), color: tc, borderColor: hexToRgba(tc, 0.35) }
+                        : (cat ? { background: hexToRgba(cat.color, 0.12), color: cat.color, borderColor: hexToRgba(cat.color, 0.35) } : { background: 'rgba(118,126,181,.12)', color: '#5E6590', borderColor: 'rgba(118,126,181,.25)' });
                       return (
                         <span
                           className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[80px]"
-                          style={cat ? { background: hexToRgba(cat.color, 0.12), color: cat.color, borderColor: hexToRgba(cat.color, 0.35) } : { background: 'rgba(118,126,181,.12)', color: '#5E6590', borderColor: 'rgba(118,126,181,.25)' }}
+                          style={style}
                           title={dp.notes || dp.title || (cat?.label || dp.category)}
                         >
                           {dp.title || cat?.label || dp.category}

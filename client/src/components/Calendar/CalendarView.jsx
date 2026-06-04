@@ -23,10 +23,11 @@ import {
   HeartIcon,
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
-import api, { getSimilarActivities } from '../../services/api';
+import api, { getSimilarActivities, getRaceEvents } from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
+import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computeActivityTss } from '../../utils/computeTss';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -736,7 +737,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
-  const TARGET_VISIBLE_LAPS = 5;
+  const TARGET_VISIBLE_LAPS = 8;
   // Bar widths are STRICTLY proportional to weight (distance for swim/run,
   // duration for bike). A 2-km lap renders 4× as wide as a 500-m lap, no
   // capping. Honza's feedback (2026-05): "vždy at je to poměrově prostě"
@@ -795,6 +796,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const zoomedTotalW = isZoomed
     ? Math.round(Math.max(1, entries.length / TARGET_VISIBLE_LAPS) * viewportEstimate)
     : 0;
+
+  // Minimum on-screen width per bar so short / zero-distance (pause) laps stay
+  // visible and tappable instead of collapsing to a sliver. Adaptive: as wide
+  // as 7 px when there's room, shrinking toward 3 px for very long lap lists so
+  // every bar still fits the (non-scrolling) full-width row.
+  const GAP_PX = 1;
+  const MIN_BAR_PX = Math.max(3, Math.min(7, Math.floor(viewportEstimate / Math.max(1, entries.length) - GAP_PX)));
 
   // Auto-scroll: center the selected lap when zoomed.
   // On deselect, reset scroll to 0 before the container shrinks back.
@@ -1144,7 +1152,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               // is still preserved for tooltips, scroll-to-lap math (above)
               // and any downstream consumers that care about actual time/dist.
               const layoutWeight = capWeight(ent.weight);
-              const itemStyle = { flex: `${layoutWeight} 0 2px`, minWidth: 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
+              // flex-basis = MIN_BAR_PX guarantees every lap (incl. pauses) is
+              // at least MIN_BAR_PX wide; flex-grow stays proportional to weight
+              // so longer laps still read proportionally larger.
+              const itemStyle = { flex: `${layoutWeight} 0 ${MIN_BAR_PX}px`, minWidth: MIN_BAR_PX, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -4807,9 +4818,9 @@ const SPORT_OPTIONS_COMPLETED = [
   { key: 'other',    label: 'Other',     icon: null,               color: '#9ca3af' },
 ];
 
-function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout }) {
-  // step: 'menu' (when plan option available) | 'pick' | 'manual' | 'fit'
-  const [step, setStep]     = useState(onPlanWorkout ? 'menu' : 'pick');
+function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, initialStep = null, onAddDayTheme = null, onAddPeriod = null }) {
+  // step: 'menu' (when plan option available) | 'pick' | 'manual' | 'fit' | 'race'
+  const [step, setStep]     = useState(initialStep || (onPlanWorkout ? 'menu' : 'pick'));
   const [saving, setSaving] = useState(false);
   const [fitError, setFitError] = useState(null);
   const fitInputRef = useRef(null);
@@ -4834,6 +4845,26 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout })
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // ── Race / goal event form (from the day "+" → Plan a race, or header + Race)
+  const [raceForm, setRaceForm] = useState({ name: '', date: dateStr || '', sport: 'run', priority: 'A', targetCTL: '' });
+  const handleRaceSubmit = async () => {
+    if (!raceForm.name || !raceForm.date) return;
+    setSaving(true);
+    try {
+      const { createRaceEvent } = await import('../../services/api.js');
+      await createRaceEvent({
+        name: raceForm.name.trim(),
+        date: raceForm.date,
+        sport: raceForm.sport,
+        priority: raceForm.priority,
+        targetCTL: raceForm.targetCTL ? Number(raceForm.targetCTL) : null,
+      }, athleteId || undefined);
+      onSaved?.();
+      onClose();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  };
 
   // Parse "h:mm:ss", "mm:ss", or plain minutes → seconds
   const parseDuration = (s) => {
@@ -4943,6 +4974,92 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout })
                     <div className="text-sm font-semibold text-gray-800">Log completed workout</div>
                     <div className="text-[11px] text-gray-400">Upload FIT or enter manually</div>
                   </div>
+                </button>
+                <button
+                  onClick={() => setStep('race')}
+                  className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 21V5a2 2 0 012-2h11l-2 4 2 4H5" /></svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Plan a race</div>
+                    <div className="text-[11px] text-gray-400">Add a race / goal event to this day</div>
+                  </div>
+                </button>
+                {onAddDayTheme && (
+                  <button
+                    onClick={() => { onClose(); setTimeout(() => onAddDayTheme(dateStr), 50); }}
+                    className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0 text-lg">🎯</div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-800">Day theme</div>
+                      <div className="text-[11px] text-gray-400">Tag this day (LT2, Recovery, …)</div>
+                    </div>
+                  </button>
+                )}
+                {onAddPeriod && (
+                  <button
+                    onClick={() => { onClose(); setTimeout(() => onAddPeriod(dateStr), 50); }}
+                    className="flex items-center gap-4 px-4 py-4 rounded-xl border border-gray-200 bg-gray-50 active:bg-gray-100 touch-manipulation text-left"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-sky-100 flex items-center justify-center flex-shrink-0 text-lg">🏝️</div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-800">Period</div>
+                      <div className="text-[11px] text-gray-400">Vacation, training camp, work trip…</div>
+                    </div>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step: race ── */}
+          {step === 'race' && (
+            <div className="px-5 pb-8 pt-2">
+              <div className="flex items-center justify-between mb-1">
+                <button onClick={() => setStep('menu')} className="text-xs text-gray-400 flex items-center gap-1">
+                  <ChevronLeftIcon className="w-3.5 h-3.5" />Back
+                </button>
+                <h2 className="text-base font-bold text-gray-800">Plan a race</h2>
+                <div className="w-10" />
+              </div>
+              <p className="text-xs text-gray-400 mb-4">{date?.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+              <div className="flex flex-col gap-3">
+                <input
+                  autoFocus placeholder="Race name" value={raceForm.name}
+                  onChange={e => setRaceForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full text-sm px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-primary/40"
+                />
+                <input
+                  type="date" value={raceForm.date}
+                  onChange={e => setRaceForm(f => ({ ...f, date: e.target.value }))}
+                  className="w-full text-sm px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-primary/40"
+                />
+                <div className="flex gap-3">
+                  <select value={raceForm.sport} onChange={e => setRaceForm(f => ({ ...f, sport: e.target.value }))}
+                    className="flex-1 text-sm px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none">
+                    {['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select value={raceForm.priority} onChange={e => setRaceForm(f => ({ ...f, priority: e.target.value }))}
+                    className="flex-1 text-sm px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none">
+                    <option value="A">A — goal</option>
+                    <option value="B">B race</option>
+                    <option value="C">C race</option>
+                  </select>
+                </div>
+                <input
+                  type="number" placeholder="Target CTL (optional)" value={raceForm.targetCTL}
+                  onChange={e => setRaceForm(f => ({ ...f, targetCTL: e.target.value }))}
+                  className="w-full text-sm px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-primary/40"
+                />
+                <button
+                  onClick={handleRaceSubmit}
+                  disabled={saving || !raceForm.name}
+                  className="w-full py-3 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Add race'}
                 </button>
               </div>
             </div>
@@ -5347,11 +5464,14 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
 // ─── DayPlanEditSheet — bottom sheet to assign / clear a day-level theme ───
 // Lightweight (no FIT pickers, no steps), portal'd so it sits above the
 // activity modal stack. Used by the mobile day-list header.
-function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
+export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
   const { categories } = useCategories();
   const [title, setTitle]       = useState(plan?.title || '');
   const [category, setCategory] = useState(plan?.category || null);
   const [notes, setNotes]       = useState(plan?.notes || '');
+  // Weekly repeat: 0 = this day only. >0 = also apply to the same weekday for
+  // the next N weeks (materialised as individual day-plans, no schema rule).
+  const [repeatWeeks, setRepeatWeeks] = useState(0);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState(null);
   // Drag-to-dismiss state — same pattern as ActivityShareSheet.
@@ -5363,13 +5483,35 @@ function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
     return new Date(y, m - 1, d);
   }, [date]);
   const niceDate = dateObj.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const weekdayName = dateObj.toLocaleDateString(undefined, { weekday: 'long' });
+
+  // Build the list of YYYY-MM-DD target dates: the base day plus one per week
+  // for `repeatWeeks` weeks ahead (same weekday).
+  const buildTargetDates = () => {
+    const fmt = (dt) => {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    const dates = [date];
+    for (let i = 1; i <= repeatWeeks; i++) {
+      const dt = new Date(dateObj);
+      dt.setDate(dt.getDate() + 7 * i);
+      dates.push(fmt(dt));
+    }
+    return dates;
+  };
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      console.log('[DayPlan] saving', { date, title, category, notes });
-      const result = await onSave({ title: title.trim(), category: category || null, notes: notes.trim() });
+      const payload = { title: title.trim(), category: category || null, notes: notes.trim() };
+      const targetDates = buildTargetDates();
+      console.log('[DayPlan] saving', { dates: targetDates, ...payload });
+      // onSave receives (payload, datesArray) — the parent upserts each date.
+      const result = await onSave(payload, targetDates);
       console.log('[DayPlan] save result', result);
     } catch (e) {
       // Surface API errors inline so the user knows WHY nothing changed
@@ -5474,12 +5616,22 @@ function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
 
         <div className="px-5 py-4 overflow-y-auto space-y-4">
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Theme</div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {DAY_THEME_PRESETS.map(preset => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setTitle(preset)}
+                  className={`text-[11px] uppercase tracking-wide px-2.5 py-1 rounded-md font-bold border leading-none ${title === preset ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:border-primary/40'}`}
+                >{preset}</button>
+              ))}
+            </div>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Threshold, Easy spin, Long run"
+              placeholder="e.g. LT2, Threshold, Easy spin, Long run"
               className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
             />
           </div>
@@ -5513,12 +5665,162 @@ function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
             />
           </div>
 
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Repeat weekly</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[{ w: 0, label: 'No' }, { w: 4, label: '4 wks' }, { w: 8, label: '8 wks' }, { w: 12, label: '12 wks' }].map(opt => (
+                <button
+                  key={opt.w}
+                  type="button"
+                  onClick={() => setRepeatWeeks(opt.w)}
+                  className={`text-[11px] uppercase tracking-wide px-2.5 py-1 rounded-md font-bold border leading-none ${repeatWeeks === opt.w ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200'}`}
+                >{opt.label}</button>
+              ))}
+            </div>
+            {repeatWeeks > 0 && (
+              <div className="mt-1.5 text-[11px] text-gray-400">
+                Also applied to every {weekdayName} for the next {repeatWeeks} weeks.
+              </div>
+            )}
+          </div>
+
           {plan && (
             <button
               onClick={handleDelete}
               disabled={saving}
               className="w-full py-2.5 text-sm font-semibold text-red-500 rounded-xl border border-red-200 bg-red-50/50 active:bg-red-50 disabled:opacity-50"
             >Remove day theme</button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.getElementById('app-modal-root') || document.body
+  );
+}
+
+// ─── PeriodEditSheet — create/edit a multi-day calendar period ───────────────
+// (Vacation, Training camp, Work trip, Illness, Race week). Bottom-sheet UI
+// mirroring DayPlanEditSheet. onSave receives a single payload object with
+// { _id?, startDate, endDate, type, color, notes }.
+export function PeriodEditSheet({ period, defaultDate, onClose, onSave, onDelete }) {
+  const initialStart = period?.startDate || defaultDate || '';
+  const initialEnd   = period?.endDate   || defaultDate || '';
+  const [type, setType]           = useState(period?.type || PERIOD_TYPES[0].type);
+  const [startDate, setStartDate] = useState(initialStart);
+  const [endDate, setEndDate]     = useState(initialEnd);
+  const [notes, setNotes]         = useState(period?.notes || '');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState(null);
+
+  const selectedColor = (PERIOD_TYPES.find(p => p.type === type) || PERIOD_TYPES[0]).color;
+
+  const handleSave = async () => {
+    if (!startDate || !endDate) { setError('Pick a start and end date.'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      // Keep start <= end.
+      const s = startDate <= endDate ? startDate : endDate;
+      const e = startDate <= endDate ? endDate : startDate;
+      await onSave({
+        ...(period?._id ? { _id: period._id } : {}),
+        startDate: s, endDate: e, type, color: selectedColor, notes: notes.trim(),
+      });
+    } catch (err) {
+      setError(err?.response?.data?.error || err?.message || 'Failed to save period');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleDelete = async () => {
+    if (!period?._id || !onDelete) return;
+    setSaving(true); setError(null);
+    try { await onDelete(period._id); }
+    catch (err) { setError(err?.response?.data?.error || err?.message || 'Failed to delete period'); }
+    finally { setSaving(false); }
+  };
+
+  return ReactDOM.createPortal(
+    <div
+      onClick={onClose}
+      className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-4"
+      style={{
+        zIndex: 2147483646, pointerEvents: 'auto',
+        background: 'rgba(0,0,0,.55)', WebkitBackdropFilter: 'blur(4px)', backdropFilter: 'blur(4px)',
+        touchAction: 'manipulation',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="w-full max-w-md sm:max-w-xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col"
+        style={{
+          padding: '14px 0 calc(28px + env(safe-area-inset-bottom, 0px))', maxHeight: '90vh',
+          fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif', pointerEvents: 'auto',
+        }}
+      >
+        <div className="sm:hidden" style={{ alignSelf: 'center', width: 44, height: 5, borderRadius: 999, background: '#d1d5db', margin: '4px 0 8px' }} />
+        <div className="px-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-700">Cancel</button>
+          <div className="text-base font-bold text-gray-900">{period ? 'Edit period' : 'Add period'}</div>
+          <button onClick={handleSave} disabled={saving} className="text-sm font-bold text-primary disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {error && (
+          <div className="mx-5 mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[11px] font-semibold text-red-700">{error}</div>
+        )}
+
+        <div className="px-5 py-4 overflow-y-auto space-y-4">
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Type</div>
+            <div className="flex flex-wrap gap-1.5">
+              {PERIOD_TYPES.map(pt => (
+                <button
+                  key={pt.type}
+                  type="button"
+                  onClick={() => setType(pt.type)}
+                  className="text-[11px] uppercase tracking-wide px-2.5 py-1 rounded-md font-bold border leading-none"
+                  style={type === pt.type
+                    ? { background: pt.color, color: '#fff', borderColor: pt.color }
+                    : { background: hexToRgba(pt.color, 0.1), color: pt.color, borderColor: hexToRgba(pt.color, 0.3) }}
+                >{pt.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">From</div>
+              <input
+                type="date" value={startDate}
+                onChange={e => { setStartDate(e.target.value); if (!endDate || e.target.value > endDate) setEndDate(e.target.value); }}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">To</div>
+              <input
+                type="date" value={endDate} min={startDate || undefined}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes <span className="text-gray-300 normal-case font-medium">(optional)</span></div>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              placeholder="e.g. Sierra Nevada camp, client visit…"
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+
+          {period && onDelete && (
+            <button
+              onClick={handleDelete} disabled={saving}
+              className="w-full py-2.5 text-sm font-semibold text-red-500 rounded-xl border border-red-200 bg-red-50/50 active:bg-red-50 disabled:opacity-50"
+            >Remove period</button>
           )}
         </div>
       </div>
@@ -5552,6 +5854,13 @@ export default function CalendarView({
   onDayPlanSave = null,
   /** Called with dateStr to remove the day theme. */
   onDayPlanDelete = null,
+  /** Array of CalendarPeriod objects: { _id, startDate, endDate, type, color, notes }
+   *  Multi-day spans (Vacation, Training camp, …) rendered as colored bands. */
+  periods = [],
+  /** Called with a payload { _id?, startDate, endDate, type, color, notes } to upsert a period. */
+  onPeriodSave = null,
+  /** Called with periodId to remove a period. */
+  onPeriodDelete = null,
   /** Called with the PlannedWorkout object when the user clicks on a planned card */
   onSelectPlannedWorkout = null,
   /** Called with the PlannedWorkout object when the user clicks "Start" */
@@ -5671,8 +5980,127 @@ export default function CalendarView({
     (dayPlans || []).forEach(p => { if (p?.date) m.set(p.date, p); });
     return m;
   }, [dayPlans]);
+  // Period editor state: holds { period } when editing, { defaultDate } when
+  // creating, or null when closed.
+  const [periodEdit, setPeriodEdit] = useState(null);
+  // Lookup: dateStr → array of periods covering that day (for the band).
+  const periodsByDate = useMemo(() => buildPeriodsByDate(periods), [periods]);
+
+  // Thin colored band(s) for any periods covering `key` (YYYY-MM-DD). Clicking
+  // a segment opens the period editor. Returns null when no period applies.
+  const renderPeriodBand = (key, { height = 4, showLabel = false } = {}) => {
+    const ps = periodsByDate.get(key);
+    if (!ps || !ps.length) return null;
+    // Label only on the day a period STARTS, so the name reads once at the
+    // left edge of the band (notes/destination if set, else the type).
+    const starting = showLabel ? ps.filter(p => p.startDate === key) : [];
+    return (
+      <div className="mb-1">
+        <div
+          className="flex gap-px"
+          style={{ height }}
+          title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}
+        >
+          {ps.slice(0, 3).map((p, i) => (
+            <div
+              key={p._id || i}
+              onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
+              style={{ flex: 1, background: periodColor(p), borderRadius: 2, cursor: onPeriodSave ? 'pointer' : 'default' }}
+            />
+          ))}
+        </div>
+        {starting.map(p => (
+          <div
+            key={`lbl-${p._id}`}
+            onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
+            className="mt-0.5 text-[9px] font-bold uppercase tracking-wide leading-none truncate"
+            style={{ color: periodColor(p), cursor: onPeriodSave ? 'pointer' : 'default' }}
+            title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
+          >
+            {(p.notes && p.notes.trim()) || p.type}
+          </div>
+        ))}
+      </div>
+    );
+  };
+  // Renders the day-theme chip for `key` (or null).
+  const renderDayThemeChip = (key) => {
+    const dp = dayPlanByDate.get(key);
+    if (!dp || (!dp.title && !dp.category)) return null;
+    const tc = dayThemePresetColor(dp.title);
+    const catColor = dp.category ? (getCategory(dp.category)?.color) : null;
+    const color = tc || catColor || '#5E6590';
+    const open = (e) => { e.stopPropagation(); if (onDayPlanSave) setDayPlanEditDate(key); };
+    return (
+      <button
+        onClick={open}
+        title={dp.notes || dp.title || catLabel(dp.category)}
+        className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px]"
+        style={{ background: hexToRgba(color, 0.12), color, borderColor: hexToRgba(color, 0.35), cursor: onDayPlanSave ? 'pointer' : 'default' }}
+      >
+        {dp.title || catLabel(dp.category)}
+      </button>
+    );
+  };
+
+  // ── Race events (existing race-planning system) — loaded here and rendered
+  // as a big badge on the race day in every calendar layout. ─────────────────
+  const [races, setRaces] = useState([]);
+  const reloadRaces = useCallback(() => {
+    getRaceEvents(athleteId || undefined, { from: '2000-01-01' })
+      .then(({ data }) => setRaces(Array.isArray(data) ? data : []))
+      .catch(() => setRaces([]));
+  }, [athleteId]);
+  useEffect(() => { reloadRaces(); }, [reloadRaces]);
+  const racesByDate = useMemo(() => {
+    const m = new Map();
+    (races || []).forEach(r => {
+      const d = String(r.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      if (!m.has(d)) m.set(d, []);
+      m.get(d).push(r);
+    });
+    return m;
+  }, [races]);
+  const RACE_PRIORITY_COLOR = { A: '#dc2626', B: '#ea580c', C: '#d97706' };
+  // Big, prominent race badge for a given day key (or null).
+  const renderRaceBadge = (key, { big = false } = {}) => {
+    const rs = racesByDate.get(key);
+    if (!rs || !rs.length) return null;
+    return (
+      <div className="flex flex-col gap-0.5 mb-1">
+        {rs.map((r, i) => {
+          const color = RACE_PRIORITY_COLOR[r.priority] || '#dc2626';
+          return (
+            <div
+              key={r._id || i}
+              title={`${r.name}${r.priority ? ` (${r.priority} race)` : ''}`}
+              className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full ${big ? 'px-2 py-1 text-[12px]' : 'px-1.5 py-0.5 text-[10px]'}`}
+              style={{ background: color }}
+            >
+              <span aria-hidden>🏁</span><span className="truncate">{r.name}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // "+ theme" affordance for empty days (desktop parity with mobile).
+  const renderAddThemeBtn = (key, { className = '' } = {}) => {
+    if (!onDayPlanSave || dayPlanByDate.get(key)) return null;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); setDayPlanEditDate(key); }}
+        className={`text-[9px] font-bold uppercase tracking-wide text-gray-300 hover:text-primary px-1 ${className}`}
+        title="Add day theme"
+      >+ theme</button>
+    );
+  };
+
   // Add completed workout sheet
   const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
+  const [addRaceOpen, setAddRaceOpen] = useState(false);          // header "+ Race" → race form
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -6586,6 +7014,22 @@ export default function CalendarView({
               Month
             </button>
           )}
+          {onPeriodSave && (
+            <button
+              onClick={() => setPeriodEdit({ defaultDate: getLocalDateString(new Date()) })}
+              title="Add a multi-day period (vacation, training camp, …)"
+              className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-gray-200 hover:bg-gray-50 text-gray-700"
+            >
+              + Period
+            </button>
+          )}
+          <button
+            onClick={() => setAddRaceOpen(true)}
+            title="Plan a race / goal event"
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-red-200 hover:bg-red-50 text-red-600"
+          >
+            + Race
+          </button>
           <button
             onClick={() => setIsFullscreen(v => !v)}
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
@@ -6888,6 +7332,10 @@ export default function CalendarView({
                     className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
                     onClick={() => setSelectedMobileDay(key)}
                   >
+                    {/* Period band(s) — colored stripe across the top */}
+                    {renderPeriodBand(key, { height: 5, showLabel: true })}
+                    {/* Race day — big badge */}
+                    <div className="px-3">{renderRaceBadge(key, { big: true })}</div>
                     {/* Day header (compact — bigger info goes on the
                         trainings inside, not the date strip).
                         The day-theme badge ("Threshold", "Recovery", …) sits
@@ -6899,16 +7347,7 @@ export default function CalendarView({
                         <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-gray-400'}`}>{dayNames[dayDate.getDay()]}</span>
                         <span className={`text-base font-extrabold ${isToday ? 'text-primary' : 'text-gray-800'}`}>{dayDate.getDate()}</span>
                         {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
-                        {_dayPlan && (_dayPlan.title || _dayPlan.category) && (
-                          <button
-                            onClick={e => { e.stopPropagation(); if (onDayPlanSave) setDayPlanEditDate(key); }}
-                            className="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-md font-bold border leading-none truncate max-w-[40vw]"
-                            style={_dayPlan.category ? catBadgeStyle(_dayPlan.category) : { background: 'rgba(118,126,181,.12)', color: '#5E6590', borderColor: 'rgba(118,126,181,.25)' }}
-                            title={_dayPlan.notes || _dayPlan.title || catLabel(_dayPlan.category)}
-                          >
-                            {_dayPlan.title || catLabel(_dayPlan.category)}
-                          </button>
-                        )}
+                        {renderDayThemeChip(key, { big: true })}
                         {!_dayPlan && onDayPlanSave && (
                           <button
                             onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
@@ -7379,11 +7818,18 @@ export default function CalendarView({
                           setDraggedPw(null);
                         }}
                       >
+                        {/* Period band(s) — colored stripe across the top */}
+                        {renderPeriodBand(key, { height: 4, showLabel: true })}
+                        {renderRaceBadge(key, { big: true })}
                         {/* Day number */}
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className={`text-xs font-bold leading-none ${isToday ? 'w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px]' : 'text-gray-700'}`}>
-                            {dayDate.getDate()}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`text-xs font-bold leading-none ${isToday ? 'w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px]' : 'text-gray-700'}`}>
+                              {dayDate.getDate()}
+                            </span>
+                            {renderDayThemeChip(key)}
+                            {renderAddThemeBtn(key, { className: 'opacity-0 group-hover/day:opacity-100 transition-opacity' })}
+                          </div>
                           {isDragTarget && <span className="text-[9px] font-semibold text-primary/70">{draggedPw?.isCopy ? 'Copy' : 'Move'}</span>}
                           {!isDragTarget && onPlanWorkout && (
                             <button
@@ -7559,10 +8005,17 @@ export default function CalendarView({
                       setDraggedPw(null);
                     }}
                   >
+                    {/* Period band(s) — colored stripe across the top */}
+                    {renderPeriodBand(key, { height: 4, showLabel: true })}
+                    {renderRaceBadge(key, { big: true })}
                     <div className={`flex items-center justify-between mb-1.5`}>
-                      <span className={`text-xs md:text-sm font-semibold ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
-                        {view === 'week' ? `${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][dayIdx]} ${dayDate.getDate()}` : dayDate.getDate()}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`text-xs md:text-sm font-semibold ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
+                          {view === 'week' ? `${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][dayIdx]} ${dayDate.getDate()}` : dayDate.getDate()}
+                        </span>
+                        {renderDayThemeChip(key)}
+                        {renderAddThemeBtn(key, { className: 'opacity-0 group-hover:opacity-100 transition-opacity hidden md:inline-block' })}
+                      </div>
                       {isDragTarget && (
                         <span className="text-[9px] font-semibold text-primary/70 ml-1">{draggedPw?.isCopy ? 'Copy here' : 'Move here'}</span>
                       )}
@@ -7855,10 +8308,26 @@ export default function CalendarView({
           date={addCompletedDate}
           athleteId={athleteId}
           onPlanWorkout={onPlanWorkout}
+          onAddDayTheme={onDayPlanSave ? (d) => { setAddCompletedDate(null); setDayPlanEditDate(d); } : null}
+          onAddPeriod={onPeriodSave ? (d) => { setAddCompletedDate(null); setPeriodEdit({ defaultDate: d }); } : null}
           onClose={() => setAddCompletedDate(null)}
           onSaved={() => {
             setAddCompletedDate(null);
             onAddCompletedWorkout?.();
+            reloadRaces();
+          }}
+        />
+      )}
+      {addRaceOpen && (
+        <AddCompletedSheet
+          date={new Date()}
+          athleteId={athleteId}
+          initialStep="race"
+          onClose={() => setAddRaceOpen(false)}
+          onSaved={() => {
+            setAddRaceOpen(false);
+            onAddCompletedWorkout?.();
+            reloadRaces();
           }}
         />
       )}
@@ -7868,14 +8337,37 @@ export default function CalendarView({
           date={dayPlanEditDate}
           plan={dayPlanByDate.get(dayPlanEditDate)}
           onClose={() => setDayPlanEditDate(null)}
-          onSave={async (payload) => {
-            await onDayPlanSave(dayPlanEditDate, payload);
+          onSave={async (payload, dates) => {
+            // `dates` includes the base day plus any weekly-repeat occurrences.
+            const list = Array.isArray(dates) && dates.length ? dates : [dayPlanEditDate];
+            let result = null;
+            for (const d of list) {
+              result = await onDayPlanSave(d, payload);
+            }
             setDayPlanEditDate(null);
+            return result;
           }}
           onDelete={async () => {
             if (onDayPlanDelete) await onDayPlanDelete(dayPlanEditDate);
             setDayPlanEditDate(null);
           }}
+        />
+      )}
+      {/* Calendar period editor */}
+      {periodEdit && onPeriodSave && (
+        <PeriodEditSheet
+          period={periodEdit.period || null}
+          defaultDate={periodEdit.defaultDate || null}
+          onClose={() => setPeriodEdit(null)}
+          onSave={async (payload) => {
+            const result = await onPeriodSave(payload);
+            setPeriodEdit(null);
+            return result;
+          }}
+          onDelete={onPeriodDelete ? async (id) => {
+            await onPeriodDelete(id);
+            setPeriodEdit(null);
+          } : null}
         />
       )}
     </>

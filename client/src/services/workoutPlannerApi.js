@@ -171,3 +171,36 @@ export const deleteDayPlan = async (date, athleteId) => {
   const { data } = await api.delete(`${BASE}/day-plans/${date}`, { params });
   return data;
 };
+
+// ── Calendar periods ────────────────────────────────────────────────────────
+// Multi-day spans (Vacation, Training camp, Work trip, Illness, Race week)
+// rendered as colored bands across the calendar.
+
+/**
+ * @param {{ from?: string, to?: string, athleteId?: string }} opts
+ */
+export const getPeriods = async (opts = {}) => {
+  const { data } = await api.get(`${BASE}/periods`, { params: opts });
+  return data;
+};
+
+/**
+ * Create (no _id) or update (with _id) a period.
+ * @param {{ _id?: string, startDate: string, endDate: string, type: string, color?: string|null, notes?: string }} payload
+ * @param {string} [athleteId]  optional — for coach setting on athlete
+ */
+export const savePeriod = async (payload, athleteId) => {
+  const params = athleteId ? { athleteId } : {};
+  if (payload && payload._id) {
+    const { data } = await api.put(`${BASE}/periods/${payload._id}`, payload, { params });
+    return data;
+  }
+  const { data } = await api.post(`${BASE}/periods`, payload, { params });
+  return data;
+};
+
+export const deletePeriod = async (periodId, athleteId) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.delete(`${BASE}/periods/${periodId}`, { params });
+  return data;
+};

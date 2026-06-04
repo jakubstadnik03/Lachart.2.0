@@ -143,6 +143,18 @@ struct WorkoutRow: View {
     var compact: Bool = false
 
     var body: some View {
+        // Tapping a row deep-links straight into that training; rows without a
+        // resolvable id just render (the whole widget still opens the app).
+        if let tid = workout.targetId, !tid.isEmpty,
+           let encoded = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let url = URL(string: "com.lachart.app://open-training?id=\(encoded)") {
+            Link(destination: url) { rowContent }
+        } else {
+            rowContent
+        }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: compact ? 6 : 8) {
             // Status indicator + sport icon
             ZStack {
@@ -218,9 +230,6 @@ struct SmallTodayView: View {
                     .tracking(0.4)
                     .foregroundColor(LaChartColor.mark)
                 Spacer()
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundColor(LaChartColor.mark)
             }
 
             if entry.snapshot.isEmptyState {
@@ -276,7 +285,7 @@ struct MediumTodayView: View {
     let entry: FormFitnessEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("LaChart")
                     .font(.system(size: 10, weight: .heavy))
@@ -291,9 +300,6 @@ struct MediumTodayView: View {
                         .clipShape(Capsule())
                 }
                 Spacer()
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundColor(LaChartColor.mark)
             }
 
             if entry.snapshot.isEmptyState {
@@ -301,13 +307,17 @@ struct MediumTodayView: View {
                 HStack { Spacer(); EmptyHint(); Spacer() }
                 Spacer(minLength: 0)
             } else {
-                KPIRow(snapshot: entry.snapshot)
-                Divider().opacity(0.4)
+                // Compact KPI row sits tight under the header so the workout
+                // list below gets as much vertical room as possible.
+                KPIRow(snapshot: entry.snapshot, compact: true)
+                Divider().opacity(0.35)
                 content
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -326,18 +336,21 @@ struct MediumTodayView: View {
                 Spacer()
             }
         } else {
-            VStack(alignment: .leading, spacing: 6) {
-                // DONE section
-                if !completed.isEmpty {
+            // Show as many rows as fit — the compact header frees room for ~4.
+            // Completed take priority, planned fill the remainder.
+            let maxRows = 4
+            let doneShown = Array(completed.prefix(maxRows))
+            let planShown = Array(planned.prefix(max(0, maxRows - doneShown.count)))
+            VStack(alignment: .leading, spacing: 4) {
+                if !doneShown.isEmpty {
                     sectionLabel("DONE", count: completed.count)
-                    ForEach(Array(completed.prefix(2))) { w in
+                    ForEach(doneShown) { w in
                         WorkoutRow(workout: w, done: true)
                     }
                 }
-                // PLANNED section
-                if !planned.isEmpty {
+                if !planShown.isEmpty {
                     sectionLabel("PLANNED", count: planned.count)
-                    ForEach(Array(planned.prefix(completed.isEmpty ? 2 : 1))) { w in
+                    ForEach(planShown) { w in
                         WorkoutRow(workout: w, done: false)
                     }
                 }
@@ -361,6 +374,87 @@ struct MediumTodayView: View {
     }
 }
 
+// MARK: - Large
+
+struct LargeTodayView: View {
+    let entry: FormFitnessEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("LaChart")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(0.4)
+                    .foregroundColor(LaChartColor.mark)
+                if entry.isStale {
+                    Text("STALE")
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundColor(LaChartColor.warning)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(LaChartColor.warning.opacity(0.14))
+                        .clipShape(Capsule())
+                }
+                Spacer()
+            }
+
+            if entry.snapshot.isEmptyState {
+                Spacer(minLength: 0)
+                HStack { Spacer(); EmptyHint(); Spacer() }
+                Spacer(minLength: 0)
+            } else {
+                KPIRow(snapshot: entry.snapshot)
+                Divider().opacity(0.35)
+                content
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        let completed = entry.snapshot.todayCompleted
+        let todayPlan = entry.snapshot.todayPlanned
+        let tmwPlan   = entry.snapshot.tomorrowPlanned
+
+        VStack(alignment: .leading, spacing: 5) {
+            label("TODAY")
+            if completed.isEmpty && todayPlan.isEmpty {
+                restRow
+            } else {
+                ForEach(Array(completed.prefix(3))) { w in WorkoutRow(workout: w, done: true) }
+                ForEach(Array(todayPlan.prefix(3)))  { w in WorkoutRow(workout: w, done: false) }
+            }
+
+            if !tmwPlan.isEmpty {
+                label("TOMORROW").padding(.top, 3)
+                ForEach(Array(tmwPlan.prefix(3))) { w in WorkoutRow(workout: w, done: false) }
+            }
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.7)
+            .foregroundColor(LaChartColor.muted)
+    }
+
+    private var restRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(LaChartColor.muted)
+            Text("Rest day")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(LaChartColor.muted)
+            Spacer()
+        }
+    }
+}
+
 // MARK: - Widget
 
 struct FormFitnessWidget: Widget {
@@ -379,7 +473,7 @@ struct FormFitnessWidget: Widget {
         }
         .configurationDisplayName("Today's Training")
         .description("Form / Fitness / Fatigue plus today's completed & planned workouts.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
@@ -388,6 +482,7 @@ struct FormFitnessWidgetView: View {
     let entry: FormFitnessEntry
     var body: some View {
         switch family {
+        case .systemLarge:  LargeTodayView(entry: entry)
         case .systemMedium: MediumTodayView(entry: entry)
         default:            SmallTodayView(entry: entry)
         }

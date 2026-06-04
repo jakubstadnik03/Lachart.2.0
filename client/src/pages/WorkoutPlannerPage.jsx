@@ -21,6 +21,7 @@ import {
   deletePlannedWorkout, getWorkoutTemplates,
 } from '../services/workoutPlannerApi';
 import api from '../services/api';
+import WorkoutTemplateLibrary from '../components/WorkoutPlanner/WorkoutTemplateLibrary';
 
 // ─── Date helpers (local, not re-exported from modal) ────────────────────────
 function startOfWeek(date) {
@@ -88,15 +89,21 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
 
 // ─── Completed Training Card (inside calendar cell) ──────────────────────────
 function CompletedCard({ training }) {
-  const sport = training.sport || 'bike';
+  // Normalise Strava ("Ride"/"Run"/"Swim") + manual sports to icon/colour keys.
+  const raw = String(training.sport || '').toLowerCase();
+  const sport = raw.includes('ride') || raw.includes('bike') || raw.includes('cycl') ? 'bike'
+              : raw.includes('run')  ? 'run'
+              : raw.includes('swim') ? 'swim'
+              : (SPORT_COLORS[raw] ? raw : 'bike');
   const col = SPORT_COLORS[sport] || '#94a3b8';
+  const title = training.title || training.name || training.titleManual || 'Activity';
   return (
     <div className="rounded-lg border bg-slate-50 overflow-hidden"
       style={{ borderColor: col + '40', borderLeftWidth: 2, borderLeftColor: col }}>
       <div className="px-2 py-1.5">
         <div className="flex items-center gap-1.5">
           <img src={SPORT_ICONS[sport] || '/icon/default.svg'} alt={sport} className="w-3 h-3 opacity-60" />
-          <span className="text-[11px] text-slate-500 truncate">{training.title || 'Untitled'}</span>
+          <span className="text-[11px] text-slate-500 truncate">{title}</span>
           <CheckCircleIcon className="w-3 h-3 text-emerald-400 shrink-0 ml-auto" />
         </div>
       </div>
@@ -125,6 +132,7 @@ export default function WorkoutPlannerPage() {
   const [trainings, setTrainings] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading,   setLoading]   = useState(false);
+  const [dragOverDay, setDragOverDay] = useState(null);   // dateStr currently hovered with a template drag
   const [modal, setModal] = useState(null); // { date, workout? }
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
 
@@ -202,16 +210,32 @@ export default function WorkoutPlannerPage() {
       if (isCoachLike && globalAthleteId && globalAthleteId !== user?._id) {
         params.athleteId = globalAthleteId;
       }
-      const [pw, tplResp, trainResp] = await Promise.all([
+      const [pw, tplResp, trainResp, extResp] = await Promise.all([
         getPlannedWorkouts(params),
         getWorkoutTemplates(),
+        // Manually-logged trainings.
         api.get(`/user/athlete/${athleteId}/trainings`).catch(() => ({ data: [] })),
+        // Strava / FIT activities — the "completed" most athletes actually have.
+        api.get('/api/integrations/activities', {
+          params: { athleteId, summaryOnly: true, limit: 300 },
+          cacheTtlMs: 60000,
+        }).catch(() => ({ data: [] })),
       ]);
       setPlanned(Array.isArray(pw) ? pw : []);
       setTemplates(Array.isArray(tplResp) ? tplResp : []);
 
-      // Filter trainings to this week
-      const weekTrainings = (trainResp.data || []).filter(t => {
+      // Merge completed from both sources (manual + Strava/FIT), dedupe, then
+      // filter to the visible week.
+      const extList = Array.isArray(extResp.data) ? extResp.data
+                    : (extResp.data?.activities || extResp.data?.data || []);
+      const merged = [
+        ...(Array.isArray(trainResp.data) ? trainResp.data : []),
+        ...extList,
+      ];
+      const seen = new Set();
+      const weekTrainings = merged.filter(t => {
+        const id = String(t._id || t.id || t.stravaId || '');
+        if (id) { if (seen.has(id)) return false; seen.add(id); }
         const d = new Date(t.date || t.startDate || t.start_date);
         return d >= start && d <= addDays(start, 7);
       });
@@ -303,7 +327,12 @@ export default function WorkoutPlannerPage() {
   const today = new Date();
 
   return (
-    <div className="min-h-full bg-gray-50 p-4 sm:p-6">
+    <div className="min-h-full bg-gray-50 flex">
+      {/* Left: draggable template library */}
+      <WorkoutTemplateLibrary templates={templates} />
+
+      {/* Right: planner */}
+      <div className="flex-1 p-4 sm:p-6 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
@@ -441,7 +470,31 @@ export default function WorkoutPlannerPage() {
           });
 
           return (
-            <div key={dateStr} className="flex flex-col gap-1.5 min-h-[120px]">
+            <div
+              key={dateStr}
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer.types).includes('application/x-lachart-template')) {
+                  e.preventDefault();
+                  if (dragOverDay !== dateStr) setDragOverDay(dateStr);
+                }
+              }}
+              onDragLeave={() => setDragOverDay(d => (d === dateStr ? null : d))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverDay(null);
+                const raw = e.dataTransfer.getData('application/x-lachart-template');
+                if (!raw) return;
+                try {
+                  const tpl = JSON.parse(raw);
+                  // Open the planner modal pre-filled from the template so the
+                  // coach can tweak it before saving it onto this day.
+                  setModal({ date: day, workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps } });
+                } catch { /* ignore malformed payload */ }
+              }}
+              className={`flex flex-col gap-1.5 min-h-[120px] rounded-xl transition-colors ${
+                dragOverDay === dateStr ? 'bg-primary/5 ring-2 ring-primary/30' : ''
+              }`}
+            >
               {/* Day header */}
               <div className={`flex flex-col items-center py-1 rounded-xl mb-0.5 ${isToday ? 'bg-primary' : 'bg-white border border-slate-100'}`}>
                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${isToday ? 'text-white/80' : 'text-slate-400'}`}>
@@ -466,7 +519,7 @@ export default function WorkoutPlannerPage() {
 
               {/* Completed trainings */}
               {dayCompleted.map(t => (
-                <CompletedCard key={t._id} training={t} />
+                <CompletedCard key={t._id || t.id || t.stravaId} training={t} />
               ))}
 
               {/* Add button */}
@@ -494,6 +547,7 @@ export default function WorkoutPlannerPage() {
           onClose={() => setModal(null)}
         />
       )}
+      </div>
     </div>
   );
 }

@@ -17,6 +17,14 @@ struct WidgetWorkout: Codable, Identifiable {
     let durationSec: Int?
     let category: String?       // category id used for the colour dot
     let subtitle: String?       // optional "10 km · 4:45/km" line
+    let targetId: String?       // prefixed activity / planned id for deep-linking
+
+    // The JSON key is "id"; expose it as `targetId` so it doesn't collide with
+    // the synthesised Identifiable `id` below.
+    enum CodingKeys: String, CodingKey {
+        case title, sport, durationSec, category, subtitle
+        case targetId = "id"
+    }
 
     // Make SwiftUI's ForEach happy with non-unique titles
     var id: String { "\(title)-\(sport ?? "")-\(durationSec ?? 0)-\(subtitle ?? "")" }
@@ -31,6 +39,7 @@ struct FormFitnessSnapshot: Codable {
 
     let todayCompleted: [WidgetWorkout]
     let todayPlanned:   [WidgetWorkout]
+    let tomorrowPlanned: [WidgetWorkout]   // shown only on the large widget
 
     let sparkline: [Int]
 
@@ -44,6 +53,7 @@ struct FormFitnessSnapshot: Codable {
         lastUpdated: Date(timeIntervalSince1970: 0),
         todayCompleted: [],
         todayPlanned: [],
+        tomorrowPlanned: [],
         sparkline: []
     )
 
@@ -55,16 +65,43 @@ struct FormFitnessSnapshot: Codable {
         formDelta: -4,
         lastUpdated: Date(),
         todayCompleted: [
-            WidgetWorkout(title: "Easy", sport: "bike", durationSec: 7680, category: "endurance", subtitle: "53.8 km · 228 W")
+            WidgetWorkout(title: "Easy", sport: "bike", durationSec: 7680, category: "endurance", subtitle: "53.8 km · 228 W", targetId: nil)
         ],
         todayPlanned: [
-            WidgetWorkout(title: "Tempo Run", sport: "run", durationSec: 3600, category: "tempo", subtitle: "10 km · 4:45/km")
+            WidgetWorkout(title: "Tempo Run", sport: "run", durationSec: 3600, category: "tempo", subtitle: "10 km · 4:45/km", targetId: nil)
+        ],
+        tomorrowPlanned: [
+            WidgetWorkout(title: "Long Ride", sport: "bike", durationSec: 10800, category: "endurance", subtitle: "90 km · 180 TSS", targetId: nil)
         ],
         sparkline: []
     )
 
     var isEmptyState: Bool {
         lastUpdated.timeIntervalSince1970 == 0
+    }
+}
+
+// Custom decoding so caches written before `tomorrowPlanned` existed still
+// decode (the key defaults to [] instead of throwing keyNotFound, which would
+// blank the widget). Kept in an extension so the memberwise initializer used by
+// `.empty` / `.preview` above is preserved.
+extension FormFitnessSnapshot {
+    enum CodingKeys: String, CodingKey {
+        case fitness, fatigue, form, formDelta, lastUpdated
+        case todayCompleted, todayPlanned, tomorrowPlanned, sparkline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fitness         = try c.decode(Int.self, forKey: .fitness)
+        fatigue         = try c.decode(Int.self, forKey: .fatigue)
+        form            = try c.decode(Int.self, forKey: .form)
+        formDelta       = try c.decode(Int.self, forKey: .formDelta)
+        lastUpdated     = try c.decode(Date.self, forKey: .lastUpdated)
+        todayCompleted  = try c.decode([WidgetWorkout].self, forKey: .todayCompleted)
+        todayPlanned    = try c.decode([WidgetWorkout].self, forKey: .todayPlanned)
+        sparkline       = try c.decode([Int].self, forKey: .sparkline)
+        tomorrowPlanned = try c.decodeIfPresent([WidgetWorkout].self, forKey: .tomorrowPlanned) ?? []
     }
 }
 

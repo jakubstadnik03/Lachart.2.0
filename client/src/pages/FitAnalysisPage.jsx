@@ -7,14 +7,14 @@ import { useCategories } from '../context/CategoryContext';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap, getTrainingCommentCounts } from '../services/api';
 import TrainingComments from '../components/TrainingComments';
 import { motion } from 'framer-motion';
-import CalendarView from '../components/Calendar/CalendarView';
+import CalendarView, { DayPlanEditSheet, PeriodEditSheet } from '../components/Calendar/CalendarView';
 import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
 import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModal';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
@@ -1571,7 +1571,11 @@ const FitAnalysisPage = () => {
   // planned workouts. Loaded alongside planned workouts so the calendar
   // can render the theme badge / mini-grid dot for each day in one pass.
   const [dayPlans, setDayPlans] = useState([]);
+  const [periods, setPeriods] = useState([]);
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
+  // Quick day-theme / period editors opened from the "Add a workout" modal tiles.
+  const [quickTheme, setQuickTheme] = useState(null);   // { date: 'YYYY-MM-DD', preset }
+  const [quickPeriod, setQuickPeriod] = useState(null); // { defaultDate: 'YYYY-MM-DD' }
   const [compareModal, setCompareModal] = useState(null); // PlannedWorkout object with executionData
   const [mobileStravaTab, setMobileStravaTab] = useState('summary'); // 'summary' | 'laps'
   const [planTemplates, setPlanTemplates] = useState([]);
@@ -2302,17 +2306,20 @@ const FitAnalysisPage = () => {
 
       const targetId = selectedAthleteId || user?._id;
 
-      const [data, tpls, dps] = await Promise.all([
+      const [data, tpls, dps, ps] = await Promise.all([
         getPlannedWorkouts(opts),
         getWorkoutTemplates().catch(() => []),
         // Day-level theme labels ("Threshold day", "Recovery", …) — drives
         // the badge in the mobile calendar's day-list header and the
         // colour-coded dot in the mini month grid.
         getDayPlans(opts).catch(() => []),
+        // Multi-day periods (Vacation, Training camp, …) — colored bands.
+        getPeriods(opts).catch(() => []),
       ]);
       setPlannedWorkoutsCalendar(Array.isArray(data) ? data : []);
       setPlanTemplates(Array.isArray(tpls) ? tpls : []);
       setDayPlans(Array.isArray(dps) ? dps : []);
+      setPeriods(Array.isArray(ps) ? ps : []);
 
       // Enrich planContext with latest test-derived thresholds (zones come from userProfile effect above)
       if (targetId) {
@@ -2341,6 +2348,7 @@ const FitAnalysisPage = () => {
     } catch (_) {
       setPlannedWorkoutsCalendar([]);
       setDayPlans([]);
+      setPeriods([]);
     }
   }, [selectedAthleteId, user?.role, user?._id]);
 
@@ -2378,6 +2386,27 @@ const FitAnalysisPage = () => {
       await apiDeleteDayPlan(dateStr, coachAthleteId);
       setDayPlans(prev => prev.filter(p => p.date !== dateStr));
     } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
+
+  // ── Calendar period save / delete ─────────────────────────────────────────
+  const handlePeriodSave = useCallback(async (payload) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    const result = await apiSavePeriod(payload, coachAthleteId);
+    setPeriods(prev => {
+      const without = prev.filter(p => String(p._id) !== String(result._id));
+      return [...without, result];
+    });
+    return result;
+  }, [selectedAthleteId, user?.role]);
+
+  const handlePeriodDelete = useCallback(async (periodId) => {
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    await apiDeletePeriod(periodId, coachAthleteId);
+    setPeriods(prev => prev.filter(p => String(p._id) !== String(periodId)));
   }, [selectedAthleteId, user?.role]);
 
   /** CRUD for planned workouts from the calendar */
@@ -4182,6 +4211,29 @@ const FitAnalysisPage = () => {
           onSave={handlePlanSave}
           onDelete={handlePlanDelete}
           onClose={() => setPlanModal(null)}
+          onAddDayTheme={(iso, preset) => { setPlanModal(null); setQuickTheme({ date: iso, preset: preset || null }); }}
+          onAddPeriod={(iso) => { setPlanModal(null); setQuickPeriod({ defaultDate: iso }); }}
+        />
+      )}
+      {quickTheme && (
+        <DayPlanEditSheet
+          date={quickTheme.date}
+          plan={dayPlans.find(p => p.date === quickTheme.date) || (quickTheme.preset ? { title: quickTheme.preset } : undefined)}
+          onClose={() => setQuickTheme(null)}
+          onSave={async (payload, dates) => {
+            const list = Array.isArray(dates) && dates.length ? dates : [quickTheme.date];
+            for (const d of list) { await handleDayPlanSave(d, payload); }
+            setQuickTheme(null);
+          }}
+          onDelete={async () => { await handleDayPlanDelete(quickTheme.date); setQuickTheme(null); }}
+        />
+      )}
+      {quickPeriod && (
+        <PeriodEditSheet
+          defaultDate={quickPeriod.defaultDate}
+          onClose={() => setQuickPeriod(null)}
+          onSave={async (payload) => { await handlePeriodSave(payload); setQuickPeriod(null); }}
+          onDelete={null}
         />
       )}
       {/* Planned vs Actual comparison modal — opens for completed workouts with executionData */}
@@ -4358,6 +4410,9 @@ const FitAnalysisPage = () => {
           dayPlans={dayPlans}
           onDayPlanSave={handleDayPlanSave}
           onDayPlanDelete={handleDayPlanDelete}
+          periods={periods}
+          onPeriodSave={handlePeriodSave}
+          onPeriodDelete={handlePeriodDelete}
           onActivityUpdate={(updated) => {
             setExternalActivities(prev => prev.map(a => {
               const aId = String(a.stravaId || a.id || a._id || '');

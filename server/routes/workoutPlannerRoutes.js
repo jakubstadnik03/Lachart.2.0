@@ -10,6 +10,7 @@ const verifyToken = require('../middleware/verifyToken');
 const WorkoutTemplate = require('../models/WorkoutTemplate');
 const PlannedWorkout  = require('../models/PlannedWorkout');
 const DayPlan         = require('../models/DayPlan');
+const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
 
@@ -563,6 +564,96 @@ router.delete('/day-plans/:date', verifyToken, requirePlanWorkouts, async (req, 
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete day plan' });
+  }
+});
+
+// ─── Calendar periods ──────────────────────────────────────────────────────
+// Multi-day spans (Vacation, Training camp, Work trip, Illness, Race week)
+// rendered as colored bands across the calendar.
+
+const PERIOD_TYPES = ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week'];
+
+/** GET /api/workout-planner/periods?from=YYYY-MM-DD&to=YYYY-MM-DD&athleteId=
+ *  Returns any period that OVERLAPS the [from,to] window. */
+router.get('/periods', verifyToken, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const from = req.query.from || null;
+    const to   = req.query.to   || null;
+    const query = { athleteId };
+    // Overlap: period.start <= to AND period.end >= from
+    if (from) query.endDate   = { $gte: from };
+    if (to)   query.startDate = { $lte: to };
+    const periods = await CalendarPeriod.find(query).sort({ startDate: 1 }).lean();
+    res.json(periods);
+  } catch (e) {
+    console.error('[WorkoutPlanner] GET /periods error:', e);
+    res.status(500).json({ error: 'Failed to load periods' });
+  }
+});
+
+/** POST /api/workout-planner/periods  body: { startDate, endDate, type, color?, notes? } */
+router.post('/periods', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    let { startDate, endDate, type, color = null, notes = '' } = req.body || {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))) {
+      return res.status(400).json({ error: 'startDate and endDate must be YYYY-MM-DD' });
+    }
+    if (!PERIOD_TYPES.includes(type)) {
+      return res.status(400).json({ error: 'Invalid period type' });
+    }
+    // Normalise so startDate is always <= endDate.
+    if (endDate < startDate) { const t = startDate; startDate = endDate; endDate = t; }
+    const period = await CalendarPeriod.create({
+      athleteId, createdBy: req.user.userId, startDate, endDate, type, color, notes,
+    });
+    res.status(201).json(period);
+  } catch (e) {
+    console.error('[WorkoutPlanner] POST /periods error:', e);
+    res.status(500).json({ error: 'Failed to create period' });
+  }
+});
+
+/** PUT /api/workout-planner/periods/:id  body: partial { startDate, endDate, type, color, notes } */
+router.put('/periods/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const period = await CalendarPeriod.findById(req.params.id);
+    if (!period) return res.status(404).json({ error: 'Period not found' });
+    if (String(period.athleteId) !== String(athleteId)) return res.status(403).json({ error: 'Forbidden' });
+    const { startDate, endDate, type, color, notes } = req.body || {};
+    if (startDate !== undefined) period.startDate = startDate;
+    if (endDate   !== undefined) period.endDate   = endDate;
+    if (type      !== undefined) {
+      if (!PERIOD_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid period type' });
+      period.type = type;
+    }
+    if (color !== undefined) period.color = color;
+    if (notes !== undefined) period.notes = notes;
+    if (period.endDate < period.startDate) {
+      const t = period.startDate; period.startDate = period.endDate; period.endDate = t;
+    }
+    await period.save();
+    res.json(period);
+  } catch (e) {
+    console.error('[WorkoutPlanner] PUT /periods error:', e);
+    res.status(500).json({ error: 'Failed to update period' });
+  }
+});
+
+/** DELETE /api/workout-planner/periods/:id */
+router.delete('/periods/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const period = await CalendarPeriod.findById(req.params.id);
+    if (!period) return res.json({ ok: true });
+    if (String(period.athleteId) !== String(athleteId)) return res.status(403).json({ error: 'Forbidden' });
+    await period.deleteOne();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[WorkoutPlanner] DELETE /periods error:', e);
+    res.status(500).json({ error: 'Failed to delete period' });
   }
 });
 

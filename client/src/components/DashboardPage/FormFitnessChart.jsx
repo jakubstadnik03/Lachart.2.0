@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LineChart, Line } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import { getFormFitnessData, getTodayMetrics } from '../../services/api';
+import { getFormFitnessData, getTodayMetrics, getRaceEvents } from '../../services/api';
 import TrainingGlossary from './TrainingGlossary';
 
 const FormFitnessChart = ({ athleteId }) => {
@@ -48,6 +48,7 @@ const FormFitnessChart = ({ athleteId }) => {
   const [timeRange, setTimeRange] = useState(getStoredTimeRange());
   const [sportFilter, setSportFilter] = useState(getStoredSportFilter());
   const [chartData, setChartData] = useState([]);
+  const [raceTarget, setRaceTarget] = useState(null); // next race with a CTL target → drawn as a reference line
   const [loading, setLoading] = useState(true);
   const [zoomRange, setZoomRange] = useState(null); // { start: number, end: number } indices in chartData
   const [refAreaLeft, setRefAreaLeft] = useState(null); // global index in chartData
@@ -206,6 +207,22 @@ const FormFitnessChart = ({ athleteId }) => {
 
     loadData();
   }, [athleteId, timeRange, sportFilter]);
+
+  // Next race with a CTL target → draw it as a horizontal reference line so the
+  // athlete sees the fitness they're building toward (TrainingPeaks-style).
+  useEffect(() => {
+    let cancelled = false;
+    if (!athleteId) { setRaceTarget(null); return undefined; }
+    (async () => {
+      try {
+        const from = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+        const { data } = await getRaceEvents(athleteId, { from });
+        const next = (Array.isArray(data) ? data : []).find(r => r.targetCTL != null);
+        if (!cancelled) setRaceTarget(next ? { ctl: Number(next.targetCTL), name: next.name } : null);
+      } catch { if (!cancelled) setRaceTarget(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId]);
 
   // Detect mobile for carousel behavior
   useEffect(() => {
@@ -869,11 +886,26 @@ const FormFitnessChart = ({ athleteId }) => {
               fill="url(#colorFatigue)" 
               strokeWidth={2}
             />
-            <ReferenceLine 
-              y={0} 
-              stroke="#9ca3af" 
-              strokeDasharray="3 3" 
+            <ReferenceLine
+              y={0}
+              stroke="#9ca3af"
+              strokeDasharray="3 3"
             />
+            {raceTarget?.ctl != null && (
+              <ReferenceLine
+                y={raceTarget.ctl}
+                stroke="#767EB5"
+                strokeDasharray="6 4"
+                strokeWidth={1.5}
+                label={{
+                  value: `Target ${Math.round(raceTarget.ctl)} CTL · ${raceTarget.name}`,
+                  position: 'insideTopRight',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  fill: '#767EB5',
+                }}
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
         </div>
