@@ -14,12 +14,17 @@ struct RunPageDefault: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s6) {
-                // Elapsed time — bumped back up to ~72 pt with auto-shrink.
-                // Fills the upper third of the watch screen without
-                // clipping because the ScrollView lets it scroll if needed.
+            // Tighter inter-row spacing + top-aligned VStack so the
+            // timer hugs the top safe area instead of floating in the
+            // middle. `s6` left ~20 pt of dead space between rows on
+            // 41 mm; `s3` keeps the design hierarchy intact while
+            // shifting every row visibly up.
+            VStack(spacing: LC.s3) {
+                // Elapsed time — fills the upper third of the watch
+                // screen. minimumScaleFactor lets it shrink on small
+                // watches without clipping.
                 Text(live.elapsed.mmss)
-                    .font(.system(size: 72, weight: .thin, design: .rounded))
+                    .font(.system(size: 60, weight: .thin, design: .rounded))
                     .foregroundColor(.lcText)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -61,7 +66,8 @@ struct RunPageDefault: View {
             // the watch face. Previously sat at ~6-10 pt which wasted real
             // estate the user wanted to see metrics in.
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)         // pull content up under status bar
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

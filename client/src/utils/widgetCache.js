@@ -16,7 +16,9 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getTodayMetrics, getFormFitnessData } from '../services/api';
 
-const LaChartShared = registerPlugin('LaChartShared');
+// Single shared plugin proxy — re-exported so other modules don't call
+// registerPlugin('LaChartShared') again (Capacitor warns "registered twice").
+export const LaChartShared = registerPlugin('LaChartShared');
 
 /**
  * @param {{

@@ -13,16 +13,16 @@ struct RunPageTotals: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s4) {
+            VStack(spacing: LC.s2) {
                 Text("Totals")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.lcText3)
 
                 // 2-column grid — 6 tiles inevitably overflow short watches,
                 // so wrap in ScrollView so users can flick to the bottom row.
                 let tiles = makeTiles()
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
-                          spacing: LC.s4) {
+                          spacing: LC.s2) {
                     ForEach(tiles, id: \.label) { tile in
                         TileView(icon: tile.icon, label: tile.label,
                                  value: tile.value, color: tile.color)
@@ -30,7 +30,8 @@ struct RunPageTotals: View {
                 }
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

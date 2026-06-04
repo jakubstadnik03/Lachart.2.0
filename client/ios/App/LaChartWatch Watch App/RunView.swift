@@ -36,6 +36,13 @@ struct RunView: View {
     //   0 Default · 1 Zone · 2 Lap · 3 Totals · 4 Stryd · 5 Core · 6 Map
     @State private var metricPage = 0
 
+    // Continuous-valued page position driven by the Digital Crown. Snaps
+    // to the nearest integer page on rest. We keep a continuous Double so
+    // the crown feels analog (1 detent ≈ 1 page) while metricPage stays
+    // an Int for view selection.
+    @State private var crownPage: Double = 0
+    @FocusState private var crownFocused: Bool
+
     private let metricCount = 7
 
     private var isStructured: Bool {
@@ -69,8 +76,10 @@ struct RunView: View {
         ZStack(alignment: .trailing) {
             currentMetricPage
                 .id(metricPage)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.22), value: metricPage)
+                // `.opacity` cross-fade reads smoother than slide here
+                // because metric pages have wildly different layouts;
+                // sliding would expose blank space at the edges.
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 .background(Color.lcBg.ignoresSafeArea())
 
             // Vertical dot column — right edge, all 7 dots.
@@ -85,26 +94,40 @@ struct RunView: View {
             .padding(.trailing, 2)
             .allowsHitTesting(false)
 
-            // Top-right "n/7 · PageName" label.
-            VStack {
-                HStack(spacing: 4) {
-                    Text("\(metricPage + 1)/\(metricCount)")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundColor(.lcPrimaryLite)
-                    Text(metricPageName(metricPage))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.lcText2)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.black.opacity(0.45)))
-                .padding(.top, 2)
-                Spacer()
-            }
-            .padding(.trailing, 14)
-            .allowsHitTesting(false)
+            // (Page label intentionally omitted — the user prefers a
+            // clean run screen; right-edge dots already convey position.)
         }
         .contentShape(Rectangle())
+        // Digital Crown drives the same metricPage state — one detent
+        // ≈ one page. `from:through:by:` defines the legal range; the
+        // crown free-runs in that interval and we snap to the nearest
+        // integer in `onChange`. `isContinuous: false` makes it clamp
+        // at the ends (so spinning past page 6 doesn't wrap to 0).
+        .focusable(true)
+        .focused($crownFocused)
+        .digitalCrownRotation(
+            $crownPage,
+            from:           0,
+            through:        Double(metricCount - 1),
+            by:             1,
+            sensitivity:    .medium,
+            isContinuous:   false,
+            isHapticFeedbackEnabled: true
+        )
+        .onChange(of: crownPage) { _, new in
+            let snapped = Int(round(new))
+            if snapped != metricPage {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    metricPage = snapped
+                }
+            }
+        }
+        .onAppear { crownFocused = true; crownPage = Double(metricPage) }
+        .onChange(of: outerTab) { _, new in
+            // Re-grab crown focus whenever we land back on the Metrics
+            // pane — TabView steals focus when switching tabs.
+            if new == 2 { crownFocused = true }
+        }
         // Vertical-only drag — TabView swallows horizontal gestures so
         // this only fires for predominantly vertical drags. We still
         // guard `absDY > absDX` to ignore diagonal flicks.
@@ -115,7 +138,7 @@ struct RunView: View {
                 // Surface the lap in the Notifications pane so the user
                 // can swipe over and confirm it registered.
                 let lapNumber = appState.live.lapHistory.count + 1
-                let pace      = appState.live.lapPace
+                let pace      = appState.live.pace
                 appState.pushRunNotification(.lap(lapNumber, paceSec: pace))
             }
         )
@@ -157,19 +180,35 @@ struct RunView: View {
         }
     }
 
-    /// Vertical-only swipe — predominantly vertical drag ≥ 40 pt.
+    /// Vertical-only swipe — lowered to 25 pt so short flicks register
+    /// (on a 41 mm watch most users only travel ~30–60 pt). We also use
+    /// `predictedEndTranslation` so a quick flick counts the same as a
+    /// long slow drag — matches Apple's own pager feel.
+    ///
     ///   • swipe ↑ → next metric page
     ///   • swipe ↓ → previous metric page
     private var verticalSwipe: some Gesture {
-        DragGesture(minimumDistance: 20)
+        DragGesture(minimumDistance: 10)
             .onEnded { value in
-                let dy = value.translation.height
-                let dx = value.translation.width
-                guard abs(dy) > abs(dx), abs(dy) > 40 else { return }
-                if dy < 0 {
-                    metricPage = min(metricCount - 1, metricPage + 1)
+                // Use predicted end so flicks (small actual translation,
+                // large velocity) still cross the page threshold.
+                let dyEnd = value.predictedEndTranslation.height
+                let dxEnd = value.predictedEndTranslation.width
+                guard abs(dyEnd) > abs(dxEnd), abs(dyEnd) > 25 else { return }
+
+                let next: Int
+                if dyEnd < 0 {
+                    next = min(metricCount - 1, metricPage + 1)
                 } else {
-                    metricPage = max(0, metricPage - 1)
+                    next = max(0, metricPage - 1)
+                }
+                if next != metricPage {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                        metricPage = next
+                    }
+                    // Keep crown state in sync so the next crown spin
+                    // continues from the new page, not the previous one.
+                    crownPage = Double(next)
                 }
             }
     }

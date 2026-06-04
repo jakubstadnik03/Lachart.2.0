@@ -18,7 +18,7 @@ struct RunPageZone: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s4) {
+            VStack(spacing: LC.s2) {
                 // Zone number badge
                 Text("Z\(zone.id)")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -50,7 +50,8 @@ struct RunPageZone: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(
             RadialGradient(

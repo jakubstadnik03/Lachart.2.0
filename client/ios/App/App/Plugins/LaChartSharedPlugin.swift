@@ -12,7 +12,18 @@ import Capacitor
 import WidgetKit
 
 @objc(LaChartSharedPlugin)
-public class LaChartSharedPlugin: CAPPlugin {
+public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
+
+    // Capacitor 6 discovers plugins via these CAPBridgedPlugin members.
+    // The legacy `.m` CAP_PLUGIN macro alone is NOT reliably registered in
+    // Capacitor 6 — without this conformance the JS side reports the plugin as
+    // "not available" even though the class compiles into the app binary.
+    public let identifier = "LaChartSharedPlugin"
+    public let jsName = "LaChartShared"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setFormFitness", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reloadWidgets",  returnType: CAPPluginReturnPromise),
+    ]
 
     /// App Group identifier — must match the entitlement on BOTH the main
     /// app target AND the widget extension target.

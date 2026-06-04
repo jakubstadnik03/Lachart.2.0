@@ -8,6 +8,7 @@
 // lap markers, lactate prompts, BLE disconnects, coach pushes.
 
 import SwiftUI
+import Combine
 
 struct RunNotification: Identifiable, Equatable {
     let id        = UUID()

@@ -53,7 +53,8 @@ struct RunPageLap: View {
                 }
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

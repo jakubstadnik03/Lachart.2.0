@@ -366,6 +366,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
+  // Running power (watts, e.g. Stryd) — optional second metric for run tests,
+  // shown alongside pace. Defaults OFF, auto-shown when any row has data.
+  const [showRunPower, setShowRunPower] = useState(false);
   // Per-user preference: show the Dur/Dist stage column.
   // Defaults OFF — auto-shown when any row actually has stage data.
   const [showStageCol, setShowStageCol] = useState(() => {
@@ -415,7 +418,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   // Initialize refs for new rows
   useEffect(() => {
     rows.forEach((_, index) => {
-      ['power', 'heartRate', 'lactate', 'glucose', 'vo2', 'RPE'].forEach(field => {
+      ['power', 'runPower', 'heartRate', 'lactate', 'glucose', 'vo2', 'RPE'].forEach(field => {
         const key = `${field}_${index}`;
         if (!inputRefs.current[key]) {
           inputRefs.current[key] = null;
@@ -446,8 +449,16 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     Number(row.vo2) !== 0
   );
 
+  // Check if any row has running-power data (run tests only)
+  const hasRunPowerData = formData.sport === 'run' && rows.some(row =>
+    row.runPower !== undefined &&
+    row.runPower !== null &&
+    row.runPower !== '' &&
+    Number(row.runPower) !== 0
+  );
+
   // Check if any row has RPE data
-  const hasRPEData = rows.some(row => 
+  const hasRPEData = rows.some(row =>
     row.RPE !== undefined && 
     row.RPE !== null && 
     row.RPE !== '' && 
@@ -473,6 +484,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       setShowVO2(false);
     }
   }, [hasVO2Data]);
+
+  // Auto-show running-power column when any row has data
+  useEffect(() => {
+    if (hasRunPowerData) {
+      setShowRunPower(true);
+    }
+  }, [hasRunPowerData]);
 
   // Notify parent component when glucose column visibility changes
   useEffect(() => {
@@ -621,6 +639,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           duration: row.duration,
           distanceMeters: row.distanceMeters,
           power: row.power,
+          runPower: row.runPower,
           heartRate: row.heartRate,
           lactate: row.lactate,
           glucose: row.glucose,
@@ -681,6 +700,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             distanceMeters: row.distanceMeters !== undefined && row.distanceMeters !== null && row.distanceMeters !== ''
               ? String(row.distanceMeters) : '',
             power,
+            // Running power (watts) stored as-is from the backend.
+            runPower: row.runPower ? String(row.runPower) : '',
             heartRate: row.heartRate ? String(row.heartRate) : '',
             lactate: row.lactate ? String(row.lactate) : '',
             glucose: row.glucose ? String(row.glucose) : '',
@@ -699,6 +720,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           duration: '',
           distanceMeters: '',
           power: '',
+          runPower: '',
           heartRate: '',
           lactate: '',
           glucose: '',
@@ -834,6 +856,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           return {
             interval: index + 1,
             power: powerInSeconds,
+            // Running power (watts) — only persisted for run tests that
+            // actually have a value, so bike/swim rows stay clean.
+            ...(formData.sport === 'run' && row.runPower !== undefined && row.runPower !== null && String(row.runPower).trim() !== ''
+              ? { runPower: convertToNumber(row.runPower) }
+              : {}),
             heartRate: convertToNumber(row.heartRate),
             lactate: convertToNumber(row.lactate),
             glucose: convertToNumber(row.glucose),
@@ -1543,6 +1570,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       VO₂
                     </button>
                   )}
+                  {formData.sport === 'run' && !hasRunPowerData && (
+                    <button
+                      type="button"
+                      onClick={() => setShowRunPower(!showRunPower)}
+                      disabled={!isNewTest && !isEditMode}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showRunPower ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                      title="Show or hide the running Power (watts) column — e.g. Stryd"
+                    >
+                      Power
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2006,16 +2044,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             );
             // Show if user explicitly enabled it OR data already exists
             const shouldShowStageCol = showStageCol || hasStageData;
+            // Running power (watts) — run tests only, when toggled on or data exists
+            const shouldShowRunPower = formData.sport === 'run' && (showRunPower || hasRunPowerData);
 
-            // Calculate columns: Int + Dur + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
+            // Calculate columns: Int + Dur + Pace + [Pwr?] + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly
-            // Header structure: Int | Dur | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
-            // Row structure:    Int | Dur | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+            // Header structure: Int | Dur | Pace | [Pwr?] | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+            // Row structure:    Int | Dur | Pace | [Pwr?] | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
 
             // Count flexible columns (all except Int and Del which are fixed)
             let flexibleColCount = 0;
             if (shouldShowStageCol) flexibleColCount += 1; // Duration / Distance — togglable in settings
             flexibleColCount += 1; // Power/Pace
+            if (shouldShowRunPower) flexibleColCount += 1; // Running power (watts)
             flexibleColCount += 1; // HR
             flexibleColCount += 1; // La
             if (hasGlucoseData || showGlucose) {
@@ -2093,6 +2134,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                         </button>
                       );
                     })()}
+                    {shouldShowRunPower && <div className="text-center min-w-0 truncate" title="Running power (watts) — e.g. Stryd">Pwr</div>}
                     <div className="text-center min-w-0 truncate">HR</div>
                     <div className="text-center min-w-0 truncate">La</div>
                     {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 truncate">Glu</div>}
@@ -2182,6 +2224,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                             ? (unitSystem === 'imperial' ? 'mph' : 'km/h')
                             : 'MM:SS'
                       )}
+                      {shouldShowRunPower && renderInput(index, 'runPower', row.runPower, 'W')}
                       {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
                       {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
                       {(hasGlucoseData || showGlucose) && renderInput(index, 'glucose', row.glucose, 'mmol/L')}

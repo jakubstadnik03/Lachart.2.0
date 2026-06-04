@@ -989,7 +989,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                     <Text style={s.cardVal}>{v}</Text>
                   </View>
                 )) : (
-                  <Text style={[s.cardVal, { color: '#9ca3af', fontStyle: 'italic' }]}>—</Text>
+                  // Helvetica-Bold has no italic face in @react-pdf — use the
+                  // regular Helvetica family so the oblique resolves.
+                  <Text style={[s.cardVal, { fontFamily: 'Helvetica', color: '#9ca3af', fontStyle: 'italic' }]}>—</Text>
                 )}
               </View>
             );

@@ -74,6 +74,7 @@ extension Color {
 enum LC {
     // Spacing
     static let s2:  CGFloat = 2
+    static let s3:  CGFloat = 3
     static let s4:  CGFloat = 4
     static let s6:  CGFloat = 6
     static let s8:  CGFloat = 8

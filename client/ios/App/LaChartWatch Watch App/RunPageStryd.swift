@@ -17,35 +17,40 @@ struct RunPageStryd: View {
         // off the bottom. The big number itself uses minimumScaleFactor
         // so it shrinks instead of forcing scrolling for typical values.
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s4) {
-                // Stryd branding label
+            // Tighter inter-row spacing (s2 instead of s4) pulls every
+            // row up so the 2×2 grid clears the bottom edge on 41 mm
+            // without losing the STRYD heading.
+            VStack(spacing: LC.s2) {
+                // Stryd branding label — kept, but compressed.
                 HStack(spacing: LC.s4) {
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                         .foregroundColor(.lcPrimaryLite)
                     Text("STRYD")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(2)
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1.5)
                         .foregroundColor(.lcText3)
                 }
+                .padding(.top, -2)        // slide into the top safe area
 
-                // Large power value — scales down if the watch is small
-                VStack(spacing: 0) {
+                // Large power value — reduced from 56 → 44 pt so the
+                // tile grid sits ~12 pt higher.
+                VStack(spacing: -2) {
                     Text(live.power > 0 ? "\(live.power)" : "—")
-                        .font(.system(size: 56, weight: .thin, design: .rounded))
+                        .font(.system(size: 44, weight: .thin, design: .rounded))
                         .foregroundColor(.lcPrimaryLite)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                     Text("WATT")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .tracking(2)
                         .foregroundColor(.lcText3)
                 }
 
                 // 4 metric tiles in 2×2 grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
-                          spacing: LC.s4) {
+                          spacing: LC.s2) {
                     TileView(icon: "metronome", label: "Cadence",
                              value: live.cadence > 0 ? "\(live.cadence) spm" : "—",
                              color: .lcPrimaryLite)
@@ -61,7 +66,8 @@ struct RunPageStryd: View {
                 }
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

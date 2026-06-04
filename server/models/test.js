@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 
 const testResultSchema = new mongoose.Schema({
     power: Number,
+    // Running power in watts (e.g. Stryd). Optional second metric for run
+    // tests, shown alongside pace. Null/absent for bike & swim.
+    runPower: Number,
     heartRate: Number,
     lactate: Number,
     glucose: Number,
@@ -56,6 +59,9 @@ const testSchema = new mongoose.Schema({
     results: [{
         interval: Number,
         power: Number,
+        // Running power in watts (e.g. Stryd). Optional second metric for run
+        // tests, shown alongside pace. Null/absent for bike & swim.
+        runPower: Number,
         heartRate: Number,
         lactate: Number,
         glucose: Number,

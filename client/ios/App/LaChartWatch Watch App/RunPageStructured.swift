@@ -43,7 +43,7 @@ struct RunPageStructured: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s4) {
+            VStack(spacing: LC.s2) {
                 // Ring timer
                 ZStack {
                     RingTimerView(
@@ -111,7 +111,8 @@ struct RunPageStructured: View {
                 }
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

@@ -2,16 +2,13 @@
 //  LaChartSharedPlugin.m
 //  App
 //
-//  Objective-C glue that exposes the Swift plugin to Capacitor's runtime.
-//  Capacitor's auto-registration discovers plugins through CAP_PLUGIN()
-//  macros at link time — without this file the JS side gets
-//  "LaChartShared plugin not implemented" at runtime.
+//  Capacitor 6 registers this plugin through the Swift `CAPBridgedPlugin`
+//  conformance in LaChartSharedPlugin.swift (identifier / jsName /
+//  pluginMethods). The legacy `CAP_PLUGIN(...)` macro is intentionally NOT
+//  used here — defining it alongside the Swift conformance would duplicate the
+//  jsName/pluginMethods registration and conflict. This file is kept (empty)
+//  only so the existing Xcode "Compile Sources" reference stays valid.
 //
 
 #import <Foundation/Foundation.h>
 #import <Capacitor/Capacitor.h>
-
-CAP_PLUGIN(LaChartSharedPlugin, "LaChartShared",
-    CAP_PLUGIN_METHOD(setFormFitness, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(reloadWidgets,  CAPPluginReturnPromise);
-)

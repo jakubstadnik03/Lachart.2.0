@@ -13,22 +13,22 @@ struct RunPageCore: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: LC.s4) {
-                // CORE branding
+            VStack(spacing: LC.s2) {
+                // CORE branding — compressed.
                 HStack(spacing: LC.s4) {
                     Image(systemName: "thermometer.high")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                         .foregroundColor(.lcAccent)
                     Text("CORE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(2)
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1.5)
                         .foregroundColor(.lcText3)
                 }
 
                 // Core temperature — scales with .minimumScaleFactor
-                VStack(spacing: 0) {
+                VStack(spacing: -2) {
                     Text(live.coreTemp > 0 ? String(format: "%.1f", live.coreTemp) : "—")
-                        .font(.system(size: 58, weight: .thin, design: .rounded))
+                        .font(.system(size: 44, weight: .thin, design: .rounded))
                         .foregroundColor(.lcAccent)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -64,7 +64,8 @@ struct RunPageCore: View {
                 .padding(.horizontal, LC.s4)
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, LC.s4)
+            .padding(.top, -4)
+            .padding(.bottom, LC.s2)
         }
         .background(Color.lcBg)
     }

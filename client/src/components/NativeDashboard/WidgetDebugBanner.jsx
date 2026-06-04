@@ -10,10 +10,9 @@
  * Tap "Run again" to re-run on demand. Tap × to dismiss for this session.
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 import { isCapacitorNative } from '../../utils/isNativeApp';
-
-const LaChartShared = registerPlugin('LaChartShared');
+import { LaChartShared } from '../../utils/widgetCache';
 
 export default function WidgetDebugBanner() {
   const [dismissed, setDismissed] = useState(false);
