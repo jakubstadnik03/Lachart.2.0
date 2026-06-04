@@ -14,7 +14,7 @@ import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import AppleHealthCard from '../components/Settings/AppleHealthCard';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -3295,6 +3295,27 @@ const SettingsPage = () => {
                         : stravaSecondsLeft > 0
                           ? `Retry in ${Math.floor(stravaSecondsLeft / 60)}:${String(stravaSecondsLeft % 60).padStart(2, '0')}`
                           : 'Sync Now'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const r = await backfillStravaHistory();
+                          setStravaBackfill({ state: 'running', cursorDate: null });
+                          addNotification(
+                            r?.alreadyRunning
+                              ? 'History import already running — see progress above.'
+                              : 'Importing your full Strava history in the background…',
+                            'success'
+                          );
+                        } catch (e) {
+                          addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
+                        }
+                      }}
+                      disabled={stravaBackfill?.state === 'running'}
+                      title="Download your entire Strava history (runs in the background)"
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                    >
+                      {stravaBackfill?.state === 'running' ? 'Importing…' : 'Import history'}
                     </button>
                     <button
                       onClick={async () => {

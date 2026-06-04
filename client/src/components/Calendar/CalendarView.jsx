@@ -737,7 +737,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
-  const TARGET_VISIBLE_LAPS = 12;
+  const TARGET_VISIBLE_LAPS = 16;
   // Bar widths are STRICTLY proportional to weight (distance for swim/run,
   // duration for bike). A 2-km lap renders 4× as wide as a 500-m lap, no
   // capping. Honza's feedback (2026-05): "vždy at je to poměrově prostě"

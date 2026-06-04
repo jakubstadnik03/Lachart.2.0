@@ -10,6 +10,7 @@ import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
+import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
@@ -616,6 +617,23 @@ export default function NativeDashboardPage({
   const [themeEditDate, setThemeEditDate] = useState(null);
   // Period editor: { period } to edit an existing one, or { defaultDate } to create.
   const [periodEdit, setPeriodEdit] = useState(null);
+  // Strava connect prompt — shown when not connected (re-prompts after a week
+  // if dismissed, so it nudges without nagging every launch).
+  const [showStravaConnect, setShowStravaConnect] = useState(false);
+  useEffect(() => {
+    if (stravaConnected) { setShowStravaConnect(false); return; }
+    let dismissedAt = 0;
+    try { dismissedAt = Number(localStorage.getItem('stravaConnectDismissedAt') || 0); } catch (_) {}
+    const WEEK = 7 * 24 * 60 * 60 * 1000;
+    if (!dismissedAt || (Date.now() - dismissedAt) > WEEK) {
+      const t = setTimeout(() => setShowStravaConnect(true), 600); // let the dashboard paint first
+      return () => clearTimeout(t);
+    }
+  }, [stravaConnected]);
+  const dismissStravaConnect = useCallback(() => {
+    try { localStorage.setItem('stravaConnectDismissedAt', String(Date.now())); } catch (_) {}
+    setShowStravaConnect(false);
+  }, []);
 
   const handleSelectDate = (d) => {
     setSelectedDate(d);
@@ -1230,6 +1248,9 @@ export default function NativeDashboardPage({
           />
         </Suspense>
       )}
+
+      {/* Strava connect prompt (shown when not connected) */}
+      <StravaConnectModal open={showStravaConnect && !stravaConnected} onClose={dismissStravaConnect} />
 
       {/* Error toast for lactate-from-dashboard failures (no laps, network, etc.) */}
       {lactateError && (

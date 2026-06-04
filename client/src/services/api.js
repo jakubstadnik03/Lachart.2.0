@@ -1282,6 +1282,13 @@ export const syncStravaActivities = async (since=null) => {
   return data; // { imported, updated }
 };
 
+// Manually (re)start the full historical import of all Strava activities.
+// Runs in the background on the server; progress shows via /strava/status.
+export const backfillStravaHistory = async () => {
+  const { data } = await api.post('/api/integrations/strava/backfill', {});
+  return data; // { started, alreadyRunning? }
+};
+
 // Track in-flight auto-sync to prevent multiple simultaneous syncs
 let stravaAutoSyncInFlight = false;
 let garminAutoSyncInFlight = false;

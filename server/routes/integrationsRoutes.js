@@ -775,6 +775,30 @@ router.post('/strava/budget/reset', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/integrations/strava/backfill — manually (re)start the full
+// historical import. The same progressive backfill that runs automatically on
+// connect; this lets a user pull their entire Strava history on demand (e.g.
+// if they connected before backfill existed). Progress shows in the Settings
+// banner via /strava/status (backfillState). Idempotent: imported activities
+// are updated, not duplicated, and a concurrency lock prevents overlap.
+router.post('/strava/backfill', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('strava.accessToken strava.backfillState');
+    if (!user || !user.strava?.accessToken) {
+      return res.status(400).json({ error: 'Strava not connected' });
+    }
+    if (user.strava.backfillState === 'running') {
+      return res.json({ started: true, alreadyRunning: true });
+    }
+    // Start from "now" so the whole history is re-scanned backwards in time.
+    startStravaHistoricalBackfill(user._id, Math.floor(Date.now() / 1000));
+    res.json({ started: true });
+  } catch (error) {
+    console.error('[Strava backfill] error:', error);
+    res.status(500).json({ error: error.message || 'Failed to start historical import' });
+  }
+});
+
 // POST /api/integrations/strava/disconnect - remove Strava tokens & disable auto-sync
 router.post('/strava/disconnect', verifyToken, async (req, res) => {
   try {
