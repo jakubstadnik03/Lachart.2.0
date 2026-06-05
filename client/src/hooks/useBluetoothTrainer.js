@@ -149,6 +149,10 @@ export default function useBluetoothTrainer() {
   const controlPointRef = useRef(null);
   // Capacitor refs
   const nativeDeviceIdRef = useRef(null);
+  // Track when we last received ANY trainer notification so we can detect
+  // stale / frozen data. Updated by every IBD / CPS notification handler.
+  const lastNotifAtRef = useRef(0);
+  const nativeDeviceIdForNotifRef = useRef(null); // copy for use inside interval
 
   const controlGranted = useRef(false);
   const startSentRef   = useRef(false);
@@ -162,6 +166,42 @@ export default function useBluetoothTrainer() {
     const webBt = typeof navigator !== 'undefined' && !!navigator.bluetooth;
     setSupported(native || webBt);
   }, []);
+
+  // Stale-data watchdog — runs only in the native app (Web Bluetooth has
+  // its own GATT disconnection events). If no notification arrives for 15 s
+  // while connected, assume the BLE notification pipe silently stopped
+  // (known iOS WKWebView + BLE-LE plugin issue) and restart it.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const interval = setInterval(async () => {
+      if (status !== 'connected') return;
+      const age = Date.now() - lastNotifAtRef.current;
+      // Only act if we've received at least one notification (age > 0) and
+      // they've gone stale — not at startup before the first packet arrives.
+      if (lastNotifAtRef.current === 0 || age < 15000) return;
+      const devId = nativeDeviceIdForNotifRef.current;
+      if (!devId) return;
+      console.warn(`[trainer] No notification for ${Math.round(age / 1000)}s — re-subscribing IBD`);
+      try {
+        const BleClient = await getBleClient();
+        // Stop and restart Indoor Bike Data notifications.
+        try { await BleClient.stopNotifications(devId, FTMS_SERVICE_UUID, INDOOR_BIKE_DATA_UUID); } catch (_) {}
+        await new Promise(r => setTimeout(r, 300));
+        await BleClient.startNotifications(devId, FTMS_SERVICE_UUID, INDOOR_BIKE_DATA_UUID, (value) => {
+          lastNotifAtRef.current = Date.now();
+          const parsed = parseIndoorBikeData(value);
+          setData((prev) => ({ ...prev, ...parsed }));
+        });
+        lastNotifAtRef.current = Date.now(); // reset so we don't spam
+        console.log('[trainer] IBD re-subscribed successfully');
+      } catch (e) {
+        console.warn('[trainer] IBD re-subscribe failed:', e?.message || e);
+        // If re-subscribe fails the device likely disconnected — let the
+        // normal disconnection handler take care of it.
+      }
+    }, 5000); // check every 5 s
+    return () => clearInterval(interval);
+  }, [status]);
 
   const handleDisconnected = useCallback(() => {
     setStatus('disconnected');
@@ -213,11 +253,13 @@ export default function useBluetoothTrainer() {
       // Try FTMS first — full Indoor Bike Data + ERG control point.
       let gotFtms = false;
       try {
+        nativeDeviceIdForNotifRef.current = device.deviceId;
         await BleClient.startNotifications(
           device.deviceId,
           FTMS_SERVICE_UUID,
           INDOOR_BIKE_DATA_UUID,
           (value) => {
+            lastNotifAtRef.current = Date.now();
             const parsed = parseIndoorBikeData(value);
             setData((prev) => ({ ...prev, ...parsed }));
           },
@@ -578,6 +620,15 @@ export default function useBluetoothTrainer() {
     return ok;
   }, [writeControl]);
 
+  // Expose a way for callers (keep-alive) to reset the controlGranted flag
+  // without doing a full disconnect. Needed when the trainer silently resets
+  // its FTMS control state (BLE supervision timeout) without disconnecting.
+  const resetControlGranted = useCallback(() => {
+    controlGranted.current = false;
+    startSentRef.current = false;
+    console.log('[trainer] controlGranted reset — next setPower will re-request control');
+  }, []);
+
   const disconnect = useCallback(async () => {
     try {
       if (nativeDeviceIdRef.current) {
@@ -611,5 +662,6 @@ export default function useBluetoothTrainer() {
     setPower,
     start,
     reset,
+    resetControlGranted,
   };
 }

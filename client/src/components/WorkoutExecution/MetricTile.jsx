@@ -25,10 +25,12 @@ export default function MetricTile({
   accent = null,
   trend = null,
   trendColor = null,
+  avg = null,
   compact = false,
   onClick = null,
 }) {
   const display = value == null || value === '' || Number.isNaN(value) ? '--' : value;
+  const hasAvg = avg != null && avg !== '' && !Number.isNaN(avg);
   const isInteractive = !!onClick;
   return (
     <button
@@ -58,11 +60,20 @@ export default function MetricTile({
           )}
         </div>
       )}
-      <div
-        className={`font-black tabular-nums leading-none text-white ${compact ? 'text-2xl' : 'text-3xl sm:text-4xl'}`}
-        style={{ letterSpacing: '-0.02em' }}
-      >
-        {display}
+      <div className="flex items-baseline gap-1.5">
+        <div
+          className={`font-black tabular-nums leading-none text-white ${compact ? 'text-2xl' : 'text-3xl sm:text-4xl'}`}
+          style={{ letterSpacing: '-0.02em' }}
+        >
+          {display}
+        </div>
+        {/* Running average for the current effort — "⌀251" sits next to the
+            live number so the athlete sees both at a glance. */}
+        {hasAvg && (
+          <span className={`font-bold tabular-nums text-gray-500 leading-none ${compact ? 'text-[11px]' : 'text-sm'}`}>
+            ⌀{avg}
+          </span>
+        )}
       </div>
       {trend && (
         <div

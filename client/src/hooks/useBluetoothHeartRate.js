@@ -25,6 +25,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { saveBleDevice, loadBleDevice } from '../utils/bleDeviceMemory';
 
 // 16-bit (web bluetooth) ids:
 const HR_SERVICE_16          = 0x180D;
@@ -115,25 +116,33 @@ export default function useBluetoothHeartRate() {
   }, []);
 
   // ── Capacitor-native connect path ──────────────────────────────────────────
-  const connectNative = useCallback(async () => {
+  // `preId`/`preName` skip the picker (used by reconnectSaved) — connect
+  // straight to a remembered deviceId.
+  const connectNative = useCallback(async (preId = null, preName = null) => {
     try {
       setStatus('connecting');
       setError(null);
       const BleClient = await getBleClient();
-      const device = await BleClient.requestDevice({
-        services: [HR_SERVICE_UUID],
-        optionalServices: [HR_SERVICE_UUID],
-      });
-      if (!device?.deviceId) {
-        setStatus('disconnected');
-        return false;
+      let deviceId = preId;
+      let name = preName;
+      if (!deviceId) {
+        const device = await BleClient.requestDevice({
+          services: [HR_SERVICE_UUID],
+          optionalServices: [HR_SERVICE_UUID],
+        });
+        if (!device?.deviceId) {
+          setStatus('disconnected');
+          return false;
+        }
+        deviceId = device.deviceId;
+        name = device.name;
       }
-      nativeDeviceIdRef.current = device.deviceId;
-      setDeviceName(device.name || 'Heart Rate Monitor');
-      await BleClient.connect(device.deviceId, () => handleDisconnected());
+      nativeDeviceIdRef.current = deviceId;
+      setDeviceName(name || 'Heart Rate Monitor');
+      await BleClient.connect(deviceId, () => handleDisconnected());
 
       await BleClient.startNotifications(
-        device.deviceId,
+        deviceId,
         HR_SERVICE_UUID,
         HR_MEASUREMENT_UUID,
         (value) => {
@@ -143,6 +152,7 @@ export default function useBluetoothHeartRate() {
         },
       );
       setStatus('connected');
+      saveBleDevice('hr', { id: deviceId, name });
       return true;
     } catch (err) {
       const msg = err?.message || 'Failed to connect to HR strap';
@@ -157,7 +167,9 @@ export default function useBluetoothHeartRate() {
   }, [handleDisconnected]);
 
   // ── Web-Bluetooth connect path ─────────────────────────────────────────────
-  const connectWeb = useCallback(async () => {
+  // `preDevice` skips the picker (used by reconnectSaved) — a device object
+  // already resolved via navigator.bluetooth.getDevices().
+  const connectWeb = useCallback(async (preDevice = null) => {
     if (!navigator.bluetooth) {
       setError('Web Bluetooth is not supported in this browser.');
       setStatus('error');
@@ -167,7 +179,7 @@ export default function useBluetoothHeartRate() {
       setStatus('connecting');
       setError(null);
 
-      const device = await navigator.bluetooth.requestDevice({
+      const device = preDevice || await navigator.bluetooth.requestDevice({
         filters: [{ services: [HR_SERVICE_16] }],
         optionalServices: [HR_SERVICE_16],
       });
@@ -187,6 +199,7 @@ export default function useBluetoothHeartRate() {
       });
 
       setStatus('connected');
+      saveBleDevice('hr', { id: device.id, name: device.name });
       return true;
     } catch (err) {
       if (err.name === 'NotFoundError') {
@@ -203,6 +216,26 @@ export default function useBluetoothHeartRate() {
   const connect = useCallback(async () => {
     if (isCapacitorNative()) return connectNative();
     return connectWeb();
+  }, [connectNative, connectWeb]);
+
+  // ── Silent auto-reconnect to the remembered strap ──────────────────────────
+  // Returns true if it (re)connected without a picker, false otherwise (no
+  // saved device, API unavailable, or device out of range → caller stays put).
+  const reconnectSaved = useCallback(async () => {
+    const saved = loadBleDevice('hr');
+    if (!saved?.id) return false;
+    if (isCapacitorNative()) {
+      try { return await connectNative(saved.id, saved.name); } catch { return false; }
+    }
+    if (!navigator.bluetooth?.getDevices) return false;
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      const dev = devices.find((d) => d.id === saved.id);
+      if (!dev) return false;
+      return await connectWeb(dev);
+    } catch {
+      return false;
+    }
   }, [connectNative, connectWeb]);
 
   const disconnect = useCallback(async () => {
@@ -229,6 +262,8 @@ export default function useBluetoothHeartRate() {
     /** Whether BLE is available in this environment (web bt OR native) */
     supported,
     connect,
+    /** Silent reconnect to the last-used strap; resolves true on success. */
+    reconnectSaved,
     disconnect,
   };
 }

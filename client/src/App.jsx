@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { AuthProvider } from './context/AuthProvider';
+import { AuthProvider, useAuth } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
 import { WorkoutSessionProvider } from './context/WorkoutSessionContext';
 import WorkoutResumeBanner from './components/WorkoutExecution/WorkoutResumeBanner';
@@ -144,6 +144,30 @@ function DeferredBuyMeACoffeeWidget() {
   return <Widget />;
 }
 
+// Root route ("/"). On web this is the marketing About page. In the native app
+// "/" used to be the LoginPage unconditionally — so opening the app from the
+// widget (which routes to "/?openActivity=…") briefly flashed the login screen
+// even when signed in. This guards it: while the session is still hydrating we
+// show the loader, when signed in we go straight to the dashboard (preserving
+// any ?openActivity deep-link), and only show the login when truly logged out.
+function RootRoute() {
+  const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+
+  if (!isCapacitorNative()) return <About />;
+  if (loading) return <PageLoader />;
+  if (isAuthenticated) {
+    if (location.search.includes('openActivity')) {
+      return <Navigate to={`/dashboard${location.search}`} replace />;
+    }
+    let last = null;
+    try { last = localStorage.getItem('lastRoute'); } catch { /* ignore */ }
+    const target = last && !['/', '/login', '/signup'].includes(last) ? last : '/dashboard';
+    return <Navigate to={target} replace />;
+  }
+  return <LoginPage />;
+}
+
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
@@ -240,7 +264,7 @@ function AppRoutes() {
     >
       <Routes>
         {/* Veřejné routy */}
-        <Route path="/" element={isCapacitorNative() ? <LoginPage /> : <About />} />
+        <Route path="/" element={<RootRoute />} />
         <Route path="/about" element={<About />} />
         <Route path="/how-to-use" element={<Tutorials />} />
         <Route path="/tutorials" element={<Tutorials />} />

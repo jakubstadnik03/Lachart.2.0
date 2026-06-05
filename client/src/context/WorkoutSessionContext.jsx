@@ -32,6 +32,7 @@ import React, {
 import { useTrainer } from '../trainer/react/useTrainer';
 import useBluetoothHeartRate from '../hooks/useBluetoothHeartRate';
 import useBluetoothCoreTemp from '../hooks/useBluetoothCoreTemp';
+import { saveBleDevice, loadBleDevice } from '../utils/bleDeviceMemory';
 import useWakeLock from '../hooks/useWakeLock';
 import * as audioCoach from '../utils/audioCoach';
 
@@ -210,6 +211,8 @@ export function WorkoutSessionProvider({ children }) {
         const found = await trainerHook.scan();
         if (!found || found.length === 0) return false;
         await trainerHook.connect(found[0].id);
+        // Remember this trainer so the next session can silently reconnect.
+        saveBleDevice('trainer', { id: found[0].id, name: found[0].name });
         // Request control so the trainer is ready for ERG writes immediately.
         if (trainerHook.requestControl) {
           try { await trainerHook.requestControl(); } catch (_) { /* non-fatal */ }
@@ -217,6 +220,26 @@ export function WorkoutSessionProvider({ children }) {
         return true;
       } catch (e) {
         console.warn('[trainer/shim] connect error:', e?.message || e);
+        return false;
+      }
+    },
+
+    // Silent auto-reconnect to the remembered trainer. On web the adapter
+    // resolves the saved id via navigator.bluetooth.getDevices() (no picker).
+    // Returns true on success, false if there's nothing saved / it's out of
+    // range — in which case the athlete just reconnects manually.
+    reconnectSaved: async () => {
+      const saved = loadBleDevice('trainer');
+      if (!saved?.id) return false;
+      if (typeof navigator === 'undefined' || !navigator.bluetooth?.getDevices) return false;
+      try {
+        await trainerHook.connect(saved.id);
+        if (trainerHook.requestControl) {
+          try { await trainerHook.requestControl(); } catch (_) { /* non-fatal */ }
+        }
+        return true;
+      } catch (e) {
+        console.warn('[trainer/shim] reconnectSaved failed:', e?.message || e);
         return false;
       }
     },
@@ -266,6 +289,25 @@ export function WorkoutSessionProvider({ children }) {
     : trainer.data.heartRate;
   const liveData = useMemo(() => ({ ...trainer.data, heartRate: liveHr }), [trainer.data, liveHr]);
 
+  // ── Auto-reconnect remembered sensors on entry ─────────────────────────────
+  // The provider wraps the whole app, so we DON'T reconnect on app load —
+  // only once a workout session actually opens (plannedWorkoutId set). Then we
+  // silently try to reconnect the trainer, HR strap and CORE sensor the athlete
+  // used last time. Each reconnectSaved() is a no-op when nothing is saved or
+  // the device is out of range. On web it relies on the browser still holding
+  // permission (navigator.bluetooth.getDevices); on native it connects straight
+  // by saved id. Never shows a picker — manual connect stays available. The ref
+  // resets when the session ends so the next workout reconnects again.
+  const autoReconnectedRef = useRef(false);
+  useEffect(() => {
+    if (!plannedWorkoutId) { autoReconnectedRef.current = false; return; }
+    if (autoReconnectedRef.current) return;
+    autoReconnectedRef.current = true;
+    trainer.reconnectSaved?.().catch(() => {});
+    hrStrap.reconnectSaved?.().catch(() => {});
+    coreTemp.reconnectSaved?.().catch(() => {});
+  }, [plannedWorkoutId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Screen-on lock while running.
   useWakeLock(wakeLockEnabled && isRunning && !isFinished);
 
@@ -282,6 +324,13 @@ export function WorkoutSessionProvider({ children }) {
   const ergRetryTimersRef = useRef([]);
   const ergModeRef = useRef(ergMode);
   const ergBiasRef = useRef(ergBias);
+  // Keep-alive: FTMS trainers reset their control state if no command
+  // arrives for ~30–60 s (BLE supervision timeout). We re-send the
+  // current target every 8 s so the trainer never "forgets" ERG mode.
+  // We also track how many consecutive failures we've seen; after 3 we
+  // clear controlGranted so the NEXT send re-does requestControl first.
+  const ergKeepAliveRef = useRef(null);
+  const ergKeepAliveFailsRef = useRef(0);
   useEffect(() => { currentStepIdxRef.current = currentStepIdx; }, [currentStepIdx]);
   useEffect(() => { ergModeRef.current = ergMode; }, [ergMode]);
   useEffect(() => { ergBiasRef.current = ergBias; }, [ergBias]);
@@ -415,6 +464,65 @@ export function WorkoutSessionProvider({ children }) {
 
   const pushErgRef = useRef(pushErgTarget);
   pushErgRef.current = pushErgTarget;
+
+  // ── ERG keep-alive ──────────────────────────────────────────────────────
+  // FTMS trainers reset their control state after ~30–60 s without a
+  // command (BLE supervision / no-data timeout). Re-send the current
+  // target every 8 s so the trainer never silently exits ERG mode.
+  //
+  // After 3 consecutive failures we assume the trainer lost its "control
+  // granted" state internally (possible without a full disconnect) and
+  // clear controlGranted so the next push re-does requestControl first.
+  useEffect(() => {
+    // Clear any existing keep-alive when mode / running state changes.
+    if (ergKeepAliveRef.current) {
+      clearInterval(ergKeepAliveRef.current);
+      ergKeepAliveRef.current = null;
+    }
+    if (!isRunning || isFinished || !ergMode) return;
+
+    ergKeepAliveRef.current = setInterval(() => {
+      const tr = trainerRef.current;
+      if (!ergModeRef.current || tr.status !== 'connected' || !tr.ergCapable) return;
+
+      const stepIdx = currentStepIdxRef.current;
+      const step = expandedStepsRef.current[stepIdx];
+      const watts = resolveErgWattsForStep(step, contextRef.current, ergBiasRef.current);
+      if (watts == null) return;
+
+      tr.setPower(watts, { immediate: true }).then((ok) => {
+        if (!ok) {
+          ergKeepAliveFailsRef.current += 1;
+          console.warn(`[ERG keep-alive] setPower returned false (fail #${ergKeepAliveFailsRef.current})`);
+          // After 3 silent failures, reset controlGranted so requestControl
+          // runs again before the next real power-target send.
+          if (ergKeepAliveFailsRef.current >= 3) {
+            ergKeepAliveFailsRef.current = 0;
+            if (tr.resetControlGranted) tr.resetControlGranted();
+            ergSentRef.current = null;
+            console.warn('[ERG keep-alive] resetting controlGranted after repeated failures');
+          }
+        } else {
+          ergKeepAliveFailsRef.current = 0;
+        }
+      }).catch((e) => {
+        ergKeepAliveFailsRef.current += 1;
+        console.warn('[ERG keep-alive] setPower threw:', e?.message || e);
+        if (ergKeepAliveFailsRef.current >= 3) {
+          ergKeepAliveFailsRef.current = 0;
+          if (tr.resetControlGranted) tr.resetControlGranted();
+          ergSentRef.current = null;
+        }
+      });
+    }, 8000); // every 8 s
+
+    return () => {
+      if (ergKeepAliveRef.current) {
+        clearInterval(ergKeepAliveRef.current);
+        ergKeepAliveRef.current = null;
+      }
+    };
+  }, [isRunning, isFinished, ergMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start / resume → always push current lap (manual ERG in modal may have left a different target).
   useEffect(() => {
@@ -581,6 +689,7 @@ export function WorkoutSessionProvider({ children }) {
           cadence: cadenceSample,
           hr: hrNow != null ? Math.round(hrNow) : (lastSample?.hr ?? null),
           coreTemp: ctNow.data?.coreTemp != null ? Number(ctNow.data.coreTemp.toFixed(2)) : null,
+          skinTemp: ctNow.data?.skinTemp != null ? Number(ctNow.data.skinTemp.toFixed(2)) : null,
           hsi: ctNow.data?.hsi != null ? Number(ctNow.data.hsi.toFixed(1)) : null,
           stepIdx: currentStepIdxRef.current,
         });

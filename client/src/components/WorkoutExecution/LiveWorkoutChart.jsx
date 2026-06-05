@@ -112,8 +112,13 @@ function SeriesChart({
   currentStepTarget,
   stepBoundaries,
   lactateMarks,
+  current,
+  avg,
 }) {
   const meta = SERIES_META[seriesKey];
+  const fmtStat = (v) => (v == null || !Number.isFinite(v)
+    ? '—'
+    : (meta.scale === 'core' ? v.toFixed(1) : String(Math.round(v))));
   const innerW = Math.max(10, w - pad.left - pad.right);
   const innerH = Math.max(10, height - pad.top - pad.bottom);
 
@@ -264,15 +269,16 @@ function SeriesChart({
           </text>
         ))}
 
+      {/* Corner read-out: series label + live value + ⌀ whole-workout average */}
       <text
         x={w - pad.right}
         y={pad.top + 10}
-        fontSize="8"
-        fontWeight="700"
+        fontSize="9"
         textAnchor="end"
-        fill={meta.color}
       >
-        {meta.label}
+        <tspan fontWeight="700" fill={meta.color}>{meta.label} </tspan>
+        <tspan fontWeight="800" fill="#fff">{fmtStat(current)}</tspan>
+        <tspan fontWeight="600" fill={COL.axisText}> ⌀{fmtStat(avg)}</tspan>
       </text>
     </svg>
   );
@@ -337,6 +343,21 @@ export default function LiveWorkoutChart({
     return out;
   }, [samples, xMin, activeSeries]);
 
+  // Live read-out per series: current (latest finite value) + whole-workout
+  // average — rendered in each sub-chart's corner next to the series label.
+  const seriesStats = useMemo(() => {
+    const out = {};
+    for (const key of activeSeries) {
+      let sum = 0, n = 0, last = null;
+      for (let i = 0; i < samples.length; i++) {
+        const v = samples[i][key];
+        if (Number.isFinite(v)) { sum += v; n += 1; last = v; }
+      }
+      out[key] = { current: last, avg: n ? sum / n : null };
+    }
+    return out;
+  }, [samples, activeSeries]);
+
   const isRow = layout === 'row';
   const count = Math.max(1, activeSeries.length);
   const gap = isRow ? 6 : 4;
@@ -396,6 +417,8 @@ export default function LiveWorkoutChart({
                 currentStepTarget={key === 'power' ? currentStepTarget : null}
                 stepBoundaries={stepBoundaries}
                 lactateMarks={key === 'power' ? lactateMarks : []}
+                current={seriesStats[key]?.current}
+                avg={seriesStats[key]?.avg}
               />
             </div>
           ))}

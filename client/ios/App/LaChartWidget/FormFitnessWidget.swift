@@ -148,9 +148,10 @@ struct WorkoutRow: View {
     var large: Bool = false  // medium widget — bigger, roomier rows
 
     var body: some View {
-        // Tapping a row deep-links straight into that training; rows without a
-        // resolvable id just render (the whole widget still opens the app).
-        if let tid = workout.targetId, !tid.isEmpty,
+        // Only COMPLETED rows deep-link into a training — a planned id is not a
+        // saved activity, so tapping it can't resolve to anything to open.
+        if done,
+           let tid = workout.targetId, !tid.isEmpty,
            let encoded = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let url = URL(string: "com.lachart.app://open-training?id=\(encoded)") {
             Link(destination: url) { rowContent }
@@ -165,24 +166,36 @@ struct WorkoutRow: View {
     private var detailSize: CGFloat { large ? 12.5 : (compact ? 9 : 10) }
     private var checkSize: CGFloat { large ? 18 : (compact ? 12 : 14) }
 
+    private var catColor: Color { LaChartColor.forCategory(workout.category) }
+
     private var rowContent: some View {
         HStack(spacing: large ? 10 : (compact ? 6 : 8)) {
-            // Status indicator + sport icon
+            // Status indicator + sport icon.
+            // Completed → solid green tint. Planned → dashed ring (no fill) so
+            // it clearly reads as "to do, not done yet".
             ZStack {
-                Circle()
-                    .fill(done ? LaChartColor.success.opacity(0.16)
-                              : LaChartColor.forCategory(workout.category).opacity(0.14))
-                    .frame(width: circleD, height: circleD)
+                if done {
+                    Circle()
+                        .fill(LaChartColor.success.opacity(0.16))
+                        .frame(width: circleD, height: circleD)
+                } else {
+                    Circle()
+                        .fill(catColor.opacity(0.06))
+                        .frame(width: circleD, height: circleD)
+                    Circle()
+                        .strokeBorder(catColor.opacity(0.55),
+                                      style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        .frame(width: circleD, height: circleD)
+                }
                 Image(systemName: sportSymbol(workout.sport))
                     .font(.system(size: iconSize, weight: .bold))
-                    .foregroundColor(done ? LaChartColor.success
-                                          : LaChartColor.forCategory(workout.category))
+                    .foregroundColor(done ? LaChartColor.success : catColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(workout.title)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .foregroundColor(LaChartColor.ink)
+                    .font(.system(size: titleSize, weight: done ? .semibold : .medium))
+                    .foregroundColor(done ? LaChartColor.ink : LaChartColor.ink.opacity(0.7))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if let line = composeDetailLine(), !line.isEmpty {
@@ -194,10 +207,15 @@ struct WorkoutRow: View {
             }
             Spacer(minLength: 0)
 
+            // Completed → green check. Planned → hollow dashed circle marker.
             if done {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: checkSize, weight: .bold))
                     .foregroundColor(LaChartColor.success)
+            } else {
+                Image(systemName: "circle.dashed")
+                    .font(.system(size: checkSize, weight: .bold))
+                    .foregroundColor(catColor.opacity(0.5))
             }
         }
     }
@@ -298,12 +316,11 @@ struct MediumTodayView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("LaChart")
-                    .font(.system(size: 12, weight: .heavy))
-                    .tracking(0.4)
-                    .foregroundColor(LaChartColor.mark)
-                if entry.isStale {
+            // No "LaChart" title — let the data fill the whole card. A tiny
+            // STALE chip only appears when the cache is old.
+            if entry.isStale {
+                HStack {
+                    Spacer()
                     Text("STALE")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundColor(LaChartColor.warning)
@@ -311,7 +328,6 @@ struct MediumTodayView: View {
                         .background(LaChartColor.warning.opacity(0.14))
                         .clipShape(Capsule())
                 }
-                Spacer()
             }
 
             if entry.snapshot.isEmptyState {
@@ -319,18 +335,18 @@ struct MediumTodayView: View {
                 HStack { Spacer(); EmptyHint(); Spacer() }
                 Spacer(minLength: 0)
             } else {
-                Spacer(minLength: 6)
+                Spacer(minLength: 2)
                 // Big KPI row — fills the width with larger numbers.
                 KPIRow(snapshot: entry.snapshot, big: true)
-                Spacer(minLength: 6)
+                Spacer(minLength: 8)
                 Divider().opacity(0.35)
-                Spacer(minLength: 6)
+                Spacer(minLength: 8)
                 content
                 Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 10)
         .padding(.bottom, 12)
     }
 
@@ -473,10 +489,14 @@ struct FormFitnessWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: FormFitnessEntry
     var body: some View {
-        switch family {
-        case .systemLarge:  LargeTodayView(entry: entry)
-        case .systemMedium: MediumTodayView(entry: entry)
-        default:            SmallTodayView(entry: entry)
+        Group {
+            switch family {
+            case .systemLarge:  LargeTodayView(entry: entry)
+            case .systemMedium: MediumTodayView(entry: entry)
+            default:            SmallTodayView(entry: entry)
+            }
         }
+        // Fallback: tapping anywhere that isn't a workout Link opens the app.
+        .widgetURL(URL(string: "com.lachart.app://open"))
     }
 }

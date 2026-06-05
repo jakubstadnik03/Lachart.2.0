@@ -5351,12 +5351,9 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
             {sportRows.map(([sport, v]) => {
               const meta = SPORT_META[sport] || SPORT_META.other;
               return (
-                <div key={sport} className="flex items-center gap-1">
-                  {meta.isImg && meta.icon
-                    ? <img src={meta.icon} alt={sport} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-                    : <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: meta.color }} />
-                  }
-                  <span className="text-[10px] font-semibold text-gray-500 w-8 shrink-0">{meta.label}</span>
+                <div key={sport} className="flex items-center gap-1.5">
+                  <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="text-[10px] font-semibold text-gray-500 w-14 shrink-0 truncate">{meta.label}</span>
                   <span className="text-[10px] font-bold text-gray-800 flex-1">{formatHours(v.secs)}</span>
                   {v.dist > 0 && <span className="text-[9px] text-gray-400 shrink-0">{formatKm(v.dist)}</span>}
                   {v.tss > 0 && <span className="text-[9px] font-bold shrink-0" style={{ color: meta.color }}>{Math.round(v.tss)}</span>}
@@ -5447,16 +5444,16 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
       {/* Per-sport rows */}
       <div className="space-y-1 flex-1">
         {sports.map(s => (
-          <div key={s.key} className="flex items-center gap-1">
-            <img src={s.icon} alt={s.key} className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+          <div key={s.key} className="flex items-center gap-1.5">
+            <SportIcon sport={s.key} className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="text-[10px] font-semibold text-gray-700 flex-1 truncate">{formatHours(s.seconds)}</span>
             {s.dist > 0 && <span className="text-[9px] text-gray-400 flex-shrink-0">{formatKm(s.dist)}</span>}
             {s.tss > 0 && <span className="text-[9px] font-bold text-primary flex-shrink-0">{Math.round(s.tss)}</span>}
           </div>
         ))}
         {strengthSeconds > 0 && (
-          <div className="flex items-center gap-1">
-            <BoltIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <SportIcon sport="strength" className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="text-[10px] font-semibold text-gray-700 flex-1">{formatHours(strengthSeconds)}</span>
             {tssStrength > 0 && <span className="text-[9px] font-bold text-primary flex-shrink-0">{Math.round(tssStrength)}</span>}
           </div>

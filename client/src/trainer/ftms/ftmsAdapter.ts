@@ -55,7 +55,8 @@ export class FTMSAdapter implements TrainerAdapter {
   private tacxFecTxChar: BluetoothRemoteGATTCharacteristic | null = null;       // Tacx FE-C primary write channel
   private tacxFecFallbackChar: BluetoothRemoteGATTCharacteristic | null = null; // Tacx FE-C fallback write channel (tried if primary fails)
   private wahooControlChar: BluetoothRemoteGATTCharacteristic | null = null;    // Wahoo KICKR proprietary ERG channel
-  // FE-C keepalive: ANT+ FE-C requires continuous commands (~4 Hz) or trainer reverts to free-wheel
+  // FE-C keepalive: periodically (1 Hz) re-asserts the ERG target so the trainer
+  // keeps holding it. 1 Hz is smooth; faster made Tacx re-ramp and feel jerky.
   private fecKeepAliveTimer: ReturnType<typeof setInterval> | null = null;
   private fecLastTargetWatts: number | null = null;
   private state: TrainerState = 'disconnected';
@@ -80,6 +81,55 @@ export class FTMSAdapter implements TrainerAdapter {
   private pendingControlReject: ((err: Error) => void) | null = null;
   private pendingErgResolve: (() => void) | null = null;
   private pendingErgReject: ((err: Error) => void) | null = null;
+
+  // ── GATT write serialization ──────────────────────────────────────────────
+  // Web Bluetooth permits only ONE GATT operation at a time per device.
+  // Firing concurrent writes — e.g. the 4 Hz FE-C keepalive colliding with the
+  // burst sent on a step change — throws "GATT operation already in progress"
+  // and can wedge the connection: the op queue backs up, notifications stop
+  // being delivered, telemetry stalls, and the workout auto-pauses. We funnel
+  // every write through a single promise chain so they run strictly in order,
+  // and track queue depth so the keepalive can DROP itself rather than pile up
+  // behind a slow op.
+  private gattWriteChain: Promise<void> = Promise.resolve();
+  private gattQueueDepth = 0;
+
+  private withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      p.then(
+        (v) => { clearTimeout(t); resolve(v); },
+        (e) => { clearTimeout(t); reject(e); },
+      );
+    });
+  }
+
+  /**
+   * Enqueue a GATT write so it never overlaps another GATT operation. Writes
+   * run strictly in submission order. A hung op is bounded by `timeoutMs` so it
+   * can't wedge the chain forever — the native op may still be pending, but the
+   * JS queue is freed and subsequent writes (and the keepalive) recover.
+   */
+  private enqueueWrite(
+    char: BluetoothRemoteGATTCharacteristic,
+    data: Uint8Array,
+    opts: { withResponse?: boolean; timeoutMs?: number } = {},
+  ): Promise<void> {
+    const { withResponse = false, timeoutMs = 2000 } = opts;
+    this.gattQueueDepth++;
+    const run = this.gattWriteChain.then(async () => {
+      const writeP = withResponse
+        ? char.writeValueWithResponse(data)
+        : char.writeValueWithoutResponse(data);
+      await this.withTimeout(writeP, timeoutMs, 'GATT write');
+    });
+    // Keep the chain alive regardless of this write's outcome; decrement depth.
+    this.gattWriteChain = run.then(
+      () => { this.gattQueueDepth--; },
+      () => { this.gattQueueDepth--; },
+    );
+    return run;
+  }
 
   async scan(options?: ScanOptions): Promise<DeviceInfo[]> {
     if (!navigator.bluetooth) {
@@ -166,26 +216,46 @@ export class FTMSAdapter implements TrainerAdapter {
         logger.info('Using device from scan:', this.scannedDevice.name);
         device = this.scannedDevice;
       } else {
-        // If no scanned device or ID mismatch, request device again
-        logger.info('Requesting device again (not found in scan cache)');
-        device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [
-            FTMS_SERVICE_UUID_STRING,
-            FTMS_FEATURE_UUID_STRING,
-            FTMS_POWER_RANGE_UUID_STRING,
-            FTMS_RESISTANCE_RANGE_UUID_STRING,
-            CYCLING_POWER_SERVICE_UUID_STRING,
-            CYCLING_SPEED_CADENCE_SERVICE_UUID_STRING,
-            CPS_MEASUREMENT_UUID_STRING,
-            CPS_CONTROL_POINT_UUID_STRING,
-            CSC_MEASUREMENT_UUID_STRING,
-            TACX_FEC_SERVICE_UUID,
-          ],
-        });
+        // Silent reconnect: getDevices() returns devices the user has ALREADY
+        // granted permission to in this browser profile. If our saved id is in
+        // that list we can connect without ever showing the chooser — this is
+        // what powers auto-reconnect on a fresh page load (Chrome/Edge).
+        try {
+          const navBt = navigator.bluetooth as unknown as { getDevices?: () => Promise<BluetoothDevice[]> };
+          if (typeof navBt.getDevices === 'function') {
+            const permitted = await navBt.getDevices();
+            const match = permitted.find((d) => d.id === deviceId);
+            if (match) {
+              logger.info('Silent reconnect via getDevices():', match.name);
+              device = match;
+            }
+          }
+        } catch (e) {
+          logger.warn('getDevices() lookup failed:', e);
+        }
 
-        if (device.id !== deviceId) {
-          throw new Error('Device ID mismatch');
+        // No permitted match → fall back to the picker (requires a user gesture).
+        if (!device) {
+          logger.info('Requesting device again (not found in scan cache / permitted list)');
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [
+              FTMS_SERVICE_UUID_STRING,
+              FTMS_FEATURE_UUID_STRING,
+              FTMS_POWER_RANGE_UUID_STRING,
+              FTMS_RESISTANCE_RANGE_UUID_STRING,
+              CYCLING_POWER_SERVICE_UUID_STRING,
+              CYCLING_SPEED_CADENCE_SERVICE_UUID_STRING,
+              CPS_MEASUREMENT_UUID_STRING,
+              CPS_CONTROL_POINT_UUID_STRING,
+              CSC_MEASUREMENT_UUID_STRING,
+              TACX_FEC_SERVICE_UUID,
+            ],
+          });
+
+          if (device.id !== deviceId) {
+            throw new Error('Device ID mismatch');
+          }
         }
       }
 
@@ -616,11 +686,9 @@ export class FTMSAdapter implements TrainerAdapter {
         if (alreadyErg) {
           // Repeat targets: skip 1 s response wait — many trainers never ACK every write.
           try {
-            if (this.controlPointChar.properties.writeWithoutResponse) {
-              await this.controlPointChar.writeValueWithoutResponse(command);
-            } else {
-              await this.controlPointChar.writeValueWithResponse(command);
-            }
+            await this.enqueueWrite(this.controlPointChar, command, {
+              withResponse: !this.controlPointChar.properties.writeWithoutResponse,
+            });
           } catch (e: any) {
             logger.warn('FTMS ERG repeat write failed:', e?.message || e);
           }
@@ -646,7 +714,7 @@ export class FTMSAdapter implements TrainerAdapter {
             };
           });
 
-          await this.controlPointChar.writeValueWithResponse(command);
+          await this.enqueueWrite(this.controlPointChar, command, { withResponse: true });
           await ergResponsePromise;
         }
 
@@ -671,19 +739,17 @@ export class FTMSAdapter implements TrainerAdapter {
 
         logger.info(`FE-C page 49: ${clampedWatts}W (raw=${powerInQuarterWatts}) → char ${this.tacxFecTxChar.uuid}`);
 
-        // Helper: write to a char, try with-response first, fall back to without-response
+        // Helper: write to a char, try with-response first, fall back to without-response.
+        // Both attempts go through the serialized queue so they can never overlap
+        // the keepalive (or each other) and trip "GATT operation already in progress".
         const writeFec = async (char: BluetoothRemoteGATTCharacteristic, data: Uint8Array): Promise<boolean> => {
           try {
-            if (char.properties.write) {
-              await char.writeValueWithResponse(data);
-            } else {
-              await char.writeValueWithoutResponse(data);
-            }
+            await this.enqueueWrite(char, data, { withResponse: !!char.properties.write });
             return true;
           } catch (e: any) {
             // write-with-response might fail on some firmwares — retry without
             try {
-              await char.writeValueWithoutResponse(data);
+              await this.enqueueWrite(char, data, { withResponse: false });
               return true;
             } catch {
               logger.warn(`FE-C write to ${char.uuid} failed: ${e.message}`);
@@ -718,24 +784,31 @@ export class FTMSAdapter implements TrainerAdapter {
           }
         }
 
-        const sendKeepalive = async () => {
+        const sendKeepalive = () => {
           if (this.fecLastTargetWatts == null || !this.tacxFecTxChar) return;
+          // Drop this tick if a write is already queued/in-flight. Never stack
+          // keepalives behind a slow op — that backlog is exactly what wedges
+          // the GATT queue and freezes telemetry + ERG control.
+          if (this.gattQueueDepth > 0) return;
           const qw = Math.round(this.fecLastTargetWatts * 4);
           const rawPage = new Uint8Array([
             0x31, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
             qw & 0xFF, (qw >> 8) & 0xFF,
           ]);
           const ka = this.buildFecAntPacket(rawPage);
-          try {
-            await this.tacxFecTxChar.writeValueWithoutResponse(ka);
-          } catch {
-            try { await this.tacxFecTxChar.writeValueWithResponse(ka); } catch { /* silent */ }
-          }
+          this.enqueueWrite(this.tacxFecTxChar, ka, { withResponse: false, timeoutMs: 1000 })
+            .catch(() => { /* silent — transient write failures are expected */ });
         };
 
         if (!this.fecKeepAliveTimer) {
-          this.fecKeepAliveTimer = setInterval(() => { sendKeepalive(); }, 250);
-          logger.info('FE-C keepalive started (250 ms / ~4 Hz, without-response)');
+          // 1 Hz, not 4 Hz: Set Target Power (page 49) is "sticky" on Tacx —
+          // the trainer holds the last target until it changes — so 1 Hz is
+          // plenty to keep ERG alive. Re-sending 4×/s made the trainer
+          // re-evaluate its resistance constantly, which felt jerky/pulsing at
+          // higher wattages. One refresh per second is smooth and still well
+          // inside the FE-C control timeout.
+          this.fecKeepAliveTimer = setInterval(() => { sendKeepalive(); }, 1000);
+          logger.info('FE-C keepalive started (1000 ms / 1 Hz, without-response)');
         }
 
         this.state = 'erg_active';

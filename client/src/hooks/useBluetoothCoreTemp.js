@@ -32,6 +32,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { saveBleDevice, loadBleDevice } from '../utils/bleDeviceMemory';
 
 const CORE_SERVICE_UUID = '00002100-5b1e-4347-b07c-97b514dae121';
 const CORE_TEMP_UUID    = '00002101-5b1e-4347-b07c-97b514dae121';
@@ -108,21 +109,28 @@ export default function useBluetoothCoreTemp() {
     setData({ coreTemp: null, skinTemp: null, quality: null, hsi: null });
   }, []);
 
-  const connectNative = useCallback(async () => {
+  // `preId`/`preName` skip the picker (used by reconnectSaved).
+  const connectNative = useCallback(async (preId = null, preName = null) => {
     try {
       setStatus('connecting');
       setError(null);
       const BleClient = await getBleClient();
-      const device = await BleClient.requestDevice({
-        services: [CORE_SERVICE_UUID],
-        optionalServices: [CORE_SERVICE_UUID],
-      });
-      if (!device?.deviceId) { setStatus('disconnected'); return false; }
-      nativeDeviceIdRef.current = device.deviceId;
-      setDeviceName(device.name || 'CORE Sensor');
-      await BleClient.connect(device.deviceId, () => handleDisconnected());
+      let deviceId = preId;
+      let name = preName;
+      if (!deviceId) {
+        const device = await BleClient.requestDevice({
+          services: [CORE_SERVICE_UUID],
+          optionalServices: [CORE_SERVICE_UUID],
+        });
+        if (!device?.deviceId) { setStatus('disconnected'); return false; }
+        deviceId = device.deviceId;
+        name = device.name;
+      }
+      nativeDeviceIdRef.current = deviceId;
+      setDeviceName(name || 'CORE Sensor');
+      await BleClient.connect(deviceId, () => handleDisconnected());
       await BleClient.startNotifications(
-        device.deviceId,
+        deviceId,
         CORE_SERVICE_UUID,
         CORE_TEMP_UUID,
         (value) => {
@@ -131,6 +139,7 @@ export default function useBluetoothCoreTemp() {
         },
       );
       setStatus('connected');
+      saveBleDevice('core', { id: deviceId, name });
       return true;
     } catch (err) {
       const msg = err?.message || 'Failed to connect to CORE sensor';
@@ -141,7 +150,9 @@ export default function useBluetoothCoreTemp() {
     }
   }, [handleDisconnected]);
 
-  const connectWeb = useCallback(async () => {
+  // `preDevice` skips the picker (used by reconnectSaved) — a device already
+  // resolved via navigator.bluetooth.getDevices().
+  const connectWeb = useCallback(async (preDevice = null) => {
     if (!navigator.bluetooth) {
       setError('Web Bluetooth is not supported in this browser.');
       setStatus('error');
@@ -150,7 +161,7 @@ export default function useBluetoothCoreTemp() {
     try {
       setStatus('connecting');
       setError(null);
-      const device = await navigator.bluetooth.requestDevice({
+      const device = preDevice || await navigator.bluetooth.requestDevice({
         filters: [{ services: [CORE_SERVICE_UUID] }],
         optionalServices: [CORE_SERVICE_UUID],
       });
@@ -167,6 +178,7 @@ export default function useBluetoothCoreTemp() {
         if (parsed) setData(parsed);
       });
       setStatus('connected');
+      saveBleDevice('core', { id: device.id, name: device.name });
       return true;
     } catch (err) {
       if (err.name === 'NotFoundError') { setStatus('disconnected'); return false; }
@@ -181,6 +193,24 @@ export default function useBluetoothCoreTemp() {
     return connectWeb();
   }, [connectNative, connectWeb]);
 
+  // Silent auto-reconnect to the remembered CORE sensor (see HR hook).
+  const reconnectSaved = useCallback(async () => {
+    const saved = loadBleDevice('core');
+    if (!saved?.id) return false;
+    if (isCapacitorNative()) {
+      try { return await connectNative(saved.id, saved.name); } catch { return false; }
+    }
+    if (!navigator.bluetooth?.getDevices) return false;
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      const dev = devices.find((d) => d.id === saved.id);
+      if (!dev) return false;
+      return await connectWeb(dev);
+    } catch {
+      return false;
+    }
+  }, [connectNative, connectWeb]);
+
   const disconnect = useCallback(async () => {
     try {
       if (nativeDeviceIdRef.current) {
@@ -193,5 +223,5 @@ export default function useBluetoothCoreTemp() {
     handleDisconnected();
   }, [handleDisconnected]);
 
-  return { status, deviceName, data, error, supported, connect, disconnect };
+  return { status, deviceName, data, error, supported, connect, reconnectSaved, disconnect };
 }

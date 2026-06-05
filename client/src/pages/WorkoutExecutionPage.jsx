@@ -15,7 +15,7 @@
  * Route: /workout-execution/:plannedWorkoutId
  * Also accepts query param ?athleteId= for coach view
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   PlayIcon, PauseIcon, ForwardIcon, BackwardIcon,
@@ -145,16 +145,19 @@ function expandSteps(steps) {
 }
 
 // ─── Power gauge arc ─────────────────────────────────────────────────────────
-function PowerGauge({ actual, target, size = 200 }) {
+function PowerGauge({ actual, target, size = 200, zoneLabel = null }) {
   const r = (size / 2) - 14;
   const cx = size / 2, cy = size / 2;
   const circumference = Math.PI * r; // half circle
   const pct = target > 0 ? Math.min(2, (actual || 0) / target) : 0;
   const dash = circumference * Math.min(1, pct);
   const color = pct < 0.9 ? '#767EB5' : pct < 1.05 ? '#22c55e' : '#ef4444';
+  // Compliance read-out — "am I riding the target?" — lives inside the gauge so
+  // the left column no longer needs separate target / intensity chips.
+  const pctInt = target > 0 && actual != null ? Math.round((actual / target) * 100) : null;
 
   return (
-    <svg width={size} height={size / 2 + 20} className="overflow-visible">
+    <svg width={size} height={size / 2 + 40} className="overflow-visible">
       {/* Background track */}
       <path
         d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
@@ -167,16 +170,27 @@ function PowerGauge({ actual, target, size = 200 }) {
         strokeDasharray={`${dash} ${circumference}`}
         style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
       />
-      {/* Actual power number */}
-      <text x={cx} y={cy - 6} textAnchor="middle" fontSize={size * 0.2} fontWeight="700" fill={color}>
-        {actual != null ? Math.round(actual) : '--'}
-      </text>
-      <text x={cx} y={cy + 14} textAnchor="middle" fontSize={size * 0.07} fill="#9ca3af">
-        W actual
-      </text>
-      {target > 0 && (
-        <text x={cx} y={cy - size * 0.28} textAnchor="middle" fontSize={size * 0.07} fill="#6b7280">
-          target {target} W
+      {/* Zone label e.g. "Z3 · Tempo" near the top of the arc */}
+      {zoneLabel && (
+        <text x={cx} y={cy - size * 0.26} textAnchor="middle" fontSize={size * 0.06} fill="#6b7280">
+          {zoneLabel}
+        </text>
+      )}
+      {/* Compliance % (coloured) — the "jedu správně?" indicator is now the
+          dominant read-out (target watts + raw actual power were removed; the
+          WATT tile above already shows the live number). */}
+      {pctInt != null ? (
+        <>
+          <text x={cx} y={cy - size * 0.02} textAnchor="middle" fontSize={size * 0.22} fontWeight="800" fill={color}>
+            {pctInt}%
+          </text>
+          <text x={cx} y={cy + size * 0.12} textAnchor="middle" fontSize={size * 0.06} fontWeight="500" fill="#9ca3af">
+            of target
+          </text>
+        </>
+      ) : (
+        <text x={cx} y={cy - size * 0.01} textAnchor="middle" fontSize={size * 0.09} fill="#9ca3af">
+          —
         </text>
       )}
     </svg>
@@ -231,6 +245,20 @@ export default function WorkoutExecutionPage() {
   });
   useEffect(() => {
     try { localStorage.setItem('wo_mobile_page', String(mobilePageIdx)); } catch {}
+  }, [mobilePageIdx]);
+  // Swiper instance for the landscape view so tapping a page dot actually
+  // moves the (otherwise swipe-only) swiper, not just the dot highlight.
+  const lsSwiperRef = useRef(null);
+  // Drive the landscape swiper from mobilePageIdx. Tapping a dot updates the
+  // state, and this effect slides the swiper to match — runs after render so
+  // the swiper instance is guaranteed to exist (slideTo straight from the
+  // click handler can fire before onSwiper has stored the instance).
+  useEffect(() => {
+    const sw = lsSwiperRef.current;
+    if (!sw || sw.destroyed) return;
+    const maxIdx = (sw.slides?.length ?? 4) - 1;
+    const target = Math.max(0, Math.min(mobilePageIdx, maxIdx));
+    if (sw.activeIndex !== target) sw.slideTo(target);
   }, [mobilePageIdx]);
 
   // ── Workout session — global context owns ALL execution state ──────────
@@ -460,6 +488,29 @@ export default function WorkoutExecutionPage() {
     if (t.useRange) return { min: t.rangeMin || center - 10, max: t.rangeMax || center + 10 };
     return { min: Math.round(center * 0.95), max: Math.round(center * 1.05) };
   }, [currentStep, context]);
+
+  // ── Current-step running averages (for the metric tiles) ──────────────────
+  // Averages of the step the athlete is *currently* riding, so the tiles read
+  // "263 now · ⌀251 this interval". Recomputed once per second (keyed on
+  // totalElapsed + step index) rather than on every trainer-data render.
+  // Declared up here with the other hooks so it stays above the early returns
+  // below (React hooks must run in the same order every render).
+  const stepAverages = useMemo(() => {
+    const arr = samplesRef.current;
+    let pSum = 0, pN = 0, cSum = 0, cN = 0, hSum = 0, hN = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const s = arr[i];
+      if (s.stepIdx !== currentStepIdx) continue;
+      if (s.power != null) { pSum += s.power; pN++; }
+      if (s.cadence != null) { cSum += s.cadence; cN++; }
+      if (s.hr != null) { hSum += s.hr; hN++; }
+    }
+    return {
+      power: pN > 0 ? Math.round(pSum / pN) : null,
+      cadence: cN > 0 ? Math.round(cSum / cN) : null,
+      hr: hN > 0 ? Math.round(hSum / hN) : null,
+    };
+  }, [currentStepIdx, totalElapsed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveChartProps = useMemo(
     () => ({
@@ -902,7 +953,7 @@ export default function WorkoutExecutionPage() {
         className={`flex-1 flex flex-col min-h-0 ${
           isMobileLayout && isLandscape && hasStarted && !isFinished
             ? 'overflow-hidden'
-            : 'items-center justify-start lg:justify-center px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto py-3 sm:py-4'
+            : 'items-center justify-start px-4 sm:px-6 lg:px-10 gap-3 sm:gap-4 overflow-y-auto py-3 sm:py-4'
         }`}
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
@@ -1037,6 +1088,7 @@ export default function WorkoutExecutionPage() {
                 lactateLogRef={lactateLogRef}
                 onStepTap={(i) => jumpToStep(i)}
                 height={44}
+                showCurrentLabel={false}
               />
 
               {/* Current step badge + countdown */}
@@ -1212,7 +1264,8 @@ export default function WorkoutExecutionPage() {
               <div className="flex-1 min-h-0">
                 <Swiper
                   slidesPerView={1}
-                  initialSlide={mobilePageIdx < 3 ? mobilePageIdx : 0}
+                  initialSlide={Math.min(mobilePageIdx, 3)}
+                  onSwiper={(sw) => { lsSwiperRef.current = sw; }}
                   onSlideChange={(sw) => setMobilePageIdx(sw.activeIndex)}
                   style={{ width: '100%', height: '100%' }}
                 >
@@ -1545,17 +1598,23 @@ export default function WorkoutExecutionPage() {
             )}
           />
         ) : (
-          <>
+          // Desktop / tablet-portrait active view. The wrapper centres the
+          // content vertically when it fits (lg:min-h-full + justify-center)
+          // but lets it grow and scroll from the top when it's taller than the
+          // viewport — without this, justify-center on the scroll container
+          // clips the top metric tiles into an unreachable overflow.
+          <div className="w-full flex flex-col items-center gap-3 sm:gap-4 lg:min-h-full lg:justify-center">
             {/* ── METRIC TILES ROW (live) ─────────────────────────────────
                 Compact horizontal strip at the top of the active view —
                 4 always-on readings the athlete glances at most. Stays at
                 the top of the column so it doesn't shift when the live
                 chart resizes underneath. */}
-            <div className="w-full max-w-2xl lg:max-w-4xl grid grid-cols-4 gap-2 mb-1">
+            <div className="w-full max-w-5xl xl:max-w-6xl grid grid-cols-4 gap-2 mb-1">
               <MetricTile
                 compact
                 label="WATT"
                 value={trainer.data.power != null ? Math.round(trainer.data.power) : null}
+                avg={stepAverages.power}
                 icon={<BoltSolid className="w-3 h-3" />}
                 accent="#a78bfa"
                 trend={(() => {
@@ -1574,6 +1633,7 @@ export default function WorkoutExecutionPage() {
                 compact
                 label="BPM"
                 value={liveHr != null ? Math.round(liveHr) : null}
+                avg={stepAverages.hr}
                 icon={<span className="text-sm leading-none">♥</span>}
                 accent="#fb7185"
               />
@@ -1581,6 +1641,7 @@ export default function WorkoutExecutionPage() {
                 compact
                 label="RPM"
                 value={trainer.data.cadence != null ? Math.round(trainer.data.cadence) : null}
+                avg={stepAverages.cadence}
                 accent="#38bdf8"
               />
               <MetricTile
@@ -1595,7 +1656,7 @@ export default function WorkoutExecutionPage() {
                 main 4-tile strip so phones without the sensor don't waste
                 vertical space on a permanent --. */}
             {coreTemp.status === 'connected' && coreTemp.data?.coreTemp != null && (
-              <div className="w-full max-w-2xl lg:max-w-4xl grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
+              <div className="w-full max-w-5xl xl:max-w-6xl grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
                 <MetricTile
                   compact
                   label="CORE °C"
@@ -1620,7 +1681,7 @@ export default function WorkoutExecutionPage() {
                 column height. Phones / tablets portrait stack vertically.
                 Goal: see every metric + the chart without scrolling on a
                 normal laptop / iPad screen. */}
-            <div className="w-full max-w-5xl xl:max-w-6xl grid grid-cols-1 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] gap-4 lg:gap-6 items-start">
+            <div className="w-full max-w-5xl xl:max-w-6xl grid grid-cols-1 lg:grid-cols-[minmax(0,300px)_minmax(0,280px)_minmax(0,1fr)] gap-4 lg:gap-6 items-start lg:items-center">
             <div className="flex flex-col items-center gap-3 sm:gap-4 min-w-0">
             {/* ── Current step badge ── */}
             <AnimatePresence mode="wait">
@@ -1653,45 +1714,14 @@ export default function WorkoutExecutionPage() {
                   {stepDuration > 0 ? fmtTime(stepRemaining) : fmtTime(stepElapsed)}
                 </div>
                 {stepDuration > 0 && (
-                  <p className="text-gray-500 text-xs sm:text-sm mb-3">of {fmtTime(stepDuration)}</p>
+                  <p className="text-gray-500 text-xs sm:text-sm mb-1">of {fmtTime(stepDuration)}</p>
                 )}
 
-                {/* Power target — when ERG bias is non-100 %, show the new
-                    value bold + the original prescribed wattage struck-through
-                    next to it, so the athlete sees both numbers at a glance.
-                    "240 ⚡ 264 W · 95% LT2  +10%" reads as
-                    "the plan said 240, you're biased to 264, that's +10%". */}
-                {currentTargetWatts != null && (() => {
-                  const isBiased = ergMode && Math.abs(ergBias - 1) > 1e-3 && effectiveErgWatts != null;
-                  const biasUp = ergBias > 1;
-                  return (
-                    <div className="flex items-center justify-center gap-2 mb-1 flex-wrap">
-                      {isBiased && (
-                        <span className="text-sm font-semibold text-gray-500 line-through tabular-nums">
-                          {currentTargetWatts}
-                        </span>
-                      )}
-                      <BoltSolid className="w-5 h-5" style={{ color: col.bg }} />
-                      <span className="text-2xl font-bold tabular-nums" style={{ color: col.bg }}>
-                        {isBiased ? effectiveErgWatts : currentTargetWatts} W
-                      </span>
-                      <span className="text-gray-500 text-sm">
-                        {resolveTargetLabel(currentStep?.powerTarget, context)}
-                      </span>
-                      {isBiased && (
-                        <span
-                          className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded-md"
-                          style={{
-                            color: biasUp ? '#fb7185' : '#34d399',
-                            background: (biasUp ? '#fb7185' : '#34d399') + '22',
-                          }}
-                        >
-                          {biasUp ? '+' : ''}{Math.round((ergBias - 1) * 100)}%
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* Target + compliance now live INSIDE the power gauge below
+                    (target watts, zone label, ERG bias and the "% of target"
+                    on-track read-out), so the left column stays short enough to
+                    fit a laptop viewport without scrolling. Only the explicit
+                    range line stays here when the step prescribes a W range. */}
                 {currentStep?.powerTarget?.useRange && (
                   <p className="text-gray-500 text-sm">
                     {currentStep.powerTarget.rangeMin}–{currentStep.powerTarget.rangeMax} W
@@ -1699,26 +1729,6 @@ export default function WorkoutExecutionPage() {
                 )}
               </motion.div>
             </AnimatePresence>
-
-            {/* ── Intensity % chip — quick read of "how hard am I going relative to target" ──
-                When ERG bias ≠ 100 %, compare against the biased target so the
-                chip shows compliance with the modified ride, not the original plan. */}
-            {trainer.status === 'connected' && trainer.data.power != null && currentTargetWatts != null && currentTargetWatts > 0 && (() => {
-              const denom = ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts;
-              const pct = Math.round((trainer.data.power / denom) * 100);
-              const off = Math.abs(pct - 100);
-              const tone = off <= 5
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                : off <= 15
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
-                  : 'bg-rose-500/25 text-rose-300 border-rose-400/40';
-              return (
-                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold tabular-nums ${tone}`}>
-                  <span>{pct}%</span>
-                  <span className="opacity-60">of target</span>
-                </div>
-              );
-            })()}
 
             {/* ── ERG active badge — shows when ERG is on so the athlete
                 can confirm the trainer is receiving power commands without
@@ -1767,13 +1777,22 @@ export default function WorkoutExecutionPage() {
               </motion.div>
             )}
 
-            {/* ── Power Gauge (Bluetooth) ── */}
+            </div>{/* end LEFT column (timer / targets) */}
+
+            {/* ── CENTER column: the power gauge, horizontally centred between
+                the timer column and the live chart. Pulled out of the left
+                stack so the column no longer grows tall enough to scroll. ── */}
+            <div className="flex flex-col items-center justify-center min-w-0">
+            {/* ── Power Gauge (Bluetooth) — the consolidated hero: actual
+                power in the centre, with target watts, zone label, ERG bias and
+                the "% of target" on-track read-out folded inside it. ── */}
             {trainer.status === 'connected' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-xs">
                 <PowerGauge
                   actual={trainer.data.power}
-                  target={currentTargetWatts}
+                  target={ergMode && effectiveErgWatts ? effectiveErgWatts : currentTargetWatts}
                   size={isNative ? 180 : 220}
+                  zoneLabel={resolveTargetLabel(currentStep?.powerTarget, context)}
                 />
                 <div className="flex justify-center gap-6 mt-1 text-xs text-gray-500">
                   {trainer.data.cadence != null && (
@@ -1793,7 +1812,7 @@ export default function WorkoutExecutionPage() {
               </motion.div>
             )}
 
-            </div>{/* end LEFT column */}
+            </div>{/* end CENTER column (gauge) */}
 
             {/* ── RIGHT column: Live chart (power + HR over time) ──
                 Always rendered on desktop (placeholder when no samples yet)
@@ -1810,7 +1829,7 @@ export default function WorkoutExecutionPage() {
                   {samplesRef.current.length > 0 ? (
                     <LiveWorkoutChart
                       {...liveChartProps}
-                      height={chartLayout === 'row' ? (isNative ? 260 : 320) : (isNative ? 200 : 280)}
+                      height={chartLayout === 'row' ? (isNative ? 240 : 280) : (isNative ? 190 : 250)}
                     />
                   ) : (
                     <div className="flex items-center justify-center text-xs text-gray-500" style={{ height: 180 }}>
@@ -1851,7 +1870,7 @@ export default function WorkoutExecutionPage() {
                 })()}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
@@ -1914,6 +1933,45 @@ export default function WorkoutExecutionPage() {
               </button>
             )}
           </div>
+
+          {/* ── Workout intensity stepper ─────────────────────────────────────
+              ± buttons that scale the WHOLE workout's load (ERG bias) up or
+              down in ERG_BIAS_STEP increments. Affects every step's target
+              watts at once, so the athlete can make the entire session harder
+              or easier on the fly. Only shown when ERG can actually drive the
+              trainer. */}
+          {ergMode && trainer.status === 'connected' && trainer.ergCapable && (() => {
+            const pct = Math.round(ergBias * 100);
+            const tone = pct > 100 ? '#fb7185' : pct < 100 ? '#34d399' : '#9ca3af';
+            return (
+              <div className="flex items-center justify-center gap-3 mt-3">
+                <button
+                  onClick={() => bumpErgBias(-ERG_BIAS_STEP)}
+                  disabled={ergBias <= ERG_BIAS_MIN + 1e-9}
+                  aria-label="Decrease workout intensity"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 text-xl font-bold leading-none flex items-center justify-center transition-colors"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                >
+                  −
+                </button>
+                <div className="text-center min-w-[88px]">
+                  <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Intensity</div>
+                  <div className="text-lg font-black tabular-nums leading-none" style={{ color: tone }}>
+                    {pct}%{pct !== 100 ? <span className="text-xs ml-0.5">{pct > 100 ? '↑' : '↓'}</span> : null}
+                  </div>
+                </div>
+                <button
+                  onClick={() => bumpErgBias(ERG_BIAS_STEP)}
+                  disabled={ergBias >= ERG_BIAS_MAX - 1e-9}
+                  aria-label="Increase workout intensity"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 disabled:opacity-30 text-xl font-bold leading-none flex items-center justify-center transition-colors"
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                >
+                  +
+                </button>
+              </div>
+            );
+          })()}
 
           {/* Compact device summary — shows which devices are connected
               without crowding the control area. Tap any pill (or the

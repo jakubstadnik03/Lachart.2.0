@@ -26,7 +26,7 @@
  * data bag through this component — keeps the swiper UI logic
  * separate from the workout state model.
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/css';
 
@@ -48,10 +48,21 @@ export default function MobileSwipeViews({
   renderStats,
 }) {
   const [active, setActive] = useState(initialIndex);
+  const swiperRef = useRef(null);
   const handleSlide = (i) => {
     setActive(i);
     if (onIndexChange) onIndexChange(i);
   };
+  // Tapping a dot sets `active`; this effect slides the (otherwise swipe-only)
+  // Swiper to match. Driving it from an effect — rather than calling slideTo
+  // straight from the click — guarantees the swiper instance already exists.
+  useEffect(() => {
+    const sw = swiperRef.current;
+    if (!sw || sw.destroyed) return;
+    const maxIdx = (sw.slides?.length ?? 5) - 1;
+    const target = Math.max(0, Math.min(active, maxIdx));
+    if (sw.activeIndex !== target) sw.slideTo(target);
+  }, [active]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full">
@@ -87,6 +98,7 @@ export default function MobileSwipeViews({
         <Swiper
           slidesPerView={1}
           initialSlide={initialIndex}
+          onSwiper={(sw) => { swiperRef.current = sw; }}
           onSlideChange={(sw) => handleSlide(sw.activeIndex)}
           style={{ width: '100%', height: '100%' }}
         >

@@ -50,6 +50,7 @@ export default function StepBarChart({
   lactateLogRef,   // ref: array of { stepIdx, value }
   onStepTap,
   height = 64,
+  showCurrentLabel = true, // floating "247W · 1:01" label above the current bar
 }) {
   // ── Geometry ─────────────────────────────────────────────────────────────
   const meta = useMemo(() => {
@@ -79,8 +80,10 @@ export default function StepBarChart({
   return (
     <div className="relative w-full" style={{ height, overflowX: 'hidden' }}>
       {/* Floating label for the CURRENT step — anchored to the TOP EDGE of
-          the bar so it always touches the interval regardless of chart height. */}
-      {currentMeta && (() => {
+          the bar so it always touches the interval regardless of chart height.
+          Suppressed on very short charts (e.g. mobile landscape) where it would
+          overlap neighbouring bars and the same info already shows alongside. */}
+      {showCurrentLabel && currentMeta && (() => {
         const before = meta.rows.slice(0, currentIdx).reduce((sum, r) => sum + r.durationSeconds, 0);
         const leftPct = (before / meta.totalDur) * 100;
         const widthPct = (currentMeta.durationSeconds / meta.totalDur) * 100;

@@ -81,6 +81,22 @@ export const AuthProvider = ({ children }) => {
       const storedToken = localStorage.getItem("token") || localStorage.getItem("authToken");
       const storedUser = localStorage.getItem("user");
 
+      // Optimistic hydration: if we already have a token + cached user, treat the
+      // session as authenticated IMMEDIATELY and verify in the background. This
+      // removes the brief "loading session" / login flash on every app open
+      // (especially when launched from the home-screen widget). A real 401 from
+      // the background /user/profile check below still logs the user out.
+      if (storedToken && storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
+          setToken(storedToken);
+          setUser(parsedUser);
+          setIsAuthenticated(true);
+          setLoading(false);
+        } catch { /* fall through to the full check below */ }
+      }
+
       // Set a timeout to ensure we don't wait forever (10 seconds max)
       const timeoutId = setTimeout(() => {
         console.warn('[AuthProvider] Auth check timeout - using fallback');
