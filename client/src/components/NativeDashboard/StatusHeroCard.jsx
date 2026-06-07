@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import useElementWidth from '../../hooks/useElementWidth';
 import { NativeSkeleton } from '../native/shared/Tiles';
 
 // TSB → status label + color
@@ -167,7 +168,12 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // bottom with a fat empty band above it, and toggling to Form chart
   // shifted everything around. Card minHeight stays in sync via the body
   // wrapper below.
-  const W = 320, H_SPARK = 120, H_FORM = 170;
+  // Measure the real chart width so the fixed-viewBox SVGs fill the full width
+  // without horizontal stretch on iPad (both the status sparkline and the form
+  // chart render full-width and share this ref — only one shows at a time).
+  const [wrapRef, measuredW] = useElementWidth(320);
+  const H_SPARK = 120, H_FORM = 170;
+  const W = measuredW > 0 ? measuredW : 320;
 
   // Shared y-domain for form chart: all three series + 0
   const allFormVals = [...ctlSeries, ...atlSeries, ...tsbSeries, 0];
@@ -435,6 +441,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
             return (
               <div
                 key={animTick}
+                ref={wrapRef}
                 style={{
                   marginTop: 4,
                   animation: 'ndFadeIn .4s cubic-bezier(.22,1,.36,1) both',
@@ -503,6 +510,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
 
           {ctlSeries.length >= 2 ? (
             <>
+              <div ref={wrapRef} style={{ width: '100%' }}>
               <svg
                 key={`form-${formRange}`}
                 viewBox={`0 0 ${W} ${H_FORM}`} preserveAspectRatio="none"
@@ -570,6 +578,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
                   style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.2s .15s cubic-bezier(.22,1,.36,1) forwards' }}
                 />
               </svg>
+              </div>
 
               {/* X-axis date labels */}
               {firstLabel && lastLabel && (

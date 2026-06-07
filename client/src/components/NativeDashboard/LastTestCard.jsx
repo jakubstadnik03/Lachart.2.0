@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import useElementWidth from '../../hooks/useElementWidth';
 import { calculateZonesFromTest } from '../Testing-page/zoneCalculator';
 // Reuse the exact threshold algorithm DataTable / LactateCurveCalculator use
 // on desktop so the LT1/LT2 stat above matches the zone table below it (the
@@ -222,10 +223,13 @@ function MiniSpark({ values, color, height = 36, width = 130, fillOpacity = 0.18
 // ─── lactate curve chart (SVG) — used in "Last lactate test" card ─────────────
 
 function LactateCurve({ thresholds }) {
+  // Draw into a viewBox whose width equals the element's real pixel width so
+  // the curve fills the full width with no horizontal stretch on iPad.
+  const [wrapRef, measuredW] = useElementWidth(320);
   if (!thresholds || !thresholds.points || thresholds.points.length < 2) {
     return <div style={{ height: 130, color: '#9CA3AF', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No curve data</div>;
   }
-  const W = 320, H = 130, padX = 14, padY = 12;
+  const W = measuredW > 0 ? measuredW : 320, H = 130, padX = 14, padY = 12;
 
   // For PACE sports: SLOWER (higher seconds/km) on the LEFT, FASTER on the RIGHT.
   // For POWER sports: lower watts on the LEFT, higher on the RIGHT.
@@ -258,6 +262,7 @@ function LactateCurve({ thresholds }) {
   const lt2X = thresholds.ltp2?.power != null ? px(thresholds.ltp2.power) : null;
 
   return (
+    <div ref={wrapRef} style={{ width: '100%' }}>
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
       style={{ width: '100%', height: H, display: 'block' }}>
       <defs>
@@ -310,6 +315,7 @@ function LactateCurve({ thresholds }) {
         />
       ))}
     </svg>
+    </div>
   );
 }
 

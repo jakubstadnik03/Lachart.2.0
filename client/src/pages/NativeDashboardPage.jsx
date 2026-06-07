@@ -611,6 +611,26 @@ export default function NativeDashboardPage({
   const today         = new Date();
   const [selectedDate, setSelectedDate] = useState(today);
 
+  // Track viewport width so the phone-first dashboard centres into a
+  // comfortable column on iPad instead of stretching its cards (and the
+  // fixed-viewBox charts inside them) across the full tablet width.
+  const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 390));
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+  // ≥700 px (iPad portrait and up): cap the content column and centre it so the
+  // cards keep phone-like proportions and the charts don't flatten out.
+  const isTablet = vw >= 700;
+  const bodyResponsive = isTablet
+    ? { width: '100%', maxWidth: 720, margin: '0 auto', padding: '8px 20px 0', boxSizing: 'border-box' }
+    : null;
+
   // Key for animation trigger — changes on date select
   const [animKey, setAnimKey] = useState(0);
   // Day-theme editor: holds the YYYY-MM-DD string of the day being edited.
@@ -1068,7 +1088,7 @@ export default function NativeDashboardPage({
         </div>
 
         {/* ── Cards (staggered fade-in) ── */}
-        <div style={styles.body}>
+        <div style={{ ...styles.body, ...bodyResponsive }}>
 
 
           {/* 1 · Week strip */}

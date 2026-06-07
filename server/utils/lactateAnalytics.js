@@ -177,7 +177,15 @@ function computeLactateTrend(sessions) {
 
       const bin = intensityBin(intensity.value, intensity.unit);
       if (!bins[bin]) bins[bin] = [];
-      bins[bin].push({ dateMs, lactate: Number(iv.lactate), unit: intensity.unit });
+      bins[bin].push({
+        dateMs,
+        lactate: Number(iv.lactate),
+        unit: intensity.unit,
+        intensity: intensity.value,
+        sport: session.sport || 'unknown',
+        sessionId: String(session._id || session.id || ''),
+        source: session.source || 'training',
+      });
     }
   }
 
@@ -208,6 +216,10 @@ function computeLactateTrend(sessions) {
       points: points.map((p) => ({
         date: new Date(p.dateMs).toISOString().slice(0, 10),
         lactate: p.lactate,
+        intensity: p.intensity,
+        sport: p.sport,
+        sessionId: p.sessionId,
+        source: p.source,
       })),
       slope: Math.round(reg.slope * 10000) / 10000,  // mmol/day, 4 decimals
       r2: Math.round(reg.r2 * 1000) / 1000,

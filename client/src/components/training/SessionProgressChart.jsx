@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import useElementWidth from '../../hooks/useElementWidth';
 
 // ─── helpers (mirrored from NativeTrainingPage) ───────────────────────────────
 
@@ -348,7 +349,11 @@ export default function SessionProgressChart({
   hideWarmCool = false,
   workOnly = false,
 }) {
-  const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
+  // Draw into a viewBox whose width equals the chart's real pixel width so the
+  // bars / line fill the full width without horizontal stretch on iPad.
+  const [wrapRef, measuredW] = useElementWidth(320);
+  const H = 230, padX = 30, padTop = 14, padBottom = 28;
+  const W = measuredW > 0 ? measuredW : 320;
   const sportIsPace = sport === 'run' || sport === 'swim';
   const isPace = sportIsPace && metric === 'power';
 
@@ -474,6 +479,7 @@ export default function SessionProgressChart({
         onClear={clearSelection}
         formatValue={fmtTooltipValue}
       />
+      <div ref={wrapRef} style={{ width: '100%' }}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{ width: '100%', height: H, display: 'block' }}>
         {/* Y grid */}
@@ -590,6 +596,7 @@ export default function SessionProgressChart({
           });
         })()}
       </svg>
+      </div>
     </div>
   );
 }

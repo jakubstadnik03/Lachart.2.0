@@ -331,12 +331,11 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
 
 /**
  * POST /api/workout-planner/planned/:id/complete
- * Save execution stats, generate a .fit with laps, create FitTraining for calendar,
+ * Save execution stats, generate a .fit with laps, create a Training for the history,
  * optional Strava upload.
  */
 router.post('/planned/:id/complete', verifyToken, async (req, res) => {
   try {
-    const FitTraining = require('../models/fitTraining');
     const { generateWorkoutExecutionFit, buildWorkoutFitData } = require('../utils/fitGenerator');
     const { uploadFitToStrava } = require('../utils/stravaFitUpload');
     const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
@@ -366,53 +365,147 @@ router.post('/planned/:id/complete', verifyToken, async (req, res) => {
     const fitData = buildWorkoutFitData(fitPayload);
     const fitBuffer = generateWorkoutExecutionFit(fitPayload);
 
-    const sportMap = {
-      run: 'running', walk: 'running', bike: 'cycling', mtbike: 'cycling',
-      swim: 'swimming', rowing: 'generic', other: 'generic',
+    // ── Build a Training document so the completed session shows up in the
+    //    history with the full record: power/cadence graph (strydSeries),
+    //    CORE graph (coreTempSeries), per-lap splits and lactate. This reuses
+    //    the existing rich detail view (TrainingDetailPage / WatchSensorCharts
+    //    / WatchLapTable) which reads exactly these fields. ───────────────────
+    const Training = require('../models/training');
+
+    // Planner sport → Training sport enum (run|bike|swim|walk|strength|mtb|other)
+    const trainingSportMap = { bike: 'bike', mtbike: 'mtb', run: 'run', walk: 'walk', swim: 'swim', strength: 'strength' };
+    const trainingSport = trainingSportMap[pw.sport] || 'bike';
+
+    const ts = Array.isArray(executionData?.timeSeries) ? executionData.timeSeries : [];
+    const steps = Array.isArray(executionData?.steps) ? executionData.steps : [];
+    const num = (v) => (Number.isFinite(v) ? v : (Number.isFinite(Number(v)) ? Number(v) : null));
+
+    // Power / cadence time-series → strydSeries (drives the detail-view graph,
+    // works for cycling too — the chart just plots power + cadence over time).
+    const strydSeries = ts.map((s) => ({
+      t: Number(s.t) || 0,
+      power: num(s.power),
+      cadence: num(s.cadence),
+    }));
+    // Core temperature time-series → coreTempSeries (drives the CORE graph).
+    const coreTempSeries = ts
+      .filter((s) => Number.isFinite(s.coreTemp))
+      .map((s) => ({ t: Number(s.t) || 0, core: s.coreTemp, skin: num(s.skinTemp), hsi: num(s.hsi) }));
+    const hsiPeak = ts.reduce((m, s) => (Number.isFinite(s.hsi) && s.hsi > m ? s.hsi : m), 0);
+
+    const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+    const intervalType = (t) => {
+      const k = String(t || '').toLowerCase();
+      if (k === 'warmup') return 'warmup';
+      if (k === 'cooldown') return 'cooldown';
+      if (k === 'recovery' || k === 'rest') return 'recovery';
+      return 'work';
     };
+    // Last lactate value measured during a step (end-of-interval is the most
+    // representative single number for the lap).
+    const stepLactate = (st) => (Array.isArray(st.lactates) && st.lactates.length
+      ? num(st.lactates[st.lactates.length - 1]?.value) : null);
+
+    // Per-step sensor aggregates + how many seconds were actually ridden in
+    // each step (number of time-series points carrying that stepIdx).
+    const stepAgg = steps.map((_, i) => {
+      const pts = ts.filter((s) => Number(s.stepIdx) === i);
+      const cad = pts.map((s) => s.cadence).filter(Number.isFinite);
+      const core = pts.map((s) => s.coreTemp).filter(Number.isFinite);
+      const hsi = pts.map((s) => s.hsi).filter(Number.isFinite);
+      return {
+        riddenSamples: pts.length,
+        avgCadence: cad.length ? Math.round(mean(cad)) : null,
+        avgCoreTemp: core.length ? Math.round(mean(core) * 100) / 100 : null,
+        peakHSI: hsi.length ? Math.max(...hsi) : null,
+      };
+    });
+
+    // Only steps the athlete actually rode become laps. Steps that were
+    // fast-forwarded/skipped without pedalling collect ~no samples, so we drop
+    // them — otherwise the saved training lists laps that were never done.
+    // (≥2 samples ≈ ridden ≥2 s; an instant skip leaves 0–1.)
+    const RIDDEN_MIN_SAMPLES = 2;
+    const riddenIdx = steps
+      .map((_, i) => i)
+      .filter((i) => stepAgg[i].riddenSamples >= RIDDEN_MIN_SAMPLES);
+    // Original step index → renumbered ridden-lap number (1-based).
+    const lapNumByStep = {};
+    riddenIdx.forEach((i, n) => { lapNumByStep[i] = n + 1; });
+
+    const laps = riddenIdx.map((i, n) => ({
+      number: n + 1,
+      time: Number(steps[i].durationSeconds) || 0,
+      avgHR: num(steps[i].actualAvgHr),
+      avgPower: num(steps[i].actualAvgWatts),
+      avgCadence: stepAgg[i].avgCadence,
+      avgCoreTemp: stepAgg[i].avgCoreTemp,
+      peakHSI: stepAgg[i].peakHSI,
+    }));
+
+    const results = riddenIdx.map((i, n) => ({
+      interval: n + 1,
+      duration: Number(steps[i].durationSeconds) || 0,
+      durationSeconds: Number(steps[i].durationSeconds) || 0,
+      durationType: 'time',
+      power: num(steps[i].actualAvgWatts),
+      heartRate: num(steps[i].actualAvgHr),
+      lactate: stepLactate(steps[i]),
+      intervalType: intervalType(steps[i].stepType),
+      isRecovery: intervalType(steps[i].stepType) === 'recovery',
+      sourceLapIndex: i,
+    }));
+
+    // Lap notes → coach-visible comments, e.g. "Lap 5: legs felt heavy".
+    // Notes are entered alongside a lactate sample during the ride, so they
+    // only ever sit on ridden steps; use the renumbered lap number.
+    const noteLines = [];
+    steps.forEach((st, i) => {
+      if (!Array.isArray(st.lactates) || lapNumByStep[i] == null) return;
+      st.lactates.forEach((l) => {
+        const note = l?.note != null ? String(l.note).trim() : '';
+        if (note) noteLines.push(`Lap ${lapNumByStep[i]}: ${note}`);
+      });
+    });
+    const lapComments = noteLines.join('\n');
 
     const pwrRecs = fitData.records.filter((r) => r.power > 0);
     const hrRecs = fitData.records.filter((r) => r.heartRate > 0);
 
     const trainingDoc = {
       athleteId: String(pw.athleteId),
-      sport: sportMap[pw.sport] || 'cycling',
-      timestamp: new Date(startedAt),
-      totalElapsedTime: totalDuration || fitData.totalElapsedTime,
-      titleManual: pw.title || 'Structured workout',
+      sport: trainingSport,
+      type: pw.sport,
+      title: pw.title || 'Structured workout',
       description: pw.description || pw.coachNotes || 'Completed in LaChart',
-      records: fitData.records.map((r) => ({
-        timestamp: r.timestamp,
-        power: r.power,
-        heartRate: r.heartRate,
-        cadence: r.cadence,
-      })),
-      laps: fitData.laps.map((lap, i) => ({
-        lapNumber: lap.lapNumber || i + 1,
-        totalElapsedTime: lap.totalElapsedTime,
-        avgPower: lap.avgPower,
-        maxPower: lap.maxPower,
-        avgHeartRate: lap.avgHeartRate,
-        maxHeartRate: lap.maxHeartRate,
-      })),
+      comments: lapComments || undefined,
+      date: new Date(startedAt),
+      results,
+      laps,
+      strydSeries,
+      coreTempSeries,
+      hsiPeak,
       avgPower: pwrRecs.length
-        ? Math.round(pwrRecs.reduce((s, r) => s + r.power, 0) / pwrRecs.length)
-        : null,
-      maxPower: pwrRecs.length ? Math.max(...pwrRecs.map((r) => r.power)) : null,
-      avgHeartRate: hrRecs.length
-        ? Math.round(hrRecs.reduce((s, r) => s + r.heartRate, 0) / hrRecs.length)
-        : null,
-      maxHeartRate: hrRecs.length ? Math.max(...hrRecs.map((r) => r.heartRate)) : null,
-      analysisComplete: false,
+        ? Math.round(pwrRecs.reduce((s, r) => s + r.power, 0) / pwrRecs.length) : 0,
+      avgHR: hrRecs.length
+        ? Math.round(hrRecs.reduce((s, r) => s + r.heartRate, 0) / hrRecs.length) : 0,
+      maxHR: hrRecs.length ? Math.max(...hrRecs.map((r) => r.heartRate)) : 0,
+      // Idempotency: re-completing the same planned workout updates the same
+      // Training instead of creating a duplicate in the history.
+      sourceWatchActivityId: `planned-${pw._id}`,
     };
 
-    const fitTraining = await FitTraining.create(trainingDoc);
+    const training = await Training.findOneAndUpdate(
+      { athleteId: String(pw.athleteId), sourceWatchActivityId: `planned-${pw._id}` },
+      { $set: trainingDoc },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
     invalidateFitCacheForUser(pw.athleteId);
 
     pw.status = 'completed';
     pw.executionData = executionData;
-    pw.fitTrainingId = String(fitTraining._id);
-    pw.completedTrainingId = String(fitTraining._id);
+    pw.completedTrainingId = String(training._id);
+    pw.fitTrainingId = null;
 
     let strava = null;
     if (uploadToStrava) {
@@ -436,7 +529,8 @@ router.post('/planned/:id/complete', verifyToken, async (req, res) => {
     res.json({
       success: true,
       plannedWorkoutId: String(pw._id),
-      fitTrainingId: String(fitTraining._id),
+      trainingId: String(training._id),
+      completedTrainingId: String(training._id),
       strava,
     });
   } catch (e) {
