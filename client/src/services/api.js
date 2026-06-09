@@ -1058,16 +1058,16 @@ export const getTodayMetrics = (athleteId) =>
 
 // ── Race / goal events (TrainingPeaks-style race planning) ───────────────────
 export const getRaceEvents = (athleteId, params = {}) =>
-  api.get('/race-events', { params: { ...(athleteId ? { athleteId } : {}), ...params } });
+  api.get('/api/race-events', { params: { ...(athleteId ? { athleteId } : {}), ...params } });
 
 export const createRaceEvent = (payload, athleteId) =>
-  api.post('/race-events', { ...payload, ...(athleteId ? { athleteId } : {}) });
+  api.post('/api/race-events', { ...payload, ...(athleteId ? { athleteId } : {}) });
 
 export const updateRaceEvent = (id, payload) =>
-  api.put(`/race-events/${id}`, payload);
+  api.put(`/api/race-events/${id}`, payload);
 
 export const deleteRaceEvent = (id) =>
-  api.delete(`/race-events/${id}`);
+  api.delete(`/api/race-events/${id}`);
 
 export const getTrainingStatus = (athleteId) => 
   api.get(`/user/athlete/${athleteId}/training-status`, {

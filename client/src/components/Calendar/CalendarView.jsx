@@ -2715,6 +2715,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Completed metadata edit state
   const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '' });
   const [savingCompleted, setSavingCompleted] = useState(false);
+  const [editingCompleted, setEditingCompleted] = useState(false); // desktop inline edit of the completed activity
 
   // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
   const parseDurationToMinutes = (raw) => {
@@ -3172,6 +3173,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
+          {/* Edit — jumps straight to the Edit tab so the completed activity
+              (title / distance / duration / TSS …) can be changed on mobile. */}
+          <button
+            onClick={() => setMobileView('edit')}
+            title="Edit activity"
+            className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 ${mobileView === 'edit' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+          >
+            <PencilIcon className="w-4 h-4" />
+          </button>
           <button
             onClick={() => setShareOpen(true)}
             title="Share activity"
@@ -4043,6 +4053,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
+          {/* Edit the completed activity (title / distance / duration / TSS …) */}
+          <button
+            onClick={() => setEditingCompleted(v => !v)}
+            title="Edit activity details"
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex-shrink-0 transition-colors ${
+              editingCompleted ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            }`}>
+            <PencilIcon className="w-4 h-4" />
+            <span>Edit</span>
+          </button>
           {onOpenFull && (
             <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
               <ArrowTopRightOnSquareIcon className="w-5 h-5" />
@@ -4168,6 +4188,83 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               )}
             </div>
           </div>
+
+          {/* ── Inline edit panel (completed activity) ── */}
+          {editingCompleted && (
+            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Edit activity</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
+                  <input type="text" value={completedForm.title}
+                    onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
+                    placeholder="Activity title"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
+                  <textarea value={completedForm.description}
+                    onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
+                    rows={2} placeholder="How did it go?"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Distance (km)</div>
+                  <input type="number" inputMode="decimal" value={completedForm.distanceKm}
+                    onChange={e => setCompletedForm(p => ({ ...p, distanceKm: e.target.value }))}
+                    placeholder="e.g. 10.5"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration <span className="text-gray-300 normal-case font-medium">(moving)</span></div>
+                  <input type="text" value={completedForm.durationDisplay}
+                    onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
+                    placeholder="1:30:00"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">TSS</div>
+                  <input type="number" inputMode="numeric" value={completedForm.tss}
+                    onChange={e => setCompletedForm(p => ({ ...p, tss: e.target.value }))}
+                    placeholder="e.g. 160" min="0"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Calories (kcal)</div>
+                  <input type="number" inputMode="numeric" value={completedForm.calories}
+                    onChange={e => setCompletedForm(p => ({ ...p, calories: e.target.value }))}
+                    placeholder="e.g. 800"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">RPE (1–10)</div>
+                  <input type="number" inputMode="numeric" value={completedForm.rpe}
+                    onChange={e => setCompletedForm(p => ({ ...p, rpe: e.target.value }))}
+                    placeholder="e.g. 7" min="1" max="10"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</div>
+                  <input type="number" inputMode="decimal" value={completedForm.lactate}
+                    onChange={e => setCompletedForm(p => ({ ...p, lactate: e.target.value }))}
+                    placeholder="e.g. 2.4" step="0.1"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': '#7c3aed' }} />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => setEditingCompleted(false)}
+                  className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-white transition-colors">Cancel</button>
+                <button
+                  onClick={async () => { await handleSaveCompleted(); setEditingCompleted(false); }}
+                  disabled={savingCompleted}
+                  className="px-5 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+                  style={{ backgroundColor: color }}>
+                  {savingCompleted ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Description + notes ── */}
           {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (

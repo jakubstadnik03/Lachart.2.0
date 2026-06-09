@@ -1095,7 +1095,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                   <Text style={s.tableCellB}>{r.interval ?? i + 1}</Text>
                   <Text style={s.tableCell}>{fmtIntensity(r.power, sport, inputMode)}</Text>
                   <Text style={s.tableCell}>{r.heartRate || '—'}</Text>
-                  <Text style={[s.tableCell, { color: Number(r.lactate) >= 4 ? C.red : C.dark }]}>
+                  <Text style={s.tableCell}>
                     {r.lactate != null ? Number(r.lactate).toFixed(2) : '—'}
                   </Text>
                   <Text style={s.tableCell}>{r.RPE || '—'}</Text>

@@ -36,7 +36,16 @@ export function usePremium() {
   // Capacitor build — UpgradeModal already returns null on native, and
   // we make sure no gate ever flips false, so neither the modal nor any
   // PremiumLockedCard can ever surface in the iOS app.
-  const isPremium = (user != null && user.isPremium === true) || isCapacitorNative();
+  // ── EVERYTHING IS FREE FOR NOW ─────────────────────────────────────────────
+  // While LaChart is in early access we unlock every premium gate for all
+  // users (web + native), so no UpgradeModal / paywall ever appears. This is
+  // a single, easily reversible switch — to re-enable paid gating later,
+  // restore the line below:
+  //   const isPremium = (user != null && user.isPremium === true) || isCapacitorNative();
+  const FREE_FOR_EVERYONE = true;
+  const isPremium = FREE_FOR_EVERYONE
+    ? true
+    : ((user != null && user.isPremium === true) || isCapacitorNative());
   const isCoach = isPremium;
 
   const [modalState, setModalState] = useState({
