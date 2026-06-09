@@ -84,6 +84,18 @@ export async function initCapacitorShell() {
               `${window.location.origin}/?openActivity=${encodeURIComponent(id)}`
             );
           }
+        } else if (/open-planned/i.test(url)) {
+          // Widget tapped a PLANNED workout:
+          // com.lachart.app://open-planned?id=<plannedId>. Route to the
+          // dashboard's openPlanned flow (opens the planned-workout editor).
+          let id = null;
+          try { id = new URL(url).searchParams.get('id'); }
+          catch { const m = url.match(/[?&]id=([^&]+)/); id = m ? decodeURIComponent(m[1]) : null; }
+          if (id) {
+            window.location.replace(
+              `${window.location.origin}/?openPlanned=${encodeURIComponent(id)}`
+            );
+          }
         }
       } catch (e) {
         console.warn('[deeplink] appUrlOpen handler failed:', e?.message || e);

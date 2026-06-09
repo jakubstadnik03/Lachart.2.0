@@ -20,7 +20,6 @@
 		5C0356162FD050C20045BD7A /* LaChartSharedPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0356142FD050C10045BD7A /* LaChartSharedPlugin.swift */; };
 		5C0356172FD050C20045BD7A /* LaChartSharedPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C0356152FD050C20045BD7A /* LaChartSharedPlugin.m */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
-		AAAA000000000000000000B1 /* LaChartWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AAAA0000000000000000C001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000C002 /* MainViewController.swift */; };
 /* End PBXBuildFile section */
 
@@ -31,13 +30,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 5C0355722FCDE7D90045BD7A;
 			remoteInfo = LaChartWidgetExtension;
-		};
-		AAAA000000000000000000B3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 5C0355C02FD049C60045BD7A;
-			remoteInfo = "LaChartWatch Watch App";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -59,17 +51,6 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-			);
-			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AAAA000000000000000000B2 /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				AAAA000000000000000000B1 /* LaChartWatch Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -227,13 +208,11 @@
 				504EC3021FED79650016851F /* Resources */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
 				5C0355642FCDE67C0045BD7A /* Embed Foundation Extensions */,
-				AAAA000000000000000000B2 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				5C0355832FCDE7DB0045BD7A /* PBXTargetDependency */,
-				AAAA000000000000000000B4 /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
@@ -458,11 +437,6 @@
 			isa = PBXTargetDependency;
 			target = 5C0355722FCDE7D90045BD7A /* LaChartWidgetExtension */;
 			targetProxy = 5C0355822FCDE7DB0045BD7A /* PBXContainerItemProxy */;
-		};
-		AAAA000000000000000000B4 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 5C0355C02FD049C60045BD7A /* LaChartWatch Watch App */;
-			targetProxy = AAAA000000000000000000B3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 

@@ -133,6 +133,16 @@ export default function WorkoutPlannerPage() {
   const [templates, setTemplates] = useState([]);
   const [loading,   setLoading]   = useState(false);
   const [dragOverDay, setDragOverDay] = useState(null);   // dateStr currently hovered with a template drag
+
+  // Mobile vs desktop: on phones we stack the planner into a vertical day list
+  // and drop the drag-only template sidebar (HTML5 DnD doesn't work on touch).
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    window.addEventListener('orientationchange', h);
+    return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
+  }, []);
   const [modal, setModal] = useState(null); // { date, workout? }
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
 
@@ -328,16 +338,17 @@ export default function WorkoutPlannerPage() {
 
   return (
     <div className="min-h-full bg-gray-50 flex">
-      {/* Left: draggable template library */}
-      <WorkoutTemplateLibrary templates={templates} />
+      {/* Left: draggable template library — desktop only (drag-and-drop is a
+          mouse affordance; on phones the planner goes full-width). */}
+      {!isMobile && <WorkoutTemplateLibrary templates={templates} />}
 
       {/* Right: planner */}
       <div className="flex-1 p-4 sm:p-6 min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className={`mb-5 ${isMobile ? 'flex flex-col items-start gap-3' : 'flex items-center justify-between'}`}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Workout Planner</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Plan structured workouts for your calendar</p>
+          <h1 className={`font-bold text-slate-900 ${isMobile ? 'text-xl' : 'text-2xl'}`}>Workout Planner</h1>
+          {!isMobile && <p className="text-sm text-slate-400 mt-0.5">Plan structured workouts for your calendar</p>}
         </div>
         {/* Week nav */}
         <div className="flex items-center gap-2">
@@ -456,7 +467,7 @@ export default function WorkoutPlannerPage() {
       )}
 
       {/* 7-day grid */}
-      <div className="grid grid-cols-7 gap-2">
+      <div className={isMobile ? 'flex flex-col gap-2.5' : 'grid grid-cols-7 gap-2'}>
         {days.map((day, di) => {
           const dateStr  = toLocalISO(day);
           const isToday  = isSameDay(day, today);
@@ -491,19 +502,31 @@ export default function WorkoutPlannerPage() {
                   setModal({ date: day, workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps } });
                 } catch { /* ignore malformed payload */ }
               }}
-              className={`flex flex-col gap-1.5 min-h-[120px] rounded-xl transition-colors ${
-                dragOverDay === dateStr ? 'bg-primary/5 ring-2 ring-primary/30' : ''
-              }`}
+              className={`flex flex-col gap-1.5 rounded-xl transition-colors ${
+                isMobile ? 'border border-slate-100 bg-white p-2.5' : 'min-h-[120px]'
+              } ${dragOverDay === dateStr ? 'bg-primary/5 ring-2 ring-primary/30' : ''}`}
             >
               {/* Day header */}
-              <div className={`flex flex-col items-center py-1 rounded-xl mb-0.5 ${isToday ? 'bg-primary' : 'bg-white border border-slate-100'}`}>
-                <span className={`text-[10px] font-semibold uppercase tracking-wider ${isToday ? 'text-white/80' : 'text-slate-400'}`}>
-                  {DAYS[di]}
-                </span>
-                <span className={`text-base font-bold leading-tight ${isToday ? 'text-white' : 'text-slate-700'}`}>
-                  {day.getDate()}
-                </span>
-              </div>
+              {isMobile ? (
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-bold uppercase tracking-wider ${isToday ? 'text-primary' : 'text-slate-500'}`}>
+                    {DAYS[di]}
+                  </span>
+                  <span className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-slate-700'}`}>
+                    {day.getDate()}
+                  </span>
+                  {isToday && <span className="text-[9px] font-bold text-white bg-primary px-1.5 py-0.5 rounded-full">Today</span>}
+                </div>
+              ) : (
+                <div className={`flex flex-col items-center py-1 rounded-xl mb-0.5 ${isToday ? 'bg-primary' : 'bg-white border border-slate-100'}`}>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${isToday ? 'text-white/80' : 'text-slate-400'}`}>
+                    {DAYS[di]}
+                  </span>
+                  <span className={`text-base font-bold leading-tight ${isToday ? 'text-white' : 'text-slate-700'}`}>
+                    {day.getDate()}
+                  </span>
+                </div>
+              )}
 
               {/* Planned workouts */}
               {dayPlanned.map(pw => (
@@ -525,10 +548,10 @@ export default function WorkoutPlannerPage() {
               {/* Add button */}
               <button
                 onClick={() => setModal({ date: day, workout: null })}
-                className="flex items-center justify-center gap-1 py-1.5 rounded-lg border border-dashed border-slate-200 text-slate-300 hover:border-primary/40 hover:text-primary/60 transition-colors text-[11px] mt-auto"
+                className={`flex items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 text-slate-400 hover:border-primary/40 hover:text-primary/60 transition-colors ${isMobile ? 'py-2 text-xs' : 'py-1.5 text-[11px] text-slate-300 mt-auto'}`}
               >
-                <PlusIcon className="w-3 h-3" />
-                <span className="hidden sm:inline">Add</span>
+                <PlusIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-3 h-3'} />
+                <span className={isMobile ? '' : 'hidden sm:inline'}>Add</span>
               </button>
             </div>
           );

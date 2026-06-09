@@ -18,11 +18,12 @@ struct WidgetWorkout: Codable, Identifiable {
     let category: String?       // category id used for the colour dot
     let subtitle: String?       // optional "10 km · 4:45/km" line
     let targetId: String?       // prefixed activity / planned id for deep-linking
+    let planned: Bool?          // was this part of the calendar plan? (drives ✓)
 
     // The JSON key is "id"; expose it as `targetId` so it doesn't collide with
     // the synthesised Identifiable `id` below.
     enum CodingKeys: String, CodingKey {
-        case title, sport, durationSec, category, subtitle
+        case title, sport, durationSec, category, subtitle, planned
         case targetId = "id"
     }
 
@@ -65,13 +66,13 @@ struct FormFitnessSnapshot: Codable {
         formDelta: -4,
         lastUpdated: Date(),
         todayCompleted: [
-            WidgetWorkout(title: "Easy", sport: "bike", durationSec: 7680, category: "endurance", subtitle: "53.8 km · 228 W", targetId: nil)
+            WidgetWorkout(title: "Easy", sport: "bike", durationSec: 7680, category: "endurance", subtitle: "53.8 km · 228 W", targetId: nil, planned: true)
         ],
         todayPlanned: [
-            WidgetWorkout(title: "Tempo Run", sport: "run", durationSec: 3600, category: "tempo", subtitle: "10 km · 4:45/km", targetId: nil)
+            WidgetWorkout(title: "Tempo Run", sport: "run", durationSec: 3600, category: "tempo", subtitle: "10 km · 4:45/km", targetId: nil, planned: true)
         ],
         tomorrowPlanned: [
-            WidgetWorkout(title: "Long Ride", sport: "bike", durationSec: 10800, category: "endurance", subtitle: "90 km · 180 TSS", targetId: nil)
+            WidgetWorkout(title: "Long Ride", sport: "bike", durationSec: 10800, category: "endurance", subtitle: "90 km · 180 TSS", targetId: nil, planned: true)
         ],
         sparkline: []
     )

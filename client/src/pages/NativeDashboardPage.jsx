@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
 import WeekStrip         from '../components/NativeDashboard/WeekStrip';
 import WeeklySummaryCard from '../components/NativeDashboard/WeeklySummaryCard';
+import WeeklySummaryCarousel from '../components/NativeDashboard/WeeklySummaryCarousel';
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
@@ -41,13 +42,6 @@ function isSameLocalDay(a, b) {
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
 }
 
 function fmtDuration(secs) {
@@ -767,6 +761,23 @@ export default function NativeDashboardPage({
   const openPlanned = (pw, linkedAct) => setEditingPlanned({ pw, linkedAct });
   const closePlanned = () => setEditingPlanned(null);
 
+  // Deep-link from the home-screen widget: `?openPlanned=<id>` opens the
+  // planned-workout editor for that planned session.
+  useEffect(() => {
+    const param = searchParams.get('openPlanned');
+    if (!param) return;
+    const pw = (plannedWorkouts || []).find(
+      p => String(p._id) === param || String(p.id) === param,
+    );
+    if (pw) {
+      openPlanned(pw, null);
+      const next = new URLSearchParams(searchParams);
+      next.delete('openPlanned');
+      setSearchParams(next, { replace: true });
+    }
+    // Re-runs when plannedWorkouts arrive (cold-start after a widget tap).
+  }, [searchParams, plannedWorkouts, setSearchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── + Lactate from activity modal: open TrainingForm prefilled with laps ──
   const [lactateModal, setLactateModal] = useState({ isOpen: false, initialData: null });
   const [lactateSubmitting, setLactateSubmitting] = useState(false);
@@ -1063,33 +1074,17 @@ export default function NativeDashboardPage({
           </div>
         )}
 
-        {/* ── Greeting — title slides in, wave-icon animates on cycle ── */}
-        <div style={{ ...styles.greetingRow, ...cardEntry(0), ...snapStyle }}>
-          <div style={styles.greetingText}>
-            {getGreeting()}, {user?.firstName || user?.name?.split(' ')[0] || 'Athlete'}{' '}
-            {/* Hand-wave SVG icon — replaces 👋 emoji */}
-            <span style={{
-              display: 'inline-flex',
-              verticalAlign: '-0.18em',
-              transformOrigin: '50% 70%',
-              animation: 'ndWave 1.6s 0.6s ease-in-out 2',
-            }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5E6590" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 11V5.5a1.5 1.5 0 0 0-3 0V13" />
-                <path d="M11 13V3.5a1.5 1.5 0 0 0-3 0v10.5" />
-                <path d="M8 13.5V7.5a1.5 1.5 0 0 0-3 0v8c0 4.5 3 8 7.5 8a8 8 0 0 0 8-8V9a1.5 1.5 0 0 0-3 0v3" />
-                <path d="M14 13V4.5a1.5 1.5 0 1 1 3 0V13" />
-              </svg>
-            </span>
-            <span style={styles.dateText}>
-              {' · '}{today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </span>
-          </div>
-        </div>
-
         {/* ── Cards (staggered fade-in) ── */}
         <div style={{ ...styles.body, ...bodyResponsive }}>
 
+          {/* 0 · Weekly summary carousel (swipeable) */}
+          <div style={{ ...cardEntry(0), ...snapStyle }}>
+            <WeeklySummaryCarousel
+              activities={activities}
+              plannedWorkouts={plannedWorkouts}
+              sparklineData={sparklineData}
+            />
+          </div>
 
           {/* 1 · Week strip */}
           <div style={{ ...cardEntry(1), ...snapStyle }}>

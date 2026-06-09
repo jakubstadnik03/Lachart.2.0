@@ -148,12 +148,11 @@ struct WorkoutRow: View {
     var large: Bool = false  // medium widget — bigger, roomier rows
 
     var body: some View {
-        // Only COMPLETED rows deep-link into a training — a planned id is not a
-        // saved activity, so tapping it can't resolve to anything to open.
-        if done,
-           let tid = workout.targetId, !tid.isEmpty,
+        // Completed → open the activity modal (open-training). Planned → open
+        // the planned-workout editor (open-planned). Both deep-link by id.
+        if let tid = workout.targetId, !tid.isEmpty,
            let encoded = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: "com.lachart.app://open-training?id=\(encoded)") {
+           let url = URL(string: "com.lachart.app://\(done ? "open-training" : "open-planned")?id=\(encoded)") {
             Link(destination: url) { rowContent }
         } else {
             rowContent
@@ -207,11 +206,15 @@ struct WorkoutRow: View {
             }
             Spacer(minLength: 0)
 
-            // Completed → green check. Planned → hollow dashed circle marker.
+            // Green ✓ only when a PLANNED session was completed. A completed
+            // workout that wasn't in the calendar plan gets no tick. Planned
+            // (not-yet-done) rows keep the dashed "to do" marker.
             if done {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: checkSize, weight: .bold))
-                    .foregroundColor(LaChartColor.success)
+                if workout.planned == true {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: checkSize, weight: .bold))
+                        .foregroundColor(LaChartColor.success)
+                }
             } else {
                 Image(systemName: "circle.dashed")
                     .font(.system(size: checkSize, weight: .bold))
@@ -260,6 +263,10 @@ struct SmallTodayView: View {
                     .tracking(0.4)
                     .foregroundColor(LaChartColor.mark)
                 Spacer()
+                Image("LaChartLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 13, height: 13)
             }
 
             if entry.snapshot.isEmptyState {
@@ -316,11 +323,10 @@ struct MediumTodayView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // No "LaChart" title — let the data fill the whole card. A tiny
-            // STALE chip only appears when the cache is old.
-            if entry.isStale {
-                HStack {
-                    Spacer()
+            // Brand mark top-right (+ a STALE chip when the cache is old).
+            HStack(spacing: 5) {
+                Spacer()
+                if entry.isStale {
                     Text("STALE")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundColor(LaChartColor.warning)
@@ -328,6 +334,10 @@ struct MediumTodayView: View {
                         .background(LaChartColor.warning.opacity(0.14))
                         .clipShape(Capsule())
                 }
+                Image("LaChartLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 15, height: 15)
             }
 
             if entry.snapshot.isEmptyState {
@@ -403,6 +413,10 @@ struct LargeTodayView: View {
                         .clipShape(Capsule())
                 }
                 Spacer()
+                Image("LaChartLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 16, height: 16)
             }
 
             if entry.snapshot.isEmptyState {

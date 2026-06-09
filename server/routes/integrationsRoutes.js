@@ -3208,13 +3208,21 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     const similarBuckets = new Map(); // date+sport -> [{ key, activity }]
     
     // Deduplicate: prefer source based on EXTERNAL_SOURCE_PRIORITY.
+    //
+    // Hard rule: only ever collapse activities that come from DIFFERENT
+    // providers. Strava/Garmin/Apple never return the same workout twice, so
+    // two activities from the *same* source are by definition two distinct
+    // sessions — merging them would make a real activity vanish from the
+    // calendar (exactly the "activity missing" bug). Cross-source merging
+    // (same ride synced from both Strava and Garmin) still works as before.
+    const isCrossSource = (other) => other && other.source !== act.source;
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
       const bucketKey = `${actDatePart}_${actSport}`;
-      
-      // Check if we've already seen this exact key
-      if (dedupMap.has(key)) {
+
+      // Exact-key match — only collapse if it came from another provider.
+      if (dedupMap.has(key) && isCrossSource(dedupMap.get(key))) {
         const existing = dedupMap.get(key);
         const merged = choosePreferredActivity(existing, act);
         dedupMap.set(key, merged);
@@ -3227,11 +3235,13 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         }
         continue;
       }
-      
+
       // Check only same-minute/same-sport candidates, not the full activity set.
       let isDuplicate = false;
       const bucket = similarBuckets.get(bucketKey) || [];
       for (const candidate of bucket) {
+        // Never fuzzy-merge two activities from the same provider.
+        if (!isCrossSource(candidate.activity)) continue;
         const [,, duration, distance] = candidate.key.split('_');
         const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
         const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);

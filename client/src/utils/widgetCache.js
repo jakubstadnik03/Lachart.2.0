@@ -88,6 +88,8 @@ function sanitiseWorkouts(arr) {
     // Deep-link target id (prefixed activity id / planned id) — lets the
     // widget open this specific training when tapped.
     id:          w?.id != null ? String(w.id) : null,
+    // Whether this session was part of the calendar plan (drives the ✓).
+    planned:     w?.planned === true,
   }));
 }
 

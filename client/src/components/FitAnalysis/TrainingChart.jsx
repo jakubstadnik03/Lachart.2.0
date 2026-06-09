@@ -189,6 +189,22 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       };
     });
 
+    // Which metrics actually have data — drives both the toggle chips and
+    // the X-axis. A gym/strength session has no distance/power/speed, so we
+    // hide those and plot the X-axis by elapsed TIME instead of distance.
+    const hasDistance = (distanceData[distanceData.length - 1]?.distance || 0) > 0.001;
+    const hasPower = distanceData.some(d => d.power > 0);
+    const hasSpeed = distanceData.some(d => d.speed > 0);
+    const hasHeartRate = distanceData.some(d => d.heartRate > 0);
+
+    // No distance → repurpose the `distance` field as elapsed HOURS so the
+    // existing distance-based xScale spreads points over time (otherwise every
+    // point sits at distance 0 and the line collapses to a vertical bar).
+    if (!hasDistance) {
+      const t0 = distanceData[0]?.time || 0;
+      distanceData.forEach(d => { d.distance = Math.max(0, (d.time - t0) / 3600); });
+    }
+
     const maxDistance = distanceData[distanceData.length - 1]?.distance || 0;
 
     // Calculate smoothing window size based on smoothing value (0-1)
@@ -243,6 +259,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const maxAltitude = validAltitude.length > 0 ? Math.max(...validAltitude) : null;
     const minAltitude = validAltitude.length > 0 ? Math.min(...validAltitude) : null;
     
+    const hasElevation = validAltitude.length > 0;
+
     return {
       points: filteredPoints,
       maxDistance,
@@ -251,7 +269,12 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       maxPower,
       maxCadence,
       maxAltitude,
-      minAltitude
+      minAltitude,
+      hasDistance,
+      hasPower,
+      hasSpeed,
+      hasHeartRate,
+      hasElevation,
     };
   }, [chartData, smoothing]);
 
@@ -407,11 +430,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     setHoveredPoint(midPoint);
   }, [highlightMetric, processedData, summarizeWindow]);
 
-  // Check if training has elevation data and set showElevation default
+  // Auto-toggle metrics based on what data the training actually has, so a
+  // gym/strength session (HR only) doesn't draw flat-zero Power/Speed lines.
   useEffect(() => {
-    if (processedData && processedData.maxAltitude !== null && processedData.minAltitude !== null && !isSwimming) {
-      setShowElevation(true);
-    }
+    if (!processedData) return;
+    if (!processedData.hasPower) setShowPower(false);
+    if (!processedData.hasSpeed) setShowSpeed(false);
+    if (processedData.hasElevation && !isSwimming) setShowElevation(true);
+    else if (!processedData.hasElevation) setShowElevation(false);
   }, [processedData, isSwimming]);
 
   // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
@@ -484,6 +510,21 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const currentGraphWidth = graphWidth || (svgWidth - padding.left - padding.right);
     return padding.left + normalizedDistance * currentGraphWidth;
   }, [processedData, graphWidth, svgWidth, padding.left, padding.right, zoomRange]);
+
+  // Format an X-axis value: real distance when the training has it, otherwise
+  // elapsed time (the `distance` field holds elapsed HOURS in that case).
+  const hasDistanceAxis = !processedData || processedData.hasDistance;
+  const fmtClock = (secs) => {
+    const s = Math.max(0, Math.round(secs));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+      : `${m}:${String(ss).padStart(2, '0')}`;
+  };
+  const fmtXLabel = (distKm) => (hasDistanceAxis
+    ? formatDistance((distKm || 0) * 1000, unitSystem).formatted
+    : fmtClock((distKm || 0) * 3600));
+  const xAxisName = hasDistanceAxis ? 'Distance' : 'Time';
 
   // Add top padding (10% of graph height) so max values don't touch the top
   const topPaddingRatio = 0.1; // 10% padding at top
@@ -1011,7 +1052,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
         {/* Legend with toggle buttons */}
         <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'} ${isMobile ? 'text-xs' : 'text-sm'} flex-wrap`}>
           {/* Only show power toggle if power data exists and it's not running or swimming */}
-          {processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && (
+          {processedData && processedData.hasPower && !isRunning && !isSwimming && (
           <button
             onClick={() => setShowPower(!showPower)}
               className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
@@ -1022,6 +1063,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showPower ? 'text-gray-700' : 'text-gray-400'}`}>Power</span>
           </button>
           )}
+          {processedData && processedData.hasHeartRate && (
           <button
             onClick={() => setShowHeartRate(!showHeartRate)}
             className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
@@ -1031,6 +1073,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showHeartRate ? 'bg-red-400' : 'bg-gray-400'}`}></div>
             <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showHeartRate ? 'text-gray-700' : 'text-gray-400'}`}>Heart Rate</span>
           </button>
+          )}
+          {processedData && processedData.hasSpeed && (
           <button
             onClick={() => setShowSpeed(!showSpeed)}
             className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
@@ -1040,6 +1084,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showSpeed ? 'bg-teal-500' : 'bg-gray-400'}`}></div>
             <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showSpeed ? 'text-gray-700' : 'text-gray-400'}`}>Speed</span>
           </button>
+          )}
           {/* Only show cadence toggle if cadence data is available (even if maxCadence is 0) */}
           {processedData && processedData.maxCadence !== null && processedData.maxCadence !== undefined && (
           <button
@@ -1112,12 +1157,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             <span>
               Duration: <span className="font-medium">{formatDuration(highlightSummary.durationSec)}</span>
             </span>
+            {hasDistanceAxis && (
             <span>
               Distance:{' '}
               <span className="font-medium">
                 {formatDistance((highlightSummary.distanceKm || 0) * 1000, unitSystem).formatted}
               </span>
             </span>
+            )}
             {highlightSummary.avgPower != null && highlightSummary.avgPower > 0 && (
               <span>
                 Avg Power:{' '}
@@ -1382,12 +1429,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                   textAnchor="middle"
                     className={`${isMobile ? 'text-[9px]' : containerWidth < 800 ? 'text-[10px]' : 'text-xs'} fill-gray-600`}
                 >
-                    {(() => {
-                      const distanceMeters = distance * 1000; // Convert km to meters
-                      const formatted = formatDistance(distanceMeters, unitSystem);
-                      return formatted.formatted;
-                    })()}
-                    {isMobile && i === labelCount - 1 && timeAtDistance > 0 && (
+                    {fmtXLabel(distance)}
+                    {isMobile && i === labelCount - 1 && hasDistanceAxis && timeAtDistance > 0 && (
                       <tspan x={x} dy="10" className="text-[8px] fill-gray-500">
                         {formatDuration(timeAtDistance)}
                       </tspan>
@@ -1454,7 +1497,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             }}
           >
             <span className="text-[10px] font-semibold text-gray-800">
-              {formatDistance(clickedPoint.distance * 1000, unitSystem).formatted}
+              {fmtXLabel(clickedPoint.distance)}
             </span>
             <span className="text-[10px] text-gray-500">
               {formatDuration(clickedPoint.time)}
@@ -1523,7 +1566,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             >
               <div className="space-y-1 text-xs">
                 <div className="font-semibold text-gray-900">
-                  Distance: {formatDistance(activePoint.distance * 1000, unitSystem).formatted}
+                  {xAxisName}: {fmtXLabel(activePoint.distance)}
                 </div>
                 <div className="text-gray-600">
                   Time: {formatDuration(activePoint.time)}

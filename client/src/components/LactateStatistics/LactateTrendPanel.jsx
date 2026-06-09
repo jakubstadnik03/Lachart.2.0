@@ -28,11 +28,11 @@ function canonicalSport(s) {
   return 'other';
 }
 const SPORT_META = {
-  all:  { label: 'Vše',  icon: '◎' },
-  bike: { label: 'Kolo', icon: '🚴' },
-  run:  { label: 'Běh',  icon: '🏃' },
-  swim: { label: 'Plav', icon: '🏊' },
-  other:{ label: 'Jiné', icon: '•' },
+  all:  { label: 'All',   icon: '◎' },
+  bike: { label: 'Bike',  icon: '🚴' },
+  run:  { label: 'Run',   icon: '🏃' },
+  swim: { label: 'Swim',  icon: '🏊' },
+  other:{ label: 'Other', icon: '•' },
 };
 const SPORT_ORDER = ['bike', 'run', 'swim', 'other'];
 
@@ -127,7 +127,7 @@ function BinScatter({ binKey, points, unit, onPointClick }) {
   const y1 = yOf(meanLa - (slope * dayRange) / 2);
   const y2 = yOf(meanLa + (slope * dayRange) / 2);
 
-  const fmt = (ms) => new Date(ms).toLocaleDateString('cs', { month: 'short', day: 'numeric' });
+  const fmt = (ms) => new Date(ms).toLocaleDateString('en', { month: 'short', day: 'numeric' });
 
   return (
     <div className="bg-gray-50 rounded-xl p-3">
@@ -302,7 +302,7 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
         <div>
           <h3 className="text-sm font-bold text-gray-900">Lactate progression</h3>
           <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-            Trend laktátu při stejné intenzitě, drift v trénincích a detekce anomálií.
+            Lactate trend at matching intensity, in-session drift and anomaly detection.
           </p>
         </div>
         {/* Days selector */}
@@ -355,7 +355,7 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
           {/* Summary row */}
           <div className="grid grid-cols-3 gap-2 mb-4">
             <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Tréninky</div>
+              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Sessions</div>
               <div className="text-base font-bold text-gray-900 mt-1">{sessions.length}</div>
             </div>
             <div className="rounded-xl bg-gray-50 px-3 py-2.5">
@@ -363,7 +363,7 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
               <div className="text-base font-bold text-gray-900 mt-1">{sortedBins.length}</div>
             </div>
             <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Anomálie</div>
+              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Anomalies</div>
               <div className={`text-base font-bold mt-1 ${anomalyCount > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
                 {anomalyCount}
               </div>
@@ -373,8 +373,8 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
           {/* Tabs */}
           <div className="flex gap-1 mb-4 border-b border-gray-100 pb-1">
             {[
-              { key: 'trend', label: 'Trend intenzity' },
-              { key: 'sessions', label: 'Tréninky' },
+              { key: 'trend', label: 'Intensity trend' },
+              { key: 'sessions', label: 'Sessions' },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -392,11 +392,11 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
           {activeTab === 'trend' && (
             sortedBins.length === 0 ? (
               <div className="text-xs text-gray-400 py-6 text-center">
-                Nedostatek dat pro výpočet trendů{sport !== 'all' ? ' pro tento sport' : ''} — zaznamenej laktát alespoň ve 2 trénincích při podobné intenzitě.
+                Not enough data to compute trends{sport !== 'all' ? ' for this sport' : ''} — record lactate in at least 2 sessions at a similar intensity.
               </div>
             ) : (
               <>
-                <p className="text-[10px] text-gray-400 mb-2">Klikni na tečku pro detail a otevření tréninku.</p>
+                <p className="text-[10px] text-gray-400 mb-2">Tap a dot for details and to open the session.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {sortedBins.map(([bin, binData]) => (
                     <BinScatter key={bin} binKey={bin} points={binData.points} unit={binData.unit} onPointClick={onPointClick} />
@@ -409,18 +409,18 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
           {/* Tab: sessions list */}
           {activeTab === 'sessions' && (
             sessions.length === 0 ? (
-              <div className="text-xs text-gray-400 py-6 text-center">Žádné tréninky s laktátem.</div>
+              <div className="text-xs text-gray-400 py-6 text-center">No sessions with lactate.</div>
             ) : (
               <div>
                 {anomalyCount > 0 && (
                   <div className="mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-100 text-[11px] text-amber-700 font-medium">
-                    ⚠ {anomalyCount} trénink{anomalyCount > 1 ? 'y' : ''} s neobvykle vysokým laktátem pro danou intenzitu.
+                    ⚠ {anomalyCount} session{anomalyCount > 1 ? 's' : ''} with unusually high lactate for the intensity.
                   </div>
                 )}
                 <div className="divide-y divide-gray-50">
                   {/* Header */}
                   <div className="flex items-center gap-2 pb-1 text-[9px] font-bold text-gray-400 uppercase tracking-wide">
-                    <span className="w-20">Datum</span>
+                    <span className="w-20">Date</span>
                     <span className="w-14">Sport</span>
                     <span className="w-12">Avg La</span>
                     <span>Drift</span>
@@ -437,7 +437,7 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
 
       {!loading && !error && data?.sessionCount === 0 && (
         <div className="text-xs text-gray-400 py-6 text-center">
-          V posledních {activeDays} dnech žádná data s laktátem. Začni zaznamenávat laktát k intervalům.
+          No lactate data in the last {activeDays} days. Start recording lactate on your intervals.
         </div>
       )}
 
@@ -459,17 +459,17 @@ export default function LactateTrendPanel({ athleteId, days = 120 }) {
               <span className="text-gray-400">mmol/L</span>
             </div>
             {fmtIntensity(sel.point.intensity, sel.point.unit) && (
-              <div className="text-gray-500 mb-2">při {fmtIntensity(sel.point.intensity, sel.point.unit)}</div>
+              <div className="text-gray-500 mb-2">at {fmtIntensity(sel.point.intensity, sel.point.unit)}</div>
             )}
             {trainingHref({ source: sel.point.source, id: sel.point.sessionId }) ? (
               <button
                 onClick={() => openTraining(trainingHref({ source: sel.point.source, id: sel.point.sessionId }))}
                 className="w-full text-center text-[11px] font-semibold text-white bg-primary rounded-lg py-1.5 hover:opacity-90"
               >
-                Otevřít trénink ›
+                Open session ›
               </button>
             ) : (
-              <div className="text-[10px] text-gray-400 text-center">Trénink nelze otevřít</div>
+              <div className="text-[10px] text-gray-400 text-center">Session can’t be opened</div>
             )}
           </div>
         </>

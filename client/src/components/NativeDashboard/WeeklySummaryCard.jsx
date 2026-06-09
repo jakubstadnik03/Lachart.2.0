@@ -654,15 +654,14 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
             const compH = comp > 0 ? Math.max(5, (comp / maxVal) * 54) : 0;
             const planH = plan > 0 ? Math.max(5, (plan / maxVal) * 54) : 0;
 
-            // Compliance color for completed bar
-            const compColor = isToday
-              ? 'linear-gradient(180deg,#FF8A6E,#E85535)'
-              : comp > 0 && plan > 0
-              ? (comp / plan >= 0.9 ? 'linear-gradient(180deg,#4ade80,#22c55e)'
-                : comp / plan >= 0.6 ? 'linear-gradient(180deg,#fbbf24,#f59e0b)'
-                : 'linear-gradient(180deg,#f87171,#ef4444)')
-              : comp > 0
-              ? 'linear-gradient(180deg,#767EB5,#5E6590)'
+            // Clean monochrome bars in the brand colour — per-day compliance is
+            // already shown by the height vs the planned ghost bar behind, so we
+            // skip the green/amber/red rainbow. Today gets a slightly brighter
+            // tint for emphasis.
+            const compColor = comp > 0
+              ? (isToday
+                ? 'linear-gradient(180deg,#9AA1D4,#6B73A6)'
+                : 'linear-gradient(180deg,#868DC4,#5E6590)')
               : null;
 
             const dayDelay = i * 35; // staggered by weekday
@@ -693,7 +692,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
                       transform: 'translateX(-50%)',
                       width: 14, height: compH, borderRadius: '4px 4px 2px 2px',
                       background: compColor,
-                      boxShadow: isToday ? '0 2px 6px -2px rgba(255,107,74,.5)' : 'none',
+                      boxShadow: isToday ? '0 2px 8px -2px rgba(94,101,144,.45)' : 'none',
                       transformOrigin: 'bottom center',
                       animation: `ndBarGrow .65s ${dayDelay + 80}ms cubic-bezier(.22,1,.36,1) both`,
                       transition: 'height .35s ease, background .25s ease',

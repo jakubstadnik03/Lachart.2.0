@@ -87,6 +87,7 @@ public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
             out["category"] = (dict["category"] as? String) ?? NSNull()
             out["subtitle"] = (dict["subtitle"] as? String) ?? NSNull()
             out["id"]       = (dict["id"] as? String) ?? NSNull()
+            out["planned"]  = (dict["planned"] as? Bool) ?? false
             if let dur = dict["durationSec"] as? Int {
                 out["durationSec"] = dur
             } else if let durDouble = dict["durationSec"] as? Double {

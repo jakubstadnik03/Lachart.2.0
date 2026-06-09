@@ -2730,6 +2730,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return `${h}:${String(m).padStart(2, '0')}`;
   };
 
+  // Swim sessions are entered in metres (pool distances: 1500, 3000…), so a
+  // bare number should be read as metres, not kilometres.
+  const formSport = String(
+    plannedWorkout?.sport || initialPlannedWorkout?.sport || activity?.sport || activity?.type || ''
+  ).toLowerCase();
+  const isSwimForm = formSport.includes('swim');
+
   // Smart distance parser: "10", "10 km", "4,5", "4.5 km" → km value.
   // "500m" → 0.5 km. Comma decimal handled (Czech / European keyboards).
   const parseDistanceToKm = (raw) => {
@@ -2739,7 +2746,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     if (s.endsWith('m')) return parseFloat(s) / 1000;
     const n = parseFloat(s);
     if (isNaN(n)) return null;
-    // If > 500 assume metres, else km
+    // Swim: a bare number ≥ 50 is metres (3000 → 3 km, 1500 → 1.5 km, 400 →
+    // 0.4 km); smaller values like "3" stay km (open-water). Bike/run: > 500 m.
+    if (isSwimForm) return n >= 50 ? n / 1000 : n;
     return n > 500 ? n / 1000 : n;
   };
 
@@ -2865,6 +2874,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const dateForPlan = actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
       const sportForPlan = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
       const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
+      // Fall back to re-parsing the display (e.g. user typed "3000" and hit
+      // Save before the field blurred) so swim metres still convert to km.
+      const distKm = planForm.distanceKm > 0 ? planForm.distanceKm : parseDistanceToKm(planForm.distanceDisplay);
       const payload = {
         title: planForm.title || title,
         description: planForm.description,
@@ -2873,7 +2885,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         date: dateForPlan,
         plannedDuration: durMins ? durMins * 60 : dur,
         // Server schema is metres — convert from the form's km value.
-        ...(planForm.distanceKm > 0 && { plannedDistance: Math.round(planForm.distanceKm * 1000) }),
+        ...(distKm > 0 && { plannedDistance: Math.round(distKm * 1000) }),
         targetTss: planForm.targetTss ? Number(planForm.targetTss) : (tss || undefined),
       };
       let saved;
@@ -5295,7 +5307,7 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
 // ─── Richer Summary Column ────────────────────────────────────────────────────
 const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
 
-function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done', weekPlannedWorkouts = [] }) {
+function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done', weekPlannedWorkouts = [], large = false }) {
   if (!weekSummary) return <div className="bg-gray-50 p-2 min-h-[130px] min-w-[140px]" />;
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
@@ -5304,6 +5316,27 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
 
   const hasPlan = plannedSeconds > 0;
   const completionPct = hasPlan ? Math.min(100, Math.round((totalSeconds / plannedSeconds) * 100)) : null;
+
+  // `large` = full-width mobile Calendar tab → bigger, more readable text.
+  // Default (false) keeps the compact sizes used in the narrow desktop grid.
+  const L = large;
+  const cls = {
+    pad:    L ? 'p-4'         : 'p-2',
+    gap:    L ? 'gap-2.5'     : 'gap-1.5',
+    big:    L ? 'text-3xl'    : 'text-base',
+    prefix: L ? 'text-base'   : 'text-[11px]',
+    tss:    L ? 'text-lg'     : 'text-xs',
+    micro:  L ? 'text-xs'     : 'text-[9px]',
+    label:  L ? 'text-sm'     : 'text-[10px]',
+    rowH:   L ? 'text-base'   : 'text-[10px]',
+    rowSub: L ? 'text-sm'     : 'text-[9px]',
+    icon:   L ? 'w-5 h-5'     : 'w-3.5 h-3.5',
+    rows:   L ? 'space-y-2.5' : 'space-y-1',
+    bar:    L ? 'h-2.5'       : 'h-1.5',
+    fire:   L ? 'w-4 h-4'     : 'w-3 h-3',
+    arrow:  L ? 'w-6 h-6'     : 'w-4 h-4',
+    sportW: L ? 'w-16'        : 'w-14',
+  };
 
   // Plan tab — show planned workouts grouped by sport
   if (tab === 'plan') {
@@ -5336,27 +5369,27 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
     const totalTssP = sportRows.reduce((s, [, v]) => s + v.tss, 0);
 
     return (
-      <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
+      <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col ${cls.gap}`}>
         {/* Totals */}
-        <div className="flex items-baseline gap-1 leading-tight">
-          <span className="text-base font-extrabold text-gray-900">{formatHours(totalSecs || plannedSeconds)}</span>
+        <div className="flex items-baseline gap-1.5 leading-tight">
+          <span className={`${cls.big} font-extrabold text-gray-900`}>{formatHours(totalSecs || plannedSeconds)}</span>
           {totalTssP > 0 && (
-            <span className="text-[10px] font-bold text-primary">{Math.round(totalTssP)} TSS</span>
+            <span className={`${cls.label} font-bold text-primary`}>{Math.round(totalTssP)} TSS</span>
           )}
         </div>
         {sportRows.length === 0 ? (
-          <span className="text-xs text-gray-400 flex-1 flex items-center">No plan</span>
+          <span className={`${cls.label} text-gray-400 flex-1 flex items-center`}>No plan</span>
         ) : (
-          <div className="space-y-1 flex-1">
+          <div className={`${cls.rows} flex-1`}>
             {sportRows.map(([sport, v]) => {
               const meta = SPORT_META[sport] || SPORT_META.other;
               return (
-                <div key={sport} className="flex items-center gap-1.5">
-                  <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="text-[10px] font-semibold text-gray-500 w-14 shrink-0 truncate">{meta.label}</span>
-                  <span className="text-[10px] font-bold text-gray-800 flex-1">{formatHours(v.secs)}</span>
-                  {v.dist > 0 && <span className="text-[9px] text-gray-400 shrink-0">{formatKm(v.dist)}</span>}
-                  {v.tss > 0 && <span className="text-[9px] font-bold shrink-0" style={{ color: meta.color }}>{Math.round(v.tss)}</span>}
+                <div key={sport} className="flex items-center gap-2">
+                  <SportIcon sport={sport} className={`${cls.icon} flex-shrink-0`} />
+                  <span className={`${cls.label} font-semibold text-gray-500 ${cls.sportW} shrink-0 truncate`}>{meta.label}</span>
+                  <span className={`${cls.rowH} font-bold text-gray-800 flex-1`}>{formatHours(v.secs)}</span>
+                  {v.dist > 0 && <span className={`${cls.rowSub} text-gray-400 shrink-0`}>{formatKm(v.dist)}</span>}
+                  {v.tss > 0 && <span className={`${cls.rowSub} font-bold shrink-0`} style={{ color: meta.color }}>{Math.round(v.tss)}</span>}
                 </div>
               );
             })}
@@ -5379,29 +5412,29 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
-    <div className="bg-gray-50 p-2 border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col gap-1.5">
+    <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col ${cls.gap}`}>
       {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
           {hasPlan ? (
-            <div className="flex items-baseline gap-1 leading-tight">
-              <span className="text-[11px] font-medium text-gray-400">{formatHours(plannedSeconds)}</span>
-              <span className="text-base font-extrabold text-gray-900">{formatHours(totalSeconds)}</span>
+            <div className="flex items-baseline gap-1.5 leading-tight">
+              <span className={`${cls.prefix} font-medium text-gray-400`}>{formatHours(plannedSeconds)}</span>
+              <span className={`${cls.big} font-extrabold text-gray-900`}>{formatHours(totalSeconds)}</span>
             </div>
           ) : (
-            <div className="text-base font-extrabold text-gray-900 leading-tight">{formatHours(totalSeconds)}</div>
+            <div className={`${cls.big} font-extrabold text-gray-900 leading-tight`}>{formatHours(totalSeconds)}</div>
           )}
-          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             {totalTSS > 0 && (
               <div className="flex items-center gap-0.5">
-                <FireIcon className="w-3 h-3 text-primary" />
-                <span className="text-xs font-bold text-primary">{Math.round(totalTSS)}</span>
-                {plannedTSS > 0 && <span className="text-[9px] text-gray-400">/{Math.round(plannedTSS)}</span>}
-                <span className="text-[9px] text-gray-400">TSS</span>
+                <FireIcon className={`${cls.fire} text-primary`} />
+                <span className={`${cls.tss} font-bold text-primary`}>{Math.round(totalTSS)}</span>
+                {plannedTSS > 0 && <span className={`${cls.micro} text-gray-400`}>/{Math.round(plannedTSS)}</span>}
+                <span className={`${cls.micro} text-gray-400`}>TSS</span>
               </div>
             )}
             {completionPct !== null && (
-              <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400'}`}>
+              <span className={`${cls.micro} font-bold px-1.5 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400'}`}>
                 {completionPct}%
               </span>
             )}
@@ -5409,16 +5442,16 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
         </div>
         {volumeChange && (
           <span className="mt-0.5 flex-shrink-0">
-            {volumeChange === 'up' && <ArrowUpIcon className="w-4 h-4 text-green-500" />}
-            {volumeChange === 'down' && <ArrowDownIcon className="w-4 h-4 text-red-500" />}
-            {volumeChange === 'same' && <MinusIcon className="w-4 h-4 text-gray-400" />}
+            {volumeChange === 'up' && <ArrowUpIcon className={`${cls.arrow} text-green-500`} />}
+            {volumeChange === 'down' && <ArrowDownIcon className={`${cls.arrow} text-red-500`} />}
+            {volumeChange === 'same' && <MinusIcon className={`${cls.arrow} text-gray-400`} />}
           </span>
         )}
       </div>
 
       {/* Progress bar: actual / planned */}
       {hasPlan && (
-        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className={`${cls.bar} bg-gray-200 rounded-full overflow-hidden`}>
           <div
             className="h-full rounded-full transition-all"
             style={{
@@ -5431,7 +5464,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
 
       {/* TSS distribution bar (only when no plan bar) */}
       {!hasPlan && totalTssForBar > 0 && (
-        <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+        <div className={`flex ${cls.bar} rounded-full overflow-hidden gap-px`}>
           {bikeRatio > 0 && <div style={{ width: `${bikeRatio*100}%`, backgroundColor: SPORT_COLORS_CELL.bike }} className="rounded-full" />}
           {runRatio  > 0 && <div style={{ width: `${runRatio*100}%`,  backgroundColor: SPORT_COLORS_CELL.run }} className="rounded-full" />}
           {swimRatio > 0 && <div style={{ width: `${swimRatio*100}%`, backgroundColor: SPORT_COLORS_CELL.swim }} className="rounded-full" />}
@@ -5442,20 +5475,20 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
       )}
 
       {/* Per-sport rows */}
-      <div className="space-y-1 flex-1">
+      <div className={`${cls.rows} flex-1`}>
         {sports.map(s => (
-          <div key={s.key} className="flex items-center gap-1.5">
-            <SportIcon sport={s.key} className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="text-[10px] font-semibold text-gray-700 flex-1 truncate">{formatHours(s.seconds)}</span>
-            {s.dist > 0 && <span className="text-[9px] text-gray-400 flex-shrink-0">{formatKm(s.dist)}</span>}
-            {s.tss > 0 && <span className="text-[9px] font-bold text-primary flex-shrink-0">{Math.round(s.tss)}</span>}
+          <div key={s.key} className="flex items-center gap-2">
+            <SportIcon sport={s.key} className={`${cls.icon} flex-shrink-0`} />
+            <span className={`${cls.rowH} font-semibold text-gray-700 flex-1 truncate`}>{formatHours(s.seconds)}</span>
+            {s.dist > 0 && <span className={`${cls.rowSub} text-gray-400 flex-shrink-0`}>{formatKm(s.dist)}</span>}
+            {s.tss > 0 && <span className={`${cls.rowSub} font-bold text-primary flex-shrink-0`}>{Math.round(s.tss)}</span>}
           </div>
         ))}
         {strengthSeconds > 0 && (
-          <div className="flex items-center gap-1.5">
-            <SportIcon sport="strength" className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="text-[10px] font-semibold text-gray-700 flex-1">{formatHours(strengthSeconds)}</span>
-            {tssStrength > 0 && <span className="text-[9px] font-bold text-primary flex-shrink-0">{Math.round(tssStrength)}</span>}
+          <div className="flex items-center gap-2">
+            <SportIcon sport="strength" className={`${cls.icon} flex-shrink-0`} />
+            <span className={`${cls.rowH} font-semibold text-gray-700 flex-1`}>{formatHours(strengthSeconds)}</span>
+            {tssStrength > 0 && <span className={`${cls.rowSub} font-bold text-primary flex-shrink-0`}>{Math.round(tssStrength)}</span>}
           </div>
         )}
       </div>
@@ -6008,6 +6041,24 @@ export default function CalendarView({
   const weekSummaryRefs = useRef({});
   const mobileStickyHeaderRef = useRef(null);
   const selectedMobileDayRef = useRef(selectedMobileDay);
+
+  // Switching the mobile Calendar/Charts tab → jump the scroll container back
+  // to the very top so the new tab opens at the top (Charts especially, which
+  // is otherwise inherited at whatever scroll the calendar list was left at).
+  useEffect(() => {
+    if (!isMobile) return;
+    const header = mobileStickyHeaderRef.current;
+    let el = header ? header.parentElement : null;
+    while (el) {
+      const oy = (typeof getComputedStyle !== 'undefined') ? getComputedStyle(el).overflowY : '';
+      if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+        el.scrollTo({ top: 0, behavior: 'auto' });
+        return;
+      }
+      el = el.parentElement;
+    }
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+  }, [mobileTab, isMobile]);
   const isAutoScrollingRef = useRef(false);
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
@@ -7606,15 +7657,15 @@ export default function CalendarView({
                       ref={el => { weekSummaryRefs.current[weekKey] = el; }}
                       className="mb-3 rounded-xl border border-primary/20 overflow-hidden"
                     >
-                      <div className="flex items-center justify-between px-3 py-2 bg-primary/5">
-                        <span className="text-xs font-bold text-primary">Week summary</span>
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5">
+                        <span className="text-base font-bold text-primary">Week summary</span>
                         {wkSummary?.plannedSeconds > 0 && (
                           <div className="flex bg-white rounded-lg p-0.5 gap-0.5 border border-primary/20">
                             {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
                               <button
                                 key={tabId}
                                 onClick={e => { e.stopPropagation(); setWeekSummaryTab(tabId); }}
-                                className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
+                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                               >{lbl}</button>
                             ))}
@@ -7627,6 +7678,7 @@ export default function CalendarView({
                         formatKm={formatKm}
                         user={user}
                         tab={weekSummaryTab}
+                        large
                         weekPlannedWorkouts={plannedWorkouts.filter(pw => {
                           if (!pw.date) return false;
                           return startOfWeek(new Date(pw.date)).toISOString().slice(0,10) === weekKey;

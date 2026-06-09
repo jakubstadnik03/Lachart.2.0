@@ -10,6 +10,13 @@ const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
 const PROFILE_SPORTS = ['cycling', 'running', 'swimming'];
 const SPORT_LABEL = { cycling: 'Bike', running: 'Run', swimming: 'Swim' };
 
+// Total time in zones → "Xh Ym" / "Ym".
+function fmtZoneTotal(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 const POWER_ZONE_FILL = ['#7dd3fc', '#38bdf8', '#0ea5e9', '#0369a1', '#082f49'];
 const HR_ZONE_FILL = ['#fecaca', '#f87171', '#ef4444', '#dc2626', '#991b1b'];
 
@@ -503,6 +510,7 @@ export default function CalendarPeriodStats({
     const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
     const byDaySec = new Map();
     const byDayCount = new Map();
+    const byDayTss = new Map();
     const tssByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
     const distByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
     let maxTssAct = null;
@@ -558,6 +566,7 @@ export default function CalendarPeriodStats({
       if (dk) {
         byDaySec.set(dk, (byDaySec.get(dk) || 0) + sec);
         byDayCount.set(dk, (byDayCount.get(dk) || 0) + 1);
+        if (tssVal > 0) byDayTss.set(dk, (byDayTss.get(dk) || 0) + tssVal);
 
         ['bike', 'run', 'swim'].forEach((sport) => {
           if (b === sport) {
@@ -610,6 +619,7 @@ export default function CalendarPeriodStats({
     }
     const dailyHours = dayKeys.map((k) => Number(((byDaySec.get(k) || 0) / 3600).toFixed(2)));
     const dailyCounts = dayKeys.map((k) => byDayCount.get(k) || 0);
+    const dailyTss = dayKeys.map((k) => Math.round(byDayTss.get(k) || 0));
 
     const dailyHoursBike = dayKeys.map((k) => +((byDaySportSec.get(`${k}-bike`) || 0) / 3600).toFixed(2));
     const dailyHoursRun = dayKeys.map((k) => +((byDaySportSec.get(`${k}-run`) || 0) / 3600).toFixed(2));
@@ -643,6 +653,7 @@ export default function CalendarPeriodStats({
       dayKeys,
       dailyHours,
       dailyCounts,
+      dailyTss,
       dailyHoursBike,
       dailyHoursRun,
       dailyHoursSwim,
@@ -909,10 +920,15 @@ export default function CalendarPeriodStats({
 
   // Zone sport toggle state — default to 'all'
   const [zoneSport, setZoneSport] = useState('all');
+  // Daily training-load chart: switch the bars between Time (h, stacked by
+  // sport) and TSS (single bar).
+  const [dailyLoadMode, setDailyLoadMode] = useState('time'); // 'time' | 'tss'
 
   // Daily stacked load chart option
   const dailyStackedOption = useMemo(() => {
     if (!aggregates.dayKeys.length) return null;
+    const isTss = dailyLoadMode === 'tss';
+    const unit = isTss ? ' TSS' : 'h';
     const labels = aggregates.dayKeys.map((k) => {
       const [, m, d] = k.split('-');
       return `${d}.${m}.`;
@@ -927,7 +943,7 @@ export default function CalendarPeriodStats({
           let html = `<div style="font-size:11px"><b>${params[0]?.axisValueLabel || ''}</b>`;
           params.forEach((p) => {
             if (p.value > 0)
-              html += `<br/>${p.marker}${p.seriesName}: ${p.value}h`;
+              html += `<br/>${p.marker}${p.seriesName}: ${p.value}${unit}`;
           });
           html += '</div>';
           return html;
@@ -952,34 +968,44 @@ export default function CalendarPeriodStats({
         axisLine: { show: false },
         axisTick: { show: false },
       },
-      series: [
-        {
-          name: 'Bike',
-          type: 'bar',
-          stack: 'd',
-          barMaxWidth: 14,
-          itemStyle: { color: '#3b82f6', borderRadius: 0 },
-          data: aggregates.dailyHoursBike,
-        },
-        {
-          name: 'Run',
-          type: 'bar',
-          stack: 'd',
-          barMaxWidth: 14,
-          itemStyle: { color: '#f97316', borderRadius: 0 },
-          data: aggregates.dailyHoursRun,
-        },
-        {
-          name: 'Swim',
-          type: 'bar',
-          stack: 'd',
-          barMaxWidth: 14,
-          itemStyle: { color: '#06b6d4', borderRadius: 0 },
-          data: aggregates.dailyHoursSwim,
-        },
-      ],
+      series: isTss
+        ? [
+            {
+              name: 'TSS',
+              type: 'bar',
+              barMaxWidth: 14,
+              itemStyle: { color: '#7c6cf0', borderRadius: [3, 3, 0, 0] },
+              data: aggregates.dailyTss,
+            },
+          ]
+        : [
+            {
+              name: 'Bike',
+              type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#3b82f6', borderRadius: 0 },
+              data: aggregates.dailyHoursBike,
+            },
+            {
+              name: 'Run',
+              type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#f97316', borderRadius: 0 },
+              data: aggregates.dailyHoursRun,
+            },
+            {
+              name: 'Swim',
+              type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#06b6d4', borderRadius: 0 },
+              data: aggregates.dailyHoursSwim,
+            },
+          ],
     };
-  }, [aggregates.dayKeys, aggregates.dailyHoursBike, aggregates.dailyHoursRun, aggregates.dailyHoursSwim, periodView]);
+  }, [aggregates.dayKeys, aggregates.dailyHoursBike, aggregates.dailyHoursRun, aggregates.dailyHoursSwim, aggregates.dailyTss, dailyLoadMode, periodView]);
 
   // Weekly trend chart option
   const weeklyTrendOption = useMemo(() => {
@@ -1109,18 +1135,39 @@ export default function CalendarPeriodStats({
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {
     const isAll = zoneSport === 'all';
-    // Prefer server-computed second-by-second data; fall back to client estimate
+    const profSport = { bike: 'cycling', run: 'running', swim: 'swimming' }[zoneSport] || null;
+    // Week view always uses the period-reactive client aggregates; month can use
+    // the more accurate server second-by-second data (which is month-keyed).
+    const useServer = periodView === 'month';
     const powerSec = isAll
-      ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
-      : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {});
+      ? ((useServer && serverZoneSecAll.power) || aggregates.powerZoneSecAll || {})
+      : ((useServer && monthlyZones?.power?.[zoneSport]) || aggregates.powerZoneSec?.[zoneSport] || {});
     const hrSec = isAll
-      ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
-      : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {});
+      ? ((useServer && serverZoneSecAll.hr) || aggregates.hrZoneSecAll || {})
+      : ((useServer && monthlyZones?.hr?.[zoneSport]) || aggregates.hrZoneSec?.[zoneSport] || {});
 
     const powerTotal = ZONE_KEYS.reduce((s, k) => s + (powerSec[k] || 0), 0);
     const hrTotal = ZONE_KEYS.reduce((s, k) => s + (hrSec[k] || 0), 0);
 
-    const makeOption = (secMap, total, fills) => {
+    // Zone boundary ranges (only meaningful for a single sport).
+    const powerDefs = zoneSport === 'bike' ? (userProfile?.powerZones?.cycling || null) : null;
+    const hrDefs = profSport ? (userProfile?.heartRateZones?.[profSport] || null) : null;
+    const rangeStr = (defs, zk, unit) => {
+      if (!defs || !defs[zk]) return '';
+      const mn = parseZoneNumber(defs[zk]?.min);
+      const mxRaw = defs[zk]?.max;
+      const mx = (mxRaw === undefined || mxRaw === null || mxRaw === '') ? null : parseZoneNumber(mxRaw);
+      if (mn == null && mx == null) return '';
+      if (mn != null && mx != null) return `${Math.round(mn)}–${Math.round(mx)} ${unit}`;
+      if (mn != null) return `${Math.round(mn)}+ ${unit}`;
+      return `≤${Math.round(mx)} ${unit}`;
+    };
+    const fmtZoneTime = (sec) => {
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    };
+
+    const makeOption = (secMap, total, fills, defs, unit) => {
       if (total <= 0) return null;
       // y-axis data reversed so Z5 is top, Z1 is bottom
       const reversed = [...ZONE_KEYS].reverse(); // zone5 -> zone1
@@ -1132,11 +1179,10 @@ export default function CalendarPeriodStats({
           formatter(params) {
             if (!Array.isArray(params) || !params[0]) return '';
             const p = params[0];
-            const sec = secMap[reversed[params[0].dataIndex]] || 0;
-            const h = Math.floor(sec / 3600);
-            const m = Math.floor((sec % 3600) / 60);
-            const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
-            return `<div style="font-size:11px"><b>${p.name}</b><br/>${p.value}% · ${timeStr}</div>`;
+            const zk = reversed[p.dataIndex];
+            const sec = secMap[zk] || 0;
+            const range = rangeStr(defs, zk, unit);
+            return `<div style="font-size:11px"><b>${p.name}${range ? ` · ${range}` : ''}</b><br/>${p.value}% · ${fmtZoneTime(sec)}</div>`;
           },
         },
         grid: { left: 60, right: 30, top: 4, bottom: 4, containLabel: false },
@@ -1176,10 +1222,12 @@ export default function CalendarPeriodStats({
     };
 
     return {
-      power: makeOption(powerSec, powerTotal, POWER_ZONE_FILL),
-      hr: makeOption(hrSec, hrTotal, HR_ZONE_FILL),
+      power: makeOption(powerSec, powerTotal, POWER_ZONE_FILL, powerDefs, 'W'),
+      hr: makeOption(hrSec, hrTotal, HR_ZONE_FILL, hrDefs, 'bpm'),
+      powerTotalSec: powerTotal,
+      hrTotalSec: hrTotal,
     };
-  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneSport, periodView, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll, userProfile, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity effort scatter / timeline option
   const effortTimelineOption = useMemo(() => {
@@ -1770,8 +1818,20 @@ export default function CalendarPeriodStats({
             {/* Daily load stacked bar */}
             {aggregates.dayKeys.length > 0 && Chart && dailyStackedOption && (
               <div style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Daily training load (h)
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Daily training load ({dailyLoadMode === 'tss' ? 'TSS' : 'h'})
+                  </div>
+                  <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                    {[['time', 'Time'], ['tss', 'TSS']].map(([m, lbl]) => (
+                      <button
+                        key={m}
+                        onClick={() => setDailyLoadMode(m)}
+                        className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-md transition-all touch-manipulation ${dailyLoadMode === m ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >{lbl}</button>
+                    ))}
+                  </div>
                 </div>
                 <Chart
                   option={dailyStackedOption}
@@ -1871,20 +1931,25 @@ export default function CalendarPeriodStats({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {zoneBarOptions.power && (
                   <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="text-xs font-semibold text-gray-600 mb-2">
-                      Power / Pace
+                    <div className="flex items-baseline justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-600">Power / Pace</span>
+                      <span className="text-[11px] font-medium text-gray-400 tabular-nums">{fmtZoneTotal(zoneBarOptions.powerTotalSec)}</span>
                     </div>
                     <Chart
                       option={zoneBarOptions.power}
                       style={{ height: isMobile ? 110 : 130, width: '100%' }}
                       notMerge
                     />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Tap a bar for the zone range &amp; time{zoneSport === 'all' ? ' · pick a sport for W/bpm ranges' : ''}.
+                    </p>
                   </div>
                 )}
                 {zoneBarOptions.hr && (
                   <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="text-xs font-semibold text-gray-600 mb-2">
-                      Heart Rate
+                    <div className="flex items-baseline justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-600">Heart Rate</span>
+                      <span className="text-[11px] font-medium text-gray-400 tabular-nums">{fmtZoneTotal(zoneBarOptions.hrTotalSec)}</span>
                     </div>
                     <Chart
                       option={zoneBarOptions.hr}

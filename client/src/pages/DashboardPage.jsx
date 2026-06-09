@@ -62,21 +62,38 @@ function normaliseSportForWidget(raw) {
   const s = String(raw || '').toLowerCase();
   if (s.includes('swim')) return 'swim';
   if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
-  if (s.includes('strength') || s.includes('gym')) return 'strength';
   if (s.includes('yoga')) return 'yoga';
-  return 'bike';
+  // Match the same keyword set as the shared SportIcon so a gym/strength
+  // session isn't misread as a bike (which the default used to do).
+  if (s.includes('strength') || s.includes('gym') || s.includes('weight')
+      || s.includes('workout') || s.includes('crossfit') || s.includes('fitness')
+      || s.includes('elliptical') || s.includes('rower') || s.includes('rowing')) return 'strength';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual') || s.includes('mtb')) return 'bike';
+  // Truly unknown → 'other' (the widget shows a neutral icon, not a bike).
+  return 'other';
 }
 
 /** Build the array the widget renders under "DONE" — completed activities
  *  done today. Sorted newest-first, max 4 entries. */
-function pickTodaysCompleted(activities) {
+function pickTodaysCompleted(activities, plannedWorkouts) {
   if (!Array.isArray(activities)) return [];
   const today = new Date();
+  // Today's planned workouts — used to decide whether a completed activity
+  // was actually in the calendar plan (drives the green ✓ in the widget).
+  const dayPlans = (Array.isArray(plannedWorkouts) ? plannedWorkouts : [])
+    .filter(p => isSameLocalDay(p?.date, today));
   return activities
     .filter(a => isSameLocalDay(a?.date || a?.startDate || a?.timestamp, today))
     .sort((a, b) => new Date(b?.date || b?.startDate || 0) - new Date(a?.date || a?.startDate || 0))
     .slice(0, 4)
     .map(a => {
+      const aid = String(a.id || a._id || '');
+      // Planned if a same-day plan is explicitly linked to this activity, or
+      // (fallback) a same-day plan of the same sport exists.
+      const wasPlanned = dayPlans.some(p =>
+        (p?.completedTrainingId && String(p.completedTrainingId) === aid) ||
+        normaliseSportForWidget(p?.sport) === normaliseSportForWidget(a?.sport)
+      );
       const durSec = Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0);
       const distM  = Number(a.distance || a.totalDistance || 0);
       const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
@@ -94,24 +111,51 @@ function pickTodaysCompleted(activities) {
         // Prefixed activity id so the widget can deep-link straight into this
         // training (handled by the appUrlOpen → ?openActivity route).
         id:          a.id || a._id || (a.stravaId ? `strava-${a.stravaId}` : null) || null,
+        // Was this completed session part of the calendar plan? (green ✓)
+        planned:     wasPlanned,
       };
     });
 }
 
 /** Build the array under "PLANNED" — today's planned workouts that haven't
- *  been completed yet. Sorted by longest planned duration first. */
-function pickTodaysPlanned(plannedWorkouts) {
+ *  been completed yet. Sorted by longest planned duration first.
+ *  A plan drops off this list once it's done: either it was explicitly
+ *  completed (status / completedTrainingId / fitTrainingId) or a recorded
+ *  activity of the same sport today is paired to it — so the widget never
+ *  shows the same session twice (once as ✓ done, once as planned). */
+function pickTodaysPlanned(plannedWorkouts, activities) {
   if (!Array.isArray(plannedWorkouts)) return [];
   const today = new Date();
-  return plannedWorkouts
-    .filter(p => isSameLocalDay(p?.date, today))
+  const todays = plannedWorkouts.filter(p => isSameLocalDay(p?.date, today));
+
+  // Greedily pair each completed activity to one same-sport plan and mark it
+  // claimed, so a finished plan is hidden from the PLANNED list.
+  const pid = (p) => String(p?._id || p?.id || '');
+  const claimed = new Set();
+  const acts = (Array.isArray(activities) ? activities : [])
+    .filter(a => isSameLocalDay(a?.date || a?.startDate || a?.timestamp, today));
+  for (const a of acts) {
+    const aid = String(a.id || a._id || '');
+    const sport = normaliseSportForWidget(a?.sport);
+    let match = todays.find(p => !claimed.has(pid(p)) && p.completedTrainingId && String(p.completedTrainingId) === aid);
+    if (!match) match = todays.find(p => !claimed.has(pid(p)) && normaliseSportForWidget(p?.sport) === sport);
+    if (match) claimed.add(pid(match));
+  }
+
+  const isDone = (p) =>
+    p?.status === 'completed' || p?.completedTrainingId || p?.fitTrainingId || claimed.has(pid(p));
+
+  return todays
+    .filter(p => !isDone(p))
     .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
     .slice(0, 4)
     .map(p => {
-      const dist = Number(p.plannedDistance || 0);
-      const fmtDist = dist > 0
-        ? (dist >= 1 ? `${dist % 1 === 0 ? dist : dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`)
-        : null;
+      // plannedDistance is metres on the server; legacy builds wrote km, so a
+      // value < 100 is almost certainly km (heal it to metres). 3000 → 3.0 km.
+      const distRaw = Number(p.plannedDistance || 0);
+      const distM = distRaw > 0 && distRaw < 100 ? distRaw * 1000 : distRaw;
+      const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
+                    : distM > 0      ? `${Math.round(distM)} m` : null;
       const tss = Number(p.targetTss || 0);
       const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
       return {
@@ -121,6 +165,7 @@ function pickTodaysPlanned(plannedWorkouts) {
         category:    p.category || null,
         subtitle:    sub || null,
         id:          p._id || p.id || null,
+        planned:     true,
       };
     });
 }
@@ -135,10 +180,12 @@ function pickTomorrowPlanned(plannedWorkouts) {
     .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
     .slice(0, 4)
     .map(p => {
-      const dist = Number(p.plannedDistance || 0);
-      const fmtDist = dist > 0
-        ? (dist >= 1 ? `${dist % 1 === 0 ? dist : dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`)
-        : null;
+      // plannedDistance is metres on the server; legacy builds wrote km, so a
+      // value < 100 is almost certainly km (heal it to metres). 3000 → 3.0 km.
+      const distRaw = Number(p.plannedDistance || 0);
+      const distM = distRaw > 0 && distRaw < 100 ? distRaw * 1000 : distRaw;
+      const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
+                    : distM > 0      ? `${Math.round(distM)} m` : null;
       const tss = Number(p.targetTss || 0);
       const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
       return {
@@ -148,6 +195,7 @@ function pickTomorrowPlanned(plannedWorkouts) {
         category:    p.category || null,
         subtitle:    sub || null,
         id:          p._id || p.id || null,
+        planned:     true,
       };
     });
 }
@@ -1493,8 +1541,8 @@ export default function DashboardPage() {
           form:      tm.form,
           formDelta: tm.formChange,
           sparkline: tsb14,
-          todayCompleted: pickTodaysCompleted(calendarDataRef.current),
-          todayPlanned:    pickTodaysPlanned(plannedWorkoutsRef.current),
+          todayCompleted: pickTodaysCompleted(calendarDataRef.current, plannedWorkoutsRef.current),
+          todayPlanned:    pickTodaysPlanned(plannedWorkoutsRef.current, calendarDataRef.current),
           tomorrowPlanned: pickTomorrowPlanned(plannedWorkoutsRef.current),
         });
       }
@@ -1527,8 +1575,8 @@ export default function DashboardPage() {
       form:      tm.form,
       formDelta: tm.formChange,
       sparkline: tsb14,
-      todayCompleted: pickTodaysCompleted(calendarData),
-      todayPlanned:    pickTodaysPlanned(plannedWorkouts),
+      todayCompleted: pickTodaysCompleted(calendarData, plannedWorkouts),
+      todayPlanned:    pickTodaysPlanned(plannedWorkouts, calendarData),
       tomorrowPlanned: pickTomorrowPlanned(plannedWorkouts),
     });
   }, [plannedWorkouts, calendarData, todayMetrics, sparklineData]);
