@@ -3220,14 +3220,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // sessions — merging them would make a real activity vanish from the
     // calendar (exactly the "activity missing" bug). Cross-source merging
     // (same ride synced from both Strava and Garmin) still works as before.
-    const isCrossSource = (other) => other && other.source !== act.source;
+    const isCrossSource = (other, current) => other && current && other.source !== current.source;
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
       const bucketKey = `${actDatePart}_${actSport}`;
 
       // Exact-key match — only collapse if it came from another provider.
-      if (dedupMap.has(key) && isCrossSource(dedupMap.get(key))) {
+      if (dedupMap.has(key) && isCrossSource(dedupMap.get(key), act)) {
         const existing = dedupMap.get(key);
         const merged = choosePreferredActivity(existing, act);
         dedupMap.set(key, merged);
@@ -3246,7 +3246,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       const bucket = similarBuckets.get(bucketKey) || [];
       for (const candidate of bucket) {
         // Never fuzzy-merge two activities from the same provider.
-        if (!isCrossSource(candidate.activity)) continue;
+        if (!isCrossSource(candidate.activity, act)) continue;
         const [,, duration, distance] = candidate.key.split('_');
         const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
         const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);

@@ -6001,7 +6001,9 @@ export default function CalendarView({
 
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
   const getInitialAnchorDate = () => {
-    if (initialAnchorDate) return initialAnchorDate;
+    // safeDate guards against an Invalid Date prop (truthy but unusable) that
+    // would otherwise crash every anchorDate.toISOString() downstream.
+    if (initialAnchorDate) return safeDate(initialAnchorDate);
     const saved = localStorage.getItem('calendarView_anchorDate');
     if (saved) {
       const parsed = new Date(saved);
@@ -6416,13 +6418,14 @@ export default function CalendarView({
   // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
   // Also detect month change and notify parent
   useEffect(() => {
+    const safeAnchor = safeDate(anchorDate);
     if (!initialAnchorDate) {
       // Only save if we're not being controlled by initialAnchorDate prop
-      localStorage.setItem('calendarView_anchorDate', anchorDate.toISOString());
+      localStorage.setItem('calendarView_anchorDate', safeAnchor.toISOString());
     }
 
     // Check if month changed and notify parent
-    const currentMonth = `${anchorDate.getFullYear()}-${anchorDate.getMonth()}`;
+    const currentMonth = `${safeAnchor.getFullYear()}-${safeAnchor.getMonth()}`;
     if (lastMonthRef.current !== null && lastMonthRef.current !== currentMonth && onMonthChange) {
       console.log('Month changed, calling onMonthChange:', { year: anchorDate.getFullYear(), month: anchorDate.getMonth() });
       onMonthChange({ year: anchorDate.getFullYear(), month: anchorDate.getMonth() });
@@ -6470,9 +6473,14 @@ export default function CalendarView({
   // Update anchorDate when initialAnchorDate changes (e.g., when navigating to a specific training)
   useEffect(() => {
     if (initialAnchorDate) {
-      setAnchorDate(initialAnchorDate);
+      // An Invalid Date is still a truthy object, so coerce it — otherwise
+      // .toISOString() throws "RangeError: Invalid time value" and the
+      // ErrorBoundary blanks the whole calendar (e.g. opening an activity
+      // whose date is corrupt passes Invalid Date in as initialAnchorDate).
+      const d = safeDate(initialAnchorDate);
+      setAnchorDate(d);
       // Also save to localStorage when navigating to specific training
-      localStorage.setItem('calendarView_anchorDate', initialAnchorDate.toISOString());
+      localStorage.setItem('calendarView_anchorDate', d.toISOString());
     }
   }, [initialAnchorDate]);
 
