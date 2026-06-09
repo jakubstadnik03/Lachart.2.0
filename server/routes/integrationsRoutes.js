@@ -3146,7 +3146,12 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // Helper function to create a deduplication key
     const createDedupKey = (activity, source) => {
       const startDate = new Date(activity.startDate);
-      const dateKey = startDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm (5 minute precision)
+      // A corrupt/missing startDate would make toISOString() throw
+      // ("RangeError: Invalid time value") and 500 the whole activities
+      // endpoint — so fall back to a stable epoch key instead of crashing.
+      const dateKey = Number.isNaN(startDate.getTime())
+        ? 'invalid-date'
+        : startDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm (5 minute precision)
       const sport = (activity.sport || 'unknown').toLowerCase();
       const duration = Math.round((activity.elapsedTime || activity.movingTime || 0) / 60); // minutes
       const distance = Math.round((activity.distance || 0) / 100); // 100m precision

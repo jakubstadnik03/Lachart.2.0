@@ -167,8 +167,16 @@ function PlanMiniChart({ steps, color, width = 60, height = 16 }) {
   );
 }
 
-function startOfWeek(date) {
+// Coerce any input to a *valid* Date. A bad activity/plan date (null, '',
+// malformed string) otherwise yields an Invalid Date whose .toISOString()
+// throws "RangeError: Invalid time value" and takes down the whole calendar.
+function safeDate(date, fallback = new Date()) {
   const d = new Date(date);
+  return isNaN(d.getTime()) ? new Date(fallback) : d;
+}
+
+function startOfWeek(date) {
+  const d = safeDate(date);
   const day = (d.getDay() + 6) % 7; // Monday=0
   d.setDate(d.getDate() - day);
   d.setHours(0,0,0,0);
@@ -176,17 +184,18 @@ function startOfWeek(date) {
 }
 
 function startOfMonth(date) {
-  const d = new Date(date);
+  const d = safeDate(date);
   d.setDate(1);
   d.setHours(0,0,0,0);
   return d;
 }
 
 function endOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  const d = safeDate(date);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 }
 
-function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate()+n); return d; }
+function addDays(date, n) { const d = safeDate(date); d.setDate(d.getDate()+n); return d; }
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
 // Helper function to get local date string (YYYY-MM-DD) without timezone issues
@@ -2386,7 +2395,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const altitude  = streams.altitude?.data || streams.altitude || [];
     const distArr   = streams.distance?.data || streams.distance || [];
     const startDate = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
-    const startMs   = new Date(startDate).getTime();
+    const startMs   = safeDate(startDate).getTime();
 
         // If velocity_smooth is absent (Garmin KEY_SET fallback returned time+heartrate+
         // distance but not speed), derive it from consecutive distance+time samples.
@@ -2454,7 +2463,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     if (usableLaps.length === 0) return null;
 
     const activityStart = merged?.start_date || merged?.startDate || merged?.date || new Date().toISOString();
-    const actStartMs = new Date(activityStart).getTime();
+    const actStartMs = safeDate(activityStart).getTime();
     const STEP_SEC = 5; // one synthetic record every 5 s — light enough for mobile
     const records = [];
     let cumSec = 0;

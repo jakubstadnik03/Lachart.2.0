@@ -4133,7 +4133,7 @@ const FitAnalysisPage = () => {
       category: selectedTraining.category || '',
       title: selectedTraining.titleManual || selectedTraining.titleAuto || '',
       description: selectedTraining.description || '',
-      date: new Date(date).toISOString().slice(0, 16),
+      date: (() => { const d = new Date(date); return (Number.isNaN(d.getTime()) ? new Date() : d).toISOString().slice(0, 16); })(),
       results,
     };
     setTrainingFormData({ ...formData, _initialSelectedLap: lapIndex != null ? lapIndex + 1 : null });
@@ -4155,9 +4155,10 @@ const FitAnalysisPage = () => {
       // Resolve the MongoDB _id (may be on _id or via localStorage for regular trainings)
       _id: selectedTraining._id || localStorage.getItem('fitAnalysis_selectedRegularTrainingId') || localStorage.getItem('fitAnalysis_selectedTrainingModelId'),
       title: selectedTraining.titleManual || selectedTraining.title || selectedTraining.titleAuto || '',
-      date: selectedTraining.timestamp
-        ? new Date(selectedTraining.timestamp).toISOString().slice(0, 16)
-        : new Date(selectedTraining.date || Date.now()).toISOString().slice(0, 16),
+      date: (() => {
+        const d = new Date(selectedTraining.timestamp || selectedTraining.date || Date.now());
+        return (Number.isNaN(d.getTime()) ? new Date() : d).toISOString().slice(0, 16);
+      })(),
       results: Array.isArray(selectedTraining.results) ? selectedTraining.results : [],
     };
     setManualFormInitialData(initData);
