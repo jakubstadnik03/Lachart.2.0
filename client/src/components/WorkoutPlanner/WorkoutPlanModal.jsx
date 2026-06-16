@@ -258,7 +258,11 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : ''
   );
   const [plannedDistStr, setPlannedDistStr] = useState(
-    workout?.plannedDistance ? String((workout.plannedDistance / 1000).toFixed(1)) : ''
+    workout?.plannedDistance
+      ? (workout?.sport === 'swim'
+          ? String(workout.plannedDistance)
+          : String((workout.plannedDistance / 1000).toFixed(1)))
+      : ''
   );
   // Coach comment (visible note shown on calendar card)
   const [comment, setComment] = useState(workout?.comment || '');
@@ -286,7 +290,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
       steps,
       category:        category || undefined,
       plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
-      plannedDistance: plannedDistStr ? parseFloat(plannedDistStr) * 1000 : undefined,
+      plannedDistance: plannedDistStr
+        ? parseFloat(plannedDistStr) * (sport === 'swim' ? 1 : 1000)
+        : undefined,
       isLactateTest:   sport === 'lactate' || undefined,
     });
     setSaving(false);
@@ -619,7 +625,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                         className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
                       />
                     </div>
-                    <span className="text-[10px] text-slate-400">km</span>
+                    <span className="text-[10px] text-slate-400">{sport === 'swim' ? 'm' : 'km'}</span>
                   </div>
 
                   {/* TSS */}

@@ -387,6 +387,27 @@ api.interceptors.response.use(
       logApiCall(error.config, error.config.__startTime);
     }
 
+    // ── Auto-retry idempotent GETs on cold-start / transient failures ─────────
+    // The #1 cause of "open the app and nothing loads until I restart" is the
+    // Render instance being asleep: the first request times out or returns a
+    // 502/503/504 while it spins up. Retrying the GET a few times with backoff
+    // lets the data arrive on its own instead of leaving the screen empty.
+    const _cfg = error.config;
+    const _status = error.response?.status;
+    const _isCanceled = error.code === 'ERR_CANCELED' || error.name === 'CanceledError';
+    const _isTimeout = error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '');
+    const _isNetErr = error.code === 'ERR_NETWORK' || error.message === 'Network Error';
+    const _isColdStart = _status === 502 || _status === 503 || _status === 504;
+    const _method = String(_cfg?.method || 'get').toLowerCase();
+    if (_cfg && _method === 'get' && !_isCanceled && !_cfg.noRetry && (_isTimeout || _isNetErr || _isColdStart)) {
+      _cfg.__retryCount = (_cfg.__retryCount || 0) + 1;
+      const MAX_RETRIES = 4;
+      if (_cfg.__retryCount <= MAX_RETRIES) {
+        const wait = Math.min(2000 * _cfg.__retryCount, 8000); // 2s, 4s, 6s, 8s
+        return new Promise((resolve) => setTimeout(resolve, wait)).then(() => api(_cfg));
+      }
+    }
+
     // Log network/CORS errors only once per session to avoid console spam
     const isNetworkError = error.code === 'ERR_NETWORK' || error.message === 'Network Error';
     if (isNetworkError) {

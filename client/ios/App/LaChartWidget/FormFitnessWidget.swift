@@ -48,7 +48,9 @@ struct FormFitnessProvider: TimelineProvider {
 enum LaChartColor {
     static let primary  = Color(red: 0.37, green: 0.40, blue: 0.71)  // #5E6590
     static let primaryLight = Color(red: 0.46, green: 0.49, blue: 0.71) // #767EB5
-    static let ink      = Color(red: 0.04, green: 0.05, blue: 0.10)  // #0A0E1A
+    // Use Color.primary instead of a hard-coded dark ink so text is readable
+    // in both light and dark mode (system automatically picks white vs black).
+    static let ink      = Color.primary
     static let muted    = Color(red: 0.61, green: 0.64, blue: 0.72)  // #9CA3AF
     static let mark     = Color(red: 0.37, green: 0.40, blue: 0.71)
     static let danger   = Color(red: 0.72, green: 0.26, blue: 0.22)  // #B84238
@@ -111,8 +113,8 @@ struct KPIRow: View {
         }
     }
 
-    private var valueSize: CGFloat { big ? 32 : (compact ? 18 : 22) }
-    private var labelSize: CGFloat { big ? 10 : (compact ? 7 : 8) }
+    private var valueSize: CGFloat { big ? 40 : (compact ? 22 : 28) }
+    private var labelSize: CGFloat { big ? 11 : (compact ? 8 : 9) }
 
     private func kpi(value: String, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
@@ -159,11 +161,11 @@ struct WorkoutRow: View {
         }
     }
 
-    private var circleD: CGFloat { large ? 34 : (compact ? 22 : 26) }
-    private var iconSize: CGFloat { large ? 16 : (compact ? 11 : 13) }
-    private var titleSize: CGFloat { large ? 16 : (compact ? 11 : 12.5) }
-    private var detailSize: CGFloat { large ? 12.5 : (compact ? 9 : 10) }
-    private var checkSize: CGFloat { large ? 18 : (compact ? 12 : 14) }
+    private var circleD: CGFloat { large ? 40 : (compact ? 26 : 30) }
+    private var iconSize: CGFloat { large ? 19 : (compact ? 13 : 15) }
+    private var titleSize: CGFloat { large ? 18 : (compact ? 13 : 15) }
+    private var detailSize: CGFloat { large ? 14 : (compact ? 10 : 11) }
+    private var checkSize: CGFloat { large ? 21 : (compact ? 14 : 16) }
 
     private var catColor: Color { LaChartColor.forCategory(workout.category) }
 
@@ -368,10 +370,10 @@ struct MediumTodayView: View {
         if completed.isEmpty && planned.isEmpty {
             HStack(spacing: 8) {
                 Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(LaChartColor.muted)
                 Text("Rest day")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(LaChartColor.muted)
                 Spacer()
             }
@@ -459,7 +461,7 @@ struct LargeTodayView: View {
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .heavy))
+            .font(.system(size: 11, weight: .heavy))
             .tracking(0.7)
             .foregroundColor(LaChartColor.muted)
     }
@@ -467,10 +469,10 @@ struct LargeTodayView: View {
     private var restRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "moon.zzz.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(LaChartColor.muted)
             Text("Rest day")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(LaChartColor.muted)
             Spacer()
         }
@@ -501,7 +503,16 @@ struct FormFitnessWidget: Widget {
 
 struct FormFitnessWidgetView: View {
     @Environment(\.widgetFamily) var family
+    @Environment(\.colorScheme) var colorScheme
     let entry: FormFitnessEntry
+
+    // Adaptive widget background: near-black in dark mode, white in light mode.
+    private var widgetBackground: Color {
+        colorScheme == .dark
+            ? Color(red: 0.08, green: 0.09, blue: 0.12)
+            : Color.white
+    }
+
     var body: some View {
         Group {
             switch family {
@@ -510,6 +521,7 @@ struct FormFitnessWidgetView: View {
             default:            SmallTodayView(entry: entry)
             }
         }
+        .background(widgetBackground)
         // Fallback: tapping anywhere that isn't a workout Link opens the app.
         .widgetURL(URL(string: "com.lachart.app://open"))
     }

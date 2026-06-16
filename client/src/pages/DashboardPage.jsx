@@ -1170,8 +1170,12 @@ export default function DashboardPage() {
     const lastReloadKey = `dashboard_foreground_reload_${user._id}`;
 
     const onForeground = async () => {
+      // When the dashboard is currently EMPTY (a previous load failed), always
+      // reload on foreground — skip the 3-minute throttle. This is the common
+      // "came back to a blank app" case and it should self-heal immediately.
+      const isEmpty = (calendarDataRef.current?.length || 0) === 0;
       const last = parseInt(sessionStorage.getItem(lastReloadKey) || '0', 10);
-      if (Date.now() - last < FOREGROUND_RELOAD_COOLDOWN) return;
+      if (!isEmpty && Date.now() - last < FOREGROUND_RELOAD_COOLDOWN) return;
       sessionStorage.setItem(lastReloadKey, Date.now().toString());
       console.log('[DashboardPage] app foreground — refreshing calendar data');
       try {
@@ -1237,6 +1241,7 @@ export default function DashboardPage() {
   const lastLoadedAthleteIdRef = React.useRef(null);
   const lastLoadTimeRef = React.useRef(null);
   const hasLoadedOnceRef = React.useRef(false);
+  const emptyRetryRef = React.useRef(0); // backoff counter for "empty after failed load" auto-retry
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1316,6 +1321,11 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error('Error loading data:', error);
+        // A failed cold-start load must NOT lock the 5-minute skip guard —
+        // otherwise the dashboard stays empty until the app is restarted.
+        // Reopen the guard so the retry effect / foreground refresh can reload.
+        hasLoadedOnceRef.current = false;
+        lastLoadTimeRef.current = 0;
       }
     };
 
@@ -1323,6 +1333,38 @@ export default function DashboardPage() {
   // selectedSport intentionally excluded — sport is a client-side filter, not a data-load trigger.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
+
+  // ── Self-heal: auto-retry when the dashboard loaded empty due to a failure ──
+  // The #1 cause of "open the app and everything is blank until I restart" is a
+  // cold-start request failing (Render free-tier spin-up, a 500, or a network
+  // blip): loadCalendarData sets calendarError and returns []. Instead of
+  // leaving the user stuck, retry a few times with backoff. We gate on
+  // calendarError so a genuinely empty account (no error) is NOT retried.
+  useEffect(() => {
+    if (isTestingRole) return;
+    const targetId = isCoachLikeRole ? selectedAthleteId : user?._id;
+    if (!targetId) return;
+    if (calendarData.length > 0) { emptyRetryRef.current = 0; return; } // recovered
+    // Retry when we have a load error, OR when the calendar is empty but the
+    // account clearly HAS data (planned workouts loaded) — i.e. the activities
+    // fetch silently came back empty after a cold-start blip. A genuinely empty
+    // account (no error, no plans) is left alone.
+    const hasOtherData = Array.isArray(plannedWorkouts) && plannedWorkouts.length > 0;
+    if (!calendarError && !hasOtherData) return;
+    if (emptyRetryRef.current >= 4) return; // give up after 4 tries (~2+4+6+8s)
+    const attempt = emptyRetryRef.current + 1;
+    emptyRetryRef.current = attempt;
+    const delay = Math.min(2000 * attempt, 8000);
+    console.log(`[DashboardPage] empty after load error — retry ${attempt}/4 in ${delay}ms`);
+    const t = setTimeout(async () => {
+      setCalendarError(null);
+      try {
+        const r = await loadTrainings(targetId);
+        await loadCalendarData(targetId, r?.regularTrainings);
+      } catch (_) { /* the effect re-runs if it fails again */ }
+    }, delay);
+    return () => clearTimeout(t);
+  }, [calendarData.length, calendarError, plannedWorkouts.length, isTestingRole, isCoachLikeRole, selectedAthleteId, user?._id, loadTrainings, loadCalendarData]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {

@@ -2692,7 +2692,7 @@ export default function NativeTrainingPage({
                         delay={idx * 30}
                         expanded={isExpanded}
                         onToggle={() => toggleExpanded(id)}
-                        onOpenFull={() => setActivityModal({ activity: enrichForModal(t), plannedWorkout: null })}
+                        onOpenFull={() => openActivity(t)}
                       />
                     );
                   })}

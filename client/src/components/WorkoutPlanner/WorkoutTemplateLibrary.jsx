@@ -31,7 +31,7 @@ function fmtDur(secs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export default function WorkoutTemplateLibrary({ templates = [] }) {
+export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null }) {
   const [sport, setSport] = useState('all');
   const [q, setQ] = useState('');
 
@@ -89,8 +89,9 @@ export default function WorkoutTemplateLibrary({ templates = [] }) {
                     JSON.stringify({ name: t.name, sport: t.sport, steps: t.steps })
                   );
                 }}
-                title="Drag onto a day to plan it"
-                className="group flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-150 bg-white hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all"
+                onClick={() => onOpenTemplate?.(t)}
+                title="Click to open & edit · drag onto a day to plan"
+                className="group flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-150 bg-white hover:border-primary/40 hover:shadow-sm cursor-pointer transition-all"
               >
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: SPORT_DOT[sp] || SPORT_DOT.other }} />
                 <div className="min-w-0 flex-1">

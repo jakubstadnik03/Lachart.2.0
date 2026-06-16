@@ -6,7 +6,7 @@
  *   • Completed trainings from the same week
  * Plus: create/edit planned workouts with WorkoutBuilder
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon,
          TrashIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
@@ -22,6 +22,33 @@ import {
 } from '../services/workoutPlannerApi';
 import api from '../services/api';
 import WorkoutTemplateLibrary from '../components/WorkoutPlanner/WorkoutTemplateLibrary';
+import { buildPresetSteps } from '../components/WorkoutPlanner/WorkoutBuilder';
+// Lazy — ActivityFullModal lives in the 8k-line CalendarView; don't pull it
+// into the planner chunk unless an activity is actually opened.
+const ActivityFullModal = lazy(() =>
+  import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
+);
+
+// Starter workout templates shown in the library when the user hasn't saved
+// any of their own yet — so the planner isn't empty on day one. Built from the
+// same presets the WorkoutBuilder uses, so dragging one onto a day creates a
+// fully-structured planned workout. Power targets are zone/threshold-relative,
+// so they scale to each athlete's profile.
+const DEFAULT_TEMPLATE_DEFS = [
+  { name: 'Endurance ride · Z2 60′',     sport: 'bike',  preset: 'zone2' },
+  { name: 'Sweet Spot · 3×15′',          sport: 'bike',  preset: 'sweet_spot' },
+  { name: 'Threshold · 5×8′ LT2',        sport: 'bike',  preset: 'threshold_intervals' },
+  { name: 'VO₂max · 6×4′',               sport: 'bike',  preset: 'vo2max' },
+  { name: 'Over/Under · 3 sets',         sport: 'bike',  preset: 'over_under' },
+  { name: 'Tempo · 2×20′',               sport: 'bike',  preset: 'tempo' },
+  { name: 'Easy run · 45′',              sport: 'run',   preset: 'run_easy' },
+  { name: 'Long run · 90′',              sport: 'run',   preset: 'run_long' },
+  { name: 'Run threshold · 2×15′',       sport: 'run',   preset: 'run_threshold' },
+  { name: 'Run VO₂max · 6×3′',           sport: 'run',   preset: 'run_vo2max' },
+  { name: 'Fartlek · 10×1′',             sport: 'run',   preset: 'run_fartlek' },
+  { name: 'Swim endurance · 1.6 km',     sport: 'swim',  preset: 'swim_endurance' },
+  { name: 'Swim threshold · 10×100',     sport: 'swim',  preset: 'swim_threshold' },
+];
 
 // ─── Date helpers (local, not re-exported from modal) ────────────────────────
 function startOfWeek(date) {
@@ -88,7 +115,7 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
 }
 
 // ─── Completed Training Card (inside calendar cell) ──────────────────────────
-function CompletedCard({ training }) {
+function CompletedCard({ training, onOpen }) {
   // Normalise Strava ("Ride"/"Run"/"Swim") + manual sports to icon/colour keys.
   const raw = String(training.sport || '').toLowerCase();
   const sport = raw.includes('ride') || raw.includes('bike') || raw.includes('cycl') ? 'bike'
@@ -98,8 +125,12 @@ function CompletedCard({ training }) {
   const col = SPORT_COLORS[sport] || '#94a3b8';
   const title = training.title || training.name || training.titleManual || 'Activity';
   return (
-    <div className="rounded-lg border bg-slate-50 overflow-hidden"
-      style={{ borderColor: col + '40', borderLeftWidth: 2, borderLeftColor: col }}>
+    <div
+      className={`rounded-lg border bg-slate-50 overflow-hidden ${onOpen ? 'cursor-pointer hover:shadow-sm transition-shadow' : ''}`}
+      style={{ borderColor: col + '40', borderLeftWidth: 2, borderLeftColor: col }}
+      onClick={onOpen ? () => onOpen(training) : undefined}
+      title={onOpen ? 'Open activity' : undefined}
+    >
       <div className="px-2 py-1.5">
         <div className="flex items-center gap-1.5">
           <img src={SPORT_ICONS[sport] || '/icon/default.svg'} alt={sport} className="w-3 h-3 opacity-60" />
@@ -131,6 +162,20 @@ export default function WorkoutPlannerPage() {
   const [planned,   setPlanned]   = useState([]);
   const [trainings, setTrainings] = useState([]);
   const [templates, setTemplates] = useState([]);
+  // Built once — starter templates to fall back on when the athlete has none.
+  const defaultTemplates = useMemo(
+    () => DEFAULT_TEMPLATE_DEFS.map((d, i) => ({
+      _id: `default-${i}`,
+      name: d.name,
+      sport: d.sport,
+      steps: buildPresetSteps(d.preset),
+      isDefault: true,
+    })),
+    []
+  );
+  // What the library shows: the athlete's own templates, or the starters when
+  // they haven't saved any yet.
+  const displayTemplates = templates.length > 0 ? templates : defaultTemplates;
   const [loading,   setLoading]   = useState(false);
   const [dragOverDay, setDragOverDay] = useState(null);   // dateStr currently hovered with a template drag
 
@@ -144,6 +189,7 @@ export default function WorkoutPlannerPage() {
     return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
   }, []);
   const [modal, setModal] = useState(null); // { date, workout? }
+  const [activityModal, setActivityModal] = useState(null); // { activity, plannedWorkout } — completed detail
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
 
   // Open the edit modal when navigated here with { editWorkout } state
@@ -276,6 +322,24 @@ export default function WorkoutPlannerPage() {
     }
   };
 
+  // Drag-and-drop a template onto a day → save it straight away, no modal.
+  const saveTemplateOnDay = async (day, tpl) => {
+    try {
+      const payload = {
+        date: toLocalISO(day),
+        sport: tpl.sport,
+        title: tpl.name,
+        steps: tpl.steps,
+        plannedDuration: stepTotalSecs(tpl.steps) || undefined,
+      };
+      const created = await createPlannedWorkout(payload, coachAthleteId);
+      setPlanned(prev => [...prev, created]);
+      addNotification('Workout planned', 'success');
+    } catch {
+      addNotification('Failed to plan workout', 'error');
+    }
+  };
+
   const handleDelete = async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
     try {
@@ -286,6 +350,29 @@ export default function WorkoutPlannerPage() {
     } catch {
       addNotification('Failed to delete', 'error');
     }
+  };
+
+  // Resolve the prefixed activity id the detail modal needs to load Strava /
+  // FIT / manual sources (same scheme the Training Calendar uses).
+  const resolveActivityId = (t) => {
+    let id = String(t.id || '');
+    if (/^(strava|fit|training|regular|garmin)-/.test(id)) return id;
+    const src = String(t.source || '').toLowerCase();
+    if (t.stravaId) return `strava-${t.stravaId}`;
+    if (src.includes('strava') && t.sourceId) return `strava-${t.sourceId}`;
+    if (src.includes('garmin') && t.sourceId) return `garmin-${t.sourceId}`;
+    if (t._id) return `training-${t._id}`;
+    return id;
+  };
+
+  // Open a completed activity in the full (editable) detail modal — IN PLACE,
+  // without leaving the planner. When it fulfils a planned workout, pass that
+  // plan too so the modal shows planned + completed together (one box → one
+  // combined modal).
+  const openCompleted = (t, pw = null) => {
+    const id = resolveActivityId(t);
+    if (!id) return;
+    setActivityModal({ activity: { ...t, id }, plannedWorkout: pw || null });
   };
 
   const handleComplete = async (pw) => {
@@ -340,7 +427,15 @@ export default function WorkoutPlannerPage() {
     <div className="min-h-full bg-gray-50 flex">
       {/* Left: draggable template library — desktop only (drag-and-drop is a
           mouse affordance; on phones the planner goes full-width). */}
-      {!isMobile && <WorkoutTemplateLibrary templates={templates} />}
+      {!isMobile && (
+        <WorkoutTemplateLibrary
+          templates={displayTemplates}
+          onOpenTemplate={(tpl) => setModal({
+            date: today,
+            workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps },
+          })}
+        />
+      )}
 
       {/* Right: planner */}
       <div className="flex-1 p-4 sm:p-6 min-w-0">
@@ -480,6 +575,27 @@ export default function WorkoutPlannerPage() {
             return isSameDay(d, day);
           });
 
+          // Pair planned ↔ completed (TrainingPeaks-style, like the calendar):
+          // each completed activity claims one same-sport plan, so a finished
+          // workout shows ONCE as a green "done" card instead of appearing
+          // twice (planned + completed).
+          const normSportKey = (s) => {
+            const v = String(s || '').toLowerCase();
+            if (v.includes('ride') || v.includes('bike') || v.includes('cycl')) return 'bike';
+            if (v.includes('run')) return 'run';
+            if (v.includes('swim')) return 'swim';
+            return v || 'other';
+          };
+          const ckey = (t) => String(t._id || t.id || t.stravaId || '');
+          const claimedDone = new Set();
+          const planMatch = new Map(); // pw._id → matched completed training
+          for (const pw of dayPlanned) {
+            let m = dayCompleted.find(t => !claimedDone.has(ckey(t)) && pw.completedTrainingId && String(pw.completedTrainingId) === ckey(t));
+            if (!m) m = dayCompleted.find(t => !claimedDone.has(ckey(t)) && normSportKey(t.sport || t.type) === normSportKey(pw.sport));
+            if (m) { claimedDone.add(ckey(m)); planMatch.set(pw._id, m); }
+          }
+          const standaloneCompleted = dayCompleted.filter(t => !claimedDone.has(ckey(t)));
+
           return (
             <div
               key={dateStr}
@@ -497,9 +613,9 @@ export default function WorkoutPlannerPage() {
                 if (!raw) return;
                 try {
                   const tpl = JSON.parse(raw);
-                  // Open the planner modal pre-filled from the template so the
-                  // coach can tweak it before saving it onto this day.
-                  setModal({ date: day, workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps } });
+                  // Drop = plan it straight onto this day (no modal). Click the
+                  // template in the library instead to open & edit first.
+                  saveTemplateOnDay(day, tpl);
                 } catch { /* ignore malformed payload */ }
               }}
               className={`flex flex-col gap-1.5 rounded-xl transition-colors ${
@@ -528,21 +644,26 @@ export default function WorkoutPlannerPage() {
                 </div>
               )}
 
-              {/* Planned workouts */}
-              {dayPlanned.map(pw => (
-                <PlannedCard
-                  key={pw._id}
-                  pw={pw}
-                  onEdit={pw => setModal({ date: day, workout: pw })}
-                  onDelete={handleDelete}
-                  onComplete={handleComplete}
-                  onStart={pw => navigate(`/workout-execution/${pw._id}${urlAthleteId ? `?athleteId=${urlAthleteId}` : ''}`)}
-                />
-              ))}
+              {/* Planned workouts — a plan that's been completed (paired with a
+                  recorded activity) renders as the single green "done" card. */}
+              {dayPlanned.map(pw => {
+                const matched = planMatch.get(pw._id);
+                if (matched) return <CompletedCard key={pw._id} training={matched} onOpen={(tr) => openCompleted(tr, pw)} />;
+                return (
+                  <PlannedCard
+                    key={pw._id}
+                    pw={pw}
+                    onEdit={pw => setModal({ date: day, workout: pw })}
+                    onDelete={handleDelete}
+                    onComplete={handleComplete}
+                    onStart={pw => navigate(`/workout-execution/${pw._id}${urlAthleteId ? `?athleteId=${urlAthleteId}` : ''}`)}
+                  />
+                );
+              })}
 
-              {/* Completed trainings */}
-              {dayCompleted.map(t => (
-                <CompletedCard key={t._id || t.id || t.stravaId} training={t} />
+              {/* Completed activities not tied to any plan */}
+              {standaloneCompleted.map(t => (
+                <CompletedCard key={ckey(t)} training={t} onOpen={openCompleted} />
               ))}
 
               {/* Add button */}
@@ -564,11 +685,26 @@ export default function WorkoutPlannerPage() {
           date={modal.date}
           workout={modal.workout}
           context={context}
-          templates={templates}
+          templates={displayTemplates}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => setModal(null)}
         />
+      )}
+
+      {/* Completed-activity detail — opens in place over the planner. Passing
+          plannedWorkout shows the planned + completed together. */}
+      {activityModal && (
+        <Suspense fallback={null}>
+          <ActivityFullModal
+            activity={activityModal.activity}
+            plannedWorkout={activityModal.plannedWorkout}
+            athleteId={coachAthleteId || athleteId}
+            onClose={() => { setActivityModal(null); loadWeek(weekStart); }}
+            onDeleted={() => { setActivityModal(null); loadWeek(weekStart); }}
+            onPlannedSaved={() => { setActivityModal(null); loadWeek(weekStart); }}
+          />
+        </Suspense>
       )}
       </div>
     </div>

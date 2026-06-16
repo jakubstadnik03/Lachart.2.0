@@ -62,7 +62,7 @@ function blobToObjectUrl(blob) {
   try { return URL.createObjectURL(blob); } catch { return null; }
 }
 
-async function svgMarkupToPng(rawMarkup) {
+async function svgMarkupToPng(rawMarkup, { transparent = false } = {}) {
   console.log('[share] svgMarkupToPng: markup length=', rawMarkup.length);
   const xml = ensureSvgNamespaces(rawMarkup);
   // Use UTF-8 data URL — avoids the URL.createObjectURL → blob race
@@ -93,8 +93,11 @@ async function svgMarkupToPng(rawMarkup) {
   // with alpha — visible as a checkerboard in the preview, Instagram, etc.
   // The dark slate matches the in-template surface so visible joins are
   // imperceptible even if a template ever leaves a hairline gap.
-  ctx.fillStyle = '#0F172A';
-  ctx.fillRect(0, 0, TEMPLATE_W, TEMPLATE_H);
+  // Skip the opaque fill when the caller wants a transparent PNG (alpha kept).
+  if (!transparent) {
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(0, 0, TEMPLATE_W, TEMPLATE_H);
+  }
   ctx.drawImage(img, 0, 0, TEMPLATE_W, TEMPLATE_H);
   const pngDataUrl = canvas.toDataURL('image/png');
   console.log('[share] svgToPng: PNG dataUrl length=', pngDataUrl.length);
@@ -141,6 +144,7 @@ export default function ActivityShareSheet({
   const [activeIdx, setActiveIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
+  const [transparentBg, setTransparentBg] = useState(false); // export PNG with alpha (no dark fill)
   // Cached PNG data URLs per template idx — built once via offscreen SVG
   // render. After this the SVG can be unmounted; the preview shows the
   // PNG and share/save/copy reuse it. Keeping a live 1080×1920 SVG in
@@ -267,6 +271,12 @@ export default function ActivityShareSheet({
   const captureActive = async () => {
     const tmpl = templates[activeIdx];
     if (!tmpl) throw new Error('No active template');
+    // Transparent export isn't cached (the cache holds the opaque variant) —
+    // render it fresh on demand so the PNG keeps its alpha channel.
+    if (transparentBg) {
+      const markup = renderToStaticMarkup(tmpl.node);
+      return await svgMarkupToPng(markup, { transparent: true });
+    }
     const cached = pngCacheRef.current[tmpl.id];
     if (cached) return cached;
     // Poll the ref so we see fresh values as the offscreen render finishes
@@ -278,6 +288,38 @@ export default function ActivityShareSheet({
     throw new Error('Render took too long');
   };
 
+  // Share/save a captured PNG without hard-depending on the Capacitor
+  // Filesystem plugin (which isn't registered in this iOS build → "not
+  // implemented on ios"). iOS WKWebView supports the Web Share API with
+  // files, which opens the native sheet (Save Image, Copy, Messages…). We
+  // try that first and only fall back to Filesystem+Capacitor Share if the
+  // Web Share API can't take files on this platform.
+  const shareBlob = async (blob, dataUrl, fileName) => {
+    const file = blob ? new File([blob], fileName, { type: 'image/png' }) : null;
+    // 1) Web Share API with files — works in iOS WKWebView, no native plugin.
+    if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'LaChart' });
+      return 'shared';
+    }
+    // 2) Native fallback via Capacitor (only if Filesystem is actually present).
+    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable?.('Filesystem')) {
+      const written = await Filesystem.writeFile({
+        path: fileName, data: dataUrlToBase64(dataUrl), directory: Directory.Cache, recursive: true,
+      });
+      await Share.share({ title: 'LaChart', text: 'My activity', files: [written.uri], dialogTitle: 'Share activity' });
+      return 'shared';
+    }
+    // 3) Plain Web Share (no files) or <a download> on desktop web.
+    if (file && typeof navigator.share === 'function') {
+      await navigator.share({ files: [file], title: 'LaChart' });
+      return 'shared';
+    }
+    const link = document.createElement('a');
+    link.href = dataUrl; link.download = fileName;
+    document.body.appendChild(link); link.click(); link.remove();
+    return 'downloaded';
+  };
+
   const handleShare = async () => {
     if (busy || inflightRef.current) return;
     inflightRef.current = true;
@@ -286,45 +328,12 @@ export default function ActivityShareSheet({
     try {
       const { dataUrl, blob } = await captureActive();
       const fileName = `lachart-${Date.now()}.png`;
-      console.log('[share] handleShare: capture done, native?', Capacitor.isNativePlatform());
-
-      if (Capacitor.isNativePlatform()) {
-        const base64 = dataUrlToBase64(dataUrl);
-        console.log('[share] handleShare: writing file, base64 length=', base64.length);
-        const written = await Filesystem.writeFile({
-          path: fileName,
-          data: base64,
-          directory: Directory.Cache,
-          recursive: true,
-        });
-        console.log('[share] handleShare: file written at', written.uri);
-        // Capacitor Share expects `files: [uri]` for local files. Passing
-        // `url` works for web URLs but on some iOS builds it silently
-        // shares an empty payload, which is what made the share button
-        // look like it did nothing.
-        await Share.share({
-          title: 'LaChart',
-          text: 'My activity',
-          files: [written.uri],
-          dialogTitle: 'Share activity',
-        });
-        console.log('[share] handleShare: Share.share resolved');
-      } else if (typeof navigator.share === 'function' && blob) {
-        const file = new File([blob], fileName, { type: 'image/png' });
-        try {
-          await navigator.share({ files: [file], title: 'LaChart' });
-        } catch (e) {
-          if (String(e?.name) === 'AbortError') return;
-          throw e;
-        }
-      } else {
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        showToast('Downloaded');
+      try {
+        const res = await shareBlob(blob, dataUrl, fileName);
+        if (res === 'downloaded') showToast('Downloaded');
+      } catch (e) {
+        if (String(e?.name) === 'AbortError') return; // user cancelled the sheet
+        throw e;
       }
     } catch (e) {
       console.error('[share] failed:', e);
@@ -340,23 +349,28 @@ export default function ActivityShareSheet({
     inflightRef.current = true;
     setBusy(true);
     try {
-      const { dataUrl } = await captureActive();
+      const { dataUrl, blob } = await captureActive();
       const fileName = `lachart-${Date.now()}.png`;
-      if (Capacitor.isNativePlatform()) {
+      if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable?.('Filesystem')) {
+        // Native build that actually has the Filesystem plugin → save to Files.
         await Filesystem.writeFile({
-          path: fileName,
-          data: dataUrlToBase64(dataUrl),
-          directory: Directory.Documents,
-          recursive: true,
+          path: fileName, data: dataUrlToBase64(dataUrl), directory: Directory.Documents, recursive: true,
         });
         showToast('Saved to Files');
+      } else if (Capacitor.isNativePlatform()) {
+        // No Filesystem plugin on iOS → route through the native share sheet,
+        // where the user can tap "Save Image" to store it in Photos.
+        try {
+          const res = await shareBlob(blob, dataUrl, fileName);
+          if (res === 'downloaded') showToast('Download started');
+        } catch (e) {
+          if (String(e?.name) === 'AbortError') return;
+          throw e;
+        }
       } else {
         const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+        link.href = dataUrl; link.download = fileName;
+        document.body.appendChild(link); link.click(); link.remove();
         showToast('Download started');
       }
     } catch (e) {
@@ -556,8 +570,32 @@ export default function ActivityShareSheet({
         </div>
 
         {/* Current template label */}
-        <div style={{ textAlign: 'center', fontSize: 12, color: '#6B7280', fontWeight: 700, marginBottom: 14 }}>
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#6B7280', fontWeight: 700, marginBottom: 10 }}>
           {templates[activeIdx]?.label}
+        </div>
+
+        {/* Transparent-background toggle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={() => setTransparentBg(v => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              padding: '7px 14px', borderRadius: 999, fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+              border: `1.5px solid ${transparentBg ? '#6366F1' : '#E5E7EB'}`,
+              background: transparentBg ? '#EEF2FF' : '#fff',
+              color: transparentBg ? '#4F46E5' : '#6B7280',
+            }}
+          >
+            <span style={{
+              width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+              border: '1px solid rgba(0,0,0,.15)',
+              backgroundImage: 'linear-gradient(45deg,#cbd5e1 25%,transparent 25%),linear-gradient(-45deg,#cbd5e1 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cbd5e1 75%),linear-gradient(-45deg,transparent 75%,#cbd5e1 75%)',
+              backgroundSize: '8px 8px', backgroundPosition: '0 0,0 4px,4px -4px,-4px 0', backgroundColor: '#fff',
+            }} />
+            Transparent background
+            <span style={{ fontWeight: 800 }}>{transparentBg ? 'ON' : 'OFF'}</span>
+          </button>
         </div>
 
         {/* Action buttons */}

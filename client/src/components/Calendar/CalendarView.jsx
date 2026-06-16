@@ -333,10 +333,12 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const linkedDistStr = (linkedActivity && actDistMeters > 0)
     ? (actDistMeters >= 1000 ? `${(actDistMeters/1000).toFixed(actDistMeters % 1000 === 0 ? 0 : 1)} km` : `${Math.round(actDistMeters)} m`)
     : null;
-  // Planned distance (km) — shown when no linked activity yet
-  const plannedDistKm = Number(pw.plannedDistance || 0);
-  const plannedDistStr = (!linkedActivity && plannedDistKm > 0)
-    ? (plannedDistKm >= 1 ? `${plannedDistKm % 1 === 0 ? plannedDistKm : plannedDistKm.toFixed(1)} km` : `${Math.round(plannedDistKm * 1000)} m`)
+  // plannedDistance is stored in metres; heal legacy entries where < 100 means km
+  const plannedDistM = (() => { const n = Number(pw.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })();
+  const plannedDistStr = (!linkedActivity && plannedDistM > 0)
+    ? (sport === 'swim' || plannedDistM < 1000
+        ? `${Math.round(plannedDistM)} m`
+        : `${(plannedDistM / 1000).toFixed(plannedDistM % 1000 === 0 ? 0 : 1)} km`)
     : null;
   // Category: prefer linked activity's category (user may set it after completing)
   // over the planned workout's category
@@ -870,8 +872,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     // middle 50 % of the chart. 1.0× IQR rejects them more aggressively,
     // and the chart range below picks up the slack so they still appear
     // (clamped to the chart edge).
-    const lo = q1 - 1.0 * iqr;
-    const hi = q3 + 1.0 * iqr;
+    const lo = q1 - 1.5 * iqr;
+    const hi = q3 + 1.5 * iqr;
     const filtered = scaleValues.filter(v => v >= lo && v <= hi);
     if (filtered.length >= 2) scaleValues = filtered;
   }
@@ -894,27 +896,45 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   //   - Current: centre + max-deviation × 1.4 — keeps avg in the middle,
   //     bars use ~70 % of the chart height, with ~15 % padding above and
   //     below the actual data extremes for clean readability.
+  // Session average (distance-weighted for run/swim, time-weighted for bike) —
+  // drawn as a dashed reference line, like Strava's "Workout Analysis".
+  const valuedEntries = entries.filter(e => !e.isPause && e.value > 0);
+  const weightTot = valuedEntries.reduce((a, e) => a + (e.weight || 0), 0) || 1;
+  const avgValue = valuedEntries.length
+    ? valuedEntries.reduce((a, e) => a + e.value * (e.weight || 0), 0) / weightTot
+    : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
+
   let chartMin, chartMax;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
   } else {
-    const centre = scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
-    // Symmetric distance from centre that covers the farthest filtered bar.
-    const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - centre)));
-    // Range scales DIRECTLY with how variable the lap times are — no
-    // sport-specific floor. Honza's swim feedback (2026-05): "podle toho
-    // jak moc rozdílný jsou ty časy tech lapů". So a tight 1×400 m repeat
-    // set zooms close, while a mixed swim of sprints + cooldowns spreads
-    // the axis out automatically. Padding multiplier 1.5 = 50 % visual
-    // headroom beyond the most extreme bar. Tiny absolute floor (2 % of
-    // centre) so a near-zero-deviation cluster still shows a visible axis
-    // tick spacing instead of all bars touching the centre line.
-    const spread = Math.max(maxDev * 1.5, centre * 0.02);
-    chartMin = Math.max(0, centre - spread);
-    chartMax = centre + spread;
+    // Strava-style: span the ACTUAL range of the real laps (fastest → slowest)
+    // rather than a symmetric band around the average. A symmetric range
+    // wasted half the chart whenever the data was lopsided (one slow lap forced
+    // a wide mirror), which squashed every work lap into the middle so a fast
+    // lap looked tiny. Spanning [min,max] gives each lap a proportional bar —
+    // fast = tall, slow = short — and the average shows as the dashed line.
+    // Honza (2026-06): "ať se nestane že rychlej lap je takhle malinkej".
+    const dataMin = Math.min(...scaleValues);
+    const dataMax = Math.max(...scaleValues);
+    // Include the average inside the span so the dashed line is always visible.
+    const lo = Math.min(dataMin, avgValue);
+    const hi = Math.max(dataMax, avgValue);
+    // 12 % padding each side (floor 1.5 % of the average) so the extreme bars
+    // don't touch the very top/bottom edge and a near-flat set still has a
+    // sensible axis instead of a zero range.
+    const pad = Math.max((hi - lo) * 0.12, avgValue * 0.015);
+    chartMin = Math.max(0, lo - pad);
+    chartMax = hi + pad;
   }
   const range    = chartMax - chartMin || 1;
+
+  // Y-position (px from top) of the dashed session-average reference line.
+  const avgLineTop = isInverted
+    ? ((avgValue - chartMin) / range) * CHART_H
+    : ((chartMax - avgValue) / range) * CHART_H;
+  const showAvgLine = !scaleOverride && avgValue > 0 && avgLineTop > 4 && avgLineTop < CHART_H - 4;
 
   const getBarH = (val) => {
     if (!val) return 3;
@@ -1092,6 +1112,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
               }} />
             ))}
+            {/* Dashed session-average reference line (Strava-style) */}
+            {showAvgLine && (
+              <div style={{
+                position: 'absolute', left: 0, right: 0,
+                top: avgLineTop, height: 0,
+                borderTop: `1.5px dashed ${color}99`,
+                zIndex: 3, pointerEvents: 'none',
+              }} />
+            )}
             {/* Elevation background — emerald green fill behind bars */}
             {elevPathD && (
               <svg
@@ -6225,6 +6254,21 @@ export default function CalendarView({
       </div>
     );
   };
+  // Compact period indicator for the mini month grid — a short colored
+  // underline (one segment per period, up to 2) so an illness / camp / travel
+  // block is visible at a glance, not just in the agenda list below.
+  const renderMiniPeriodBar = (key) => {
+    const ps = periodsByDate.get(key);
+    if (!ps || !ps.length) return null;
+    return (
+      <span className="flex gap-px mt-0.5" style={{ width: 18, height: 3 }} title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}>
+        {ps.slice(0, 2).map((p, i) => (
+          <span key={p._id || i} style={{ flex: 1, background: periodColor(p), borderRadius: 2 }} />
+        ))}
+      </span>
+    );
+  };
+
   // Renders the day-theme chip for `key` (or null).
   const renderDayThemeChip = (key) => {
     const dp = dayPlanByDate.get(key);
@@ -7359,6 +7403,8 @@ export default function CalendarView({
                           }`}>
                             {dayDate.getDate()}
                           </span>
+                          {/* Period (illness / camp / travel…) — colored underline so it's visible in the mini grid too */}
+                          {renderMiniPeriodBar(key)}
                           <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
                             {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
                             {dots.map((sport, si) => (
@@ -7461,6 +7507,8 @@ export default function CalendarView({
                           }`}>
                             {dayDate.getDate()}
                           </span>
+                          {/* Period (illness / camp / travel…) — colored underline */}
+                          {renderMiniPeriodBar(key)}
                           <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
                             {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
                             {dots.map((sport, si) => (
@@ -7608,7 +7656,8 @@ export default function CalendarView({
                                 const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
                                 // Fall back to plannedDuration when no structured steps exist
                                 const duration = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
-                                const plannedDistKmMobile = Number(pw.plannedDistance || 0);
+                                // plannedDistance is stored in metres; heal legacy entries < 100 (old km values)
+                                const plannedDistMMobile = (() => { const n = Number(pw.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })();
                                 const isSkipped = pw.status === 'skipped';
                                 const compliance = act ? findCompliance(pw, [act]) : null;
 
@@ -7695,10 +7744,10 @@ export default function CalendarView({
                                       {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={42} height={14} />}
                                     </div>
                                     {/* Stats row */}
-                                    {(duration > 0 || plannedDistKmMobile > 0 || pw.targetTss > 0) && (
+                                    {(duration > 0 || plannedDistMMobile > 0 || pw.targetTss > 0) && (
                                       <div className="flex items-center gap-1.5 text-[12px] font-semibold pl-0.5" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
                                         {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
-                                        {plannedDistKmMobile > 0 && <><span className="opacity-40">·</span><span>{plannedDistKmMobile >= 1 ? `${plannedDistKmMobile % 1 === 0 ? plannedDistKmMobile : plannedDistKmMobile.toFixed(1)} km` : `${Math.round(plannedDistKmMobile * 1000)} m`}</span></>}
+                                        {plannedDistMMobile > 0 && <><span className="opacity-40">·</span><span>{pwSport === 'swim' || plannedDistMMobile < 1000 ? `${Math.round(plannedDistMMobile)} m` : `${(plannedDistMMobile / 1000).toFixed(plannedDistMMobile % 1000 === 0 ? 0 : 1)} km`}</span></>}
                                         {pw.targetTss > 0 && <><span className="opacity-40">·</span><span>{pw.targetTss} TSS</span></>}
                                       </div>
                                     )}

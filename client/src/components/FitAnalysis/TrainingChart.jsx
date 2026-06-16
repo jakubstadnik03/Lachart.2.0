@@ -92,6 +92,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [highlightWindow, setHighlightWindow] = useState(null); // { startDistance, endDistance }
   const [highlightSummary, setHighlightSummary] = useState(null); // aggregated metrics for highlighted window
+  const touchSelRef = useRef({ startRel: null, endRel: null, selecting: false }); // mobile drag-to-select state
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const mouseMoveTimeoutRef = useRef(null); // For throttling mouse move events
@@ -336,6 +337,25 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       avgSpeedKmh: countSpeed > 0 ? sumSpeed / countSpeed : null
     });
   }, []);
+
+  // Summarise the segment between two in-graph x-pixels (no zoom) — used by the
+  // mobile drag-to-select gesture so you can mark a part of the ride and read
+  // its averages without losing the full chart.
+  const summarizeFromRelativeX = useCallback((relA, relB) => {
+    if (!processedData || relA == null || relB == null) return;
+    const startX = Math.min(relA, relB);
+    const endX = Math.max(relA, relB);
+    if (endX - startX < graphWidth * 0.03) return; // too small a swipe — treat as a tap
+    const zoomedMin = processedData.maxDistance * zoomRange.min;
+    const zoomedMax = processedData.maxDistance * zoomRange.max;
+    const zr = (zoomedMax - zoomedMin) || 1;
+    const startDistance = zoomedMin + (startX / graphWidth) * zr;
+    const endDistance = zoomedMin + (endX / graphWidth) * zr;
+    let si = 0, ei = processedData.points.length - 1;
+    for (let i = 0; i < processedData.points.length; i++) { if (processedData.points[i].distance >= startDistance) { si = i; break; } }
+    for (let i = processedData.points.length - 1; i >= 0; i--) { if (processedData.points[i].distance <= endDistance) { ei = i; break; } }
+    summarizeWindow(processedData.points, si, ei, 'Selected segment');
+  }, [processedData, graphWidth, zoomRange, summarizeWindow]);
 
   // When coming from Power Radar (highlightMetric), auto-zoom to the best window and keep tooltip there
   useEffect(() => {
@@ -797,6 +817,10 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       }
     }
     
+    // Remember where the finger landed — a horizontal drag from here becomes a
+    // range selection; a tap stays a tooltip.
+    touchSelRef.current = { startRel: clampedRelativeX, endRel: clampedRelativeX, selecting: false };
+
     // Show top-bar info immediately on touch
     if (closestPoint) {
       setTouchActive(true);
@@ -805,7 +829,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     }
   }, [processedData, graphWidth, padding.left, isMobile, xScale]);
 
-  // Track finger movement — update top-bar data in real time
+  // Track finger movement — small move = scrub tooltip, horizontal drag = select
   const handleTouchMove = useCallback((e) => {
     if (!containerRef.current || !processedData || !isMobile) return;
     if (e.touches.length > 1) return;
@@ -813,8 +837,26 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const touch = e.touches[0];
     const rect = containerRef.current.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    const relativeX = x - padding.left;
-    if (relativeX < 0 || relativeX > graphWidth) return;
+    const relativeX = Math.max(0, Math.min(x - padding.left, graphWidth));
+
+    const sel = touchSelRef.current;
+    // Enter selection mode once the finger has travelled far enough horizontally.
+    if (!sel.selecting && sel.startRel != null && Math.abs(relativeX - sel.startRel) > 14) {
+      sel.selecting = true;
+      setIsDragging(true);
+      setDragStart({ relativeX: sel.startRel });
+      // Selecting a range — drop the single-point tooltip.
+      setClickedPoint(null);
+      setClickedCursorX(null);
+      setTouchActive(false);
+    }
+    if (sel.selecting) {
+      sel.endRel = relativeX;
+      setDragEnd({ relativeX });
+      return;
+    }
+
+    // Otherwise keep scrubbing the tooltip.
     let closestPoint = null, minDist = Infinity;
     for (const point of processedData.points) {
       const px = xScale(point.distance);
@@ -828,10 +870,18 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     }
   }, [processedData, graphWidth, padding.left, isMobile, xScale]);
 
-  // Clear on lift
+  // On lift: if we were selecting, summarise the marked segment; else clear.
   const handleTouchEnd = useCallback(() => {
+    const sel = touchSelRef.current;
+    if (sel.selecting) {
+      summarizeFromRelativeX(sel.startRel, sel.endRel);
+      setIsDragging(false);
+      setDragStart(null);
+      setDragEnd(null);
+    }
+    touchSelRef.current = { startRel: null, endRel: null, selecting: false };
     setTouchActive(false);
-  }, []);
+  }, [summarizeFromRelativeX]);
 
   // Handle mouse down for drag selection (desktop)
   const handleMouseDown = useCallback((e) => {
@@ -1140,6 +1190,13 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
           )}
         </div>
       </div>
+
+      {/* Discovery hint — only until the user has a selection */}
+      {!highlightSummary && (
+        <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-1`}>
+          {isMobile ? 'Drag across the chart to measure a segment' : 'Drag across the chart to zoom & measure a segment'}
+        </div>
+      )}
 
       {/* Highlighted window summary (from Power Radar) */}
       {highlightSummary && (
