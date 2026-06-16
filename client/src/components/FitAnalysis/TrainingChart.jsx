@@ -279,6 +279,23 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     };
   }, [chartData, smoothing]);
 
+  // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
+  const chartHeight = isMobile ? 250 : 400;
+  const isNarrow = containerWidth < 800;
+  const padding = isMobile
+    ? { top: 15, right: 10, bottom: 25, left: 40 }
+    : isNarrow 
+    ? { top: 20, right: 15, bottom: 30, left: 50 }
+    : { top: 20, right: 20, bottom: 30, left: 56 };
+  // Use container width for viewBox - this ensures proper scaling
+  // For mobile, use actual container width; for desktop, use container width or minimum
+  const svgWidth = isMobile 
+    ? Math.max(containerWidth || 400, 400) 
+    : Math.max(containerWidth || 800, 800);
+  const svgHeight = chartHeight;
+  const graphWidth = svgWidth - padding.left - padding.right;
+  const graphHeight = svgHeight - padding.top - padding.bottom;
+
   const summarizeWindow = useCallback((points, startIndex, endIndex, label = 'Selected segment') => {
     if (!Array.isArray(points) || points.length === 0 || startIndex == null || endIndex == null) return;
     if (endIndex <= startIndex) return;
@@ -459,23 +476,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     if (processedData.hasElevation && !isSwimming) setShowElevation(true);
     else if (!processedData.hasElevation) setShowElevation(false);
   }, [processedData, isSwimming]);
-
-  // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
-  const chartHeight = isMobile ? 250 : 400;
-  const isNarrow = containerWidth < 800;
-  const padding = isMobile
-    ? { top: 15, right: 10, bottom: 25, left: 40 }
-    : isNarrow 
-    ? { top: 20, right: 15, bottom: 30, left: 50 }
-    : { top: 20, right: 20, bottom: 30, left: 56 };
-  // Use container width for viewBox - this ensures proper scaling
-  // For mobile, use actual container width; for desktop, use container width or minimum
-  const svgWidth = isMobile 
-    ? Math.max(containerWidth || 400, 400) 
-    : Math.max(containerWidth || 800, 800);
-  const svgHeight = chartHeight;
-  const graphWidth = svgWidth - padding.left - padding.right;
-  const graphHeight = svgHeight - padding.top - padding.bottom;
 
   // Update container width when component mounts or resizes
   useEffect(() => {

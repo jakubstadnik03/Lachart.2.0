@@ -1364,7 +1364,7 @@ export default function DashboardPage() {
       } catch (_) { /* the effect re-runs if it fails again */ }
     }, delay);
     return () => clearTimeout(t);
-  }, [calendarData.length, calendarError, plannedWorkouts.length, isTestingRole, isCoachLikeRole, selectedAthleteId, user?._id, loadTrainings, loadCalendarData]);
+  }, [calendarData.length, calendarError, plannedWorkouts, isTestingRole, isCoachLikeRole, selectedAthleteId, user?._id, loadTrainings, loadCalendarData]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
