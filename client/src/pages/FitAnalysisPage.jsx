@@ -3852,8 +3852,13 @@ const FitAnalysisPage = () => {
     try {
       setIsExporting(true);
       
-      // Filter out unselected intervals (recovery intervals that user didn't select)
-      const selectedResults = formData.results.filter(result => result.isSelected !== false);
+      // Filter out unselected intervals (recovery intervals the user didn't
+      // select). Never drop a lap that's been classified as work/warmup/cooldown
+      // though — only genuine recovery laps may be deselected.
+      const selectedResults = formData.results.filter(result =>
+        result.isSelected !== false ||
+        (result.intervalType && result.intervalType !== 'recovery')
+      );
       
       // Remove internal flags and convert lactate/power/heartRate to proper types
       const cleanedResults = selectedResults.map(result => {

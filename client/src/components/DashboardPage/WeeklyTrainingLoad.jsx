@@ -1,9 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from 'recharts';
+import { Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend, ReferenceArea } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getWeeklyTrainingLoad } from '../../services/api';
+import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import TrainingGlossary from './TrainingGlossary';
+
+// Total planned duration in seconds (respects interval-group repeats).
+const planStepTotalSecs = (steps) => {
+  if (!Array.isArray(steps)) return 0;
+  const visited = new Set();
+  let total = 0;
+  steps.forEach((s) => {
+    if (!s.groupId) { total += s.durationSeconds || 0; return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter((x) => x.groupId === s.groupId);
+    const reps = (group.find((x) => x.isGroupHeader)?.groupRepeat) || 1;
+    group.forEach((gs) => { total += (gs.durationSeconds || 0) * reps; });
+  });
+  return total;
+};
+
+// Estimate a planned session's TSS (explicit targetTss, else ~50 TSS/h).
+const estimatePlannedTss = (pw) => {
+  const explicit = Number(pw?.targetTss || 0);
+  if (explicit > 0) return explicit;
+  let secs = Number(pw?.plannedDuration || 0);
+  if (!secs && Array.isArray(pw?.steps)) secs = planStepTotalSecs(pw.steps) || 0;
+  if (secs > 0 && secs < 24 * 3600) return (secs / 3600) * 50;
+  return 0;
+};
+
+// Monday-based week key (matches backend bucketing).
+const weekKeyFor = (date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const weekLabelFor = (weekKey) =>
+  new Date(weekKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
 const WeeklyTrainingLoad = ({ athleteId }) => {
   const [showGlossary, setShowGlossary] = useState(false);
@@ -39,6 +79,14 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
   const [sportFilter, setSportFilter] = useState(getStoredSportFilter());
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [plannedByWeek, setPlannedByWeek] = useState({}); // future weekKey → planned TSS
+  const [showProjection, setShowProjection] = useState(() => {
+    try { return localStorage.getItem('weeklyTrainingLoadProjection') !== 'false'; } catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('weeklyTrainingLoadProjection', String(showProjection)); } catch { /* ignore */ }
+  }, [showProjection]);
 
   // Save time range to localStorage when it changes
   const handleTimeRangeChange = (newTimeRange) => {
@@ -132,6 +180,65 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
     loadData();
   }, [athleteId, timeRange, sportFilter]);
 
+  // Load FUTURE planned workouts → weekly planned TSS for projection.
+  useEffect(() => {
+    let cancelled = false;
+    if (!athleteId) { setPlannedByWeek({}); return undefined; }
+    (async () => {
+      try {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const from = new Date(today);
+        const to = new Date(today); to.setDate(to.getDate() + 56);
+        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const data = await getPlannedWorkouts({ from: iso(from), to: iso(to), athleteId });
+        const list = Array.isArray(data) ? data : [];
+        const map = {};
+        list.forEach((pw) => {
+          if (pw?.status === 'completed' || pw?.status === 'skipped') return;
+          const sport = (pw?.sport || '').toLowerCase();
+          if (sportFilter !== 'all' && sport !== sportFilter) return;
+          const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : '';
+          if (!day || day < iso(today)) return; // only today onwards
+          const wk = weekKeyFor(day);
+          map[wk] = (map[wk] || 0) + estimatePlannedTss(pw);
+        });
+        if (!cancelled) setPlannedByWeek(map);
+      } catch { if (!cancelled) setPlannedByWeek({}); }
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, sportFilter]);
+
+  // Merge actual weeks with planned projection. The current week gets a stacked
+  // "planned" segment for its remaining sessions; future weeks are planned-only.
+  const displayData = useMemo(() => {
+    const base = Array.isArray(chartData) ? chartData : [];
+    if (!showProjection || Object.keys(plannedByWeek).length === 0) {
+      return base.map((w) => ({ ...w, plannedLoad: 0 }));
+    }
+    const lastHistKey = base.length > 0 ? base[base.length - 1].weekStart : null;
+    const lastOptimal = base.length > 0 ? (base[base.length - 1].optimalLoad || 0) : 0;
+    const merged = base.map((w) => ({ ...w, plannedLoad: plannedByWeek[w.weekStart] ? Math.round(plannedByWeek[w.weekStart]) : 0 }));
+    Object.keys(plannedByWeek)
+      .filter((wk) => !lastHistKey || wk > lastHistKey)
+      .sort()
+      .forEach((wk) => {
+        merged.push({
+          weekStart: wk,
+          weekLabel: weekLabelFor(wk),
+          trainingLoad: 0,
+          plannedLoad: Math.round(plannedByWeek[wk]),
+          optimalLoad: lastOptimal,
+          projected: true,
+        });
+      });
+    return merged;
+  }, [chartData, plannedByWeek, showProjection]);
+
+  const projectedWeeks = useMemo(() => displayData.filter((w) => w.projected), [displayData]);
+  const hasProjection = projectedWeeks.length > 0 || displayData.some((w) => w.plannedLoad > 0);
+  const projectionBandX1 = projectedWeeks.length > 0 ? projectedWeeks[0].weekLabel : null;
+  const projectionBandX2 = projectedWeeks.length > 0 ? projectedWeeks[projectedWeeks.length - 1].weekLabel : null;
+
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full">
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -211,6 +318,21 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
                 </div>
               </div>
 
+              <div>
+                <div className="text-xs font-semibold text-gray-600 mb-1">Projection</div>
+                <button
+                  type="button"
+                  onClick={() => setShowProjection((v) => !v)}
+                  className="flex items-center justify-between w-full text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-700 bg-white h-10 hover:bg-gray-50 transition-colors"
+                >
+                  <span>Project planned workouts forward</span>
+                  <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showProjection ? 'bg-primary' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showProjection ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </span>
+                </button>
+                <p className="mt-1 text-[11px] text-gray-400">Adds upcoming planned weeks (and this week&apos;s remaining sessions) as a forecast.</p>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-2 pt-2">
                 <button
                   onClick={() => {
@@ -241,7 +363,7 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
       ) : (
         <div className="h-72 sm:h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <ComposedChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis 
               dataKey="weekLabel" 
@@ -260,12 +382,16 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
                 padding: '12px'
               }}
               formatter={(value, name) => {
-                if (name === 'Training Load' || name === 'Optimal Load') {
+                if (name === 'Training Load' || name === 'Optimal Load' || name === 'Planned (projected)') {
                   return [`${value} TSS`, name];
                 }
                 return [value, name];
               }}
             />
+            {/* Shade the projected (future) region */}
+            {hasProjection && projectionBandX1 && (
+              <ReferenceArea x1={projectionBandX1} x2={projectionBandX2} fill="#6366f1" fillOpacity={0.05} />
+            )}
             {/* Optimal Load as Area (behind bars) */}
             <Area 
               type="monotone" 
@@ -277,13 +403,28 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
               strokeDasharray="5 5"
               name="Optimal Load"
             />
-            {/* Training Load as Bars (in front) */}
+            {/* Actual Training Load (stacked base) */}
             <Bar 
               dataKey="trainingLoad" 
+              stackId="load"
               fill="#ef4444" 
               name="Training Load"
               radius={[4, 4, 0, 0]}
             />
+            {/* Planned / projected load (stacked on top) */}
+            {hasProjection && (
+              <Bar
+                dataKey="plannedLoad"
+                stackId="load"
+                fill="#fca5a5"
+                fillOpacity={0.7}
+                stroke="#ef4444"
+                strokeOpacity={0.5}
+                strokeDasharray="4 3"
+                name="Planned (projected)"
+                radius={[4, 4, 0, 0]}
+              />
+            )}
             <Legend 
               wrapperStyle={{ paddingTop: '20px' }}
               iconType="circle"

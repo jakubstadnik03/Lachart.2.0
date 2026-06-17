@@ -79,6 +79,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   const [showSpeed, setShowSpeed] = useState(true);
   const [showCadence, setShowCadence] = useState(false);
   const [showElevation, setShowElevation] = useState(false);
+  const [showZones, setShowZones] = useState(false); // target training-zone bands behind the line
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [cursorX, setCursorX] = useState(null);
   const [clickedPoint, setClickedPoint] = useState(null); // For mobile touch tooltip
@@ -584,6 +585,29 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     return padding.top + graphHeight - (normalized * graphHeight);
   }, [processedData, graphHeight, padding.top]);
 
+  // ── Target training-zone bands (shown behind the actual line) ──
+  // Power zones for cycling, HR zones for run/swim — whichever the athlete
+  // has thresholds configured for. Lets coaches see, at a glance, which zone
+  // the real effort fell into vs the planned target intensity.
+  const ZONE_FILLS = [
+    'rgba(96,165,250,0.12)',  // Z1 — blue
+    'rgba(52,211,153,0.12)',  // Z2 — green
+    'rgba(250,204,21,0.16)',  // Z3 — yellow
+    'rgba(251,146,60,0.18)',  // Z4 — orange
+    'rgba(248,113,113,0.18)', // Z5 — red
+  ];
+  const zoneOverlay = (() => {
+    if (!processedData) return null;
+    if (isCycling && showPower && powerZones && processedData.maxPower > 1) {
+      return { zones: powerZones, yScaleFn: powerYScale, maxVal: processedData.maxPower, unit: 'W' };
+    }
+    if (showHeartRate && hrZones && processedData.maxHeartRate > 1) {
+      return { zones: hrZones, yScaleFn: hrYScale, maxVal: processedData.maxHeartRate, unit: 'bpm' };
+    }
+    return null;
+  })();
+  const hasZoneData = !!zoneOverlay;
+
   // Generate SVG paths - use polyline with optional smoothing
   const speedPath = useMemo(() => {
     if (!processedData || processedData.points.length === 0) return '';
@@ -795,10 +819,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const touch = e.touches[0];
     const rect = containerRef.current.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    const relativeX = x - padding.left;
-    
+    // Convert screen px → SVG viewBox units (the SVG is width:100% over a fixed
+    // svgWidth viewBox), so relativeX matches graphWidth / xScale / padding.left
+    // which are all in SVG units. Without this the selection band drifts on
+    // phones where the rendered width ≠ svgWidth.
+    const relativeX = (x / (rect.width || svgWidth)) * svgWidth - padding.left;
+
     if (relativeX < 0 || relativeX > graphWidth) return;
-    
+
     // Find closest point
     const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
     let closestPoint = null;
@@ -827,7 +855,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       setClickedPoint(closestPoint);
       setClickedCursorX(x);
     }
-  }, [processedData, graphWidth, padding.left, isMobile, xScale]);
+  }, [processedData, graphWidth, padding.left, isMobile, xScale, svgWidth]);
 
   // Track finger movement — small move = scrub tooltip, horizontal drag = select
   const handleTouchMove = useCallback((e) => {
@@ -837,7 +865,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const touch = e.touches[0];
     const rect = containerRef.current.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    const relativeX = Math.max(0, Math.min(x - padding.left, graphWidth));
+    // px → SVG units (see handleTouchStart) so the selection matches the bars.
+    const relativeX = Math.max(0, Math.min((x / (rect.width || svgWidth)) * svgWidth - padding.left, graphWidth));
 
     const sel = touchSelRef.current;
     // Enter selection mode once the finger has travelled far enough horizontally.
@@ -868,7 +897,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       setClickedPoint(closestPoint);
       setClickedCursorX(x);
     }
-  }, [processedData, graphWidth, padding.left, isMobile, xScale]);
+  }, [processedData, graphWidth, padding.left, isMobile, xScale, svgWidth]);
 
   // On lift: if we were selecting, summarise the marked segment; else clear.
   const handleTouchEnd = useCallback(() => {
@@ -890,7 +919,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const relativeX = x - padding.left;
+    // px → SVG units so selection/point-finding matches the bars (see handleTouchStart).
+    const relativeX = (x / (rect.width || svgWidth)) * svgWidth - padding.left;
     
     if (relativeX < 0 || relativeX > graphWidth) return;
     
@@ -936,7 +966,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     setHoveredPoint(null);
     setClickedPoint(null);
     setClickedCursorX(null);
-  }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale]);
+  }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale, svgWidth]);
 
   // Handle mouse move with throttling to reduce CPU usage
   const handleMouseMove = useCallback((e) => {
@@ -953,7 +983,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const relativeX = x - padding.left;
+    // px → SVG units so selection/point-finding matches the bars (see handleTouchStart).
+    const relativeX = (x / (rect.width || svgWidth)) * svgWidth - padding.left;
     
     // If dragging, update drag end (no throttling for dragging)
     if (isDragging && dragStart) {
@@ -1029,7 +1060,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       setHoveredPoint(null);
       if (onLeave) onLeave();
     }
-  }, [processedData, graphWidth, padding.left, onHover, onLeave, isDragging, dragStart, zoomRange, xScale]);
+  }, [processedData, graphWidth, padding.left, onHover, onLeave, isDragging, dragStart, zoomRange, xScale, svgWidth]);
 
   // Handle mouse up for zoom
   const handleMouseUp = useCallback((e) => {
@@ -1157,6 +1188,23 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             >
               <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showElevation ? 'bg-orange-500' : 'bg-gray-400'}`}></div>
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showElevation ? 'text-gray-700' : 'text-gray-400'}`}>Elevation</span>
+            </button>
+          )}
+          {/* Target training-zone bands toggle — only when the athlete has zones */}
+          {hasZoneData && (
+            <button
+              onClick={() => setShowZones(!showZones)}
+              className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
+                showZones ? 'bg-indigo-100' : 'bg-gray-100 opacity-50'
+              }`}
+              title="Show target training zones behind the line"
+            >
+              <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-sm overflow-hidden flex flex-col`}>
+                <span className="flex-1" style={{ backgroundColor: showZones ? '#f87171' : '#9ca3af' }} />
+                <span className="flex-1" style={{ backgroundColor: showZones ? '#fbbf24' : '#9ca3af' }} />
+                <span className="flex-1" style={{ backgroundColor: showZones ? '#34d399' : '#9ca3af' }} />
+              </div>
+              <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showZones ? 'text-gray-700' : 'text-gray-400'}`}>Zones</span>
             </button>
           )}
         </div>
@@ -1289,18 +1337,25 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Drag selection rectangle */}
-        {isDragging && dragStart && dragEnd && (
-          <div
-            className="absolute border-2 border-blue-500 bg-blue-200/20 pointer-events-none z-40"
-            style={{
-              left: `${padding.left + Math.min(dragStart.relativeX, dragEnd.relativeX)}px`,
-              top: `${padding.top}px`,
-              width: `${Math.abs(dragEnd.relativeX - dragStart.relativeX)}px`,
-              height: `${graphHeight}px`
-            }}
-          />
-        )}
+        {/* Drag selection rectangle — relativeX is in SVG units, convert the
+            horizontal values back to screen px (the SVG is width:100% over a
+            fixed viewBox). Vertical stays 1:1 (svgHeight renders at px height). */}
+        {isDragging && dragStart && dragEnd && (() => {
+          const pxPerSvg = (containerWidth || svgWidth) / svgWidth;
+          const startX = Math.min(dragStart.relativeX, dragEnd.relativeX);
+          const w = Math.abs(dragEnd.relativeX - dragStart.relativeX);
+          return (
+            <div
+              className="absolute border-2 border-blue-500 bg-blue-200/20 pointer-events-none z-40"
+              style={{
+                left: `${(padding.left + startX) * pxPerSvg}px`,
+                top: `${padding.top}px`,
+                width: `${w * pxPerSvg}px`,
+                height: `${graphHeight}px`
+              }}
+            />
+          );
+        })()}
         <svg
           ref={svgRef}
           width="100%"
@@ -1330,6 +1385,29 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                 strokeWidth="1"
                 strokeDasharray="2,2"
               />
+            );
+          })}
+
+          {/* Target training-zone bands — drawn behind the metric areas/lines */}
+          {showZones && zoneOverlay && [1, 2, 3, 4, 5].map((i) => {
+            const z = zoneOverlay.zones[`zone${i}`];
+            if (!z) return null;
+            const lo = Number(z.min) || 0;
+            const hi = (z.max === Infinity || z.max == null) ? zoneOverlay.maxVal : Number(z.max);
+            if (hi <= lo) return null;
+            const yTop = zoneOverlay.yScaleFn(Math.min(hi, zoneOverlay.maxVal));
+            const yBot = zoneOverlay.yScaleFn(lo);
+            const h = Math.max(0, yBot - yTop);
+            if (h <= 0) return null;
+            return (
+              <g key={`zone-band-${i}`}>
+                <rect x={padding.left} y={yTop} width={graphWidth} height={h} fill={ZONE_FILLS[i - 1]} />
+                {h > 12 && (
+                  <text x={padding.left + 4} y={yTop + 11} fontSize={isMobile ? 8 : 10} fontWeight="700" fill="#64748b" opacity="0.7">
+                    Z{i}
+                  </text>
+                )}
+              </g>
             );
           })}
 

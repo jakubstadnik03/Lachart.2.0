@@ -1170,8 +1170,13 @@ const SettingsPage = () => {
             : 'Strava rate limit reached. Please try again later.',
           'warning'
         );
+      } else if (e?.response?.status === 400 && /not connected/i.test(e?.response?.data?.error || '')) {
+        // The server has no valid Strava token (revoked / expired / never
+        // finished). Reflect that in the UI and tell the user to reconnect.
+        setStravaConnected(false);
+        addNotification('Strava is no longer connected — reconnect it below to sync.', 'warning');
       } else {
-        addNotification(e?.response?.data?.message || 'Failed to sync Strava activities', 'error');
+        addNotification(e?.response?.data?.error || e?.response?.data?.message || 'Failed to sync Strava activities', 'error');
       }
     } finally {
       setIsSyncingStrava(false);
@@ -3308,7 +3313,12 @@ const SettingsPage = () => {
                             'success'
                           );
                         } catch (e) {
-                          addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
+                          if (e?.response?.status === 400 && /not connected/i.test(e?.response?.data?.error || '')) {
+                            setStravaConnected(false);
+                            addNotification('Strava is no longer connected — reconnect it below first.', 'warning');
+                          } else {
+                            addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
+                          }
                         }
                       }}
                       disabled={stravaBackfill?.state === 'running'}

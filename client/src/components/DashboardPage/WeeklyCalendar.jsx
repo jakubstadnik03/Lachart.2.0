@@ -854,15 +854,8 @@ function actSportColor(sport) {
   return '#8b5cf6';
 }
 
-function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compact = false }) {
+function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false }) {
   const title = act.title || act.name || act.originalFileName || 'Activity';
-  const dur = act.duration || act.elapsed_time || act.movingTime || act.totalTimerTime || act.totalElapsedTime || 0;
-  const durStr = dur > 0 ? `${Math.floor(dur / 3600)}:${String(Math.floor((dur % 3600) / 60)).padStart(2, '0')}` : null;
-  const dist = act.distance || act.totalDistance || 0;
-  const distStr = dist > 0 ? (dist > 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`) : null;
-  const tss = act.tss || act.trainingLoad || 0;
-  const power = act.normalizedPower || act.avgPower || act.average_watts || 0;
-  const hr = act.averageHeartRate || act.average_heartrate || 0;
   const color = catBadgeStyle && act.category
     ? (catBadgeStyle(act.category).borderColor || actSportColor(act.sport))
     : actSportColor(act.sport);
@@ -870,8 +863,8 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left rounded-xl border transition-all flex flex-col gap-1 ${
-        compact ? 'p-1.5' : 'p-2'
+      className={`w-full text-left rounded-xl border transition-all flex items-center gap-1.5 ${
+        compact ? 'p-1.5' : 'px-2 py-1.5'
       } ${
         isSelected
           ? 'bg-gradient-to-br from-primary to-primary-dark shadow-md ring-2 ring-primary/20 border-transparent'
@@ -880,52 +873,12 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, catLabel, compac
       style={{ borderLeftColor: color, borderLeftWidth: 3, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       title={title}
     >
-      <div className="flex items-start gap-1.5 min-w-0">
-        <SportIcon sport={act.sport} className={`mt-0.5 flex-shrink-0 ${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
-        {/* Two-line clamp: lets longer titles like "Bike Endurance" or
-            "Afternoon Swim" wrap onto a second line instead of truncating
-            to "Bike Endura…". `min-w-0` on the parent + `break-words` here
-            ensure wrap actually triggers in narrow flex children. */}
-        <span
-          className={`font-bold flex-1 min-w-0 break-words leading-tight ${compact ? 'text-xs' : 'text-[13px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
-          style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
-        >
-          {title}
-        </span>
-      </div>
-      {act.category && catBadgeStyle && catLabel && (
-        <div className="flex">
-          <span
-            className={`uppercase tracking-wide font-bold border rounded-md leading-tight flex-shrink-0 ${compact ? 'text-[10px] px-1 py-[1px]' : 'text-[11px] px-1.5 py-[1px]'}`}
-            style={isSelected
-              ? { backgroundColor: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.4)' }
-              : catBadgeStyle(act.category)}
-            title={catLabel(act.category)}
-          >
-            {catLabel(act.category)}
-          </span>
-        </div>
-      )}
-      {!compact && (durStr || distStr) && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {durStr && <span className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{durStr}</span>}
-          {distStr && <><span className={isSelected ? 'text-white/40' : 'text-gray-300'}>·</span><span className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{distStr}</span></>}
-        </div>
-      )}
-      {!compact && tss > 0 && (
-        <div className="flex items-center gap-1.5">
-          <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${Math.min(100, (tss / 150) * 100)}%`, backgroundColor: tss > 100 ? '#ef4444' : tss > 70 ? '#f59e0b' : '#22c55e' }} />
-          </div>
-          <span className={`text-[11px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
-        </div>
-      )}
-      {!compact && (power > 0 || hr > 0) && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {power > 0 && <span className={`text-xs ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>{Math.round(power)}W</span>}
-          {hr > 0 && <span className={`text-xs ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>♥ {Math.round(hr)}</span>}
-        </div>
-      )}
+      <SportIcon sport={act.sport} className={`flex-shrink-0 ${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
+      <span
+        className={`font-bold flex-1 min-w-0 truncate leading-tight ${compact ? 'text-xs' : 'text-[13px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
+      >
+        {title}
+      </span>
     </button>
   );
 }

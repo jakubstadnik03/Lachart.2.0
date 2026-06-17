@@ -291,14 +291,25 @@ struct SmallTodayView: View {
         let planned   = entry.snapshot.todayPlanned
 
         if completed.isEmpty && planned.isEmpty {
-            HStack(spacing: 6) {
-                Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(LaChartColor.muted)
-                Text("Rest day")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(LaChartColor.muted)
-                Spacer()
+            // Rest day today → surface tomorrow's first planned workout (if any)
+            // so the tile stays useful instead of just saying "Rest day".
+            if let plan = entry.snapshot.tomorrowPlanned.first {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TOMORROW")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(LaChartColor.muted)
+                    WorkoutRow(workout: plan, done: false, compact: true)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "moon.zzz.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(LaChartColor.muted)
+                    Text("Rest day")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(LaChartColor.muted)
+                    Spacer()
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -360,6 +371,9 @@ struct MediumTodayView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 12)
+        // Pin to the top so the Form / Fitness / Fatigue KPI row is ALWAYS fully
+        // visible — overflow clips at the bottom, never the top.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -368,26 +382,48 @@ struct MediumTodayView: View {
         let planned   = entry.snapshot.todayPlanned
 
         if completed.isEmpty && planned.isEmpty {
-            HStack(spacing: 8) {
-                Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(LaChartColor.muted)
-                Text("Rest day")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(LaChartColor.muted)
-                Spacer()
+            // Rest day → show the next upcoming (tomorrow's) planned workouts so
+            // the tile still tells you what's next instead of just "Rest day".
+            let upcoming = Array(entry.snapshot.tomorrowPlanned.prefix(2))
+            if !upcoming.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("TOMORROW")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(LaChartColor.muted)
+                    ForEach(upcoming) { w in
+                        WorkoutRow(workout: w, done: false, large: true)
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "moon.zzz.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(LaChartColor.muted)
+                    Text("Rest day")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(LaChartColor.muted)
+                    Spacer()
+                }
             }
         } else {
-            // Bigger rows → fewer fit; show up to 3 and spread them to fill.
-            let maxRows = 3
-            let doneShown = Array(completed.prefix(maxRows))
-            let planShown = Array(planned.prefix(max(0, maxRows - doneShown.count)))
+            // Show the first 2 sessions (completed first), then a "+N more" line
+            // so the KPI row never gets pushed off the top.
+            let total = completed.count + planned.count
+            let doneShown = Array(completed.prefix(2))
+            let planShown = Array(planned.prefix(max(0, 2 - doneShown.count)))
+            let moreCount = total - doneShown.count - planShown.count
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(doneShown) { w in
                     WorkoutRow(workout: w, done: true, large: true)
                 }
                 ForEach(planShown) { w in
                     WorkoutRow(workout: w, done: false, large: true)
+                }
+                if moreCount > 0 {
+                    Text("+\(moreCount) more")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(LaChartColor.muted)
+                        .padding(.top, 1)
                 }
             }
         }
@@ -435,6 +471,10 @@ struct LargeTodayView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 10)
+        // Pin to the top so the KPI row (Form / Fitness / Fatigue) is ALWAYS
+        // fully visible — if the workout list is long it clips at the bottom,
+        // never at the top.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -443,18 +483,26 @@ struct LargeTodayView: View {
         let todayPlan = entry.snapshot.todayPlanned
         let tmwPlan   = entry.snapshot.tomorrowPlanned
 
+        // Keep the total row count small enough that the header + KPI never get
+        // pushed off the top. TODAY gets up to 4 rows (completed first), then
+        // TOMORROW fills whatever's left up to 2.
+        let doneShown = Array(completed.prefix(4))
+        let planShown = Array(todayPlan.prefix(max(0, 4 - doneShown.count)))
+        let todayCount = doneShown.count + planShown.count
+        let tmwShown = Array(tmwPlan.prefix(max(0, min(2, 5 - todayCount))))
+
         VStack(alignment: .leading, spacing: 5) {
             label("TODAY")
             if completed.isEmpty && todayPlan.isEmpty {
                 restRow
             } else {
-                ForEach(Array(completed.prefix(3))) { w in WorkoutRow(workout: w, done: true) }
-                ForEach(Array(todayPlan.prefix(3)))  { w in WorkoutRow(workout: w, done: false) }
+                ForEach(doneShown) { w in WorkoutRow(workout: w, done: true) }
+                ForEach(planShown) { w in WorkoutRow(workout: w, done: false) }
             }
 
-            if !tmwPlan.isEmpty {
+            if !tmwShown.isEmpty {
                 label("TOMORROW").padding(.top, 3)
-                ForEach(Array(tmwPlan.prefix(3))) { w in WorkoutRow(workout: w, done: false) }
+                ForEach(tmwShown) { w in WorkoutRow(workout: w, done: false) }
             }
         }
     }

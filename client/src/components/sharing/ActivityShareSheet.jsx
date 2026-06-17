@@ -25,6 +25,7 @@ import RouteStatsTemplate from './templates/RouteStatsTemplate';
 import StatsOnlyTemplate from './templates/StatsOnlyTemplate';
 import LapsElevationLactateTemplate from './templates/LapsElevationLactateTemplate';
 import LactateCurveTemplate from './templates/LactateCurveTemplate';
+import SummaryShareTemplate from './templates/SummaryShareTemplate';
 
 // Templates internally use a 1080×1920 viewBox (IG Story native) but we
 // rasterise to 720×1280. Why: on iOS the Capacitor JS↔Native bridge
@@ -124,22 +125,31 @@ export default function ActivityShareSheet({
   test = null,
   thresholds = null,
   accent = '#FC4C02',
+  summary = null, // { title, subtitle, sport, kpis, totals, workouts } → daily/weekly summary card
 }) {
+  // Each template is stored as a component + props so we can re-render it with
+  // `transparent` on demand (the transparent export must skip the template's
+  // own dark background, not just the canvas fill). Recomputed whenever any of
+  // the source props change (activity, gps, laps, test, summary, …).
   const templates = useMemo(() => {
     const out = [];
+    if (summary) {
+      out.push({ id: 'summary', label: summary.label || 'Summary', Comp: SummaryShareTemplate, props: { summary, accent } });
+      return out;
+    }
     if (test) {
-      out.push({ id: 'lactate', label: 'Lactate curve', node: <LactateCurveTemplate test={test} thresholds={thresholds} accent={accent} /> });
+      out.push({ id: 'lactate', label: 'Lactate curve', Comp: LactateCurveTemplate, props: { test, thresholds, accent } });
       return out;
     }
     if (Array.isArray(gpsPoints) && gpsPoints.length > 1) {
-      out.push({ id: 'route', label: 'Route + stats', node: <RouteStatsTemplate activity={activity || {}} gpsPoints={gpsPoints} accent={accent} /> });
+      out.push({ id: 'route', label: 'Route + stats', Comp: RouteStatsTemplate, props: { activity: activity || {}, gpsPoints, accent } });
     }
-    out.push({ id: 'stats', label: 'Stats', node: <StatsOnlyTemplate activity={activity || {}} accent={accent} /> });
+    out.push({ id: 'stats', label: 'Stats', Comp: StatsOnlyTemplate, props: { activity: activity || {}, accent } });
     if (Array.isArray(laps) && laps.length >= 2) {
-      out.push({ id: 'laps', label: 'Laps + elevation + lactate', node: <LapsElevationLactateTemplate activity={activity || {}} laps={laps} records={records} accent={accent} /> });
+      out.push({ id: 'laps', label: 'Laps + elevation + lactate', Comp: LapsElevationLactateTemplate, props: { activity: activity || {}, laps, records, accent } });
     }
     return out;
-  }, [activity, gpsPoints, laps, records, test, thresholds, accent]);
+  }, [activity, gpsPoints, laps, records, test, thresholds, accent, summary]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -226,7 +236,7 @@ export default function ActivityShareSheet({
     const id = setTimeout(async () => {
       try {
         console.log('[share] rendering template to markup:', tmpl.id);
-        const markup = renderToStaticMarkup(tmpl.node);
+        const markup = renderToStaticMarkup(React.createElement(tmpl.Comp, tmpl.props));
         console.log('[share] markup ready, converting to PNG');
         const png = await svgMarkupToPng(markup);
         if (cancelled) return;
@@ -274,7 +284,9 @@ export default function ActivityShareSheet({
     // Transparent export isn't cached (the cache holds the opaque variant) —
     // render it fresh on demand so the PNG keeps its alpha channel.
     if (transparentBg) {
-      const markup = renderToStaticMarkup(tmpl.node);
+      // Re-render the template WITH transparent so it omits its own dark
+      // background, then keep the canvas alpha too.
+      const markup = renderToStaticMarkup(React.createElement(tmpl.Comp, { ...tmpl.props, transparent: true }));
       return await svgMarkupToPng(markup, { transparent: true });
     }
     const cached = pngCacheRef.current[tmpl.id];
@@ -387,12 +399,25 @@ export default function ActivityShareSheet({
     inflightRef.current = true;
     setBusy(true);
     try {
-      const { blob } = await captureActive();
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        showToast('Copied to clipboard');
-      } else {
-        showToast('Clipboard unavailable');
+      const { blob, dataUrl } = await captureActive();
+      // The async Clipboard image API is unreliable inside the iOS WKWebView
+      // (it either throws or copies a partial image), so only use it on web.
+      // On native we go straight to the share sheet, where "Copy" copies the
+      // full PNG correctly.
+      if (!Capacitor.isNativePlatform() && navigator.clipboard && window.ClipboardItem) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          showToast('Copied to clipboard');
+          return;
+        } catch (_) { /* fall back to the share sheet below */ }
+      }
+      const fileName = `lachart-${Date.now()}.png`;
+      try {
+        const res = await shareBlob(blob, dataUrl, fileName);
+        if (res === 'downloaded') showToast('Downloaded');
+      } catch (e) {
+        if (String(e?.name) === 'AbortError') return;
+        throw e;
       }
     } catch (e) {
       console.error('[copy] failed:', e);

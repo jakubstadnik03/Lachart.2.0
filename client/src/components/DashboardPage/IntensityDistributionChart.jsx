@@ -386,7 +386,7 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
           activePreset.windows.map(async (win) => {
             const startDate = new Date(nowMs - win.daysStart * dayMs).toISOString();
             const endDate = new Date(nowMs - win.daysEnd * dayMs).toISOString();
-            const { data } = await api.get('/fit/intensity-histogram', {
+            const { data } = await api.get('/api/fit/intensity-histogram', {
               params: { startDate, endDate, sport: sportParam, athleteId },
             });
             const map = new Map();

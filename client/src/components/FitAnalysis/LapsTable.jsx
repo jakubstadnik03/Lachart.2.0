@@ -55,6 +55,28 @@ const METRIC_LABELS = {
   threshold20min: '20min', endurance60min: '60min',
 };
 
+// ── Interval-type colour coding (mirrors CalendarView heuristic) ──
+const LAP_TYPE_COLORS = { warmup: '#fbbf24', work: '#767EB5', recovery: '#6ee7b7', cooldown: '#38bdf8', rest: '#d1d5db' };
+const LAP_TYPE_LABELS = { warmup: 'Warm-up', work: 'Work', recovery: 'Recovery', cooldown: 'Cool-down', rest: 'Rest' };
+
+function detectLapTypeLocal(lap, index, total) {
+  const it = lap?.intervalType;
+  if (it && LAP_TYPE_COLORS[it]) return it;
+  const name = String(lap?.name || '').toLowerCase();
+  if (/warm.?up|rozeh/i.test(name)) return 'warmup';
+  if (/cool.?down|zklidn/i.test(name)) return 'cooldown';
+  if (/recov|odpoc|rest/i.test(name)) return 'recovery';
+  if (/interval|work|int\s*\d/i.test(name)) return 'work';
+  const dist = Number(lap?.distance || lap?.totalDistance || 0);
+  const dur = Number(lap?.elapsed_time || lap?.totalElapsedTime || lap?.duration || 0);
+  if (dist > 0 && dist < 200) return 'recovery';
+  if (dist > 0 && dur > 0 && dur / (dist / 1000) > 480) return 'recovery';
+  if (index === 0 && total > 2) return 'warmup';
+  if (index === total - 1 && total > 2) return 'cooldown';
+  if (total >= 5) return index % 2 === 1 ? 'work' : 'recovery';
+  return 'work';
+}
+
 const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null, disableZoom = false, hideChart = false, highlightMetric = null, radarWatts = null }) => {
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
   const [initialLapIndex, setInitialLapIndex] = useState(null);
@@ -253,6 +275,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             {uniqueLaps.map((lap, index) => {
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isSelected = effectiveSelectedLap != null && String(lapNumber) === String(effectiveSelectedLap);
+              const lapType = detectLapTypeLocal(lap, index, uniqueLaps.length);
+              const lapTypeColor = LAP_TYPE_COLORS[lapType] || '#d1d5db';
               const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
               const distanceMeters =
                 lap.totalDistance ?? lap.total_distance ?? lap.distance ?? lap.distanceMeters ?? lap.distance_meters ?? 0;
@@ -297,18 +321,19 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleSelectLap(isSelected ? null : lapNumber); }}
                   className={`w-full text-left px-3 py-3.5 flex items-center gap-3 transition-colors touch-manipulation cursor-pointer ${
                     isSelected
-                      ? 'bg-primary/10 border-l-[3px] border-primary'
+                      ? 'bg-primary/10'
                       : lap.lactate
                         ? 'bg-primary/5'
                         : 'active:bg-gray-50'
                   }`}
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                  style={{ WebkitTapHighlightColor: 'transparent', borderLeft: `4px solid ${isSelected ? 'var(--color-primary, #767EB5)' : lapTypeColor}` }}
                 >
-                  {/* Lap number */}
+                  {/* Lap number + type dot */}
                   <div className="w-8 shrink-0 text-center">
-                    <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
+                    <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-500'}`}>
                       {index + 1}
                     </span>
+                    <span className="block mx-auto mt-0.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: lapTypeColor }} title={LAP_TYPE_LABELS[lapType]} />
                   </div>
 
                   {/* Main info */}
@@ -418,6 +443,16 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
         </div>
       </div>
 
+      {/* Interval-type legend */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-3 text-[11px] text-gray-500">
+        {['warmup', 'work', 'recovery', 'cooldown'].map((t) => (
+          <span key={t} className="inline-flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: LAP_TYPE_COLORS[t] }} />
+            {LAP_TYPE_LABELS[t]}
+          </span>
+        ))}
+      </div>
+
       {/* Lap bar overview */}
       <LapsBarChart
         laps={uniqueLaps}
@@ -455,6 +490,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             {uniqueLaps.map((lap, index) => {
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isSelected = effectiveSelectedLap != null && String(lapNumber) === String(effectiveSelectedLap);
+              const lapType = detectLapTypeLocal(lap, index, uniqueLaps.length);
+              const lapTypeColor = LAP_TYPE_COLORS[lapType] || '#d1d5db';
 
               const distanceMeters =
                 lap.totalDistance ??
@@ -515,8 +552,15 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 onClick={() => handleSelectLap(isSelected ? null : lapNumber)}
                 ref={(el) => { if (el) lapRefs.current[lapNumber] = el; }}
                 className={`transition-colors hover:bg-white/60 cursor-pointer ${lap.lactate ? 'bg-primary/10' : ''} ${isSelected ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}
+                style={{ borderLeft: `4px solid ${lapTypeColor}` }}
+                title={LAP_TYPE_LABELS[lapType]}
               >
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lapTypeColor }} />
+                    {index + 1}
+                  </span>
+                </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time)}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
                     {formatDistance(distanceMeters, user, { swim: isSwim, assumeMeters: true })}

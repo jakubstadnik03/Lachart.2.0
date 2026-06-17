@@ -24,7 +24,7 @@ function fmtPace(secPerKm) {
 function fmtKcal(k) { return k ? `${Math.round(k).toLocaleString('en')} kcal` : '—'; }
 function fmtCad(c, isRun) { return c ? `${Math.round(c)} ${isRun ? 'spm' : 'rpm'}` : '—'; }
 
-export default function StatsOnlyTemplate({ activity = {}, accent = '#FC4C02' }) {
+export default function StatsOnlyTemplate({ activity = {}, accent = '#FC4C02', transparent = false }) {
   const sport = String(activity.sport || '').toLowerCase();
   const isRun = sport.includes('run');
   const isSwim = sport.includes('swim');
@@ -65,7 +65,7 @@ export default function StatsOnlyTemplate({ activity = {}, accent = '#FC4C02' })
           <stop offset="100%" stopColor="rgba(0,0,0,0.55)" />
         </radialGradient>
       </defs>
-      <rect width={W} height={H} fill="url(#soVignette)" />
+      {!transparent && <rect width={W} height={H} fill="url(#soVignette)" />}
 
       {/* Wordmark — anchor to top so the grid feels grounded */}
       <text x={W / 2} y="220" textAnchor="middle"

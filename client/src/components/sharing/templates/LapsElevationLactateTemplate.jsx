@@ -20,6 +20,7 @@
  */
 
 import React, { useMemo } from 'react';
+import ShareSportGlyph from './ShareSportGlyph';
 
 const W = 1080;
 const H = 1920;
@@ -30,20 +31,6 @@ const TITLE_BAND_Y = 200;
 const ELEV_BAND_Y  = 700;
 const ELEV_BAND_H  = 720; // trimmed to leave space for the y-axis labels & legend
 const STATS_BAND_Y = 1560;
-
-// Sport-icon SVG paths (24 × 24 coord space) — clean line-art glyphs that
-// scale well at 110 × 110 px in the share template header.
-const SPORT_ICONS = {
-  bike: 'M5.5 18.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm13 0a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-6.5-3.5l-3-6h-2m5 6l4-5h-3m-2-2l1.5 2m1.5-5h3',
-  run:  'M13 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm-2 6l-3 4 3 2 1 6m4-8l-3-2 2-3 3 1',
-  swim: 'M3 16c2 0 2-1.2 4-1.2s2 1.2 4 1.2 2-1.2 4-1.2 2 1.2 4 1.2 2-1.2 4-1.2 M3 20c2 0 2-1.2 4-1.2s2 1.2 4 1.2 2-1.2 4-1.2 2 1.2 4 1.2 2-1.2 4-1.2 M14 5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 13l6-4',
-};
-function pickSport(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
-  if (s.includes('swim')) return 'swim';
-  return 'bike';
-}
 
 function fmtDist(m)  { return m ? `${(m / 1000).toFixed(2)} km` : '—'; }
 function fmtDur(s) {
@@ -85,6 +72,7 @@ export default function LapsElevationLactateTemplate({
   laps = [],
   records = null,
   accent = '#FC4C02',
+  transparent = false,
 }) {
   // ── Elevation polygon ──────────────────────────────────────────────────────
   const elevPath = useMemo(() => {
@@ -166,7 +154,6 @@ export default function LapsElevationLactateTemplate({
   const dur      = Number(activity.movingTime || activity.moving_time || activity.duration || activity.elapsed_time || 0);
   const elev     = Number(activity.totalElevationGain ?? activity.total_elevation_gain ?? activity.elevationGain ?? 0);
   const title    = String(activity.titleManual || activity.title || activity.name || '').slice(0, 32);
-  const sportKey = pickSport(activity.sport);
   // The bar height label depends on what we used as the intensity metric
   const intensityLabel = lapGeom.some(g => lapAvgPower(g.lap) > 0) ? 'Power'
                        : lapGeom.some(g => lapAvgHr(g.lap) > 0) ? 'HR' : 'Pace';
@@ -187,14 +174,14 @@ export default function LapsElevationLactateTemplate({
           <stop offset="100%" stopColor={accent} stopOpacity="0.7" />
         </linearGradient>
       </defs>
-      <rect width={W} height={H} fill="url(#leVignette)" />
+      {!transparent && <rect width={W} height={H} fill="url(#leVignette)" />}
 
       {/* Sport icon (rounded badge) + wordmark + title */}
       <g transform={`translate(${W / 2 - 55}, ${TITLE_BAND_Y - 110})`}>
         <rect x="0" y="0" width="110" height="110" rx="28"
           fill="rgba(255,255,255,.12)" stroke={accent} strokeWidth="3" />
-        <g transform="translate(15, 15) scale(3.33)" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <path d={SPORT_ICONS[sportKey]} />
+        <g transform="translate(15, 15) scale(3.33)">
+          <ShareSportGlyph sport={activity.sport} color="#fff" strokeWidth={2} />
         </g>
       </g>
       <text x={W / 2} y={TITLE_BAND_Y + 50} textAnchor="middle"

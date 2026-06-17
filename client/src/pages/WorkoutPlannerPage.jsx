@@ -65,51 +65,77 @@ function isSameDay(a, b) {
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
+// Pull a sensible duration (seconds) out of a completed-activity object whose
+// shape varies across Strava / FIT / manual sources.
+function completedSecs(t) {
+  const v = t.totalTimerTime || t.moving_time || t.movingTime
+    || t.totalElapsedTime || t.elapsedTime || t.elapsed_time || t.duration || t.durationSeconds;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 // ─── Planned Workout Card (inside calendar cell) ─────────────────────────────
 function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
   const col = SPORT_COLORS[pw.sport] || '#94a3b8';
   const dur = stepTotalSecs(pw.steps);
   return (
     <div
-      className={`rounded-lg border bg-white cursor-pointer hover:shadow-sm transition-shadow overflow-hidden group
+      className={`group relative rounded-xl bg-white ring-1 ring-slate-200/70 shadow-sm cursor-pointer overflow-hidden transition-all hover:shadow-md hover:ring-slate-300
         ${pw.status === 'completed' ? 'opacity-60' : ''}
         ${pw.status === 'skipped' ? 'opacity-40' : ''}`}
-      style={{ borderStyle: 'dashed', borderColor: col + '80', borderLeftWidth: 3, borderLeftStyle: 'solid', borderLeftColor: col }}
       onClick={() => onEdit(pw)}
     >
-      <div className="px-2 py-1.5">
-        <div className="flex items-center gap-1.5 mb-1">
-          <img src={SPORT_ICONS[pw.sport] || '/icon/default.svg'} alt={pw.sport} className="w-3 h-3 opacity-80" />
-          <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">{pw.title}</span>
-          {pw.status === 'completed' && <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+      {/* Left sport accent bar */}
+      <span className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: col }} />
+      <div className="pl-3 pr-2.5 py-2">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span
+            className="flex items-center justify-center w-5 h-5 rounded-md shrink-0"
+            style={{ backgroundColor: col + '1a' }}
+          >
+            <img src={SPORT_ICONS[pw.sport] || '/icon/default.svg'} alt={pw.sport} className="w-3 h-3" />
+          </span>
+          <span className="text-xs font-semibold text-slate-700 truncate flex-1 leading-tight">{pw.title}</span>
+          {pw.status === 'completed' && <CheckCircleIcon className="w-4 h-4 text-emerald-500 shrink-0" />}
         </div>
         {pw.steps?.length > 0 && <MiniWorkoutChart steps={pw.steps} />}
-        <div className="flex items-center justify-between mt-1">
-          {dur > 0 && <span className="text-[10px] text-slate-400">{fmtDuration(dur)}</span>}
-          {pw.targetTss && <span className="text-[10px] text-slate-400">{pw.targetTss} TSS</span>}
-        </div>
+        {(dur > 0 || pw.targetTss) && (
+          <div className="flex items-center gap-1.5 mt-1.5">
+            {dur > 0 && (
+              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 rounded-md px-1.5 py-0.5 tabular-nums">
+                {fmtDuration(dur)}
+              </span>
+            )}
+            {pw.targetTss && (
+              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 rounded-md px-1.5 py-0.5 tabular-nums">
+                {pw.targetTss} TSS
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {/* Hover actions */}
-      <div className="hidden group-hover:flex items-center gap-1 px-1.5 pb-1.5">
-        {pw.status === 'planned' && onStart && (
-          <button
-            onClick={e=>{e.stopPropagation();onStart(pw)}}
-            className="flex items-center gap-0.5 text-[10px] text-white rounded px-1.5 py-0.5 font-semibold"
-            style={{ backgroundColor: col }}
-          >
-            <PlayIcon className="w-2.5 h-2.5" /> Start
-          </button>
-        )}
-        {pw.status === 'planned' && (
+      {pw.status === 'planned' && (
+        <div className="hidden group-hover:flex items-center gap-1 px-2 pb-2 pl-3">
+          {onStart && (
+            <button
+              onClick={e=>{e.stopPropagation();onStart(pw)}}
+              className="flex items-center gap-0.5 text-[10px] text-white rounded-md px-2 py-1 font-semibold shadow-sm hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: col }}
+            >
+              <PlayIcon className="w-2.5 h-2.5" /> Start
+            </button>
+          )}
           <button onClick={e=>{e.stopPropagation();onComplete(pw)}}
-            className="flex-1 flex items-center justify-center gap-0.5 text-[10px] text-emerald-600 hover:bg-emerald-50 rounded px-1 py-0.5">
+            className="flex-1 flex items-center justify-center gap-0.5 text-[10px] font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-md px-1.5 py-1 transition-colors">
               <CheckCircleIcon className="w-3 h-3" /> Done</button>
-        )}
-        <button onClick={e=>{e.stopPropagation();onDelete(pw)}}
-          className="text-[10px] text-red-400 hover:bg-red-50 rounded px-1 py-0.5">
-          <TrashIcon className="w-3 h-3" />
-        </button>
-      </div>
+          <button onClick={e=>{e.stopPropagation();onDelete(pw)}}
+            title="Delete"
+            className="text-red-400 hover:text-red-500 hover:bg-red-50 rounded-md p-1 transition-colors">
+            <TrashIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -124,19 +150,29 @@ function CompletedCard({ training, onOpen }) {
               : (SPORT_COLORS[raw] ? raw : 'bike');
   const col = SPORT_COLORS[sport] || '#94a3b8';
   const title = training.title || training.name || training.titleManual || 'Activity';
+  const secs = completedSecs(training);
   return (
     <div
-      className={`rounded-lg border bg-slate-50 overflow-hidden ${onOpen ? 'cursor-pointer hover:shadow-sm transition-shadow' : ''}`}
-      style={{ borderColor: col + '40', borderLeftWidth: 2, borderLeftColor: col }}
+      className={`group relative rounded-xl bg-emerald-50/40 ring-1 ring-emerald-200/60 overflow-hidden transition-all ${onOpen ? 'cursor-pointer hover:shadow-md hover:ring-emerald-300' : ''}`}
       onClick={onOpen ? () => onOpen(training) : undefined}
       title={onOpen ? 'Open activity' : undefined}
     >
-      <div className="px-2 py-1.5">
+      <span className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ backgroundColor: col }} />
+      <div className="pl-3 pr-2.5 py-2">
         <div className="flex items-center gap-1.5">
-          <img src={SPORT_ICONS[sport] || '/icon/default.svg'} alt={sport} className="w-3 h-3 opacity-60" />
-          <span className="text-[11px] text-slate-500 truncate">{title}</span>
-          <CheckCircleIcon className="w-3 h-3 text-emerald-400 shrink-0 ml-auto" />
+          <span className="flex items-center justify-center w-5 h-5 rounded-md shrink-0" style={{ backgroundColor: col + '1a' }}>
+            <img src={SPORT_ICONS[sport] || '/icon/default.svg'} alt={sport} className="w-3 h-3 opacity-80" />
+          </span>
+          <span className="text-xs font-medium text-slate-600 truncate flex-1 leading-tight">{title}</span>
+          <CheckCircleIcon className="w-4 h-4 text-emerald-500 shrink-0" />
         </div>
+        {secs > 0 && (
+          <div className="mt-1.5 pl-[26px]">
+            <span className="text-[10px] font-medium text-emerald-700/80 bg-emerald-100/70 rounded-md px-1.5 py-0.5 tabular-nums">
+              {fmtDuration(secs)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -424,7 +460,7 @@ export default function WorkoutPlannerPage() {
   const today = new Date();
 
   return (
-    <div className="min-h-full bg-gray-50 flex">
+    <div className="min-h-full bg-slate-50 flex">
       {/* Left: draggable template library — desktop only (drag-and-drop is a
           mouse affordance; on phones the planner goes full-width). */}
       {!isMobile && (
@@ -440,79 +476,59 @@ export default function WorkoutPlannerPage() {
       {/* Right: planner */}
       <div className="flex-1 p-4 sm:p-6 min-w-0">
       {/* Header */}
-      <div className={`mb-5 ${isMobile ? 'flex flex-col items-start gap-3' : 'flex items-center justify-between'}`}>
-        <div>
-          <h1 className={`font-bold text-slate-900 ${isMobile ? 'text-xl' : 'text-2xl'}`}>Workout Planner</h1>
-          {!isMobile && <p className="text-sm text-slate-400 mt-0.5">Plan structured workouts for your calendar</p>}
+      <div className={`mb-4 ${isMobile ? 'flex flex-col items-start gap-3' : 'flex items-end justify-between gap-4'}`}>
+        <div className="min-w-0">
+          <h1 className={`font-bold text-slate-900 leading-tight ${isMobile ? 'text-xl' : 'text-2xl'}`}>Workout Planner</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm font-medium text-slate-500">
+              {weekStart.toLocaleDateString('en-GB', { day:'numeric', month:'short' })} –{' '}
+              {addDays(weekStart, 6).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+            </p>
+            {loading && <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
+          </div>
         </div>
-        {/* Week nav */}
-        <div className="flex items-center gap-2">
+        {/* Week nav — segmented pill */}
+        <div className="flex items-center gap-0.5 bg-white rounded-xl ring-1 ring-slate-200 shadow-sm p-1 self-start">
           <button onClick={() => setWeekStart(d => startOfWeek(addDays(d,-7)))}
-            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition-colors">
+            aria-label="Previous week"
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
             <ChevronLeftIcon className="w-4 h-4" />
           </button>
           <button onClick={() => setWeekStart(startOfWeek(new Date()))}
-            className="text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors">
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors">
             Today
           </button>
           <button onClick={() => setWeekStart(d => startOfWeek(addDays(d, 7)))}
-            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition-colors">
+            aria-label="Next week"
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
             <ChevronRightIcon className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Week label */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm font-semibold text-slate-700">
-          {weekStart.toLocaleDateString('en-GB', { day:'numeric', month:'long' })} –{' '}
-          {addDays(weekStart, 6).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}
-        </span>
-        {loading && <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
-      </div>
-
-      {/* Context bar (FTP / LT1 / LT2) */}
-      {(context.ftp || context.lt2Power) && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {context.ftp && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">
-              FTP {Math.round(context.ftp)} W
-            </span>
-          )}
-          {context.lt1Power && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
-              LT1 {Math.round(context.lt1Power)} W
-            </span>
-          )}
-          {context.lt2Power && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">
-              LT2 {Math.round(context.lt2Power)} W
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── Week summary ─────────────────────────────────────────────────── */}
-      {(weekSummary.planned.sec > 0 || weekSummary.done.sec > 0) && (
-        <div className="mb-3 p-3 rounded-xl bg-white border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+      {/* ── Summary + athlete context ────────────────────────────────────── */}
+      {(weekSummary.planned.sec > 0 || weekSummary.done.sec > 0 || context.ftp || context.lt2Power) && (
+        <div className="mb-4 p-4 rounded-2xl bg-white ring-1 ring-slate-200/70 shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
             {/* Total time — Done / Planned */}
-            <div className="flex flex-col">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Time</span>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-lg font-bold text-slate-900 tabular-nums">{fmtHours(weekSummary.done.sec)}</span>
-                {weekSummary.planned.sec > 0 && (
-                  <span className="text-xs font-semibold text-slate-400 tabular-nums">/ {fmtHours(weekSummary.planned.sec)}</span>
-                )}
+            {(weekSummary.planned.sec > 0 || weekSummary.done.sec > 0) && (
+              <div className="flex flex-col">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Time</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-bold text-slate-900 tabular-nums">{fmtHours(weekSummary.done.sec)}</span>
+                  {weekSummary.planned.sec > 0 && (
+                    <span className="text-xs font-semibold text-slate-400 tabular-nums">/ {fmtHours(weekSummary.planned.sec)}</span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* TSS — Done / Planned */}
             {(weekSummary.planned.tss > 0 || weekSummary.done.tss > 0) && (
               <div className="flex flex-col">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TSS</span>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-lg font-bold text-slate-900 tabular-nums">{Math.round(weekSummary.done.tss)}</span>
+                  <span className="text-xl font-bold text-slate-900 tabular-nums">{Math.round(weekSummary.done.tss)}</span>
                   {weekSummary.planned.tss > 0 && (
                     <span className="text-xs font-semibold text-slate-400 tabular-nums">/ {Math.round(weekSummary.planned.tss)}</span>
                   )}
@@ -522,25 +538,46 @@ export default function WorkoutPlannerPage() {
 
             {/* Per-sport hours (planned, since this is a planner) */}
             {weekSummary.planned.sec > 0 && (
-              <div className="flex items-center gap-3 ml-auto">
+              <div className="flex items-center gap-3">
                 {weekSummary.planned.bike > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-semibold text-blue-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> {fmtHours(weekSummary.planned.bike)}
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: SPORT_COLORS.bike }} /> {fmtHours(weekSummary.planned.bike)}
                   </span>
                 )}
                 {weekSummary.planned.run > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> {fmtHours(weekSummary.planned.run)}
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: SPORT_COLORS.run }} /> {fmtHours(weekSummary.planned.run)}
                   </span>
                 )}
                 {weekSummary.planned.swim > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-semibold text-cyan-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" /> {fmtHours(weekSummary.planned.swim)}
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: SPORT_COLORS.swim }} /> {fmtHours(weekSummary.planned.swim)}
                   </span>
                 )}
                 {weekSummary.planned.other > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-semibold text-slate-500">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> {fmtHours(weekSummary.planned.other)}
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" /> {fmtHours(weekSummary.planned.other)}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Athlete context chips (FTP / LT1 / LT2) — pushed to the right */}
+            {(context.ftp || context.lt1Power || context.lt2Power) && (
+              <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+                {context.ftp && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">
+                    FTP {Math.round(context.ftp)} W
+                  </span>
+                )}
+                {context.lt1Power && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                    LT1 {Math.round(context.lt1Power)} W
+                  </span>
+                )}
+                {context.lt2Power && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">
+                    LT2 {Math.round(context.lt2Power)} W
                   </span>
                 )}
               </div>
@@ -549,20 +586,26 @@ export default function WorkoutPlannerPage() {
 
           {/* Progress bar — done vs planned */}
           {completionPct != null && (
-            <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  completionPct >= 100 ? 'bg-emerald-500' : completionPct >= 70 ? 'bg-amber-500' : 'bg-primary'
-                }`}
-                style={{ width: `${completionPct}%` }}
-              />
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Completed</span>
+                <span className="text-[10px] font-bold text-slate-500 tabular-nums">{completionPct}%</span>
+              </div>
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    completionPct >= 100 ? 'bg-emerald-500' : completionPct >= 70 ? 'bg-amber-500' : 'bg-primary'
+                  }`}
+                  style={{ width: `${completionPct}%` }}
+                />
+              </div>
             </div>
           )}
         </div>
       )}
 
       {/* 7-day grid */}
-      <div className={isMobile ? 'flex flex-col gap-2.5' : 'grid grid-cols-7 gap-2'}>
+      <div className={isMobile ? 'flex flex-col gap-2.5' : 'grid grid-cols-7 gap-3 items-stretch'}>
         {days.map((day, di) => {
           const dateStr  = toLocalISO(day);
           const isToday  = isSameDay(day, today);
@@ -595,6 +638,8 @@ export default function WorkoutPlannerPage() {
             if (m) { claimedDone.add(ckey(m)); planMatch.set(pw._id, m); }
           }
           const standaloneCompleted = dayCompleted.filter(t => !claimedDone.has(ckey(t)));
+          const isWeekend = di >= 5;
+          const isEmpty = dayPlanned.length === 0 && dayCompleted.length === 0;
 
           return (
             <div
@@ -618,31 +663,29 @@ export default function WorkoutPlannerPage() {
                   saveTemplateOnDay(day, tpl);
                 } catch { /* ignore malformed payload */ }
               }}
-              className={`flex flex-col gap-1.5 rounded-xl transition-colors ${
-                isMobile ? 'border border-slate-100 bg-white p-2.5' : 'min-h-[120px]'
-              } ${dragOverDay === dateStr ? 'bg-primary/5 ring-2 ring-primary/30' : ''}`}
+              className={`group/day flex flex-col gap-2 rounded-2xl transition-all ${
+                isMobile
+                  ? 'ring-1 ring-slate-200/70 bg-white p-3 shadow-sm'
+                  : `p-2 min-h-[180px] ring-1 ${
+                      isToday
+                        ? 'bg-primary/5 ring-primary/30'
+                        : isWeekend
+                          ? 'bg-slate-50/60 ring-slate-200/60'
+                          : 'bg-white ring-slate-200/70'
+                    } shadow-sm`
+              } ${dragOverDay === dateStr ? 'ring-2 ring-primary/60 bg-primary/5' : ''}`}
             >
-              {/* Day header */}
-              {isMobile ? (
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${isToday ? 'text-primary' : 'text-slate-500'}`}>
-                    {DAYS[di]}
-                  </span>
-                  <span className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-slate-700'}`}>
-                    {day.getDate()}
-                  </span>
-                  {isToday && <span className="text-[9px] font-bold text-white bg-primary px-1.5 py-0.5 rounded-full">Today</span>}
-                </div>
-              ) : (
-                <div className={`flex flex-col items-center py-1 rounded-xl mb-0.5 ${isToday ? 'bg-primary' : 'bg-white border border-slate-100'}`}>
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${isToday ? 'text-white/80' : 'text-slate-400'}`}>
-                    {DAYS[di]}
-                  </span>
-                  <span className={`text-base font-bold leading-tight ${isToday ? 'text-white' : 'text-slate-700'}`}>
-                    {day.getDate()}
-                  </span>
-                </div>
-              )}
+              {/* Day header — weekday left, date right (circled when today) */}
+              <div className="flex items-center justify-between px-0.5">
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isToday ? 'text-primary' : 'text-slate-400'}`}>
+                  {DAYS[di]}
+                </span>
+                <span className={`flex items-center justify-center text-sm font-bold tabular-nums ${
+                  isToday ? 'text-white bg-primary w-6 h-6 rounded-full' : 'text-slate-600'
+                }`}>
+                  {day.getDate()}
+                </span>
+              </div>
 
               {/* Planned workouts — a plan that's been completed (paired with a
                   recorded activity) renders as the single green "done" card. */}
@@ -666,14 +709,27 @@ export default function WorkoutPlannerPage() {
                 <CompletedCard key={ckey(t)} training={t} onOpen={openCompleted} />
               ))}
 
-              {/* Add button */}
-              <button
-                onClick={() => setModal({ date: day, workout: null })}
-                className={`flex items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 text-slate-400 hover:border-primary/40 hover:text-primary/60 transition-colors ${isMobile ? 'py-2 text-xs' : 'py-1.5 text-[11px] text-slate-300 mt-auto'}`}
-              >
-                <PlusIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-3 h-3'} />
-                <span className={isMobile ? '' : 'hidden sm:inline'}>Add</span>
-              </button>
+              {/* Empty day → "Rest day" affordance that doubles as the add button.
+                  Non-empty day → compact add button at the bottom. */}
+              {isEmpty && !isMobile ? (
+                <button
+                  onClick={() => setModal({ date: day, workout: null })}
+                  className="flex-1 flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-200 text-slate-300 hover:border-primary/40 hover:text-primary/70 hover:bg-primary/5 transition-all py-3"
+                >
+                  <span className="text-[11px] font-medium text-slate-400">Rest day</span>
+                  <span className="flex items-center gap-1 text-[10px] opacity-0 group-hover/day:opacity-100 transition-opacity">
+                    <PlusIcon className="w-3 h-3" /> Add workout
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setModal({ date: day, workout: null })}
+                  className={`flex items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 text-slate-400 hover:border-primary/40 hover:text-primary/70 hover:bg-primary/5 transition-all ${isMobile ? 'py-2 text-xs' : 'py-1.5 text-[11px] mt-auto'}`}
+                >
+                  <PlusIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-3 h-3'} />
+                  <span className={isMobile ? '' : 'hidden sm:inline'}>Add</span>
+                </button>
+              )}
             </div>
           );
         })}

@@ -14,6 +14,11 @@ import {
   ChartBarSquareIcon,
   HeartIcon,
   CloudArrowDownIcon,
+  PresentationChartLineIcon,
+  SignalIcon,
+  AdjustmentsHorizontalIcon,
+  UsersIcon,
+  DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
 import { getIntegrationStatus } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
@@ -33,7 +38,7 @@ import { useAuth } from '../context/AuthProvider';
  * everywhere.
  */
 
-const RELEASE_TAG = '2026-05';
+const RELEASE_TAG = '2026-06';
 
 // Slide content — each item carries a React component for its hero icon
 // (we render it via createElement with an `accent` colour) instead of an
@@ -48,11 +53,51 @@ const ITEMS = [
   {
     icon: CloudArrowDownIcon,
     title: 'Connect Strava in one click',
-    body: "Auto-import every ride, run and swim — with power, HR, pace and laps — straight into LaChart. Your training history fills itself in.",
+    body: 'Auto-import every ride, run and swim — with power, HR, pace and laps — straight into LaChart. Your training history fills itself in.',
     cta: 'Connect Strava',
     href: '/settings?tab=integrations',
     accent: '#fc4c02', // strava orange
     stravaOnly: true,
+  },
+  {
+    icon: BoltIcon,
+    title: 'Import & auto-categorize activities',
+    body: 'Sync from Strava or drop in a FIT file and LaChart sorts every session — endurance, threshold, VO₂max, recovery — from its interval structure, zones and title.',
+    cta: 'Set up sync',
+    href: '/settings?tab=integrations',
+    accent: '#6366f1', // indigo
+  },
+  {
+    icon: PresentationChartLineIcon,
+    title: 'Analyze every workout in depth',
+    body: 'Open any session for synced power, heart-rate, pace, cadence and elevation graphs. Drag across the chart to select a segment and read its averages instantly.',
+    cta: 'Open training',
+    href: '/training',
+    accent: '#06b6d4', // cyan
+  },
+  {
+    icon: SignalIcon,
+    title: 'See your power profile & best efforts',
+    body: 'LaChart finds your best 5s sprint, 1-min attack, 5-min VO₂max, 20-min threshold and 60-min endurance power — then jumps you straight to where you hit them.',
+    cta: 'View my profile',
+    href: '/training',
+    accent: '#7c3aed', // violet
+  },
+  {
+    icon: ArrowTrendingUpIcon,
+    title: 'Watch your lactate curve evolve',
+    body: 'Every new test rebuilds your curve with LT1, LT2, IAT and OBLA thresholds — and overlays previous tests so your progress is impossible to miss.',
+    cta: 'View my tests',
+    href: '/testing',
+    accent: '#10b981', // emerald
+  },
+  {
+    icon: AdjustmentsHorizontalIcon,
+    title: 'Training zones from your lactate',
+    body: 'Forget generic HR formulas. Your power, pace and heart-rate zones are built directly from your own LT1 and LT2 — and update with every test.',
+    cta: 'Check my zones',
+    href: '/settings',
+    accent: '#0d9488', // teal
   },
   {
     icon: CalendarDaysIcon,
@@ -60,12 +105,13 @@ const ITEMS = [
     body: 'Build structured sessions — warm-up, intervals with target zones, recoveries, cooldown — and drop them onto any day. See planned vs actual side-by-side.',
     cta: 'Open the planner',
     href: '/workout-planner',
-    accent: '#7c3aed', // violet
+    accent: '#8b5cf6', // violet
+    coachOnly: true,
   },
   {
     icon: PlayCircleIcon,
-    title: 'Start trainings from the app',
-    body: 'Open a planned workout and run it live with step-by-step prompts, target zones and lap timers right in the browser.',
+    title: 'Run workouts live, step-by-step',
+    body: 'Open a planned session and execute it with live prompts, target zones and lap timers — on your phone or in the browser.',
     cta: "See today's plan",
     href: '/training-calendar',
     accent: '#0ea5e9', // sky
@@ -73,51 +119,52 @@ const ITEMS = [
   {
     icon: BeakerIcon,
     title: 'Add lactate values to any interval',
-    body: 'Tag any interval of an existing workout with a blood lactate sample. Each sample feeds straight back into your curve and zones.',
+    body: 'Tag any interval of an existing workout with a blood-lactate sample. Each sample feeds straight back into your curve and zones.',
     cta: 'Try it',
     href: '/training-calendar',
     accent: '#ef4444', // red
-  },
-  {
-    icon: PaintBrushIcon,
-    title: 'Brand your PDF reports',
-    body: 'Upload your logo, set your studio name + address + colour, and every test PDF goes out as your branded handout for athletes.',
-    cta: 'Set up branding',
-    href: '/settings?tab=branding',
-    accent: '#f59e0b', // amber
-    coachOnly: true,
-  },
-  {
-    icon: BoltIcon,
-    title: 'Auto-categorize your activities',
-    body: 'Connect Strava or upload a FIT file and LaChart sorts each session — endurance, threshold, VO2max, recovery — using interval structure, zones and workout titles.',
-    cta: 'Open Strava sync',
-    href: '/settings?tab=integrations',
-    accent: '#6366f1', // indigo
   },
   {
     icon: HeartIcon,
     title: 'Track form, fitness & fatigue',
     body: 'CTL, ATL and TSB charted over weeks so you can see when you peak, when you overreach, and when to back off — built from every workout you log.',
     cta: 'See my form',
-    href: '/training-calendar',
+    href: '/dashboard',
     accent: '#ec4899', // pink
   },
   {
     icon: ChartBarSquareIcon,
-    title: 'Compare sessions side-by-side',
-    body: 'Stack any two workouts on the same chart — pace, power, HR, lactate — and watch how the same session looks fresh vs fatigued, base vs race-fit.',
+    title: 'Compare sessions & tests side-by-side',
+    body: 'Stack any two workouts or lactate tests on one chart — pace, power, HR, lactate — and watch how you look fresh vs fatigued, base vs race-fit.',
     cta: 'Open compare',
     href: '/training',
-    accent: '#06b6d4', // cyan
+    accent: '#0891b2', // cyan-dark
   },
   {
-    icon: ArrowTrendingUpIcon,
-    title: 'Watch your lactate curve evolve',
-    body: 'Every new test re-builds your curve with LT1, LT2, IAT and OBLA thresholds — and overlays previous tests so progress is impossible to miss.',
-    cta: 'View my tests',
-    href: '/lactate-statistics',
-    accent: '#10b981', // emerald
+    icon: PaintBrushIcon,
+    title: 'Brand your PDF reports',
+    body: 'Upload your logo, set your studio name, address and colour, and every test PDF goes out as your own branded handout for athletes.',
+    cta: 'Set up branding',
+    href: '/settings?tab=branding',
+    accent: '#f59e0b', // amber
+    coachOnly: true,
+  },
+  {
+    icon: UsersIcon,
+    title: 'Manage your whole squad',
+    body: 'Invite athletes by email, switch between them in one tap, and track each one’s tests, zones and form from a single coach dashboard.',
+    cta: 'Open athletes',
+    href: '/athletes',
+    accent: '#d946ef', // fuchsia
+    coachOnly: true,
+  },
+  {
+    icon: DevicePhoneMobileIcon,
+    title: 'LaChart on iPhone & Apple Watch',
+    body: 'Take your zones, plans and live workouts anywhere. Start a session on your wrist and it syncs back to LaChart automatically.',
+    cta: 'Get the app',
+    href: 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs',
+    accent: '#111827', // near-black
   },
 ];
 

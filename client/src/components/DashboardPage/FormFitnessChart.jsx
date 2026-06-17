@@ -2,7 +2,38 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LineChart, Line } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { getFormFitnessData, getTodayMetrics, getRaceEvents } from '../../services/api';
+import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import TrainingGlossary from './TrainingGlossary';
+
+// Total planned duration in seconds (respects interval-group repeats).
+const planStepTotalSecs = (steps) => {
+  if (!Array.isArray(steps)) return 0;
+  const visited = new Set();
+  let total = 0;
+  steps.forEach((s) => {
+    if (!s.groupId) { total += s.durationSeconds || 0; return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter((x) => x.groupId === s.groupId);
+    const reps = (group.find((x) => x.isGroupHeader)?.groupRepeat) || 1;
+    group.forEach((gs) => { total += (gs.durationSeconds || 0) * reps; });
+  });
+  return total;
+};
+
+// Estimate a planned session's TSS when no explicit targetTss was set.
+// Falls back to duration × ~50 TSS/h (≈ endurance IF 0.7) so the projection
+// still reacts to planned volume.
+const estimatePlannedTss = (pw) => {
+  const explicit = Number(pw?.targetTss || 0);
+  if (explicit > 0) return explicit;
+  let secs = Number(pw?.plannedDuration || 0);
+  if (!secs && Array.isArray(pw?.steps)) {
+    secs = planStepTotalSecs(pw.steps) || 0;
+  }
+  if (secs > 0 && secs < 24 * 3600) return (secs / 3600) * 50;
+  return 0;
+};
 
 const FormFitnessChart = ({ athleteId }) => {
   const [showGlossary, setShowGlossary] = useState(false);
@@ -48,6 +79,10 @@ const FormFitnessChart = ({ athleteId }) => {
   const [timeRange, setTimeRange] = useState(getStoredTimeRange());
   const [sportFilter, setSportFilter] = useState(getStoredSportFilter());
   const [chartData, setChartData] = useState([]);
+  const [plannedTssByDate, setPlannedTssByDate] = useState({}); // future planned TSS keyed by YYYY-MM-DD
+  const [showProjection, setShowProjection] = useState(() => {
+    try { return localStorage.getItem('formFitnessShowProjection') !== 'false'; } catch { return true; }
+  });
   const [raceTarget, setRaceTarget] = useState(null); // next race with a CTL target → drawn as a reference line
   const [loading, setLoading] = useState(true);
   const [zoomRange, setZoomRange] = useState(null); // { start: number, end: number } indices in chartData
@@ -224,6 +259,38 @@ const FormFitnessChart = ({ athleteId }) => {
     return () => { cancelled = true; };
   }, [athleteId]);
 
+  useEffect(() => {
+    try { localStorage.setItem('formFitnessShowProjection', String(showProjection)); } catch { /* ignore */ }
+  }, [showProjection]);
+
+  // Load FUTURE planned workouts so the chart can project Fitness/Form/Fatigue
+  // forward from their planned TSS (up to ~8 weeks ahead).
+  useEffect(() => {
+    let cancelled = false;
+    if (!athleteId) { setPlannedTssByDate({}); return undefined; }
+    (async () => {
+      try {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const from = new Date(today); from.setDate(from.getDate() + 1);
+        const to = new Date(today); to.setDate(to.getDate() + 56);
+        const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const data = await getPlannedWorkouts({ from: iso(from), to: iso(to), athleteId });
+        const list = Array.isArray(data) ? data : [];
+        const map = {};
+        list.forEach((pw) => {
+          if (pw?.status === 'completed' || pw?.status === 'skipped') return;
+          const sport = (pw?.sport || '').toLowerCase();
+          if (sportFilter !== 'all' && sport !== sportFilter) return;
+          const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : '';
+          if (!day) return;
+          map[day] = (map[day] || 0) + estimatePlannedTss(pw);
+        });
+        if (!cancelled) setPlannedTssByDate(map);
+      } catch { if (!cancelled) setPlannedTssByDate({}); }
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, sportFilter]);
+
   // Detect mobile for carousel behavior
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 640);
@@ -307,6 +374,62 @@ const FormFitnessChart = ({ athleteId }) => {
     };
   }, [chartData, deltaMode, timeframeLabel, todayMetrics]);
 
+  // ── Future projection from planned workouts (TrainingPeaks-style PMC) ──
+  // Continues the CTL/ATL/TSB recurrence forward using planned TSS so coaches
+  // and athletes can see how the plan will shape fitness/form before it happens.
+  const projection = useMemo(() => {
+    if (!showProjection || !chartData || chartData.length === 0) return [];
+    const days = Object.keys(plannedTssByDate);
+    if (days.length === 0) return [];
+    const last = chartData[chartData.length - 1];
+    let ctl = Number(last.Fitness || 0);
+    let atl = Number(last.Fatigue || 0);
+    const lastDate = new Date(last.date); lastDate.setHours(0, 0, 0, 0);
+    const maxDay = days.reduce((m, d) => (d > m ? d : m), days[0]);
+    const end = new Date(maxDay); end.setHours(0, 0, 0, 0);
+    const alphaCTL = 1 / 42;
+    const alphaATL = 1 / 7;
+    const out = [];
+    const d = new Date(lastDate);
+    d.setDate(d.getDate() + 1);
+    let guard = 0;
+    while (d <= end && guard < 120) {
+      guard++;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const tss = plannedTssByDate[key] || 0;
+      const form = ctl - atl; // TSB = yesterday's balance (before today's TSS)
+      ctl = ctl + alphaCTL * (tss - ctl);
+      atl = atl + alphaATL * (tss - atl);
+      out.push({
+        date: key,
+        dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        projected: true,
+        FitnessProj: Math.round(ctl),
+        FatigueProj: Math.round(atl),
+        FormProj: Math.round(form),
+        PlannedTSS: Math.round(tss),
+      });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }, [showProjection, chartData, plannedTssByDate]);
+
+  // Actual series + projected tail. The last actual point also carries the
+  // *Proj fields so the dashed projection line connects seamlessly.
+  const chartDataExtended = useMemo(() => {
+    if (!chartData || chartData.length === 0) return chartData || [];
+    if (projection.length === 0) return chartData;
+    const base = chartData.map((p, i) => (
+      i === chartData.length - 1
+        ? { ...p, FitnessProj: p.Fitness, FatigueProj: p.Fatigue, FormProj: p.Form }
+        : p
+    ));
+    return [...base, ...projection];
+  }, [chartData, projection]);
+
+  const hasProjection = projection.length > 0;
+  const todayLabel = (chartData && chartData.length > 0) ? chartData[chartData.length - 1].dateLabel : null;
+
   const handleInfoClick = (term) => {
     setSelectedTerm(term);
     setShowGlossary(true);
@@ -319,16 +442,16 @@ const FormFitnessChart = ({ athleteId }) => {
   };
 
   const effectiveZoomRange = useMemo(() => {
-    if (!chartData || chartData.length === 0) return { start: 0, end: 0 };
-    const start = zoomRange?.start != null ? Math.max(0, Math.min(chartData.length - 1, zoomRange.start)) : 0;
-    const end = zoomRange?.end != null ? Math.max(0, Math.min(chartData.length - 1, zoomRange.end)) : (chartData.length - 1);
+    if (!chartDataExtended || chartDataExtended.length === 0) return { start: 0, end: 0 };
+    const start = zoomRange?.start != null ? Math.max(0, Math.min(chartDataExtended.length - 1, zoomRange.start)) : 0;
+    const end = zoomRange?.end != null ? Math.max(0, Math.min(chartDataExtended.length - 1, zoomRange.end)) : (chartDataExtended.length - 1);
     return start <= end ? { start, end } : { start: end, end: start };
-  }, [chartData, zoomRange]);
+  }, [chartDataExtended, zoomRange]);
 
   const zoomedData = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [];
-    return chartData.slice(effectiveZoomRange.start, effectiveZoomRange.end + 1);
-  }, [chartData, effectiveZoomRange]);
+    if (!chartDataExtended || chartDataExtended.length === 0) return [];
+    return chartDataExtended.slice(effectiveZoomRange.start, effectiveZoomRange.end + 1);
+  }, [chartDataExtended, effectiveZoomRange]);
 
   // If data length changes (filters/time range), keep zoom in bounds / reset selection
   useEffect(() => {
@@ -347,13 +470,13 @@ const FormFitnessChart = ({ athleteId }) => {
 
   const selectionX1 = useMemo(() => {
     if (refAreaLeft == null) return null;
-    return chartData?.[refAreaLeft]?.dateLabel ?? null;
-  }, [refAreaLeft, chartData]);
+    return chartDataExtended?.[refAreaLeft]?.dateLabel ?? null;
+  }, [refAreaLeft, chartDataExtended]);
 
   const selectionX2 = useMemo(() => {
     if (refAreaRight == null) return null;
-    return chartData?.[refAreaRight]?.dateLabel ?? null;
-  }, [refAreaRight, chartData]);
+    return chartDataExtended?.[refAreaRight]?.dateLabel ?? null;
+  }, [refAreaRight, chartDataExtended]);
 
   const getGlobalIndexFromChartEvent = (e) => {
     if (!e) return null;
@@ -361,7 +484,7 @@ const FormFitnessChart = ({ athleteId }) => {
       return effectiveZoomRange.start + e.activeTooltipIndex;
     }
     if (e.activeLabel) {
-      const idx = chartData.findIndex(d => d.dateLabel === e.activeLabel);
+      const idx = chartDataExtended.findIndex(d => d.dateLabel === e.activeLabel);
       return idx >= 0 ? idx : null;
     }
     return null;
@@ -427,11 +550,11 @@ const FormFitnessChart = ({ athleteId }) => {
   const miniTooltip = ({ active, payload, label }) => {
     if (!active || !payload || payload.length === 0) return null;
     const p = payload[0];
-    const dp = chartData.find(d => d.dateLabel === label) || null;
+    const dp = chartDataExtended.find(d => d.dateLabel === label) || null;
     const dateText = dp?.date ? new Date(dp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : label;
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-        <div className="font-semibold text-gray-900">{dateText}</div>
+        <div className="font-semibold text-gray-900">{dateText}{dp?.projected ? ' · planned' : ''}</div>
         <div className="text-gray-700">
           {p.name}: <span className="font-semibold">{p.value}</span>
         </div>
@@ -541,6 +664,21 @@ const FormFitnessChart = ({ athleteId }) => {
                     </select>
                     <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
                   </div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">Projection</div>
+                  <button
+                    type="button"
+                    onClick={() => setShowProjection((v) => !v)}
+                    className="flex items-center justify-between w-full text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-700 bg-white h-10 hover:bg-gray-50 transition-colors"
+                  >
+                    <span>Project planned workouts forward</span>
+                    <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showProjection ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showProjection ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </span>
+                  </button>
+                  <p className="mt-1 text-[11px] text-gray-400">Uses planned TSS to forecast Fitness, Form &amp; Fatigue up to 8 weeks ahead.</p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">
@@ -851,10 +989,11 @@ const FormFitnessChart = ({ athleteId }) => {
                 padding: '12px'
               }}
               labelFormatter={(label) => {
-                const dataPoint = chartData.find(d => d.dateLabel === label);
+                const dataPoint = chartDataExtended.find(d => d.dateLabel === label);
                 if (dataPoint) {
                   const date = new Date(dataPoint.date);
-                  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+                  const base = date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+                  return dataPoint.projected ? `${base} · Planned` : base;
                 }
                 return label;
               }}
@@ -886,6 +1025,21 @@ const FormFitnessChart = ({ athleteId }) => {
               fill="url(#colorFatigue)" 
               strokeWidth={2}
             />
+            {/* ── Future projection from planned workouts (dashed) ── */}
+            {hasProjection && (
+              <>
+                <ReferenceArea x1={todayLabel} x2={projection[projection.length - 1].dateLabel} fill="#6366f1" fillOpacity={0.05} />
+                <ReferenceLine
+                  x={todayLabel}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 3"
+                  label={{ value: 'Today', position: 'insideTopLeft', fontSize: 10, fontWeight: 700, fill: '#64748b' }}
+                />
+                <Area type="monotone" dataKey="FitnessProj" name="Fitness" stroke="#3b82f6" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
+                <Area type="monotone" dataKey="FormProj" name="Form" stroke="#f97316" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
+                <Area type="monotone" dataKey="FatigueProj" name="Fatigue" stroke="#9333ea" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
+              </>
+            )}
             <ReferenceLine
               y={0}
               stroke="#9ca3af"
@@ -925,6 +1079,12 @@ const FormFitnessChart = ({ athleteId }) => {
           <div className="w-3 h-3 rounded-full bg-purple-500"></div>
           <span className="text-sm text-gray-600">Fatigue</span>
         </div>
+        {hasProjection && (
+          <div className="flex items-center gap-2">
+            <svg width="20" height="6" aria-hidden><line x1="0" y1="3" x2="20" y2="3" stroke="#64748b" strokeWidth="2" strokeDasharray="5 4" /></svg>
+            <span className="text-sm text-gray-600">Planned (projected)</span>
+          </div>
+        )}
       </div>
 
       {/* Glossary Modal */}

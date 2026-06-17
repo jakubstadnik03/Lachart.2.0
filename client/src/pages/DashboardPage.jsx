@@ -830,8 +830,12 @@ export default function DashboardPage() {
         try {
           const parsed = JSON.parse(cachedData);
           const isCacheValid = cacheTimestamp && (now - parseInt(cacheTimestamp)) < CACHE_DURATION;
-          
-          if (isCacheValid) {
+
+          // Only trust a NON-EMPTY valid cache. An empty cache (written when the
+          // dashboard loaded right after a first Strava connect, before activities
+          // had synced) must NOT be served for 24h — fall through and refetch,
+          // otherwise the calendar stays blank even after activities arrive.
+          if (isCacheValid && parsed.length > 0) {
             // Cache is valid, use it immediately
             setCalendarData(parsed);
             setCalendarLoading(false);
@@ -955,12 +959,17 @@ export default function DashboardPage() {
         }
       }
 
-      // Cache the combined data
+      // Cache the combined data — but NEVER cache an empty result. Caching []
+      // (e.g. activities haven't synced yet, or the Strava fetch came back
+      // empty after a cold-start blip) would make the dashboard serve a blank
+      // calendar for the next 24h even once the activities exist.
       try {
-        const dataToCache = JSON.stringify(limitedForView);
-        if (dataToCache.length < 450000) {
-          localStorage.setItem(cacheKey, dataToCache);
-          localStorage.setItem(cacheTimestampKey, now.toString());
+        if (limitedForView.length > 0) {
+          const dataToCache = JSON.stringify(limitedForView);
+          if (dataToCache.length < 450000) {
+            localStorage.setItem(cacheKey, dataToCache);
+            localStorage.setItem(cacheTimestampKey, now.toString());
+          }
         }
       } catch (e) {
         if (e.name === 'QuotaExceededError' || e.code === 22) {

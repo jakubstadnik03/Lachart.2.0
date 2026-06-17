@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Joyride, { ACTIONS, EVENTS, STATUS } from 'react-joyride';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { LAYOUT_DESKTOP_MIN_PX } from '../../constants/layoutBreakpoints';
 
 const COACH_LIKE = ['coach', 'tester', 'testing'];
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
@@ -36,6 +37,19 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
   const roleLower = String(userRole || '').toLowerCase();
   const isCoachLike = COACH_LIKE.includes(roleLower);
 
+  // On phones/tablets the left navigation is an off-canvas drawer, so any tour
+  // step that spotlights a sidebar element (e.g. the athlete list) would point
+  // at a hidden, off-screen node and render a broken highlight. We detect the
+  // small layout and swap those steps for centered, descriptive cards instead.
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < LAYOUT_DESKTOP_MIN_PX : false
+  );
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < LAYOUT_DESKTOP_MIN_PX);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const steps = useMemo(() => {
     if (isCoachLike) {
       return [
@@ -45,7 +59,7 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
           disableBeacon: true,
           content: stepContent(
             'Welcome, coach',
-            'This hands-on tour walks through inviting athletes, recording a lactate test, and sharing results (email / PDF). Use Next, or Skip tour anytime.'
+            'Here is your full workflow: invite athletes so they link their account & Strava, see all their training, plan workouts in the calendar, run lactate tests, and share your own branded PDF reports. Use Next, or Skip anytime.'
           ),
         },
         {
@@ -55,19 +69,29 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
           spotlightClicks: true,
           content: stepContent(
             'Add an athlete',
-            'Use Add New Athlete to create a profile, or Add Existing Athlete to send an email invitation. The athlete must accept before you see their data.'
+            'Use Add New Athlete to create a profile, or invite an existing athlete by email. Once they accept the request and connect Strava, all their training and tests sync straight to you.'
           ),
         },
-        {
-          target: '[data-tour="tour-athletes-sidebar"]',
-          placement: 'right',
-          disableBeacon: true,
-          spotlightClicks: true,
-          content: stepContent(
-            'Select an athlete',
-            'Click an athlete here so Dashboard, Training, and Testing load their data. Strava is connected by each athlete in their own Settings → Integrations.'
-          ),
-        },
+        isMobile
+          ? {
+              target: 'body',
+              placement: 'center',
+              disableBeacon: true,
+              content: stepContent(
+                'Select an athlete',
+                'Open the menu (☰ top-left) and tap an athlete to load their Dashboard, Training and Testing. Once they connect Strava in their own Settings → Integrations, every activity they do shows up here for you.'
+              ),
+            }
+          : {
+              target: '[data-tour="tour-athletes-sidebar"]',
+              placement: 'right',
+              disableBeacon: true,
+              spotlightClicks: true,
+              content: stepContent(
+                'Select an athlete',
+                'Click an athlete to load their Dashboard, Training and Testing. After they connect Strava in their own Settings → Integrations, every activity they do shows up here for you.'
+              ),
+            },
         {
           target: '[data-tour="tour-new-testing"]',
           placement: 'left',
@@ -172,8 +196,44 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
           placement: 'center',
           disableBeacon: true,
           content: stepContent(
+            'Brand your PDF reports',
+            'In Settings → Branding upload your own logo, set your studio name / report title and brand colour. Every test PDF you export then goes out as your own branded report for the athlete.'
+          ),
+        },
+        {
+          target: 'body',
+          placement: 'center',
+          disableBeacon: true,
+          content: stepContent(
+            'Plan workouts in the calendar',
+            'In Workout Planner build structured sessions (warm-up, intervals with target zones, cooldown) and drop them onto any day in the Training Calendar — then track planned vs actual for each athlete.'
+          ),
+        },
+        {
+          target: 'body',
+          placement: 'center',
+          disableBeacon: true,
+          content: stepContent(
+            'Analyze every session',
+            'Open Training to review any workout: synced power, heart-rate, pace and elevation, auto-detected intervals, the athlete’s power profile, and drag-to-select segment averages.'
+          ),
+        },
+        {
+          target: 'body',
+          placement: 'center',
+          disableBeacon: true,
+          content: stepContent(
+            'Track form & fitness',
+            'The Dashboard charts CTL, ATL and TSB (fitness, fatigue, form) from every logged session, so you can see when an athlete is peaking or needs to back off.'
+          ),
+        },
+        {
+          target: 'body',
+          placement: 'center',
+          disableBeacon: true,
+          content: stepContent(
             'You are set',
-            'Explore Dashboard and Training for load and calendar. Re-run this tour anytime from Settings → Profile → App walkthrough.'
+            'That’s the full workflow. Re-run this tour anytime from Settings → Profile → App walkthrough.'
           ),
         },
       ];
@@ -303,12 +363,39 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
         placement: 'center',
         disableBeacon: true,
         content: stepContent(
+          'Connect Strava & analyze',
+          'Connect Strava (Settings → Integrations) or drop in a FIT file to auto-import activities. Open Training to review power, HR, pace, your power profile and drag-to-select segment averages.'
+        ),
+      },
+      {
+        target: 'body',
+        placement: 'center',
+        disableBeacon: true,
+        content: stepContent(
+          'Plan & run workouts',
+          'Build sessions in Workout Planner, schedule them on the Training Calendar, and run them live with step-by-step prompts and target zones — on your phone or in the browser.'
+        ),
+      },
+      {
+        target: 'body',
+        placement: 'center',
+        disableBeacon: true,
+        content: stepContent(
+          'Track form & fitness',
+          'Your Dashboard charts fitness, fatigue and form (CTL / ATL / TSB) from every session, so you can time your best performances and avoid overtraining.'
+        ),
+      },
+      {
+        target: 'body',
+        placement: 'center',
+        disableBeacon: true,
+        content: stepContent(
           'Done',
-          'Use Dashboard for your calendar and Training for planning. Run this walkthrough again from Settings → Profile whenever you like.'
+          'That’s the tour. Run it again anytime from Settings → Profile → App walkthrough.'
         ),
       },
     ];
-  }, [isCoachLike]);
+  }, [isCoachLike, isMobile]);
 
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);

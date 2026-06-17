@@ -825,7 +825,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     // pixel for any row where capping kicked in. Both numerator and
     // denominator must come from the same scale.
     const cumW       = entries.slice(0, selectedLap).reduce((a, e) => a + capWeight(e.weight), 0);
-    const barCenterX = (cumW + capWeight(entries[selectedLap].weight) / 2) / totalWeight * innerW;
+    // Bars are offset right by the Y_AXIS_W spacer; the weighted area spans the
+    // remaining width. Account for both so the selected lap centres accurately.
+    const barsW      = Math.max(1, innerW - Y_AXIS_W);
+    const barCenterX = Y_AXIS_W + (cumW + capWeight(entries[selectedLap].weight) / 2) / totalWeight * barsW;
     container.scrollTo({ left: Math.max(0, barCenterX - containerW / 2), behavior: 'smooth' });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLap, isZoomed]);
@@ -909,24 +912,29 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
   } else {
-    // Strava-style: span the ACTUAL range of the real laps (fastest → slowest)
-    // rather than a symmetric band around the average. A symmetric range
-    // wasted half the chart whenever the data was lopsided (one slow lap forced
-    // a wide mirror), which squashed every work lap into the middle so a fast
-    // lap looked tiny. Spanning [min,max] gives each lap a proportional bar —
-    // fast = tall, slow = short — and the average shows as the dashed line.
-    // Honza (2026-06): "ať se nestane že rychlej lap je takhle malinkej".
-    const dataMin = Math.min(...scaleValues);
-    const dataMax = Math.max(...scaleValues);
-    // Include the average inside the span so the dashed line is always visible.
-    const lo = Math.min(dataMin, avgValue);
-    const hi = Math.max(dataMax, avgValue);
-    // 12 % padding each side (floor 1.5 % of the average) so the extreme bars
-    // don't touch the very top/bottom edge and a near-flat set still has a
-    // sensible axis instead of a zero range.
-    const pad = Math.max((hi - lo) * 0.12, avgValue * 0.015);
-    chartMin = Math.max(0, lo - pad);
-    chartMax = hi + pad;
+    // Centre the axis on the session average (the dashed line) AND keep every
+    // real lap on-chart — including slow warm-up / recovery laps. We size a
+    // SYMMETRIC range around the average just big enough to cover the farthest
+    // lap from it, so: the average sits in the middle, no lap (fast OR slow)
+    // clamps off the bottom/top, and a small padding keeps bars off the edges.
+    // Use ALL non-pause laps (not just the IQR-trimmed work laps) so warm-up /
+    // recovery laps stay visible instead of falling below the axis.
+    // Honza (2026-06): "průměr ať je uprostřed a všechny lapy ať jsou vidět".
+    let rangeVals = nonZero.slice();
+    if (rangeVals.length >= 6) {
+      const s = [...rangeVals].sort((a, b) => a - b);
+      const q1 = s[Math.floor(s.length * 0.1)];
+      const q3 = s[Math.floor(s.length * 0.9)];
+      const iqr = q3 - q1;
+      // Wide fence — drops only an absurd stray lap (a mis-recorded wall touch),
+      // while keeping genuine warm-up / recovery laps in range.
+      const f = rangeVals.filter(v => v >= q1 - 2.5 * iqr && v <= q3 + 2.5 * iqr);
+      if (f.length >= 3) rangeVals = f;
+    }
+    const maxDev = Math.max(...rangeVals.map(v => Math.abs(v - avgValue)), avgValue * 0.03);
+    const spread = maxDev * 1.1; // 10 % headroom so the most extreme bar isn't glued to the edge
+    chartMin = Math.max(0, avgValue - spread);
+    chartMax = avgValue + spread;
   }
   const range    = chartMax - chartMin || 1;
 
@@ -946,10 +954,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     return Math.max(3, Math.min(CHART_H, h));
   };
 
-  // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power
+  // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power.
+  // CLAMP to [0,1] — minVal/maxVal come from the work laps only, so a slow
+  // warm-up/recovery lap sits OUTSIDE that band and would otherwise produce a
+  // negative intensity → negative alpha → an invalid colour → an invisible bar
+  // (the lap looked "missing" until a re-render flipped it to the dimmed alpha).
   const getIntensity = (val) => {
     if (!val || maxVal === minVal) return 0.5;
-    return isInverted ? (maxVal - val) / (maxVal - minVal) : (val - minVal) / (maxVal - minVal);
+    const raw = isInverted ? (maxVal - val) / (maxVal - minVal) : (val - minVal) / (maxVal - minVal);
+    return Math.max(0, Math.min(1, raw));
   };
 
   const fmtTick = (v) => {
@@ -972,8 +985,59 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     (l.start_altitude != null && !isNaN(Number(l.start_altitude)))
   );
 
+  // The denominator for ALL x-positions must be the SAME total the bars use
+  // (sum of lap weights = total distance for run/swim, total duration for bike).
+  // Using the raw max of the record axis instead would stretch/shift the
+  // elevation relative to the bars whenever record time ≠ Σ lap durations.
+  const totalElevW = entries.reduce((s, e) => s + (e.weight || 0), 0) || 1;
+
   let elevPathD = null;
-  if (hasElevation) {
+
+  // ── Preferred: detailed elevation from raw records, mapped through the SAME
+  //    cumulative-weight x-axis as the bars so the terrain sits under the right
+  //    laps (and shows real within-lap shape, not just straight lines).
+  if (Array.isArray(records) && records.length > 0) {
+    const altRecs = records.filter(r => r.altitude != null);
+    if (altRecs.length >= 4) {
+      const altValues = altRecs.map(r => r.altitude);
+      const altMin = Math.min(...altValues);
+      const altMax = Math.max(...altValues);
+      if (altMax - altMin >= 1) {
+        const altRange = altMax - altMin;
+        // Bars are laid out by DISTANCE for run/swim, by TIME for bike — match it.
+        const hasTime = altRecs[0].timeFromStart != null;
+        const hasDist = altRecs.some(r => r.distance != null);
+        const preferDist = (isRun || isSwim) && hasDist;
+        const getX = preferDist
+          ? (r) => r.distance
+          : hasTime
+            ? (r) => r.timeFromStart
+            : hasDist
+              ? (r) => r.distance
+              : (_, i) => i;
+        // Denominator = the bars' total (so x matches the bar layout). For the
+        // index fallback there are no lap weights to match, so use record count.
+        const axisMax = (hasTime || (preferDist && hasDist) || hasDist) ? totalElevW : (altRecs.length - 1 || 1);
+        const step = Math.max(1, Math.floor(altRecs.length / 300));
+        const sampled = altRecs.filter((_, i) => i % step === 0 || i === altRecs.length - 1);
+        const clamp = (v) => Math.max(0, Math.min(100, v));
+        const pts = sampled.map((r, si) => {
+          const origIdx = si * step;
+          const xv = getX(r, origIdx);
+          const x = clamp((xv / axisMax) * 100).toFixed(1);
+          const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+          return `${x},${y}`;
+        });
+        const firstX = pts[0].split(',')[0];
+        const lastX = pts[pts.length - 1].split(',')[0];
+        elevPathD = `M ${pts[0]} ${pts.slice(1).map(p => `L ${p}`).join(' ')} L ${lastX},${CHART_H} L ${firstX},${CHART_H} Z`;
+      }
+    }
+  }
+
+  // ── Fallback: coarse lap-level elevation (one point per lap) when records
+  //    aren't available. Already aligned (uses the same cumulative weight).
+  if (!elevPathD && hasElevation) {
     let alts;
     const firstSA = Number(laps[0]?.start_altitude ?? NaN);
     if (!isNaN(firstSA)) {
@@ -990,51 +1054,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     const altMax = Math.max(...alts);
     if (altMax - altMin >= 2) {
       const altRange = altMax - altMin;
-      const totalW = entries.reduce((s, e) => s + e.weight, 0) || 1;
       let cumW = 0;
       const pts = alts.map((alt, i) => {
-        const x = (cumW / totalW * 100).toFixed(1);
+        const x = (cumW / totalElevW * 100).toFixed(1);
         if (i < entries.length) cumW += entries[i].weight;
         const y = ((1 - (alt - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
         return `${x},${y}`;
       });
-      const lastX = (cumW / totalW * 100).toFixed(1);
+      const lastX = (cumW / totalElevW * 100).toFixed(1);
       elevPathD = `M ${pts[0]} ${pts.slice(1).map(p => `L ${p}`).join(' ')} L ${lastX},${CHART_H} L 0,${CHART_H} Z`;
-    }
-  }
-
-  // ── Fallback: build elevation from raw records when lap-level data is missing ──
-  if (!elevPathD && Array.isArray(records) && records.length > 0) {
-    const altRecs = records.filter(r => r.altitude != null);
-    if (altRecs.length >= 4) {
-      const altValues = altRecs.map(r => r.altitude);
-      const altMin = Math.min(...altValues);
-      const altMax = Math.max(...altValues);
-      if (altMax - altMin >= 1) {
-        const altRange = altMax - altMin;
-        // Pick the best x-axis source: timeFromStart (FIT) → distance (Strava)
-        // → index (fallback when neither is available)
-        const hasTime = altRecs[0].timeFromStart != null;
-        const hasDist = altRecs.some(r => r.distance != null);
-        const getX = hasTime
-          ? (r) => r.timeFromStart
-          : hasDist
-            ? (r) => r.distance
-            : (_, i) => i;
-        const xVals = altRecs.map((r, i) => getX(r, i));
-        const xMax = Math.max(...xVals) || 1;
-        // Downsample to ~300 points to keep the SVG path short
-        const step = Math.max(1, Math.floor(altRecs.length / 300));
-        const sampled = altRecs.filter((_, i) => i % step === 0 || i === altRecs.length - 1);
-        const pts = sampled.map((r, si) => {
-          const origIdx = si * step;
-          const xv = getX(r, origIdx);
-          const x = ((xv / xMax) * 100).toFixed(1);
-          const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
-          return `${x},${y}`;
-        });
-        elevPathD = `M ${pts[0]} ${pts.slice(1).map(p => `L ${p}`).join(' ')} L 100,${CHART_H} L 0,${CHART_H} Z`;
-      }
     }
   }
 
@@ -1126,7 +1154,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
               <svg
                 viewBox={`0 0 100 ${CHART_H}`}
                 preserveAspectRatio="none"
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: CHART_H, pointerEvents: 'none', zIndex: 1, opacity: 0.55 }}
+                /* Offset by the Y-axis spacer so the elevation lines up with the
+                   bars (which start after that spacer), not 38px to the left. */
+                style={{ position: 'absolute', top: 0, left: Y_AXIS_W, width: `calc(100% - ${Y_AXIS_W}px)`, height: CHART_H, pointerEvents: 'none', zIndex: 1, opacity: 0.55 }}
               >
                 <defs>
                   <linearGradient id="lapElevGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1148,6 +1178,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
                 zIndex: 2,
               }}
             >
+            {/* Left spacer = Y-axis label width, so the first lap clears the
+                floating axis labels and can be scrolled fully into view when
+                zoomed (otherwise lap 1 hides behind the labels). */}
+            <div style={{ flex: `0 0 ${Y_AXIS_W}px`, height: 1 }} />
             {entries.map((ent, i) => {
               const isSelected = selectedLap === i;
               const barH = getBarH(ent.value);
@@ -4541,7 +4575,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {/* ── Planned section (edit / view) ── */}
           <div className="border-t border-gray-100 px-5 py-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
               {plannedWorkout && !editingPlanned && (
                 <button
                   onClick={() => setEditingPlanned(true)}
@@ -4614,11 +4648,48 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             ) : (
               plannedWorkout ? (
                 <div className="flex flex-wrap gap-4 items-start">
-                  <div className="rounded-xl bg-gray-50 p-3 flex gap-4 flex-wrap">
-                    {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
-                    {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
-                    {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
-                  </div>
+                  {/* Planned vs Completed comparison — TrainingPeaks-style two
+                      columns so the athlete/coach sees target vs actual at a glance. */}
+                  {(() => {
+                    const fmtPaceDD = (distM, durS) => {
+                      if (!(distM > 0 && durS > 0)) return '—';
+                      const per = isSwim ? durS / (distM / 100) : durS / (distM / 1000);
+                      return `${Math.floor(per / 60)}:${String(Math.round(per % 60)).padStart(2, '0')}`;
+                    };
+                    const stripUnit = (s) => (s ? s.replace(' /km', '').replace(' /100m', '') : '—');
+                    const rows = [];
+                    rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
+                    if (plannedDist > 0 || dist > 0) {
+                      rows.push(['Distance', plannedDist > 0 ? fmtDist(plannedDist) : '—', dist > 0 ? fmtDist(dist) : '—']);
+                    }
+                    if (isBike) {
+                      if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
+                    } else if (isRun || isSwim) {
+                      rows.push([isSwim ? 'Pace /100m' : 'Pace /km', fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
+                    }
+                    if (plannedTss > 0 || tss > 0) {
+                      rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
+                    }
+                    if (hr > 0) rows.push(['Avg HR', '—', `${Math.round(hr)} bpm`]);
+                    return (
+                      <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
+                        <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                          <span className="px-3 py-1.5">&nbsp;</span>
+                          <span className="px-3 py-1.5 text-right">Planned</span>
+                          <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
+                        </div>
+                        <div className="divide-y divide-gray-50">
+                          {rows.map(([label, p, c]) => (
+                            <div key={label} className="grid grid-cols-[1fr_5.5rem_5.5rem] items-center text-[11px]">
+                              <span className="px-3 py-2 text-gray-500 font-medium">{label}</span>
+                              <span className="px-3 py-2 text-right tabular-nums text-gray-500">{p}</span>
+                              <span className="px-3 py-2 text-right tabular-nums font-bold text-gray-800">{c}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {planSteps.length > 0 && (
                     <div className="flex-1 min-w-[200px]">
                       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
@@ -6244,7 +6315,7 @@ export default function CalendarView({
           <div
             key={`lbl-${p._id}`}
             onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
-            className="mt-0.5 text-[9px] font-bold uppercase tracking-wide leading-none truncate"
+            className="mt-0.5 text-[9px] font-bold uppercase tracking-wide leading-none truncate pl-3"
             style={{ color: periodColor(p), cursor: onPeriodSave ? 'pointer' : 'default' }}
             title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
           >

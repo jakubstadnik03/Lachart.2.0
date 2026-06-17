@@ -9,6 +9,7 @@
  */
 
 import React, { useMemo } from 'react';
+import ShareSportGlyph from './ShareSportGlyph';
 
 const W = 1080;
 const H = 1920;
@@ -28,25 +29,11 @@ function fmtDur(sec) {
   if (h === 0) return `${m} min`;
   return `${h}h ${m}min`;
 }
-// Clean line-art glyphs (24 × 24 coord space). Path strokes when applied at
-// scale render way better than filled paths — the bike especially needs
-// visible wheels + frame which fill-only paths smudge together.
-function sportIconPath(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('run') || s.includes('walk') || s.includes('hike')) {
-    return 'M13 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm-2 6l-3 4 3 2 1 6m4-8l-3-2 2-3 3 1';
-  }
-  if (s.includes('swim')) {
-    return 'M3 16c2 0 2-1.2 4-1.2s2 1.2 4 1.2 2-1.2 4-1.2 2 1.2 4 1.2 2-1.2 4-1.2 2 1.2 4 1.2 M3 20c2 0 2-1.2 4-1.2s2 1.2 4 1.2 2-1.2 4-1.2 2 1.2 4 1.2 2-1.2 4-1.2 M14 5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7 13l6-4';
-  }
-  // bike: two clear wheels + a triangle frame + handlebar — recognisable
-  return 'M5.5 18.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm13 0a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-6.5-3.5l-3-6h-2m5 6l4-5h-3m-2-2l1.5 2m1.5-5h3';
-}
-
 export default function RouteStatsTemplate({
   activity = {},
   gpsPoints = [],
   accent = '#FC4C02', // Strava orange default
+  transparent = false,
 }) {
   const distance = Number(activity.distance || 0);
   const elev     = Number(activity.totalElevationGain ?? activity.total_elevation_gain ?? activity.elevationGain ?? 0);
@@ -104,7 +91,7 @@ export default function RouteStatsTemplate({
           <stop offset="100%" stopColor="rgba(0,0,0,0.35)" />
         </radialGradient>
       </defs>
-      <rect x="0" y="0" width={W} height={H} fill="url(#rsVignette)" />
+      {!transparent && <rect x="0" y="0" width={W} height={H} fill="url(#rsVignette)" />}
 
       {/* Route polyline */}
       {routePath && (
@@ -114,9 +101,9 @@ export default function RouteStatsTemplate({
         </>
       )}
 
-      {/* Sport icon — stroked so wheels/limbs stay readable at preview size */}
-      <g transform={`translate(${W / 2 - 50}, 1420)`}>
-        <path d={sportIconPath(activity.sport)} fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" transform="scale(4.2)" />
+      {/* Sport icon — centred above the wordmark (clears the LaChart text) */}
+      <g transform={`translate(${W / 2 - 50}, 1352) scale(4.2)`}>
+        <ShareSportGlyph sport={activity.sport} color="#fff" strokeWidth={2} />
       </g>
 
       {/* Wordmark */}

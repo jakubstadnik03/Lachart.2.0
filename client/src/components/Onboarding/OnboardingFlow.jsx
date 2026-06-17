@@ -1061,6 +1061,90 @@ function StepTestVisual() {
   );
 }
 
+function ImportAnalyzeVisual() {
+  // Mini workout chart: power (violet) + HR (red) with a highlighted segment band.
+  const power = '0,70 30,60 60,64 90,42 120,46 150,30 180,34 210,52 240,40 270,44 300,28 330,32';
+  const hr    = '0,86 30,80 60,78 90,66 120,64 150,54 180,52 210,62 240,58 270,56 300,48 330,46';
+  return (
+    <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-md bg-[#FC4C02] flex items-center justify-center text-white text-[9px] font-black">S</span>
+          <span className="text-xs font-bold text-gray-700">Threshold Ride</span>
+        </div>
+        <span className="text-[10px] text-gray-400">1:12:40 · 38.4 km</span>
+      </div>
+      <div className="px-3 pt-3">
+        <svg viewBox="0 0 340 100" className="w-full h-24">
+          {/* selected segment band */}
+          <rect x="120" y="0" width="60" height="100" fill="#7c3aed" opacity="0.08" />
+          <line x1="120" y1="0" x2="120" y2="100" stroke="#7c3aed" strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />
+          <line x1="180" y1="0" x2="180" y2="100" stroke="#7c3aed" strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />
+          <polyline points={power} fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={hr} fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        </svg>
+      </div>
+      <div className="grid grid-cols-3 border-t border-gray-100">
+        <div className="px-3 py-2.5 border-r border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Avg Power</p>
+          <p className="text-sm font-bold text-[#7c3aed] mt-0.5">268 W</p>
+        </div>
+        <div className="px-3 py-2.5 border-r border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Avg HR</p>
+          <p className="text-sm font-bold text-red-500 mt-0.5">163 bpm</p>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Segment</p>
+          <p className="text-sm font-bold text-gray-800 mt-0.5">5:00</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanTrackVisual() {
+  // Fitness (CTL) rising area + form markers, with summary stats.
+  const ctl = '0,78 40,72 80,66 120,58 160,52 200,46 240,40 280,34 320,30 340,28';
+  return (
+    <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Form & Fitness</span>
+        <div className="flex gap-3">
+          <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#10b981]" /><span className="text-[10px] text-gray-500">Fitness</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#f59e0b]" /><span className="text-[10px] text-gray-500">Form</span></div>
+        </div>
+      </div>
+      <div className="px-3 pt-3">
+        <svg viewBox="0 0 340 90" className="w-full h-24">
+          <defs>
+            <linearGradient id="ctlGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polyline points={`0,90 ${ctl} 340,90`} fill="url(#ctlGrad)" stroke="none" />
+          <polyline points={ctl} fill="none" stroke="#10b981" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points="0,70 60,66 120,62 180,50 240,52 300,40 340,42" fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="4,3" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
+        </svg>
+      </div>
+      <div className="grid grid-cols-3 border-t border-gray-100">
+        <div className="px-3 py-2.5 border-r border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Fitness</p>
+          <p className="text-sm font-bold text-[#10b981] mt-0.5">72</p>
+        </div>
+        <div className="px-3 py-2.5 border-r border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Fatigue</p>
+          <p className="text-sm font-bold text-gray-800 mt-0.5">58</p>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Form</p>
+          <p className="text-sm font-bold text-[#f59e0b] mt-0.5">+14</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReportsVisual() {
   return (
     <div className="w-full rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
@@ -1137,7 +1221,9 @@ function CoachVisual() {
 const INTRO_SLIDES = [
   { label: 'Welcome',        accentColor: '#767EB5', title: 'The Science of\nEndurance Performance', subtitle: 'Professional lactate threshold testing for coaches and athletes — with the precision of a sports lab, in your pocket.', visual: <LactateCurveVisual /> },
   { label: 'Step Testing',   accentColor: '#3b82f6', title: 'Run a Step Test\nin Minutes',            subtitle: 'Enter power, lactate and heart rate at each step. LaChart fits the curve and detects LT1 & LT2 automatically.',        visual: <StepTestVisual />    },
-  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your 5 training zones are derived directly from LT1 and LT2 — specific to you.',         visual: <ZonesVisual />       },
+  { label: 'Training Zones', accentColor: '#10b981', title: 'Zones From\nReal Lactate Data',          subtitle: 'Forget generic HR formulas. Your power, pace and HR zones are derived directly from LT1 and LT2 — specific to you.',     visual: <ZonesVisual />       },
+  { label: 'Import & Analyze', accentColor: '#7c3aed', title: 'Import & Analyze\nEvery Workout',       subtitle: 'Sync Strava or drop in a FIT file. Review power, HR and pace, your power profile, and drag across the chart to read any segment.', visual: <ImportAnalyzeVisual /> },
+  { label: 'Plan & Track',   accentColor: '#0ea5e9', title: 'Plan Workouts,\nTrack Your Form',         subtitle: 'Build sessions in the planner, run them live, and watch fitness, fatigue and form (CTL/ATL/TSB) build from every session.', visual: <PlanTrackVisual />   },
   { label: 'PDF Reports',    accentColor: '#8b5cf6', title: 'Professional\nPDF Reports',              subtitle: 'Generate a complete report with lactate curve, thresholds and zones — send it directly to your athlete.',             visual: <ReportsVisual />     },
   { label: 'Coach',          accentColor: '#ec4899', title: 'Manage Your\nEntire Squad',              subtitle: 'Track every athlete\'s progress, compare tests over time, and monitor fitness from a single coach dashboard.',          visual: <CoachVisual />       },
 ];

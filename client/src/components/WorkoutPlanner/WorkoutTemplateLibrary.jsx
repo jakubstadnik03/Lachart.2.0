@@ -45,14 +45,15 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   }, [templates, sport, q]);
 
   return (
-    <aside className="w-60 shrink-0 border-r border-slate-200 bg-white flex flex-col h-[calc(100vh-0px)] sticky top-0">
+    <aside className="w-60 shrink-0 border-r border-slate-200/70 bg-white flex flex-col h-[calc(100vh-0px)] sticky top-0">
       <div className="p-3 border-b border-slate-100">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Workout library</div>
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Workout library</div>
+        <p className="text-[10.5px] text-slate-400 mb-2.5">Drag onto a day to plan it</p>
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Search by title…"
-          className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 outline-none focus:border-primary/40"
+          className="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 outline-none focus:border-primary/40 focus:bg-white transition-colors"
         />
         <div className="flex flex-wrap gap-1.5 mt-2">
           {SPORTS.map(s => (
@@ -91,7 +92,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
                 }}
                 onClick={() => onOpenTemplate?.(t)}
                 title="Click to open & edit · drag onto a day to plan"
-                className="group flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-150 bg-white hover:border-primary/40 hover:shadow-sm cursor-pointer transition-all"
+                className="group flex items-center gap-2 px-2.5 py-2 rounded-xl ring-1 ring-slate-200/70 bg-white hover:ring-primary/40 hover:shadow-sm cursor-pointer transition-all"
               >
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: SPORT_DOT[sp] || SPORT_DOT.other }} />
                 <div className="min-w-0 flex-1">

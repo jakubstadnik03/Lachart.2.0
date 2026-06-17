@@ -77,13 +77,17 @@ function weekLabel(offset, monday, sunday) {
   return `${f(monday)} – ${f(sunday)}`;
 }
 
-// week-over-week delta chip (▲ more / ▼ less than last week)
-function Delta({ value, unit = '' }) {
-  if (value == null || Math.abs(value) < 1) return <span className="text-[10px] text-gray-300 font-semibold">— vs last wk</span>;
+// week-over-week delta chip (▲ more / ▼ less than last week).
+// When `fmt` is given, `value` is fed to it (e.g. seconds → "14h 6m") instead
+// of being shown as a raw number + unit.
+function Delta({ value, unit = '', fmt = null }) {
+  const minMeaningful = fmt ? 60 : 1; // time delta: ignore < 1 min
+  if (value == null || Math.abs(value) < minMeaningful) return <span className="text-[10px] text-gray-300 font-semibold">— vs last wk</span>;
   const up = value > 0;
+  const text = fmt ? fmt(Math.abs(value)) : `${Math.abs(value)}${unit ? ` ${unit}` : ''}`;
   return (
     <span className="text-[10px] font-bold tabular-nums" style={{ color: up ? '#10b981' : '#9ca3af' }}>
-      {up ? '▲' : '▼'} {Math.abs(value)}{unit ? ` ${unit}` : ''}
+      {up ? '▲' : '▼'} {text}
     </span>
   );
 }
@@ -245,6 +249,8 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
       bySport,
       weekDays,
       streak,
+      curActs,
+      range: `${wb.monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${wb.sunday.toLocaleDateString('en', { month: 'short', day: 'numeric' })}`,
     };
   }, [activities, plannedWorkouts, sparklineData, weekOffset]);
 
@@ -296,7 +302,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
               <Stat label="Activities" value={data.act.count}
                 delta={<Delta value={data.act.count - data.prev.count} />} />
               <Stat label="Time" value={fmtTime(data.act.secs)}
-                delta={<Delta value={Math.round((data.act.secs - data.prev.secs) / 60)} unit="m" />} />
+                delta={<Delta value={data.act.secs - data.prev.secs} fmt={fmtTime} />} />
               <Stat label="Distance" value={`${fmtKm(data.act.dist)} km`}
                 delta={<Delta value={Math.round((data.act.dist - data.prev.dist) / 1000)} unit="km" />} />
             </div>

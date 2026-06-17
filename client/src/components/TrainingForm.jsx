@@ -918,12 +918,17 @@ const TrainingForm = ({
         dataToSubmit._id = initialData._id;
       }
 
-      // Sync isRecovery from intervalType for server compatibility
+      // Persist an EXPLICIT intervalType on every result + keep isRecovery in
+      // sync. Without this, a result that only carries the legacy isRecovery
+      // flag (or nothing) is saved without intervalType — and on the next edit
+      // auto-classify re-guesses ALL laps (its "keep saved types" shortcut only
+      // fires when every lap has one), which flips e.g. a late work lap to
+      // "cooldown". Filling it here makes the classification round-trip stable.
       if (dataToSubmit.results) {
-        dataToSubmit.results = dataToSubmit.results.map(interval => ({
-          ...interval,
-          isRecovery: interval.intervalType === 'recovery',
-        }));
+        dataToSubmit.results = dataToSubmit.results.map(interval => {
+          const intervalType = interval.intervalType || (interval.isRecovery ? 'recovery' : 'work');
+          return { ...interval, intervalType, isRecovery: intervalType === 'recovery' };
+        });
       }
 
       // Duration default + elevation (one pass so elevation is never skipped)
@@ -1117,10 +1122,18 @@ const TrainingForm = ({
     }
   };
 
-  /** Change one interval type and keep legacy isRecovery in sync. */
+  /** Change one interval type and keep legacy isRecovery / isSelected in sync.
+   *  A lap re-classified to a non-recovery type must become selected, otherwise
+   *  the export step (which drops isSelected===false laps) would silently throw
+   *  away the work lap the user just set. */
   const handleSetIntervalType = (index, type) => {
     const nextResults = [...formData.results];
-    nextResults[index] = { ...nextResults[index], intervalType: type, isRecovery: type === 'recovery' };
+    nextResults[index] = {
+      ...nextResults[index],
+      intervalType: type,
+      isRecovery: type === 'recovery',
+      isSelected: type === 'recovery' ? nextResults[index].isSelected : true,
+    };
     setFormData((prev) => ({ ...prev, results: nextResults }));
     setTypePickerOpenIdx(null);
   };

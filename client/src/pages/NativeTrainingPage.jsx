@@ -72,9 +72,9 @@ function getDate(a) { if (!a) return new Date(0); return new Date(a.date || a.st
 
 function hasLactate(a) {
   if (!a) return false;
-  if (a.lactate != null && Number(a.lactate) > 0) return true;
-  if (Array.isArray(a.laps) && a.laps.some(l => l && (l.lactate != null || l.lactateValue != null))) return true;
-  if (Array.isArray(a.results) && a.results.some(r => r && (r.lactate != null || r.mmol != null))) return true;
+  if (Number(a.lactate) > 0) return true;
+  if (Array.isArray(a.laps) && a.laps.some(l => l && (Number(l.lactate) > 0 || Number(l.lactateValue) > 0))) return true;
+  if (Array.isArray(a.results) && a.results.some(r => r && (Number(r.lactate) > 0 || Number(r.mmol) > 0))) return true;
   return false;
 }
 
@@ -1794,10 +1794,13 @@ export default function NativeTrainingPage({
     const tSport = normSport(t.sport);
     const tDayKey = `${tDate.getFullYear()}-${tDate.getMonth()}-${tDate.getDate()}`;
 
-    // Skip if `t` is already a rich activity
-    const tHasGps = !!(t.stravaId || t.type === 'fit' || t.type === 'strava' ||
-                       (Array.isArray(t.laps) && t.laps.length > 0));
-    if (tHasGps) return null;
+    // Skip only if this IS already a Strava/FIT activity (not a manual Training record).
+    // Manual training records may have laps[] from TrainingForm but still lack
+    // Strava streams/GPS — we want to find the linked Strava activity in that case.
+    const isAlreadyRich = !!(t.type === 'strava' || t.source === 'strava' ||
+                              t.type === 'fit' ||
+                              String(t.id || t._id || '').match(/^(strava|fit)-/i));
+    if (isAlreadyRich) return null;
 
     // Find candidates: trainings on the same calendar day, same sport, that
     // have actual execution data (Strava/FIT laps).
@@ -1823,36 +1826,52 @@ export default function NativeTrainingPage({
   }
 
   const openActivity = (act) => {
-    // If the activity already has manually-logged intervals (results[]), open it
-    // directly — findRelatedRichActivity would replace it with a same-day Strava
-    // run that doesn't carry the lactate values from those results.
-    const hasManualResults = Array.isArray(act?.results) && act.results.length > 0;
+    const athleteQs = athleteId ? `&athleteId=${athleteId}` : '';
 
-    // Lactate-tested trainings live in the Training model (results[] hold the
-    // lactate values). Even when such a training cross-references a Strava
-    // activity (stravaId), detectActivityKind would route to `strava-…` and the
-    // detail page would load the bare Strava activity — which has no lactate
-    // results, so it renders empty. Open the Training record directly instead.
-    if (hasManualResults && act?._id) {
-      const qs = athleteId ? `?athleteId=${athleteId}` : '';
-      navigate(`/training-calendar/${encodeURIComponent(`regular-${act._id}`)}${qs}`);
+    // Direct Strava activity — has streams, GPS, full laps.
+    const stravaIdRaw = String(act?.stravaId || act?.sourceStravaActivityId || '').replace(/^strava-/i, '');
+    if (stravaIdRaw) {
+      navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaIdRaw}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
       return;
     }
 
-    const rich = hasManualResults ? null : findRelatedRichActivity(act);
-    const target = rich || act;
+    // Direct FIT file activity.
+    if (act?.type === 'fit') {
+      const fitId = String(act._id || act.id || '').replace(/^fit-/i, '');
+      if (fitId) {
+        navigate(`/training-calendar/${encodeURIComponent(`fit-${fitId}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
+        return;
+      }
+    }
 
-    // Navigate to the full training-calendar detail page (with map, zones,
-    // power charts, etc.) instead of the compact modal.
-    const { kind, id } = detectActivityKind(target);
+    // Manual Training record with a _id — use the same ?trainingId= approach as
+    // the web "View in calendar" button so FitAnalysisPage can resolve the linked
+    // Strava/FIT activity via sourceStravaActivityId / sourceFitTrainingId.
+    const trainingModelId = String(act?._id || '').replace(/^(regular-|training-)/, '');
+    if (trainingModelId && act?.type !== 'strava' && act?.type !== 'fit') {
+      navigate(`/training-calendar?trainingId=${trainingModelId}${athleteQs}`);
+      return;
+    }
+
+    // Same-day Strava/FIT lookup (fallback for older records).
+    const rich = findRelatedRichActivity(act);
+    if (rich) {
+      const { kind, id } = detectActivityKind(rich);
+      if (id) {
+        navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
+        return;
+      }
+    }
+
+    // Fall back to the training record itself.
+    const { kind, id } = detectActivityKind(act);
     if (id) {
-      const qs = athleteId ? `?athleteId=${athleteId}` : '';
-      navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${qs}`);
+      navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
       return;
     }
 
-    // Fallback for activities without a resolvable ID — open the compact modal.
-    setActivityModal({ activity: enrichForModal(target), plannedWorkout: null });
+    // Last resort: compact modal.
+    setActivityModal({ activity: enrichForModal(act), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);
 
@@ -3117,11 +3136,14 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
     return workOnly.length > 0 ? workOnly : all;
   })();
 
-  // Average power across the work intervals (falls back to the activity's own
-  // avgPower) so cyclists see the average watts of the test at a glance.
+  // Average power of the FULL training (all laps, not just WORK).
+  // Prefer the activity-level avgPower field; fall back to mean of all intervals.
   const avgW = (() => {
     if (t.avgPower != null && Number(t.avgPower) > 0) return Math.round(Number(t.avgPower));
-    const ps = lapDetails.map(l => l.power).filter(v => v != null && v > 0);
+    if (t.averagePower != null && Number(t.averagePower) > 0) return Math.round(Number(t.averagePower));
+    const ps = intervalsAll
+      .map(iv => Number(iv.power || iv.average_watts || iv.avgPower) || null)
+      .filter(v => v != null && v > 0);
     return ps.length ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length) : null;
   })();
 

@@ -18,7 +18,7 @@ function fmtPace(secPerKm) {
   return `${Math.floor(secPerKm / 60)}:${String(Math.round(secPerKm % 60)).padStart(2, '0')}`;
 }
 
-export default function LactateCurveTemplate({ test = {}, thresholds = null, accent = '#7C3AED' }) {
+export default function LactateCurveTemplate({ test = {}, thresholds = null, accent = '#7C3AED', transparent = false }) {
   const sport   = String(test.sport || '').toLowerCase();
   const isPace  = sport.includes('run') || sport.includes('swim');
 
@@ -86,7 +86,7 @@ export default function LactateCurveTemplate({ test = {}, thresholds = null, acc
           <stop offset="100%" stopColor={accent} stopOpacity="0.05" />
         </linearGradient>
       </defs>
-      <rect width={W} height={H} fill="url(#lcVignette)" />
+      {!transparent && <rect width={W} height={H} fill="url(#lcVignette)" />}
 
       {/* Wordmark + meta */}
       <text x={W / 2} y="220" textAnchor="middle"
