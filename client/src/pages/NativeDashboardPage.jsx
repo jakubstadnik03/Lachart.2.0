@@ -1083,6 +1083,7 @@ export default function NativeDashboardPage({
               activities={activities}
               plannedWorkouts={plannedWorkouts}
               sparklineData={sparklineData}
+              kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
             />
           </div>
 

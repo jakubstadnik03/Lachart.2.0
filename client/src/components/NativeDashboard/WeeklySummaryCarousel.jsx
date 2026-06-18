@@ -10,9 +10,10 @@
  * Reads the dashboard's existing activities / plannedWorkouts / sparklineData,
  * so it needs no extra fetch.
  */
-import React, { useMemo, useRef, useState } from 'react';
-import { Flame, RotateCcw } from 'lucide-react';
+import React, { useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { Flame, RotateCcw, Share2 } from 'lucide-react';
 import SportIcon from '../shared/SportIcon';
+const ActivityShareSheet = lazy(() => import('../sharing/ActivityShareSheet'));
 
 // ─── glass card look (matches the rest of the dashboard) ─────────────────────
 const CARD = {
@@ -143,7 +144,8 @@ const DAY_STATUS = {
   rest:    { bg: 'rgba(10,14,26,.06)', fg: '#9ca3af', mark: '', ring: 'none' },             // grey — rest
 };
 
-export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts = [], sparklineData = [] }) {
+export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts = [], sparklineData = [], kpis = null }) {
+  const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
   const [page, setPage] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -272,8 +274,46 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
 
   const PAGES = 4;
 
+  // Build the shareable weekly-summary payload (IG-story card) from the
+  // currently-selected week. KPIs (Fitness/Form/Fatigue) come from the parent.
+  const shareSummary = useMemo(() => {
+    const fmtSub = (a) => {
+      const parts = [];
+      const s = actSecs(a); if (s > 0) parts.push(fmtTime(s));
+      const d = actDist(a); if (d > 0) parts.push(`${fmtKm(d)} km`);
+      return parts.join(' · ');
+    };
+    return {
+      label: 'Weekly summary',
+      title: data.label,
+      subtitle: data.range,
+      kpis: kpis || null,
+      totals: { count: data.act.count, secs: data.act.secs, distM: data.act.dist, tss: data.act.tss },
+      workouts: (data.curActs || []).map((a) => ({
+        title: a.title || a.name || a.titleManual || 'Activity',
+        sport: a.sport || a.type,
+        subtitle: fmtSub(a),
+        done: true,
+      })),
+    };
+  }, [data, kpis]);
+
   return (
     <div style={{ position: 'relative' }}>
+      {/* Share this week as an Instagram-story card */}
+      <button
+        onClick={() => setShareOpen(true)}
+        aria-label="Share weekly summary"
+        className="absolute z-10 flex items-center justify-center w-7 h-7 rounded-full active:scale-95 transition-transform"
+        style={{ top: 8, right: 8, background: 'rgba(10,14,26,.05)' }}
+      >
+        <Share2 className="w-3.5 h-3.5 text-gray-500" strokeWidth={2.2} />
+      </button>
+      {shareOpen && (
+        <Suspense fallback={null}>
+          <ActivityShareSheet open={shareOpen} summary={shareSummary} accent="#5E6590" onClose={() => setShareOpen(false)} />
+        </Suspense>
+      )}
       <style>{`
         .nd-wsc::-webkit-scrollbar{display:none}
         @keyframes ndWkInR { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
