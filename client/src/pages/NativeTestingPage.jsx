@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -261,6 +262,7 @@ function LactateCurve({ thresholds }) {
 
 export default function NativeTestingPage({ user, athleteId: externalAthleteId }) {
   const navigate = useNavigate();
+  useNativeTabScrollToTop('testing');
   const [searchParams, setSearchParams] = useSearchParams();
   const testIdFromUrl = searchParams.get('testId');
 

@@ -1533,10 +1533,11 @@ export const syncAppleHealthWellness = async (payload) => {
   return data;
 };
 
-/** @param {{ days?: number; signal?: AbortSignal }} [opts] */
+/** @param {{ days?: number; athleteId?: string; signal?: AbortSignal }} [opts] */
 export const getAppleHealthWellness = async (opts = {}) => {
   const cfg = { params: {} };
   if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.athleteId) cfg.params.athleteId = opts.athleteId;
   if (opts.signal) cfg.signal = opts.signal;
   const { data } = await api.get('/api/integrations/apple-health/wellness', cfg);
   return data;
@@ -1807,8 +1808,9 @@ export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`)
 export const clearAllNotifications = () => api.delete('/api/notifications');
 
 // Mobile push token registration (Capacitor / Expo)
-export const registerPushToken = (expoPushToken) =>
-  api.post('/user/push-token', { expoPushToken });
+export const registerPushToken = (expoPushToken, meta = {}) =>
+  api.post('/user/push-token', { expoPushToken, ...meta });
+export const pingMobileApp = (meta) => api.post('/user/mobile-app-ping', meta);
 // Field Lactate Measurements
 export const createFieldLactateMeasurement = (data) => api.post('/api/field-lactate', data).then(r => r.data);
 export const getFieldLactateMeasurements = (athleteId = null, status = null) => {

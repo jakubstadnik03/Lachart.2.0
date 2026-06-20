@@ -595,10 +595,10 @@ function NativeBottomTabBar({ tabs }) {
               onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
               onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
               onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
-              // Re-tapping the active tab dispatches `nl-tab-reclicked` — pages
-              // can listen for it (e.g. Calendar scrolls back to today, Dashboard
-              // scrolls to top). Without this, React Router swallows the click.
               onClick={() => {
+                window.dispatchEvent(new CustomEvent('nl-tab-navigated', {
+                  detail: { key: tab.key, path: tab.path, reclick: !!isActive },
+                }));
                 if (isActive) {
                   window.dispatchEvent(new CustomEvent('nl-tab-reclicked', {
                     detail: { key: tab.key, path: tab.path },
@@ -1038,6 +1038,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           On immersive routes, drop overflow so the page can position-fixed
           properly without competing with this scroller. */}
       <div
+        id="nl-content-scroll"
         style={{
           flex: 1,
           minHeight: 0,

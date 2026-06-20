@@ -3,9 +3,11 @@
 // Designed to be dropped into any native page (Profile, Training, Tests, etc.).
 
 import React from 'react';
+import { resolveSportKey, SportGlyph, SPORT_ICON_COLORS } from '../../shared/SportIcon';
 
 // ─── sport metadata ───────────────────────────────────────────────────────────
 
+/** @deprecated Use SportGlyph — kept for legacy mask-based callers */
 export const SPORT_ICONS = {
   bike: '/icon/bike.svg',
   run:  '/icon/run.svg',
@@ -13,34 +15,21 @@ export const SPORT_ICONS = {
 };
 
 export const SPORT_TINT = {
-  bike:  '#3b82f6',
-  run:   '#f97316',
-  swim:  '#06b6d4',
-  walk:  '#22c55e',
-  gym:   '#8b5cf6',
-  other: '#9ca3af',
+  ...SPORT_ICON_COLORS,
+  hike: SPORT_ICON_COLORS.hike,
 };
 
 export const SPORT_BG = {
   bike:  '#EFF6FF',
   run:   '#FFF7ED',
   swim:  '#ECFEFF',
+  hike:  '#FFFBEB',
   walk:  '#F0FDF4',
   gym:   '#F5F3FF',
   other: '#F9FAFB',
 };
 
-export function normSport(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-  if (s.includes('run'))  return 'run';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('walk')) return 'walk';
-  if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') ||
-      s.includes('crossfit') || s.includes('yoga') || s.includes('elliptical') || s.includes('fitness'))
-    return 'gym';
-  return 'other';
-}
+export const normSport = resolveSportKey;
 
 // ─── SportTile ───────────────────────────────────────────────────────────────
 // Rounded soft-tinted square with the SVG sport icon centered inside.
@@ -48,7 +37,6 @@ export function normSport(sport) {
 
 export function SportTile({ sport, size = 32, style }) {
   const key  = normSport(sport);
-  const src  = SPORT_ICONS[key];
   const tint = SPORT_TINT[key] || SPORT_TINT.other;
   const bg   = SPORT_BG[key]   || SPORT_BG.other;
   return (
@@ -58,32 +46,7 @@ export function SportTile({ sport, size = 32, style }) {
       flexShrink: 0,
       ...style,
     }}>
-      {src ? (
-        <span style={{
-          width: size * 0.6, height: size * 0.6, display: 'block',
-          background: tint,
-          WebkitMaskImage: `url(${src})`,
-          maskImage:       `url(${src})`,
-          WebkitMaskRepeat: 'no-repeat',
-          maskRepeat: 'no-repeat',
-          WebkitMaskPosition: 'center',
-          maskPosition: 'center',
-          WebkitMaskSize: 'contain',
-          maskSize: 'contain',
-        }} />
-      ) : key === 'gym' ? (
-        // Dumbbell icon for gym / workout
-        <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none" stroke={tint} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 5v14M18 5v14"/>
-          <path d="M3 8h3M3 16h3M18 8h3M18 16h3"/>
-          <line x1="6" y1="12" x2="18" y2="12"/>
-        </svg>
-      ) : (
-        // Lightning-bolt SVG fallback for unknown sport
-        <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill={tint} stroke="none">
-          <path d="M13 2L4.5 13h6L9 22l9-12h-6z" />
-        </svg>
-      )}
+      <SportGlyph sport={key} size={size * 0.58} color={tint} />
     </div>
   );
 }

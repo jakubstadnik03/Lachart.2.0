@@ -3,7 +3,10 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { getFormFitnessData, getTodayMetrics, getRaceEvents } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
+import { fetchWellness } from '../../services/wellnessData';
+import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
+import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -36,6 +39,12 @@ const estimatePlannedTss = (pw) => {
 };
 
 const FormFitnessChart = ({ athleteId }) => {
+  const { user } = useAuth();
+  const isCoachView = !!user?._id && athleteId && String(athleteId) !== String(user._id);
+  const [wellness, setWellness] = useState([]);
+  const [showRecovery, setShowRecovery] = useState(() => {
+    try { return localStorage.getItem('formFitnessShowRecovery') === 'true'; } catch { return false; }
+  });
   const [showGlossary, setShowGlossary] = useState(false);
   const [selectedTerm, setSelectedTerm] = useState('Form & Fitness');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
@@ -263,6 +272,25 @@ const FormFitnessChart = ({ athleteId }) => {
     try { localStorage.setItem('formFitnessShowProjection', String(showProjection)); } catch { /* ignore */ }
   }, [showProjection]);
 
+  useEffect(() => {
+    try { localStorage.setItem('formFitnessShowRecovery', String(showRecovery)); } catch { /* ignore */ }
+  }, [showRecovery]);
+
+  // Load Apple Health recovery (resting HR / HRV) for the overlay. Works for
+  // the logged-in user and for coaches viewing a linked athlete (?athleteId).
+  useEffect(() => {
+    let cancelled = false;
+    if (!athleteId) { setWellness([]); return undefined; }
+    const n = Math.min(Math.max(parseInt(timeRange, 10) || 60, 7), 90);
+    (async () => {
+      try {
+        const w = await fetchWellness(n, isCoachView ? athleteId : null);
+        if (!cancelled) setWellness(w.days || []);
+      } catch { if (!cancelled) setWellness([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, isCoachView, timeRange]);
+
   // Load FUTURE planned workouts so the chart can project Fitness/Form/Fatigue
   // forward from their planned TSS (up to ~8 weeks ahead).
   useEffect(() => {
@@ -414,18 +442,31 @@ const FormFitnessChart = ({ athleteId }) => {
     return out;
   }, [showProjection, chartData, plannedTssByDate]);
 
+  const wellnessByDate = useMemo(() => {
+    const m = {};
+    (wellness || []).forEach((d) => { if (d?.date) m[d.date] = d; });
+    return m;
+  }, [wellness]);
+  const hasWellness = (wellness || []).length > 0;
+
   // Actual series + projected tail. The last actual point also carries the
-  // *Proj fields so the dashed projection line connects seamlessly.
+  // *Proj fields so the dashed projection line connects seamlessly. Recovery
+  // (resting HR / HRV) is merged onto matching days for the optional overlay.
   const chartDataExtended = useMemo(() => {
     if (!chartData || chartData.length === 0) return chartData || [];
-    if (projection.length === 0) return chartData;
-    const base = chartData.map((p, i) => (
-      i === chartData.length - 1
-        ? { ...p, FitnessProj: p.Fitness, FatigueProj: p.Fatigue, FormProj: p.Form }
-        : p
-    ));
-    return [...base, ...projection];
-  }, [chartData, projection]);
+    const lastIdx = chartData.length - 1;
+    const base = chartData.map((p, i) => {
+      const w = wellnessByDate[p.date];
+      const merged = w
+        ? { ...p, rhr: w.restingHeartRate ?? null, hrv: w.hrvMs ?? null }
+        : p;
+      if (projection.length > 0 && i === lastIdx) {
+        return { ...merged, FitnessProj: p.Fitness, FatigueProj: p.Fatigue, FormProj: p.Form };
+      }
+      return merged;
+    });
+    return projection.length > 0 ? [...base, ...projection] : base;
+  }, [chartData, projection, wellnessByDate]);
 
   const hasProjection = projection.length > 0;
   const todayLabel = (chartData && chartData.length > 0) ? chartData[chartData.length - 1].dateLabel : null;
@@ -586,6 +627,18 @@ const FormFitnessChart = ({ athleteId }) => {
         </div>
       </div>
 
+      <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+        {FORM_FITNESS_INTRO}
+        {' '}
+        <button
+          type="button"
+          onClick={() => handleInfoClick('Form & Fitness')}
+          className="font-semibold text-primary hover:underline"
+        >
+          Full glossary
+        </button>
+      </p>
+
       {loading ? (
         <div className="h-64 sm:h-80 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -680,6 +733,23 @@ const FormFitnessChart = ({ athleteId }) => {
                   </button>
                   <p className="mt-1 text-[11px] text-gray-400">Uses planned TSS to forecast Fitness, Form &amp; Fatigue up to 8 weeks ahead.</p>
                 </div>
+
+                {hasWellness && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Recovery overlay</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRecovery((v) => !v)}
+                      className="flex items-center justify-between w-full text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-700 bg-white h-10 hover:bg-gray-50 transition-colors"
+                    >
+                      <span>Show resting HR &amp; HRV</span>
+                      <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showRecovery ? 'bg-primary' : 'bg-gray-300'}`}>
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showRecovery ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </span>
+                    </button>
+                    <p className="mt-1 text-[11px] text-gray-400">Overlays Apple Health resting heart rate &amp; HRV so you can spot rising fatigue / overtraining.</p>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">
                   <button
@@ -981,6 +1051,9 @@ const FormFitnessChart = ({ athleteId }) => {
               tick={{ fontSize: isMobile ? 10 : 12, fill: '#6b7280' }}
               domain={['auto', 'auto']}
             />
+            {showRecovery && hasWellness && (
+              <YAxis yAxisId="recovery" orientation="right" hide domain={['auto', 'auto']} />
+            )}
             <Tooltip 
               contentStyle={{ 
                 backgroundColor: 'white', 
@@ -1025,6 +1098,13 @@ const FormFitnessChart = ({ athleteId }) => {
               fill="url(#colorFatigue)" 
               strokeWidth={2}
             />
+            {/* ── Recovery overlay (Apple Health) — thin lines on a hidden right axis ── */}
+            {showRecovery && hasWellness && (
+              <>
+                <Line yAxisId="recovery" type="monotone" dataKey="rhr" name="Resting HR" stroke="#f43f5e" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
+                <Line yAxisId="recovery" type="monotone" dataKey="hrv" name="HRV" stroke="#10b981" strokeWidth={1.5} strokeDasharray="2 2" dot={false} connectNulls isAnimationActive={false} />
+              </>
+            )}
             {/* ── Future projection from planned workouts (dashed) ── */}
             {hasProjection && (
               <>
@@ -1084,6 +1164,18 @@ const FormFitnessChart = ({ athleteId }) => {
             <svg width="20" height="6" aria-hidden><line x1="0" y1="3" x2="20" y2="3" stroke="#64748b" strokeWidth="2" strokeDasharray="5 4" /></svg>
             <span className="text-sm text-gray-600">Planned (projected)</span>
           </div>
+        )}
+        {showRecovery && hasWellness && (
+          <>
+            <div className="flex items-center gap-2">
+              <svg width="20" height="6" aria-hidden><line x1="0" y1="3" x2="20" y2="3" stroke="#f43f5e" strokeWidth="2" /></svg>
+              <span className="text-sm text-gray-600">Resting HR</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <svg width="20" height="6" aria-hidden><line x1="0" y1="3" x2="20" y2="3" stroke="#10b981" strokeWidth="2" strokeDasharray="2 2" /></svg>
+              <span className="text-sm text-gray-600">HRV</span>
+            </div>
+          </>
         )}
       </div>
 

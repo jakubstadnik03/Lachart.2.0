@@ -22,6 +22,7 @@ import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleSta
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
+import { sendPlannedWorkoutToWatch, isAppleWorkoutPlanSupported } from '../../services/appleWorkoutPlan';
 import { useCategories } from '../../context/CategoryContext';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -792,79 +793,112 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
         {/* ─── Footer (only in build step) ─── */}
         {step === 'build' && (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 shrink-0 bg-white">
-            <div className="flex gap-2">
-              {isEdit && (
-                <button onClick={() => onDelete(workout)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-500 text-sm hover:bg-red-50 transition-colors min-h-[44px]">
-                  <TrashIcon className="w-4 h-4" />
-                </button>
-              )}
-              {steps.length > 0 && (
-                <button
-                  onClick={async () => {
-                    const name = window.prompt('Template name:', title);
-                    if (!name) return;
-                    try { await createWorkoutTemplate({ name, sport, steps, description: desc }); } catch (_) {}
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors">
-                  <BookmarkIcon className="w-4 h-4" />
-                  Save as template
-                </button>
-              )}
-              {/* Export — only when editing an already-saved workout. New
-                  workouts have no _id yet so there's nothing to export. */}
-              {isEdit && steps.length > 0 && (
-                <>
+          <div className="shrink-0 bg-white border-t border-slate-100">
+            {/* Secondary tools — scroll horizontally so nothing overlaps */}
+            {(isEdit || steps.length > 0) && (
+              <div
+                className="flex gap-2 px-4 py-2 overflow-x-auto border-b border-slate-50"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                {isEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(workout)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-500 text-sm whitespace-nowrap shrink-0"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                    Delete
+                  </button>
+                )}
+                {steps.length > 0 && (
                   <button
                     type="button"
                     onClick={async () => {
-                      try {
-                        await exportPlannedWorkout(workout._id, {
-                          format: 'zwo',
-                          athleteId: context?.athleteId,
-                          suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
-                        });
-                      } catch (err) {
-                        // eslint-disable-next-line no-alert
-                        alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
-                      }
+                      const name = window.prompt('Template name:', title);
+                      if (!name) return;
+                      try { await createWorkoutTemplate({ name, sport, steps, description: desc }); } catch (_) {}
                     }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors"
-                    title="Download as Zwift / TrainerRoad workout (.zwo)"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
                   >
-                    .zwo
+                    <BookmarkIcon className="w-4 h-4" />
+                    Save template
                   </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await exportPlannedWorkout(workout._id, {
-                          format: 'tcx',
-                          athleteId: context?.athleteId,
-                          suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
-                        });
-                      } catch (err) {
-                        // eslint-disable-next-line no-alert
-                        alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors"
-                    title="Download as Garmin / TrainingPeaks workout (.tcx)"
-                  >
-                    .tcx
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="flex gap-2">
-              {/* Start Workout — only when editing an existing saved plan
-                  that has structured steps. Saves first, then navigates to
-                  the execution screen so unsaved tweaks (like ERG bias prep)
-                  aren't lost. Hidden for lactate-test plans because those
-                  don't run on the trainer. */}
+                )}
+                {isEdit && steps.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await exportPlannedWorkout(workout._id, {
+                            format: 'zwo',
+                            athleteId: context?.athleteId,
+                            suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+                          });
+                        } catch (err) {
+                          alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
+                      title="Download .zwo"
+                    >
+                      .zwo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await exportPlannedWorkout(workout._id, {
+                            format: 'tcx',
+                            athleteId: context?.athleteId,
+                            suggestedName: (title || 'workout').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 50),
+                          });
+                        } catch (err) {
+                          alert(`Export failed: ${err?.response?.data?.error || err?.message || 'unknown'}`);
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
+                      title="Download .tcx"
+                    >
+                      .tcx
+                    </button>
+                    {isAppleWorkoutPlanSupported() && sport !== 'lactate' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await sendPlannedWorkoutToWatch(
+                              { _id: workout._id, sport, title, date, steps },
+                              context
+                            );
+                            if (res?.scheduled) {
+                              alert('Sent to Apple Watch. Open the Workout app on your watch to start it.');
+                            } else if (res?.reason === 'no_steps') {
+                              alert('This workout has no structured steps to send.');
+                            } else if (res?.reason === 'not_authorized') {
+                              alert('Allow LaChart to schedule workouts: Watch app → enable, then try again.');
+                            } else if (res?.reason) {
+                              alert('Could not send to Apple Watch on this device.');
+                            }
+                          } catch (err) {
+                            alert(`Apple Watch sync failed: ${err?.message || 'unknown'}`);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
+                      >
+                        Apple Watch
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Primary actions */}
+            <div className="flex items-center gap-2 px-4 py-3" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}>
               {isEdit && steps.length > 0 && sport !== 'lactate' && (
                 <button
+                  type="button"
                   onClick={async () => {
                     try {
                       if (title.trim()) {
@@ -877,28 +911,33 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                           comment,
                         });
                       }
-                    } catch (_) { /* fall through and still navigate */ }
+                    } catch (_) { /* fall through */ }
                     finally { setSaving(false); }
                     const qs = context?.athleteId ? `?athleteId=${context.athleteId}` : '';
                     onClose && onClose();
                     navigate(`/workout-execution/${workout._id}${qs}`);
                   }}
                   disabled={saving}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold disabled:opacity-40 touch-manipulation min-h-[44px] shadow-sm"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                  title="Save and start this workout"
+                  className="flex items-center justify-center gap-1.5 flex-1 min-w-0 px-4 py-3 rounded-xl bg-sky-500 text-white text-sm font-semibold disabled:opacity-40 min-h-[48px]"
                 >
-                  <PlayIcon className="w-4 h-4" />
+                  <PlayIcon className="w-4 h-4 shrink-0" />
                   Start
                 </button>
               )}
-              <button onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 transition-colors touch-manipulation min-h-[44px]">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 min-w-0 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold min-h-[48px]"
+              >
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={!title.trim() || saving}
-                className={`px-5 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 touch-manipulation min-h-[44px] ${sport === 'lactate' ? 'bg-red-500' : 'bg-primary'}`}>
-                {saving ? 'Saving…' : isEdit ? 'Update' : sport === 'lactate' ? 'Plan lactate test' : 'Plan it'}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!title.trim() || saving}
+                className={`flex-[1.2] min-w-0 px-4 py-3 rounded-xl text-white text-sm font-semibold disabled:opacity-40 min-h-[48px] ${sport === 'lactate' ? 'bg-red-500' : 'bg-primary'}`}
+              >
+                {saving ? 'Saving…' : isEdit ? 'Update' : sport === 'lactate' ? 'Plan test' : 'Plan it'}
               </button>
             </div>
           </div>

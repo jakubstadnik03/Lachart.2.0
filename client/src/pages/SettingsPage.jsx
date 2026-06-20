@@ -2669,7 +2669,7 @@ const SettingsPage = () => {
                 Push notifications
               </h3>
               <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                Mobile app (Expo / iOS Android). You may need to allow notifications in system settings.
+                iOS/Android app. Allow notifications when prompted; check iOS Settings → LaChart → Notifications if nothing appears.
               </p>
               <div className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
                 <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
@@ -2683,6 +2683,40 @@ const SettingsPage = () => {
                       checked={notifications.pushStravaImport !== false}
                       onChange={(e) =>
                         saveNotifications({ ...notifications, pushStravaImport: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Coach & athlete comments</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>When someone comments on your training</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.trainingComments !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, trainingComments: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Coach & athlete comments</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>When someone comments on your training</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.trainingComments !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, trainingComments: e.target.checked })
                       }
                       className="sr-only peer"
                     />

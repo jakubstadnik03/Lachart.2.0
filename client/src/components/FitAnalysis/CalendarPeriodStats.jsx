@@ -3,6 +3,8 @@ import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { getFormFitnessData, getMonthlyPowerAnalysis } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
+import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
+import { getTsbStatus } from '../../utils/formFitnessMetrics';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
@@ -351,6 +353,7 @@ export default function CalendarPeriodStats({
   // client-side recompute if the fetch fails (offline / coach-without-access).
   const effectiveAthleteId = athleteId || user?._id || user?.id || null;
   const [serverPmc, setServerPmc] = useState(null);
+  const [ffHelpOpen, setFfHelpOpen] = useState(false);
   useEffect(() => {
     if (!effectiveAthleteId) return;
     let cancelled = false;
@@ -1532,6 +1535,7 @@ export default function CalendarPeriodStats({
   ];
 
   return (
+    <>
     <div ref={rootRef} className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
         {/* Header */}
@@ -1635,11 +1639,21 @@ export default function CalendarPeriodStats({
             {/* Performance Management Chart */}
             {Chart && pmcOption && pmc && pmc.length > 0 && (() => {
               const lastEntry = pmc[pmc.length - 1];
+              const tsbStatus = getTsbStatus(lastEntry.tsb);
               const tsbColor = lastEntry.tsb >= -10 ? 'text-green-600' : lastEntry.tsb >= -25 ? 'text-yellow-600' : 'text-red-600';
               return (
                 <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    Training Load (CTL / ATL / TSB)
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Training Load (CTL / ATL / TSB)
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFfHelpOpen(true)}
+                      className="text-xs font-semibold text-primary hover:underline shrink-0"
+                    >
+                      What is this?
+                    </button>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
                     <Chart
@@ -1659,6 +1673,7 @@ export default function CalendarPeriodStats({
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
                         <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
                         <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{tsbStatus.label}</div>
                       </div>
                     </div>
                   </div>
@@ -2486,5 +2501,7 @@ export default function CalendarPeriodStats({
         )}
       </div>
     </div>
+    <FormFitnessHelpSheet open={ffHelpOpen} onClose={() => setFfHelpOpen(false)} />
+  </>
   );
 }

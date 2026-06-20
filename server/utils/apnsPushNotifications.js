@@ -72,19 +72,32 @@ function getProviderJwt() {
 // per send burns rate limit and adds 100-200 ms TLS handshake every time.
 
 let session = null;
-function getSession() {
-  const host = process.env.APNS_PRODUCTION === 'false'
-    ? 'https://api.sandbox.push.apple.com'
-    : 'https://api.push.apple.com';
+let sessionSandbox = null;
 
-  if (session && !session.closed && !session.destroyed) return session;
+function apnsHost(sandbox) {
+  return sandbox ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com';
+}
 
-  session = http2.connect(host);
-  session.on('error', (err) => {
+function getSession(sandbox = false) {
+  const preferSandbox = sandbox || process.env.APNS_PRODUCTION === 'false';
+  let ref = preferSandbox ? sessionSandbox : session;
+  const host = apnsHost(preferSandbox);
+
+  if (ref && !ref.closed && !ref.destroyed) return { sess: ref, sandbox: preferSandbox };
+
+  ref = http2.connect(host);
+  ref.on('error', (err) => {
     console.warn('[APNs] session error:', err.message);
   });
-  session.on('close', () => { session = null; });
-  return session;
+  ref.on('close', () => {
+    if (preferSandbox) sessionSandbox = null;
+    else session = null;
+  });
+
+  if (preferSandbox) sessionSandbox = ref;
+  else session = ref;
+
+  return { sess: ref, sandbox: preferSandbox };
 }
 
 /**
@@ -117,20 +130,46 @@ async function sendApnsToTokens(tokens, { title, body, data = {} }) {
     aps: {
       alert: { title: title || 'LaChart', body: body || '' },
       sound: 'default',
-      // Tells iOS to wake the JS layer in the background so listeners can
-      // run. Capacitor's `pushNotificationActionPerformed` then fires when
-      // the user actually taps the banner.
       'content-available': 1,
     },
-    // Anything outside `aps` lands in `notification.data` on the JS side.
     ...(typeof data === 'object' && data ? data : {}),
   });
 
-  const sess = getSession();
+  const primarySandbox = process.env.APNS_PRODUCTION === 'false';
+  const primary = await sendApnsBatch(clean, payload, bundleId, providerJwt, primarySandbox);
 
-  // Send in parallel — each token gets its own HTTP/2 stream. APNs handles
-  // hundreds of concurrent streams over a single connection.
-  const results = await Promise.allSettled(clean.map((token) => new Promise((resolve) => {
+  // Xcode debug tokens need sandbox; TestFlight/App Store need production — retry mismatched tokens.
+  const retryTokens = primary
+    .filter((v) => !v.ok && (v.reason === 'BadDeviceToken' || v.status === 400))
+    .map((v) => v.token);
+
+  const secondary = retryTokens.length
+    ? await sendApnsBatch(retryTokens, payload, bundleId, providerJwt, !primarySandbox)
+    : [];
+
+  const all = [...primary, ...secondary];
+  let sent = 0;
+  const invalid = [];
+  const succeeded = new Set();
+
+  for (const v of all) {
+    if (v.ok) {
+      if (!succeeded.has(v.token)) { sent += 1; succeeded.add(v.token); }
+      continue;
+    }
+    if (v.status === 410 || v.reason === 'BadDeviceToken' || v.reason === 'Unregistered') {
+      invalid.push(v.token);
+    } else if (!retryTokens.includes(v.token)) {
+      console.warn('[APNs] send failed', v.status, v.reason || v.error, v.token?.slice(0, 8));
+    }
+  }
+
+  return { sent, invalid: [...new Set(invalid)] };
+}
+
+function sendApnsBatch(tokens, payload, bundleId, providerJwt, sandbox) {
+  const { sess } = getSession(sandbox);
+  return Promise.all(tokens.map((token) => new Promise((resolve) => {
     const req = sess.request({
       ':method': 'POST',
       ':path': `/3/device/${token}`,
@@ -157,23 +196,6 @@ async function sendApnsToTokens(tokens, { title, body, data = {} }) {
     req.setTimeout(15000, () => { try { req.close(); } catch {} resolve({ token, ok: false, error: 'timeout' }); });
     req.end(payload);
   })));
-
-  let sent = 0;
-  const invalid = [];
-  results.forEach((r) => {
-    if (r.status !== 'fulfilled') return;
-    const v = r.value;
-    if (v.ok) { sent += 1; return; }
-    // 410 Gone OR "BadDeviceToken" / "Unregistered" — the token will never
-    // work again, prune it from the DB so we stop trying.
-    if (v.status === 410 || v.reason === 'BadDeviceToken' || v.reason === 'Unregistered') {
-      invalid.push(v.token);
-    } else {
-      console.warn('[APNs] send failed', v.status, v.reason || v.error, v.token?.slice(0, 8));
-    }
-  });
-
-  return { sent, invalid };
 }
 
 /**

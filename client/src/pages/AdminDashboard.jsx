@@ -26,6 +26,37 @@ function healthUserName(log) {
   return [user.name, user.surname].filter(Boolean).join(' ') || user.email || String(user._id || 'Unknown user');
 }
 
+function mobileAppPlatformLabel(platform) {
+  if (platform === 'ios') return 'iOS';
+  if (platform === 'android') return 'Android';
+  return 'App';
+}
+
+function renderMobileAppBadge(user, { compact = false } = {}) {
+  if (!user?.hasMobileApp) {
+    return (
+      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 ${compact ? '' : 'w-fit'}`}>
+        —
+      </span>
+    );
+  }
+
+  const platform = user.mobileAppPlatform;
+  const label = mobileAppPlatformLabel(platform);
+  const colorClass = platform === 'ios'
+    ? 'bg-slate-800 text-white'
+    : platform === 'android'
+      ? 'bg-green-700 text-white'
+      : 'bg-cyan-100 text-cyan-900';
+
+  return (
+    <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${colorClass} ${compact ? '' : 'w-fit'}`}>
+      {label}
+      {user.mobileAppVersion ? ` v${user.mobileAppVersion}` : ''}
+    </span>
+  );
+}
+
 const AdminDashboard = () => {
   const { user: currentUser, loading, login: authLogin } = useAuth();
   const { addNotification } = useNotification();
@@ -39,6 +70,7 @@ const AdminDashboard = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [stravaFilter, setStravaFilter] = useState('all'); // 'all', 'connected', 'notConnected'
+  const [mobileAppFilter, setMobileAppFilter] = useState('all'); // 'all', 'hasApp', 'active7d', 'noApp'
   const [premiumFilter, setPremiumFilter] = useState('all'); // 'all' | 'free' | 'manual' | 'paid' | 'trial' | 'any'
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
@@ -404,6 +436,16 @@ const AdminDashboard = () => {
     return { last24h, last7d, last30d, never };
   }, [users]);
 
+  const mobileAppStats = useMemo(() => {
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const withApp = users.filter((u) => u.hasMobileApp).length;
+    const active7d = users.filter((u) => u.mobileAppLastSeen && (now - new Date(u.mobileAppLastSeen)) < weekMs).length;
+    const ios = users.filter((u) => u.mobileAppPlatform === 'ios').length;
+    const android = users.filter((u) => u.mobileAppPlatform === 'android').length;
+    return { withApp, active7d, ios, android };
+  }, [users]);
+
   const retentionFilteredUsers = useMemo(() => {
     const q = retentionSearch.toLowerCase();
     return users
@@ -510,6 +552,21 @@ const AdminDashboard = () => {
       });
     }
 
+    if (stravaFilter === 'connected') {
+      filtered = filtered.filter((u) => u.stravaConnected);
+    } else if (stravaFilter === 'notConnected') {
+      filtered = filtered.filter((u) => !u.stravaConnected);
+    }
+
+    if (mobileAppFilter === 'hasApp') {
+      filtered = filtered.filter((u) => u.hasMobileApp);
+    } else if (mobileAppFilter === 'active7d') {
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      filtered = filtered.filter((u) => u.mobileAppLastSeen && new Date(u.mobileAppLastSeen) >= new Date(weekAgo));
+    } else if (mobileAppFilter === 'noApp') {
+      filtered = filtered.filter((u) => !u.hasMobileApp);
+    }
+
     // Sort by last login (most recent first)
     filtered = filtered.sort((a, b) => {
       if (!a.lastLogin && !b.lastLogin) return 0;
@@ -520,7 +577,7 @@ const AdminDashboard = () => {
 
     // Apply limit
     return filtered.slice(0, usersLimit);
-  }, [users, searchQuery, premiumFilter, usersLimit]);
+  }, [users, searchQuery, premiumFilter, stravaFilter, mobileAppFilter, usersLimit]);
 
   /**
    * Counts of users in each premium bucket — drives the filter chip labels.
@@ -1337,6 +1394,21 @@ const AdminDashboard = () => {
 
               <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
+                  <div className="p-2 bg-slate-100 rounded-lg">
+                    <span className="text-xl sm:text-2xl">📱</span>
+                  </div>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Mobile App Users</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{mobileAppStats.withApp}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {mobileAppStats.active7d} active (7d) · iOS {mobileAppStats.ios} · Android {mobileAppStats.android}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <div className="flex items-center">
                   <div className="p-2 bg-teal-100 rounded-lg">
                     <span className="text-xl sm:text-2xl">📊</span>
                   </div>
@@ -1730,6 +1802,19 @@ const AdminDashboard = () => {
                         </select>
                       </div>
                       <div className="flex items-center gap-2">
+                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Mobile app:</label>
+                        <select
+                          value={mobileAppFilter}
+                          onChange={(e) => setMobileAppFilter(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        >
+                          <option value="all">All</option>
+                          <option value="hasApp">Has app ({mobileAppStats.withApp})</option>
+                          <option value="active7d">Active 7d ({mobileAppStats.active7d})</option>
+                          <option value="noApp">No app</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Premium:</label>
                         <select
                           value={premiumFilter}
@@ -2043,6 +2128,15 @@ const AdminDashboard = () => {
                         }`}>
                           Strava: {user.stravaConnected ? 'Connected' : '—'}
                         </span>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-gray-500">App:</span>
+                          {renderMobileAppBadge(user, { compact: true })}
+                        </span>
+                        {user.hasMobileApp && user.mobileAppLastSeen && (
+                          <span className="text-gray-400">
+                            App last seen: {new Date(user.mobileAppLastSeen).toLocaleDateString()}
+                          </span>
+                        )}
                         {!user.stravaConnected && user.stravaReminderEmail?.sent && user.stravaReminderEmail.lastSent && (
                           <span className="text-gray-400">
                             Reminder: {new Date(user.stravaReminderEmail.lastSent).toLocaleDateString()}{' '}
@@ -2211,6 +2305,7 @@ const AdminDashboard = () => {
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile App</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thank You Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Status</th>
@@ -2220,7 +2315,7 @@ const AdminDashboard = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="13" className="px-4 lg:px-6 py-8 text-center text-gray-500">
+                          <td colSpan="14" className="px-4 lg:px-6 py-8 text-center text-gray-500">
                             {searchQuery ? `No users found matching "${searchQuery}"` : 'No users found'}
                           </td>
                         </tr>
@@ -2430,6 +2525,27 @@ const AdminDashboard = () => {
                                     </button>
                                   )}
                                 </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 text-sm">
+                            <div className="flex flex-col gap-1">
+                              {renderMobileAppBadge(user)}
+                              {user.hasMobileApp && user.mobileAppLastSeen && (
+                                <div className="text-xs text-gray-500">
+                                  Last seen: {new Date(user.mobileAppLastSeen).toLocaleDateString()}{' '}
+                                  {new Date(user.mobileAppLastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              )}
+                              {user.hasMobileApp && user.mobileAppFirstSeen && (
+                                <div className="text-[11px] text-gray-400">
+                                  First seen: {new Date(user.mobileAppFirstSeen).toLocaleDateString()}
+                                </div>
+                              )}
+                              {user.pushTokenCount > 0 && (
+                                <div className="text-[11px] text-gray-400">
+                                  Push tokens: {user.pushTokenCount}
+                                </div>
                               )}
                             </div>
                           </td>

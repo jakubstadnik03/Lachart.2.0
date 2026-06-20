@@ -247,10 +247,41 @@ router.post("/resend-verification-email", authActionLimiter, async (req, res) =>
     }
 });
 
+function resolveMobileAppFields(user) {
+    const mobileApp = user?.mobileApp || {};
+    const pushTokenCount = Array.isArray(user?.expoPushTokens) ? user.expoPushTokens.length : 0;
+    const hasMobileApp = !!(mobileApp.lastSeenAt || pushTokenCount > 0);
+    return {
+        hasMobileApp,
+        mobileAppPlatform: mobileApp.platform || null,
+        mobileAppVersion: mobileApp.appVersion || null,
+        mobileAppFirstSeen: mobileApp.firstSeenAt || null,
+        mobileAppLastSeen: mobileApp.lastSeenAt || null,
+        pushTokenCount,
+    };
+}
+
+async function touchMobileAppUsage(userId, { platform, appVersion } = {}) {
+    const now = new Date();
+    const validPlatform = platform === 'ios' || platform === 'android' ? platform : null;
+    const $set = { 'mobileApp.lastSeenAt': now };
+    if (validPlatform) $set['mobileApp.platform'] = validPlatform;
+    if (appVersion && typeof appVersion === 'string') {
+        $set['mobileApp.appVersion'] = appVersion.trim().slice(0, 32);
+    }
+
+    const existing = await User.findById(userId).select('mobileApp.firstSeenAt').lean();
+    if (!existing?.mobileApp?.firstSeenAt) {
+        $set['mobileApp.firstSeenAt'] = now;
+    }
+
+    await User.findByIdAndUpdate(userId, { $set });
+}
+
 // Register Expo push token for the logged-in user (mobile app)
 router.post("/push-token", verifyToken, async (req, res) => {
     try {
-        const { expoPushToken } = req.body || {};
+        const { expoPushToken, platform, appVersion } = req.body || {};
         if (!expoPushToken || typeof expoPushToken !== "string") {
             return res.status(400).json({ error: "expoPushToken is required" });
         }
@@ -266,6 +297,7 @@ router.post("/push-token", verifyToken, async (req, res) => {
             { $addToSet: { expoPushTokens: tokenStr } },
             { new: true }
         );
+        await touchMobileAppUsage(req.user.userId, { platform, appVersion });
 
         res.status(200).json({ ok: true });
     } catch (error) {
@@ -274,7 +306,19 @@ router.post("/push-token", verifyToken, async (req, res) => {
     }
 });
 
-// Send a test push notification to the logged-in user's saved Expo tokens
+// Native app heartbeat — called on launch / foreground so admin can see who uses the mobile app.
+router.post("/mobile-app-ping", verifyToken, async (req, res) => {
+    try {
+        const { platform, appVersion } = req.body || {};
+        await touchMobileAppUsage(req.user.userId, { platform, appVersion });
+        res.status(200).json({ ok: true });
+    } catch (error) {
+        console.error("Error saving mobile app ping:", error);
+        res.status(500).json({ error: "Failed to save mobile app activity" });
+    }
+});
+
+// Send a test push notification to the logged-in user's saved APNs tokens
 router.post("/push-test", verifyToken, async (req, res) => {
     try {
         const { title, body, data } = req.body || {};
@@ -284,37 +328,21 @@ router.post("/push-test", verifyToken, async (req, res) => {
             return res.status(200).json({ ok: true, sent: 0, message: "No push tokens registered" });
         }
 
-        const messages = tokens.map((to) => ({
-            to,
-            sound: "default",
+        const { sendApnsToTokens } = require("../utils/apnsPushNotifications");
+        const { sent, invalid } = await sendApnsToTokens(tokens, {
             title: title || "LaChart",
             body: body || "Test notification",
-            data: data && typeof data === "object" ? data : {}
-        }));
+            data: data && typeof data === "object" ? data : { type: "test" },
+        });
 
-        // Expo push API accepts up to 100 messages per request
-        const chunkSize = 100;
-        const chunks = [];
-        for (let i = 0; i < messages.length; i += chunkSize) {
-            chunks.push(messages.slice(i, i + chunkSize));
+        if (invalid.length > 0) {
+            await User.updateOne(
+                { _id: req.user.userId },
+                { $pull: { expoPushTokens: { $in: invalid } } }
+            );
         }
 
-        const results = [];
-        for (const chunk of chunks) {
-            const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "Accept-Encoding": "gzip, deflate"
-                },
-                body: JSON.stringify(chunk)
-            });
-            const json = await resp.json().catch(() => null);
-            results.push({ status: resp.status, body: json });
-        }
-
-        res.status(200).json({ ok: true, sent: tokens.length, results });
+        res.status(200).json({ ok: true, sent, invalidCount: invalid.length });
     } catch (error) {
         console.error("Error sending test push:", error);
         res.status(500).json({ error: "Failed to send push" });
@@ -2852,7 +2880,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined,
                 athletesLinkedCount: user.role === 'coach' ? athletesLinkedCount : undefined,
                 registrationLocation: user.registrationLocation || null,
-                lastLoginLocation: user.lastLoginLocation || null
+                lastLoginLocation: user.lastLoginLocation || null,
+                ...resolveMobileAppFields(user),
             };
         }));
 

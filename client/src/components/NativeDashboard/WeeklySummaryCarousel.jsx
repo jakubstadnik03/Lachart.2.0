@@ -95,13 +95,12 @@ function Delta({ value, unit = '', fmt = null }) {
 
 function Stat({ label, value, planned, sub, delta }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 overflow-hidden">
       <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide truncate">{label}</div>
-      <div className="text-xl font-black text-gray-900 tabular-nums leading-tight mt-0.5 whitespace-nowrap">{value}</div>
-      {/* planned + delta on ONE line to keep the card short */}
+      <div className="text-lg font-black text-gray-900 tabular-nums leading-tight mt-0.5 truncate">{value}</div>
       {(planned != null || delta || sub) && (
-        <div className="flex items-center gap-1 mt-0.5 whitespace-nowrap">
-          {planned != null && <span className="text-[10px] text-gray-400">of {planned}</span>}
+        <div className="flex items-center gap-1 mt-0.5 min-w-0">
+          {planned != null && <span className="text-[10px] text-gray-400 truncate">of {planned}</span>}
           {delta}
           {sub && <span className="text-[10px] text-gray-400">{sub}</span>}
         </div>
@@ -110,21 +109,23 @@ function Stat({ label, value, planned, sub, delta }) {
   );
 }
 
-function WeekNav({ label, offset = 0, onPrev, onNext, onReset }) {
-  const btn = 'w-6 h-6 rounded-full flex items-center justify-center text-gray-500 text-sm font-bold active:bg-black/5';
+function WeekNav({ label, offset = 0, onPrev, onNext, onReset, trailing = null }) {
+  const btn = 'w-6 h-6 rounded-full flex items-center justify-center text-gray-500 text-sm font-bold active:bg-black/5 shrink-0';
   return (
-    <div className="flex items-center justify-between mb-2">
+    <div className="flex items-center justify-between mb-2 gap-1 min-h-[28px]">
       <button onClick={onPrev} className={btn} style={{ background: 'rgba(10,14,26,.05)' }} aria-label="Previous week">‹</button>
       {offset === 0 ? (
-        <span className="text-[13px] font-bold text-gray-900">{label}</span>
+        <span className="text-[13px] font-bold text-gray-900 truncate text-center flex-1 min-w-0 px-1">{label}</span>
       ) : (
-        // Off the current week → label becomes a "back to this week" button.
-        <button onClick={onReset} className="flex items-center gap-1 text-[13px] font-bold text-primary active:opacity-70" aria-label="Back to this week">
-          <RotateCcw className="w-3 h-3" strokeWidth={2.5} />
-          {label}
+        <button onClick={onReset} className="flex items-center justify-center gap-1 text-[13px] font-bold text-primary active:opacity-70 flex-1 min-w-0 px-1 truncate" aria-label="Back to this week">
+          <RotateCcw className="w-3 h-3 shrink-0" strokeWidth={2.5} />
+          <span className="truncate">{label}</span>
         </button>
       )}
-      <button onClick={onNext} className={btn} style={{ background: 'rgba(10,14,26,.05)' }} aria-label="Next week">›</button>
+      <div className="flex items-center gap-1 shrink-0">
+        {trailing}
+        <button onClick={onNext} className={btn} style={{ background: 'rgba(10,14,26,.05)' }} aria-label="Next week">›</button>
+      </div>
     </div>
   );
 }
@@ -144,7 +145,7 @@ const DAY_STATUS = {
   rest:    { bg: 'rgba(10,14,26,.06)', fg: '#9ca3af', mark: '', ring: 'none' },             // grey — rest
 };
 
-export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts = [], sparklineData = [], kpis = null }) {
+export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts = [], sparklineData = [], kpis = null, tests = [] }) {
   const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
   const [page, setPage] = useState(0);
@@ -277,38 +278,43 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
   // Build the shareable weekly-summary payload (IG-story card) from the
   // currently-selected week. KPIs (Fitness/Form/Fatigue) come from the parent.
   const shareSummary = useMemo(() => {
-    const fmtSub = (a) => {
-      const parts = [];
-      const s = actSecs(a); if (s > 0) parts.push(fmtTime(s));
-      const d = actDist(a); if (d > 0) parts.push(`${fmtKm(d)} km`);
-      return parts.join(' · ');
-    };
+    const now = new Date();
+    const ref = new Date(now);
+    ref.setDate(now.getDate() + weekOffset * 7);
+    const wb = getWeekBounds(ref);
+    const rangeShort = `${wb.monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${wb.sunday.getDate()}`;
+
     return {
       label: 'Weekly summary',
       title: data.label,
       subtitle: data.range,
+      rangeShort,
+      monday: wb.monday.toISOString(),
+      sunday: wb.sunday.toISOString(),
       kpis: kpis || null,
       totals: { count: data.act.count, secs: data.act.secs, distM: data.act.dist, tss: data.act.tss },
-      workouts: (data.curActs || []).map((a) => ({
-        title: a.title || a.name || a.titleManual || 'Activity',
-        sport: a.sport || a.type,
-        subtitle: fmtSub(a),
-        done: true,
-      })),
+      activities: data.curActs || [],
+      allActivities: activities,
+      sparklineData,
+      tests,
+      allTests: tests,
+      streak: data.streak,
     };
-  }, [data, kpis]);
+  }, [data, kpis, weekOffset, activities, sparklineData, tests]);
+
+  const shareBtn = (
+    <button
+      onClick={() => setShareOpen(true)}
+      aria-label="Share weekly summary"
+      className="flex items-center justify-center w-6 h-6 rounded-full active:scale-95 transition-transform shrink-0"
+      style={{ background: 'rgba(10,14,26,.05)' }}
+    >
+      <Share2 className="w-3 h-3 text-gray-500" strokeWidth={2.2} />
+    </button>
+  );
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Share this week as an Instagram-story card */}
-      <button
-        onClick={() => setShareOpen(true)}
-        aria-label="Share weekly summary"
-        className="absolute z-10 flex items-center justify-center w-7 h-7 rounded-full active:scale-95 transition-transform"
-        style={{ top: 8, right: 8, background: 'rgba(10,14,26,.05)' }}
-      >
-        <Share2 className="w-3.5 h-3.5 text-gray-500" strokeWidth={2.2} />
-      </button>
       {shareOpen && (
         <Suspense fallback={null}>
           <ActivityShareSheet open={shareOpen} summary={shareSummary} accent="#5E6590" onClose={() => setShareOpen(false)} />
@@ -337,7 +343,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
         {/* ── Card 1: This week (actual vs planned) ─────────────────────── */}
         <div style={SLIDE}>
           <div style={CARD}>
-            <WeekNav label={data.label} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} />
+            <WeekNav label={data.label} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} trailing={shareBtn} />
             <div key={weekOffset} style={contentAnim} className="grid grid-cols-3 gap-2">
               <Stat label="Activities" value={data.act.count}
                 delta={<Delta value={data.act.count - data.prev.count} />} />
@@ -352,7 +358,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
         {/* ── Card 2: By sport ──────────────────────────────────────────── */}
         <div style={SLIDE}>
           <div style={CARD}>
-            <WeekNav label={`${data.label} · by sport`} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} />
+            <WeekNav label={`${data.label} · by sport`} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} trailing={shareBtn} />
             <div key={weekOffset} style={contentAnim} className="grid grid-cols-3 gap-2">
               {data.bySport.map((s) => (
                 <div key={s.key} className="rounded-xl px-2 py-2" style={{ background: `${s.color}12` }}>
@@ -371,7 +377,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
         {/* ── Card 3: Training load (actual vs planned) ─────────────────── */}
         <div style={SLIDE}>
           <div style={CARD}>
-            <WeekNav label={`${data.label} · load`} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} />
+            <WeekNav label={`${data.label} · load`} offset={weekOffset} onPrev={prevWeek} onNext={nextWeek} onReset={goCurrent} trailing={shareBtn} />
             <div key={weekOffset} style={contentAnim} className="grid grid-cols-3 gap-2">
               <Stat label="TSS" value={Math.round(data.act.tss)}
                 delta={<Delta value={Math.round(data.act.tss - data.prev.tss)} />} />
@@ -385,13 +391,15 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
         {/* ── Card 4: Streak (always current) ───────────────────────────── */}
         <div style={SLIDE}>
           <div style={CARD}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[13px] font-bold text-gray-900">Streak</span>
-              {/* compact inline legend */}
-              <div className="flex items-center gap-2 text-[9px] text-gray-400 font-semibold">
-                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />done</span>
-                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#f59e0b' }} />to&nbsp;do</span>
-                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ef4444' }} />missed</span>
+            <div className="flex items-center justify-between mb-2 min-h-[28px] gap-1">
+              <span className="text-[13px] font-bold text-gray-900 truncate flex-1 min-w-0">Streak</span>
+              <div className="flex items-center gap-2 shrink-0">
+                {shareBtn}
+                <div className="hidden sm:flex items-center gap-2 text-[9px] text-gray-400 font-semibold">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />done</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#f59e0b' }} />to&nbsp;do</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ef4444' }} />missed</span>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">

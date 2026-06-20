@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import TimeInZonesBar from '../training/TimeInZonesBar';
+import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import ActivityShareSheet from '../sharing/ActivityShareSheet';
 import {
   ChevronLeftIcon,
@@ -28,7 +29,8 @@ import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
-import { computeActivityTss } from '../../utils/computeTss';
+import { computeActivityTss, computePowerTss, computeHrTss, defaultTssMode, canToggleTss } from '../../utils/computeTss';
+import { getTssDisplayMode, setTssDisplayMode, resolveTssDisplayMode } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
@@ -1003,28 +1005,46 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
       const altMin = Math.min(...altValues);
       const altMax = Math.max(...altValues);
       if (altMax - altMin >= 1) {
-        const altRange = altMax - altMin;
+        // Inflate the range by 35% so the highest peak sits ~74% up the chart
+        // instead of touching the top edge — gives the terrain visible headroom.
+        const altRange = (altMax - altMin) * 1.35;
         // Bars are laid out by DISTANCE for run/swim, by TIME for bike — match it.
-        const hasTime = altRecs[0].timeFromStart != null;
+        // Records carry `timeFromStart` (older shape) OR an ISO `timestamp`; the
+        // current record builder only sets `timestamp`, so derive seconds from
+        // start when timeFromStart is absent. Without this the bike branch fell
+        // through to distance while the denominator stayed time-based, piling the
+        // whole elevation onto the far-right edge.
+        const t0ms = altRecs[0].timestamp != null ? new Date(altRecs[0].timestamp).getTime() : NaN;
+        const getTimeSec = altRecs[0].timeFromStart != null
+          ? (r) => r.timeFromStart
+          : (!isNaN(t0ms) ? (r) => (new Date(r.timestamp).getTime() - t0ms) / 1000 : null);
+        const hasTime = getTimeSec != null;
         const hasDist = altRecs.some(r => r.distance != null);
         const preferDist = (isRun || isSwim) && hasDist;
         const getX = preferDist
           ? (r) => r.distance
           : hasTime
-            ? (r) => r.timeFromStart
+            ? getTimeSec
             : hasDist
               ? (r) => r.distance
               : (_, i) => i;
-        // Denominator = the bars' total (so x matches the bar layout). For the
-        // index fallback there are no lap weights to match, so use record count.
-        const axisMax = (hasTime || (preferDist && hasDist) || hasDist) ? totalElevW : (altRecs.length - 1 || 1);
         const step = Math.max(1, Math.floor(altRecs.length / 300));
         const sampled = altRecs.filter((_, i) => i % step === 0 || i === altRecs.length - 1);
         const clamp = (v) => Math.max(0, Math.min(100, v));
+        // Normalise x by the records' OWN extent so the terrain ALWAYS spans the
+        // full chart width — never cropped to the right. Using the bars' total
+        // weight as the denominator looked right only when the record span ==
+        // Σ lap weights; with synthesised/moving-time records (common on mobile)
+        // the last point landed well short of 100% and the elevation appeared
+        // chopped off. The record stream is uniform over the activity, so the
+        // bars' total and the record extent line up to the same shape anyway.
+        const rawXs = sampled.map((r, si) => getX(r, si * step));
+        const xMin = Math.min(...rawXs, 0);
+        const xMax = Math.max(...rawXs);
+        const xSpan = (xMax - xMin) || 1;
         const pts = sampled.map((r, si) => {
-          const origIdx = si * step;
-          const xv = getX(r, origIdx);
-          const x = clamp((xv / axisMax) * 100).toFixed(1);
+          const xv = rawXs[si];
+          const x = clamp(((xv - xMin) / xSpan) * 100).toFixed(1);
           const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
           return `${x},${y}`;
         });
@@ -2770,6 +2790,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const [mobileView, setMobileView] = useState('summary'); // 'summary' | 'laps' | 'edit'
+  const [peaksFocus, setPeaksFocus] = useState(null);
+  const [tssMode, setTssMode] = useState(() => getTssDisplayMode() || 'power');
+
+  useEffect(() => {
+    setPeaksFocus(null);
+  }, [a?.id, a?._id]);
 
   // Planned workout editing state
   const [plannedWorkout, setPlannedWorkout] = useState(initialPlannedWorkout || null);
@@ -2884,8 +2910,36 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // pace) so Strava activities — which never carry TSS — always show
   // something instead of being hidden.
   const explicitTss = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
-  const tss = explicitTss > 0 ? explicitTss : computeActivityTss(merged, authUser);
-  const hrTss = Number(merged.hrTSS || merged.hrTss || 0);
+  const powerTss = computePowerTss(merged, authUser);
+  const hrTssValue = computeHrTss(merged, authUser);
+  const tssToggleable = canToggleTss(powerTss, hrTssValue);
+  const tssLabel = tssMode === 'power'
+    ? (isBike ? 'Power TSS' : (isRun ? 'Pace TSS' : isSwim ? 'Pace TSS' : 'TSS'))
+    : 'hrTSS';
+  const tss = (() => {
+    if (tssMode === 'power' && powerTss > 0) return powerTss;
+    if (tssMode === 'hr' && hrTssValue > 0) return hrTssValue;
+    return explicitTss > 0 ? explicitTss : computeActivityTss(merged, authUser);
+  })();
+  const hrTss = hrTssValue;
+  const activityKey = String(merged.id || merged._id || merged.stravaId || merged.strava_id || title);
+  useEffect(() => {
+    const fallback = defaultTssMode(powerTss, hrTssValue, explicitTss);
+    setTssMode(resolveTssDisplayMode({
+      powerTss,
+      hrTss: hrTssValue,
+      explicitTss,
+      defaultMode: fallback,
+    }));
+  }, [activityKey, powerTss, hrTssValue, explicitTss]);
+  const flipTssMode = () => {
+    if (!tssToggleable) return;
+    setTssMode((m) => {
+      const next = m === 'power' ? 'hr' : 'power';
+      setTssDisplayMode(next);
+      return next;
+    });
+  };
   // Use actual average power for `power` — don't fall through to NP, otherwise
   // np === power and the NP label is never shown (the condition below checks ≠).
   const power = Number(merged.avgPower || merged.averagePower || merged.average_watts || 0);
@@ -3198,6 +3252,250 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
   };
 
+  // Shared Planned | Completed editor (mobile Edit tab + desktop inline edit).
+  const renderPlannedVsCompletedEditor = ({ mobile = false, onCancel, onSaved } = {}) => {
+    const inputCls = mobile
+      ? 'w-full px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500'
+      : 'w-full px-2.5 py-1.5 rounded-md border border-gray-200 text-sm bg-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500';
+    const plannedCls = mobile
+      ? 'w-full px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 text-right tabular-nums text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-400'
+      : 'w-full px-2.5 py-1.5 rounded-md border border-gray-200 text-sm bg-gray-50 text-right tabular-nums text-gray-600 focus:outline-none focus:ring-2 focus:ring-slate-400';
+    const num = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isNaN(n) ? null : n; };
+    const durMins = (s) => { const m = parseDurationToMinutes(s); return (m != null && m > 0) ? m : null; };
+    const ratioColor = (c, p) => {
+      if (!(c > 0) || !(p > 0)) return null;
+      const r = c / p;
+      if (r < 0.9) return '#dc2626';
+      if (r > 1.25) return '#d97706';
+      return '#059669';
+    };
+    const durColor = ratioColor(durMins(completedForm.durationDisplay), planForm.durationMins || durMins(planForm.durationDisplay));
+    const distColor = ratioColor(num(completedForm.distanceKm), num(planForm.distanceKm) ?? parseDistanceToKm(planForm.distanceDisplay));
+    const tssColor = ratioColor(num(completedForm.tss), num(planForm.targetTss));
+    const doneStyle = (c) => (c ? { color: c, fontWeight: 700 } : undefined);
+    const labelCol = mobile ? '56px' : '78px';
+    const Row = ({ label, plannedInput, children, accent }) => (
+      <div className="grid items-center gap-2 py-1.5" style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
+        <div className="text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: accent || '#6b7280' }}>{label}</div>
+        <div>{plannedInput || <div className="text-sm text-gray-300 text-right pr-1">—</div>}</div>
+        <div>{children}</div>
+      </div>
+    );
+
+    const saveAll = async () => {
+      const hasPlanData = plannedWorkout?._id
+        || planForm.durationDisplay || planForm.distanceDisplay || planForm.targetTss
+        || planForm.title || planForm.description || planForm.notes;
+      if (hasPlanData) {
+        try { await handleSavePlan(); } catch (_) { /* plan save errors logged in handleSavePlan */ }
+      }
+      await handleSaveCompleted();
+      onSaved?.();
+    };
+
+    return (
+      <div className={mobile ? 'px-4 py-4 space-y-4' : 'px-5 py-4 border-b border-gray-100 bg-gray-50/60'}>
+        {!mobile && (
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Edit activity</div>
+        )}
+
+        <div>
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
+          <input
+            type="text"
+            value={completedForm.title}
+            onChange={(e) => {
+              const v = e.target.value;
+              setCompletedForm((p) => ({ ...p, title: v }));
+              setPlanForm((p) => ({ ...p, title: v }));
+            }}
+            placeholder="Activity title"
+            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white px-3 py-1 divide-y divide-gray-100">
+          <div className="grid gap-2 pb-1.5 pt-1" style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
+            <div />
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right pr-1">Planned</div>
+            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wide text-right pr-1">Completed</div>
+          </div>
+          <Row
+            label="Duration"
+            plannedInput={(
+              <input
+                type="text"
+                value={planForm.durationDisplay}
+                onChange={(e) => setPlanForm((p) => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                onBlur={() => {
+                  const mins = parseDurationToMinutes(planForm.durationDisplay);
+                  if (mins != null && mins > 0) setPlanForm((p) => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) }));
+                }}
+                placeholder="1:30"
+                className={plannedCls}
+              />
+            )}
+          >
+            <input
+              type="text"
+              value={completedForm.durationDisplay}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, durationDisplay: e.target.value }))}
+              placeholder="3:34:53"
+              className={inputCls}
+              style={doneStyle(durColor)}
+            />
+          </Row>
+          <Row
+            label="Distance"
+            plannedInput={(
+              <input
+                type="text"
+                value={planForm.distanceDisplay}
+                onChange={(e) => setPlanForm((p) => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                onBlur={() => {
+                  const km = parseDistanceToKm(planForm.distanceDisplay);
+                  if (km != null && km > 0) setPlanForm((p) => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
+                }}
+                placeholder="10 km"
+                className={plannedCls}
+              />
+            )}
+          >
+            <input
+              type="number"
+              inputMode="decimal"
+              value={completedForm.distanceKm}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: e.target.value }))}
+              placeholder="km"
+              className={inputCls}
+              style={doneStyle(distColor)}
+            />
+          </Row>
+          <Row
+            label="TSS"
+            plannedInput={(
+              <input
+                type="number"
+                inputMode="numeric"
+                value={planForm.targetTss}
+                onChange={(e) => setPlanForm((p) => ({ ...p, targetTss: e.target.value }))}
+                placeholder="—"
+                min="0"
+                className={plannedCls}
+              />
+            )}
+          >
+            <input
+              type="number"
+              inputMode="numeric"
+              value={completedForm.tss}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, tss: e.target.value }))}
+              placeholder="—"
+              min="0"
+              className={inputCls}
+              style={doneStyle(tssColor)}
+            />
+          </Row>
+          <Row label="Calories">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={completedForm.calories}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, calories: e.target.value }))}
+              placeholder="kcal"
+              className={inputCls}
+            />
+          </Row>
+          <Row label="RPE">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={completedForm.rpe}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, rpe: e.target.value }))}
+              placeholder="1–10"
+              min="1"
+              max="10"
+              className={inputCls}
+            />
+          </Row>
+          <Row label="Lactate" accent="#7c3aed">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={completedForm.lactate}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, lactate: e.target.value }))}
+              placeholder="mmol/L"
+              step="0.1"
+              className={inputCls}
+            />
+          </Row>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Planned description</div>
+            <textarea
+              value={planForm.description}
+              onChange={(e) => setPlanForm((p) => ({ ...p, description: e.target.value }))}
+              rows={mobile ? 2 : 3}
+              placeholder="Workout description…"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wide mb-1">Completed notes</div>
+            <textarea
+              value={completedForm.description}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, description: e.target.value }))}
+              rows={mobile ? 2 : 3}
+              placeholder="How did it go?"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Coach notes</div>
+          <textarea
+            value={planForm.notes}
+            onChange={(e) => setPlanForm((p) => ({ ...p, notes: e.target.value }))}
+            rows={2}
+            placeholder="Coach notes, instructions…"
+            className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
+          />
+        </div>
+
+        {!mobile && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
+            <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
+          </div>
+        )}
+
+        <div className={`flex gap-2 ${mobile ? 'pt-1' : 'mt-1'}`}>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className={`${mobile ? 'flex-1 py-3' : 'px-4 py-2'} rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 active:bg-gray-50`}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={savingCompleted || savingPlan}
+            className={`${mobile ? 'flex-[2] py-3' : 'px-5 py-2'} rounded-xl text-sm font-bold text-white disabled:opacity-50`}
+            style={{ backgroundColor: color }}
+          >
+            {(savingCompleted || savingPlan) ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // ── Compare tab visibility ──
   const hasCategory  = !!(merged?.category);
   const hasTitle     = !!(merged?.titleManual || (merged?.title && String(merged.title).trim()));
@@ -3239,7 +3537,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {/* Edit — jumps straight to the Edit tab so the completed activity
               (title / distance / duration / TSS …) can be changed on mobile. */}
           <button
-            onClick={() => setMobileView('edit')}
+            onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
             title="Edit activity"
             className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 ${mobileView === 'edit' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
           >
@@ -3276,16 +3574,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </button>
         </div>
 
-        {/* Tab bar */}
+        {/* Tab bar — TrainingPeaks-style: Summary · Map/Graph · Laps · Peaks */}
         <div className="flex border-b border-gray-100 flex-shrink-0">
           {[
             { id: 'summary', label: 'Summary' },
+            ...((gpsData.length > 0 || chartTraining?.records?.length > 0) ? [{ id: 'mapgraph', label: 'Map/Graph' }] : []),
             ...(hasLaps ? [{ id: 'laps', label: 'Laps' }] : []),
+            ...((chartTraining?.records?.length > 10) ? [{ id: 'peaks', label: 'Peaks' }] : []),
             ...(showCompare ? [{ id: 'compare', label: 'Compare' }] : []),
-            { id: 'edit', label: 'Edit' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setMobileView(tab.id)}
-              className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${mobileView === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>
+              className={`flex-1 py-2.5 text-[13px] font-semibold transition-colors whitespace-nowrap ${mobileView === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>
               {tab.label}
             </button>
           ))}
@@ -3295,146 +3594,220 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {mobileView === 'summary' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-            {/* Stats grid — compact grouped layout */}
-            <div className="px-4 pt-3 pb-3 space-y-1.5 border-b border-gray-50">
+            {/* Stats — TrainingPeaks-style Planned | Completed comparison */}
+            <div className="px-4 pt-3 pb-3 space-y-3 border-b border-gray-50">
+              {(() => {
+                const elapsedTime = Number(merged.elapsed_time || merged.totalElapsedTime || merged.elapsedTime || merged.totalTimerTime || 0);
+                const plDur  = plannedWorkout ? Number(plannedDur || 0) : 0;
+                const plDist = plannedWorkout ? Number(plannedDist || 0) : 0;
+                const plTss  = plannedWorkout ? Number(plannedTss || 0) : 0;
+                // IF derived from TSS: TSS = IF² × hours × 100  ⇒  IF = √(TSS / (100·h))
+                const hrs    = dur > 0 ? dur / 3600 : 0;
+                const ifVal  = (tss > 0 && hrs > 0) ? Math.sqrt(tss / (100 * hrs)) : 0;
+                const plHrs  = plDur > 0 ? plDur / 3600 : 0;
+                const plIf   = (plTss > 0 && plHrs > 0) ? Math.sqrt(plTss / (100 * plHrs)) : 0;
+                const workKj = Number(merged.kilojoules || merged.work || 0) || (power > 0 && dur > 0 ? (power * dur / 1000) : 0);
 
-              {/* Row 1: Duration + Distance */}
-              <div className="grid grid-cols-2 gap-1.5">
-                <div className="rounded-xl bg-gray-50 px-3 py-2">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Duration</div>
-                  <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</div>
-                </div>
-                {dist > 0 && (
-                  <div className="rounded-xl bg-gray-50 px-3 py-2">
-                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Distance</div>
-                    <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</div>
-                  </div>
-                )}
-              </div>
+                // Compliance colour for completed vs planned (green on/over, red under).
+                const ratioColor = (c, p) => {
+                  if (!(c > 0) || !(p > 0)) return null;
+                  const r = c / p;
+                  if (r < 0.9) return '#dc2626';
+                  if (r > 1.25) return '#d97706';
+                  return '#059669';
+                };
 
-              {/* Power + HR on same row */}
-              {(isBike && power > 0) || hr > 0 ? (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {/* Power card (bike) */}
-                  {isBike && power > 0 ? (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Power</div>
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <div className="flex items-baseline gap-0.5">
-                          <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}</span>
-                          <span className="text-[10px] text-gray-400 font-semibold">W</span>
+                const deltaPct = (c, p) => (c > 0 && p > 0) ? Math.round((c / p - 1) * 100) : null;
+                const compliancePct = (plDur > 0 && dur > 0) ? Math.round(dur / plDur * 100) : null;
+                const durCompliant = ratioColor(dur, plDur) === '#059669';
+
+                const speedRow = isBike
+                  ? { label: 'Avg Speed', co: avgSpeed > 0 ? (avgSpeed * 3.6).toFixed(1) : null, plRaw: null, coRaw: avgSpeed > 0 ? avgSpeed * 3.6 : null, unit: 'km/h' }
+                  : { label: 'Avg Pace', co: paceStr, plRaw: null, coRaw: null, unit: '' };
+
+                const rows = [
+                  { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: ratioColor(dur, plDur), delta: deltaPct(dur, plDur) },
+                  (elapsedTime > 0 && Math.abs(elapsedTime - dur) > 1) ? { label: 'Total Time', pl: null, co: fmtDur(elapsedTime), unit: 'h:m:s' } : null,
+                  { label: 'Distance', pl: plDist > 0 ? (plDist / 1000).toFixed(1) : null, co: dist > 0 ? (dist / 1000).toFixed(1) : null, unit: 'km', color: ratioColor(dist, plDist), delta: deltaPct(dist, plDist) },
+                  speedRow.co ? { label: speedRow.label, pl: null, co: speedRow.co, unit: speedRow.unit } : null,
+                  calories > 0 ? { label: 'Calories', pl: null, co: Math.round(calories), unit: 'kcal' } : null,
+                  elevation > 0 ? { label: 'El. Gain', pl: null, co: Math.round(elevation).toLocaleString(), unit: 'm' } : null,
+                  { label: tssLabel, pl: plTss > 0 ? Math.round(plTss) : null, co: tss > 0 ? Math.round(tss) : null, unit: 'TSS', color: ratioColor(tss, plTss), delta: deltaPct(tss, plTss), tssToggle: true },
+                  (ifVal > 0 || plIf > 0) ? { label: 'IF', pl: plIf > 0 ? plIf.toFixed(2) : null, co: ifVal > 0 ? ifVal.toFixed(2) : null, unit: '', color: ratioColor(ifVal, plIf), delta: deltaPct(ifVal, plIf) } : null,
+                  (isBike && np > 0) ? { label: 'N. Power', pl: null, co: Math.round(np), unit: 'W' } : null,
+                  (isBike && power > 0) ? { label: 'Avg Power', pl: null, co: Math.round(power), unit: 'W' } : null,
+                  (isBike && workKj > 0) ? { label: 'Work', pl: null, co: Math.round(workKj).toLocaleString(), unit: 'kJ' } : null,
+                ].filter(Boolean).filter(r => r.co != null || r.pl != null);
+
+                // ── Min / Avg / Max from per-second records ──
+                const recs = chartTraining?.records || [];
+                const mam = (key, mult = 1) => {
+                  const vals = recs.map(r => r[key]).filter(v => v != null && v > 0).map(v => v * mult);
+                  if (vals.length < 3) return null;
+                  return { min: Math.min(...vals), avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals) };
+                };
+                const mamRows = [
+                  { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
+                  { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
+                  isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
+                  { label: 'Cadence', unit: isSwim ? 'spm' : 'rpm', d: mam('cadence'), dec: 0 },
+                ].filter(Boolean).filter(r => r.d);
+
+                const hasPlanned = rows.some(r => r.pl != null);
+                // Compliance bar marker: 50%→left, 150%→right (100% centred).
+                const markerLeft = compliancePct != null ? Math.max(2, Math.min(98, (compliancePct - 50) / 100 * 100)) : null;
+
+                return (
+                  <>
+                    {/* Top KPI strip: Duration (green when on plan) · Distance · hrTSS */}
+                    <div className="grid grid-cols-3 items-start gap-2 pt-1">
+                      <div>
+                        <span className="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-lg tabular-nums"
+                          style={durCompliant ? { backgroundColor: '#dcfce7', border: '1px solid #86efac' } : {}}>
+                          <span className="text-[19px] font-extrabold" style={{ color: durCompliant ? '#15803d' : '#1f2937' }}>{fmtDur(dur)}</span>
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{dist > 0 ? (dist / 1000).toFixed(2) : '—'}</span>
+                        <span className="text-[11px] font-semibold text-gray-400 ml-1">km</span>
+                      </div>
+                      <div className="text-right">
+                        <button
+                          type="button"
+                          onClick={flipTssMode}
+                          disabled={!tssToggleable}
+                          className={`text-right ${tssToggleable ? 'cursor-pointer active:opacity-70' : 'cursor-default'}`}
+                          title={tssToggleable ? `Switch to ${tssMode === 'power' ? 'hrTSS' : (isBike ? 'Power TSS' : 'Power / Pace TSS')}` : undefined}
+                        >
+                          <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{tss > 0 ? Math.round(tss) : '—'}</span>
+                          <span className={`text-[11px] font-semibold ml-1 ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
+                            {tssLabel}{tssToggleable ? ' ⇄' : ''}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Compliance bar — TrainingPeaks gauge */}
+                    {compliancePct != null && (
+                      <div className="pt-1 pb-0.5">
+                        <div className="relative">
+                          <div className="flex gap-1 h-2.5">
+                            <div className="rounded-l-full" style={{ flex: 1, backgroundColor: '#f97316' }} />
+                            <div style={{ flex: 1, backgroundColor: '#fbbf24' }} />
+                            <div style={{ flex: 1.5, backgroundColor: '#22c55e' }} />
+                            <div style={{ flex: 1, backgroundColor: '#fbbf24' }} />
+                            <div className="rounded-r-full" style={{ flex: 1, backgroundColor: '#f97316' }} />
+                          </div>
+                          <div className="absolute top-[-3px] w-[3px] h-[17px] rounded-full bg-gray-900"
+                            style={{ left: `${markerLeft}%`, transform: 'translateX(-50%)' }} />
                         </div>
-                        {np > 0 && (
-                          <div className="flex items-baseline gap-0.5">
-                            <span className="text-xs font-bold text-gray-600 tabular-nums">{Math.round(np)}</span>
-                            <span className="text-[10px] text-gray-400 font-semibold">NP</span>
-                          </div>
-                        )}
-                        {maxPower > 0 && (
-                          <div className="flex items-baseline gap-0.5">
-                            <span className="text-xs font-bold text-gray-500 tabular-nums">{Math.round(maxPower)}</span>
-                            <span className="text-[10px] text-gray-400 font-semibold">max</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Pace card (run/swim) in left slot */
-                    (paceStr || (!isBike && avgSpeed > 0)) ? (
-                      <div className="rounded-xl bg-gray-50 px-3 py-2">
-                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Pace</div>
-                        <div className="text-sm font-bold text-gray-800 tabular-nums">{paceStr}</div>
-                      </div>
-                    ) : <div />
-                  )}
-                  {/* HR card */}
-                  {hr > 0 ? (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Heart Rate</div>
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <div className="flex items-baseline gap-0.5">
-                          <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(hr)}</span>
-                          <span className="text-[10px] text-gray-400 font-semibold">bpm</span>
+                        <div className="text-center mt-1.5">
+                          <div className="text-2xl font-extrabold text-gray-900 leading-none">{compliancePct}%</div>
+                          <div className="text-[11px] font-semibold text-gray-400 mt-0.5">Based on Duration</div>
                         </div>
-                        {maxHR > 0 && (
-                          <div className="flex items-baseline gap-0.5">
-                            <span className="text-xs font-bold text-gray-500 tabular-nums">{Math.round(maxHR)}</span>
-                            <span className="text-[10px] text-gray-400 font-semibold">max</span>
+                      </div>
+                    )}
+
+                    {/* Planned vs Completed table — hide Planned column when no plan */}
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      {hasPlanned ? (
+                        <>
+                          <div className="grid grid-cols-[1fr_58px_62px_24px_42px] items-center px-3 py-1.5 bg-gray-50/80">
+                            <div />
+                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wide text-right">Planned</div>
+                            <div className="text-[9px] font-bold text-blue-500 uppercase tracking-wide text-right">Completed</div>
+                            <div />
+                            <div />
+                          </div>
+                          {rows.map((r, i) => (
+                            <div key={r.label} className={`grid grid-cols-[1fr_58px_62px_24px_42px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                              <div className="text-[12px] font-semibold text-gray-700">
+                                {r.tssToggle ? (
+                                  <button type="button" onClick={flipTssMode} disabled={!tssToggleable}
+                                    className={`text-left ${tssToggleable ? 'text-blue-600 active:opacity-70' : 'text-gray-700'}`}>
+                                    {r.label}{tssToggleable ? ' ⇄' : ''}
+                                  </button>
+                                ) : r.label}
+                              </div>
+                              <div className="text-[13px] font-medium text-gray-400 tabular-nums text-right">{r.pl != null ? r.pl : '—'}</div>
+                              <div className="text-[13px] font-bold tabular-nums text-right" style={{ color: r.color || '#1f2937' }}>{r.co != null ? r.co : '—'}</div>
+                              <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
+                              <div className="text-[11px] font-bold tabular-nums text-right" style={{ color: r.delta == null ? 'transparent' : r.delta >= 0 ? '#059669' : '#9ca3af' }}>
+                                {r.delta != null ? `${r.delta >= 0 ? '+' : ''}${r.delta}%` : ''}
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-[1fr_auto_28px] items-center px-3 py-1.5 bg-gray-50/80">
+                            <div />
+                            <div className="text-[9px] font-bold text-blue-500 uppercase tracking-wide text-right">Completed</div>
+                            <div />
+                          </div>
+                          {rows.map((r, i) => (
+                            <div key={r.label} className={`grid grid-cols-[1fr_auto_28px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                              <div className="text-[12px] font-semibold text-gray-700">
+                                {r.tssToggle ? (
+                                  <button type="button" onClick={flipTssMode} disabled={!tssToggleable}
+                                    className={`text-left ${tssToggleable ? 'text-blue-600 active:opacity-70' : 'text-gray-700'}`}>
+                                    {r.label}{tssToggleable ? ' ⇄' : ''}
+                                  </button>
+                                ) : r.label}
+                              </div>
+                              <div className="text-[13px] font-bold tabular-nums text-right text-gray-900">{r.co != null ? r.co : '—'}</div>
+                              <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Workout Metrics — Min / Avg / Max */}
+                    {mamRows.length > 0 && (
+                      <div>
+                        <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1 px-1">Workout Metrics</div>
+                        <div className="rounded-xl border border-gray-200 overflow-hidden">
+                          <div className="grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 bg-gray-50/80">
+                            <div></div>
+                            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">Min</div>
+                            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">Avg</div>
+                            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">Max</div>
+                            <div></div>
+                          </div>
+                          {mamRows.map((r, i) => (
+                            <div key={r.label} className={`grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                              <div className="text-[12px] font-semibold text-gray-700">{r.label}</div>
+                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.min.toFixed(r.dec)}</div>
+                              <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{r.d.avg.toFixed(r.dec)}</div>
+                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.max.toFixed(r.dec)}</div>
+                              <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* RPE + Lactate chips */}
+                    {(rpe > 0 || sessionLactate != null) && (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {rpe > 0 && (
+                          <div className="rounded-xl bg-gray-50 px-3 py-2">
+                            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">RPE</div>
+                            <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{rpe} / 10</div>
+                          </div>
+                        )}
+                        {sessionLactate != null && (
+                          <div className="rounded-xl bg-gray-50 px-3 py-2">
+                            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Lactate</div>
+                            <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{sessionLactate.toFixed(1)} mmol</div>
                           </div>
                         )}
                       </div>
-                    </div>
-                  ) : <div />}
-                </div>
-              ) : null}
-
-              {/* Speed (bike) + TSS row */}
-              {(isBike && avgSpeed > 0) || tss > 0 ? (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {isBike && avgSpeed > 0 ? (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Speed</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{(avgSpeed * 3.6).toFixed(1)} km/h</div>
-                    </div>
-                  ) : <div />}
-                  {tss > 0 ? (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">TSS</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(tss)}</div>
-                    </div>
-                  ) : <div />}
-                </div>
-              ) : null}
-
-              {/* Secondary metrics: Elev · Cad · Calories in 3-col */}
-              {(elevation > 0 || cadence > 0 || calories > 0) && (
-                <div className={`grid gap-1.5 ${[elevation > 0, cadence > 0, calories > 0].filter(Boolean).length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                  {elevation > 0 && (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Elev</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(elevation)}m</div>
-                    </div>
-                  )}
-                  {cadence > 0 && (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{isSwim ? 'SPM' : 'Cad'}</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</div>
-                    </div>
-                  )}
-                  {calories > 0 && (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Cal</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(calories)} kcal</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* RPE + Lactate */}
-              {(rpe > 0 || sessionLactate != null) && (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {rpe > 0 && (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">RPE</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{rpe} / 10</div>
-                    </div>
-                  )}
-                  {sessionLactate != null && (
-                    <div className="rounded-xl bg-gray-50 px-3 py-2">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Lactate</div>
-                      <div className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{sessionLactate.toFixed(1)} mmol</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Compliance badge */}
-              {complianceRow && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
-                  <span className="text-sm font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
-                </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Category */}
               <div className="flex items-center gap-2 px-1 pt-0.5">
@@ -3443,118 +3816,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             </div>
 
-            {/* Route Map */}
-            {gpsData.length > 0 && (
-              <div className="border-b border-gray-50">
-                <div className="relative overflow-hidden" style={{ height: 260 }}>
-                  <MapContainer
-                    key={`modal-map-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
-                    center={gpsData[Math.floor(gpsData.length / 2)]}
-                    zoom={12}
-                    style={{ height: '100%', width: '100%', zIndex: 0 }}
-                    scrollWheelZoom={false}
-                    zoomControl={true}
-                    attributionControl={false}
-                  >
-                    <MapInvalidator />
-                    <FitBoundsToRoute positions={gpsData} />
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-                    <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
-                    <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
-                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
-                    </CircleMarker>
-                    <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
-                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
-                    </CircleMarker>
-                  </MapContainer>
-                </div>
-              </div>
-            )}
-
-            {/* Training Overview — always shown:
-                • loading → skeleton pulse
-                • loaded + records → full TrainingChart (time-series)
-                • loaded + no records but has laps → LapChart bar overview */}
-            {detailLoading ? (
-              <div className="px-4 py-3 border-b border-gray-50">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
-                <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 120 }} />
-              </div>
-            ) : chartTraining?.records?.length > 0 ? (
-              <div className="px-4 py-3 border-b border-gray-50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Training Overview</div>
-                  {isSyntheticData && (
-                    <button
-                      onClick={refreshStreams}
-                      disabled={streamsRefreshing}
-                      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-60"
-                    >
-                      <svg className={`w-3 h-3 ${streamsRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      {streamsRefreshing ? 'Loading streams…' : 'Reload streams'}
-                    </button>
-                  )}
-                </div>
-                {activeHighlight && (
-                  <div className="mb-2 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-1.5 text-xs text-indigo-800">
-                    <span>
-                      <span className="font-semibold">Power Radar highlight</span>
-                      {activeRadarWatts > 0 && (
-                        <span className="ml-1.5">
-                          — Best {activeHighlight === 'sprint5s' ? '5s' : activeHighlight === 'attack1min' ? '1min' : activeHighlight === 'vo2max5min' ? '5min' : activeHighlight === 'threshold20min' ? '20min' : '60min'}: <span className="font-bold">{activeRadarWatts} W</span>
-                        </span>
-                      )}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setHighlightCleared(true);
-                        const url = new URL(window.location);
-                        url.searchParams.delete('highlightMetric');
-                        url.searchParams.delete('radarWatts');
-                        window.history.replaceState({}, '', url.toString());
-                      }}
-                      className="ml-3 text-[10px] font-medium text-indigo-600 hover:text-indigo-900 underline underline-offset-2"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-                <TrainingChart
-                  training={chartTraining}
-                  user={null}
-                  userProfile={null}
-                  onHover={() => {}}
-                  onLeave={() => {}}
-                  highlightMetric={activeHighlight}
-                  radarWatts={activeRadarWatts}
-                />
-              </div>
-            ) : laps.length > 0 ? (
-              <div className="px-4 py-3 border-b border-gray-50">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
-                <LapChart
-                  laps={laps}
-                  color={color}
-                  isBike={isBike}
-                  isRun={isRun}
-                  isSwim={isSwim}
-                  selectedLap={null}
-                  onSelectLap={() => {}}
-                  chartScrollRef={{ current: null }}
-                  onScrollCenter={() => {}}
-                  records={chartTraining?.records}
-                />
-              </div>
-            ) : null}
-
-            {/* Time in zones — derived from per-second records */}
-            {chartTraining?.records?.length > 30 && (
-              <TimeInZonesBar
-                records={chartTraining.records}
-                sport={merged?.sport}
-                authUser={authUser}
-              />
-            )}
+            {/* Map · Training Overview · Time-in-zones moved → Map/Graph tab */}
 
             {/* Description / notes */}
             {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
@@ -3590,7 +3852,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {!plannedWorkout && (
               <div className="px-4 py-3 border-t border-gray-100">
                 <button onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
-                  className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-400 active:bg-gray-50">
+                  className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 active:bg-gray-50">
                   + Add planned workout
                 </button>
               </div>
@@ -3608,6 +3870,176 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           )}
 
           </div>
+        )}
+
+        {/* ── MAP / GRAPH TAB ── */}
+        {mobileView === 'mapgraph' && (
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {/* Route Map */}
+            {gpsData.length > 0 && (
+              <div className="border-b border-gray-50">
+                <div className="relative overflow-hidden" style={{ height: 260 }}>
+                  <MapContainer
+                    key={`modal-map-mg-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
+                    center={gpsData[Math.floor(gpsData.length / 2)]}
+                    zoom={12}
+                    style={{ height: '100%', width: '100%', zIndex: 0 }}
+                    scrollWheelZoom={false}
+                    zoomControl={true}
+                    attributionControl={false}
+                  >
+                    <MapInvalidator />
+                    <FitBoundsToRoute positions={gpsData} />
+                    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                    <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+                    <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
+                    </CircleMarker>
+                    <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                      <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
+                    </CircleMarker>
+                  </MapContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Graph */}
+            {detailLoading ? (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 160 }} />
+              </div>
+            ) : chartTraining?.records?.length > 0 ? (
+              <div className="px-4 py-3 border-b border-gray-50">
+                {peaksFocus && (
+                  <div className="mb-2 flex items-center justify-between px-3 py-2 rounded-xl bg-violet-50 border border-violet-100">
+                    <span className="text-[12px] text-violet-800">
+                      Peak at <strong>{peaksFocus.label}</strong>
+                    </span>
+                    <button type="button" onClick={() => setPeaksFocus(null)} className="text-[11px] font-semibold text-violet-600 px-2 py-0.5 rounded-lg hover:bg-violet-100">
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+                {isSyntheticData && (
+                  <div className="flex justify-end mb-2">
+                    <button onClick={refreshStreams} disabled={streamsRefreshing}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 border border-amber-200 text-amber-700 active:bg-amber-100 disabled:opacity-60">
+                      <svg className={`w-3 h-3 ${streamsRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      {streamsRefreshing ? 'Loading…' : 'Reload streams'}
+                    </button>
+                  </div>
+                )}
+                <TrainingChart
+                  training={chartTraining}
+                  user={null}
+                  userProfile={null}
+                  onHover={() => {}}
+                  onLeave={() => {}}
+                  highlightMetric={activeHighlight}
+                  radarWatts={activeRadarWatts}
+                  focusTimeSec={peaksFocus?.focusTimeSec ?? null}
+                  focusMetric={peaksFocus?.metric ?? null}
+                />
+              </div>
+            ) : laps.length > 0 ? (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={null} onSelectLap={() => {}} chartScrollRef={{ current: null }} onScrollCenter={() => {}} records={chartTraining?.records} />
+              </div>
+            ) : (
+              <div className="px-4 py-10 text-center text-sm text-gray-400">No graph data available</div>
+            )}
+
+            {/* Time in zones */}
+            {chartTraining?.records?.length > 30 && (
+              <TimeInZonesBar records={chartTraining.records} sport={merged?.sport} authUser={authUser} />
+            )}
+
+            {/* Entire Workout — extended stats + Min/Avg/Max */}
+            {chartTraining?.records?.length > 5 && (() => {
+              const recs = chartTraining.records;
+              const hrs = dur > 0 ? dur / 3600 : 0;
+              const ifVal = (tss > 0 && hrs > 0) ? Math.sqrt(tss / (100 * hrs)) : 0;
+              const workKj = Number(merged.kilojoules || merged.work || 0) || (power > 0 && dur > 0 ? (power * dur / 1000) : 0);
+              // Elevation gain/loss from altitude record deltas.
+              let gain = 0, loss = 0;
+              for (let i = 1; i < recs.length; i++) {
+                const a0 = recs[i - 1].altitude, a1 = recs[i].altitude;
+                if (a0 != null && a1 != null) { const d = a1 - a0; if (d > 0) gain += d; else loss -= d; }
+              }
+              if (gain < 1 && elevation > 0) gain = elevation;
+              const mam = (key, mult = 1) => {
+                const vals = recs.map(r => r[key]).filter(v => v != null && v > 0).map(v => v * mult);
+                if (vals.length < 3) return null;
+                return { min: Math.min(...vals), avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals) };
+              };
+              const mamRows = [
+                isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
+                { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
+                { label: 'Cadence', unit: isSwim ? 'spm' : 'rpm', d: mam('cadence'), dec: 0 },
+                { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
+                { label: 'Elevation', unit: 'm', d: mam('altitude'), dec: 0 },
+              ].filter(Boolean).filter(r => r.d);
+              const facts = [
+                workKj > 0 ? { k: 'Work', v: `${Math.round(workKj).toLocaleString()} kJ` } : null,
+                ifVal > 0 ? { k: 'IF', v: ifVal.toFixed(2) } : null,
+                gain > 0 ? { k: 'El. Gain', v: `${Math.round(gain).toLocaleString()} m` } : null,
+                loss > 0 ? { k: 'El. Loss', v: `${Math.round(loss).toLocaleString()} m` } : null,
+              ].filter(Boolean);
+              return (
+                <div className="px-4 py-3">
+                  <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">Entire Workout</div>
+                  {facts.length > 0 && (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3">
+                      {facts.map(f => (
+                        <div key={f.k} className="flex items-baseline justify-between border-b border-gray-50 pb-1">
+                          <span className="text-[12px] text-gray-500">{f.k}</span>
+                          <span className="text-[13px] font-bold text-gray-800 tabular-nums">{f.v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {mamRows.length > 0 && (
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 bg-gray-50/80">
+                        <div></div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase text-right">Min</div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase text-right">Avg</div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase text-right">Max</div>
+                        <div></div>
+                      </div>
+                      {mamRows.map((r, i) => (
+                        <div key={r.label} className={`grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                          <div className="text-[12px] font-semibold text-gray-700">{r.label}</div>
+                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.min.toFixed(r.dec)}</div>
+                          <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{r.d.avg.toFixed(r.dec)}</div>
+                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.max.toFixed(r.dec)}</div>
+                          <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── PEAKS TAB ── */}
+        {mobileView === 'peaks' && chartTraining?.records?.length > 10 && (
+          <ActivityPeaksTab
+            records={chartTraining.records}
+            sport={merged?.sport || sport}
+            authUser={authUser}
+            durationSec={dur}
+            onNavigateToGraph={(sel) => {
+              if (sel?.type === 'peak' && sel.focusTimeSec != null) {
+                setPeaksFocus({ focusTimeSec: sel.focusTimeSec, metric: sel.metric, label: sel.label });
+              } else {
+                setPeaksFocus(null);
+              }
+              setMobileView('mapgraph');
+            }}
+          />
         )}
 
         {/* ── LAPS TAB ── */}
@@ -3899,165 +4331,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {/* ── EDIT TAB ── */}
         {mobileView === 'edit' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-
-            {/* ── Planned section (moved here from Summary) ── */}
-            <div className="px-4 py-4 border-b border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Planned</span>
-                {plannedWorkout && !editingPlanned && (
-                  <button onClick={() => setEditingPlanned(true)}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50">
-                    <PencilIcon className="w-3 h-3" /> Edit
-                  </button>
-                )}
-              </div>
-              {editingPlanned ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                    <div className="col-span-2 text-[10px] font-semibold text-gray-400 uppercase">Title</div>
-                    <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
-                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Duration</div>
-                      <input type="text" value={planForm.durationDisplay}
-                        onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                        onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
-                        placeholder="1:30" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Distance</div>
-                      <input type="text" value={planForm.distanceDisplay}
-                        onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                        onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
-                        placeholder="10 km" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">TSS</div>
-                      <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder=""
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Description</div>
-                    <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} rows={2}
-                      placeholder="Workout description…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Coach notes</div>
-                    <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-                      placeholder="Coach notes, instructions…" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2" />
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    {plannedWorkout && (
-                      <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 active:bg-gray-50">Cancel</button>
-                    )}
-                    <button onClick={async () => { await handleSavePlan(); setEditingPlanned(false); }}
-                      disabled={savingPlan}
-                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: color }}>
-                      {savingPlan ? 'Saving…' : plannedWorkout ? 'Save plan' : 'Add Planned'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                plannedWorkout ? (
-                  <div className="rounded-xl bg-gray-50 p-3 space-y-2">
-                    {plannedWorkout?.title && <div className="font-semibold text-sm text-gray-800">{plannedWorkout.title}</div>}
-                    <div className="flex flex-wrap gap-3">
-                      {plannedDur > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Duration</div><div className="text-sm font-bold text-gray-800">{fmtDur(plannedDur)}</div></div>}
-                      {plannedTss > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">TSS</div><div className="text-sm font-bold text-gray-800">{plannedTss}</div></div>}
-                      {plannedDist > 0 && <div><div className="text-[9px] font-bold text-gray-400 uppercase">Distance</div><div className="text-sm font-bold text-gray-800">{fmtDist(plannedDist)}</div></div>}
-                    </div>
-                    {plannedWorkout?.description && <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>}
-                    {plannedWorkout?.notes && (
-                      <div>
-                        <div className="text-[9px] font-bold text-gray-400 uppercase mb-0.5">Coach notes</div>
-                        <p className="text-xs text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <button onClick={() => setEditingPlanned(true)}
-                    className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-400 active:bg-gray-50">
-                    + Add planned workout
-                  </button>
-                )
-              )}
-            </div>
-
-            <div className="px-4 py-4 space-y-4">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Completed</div>
-              <div>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
-                <input type="text" value={completedForm.title}
-                  onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
-                  placeholder="Activity title"
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-                <textarea value={completedForm.description}
-                  onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
-                  rows={3} placeholder="How did it go?"
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Category</div>
-                <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Distance (km)</div>
-                  <input type="number" inputMode="decimal" value={completedForm.distanceKm}
-                    onChange={e => setCompletedForm(p => ({ ...p, distanceKm: e.target.value }))}
-                    placeholder="e.g. 10.5"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration <span className="text-gray-300 normal-case font-medium">(moving)</span></div>
-                  <input type="text" value={completedForm.durationDisplay}
-                    onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
-                    placeholder="1:30:00"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">TSS</div>
-                  <input type="number" inputMode="numeric" value={completedForm.tss}
-                    onChange={e => setCompletedForm(p => ({ ...p, tss: e.target.value }))}
-                    placeholder="e.g. 160" min="0"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Calories (kcal)</div>
-                  <input type="number" inputMode="numeric" value={completedForm.calories}
-                    onChange={e => setCompletedForm(p => ({ ...p, calories: e.target.value }))}
-                    placeholder="e.g. 800"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">RPE (1–10)</div>
-                  <input type="number" inputMode="numeric" value={completedForm.rpe}
-                    onChange={e => setCompletedForm(p => ({ ...p, rpe: e.target.value }))}
-                    placeholder="e.g. 7" min="1" max="10"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div className="col-span-2">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</div>
-                  <input type="number" inputMode="decimal" value={completedForm.lactate}
-                    onChange={e => setCompletedForm(p => ({ ...p, lactate: e.target.value }))}
-                    placeholder="e.g. 2.4" step="0.1"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2"
-                    style={{ '--tw-ring-color': '#7c3aed' }} />
-                </div>
-              </div>
-              <button
-                onClick={async () => { await handleSaveCompleted(); setMobileView('summary'); }}
-                disabled={savingCompleted}
-                className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                style={{ backgroundColor: color }}>
-                {savingCompleted ? 'Saving…' : 'Save Activity'}
-              </button>
+            {renderPlannedVsCompletedEditor({
+              mobile: true,
+              onCancel: () => setMobileView('summary'),
+              onSaved: () => setMobileView('summary'),
+            })}
+            <div className="px-4 pb-6">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Category</div>
+              <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
             </div>
           </div>
         )}
@@ -4182,17 +4463,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</span>
               </div>
             )}
-            {/* TSS */}
-            <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">TSS</span>
+            {/* TSS — tap to switch Power / hr when both are available */}
+            <button
+              type="button"
+              onClick={flipTssMode}
+              disabled={!tssToggleable}
+              className={`rounded-xl bg-gray-50 px-3 py-2 flex flex-col text-left ${tssToggleable ? 'hover:bg-gray-100 active:bg-gray-200' : ''}`}
+              title={tssToggleable ? `Switch to ${tssMode === 'power' ? 'hrTSS' : (isBike ? 'Power TSS' : 'Power / Pace TSS')}` : undefined}
+            >
+              <span className={`text-[9px] font-bold uppercase tracking-wide leading-none ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
+                {tssLabel}{tssToggleable ? ' ⇄' : ''}
+              </span>
               <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{tss > 0 ? Math.round(tss) : '—'}</span>
-            </div>
-            {hrTss > 0 && hrTss !== tss && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">hrTSS</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(hrTss)}</span>
-              </div>
-            )}
+            </button>
             {/* Pace/Speed */}
             {paceStr && (
               <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
@@ -4253,81 +4536,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </div>
 
           {/* ── Inline edit panel (completed activity) ── */}
-          {editingCompleted && (
-            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Edit activity</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Title</div>
-                  <input type="text" value={completedForm.title}
-                    onChange={e => setCompletedForm(p => ({ ...p, title: e.target.value }))}
-                    placeholder="Activity title"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div className="col-span-2">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-                  <textarea value={completedForm.description}
-                    onChange={e => setCompletedForm(p => ({ ...p, description: e.target.value }))}
-                    rows={2} placeholder="How did it go?"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Distance (km)</div>
-                  <input type="number" inputMode="decimal" value={completedForm.distanceKm}
-                    onChange={e => setCompletedForm(p => ({ ...p, distanceKm: e.target.value }))}
-                    placeholder="e.g. 10.5"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Duration <span className="text-gray-300 normal-case font-medium">(moving)</span></div>
-                  <input type="text" value={completedForm.durationDisplay}
-                    onChange={e => setCompletedForm(p => ({ ...p, durationDisplay: e.target.value }))}
-                    placeholder="1:30:00"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">TSS</div>
-                  <input type="number" inputMode="numeric" value={completedForm.tss}
-                    onChange={e => setCompletedForm(p => ({ ...p, tss: e.target.value }))}
-                    placeholder="e.g. 160" min="0"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Calories (kcal)</div>
-                  <input type="number" inputMode="numeric" value={completedForm.calories}
-                    onChange={e => setCompletedForm(p => ({ ...p, calories: e.target.value }))}
-                    placeholder="e.g. 800"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">RPE (1–10)</div>
-                  <input type="number" inputMode="numeric" value={completedForm.rpe}
-                    onChange={e => setCompletedForm(p => ({ ...p, rpe: e.target.value }))}
-                    placeholder="e.g. 7" min="1" max="10"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</div>
-                  <input type="number" inputMode="decimal" value={completedForm.lactate}
-                    onChange={e => setCompletedForm(p => ({ ...p, lactate: e.target.value }))}
-                    placeholder="e.g. 2.4" step="0.1"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2"
-                    style={{ '--tw-ring-color': '#7c3aed' }} />
-                </div>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button onClick={() => setEditingCompleted(false)}
-                  className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-white transition-colors">Cancel</button>
-                <button
-                  onClick={async () => { await handleSaveCompleted(); setEditingCompleted(false); }}
-                  disabled={savingCompleted}
-                  className="px-5 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-50"
-                  style={{ backgroundColor: color }}>
-                  {savingCompleted ? 'Saving…' : 'Save changes'}
-                </button>
-              </div>
-            </div>
-          )}
+          {editingCompleted && renderPlannedVsCompletedEditor({
+            onCancel: () => setEditingCompleted(false),
+            onSaved: () => setEditingCompleted(false),
+          })}
 
           {/* ── Description + notes ── */}
           {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
@@ -4419,6 +4631,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 userProfile={null}
                 onHover={() => {}}
                 onLeave={() => {}}
+                focusTimeSec={peaksFocus?.focusTimeSec ?? null}
+                focusMetric={peaksFocus?.metric ?? null}
               />
             </div>
           ) : null}
@@ -5575,7 +5789,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
     const totalTssP = sportRows.reduce((s, [, v]) => s + v.tss, 0);
 
     return (
-      <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col ${cls.gap}`}>
+      <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[130px]'} min-w-[140px] flex flex-col ${cls.gap}`}>
         {/* Totals */}
         <div className="flex items-baseline gap-1.5 leading-tight">
           <span className={`${cls.big} font-extrabold text-gray-900`}>{formatHours(totalSecs || plannedSeconds)}</span>
@@ -5618,7 +5832,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
-    <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 min-h-[130px] min-w-[140px] flex flex-col ${cls.gap}`}>
+    <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[130px]'} min-w-[140px] flex flex-col ${cls.gap}`}>
       {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
@@ -6248,6 +6462,7 @@ export default function CalendarView({
   const dayRefs = useRef({});
   const weekSummaryRefs = useRef({});
   const mobileStickyHeaderRef = useRef(null);
+  const [mobileHeaderHeight, setMobileHeaderHeight] = useState(0);
   const selectedMobileDayRef = useRef(selectedMobileDay);
 
   // Switching the mobile Calendar/Charts tab → jump the scroll container back
@@ -6515,6 +6730,20 @@ export default function CalendarView({
     return () => obs.disconnect();
   }, [isMobile, mobileTab]);
 
+  // Track sticky header height for scroll-margin and scrollToEl offsets.
+  useLayoutEffect(() => {
+    if (!isMobile) return;
+    const headerEl = mobileStickyHeaderRef.current;
+    if (!headerEl) return;
+    const measure = () => setMobileHeaderHeight(headerEl.offsetHeight || 0);
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(headerEl);
+    return () => ro?.disconnect();
+  }, [isMobile, mobileTab, showMiniCal, showMiniCalCharts]);
+
+  const mobileScrollMargin = mobileHeaderHeight > 0 ? mobileHeaderHeight + 12 : undefined;
+
   // Scroll to a day or week-summary element accounting for the sticky header height
   const scrollToEl = useCallback((el) => {
     if (!el) return;
@@ -6531,9 +6760,42 @@ export default function CalendarView({
       }
       return window;
     })();
-    const offset = elTop - headerBottom - 8;
+    const offset = elTop - headerBottom - 12;
     scrollEl.scrollBy({ top: offset, behavior: 'smooth' });
   }, []);
+
+  const scrollToTodayCard = useCallback(() => {
+    const today = new Date();
+    const todayKey = getLocalDateString(today);
+    setAnchorDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setMobileTab('calendar');
+    setSelectedMobileDay(todayKey);
+    setShowMiniCal(true);
+    isAutoScrollingRef.current = true;
+    const tryScroll = (attempt = 0) => {
+      const el = dayRefs.current[todayKey];
+      if (el) {
+        scrollToEl(el);
+        setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+        return;
+      }
+      if (attempt < 15) setTimeout(() => tryScroll(attempt + 1), 60);
+      else isAutoScrollingRef.current = false;
+    };
+    requestAnimationFrame(() => tryScroll());
+  }, [scrollToEl]);
+
+  const handleWeekSummaryTabChange = useCallback((tabId, weekKey) => {
+    setWeekSummaryTab(tabId);
+    isAutoScrollingRef.current = true;
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = weekSummaryRefs.current[weekKey];
+        if (el) scrollToEl(el);
+        setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
+      }, 0);
+    });
+  }, [scrollToEl]);
 
   // Load user profile for FTP and threshold pace
   useEffect(() => {
@@ -6571,61 +6833,23 @@ export default function CalendarView({
     };
   }, [draggedPw != null]); // eslint-disable-line
 
-  // Tapping the active Calendar tab in the native bottom bar fires
-  // `nl-tab-reclicked`. Reset the view to today and scroll to the today card
-  // — mirrors the "tap-the-tab-again to go home" pattern on iOS/Android.
+  // Native bottom bar: scroll to today when Calendar tab is tapped.
   useEffect(() => {
-    const onReclick = (e) => {
-      if (e?.detail?.key !== 'calendar') return;
-      const today = new Date();
-      const todayKey = getLocalDateString(today);
-      setAnchorDate(today);
-      setMobileTab('calendar');
-      setSelectedMobileDay(todayKey);
-      // Wait for the calendar tab + month to render, then scroll the today
-      // card into view (just below the sticky header).
-      isAutoScrollingRef.current = true;
-      const tryScroll = (attempt = 0) => {
-        const el = dayRefs.current[todayKey];
-        if (el) {
-          scrollToEl(el);
-          setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-          return;
-        }
-        if (attempt < 10) setTimeout(() => tryScroll(attempt + 1), 50);
-        else isAutoScrollingRef.current = false;
-      };
-      requestAnimationFrame(() => tryScroll());
+    const onNavigated = (e) => {
+      if (e?.detail?.key === 'calendar') scrollToTodayCard();
     };
-    window.addEventListener('nl-tab-reclicked', onReclick);
-    return () => window.removeEventListener('nl-tab-reclicked', onReclick);
-  }, [scrollToEl]);
+    window.addEventListener('nl-tab-navigated', onNavigated);
+    return () => window.removeEventListener('nl-tab-navigated', onNavigated);
+  }, [scrollToTodayCard]);
 
-  // Auto-scroll to today on first mobile-calendar render so the user lands on
-  // the current day even on initial app open / tab switch. Only fires once
-  // per Calendar tab visit.
+  // Auto-scroll to today on first mobile-calendar render (e.g. deep-link).
   const didInitialScrollToTodayRef = useRef(false);
   useEffect(() => {
-    if (!isMobile || mobileTab !== 'calendar') {
-      didInitialScrollToTodayRef.current = false;
-      return;
-    }
+    if (!isMobile || mobileTab !== 'calendar') return;
     if (didInitialScrollToTodayRef.current) return;
-    const todayKey = getLocalDateString(new Date());
-    isAutoScrollingRef.current = true;
-    const tryScroll = (attempt = 0) => {
-      const el = dayRefs.current[todayKey];
-      if (el) {
-        scrollToEl(el);
-        didInitialScrollToTodayRef.current = true;
-        setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-        return;
-      }
-      if (attempt < 15) setTimeout(() => tryScroll(attempt + 1), 60);
-      else isAutoScrollingRef.current = false;
-    };
-    requestAnimationFrame(() => tryScroll());
-  }, [isMobile, mobileTab, anchorDate, scrollToEl]);
+    didInitialScrollToTodayRef.current = true;
+    scrollToTodayCard();
+  }, [isMobile, mobileTab, scrollToTodayCard]);
 
   // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
   // Also detect month change and notify parent
@@ -7637,7 +7861,7 @@ export default function CalendarView({
           {mobileTab === 'calendar' && (
             <div
               ref={dayListRef}
-              className="px-3 pt-2"
+              className="px-3 pt-2 pb-24"
               onTouchStart={handleCalSwipeStart}
               onTouchEnd={handleCalSwipeEnd}
             >
@@ -7657,6 +7881,7 @@ export default function CalendarView({
                   <div
                     ref={el => { dayRefs.current[key] = el; }}
                     className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
+                    style={mobileScrollMargin ? { scrollMarginTop: mobileScrollMargin } : undefined}
                     onClick={() => setSelectedMobileDay(key)}
                   >
                     {/* Period band(s) — colored stripe across the top */}
@@ -7890,6 +8115,7 @@ export default function CalendarView({
                     <div
                       ref={el => { weekSummaryRefs.current[weekKey] = el; }}
                       className="mb-3 rounded-xl border border-primary/20 overflow-hidden"
+                      style={mobileScrollMargin ? { scrollMarginTop: mobileScrollMargin } : undefined}
                     >
                       <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5">
                         <span className="text-base font-bold text-primary">Week summary</span>
@@ -7898,7 +8124,7 @@ export default function CalendarView({
                             {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
                               <button
                                 key={tabId}
-                                onClick={e => { e.stopPropagation(); setWeekSummaryTab(tabId); }}
+                                onClick={e => { e.stopPropagation(); handleWeekSummaryTabChange(tabId, weekKey); }}
                                 className={`px-3 py-1 text-xs font-semibold rounded-md transition-all touch-manipulation ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                               >{lbl}</button>

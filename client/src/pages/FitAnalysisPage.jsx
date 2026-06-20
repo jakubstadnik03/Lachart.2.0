@@ -3534,10 +3534,48 @@ const FitAnalysisPage = () => {
     navigate('/training-calendar');
   }, [navigate]);
 
+  /** Find a previously saved Training row linked to this Strava activity. */
+  const findSavedTrainingForStrava = (strava, sport) => {
+    const stravaId = String(strava?.id || strava?.stravaId || '').replace(/^strava-/i, '');
+    const actDate = new Date(strava?.start_date_local || strava?.start_date || strava?.startDate || Date.now());
+    const actStart = Number.isNaN(actDate.getTime()) ? 0 : actDate.getTime();
+    return (regularTrainings || []).find((t) => {
+      if (!t) return false;
+      if (stravaId && String(t.sourceStravaActivityId || '').replace(/^strava-/i, '') === stravaId) return true;
+      if (stravaId && String(t.stravaId || '').replace(/^strava-/i, '') === stravaId) return true;
+      const tStart = new Date(t.date).getTime();
+      return actStart && tStart && Math.abs(tStart - actStart) < 90_000 && String(t.sport) === String(sport);
+    }) || null;
+  };
+
+  /** Keep user's lap types (work/rest/warmup/cooldown) when re-opening the form. */
+  const mergeSavedResultsWithFreshLaps = (savedResults, freshResults) => {
+    if (!Array.isArray(savedResults) || savedResults.length === 0) return freshResults;
+    if (!Array.isArray(freshResults) || freshResults.length === 0) return savedResults;
+    if (savedResults.length !== freshResults.length) return savedResults;
+    return savedResults.map((saved, i) => {
+      const fresh = freshResults[i] || {};
+      return {
+        ...fresh,
+        ...saved,
+        intervalType: saved.intervalType || fresh.intervalType,
+        isRecovery: saved.isRecovery ?? fresh.isRecovery,
+        isSelected: saved.isSelected ?? fresh.isSelected,
+        lactate: saved.lactate != null && saved.lactate !== '' ? saved.lactate : fresh.lactate,
+        RPE: saved.RPE ?? fresh.RPE,
+        power: saved.power || fresh.power,
+        heartRate: saved.heartRate || fresh.heartRate,
+        duration: saved.duration || fresh.duration,
+        durationSeconds: saved.durationSeconds || fresh.durationSeconds,
+        sourceLapIndex: saved.sourceLapIndex ?? fresh.sourceLapIndex ?? i,
+      };
+    });
+  };
+
   // Convert Strava laps to Training format
-  const convertLapsToTrainingFormat = (laps, isRecoveryMap = new Map(), durationTypePreference = 'auto') => {
+  const convertLapsToTrainingFormat = (laps, isRecoveryMap = new Map(), durationTypePreference = 'auto', sportTypeHint = null) => {
     // Determine sport type
-    const sportType = selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
+    const sportType = sportTypeHint || selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
     const isRun = sportType.toLowerCase().includes('run');
     const isSwim = sportType.toLowerCase().includes('swim');
     
@@ -3627,7 +3665,8 @@ const FitAnalysisPage = () => {
         distanceMeters: distanceMetersNum,  // raw meters for Distance field
         repeatCount: 1,
         isRecovery: isRecovery,
-        isSelected: !isRecovery
+        isSelected: !isRecovery,
+        intervalType: lap.intervalType || (isRecovery ? 'recovery' : undefined),
       };
     });
   };
@@ -3805,10 +3844,10 @@ const FitAnalysisPage = () => {
     });
 
     // Convert all laps to training format (including recovery) with duration type preference
-    const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap, durationType);
+    const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap, durationType, sportType);
 
     // Check if we have at least some work intervals
-    const workIntervals = results.filter(r => !r.isRecovery);
+    const workIntervals = results.filter(r => !r.isRecovery && r.intervalType !== 'recovery');
     if (workIntervals.length === 0) {
       alert('No work intervals found. All intervals appear to be recovery periods.');
       return;
@@ -3823,24 +3862,30 @@ const FitAnalysisPage = () => {
     const safeActivityDate = Number.isNaN(parsedActivityDate.getTime()) ? new Date() : parsedActivityDate;
     const dateStr = safeActivityDate.toISOString().slice(0, 16);
 
+    const savedTraining = findSavedTrainingForStrava(strava, sport);
+    const mergedResults = savedTraining?.results?.length
+      ? mergeSavedResultsWithFreshLaps(savedTraining.results, results)
+      : results;
+
     // Prepare form data with all intervals (user can edit/remove in form)
     const formData = {
       sport: sport,
       type: 'interval',
-      category: strava?.category || '',
-      title: strava?.titleManual || strava?.name || 'Untitled Training',
+      category: savedTraining?.category || strava?.category || '',
+      title: savedTraining?.title || strava?.titleManual || strava?.name || 'Untitled Training',
       customTitle: '',
-      description: strava?.description || '',
+      description: savedTraining?.description || strava?.description || '',
       date: dateStr,
+      ...(savedTraining?._id ? { _id: savedTraining._id } : {}),
       // Link back to Strava so we can merge calendar entries and keep Strava data as the source of truth
       sourceStravaActivityId: String(strava.id || strava.stravaId || ''),
-      specifics: {
+      specifics: savedTraining?.specifics || {
         specific: '',
         weather: '',
         customSpecific: '',
         customWeather: ''
       },
-      results: results
+      results: mergedResults,
     };
 
     setTrainingFormData(formData);
@@ -4021,6 +4066,8 @@ const FitAnalysisPage = () => {
       const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
       const stravaActivity = {
         ...data.detail,
+        id: data.detail?.id || data.detail?.stravaId || stravaNumericId,
+        stravaId: data.detail?.stravaId || stravaNumericId,
         titleManual: data.titleManual,
         description: data.description,
         category: data.category || null,
@@ -4090,7 +4137,9 @@ const FitAnalysisPage = () => {
       });
     }
 
-    const results = selectedTraining.laps.map((lap, idx) => {
+    const results = (Array.isArray(selectedTraining.results) && selectedTraining.results.length > 0)
+      ? selectedTraining.results
+      : selectedTraining.laps.map((lap, idx) => {
       const duration = lap.moving_time ?? lap.totalTimerTime ?? lap.totalElapsedTime ?? lap.elapsed_time ?? 0;
       const distance = Number(lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? 0);
       const rawSpeed = lap.avgSpeed ?? lap.average_speed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? lap.enhanced_avg_speed ?? lap.speed ?? 0;
@@ -4125,8 +4174,9 @@ const FitAnalysisPage = () => {
         durationType: 'time',
         distanceMeters: distance > 0 ? Math.round(distance) : undefined,
         repeatCount: 1,
-        isRecovery: false,
-        isSelected: true,
+        isRecovery: lap.isRecovery || false,
+        isSelected: lap.isSelected !== false,
+        intervalType: lap.intervalType || undefined,
       };
     });
 

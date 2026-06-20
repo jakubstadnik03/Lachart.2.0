@@ -25,7 +25,12 @@ import RouteStatsTemplate from './templates/RouteStatsTemplate';
 import StatsOnlyTemplate from './templates/StatsOnlyTemplate';
 import LapsElevationLactateTemplate from './templates/LapsElevationLactateTemplate';
 import LactateCurveTemplate from './templates/LactateCurveTemplate';
-import SummaryShareTemplate from './templates/SummaryShareTemplate';
+import { WEEKLY_STORIES } from './templates/WeeklySummaryStories';
+import { toWeek } from './weeklySummaryToWeek';
+import SharePaletteProvider from './SharePaletteProvider';
+import { shareCanvasColor } from './shareTheme';
+import { activityCanvasColor } from './templates/activityShareChrome';
+import { getStravaActivityDetail } from '../../services/api';
 
 // Templates internally use a 1080×1920 viewBox (IG Story native) but we
 // rasterise to 720×1280. Why: on iOS the Capacitor JS↔Native bridge
@@ -63,7 +68,7 @@ function blobToObjectUrl(blob) {
   try { return URL.createObjectURL(blob); } catch { return null; }
 }
 
-async function svgMarkupToPng(rawMarkup, { transparent = false } = {}) {
+async function svgMarkupToPng(rawMarkup, { transparent = false, theme = 'dark', activityStyle = false } = {}) {
   console.log('[share] svgMarkupToPng: markup length=', rawMarkup.length);
   const xml = ensureSvgNamespaces(rawMarkup);
   // Use UTF-8 data URL — avoids the URL.createObjectURL → blob race
@@ -96,7 +101,7 @@ async function svgMarkupToPng(rawMarkup, { transparent = false } = {}) {
   // imperceptible even if a template ever leaves a hairline gap.
   // Skip the opaque fill when the caller wants a transparent PNG (alpha kept).
   if (!transparent) {
-    ctx.fillStyle = '#0F172A';
+    ctx.fillStyle = activityStyle ? activityCanvasColor(theme) : shareCanvasColor(theme);
     ctx.fillRect(0, 0, TEMPLATE_W, TEMPLATE_H);
   }
   ctx.drawImage(img, 0, 0, TEMPLATE_W, TEMPLATE_H);
@@ -127,6 +132,36 @@ export default function ActivityShareSheet({
   accent = '#FC4C02',
   summary = null, // { title, subtitle, sport, kpis, totals, workouts } → daily/weekly summary card
 }) {
+  const [heroMetric, setHeroMetric] = useState('distance');
+  const [shareTheme, setShareTheme] = useState('dark');
+  const [topMetric, setTopMetric] = useState('tss');
+  const [topShowMap, setTopShowMap] = useState(false);
+  const [topGpsPoints, setTopGpsPoints] = useState(null);
+
+  const weekData = useMemo(() => (summary ? toWeek(summary) : null), [summary]);
+
+  const topCanMap = useMemo(() => {
+    if (!weekData?.top) return false;
+    if (weekData.top.gpsPoints?.length > 1) return true;
+    return Boolean(weekData.top.activityId);
+  }, [weekData]);
+
+  const pillBtn = (active) => ({
+    padding: '6px 12px', borderRadius: 999, fontFamily: 'inherit',
+    fontSize: 11, fontWeight: 700, cursor: 'pointer',
+    border: active ? '1.5px solid #5E6590' : '1px solid #E5E7EB',
+    background: active ? 'rgba(94,101,144,.12)' : '#fff',
+    color: active ? '#5E6590' : '#6B7280',
+  });
+
+  const renderTemplateMarkup = (Comp, props) => renderToStaticMarkup(
+    React.createElement(
+      SharePaletteProvider,
+      { theme: props.theme || shareTheme },
+      React.createElement(Comp, props),
+    ),
+  );
+
   // Each template is stored as a component + props so we can re-render it with
   // `transparent` on demand (the transparent export must skip the template's
   // own dark background, not just the canvas fill). Recomputed whenever any of
@@ -134,7 +169,26 @@ export default function ActivityShareSheet({
   const templates = useMemo(() => {
     const out = [];
     if (summary) {
-      out.push({ id: 'summary', label: summary.label || 'Summary', Comp: SummaryShareTemplate, props: { summary, accent } });
+      const week = weekData || toWeek(summary);
+      const topGps = topGpsPoints?.length > 1 ? topGpsPoints : week.top?.gpsPoints;
+      WEEKLY_STORIES
+        .filter((s) => !s.requires || s.requires(week))
+        .forEach((s) => out.push({
+          id: s.id,
+          label: s.label,
+          Comp: s.Comp,
+          props: {
+            week,
+            accent,
+            theme: shareTheme,
+            ...(s.id === 'hero' ? { metric: heroMetric } : {}),
+            ...(s.id === 'top' ? {
+              heroMetric: topMetric,
+              showMap: topShowMap && topCanMap,
+              gpsPoints: topGps || [],
+            } : {}),
+          },
+        }));
       return out;
     }
     if (test) {
@@ -149,7 +203,7 @@ export default function ActivityShareSheet({
       out.push({ id: 'laps', label: 'Laps + elevation + lactate', Comp: LapsElevationLactateTemplate, props: { activity: activity || {}, laps, records, accent } });
     }
     return out;
-  }, [activity, gpsPoints, laps, records, test, thresholds, accent, summary]);
+  }, [activity, gpsPoints, laps, records, test, thresholds, accent, summary, heroMetric, shareTheme, topMetric, topShowMap, topGpsPoints, topCanMap, weekData]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -203,6 +257,11 @@ export default function ActivityShareSheet({
   useEffect(() => {
     if (open) {
       setActiveIdx(0);
+      setHeroMetric('distance');
+      setShareTheme('dark');
+      setTopMetric('tss');
+      setTopShowMap(false);
+      setTopGpsPoints(null);
       setPngCache(prev => {
         Object.values(prev).forEach(p => {
           if (p?.objectUrl) URL.revokeObjectURL(p.objectUrl);
@@ -221,6 +280,67 @@ export default function ActivityShareSheet({
     };
   }, [open, templates.length]);
 
+  // Re-render hero card when the user picks a different headline metric.
+  useEffect(() => {
+    if (!open || !summary) return;
+    setPngCache((prev) => {
+      if (!prev.hero) return prev;
+      const next = { ...prev };
+      if (next.hero?.objectUrl) URL.revokeObjectURL(next.hero.objectUrl);
+      delete next.hero;
+      return next;
+    });
+  }, [heroMetric, open, summary]);
+
+  // Re-render all weekly cards when light/dark theme changes.
+  useEffect(() => {
+    if (!open || !summary) return;
+    setPngCache((prev) => {
+      if (!Object.keys(prev).length) return prev;
+      Object.values(prev).forEach((v) => {
+        if (v?.objectUrl) URL.revokeObjectURL(v.objectUrl);
+      });
+      return {};
+    });
+  }, [shareTheme, open, summary]);
+
+  // Re-render top session when metric / map options change.
+  useEffect(() => {
+    if (!open || !summary) return;
+    setPngCache((prev) => {
+      if (!prev.top) return prev;
+      const next = { ...prev };
+      if (next.top?.objectUrl) URL.revokeObjectURL(next.top.objectUrl);
+      delete next.top;
+      return next;
+    });
+  }, [topMetric, topShowMap, topGpsPoints, open, summary]);
+
+  // Load GPS track for top session when map is enabled.
+  useEffect(() => {
+    if (!open || !summary || !topShowMap || !weekData?.top) {
+      if (!topShowMap) setTopGpsPoints(null);
+      return undefined;
+    }
+    const embedded = weekData.top.gpsPoints;
+    if (embedded?.length > 1) {
+      setTopGpsPoints(embedded);
+      return undefined;
+    }
+    const id = weekData.top.activityId;
+    if (!id) return undefined;
+    let cancelled = false;
+    getStravaActivityDetail(id)
+      .then((data) => {
+        if (cancelled) return;
+        const latlng = data?.streams?.latlng?.data || data?.streams?.latlng || [];
+        const pts = latlng.filter((p) => Array.isArray(p) && p[0] != null);
+        if (pts.length > 1) setTopGpsPoints(pts);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, summary, topShowMap, weekData]);
+
   // Generate PNG for the active template when not yet cached.
   // We use renderToStaticMarkup() to build the SVG as a *string* without
   // ever mounting it in the DOM — this is what finally unblocked iOS
@@ -236,15 +356,24 @@ export default function ActivityShareSheet({
     const id = setTimeout(async () => {
       try {
         console.log('[share] rendering template to markup:', tmpl.id);
-        const markup = renderToStaticMarkup(React.createElement(tmpl.Comp, tmpl.props));
+        let markup;
+        try {
+          markup = renderTemplateMarkup(tmpl.Comp, tmpl.props);
+        } catch (renderErr) {
+          throw new Error(renderErr?.message || String(renderErr) || 'SVG render failed');
+        }
         console.log('[share] markup ready, converting to PNG');
-        const png = await svgMarkupToPng(markup);
+        const png = await svgMarkupToPng(markup, {
+          theme: tmpl.props.theme || shareTheme,
+          activityStyle: !summary,
+        });
         if (cancelled) return;
         setPngCache(prev => ({ ...prev, [tmpl.id]: png }));
         console.log('[share] cached template', tmpl.id);
       } catch (e) {
-        console.error('[share] capture failed for', tmpl.id, e);
-        if (!cancelled) showToast(`Render failed: ${e?.message || 'unknown'}`);
+        const msg = e?.message || (typeof e === 'string' ? e : JSON.stringify(e)) || 'unknown';
+        console.error('[share] capture failed for', tmpl.id, msg, e);
+        if (!cancelled) showToast(`Render failed (${tmpl.label}): ${msg}`);
       }
     }, 20);
     return () => { cancelled = true; clearTimeout(id); };
@@ -286,8 +415,12 @@ export default function ActivityShareSheet({
     if (transparentBg) {
       // Re-render the template WITH transparent so it omits its own dark
       // background, then keep the canvas alpha too.
-      const markup = renderToStaticMarkup(React.createElement(tmpl.Comp, { ...tmpl.props, transparent: true }));
-      return await svgMarkupToPng(markup, { transparent: true });
+      const markup = renderTemplateMarkup(tmpl.Comp, { ...tmpl.props, transparent: true });
+      return await svgMarkupToPng(markup, {
+        transparent: true,
+        theme: tmpl.props.theme || shareTheme,
+        activityStyle: !summary,
+      });
     }
     const cached = pngCacheRef.current[tmpl.id];
     if (cached) return cached;
@@ -599,17 +732,77 @@ export default function ActivityShareSheet({
           {templates[activeIdx]?.label}
         </div>
 
+        {/* Hero stat metric picker (weekly summary only) */}
+        {summary && templates[activeIdx]?.id === 'hero' && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap', padding: '0 16px', marginBottom: 10 }}>
+            {[
+              { id: 'distance', label: 'Distance' },
+              { id: 'tss', label: 'TSS' },
+              { id: 'time', label: 'Time' },
+              { id: 'activities', label: 'Sessions' },
+            ].map((opt) => (
+              <button key={opt.id} type="button" onClick={() => setHeroMetric(opt.id)} style={pillBtn(heroMetric === opt.id)}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Top session options */}
+        {summary && templates[activeIdx]?.id === 'top' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 16px', marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { id: 'tss', label: 'TSS' },
+                { id: 'distance', label: 'Distance' },
+                { id: 'time', label: 'Time' },
+                { id: 'speed', label: 'Speed' },
+              ].map((opt) => (
+                <button key={opt.id} type="button" onClick={() => setTopMetric(opt.id)} style={pillBtn(topMetric === opt.id)}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {topCanMap && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setTopShowMap((v) => !v)}
+                  style={pillBtn(topShowMap)}
+                >
+                  {topShowMap ? 'Map ON' : 'Show map'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Light / dark theme (weekly summary) */}
+        {summary && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, padding: '0 16px', marginBottom: 10 }}>
+            {[
+              { id: 'dark', label: 'Dark' },
+              { id: 'light', label: 'Light' },
+            ].map((opt) => (
+              <button key={opt.id} type="button" onClick={() => setShareTheme(opt.id)} style={pillBtn(shareTheme === opt.id)}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Transparent-background toggle */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, padding: '0 16px' }}>
           <button
             type="button"
             onClick={() => setTransparentBg(v => !v)}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-              padding: '7px 14px', borderRadius: 999, fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+              padding: '7px 14px', borderRadius: 999, fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
               border: `1.5px solid ${transparentBg ? '#6366F1' : '#E5E7EB'}`,
               background: transparentBg ? '#EEF2FF' : '#fff',
               color: transparentBg ? '#4F46E5' : '#6B7280',
+              maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'center',
             }}
           >
             <span style={{
@@ -618,8 +811,8 @@ export default function ActivityShareSheet({
               backgroundImage: 'linear-gradient(45deg,#cbd5e1 25%,transparent 25%),linear-gradient(-45deg,#cbd5e1 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cbd5e1 75%),linear-gradient(-45deg,transparent 75%,#cbd5e1 75%)',
               backgroundSize: '8px 8px', backgroundPosition: '0 0,0 4px,4px -4px,-4px 0', backgroundColor: '#fff',
             }} />
-            Transparent background
-            <span style={{ fontWeight: 800 }}>{transparentBg ? 'ON' : 'OFF'}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>Transparent</span>
+            <span style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{transparentBg ? 'ON' : 'OFF'}</span>
           </button>
         </div>
 

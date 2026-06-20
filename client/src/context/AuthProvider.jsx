@@ -152,6 +152,15 @@ export const AuthProvider = ({ children }) => {
             }
           }
           setLoading(false);
+
+          if (isNative) {
+            import('../utils/pushTokenSync').then((m) => {
+              m.syncPushTokenToServer().catch(() => {});
+            }).catch(() => {});
+            import('../utils/mobileAppSync').then((m) => {
+              m.syncMobileAppActivity({ force: true }).catch(() => {});
+            }).catch(() => {});
+          }
         } catch (error) {
           clearTimeout(timeoutId);
           
@@ -301,6 +310,14 @@ export const AuthProvider = ({ children }) => {
           ? lastRoute
           : '/dashboard';
         navigate(target, { replace: true });
+        // Upload APNs token after auth is available (may have arrived before login).
+        import('../utils/pushTokenSync').then((m) => {
+          m.syncPushTokenToServer().catch(() => {});
+          m.ensurePushNotificationsSetup().catch(() => {});
+        }).catch(() => {});
+        import('../utils/mobileAppSync').then((m) => {
+          m.syncMobileAppActivity({ force: true }).catch(() => {});
+        }).catch(() => {});
       };
 
       if (token && user) {

@@ -5,7 +5,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
-import { SportTile, SPORT_TINT, SPORT_ICONS, normSport } from '../native/shared/Tiles';
+import { SportTile, SPORT_TINT, normSport } from '../native/shared/Tiles';
+import { SportGlyph } from '../shared/SportIcon';
 import { useCategories } from '../../context/CategoryContext';
 import { WorkoutChart } from '../WorkoutPlanner/WorkoutBuilder';
 import api from '../../services/api';
@@ -124,7 +125,8 @@ export default function PlannedWorkoutEditor({
   useEffect(() => {
     if (!plannedWorkout) return;
     setTitle(plannedWorkout.title || plannedWorkout.name || '');
-    setSport(normSport(plannedWorkout.sport || 'bike'));
+    const ns = normSport(plannedWorkout.sport || 'bike');
+    setSport(ns === 'gym' ? 'strength' : ns);
     setDate(toLocalDateInput(plannedWorkout.date));
     // Prefer explicit plannedDuration; fall back to computing from steps
     const durSecs = Number(plannedWorkout.plannedDuration) || planStepSecs(plannedWorkout.steps);
@@ -212,7 +214,7 @@ export default function PlannedWorkoutEditor({
   if (!isOpen) return null;
 
   const isCompleted = !!linkedActivity;
-  const tint = SPORT_TINT[sport] || SPORT_TINT.other;
+  const tint = SPORT_TINT[sport === 'strength' ? 'gym' : sport] || SPORT_TINT.other;
 
   // Build chart context: prefer freshly-fetched profile zones + test thresholds
   // so the wattage labels exactly match what the athlete sees on their Training
@@ -366,7 +368,7 @@ export default function PlannedWorkoutEditor({
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 18px 8px',
         }}>
-          <SportTile sport={sport} size={36} />
+          <SportTile sport={sport === 'strength' ? 'gym' : sport} size={36} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: tint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               {isCompleted ? 'Planned · linked' : 'Planned workout'}
@@ -487,15 +489,15 @@ export default function PlannedWorkoutEditor({
           {/* Sport pills */}
           <Field label="Sport">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['bike', 'run', 'swim'].map(sp => {
-                const on = sport === sp;
-                const t = SPORT_TINT[sp];
-                const icon = SPORT_ICONS[sp];
+              {['bike', 'run', 'swim', 'gym'].map(sp => {
+                const on = sport === sp || (sp === 'gym' && (sport === 'strength' || sport === 'gym'));
+                const t = SPORT_TINT[sp] || SPORT_TINT.other;
+                const label = sp === 'gym' ? 'Gym' : sp.charAt(0).toUpperCase() + sp.slice(1);
                 return (
                   <button
                     key={sp}
                     type="button"
-                    onClick={() => setSport(sp)}
+                    onClick={() => setSport(sp === 'gym' ? 'strength' : sp)}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 5,
                       padding: '7px 14px 7px 10px', borderRadius: 9999,
@@ -508,17 +510,8 @@ export default function PlannedWorkoutEditor({
                       transition: 'background .2s ease, color .2s ease, border-color .2s ease',
                     }}
                   >
-                    {icon && (
-                      <span style={{
-                        width: 14, height: 14, display: 'block',
-                        background: on ? '#fff' : t,
-                        WebkitMaskImage: `url(${icon})`, maskImage: `url(${icon})`,
-                        WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                        WebkitMaskPosition: 'center', maskPosition: 'center',
-                        WebkitMaskSize: 'contain', maskSize: 'contain',
-                      }} />
-                    )}
-                    {sp.charAt(0).toUpperCase() + sp.slice(1)}
+                    <SportGlyph sport={sp} size={14} color={on ? '#fff' : t} />
+                    {label}
                   </button>
                 );
               })}

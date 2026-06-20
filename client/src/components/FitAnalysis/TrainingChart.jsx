@@ -71,7 +71,7 @@ const formatPace = (seconds, unitSystem, isSwim = false) => {
 };
 
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null }) => {
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null, focusTimeSec = null, focusMetric = null }) => {
   const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
@@ -546,6 +546,28 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     ? formatDistance((distKm || 0) * 1000, unitSystem).formatted
     : fmtClock((distKm || 0) * 3600));
   const xAxisName = hasDistanceAxis ? 'Distance' : 'Time';
+
+  // Seek chart to a peak effort selected from the Peaks tab.
+  useEffect(() => {
+    if (focusTimeSec == null || !processedData?.points?.length) return;
+    if (focusMetric === 'power') setShowPower(true);
+    if (focusMetric === 'hr') setShowHeartRate(true);
+    const pts = processedData.points;
+    let best = pts[0];
+    let minD = Math.abs((pts[0].time || 0) - focusTimeSec);
+    for (const p of pts) {
+      const d = Math.abs((p.time || 0) - focusTimeSec);
+      if (d < minD) { minD = d; best = p; }
+    }
+    const px = xScale(best.distance);
+    if (px == null || Number.isNaN(px)) return;
+    setHoveredPoint(best);
+    setCursorX(px);
+    setClickedPoint(best);
+    setClickedCursorX(px);
+    setTouchActive(true);
+    if (onHover) onHover(best);
+  }, [focusTimeSec, focusMetric, processedData, xScale, onHover]);
 
   // Add top padding (10% of graph height) so max values don't touch the top
   const topPaddingRatio = 0.1; // 10% padding at top

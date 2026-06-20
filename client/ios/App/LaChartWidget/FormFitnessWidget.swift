@@ -48,23 +48,40 @@ struct FormFitnessProvider: TimelineProvider {
 enum LaChartColor {
     static let primary  = Color(red: 0.37, green: 0.40, blue: 0.71)  // #5E6590
     static let primaryLight = Color(red: 0.46, green: 0.49, blue: 0.71) // #767EB5
-    // Use Color.primary instead of a hard-coded dark ink so text is readable
-    // in both light and dark mode (system automatically picks white vs black).
     static let ink      = Color.primary
-    static let muted    = Color(red: 0.61, green: 0.64, blue: 0.72)  // #9CA3AF
     static let mark     = Color(red: 0.37, green: 0.40, blue: 0.71)
     static let danger   = Color(red: 0.72, green: 0.26, blue: 0.22)  // #B84238
     static let warning  = Color(red: 0.96, green: 0.49, blue: 0.13)
     static let success  = Color(red: 0.13, green: 0.55, blue: 0.13)
 
-    static func forForm(_ form: Int) -> Color {
-        // Same buckets the StatusHeroCard ring uses.
+    static func muted(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 0.58, green: 0.61, blue: 0.68)
+            : Color(red: 0.61, green: 0.64, blue: 0.72)
+    }
+
+    static func surface(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 0.09, green: 0.10, blue: 0.14)
+            : Color.white
+    }
+
+    static func dividerOpacity(_ scheme: ColorScheme) -> Double {
+        scheme == .dark ? 0.28 : 0.38
+    }
+
+    static func forForm(_ form: Int, scheme: ColorScheme = .light) -> Color {
+        let base: Color
         switch form {
-        case ..<(-25): return danger
-        case ..<(-10): return warning
-        case 0...20:   return success
-        default:       return primary
+        case ..<(-25): base = danger
+        case ..<(-10): base = warning
+        case 0...20:   base = success
+        default:       base = primary
         }
+        if scheme == .dark && form >= 0 && form <= 20 {
+            return Color(red: 0.34, green: 0.78, blue: 0.48)
+        }
+        return base
     }
 
     static func forCategory(_ cat: String?) -> Color {
@@ -84,6 +101,8 @@ private func sportSymbol(_ sport: String?) -> String {
     switch (sport ?? "").lowercased() {
     case "bike", "ride", "cycle", "virtual": return "bicycle"
     case "swim":                              return "figure.pool.swim"
+    case "hike", "hiking":                    return "figure.hiking"
+    case "walk", "walking":                   return "figure.walk"
     case "strength", "gym", "weights":        return "dumbbell.fill"
     case "yoga":                              return "figure.yoga"
     default:                                  return "figure.run"
@@ -93,9 +112,10 @@ private func sportSymbol(_ sport: String?) -> String {
 // MARK: - KPI Row (matches StatusHeroCard layout)
 
 struct KPIRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let snapshot: FormFitnessSnapshot
     var compact: Bool = false
-    var big: Bool = false   // medium/large widget — fill the width with larger numbers
+    var big: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -105,27 +125,30 @@ struct KPIRow: View {
             Spacer(minLength: 0)
             kpi(value: formattedForm(snapshot.form),
                 label: "FORM",
-                color: LaChartColor.forForm(snapshot.form))
+                color: LaChartColor.forForm(snapshot.form, scheme: colorScheme))
             Spacer(minLength: 0)
             kpi(value: "\(snapshot.fatigue)",
                 label: "FATIGUE",
-                color: LaChartColor.danger)
+                color: colorScheme == .dark
+                    ? Color(red: 0.92, green: 0.45, blue: 0.40)
+                    : LaChartColor.danger)
         }
     }
 
-    private var valueSize: CGFloat { big ? 40 : (compact ? 22 : 28) }
-    private var labelSize: CGFloat { big ? 11 : (compact ? 8 : 9) }
+    // Slightly smaller than before so workout rows get more room.
+    private var valueSize: CGFloat { big ? 28 : (compact ? 17 : 22) }
+    private var labelSize: CGFloat { big ? 8 : (compact ? 6.5 : 7.5) }
 
     private func kpi(value: String, label: String, color: Color) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             Text(value)
                 .font(.system(size: valueSize, weight: .bold))
                 .foregroundColor(LaChartColor.ink)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.55)
                 .lineLimit(1)
             Text(label)
                 .font(.system(size: labelSize, weight: .heavy))
-                .tracking(0.5)
+                .tracking(0.4)
                 .foregroundColor(color)
         }
         .frame(maxWidth: .infinity)
@@ -144,6 +167,7 @@ private func formatDuration(_ s: Int?) -> String {
 }
 
 struct WorkoutRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let workout: WidgetWorkout
     let done: Bool       // true = completed (green check); false = planned (dashed)
     var compact: Bool = false
@@ -161,48 +185,30 @@ struct WorkoutRow: View {
         }
     }
 
-    private var circleD: CGFloat { large ? 40 : (compact ? 26 : 30) }
-    private var iconSize: CGFloat { large ? 19 : (compact ? 13 : 15) }
-    private var titleSize: CGFloat { large ? 18 : (compact ? 13 : 15) }
-    private var detailSize: CGFloat { large ? 14 : (compact ? 10 : 11) }
+    private var iconSize: CGFloat { large ? 15 : (compact ? 11 : 13) }
+    private var titleSize: CGFloat { large ? 15 : (compact ? 11 : 13) }
+    private var detailSize: CGFloat { large ? 12 : (compact ? 9 : 10) }
     private var checkSize: CGFloat { large ? 21 : (compact ? 14 : 16) }
 
     private var catColor: Color { LaChartColor.forCategory(workout.category) }
 
     private var rowContent: some View {
-        HStack(spacing: large ? 10 : (compact ? 6 : 8)) {
-            // Status indicator + sport icon.
-            // Completed → solid green tint. Planned → dashed ring (no fill) so
-            // it clearly reads as "to do, not done yet".
-            ZStack {
-                if done {
-                    Circle()
-                        .fill(LaChartColor.success.opacity(0.16))
-                        .frame(width: circleD, height: circleD)
-                } else {
-                    Circle()
-                        .fill(catColor.opacity(0.06))
-                        .frame(width: circleD, height: circleD)
-                    Circle()
-                        .strokeBorder(catColor.opacity(0.55),
-                                      style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                        .frame(width: circleD, height: circleD)
-                }
-                Image(systemName: sportSymbol(workout.sport))
-                    .font(.system(size: iconSize, weight: .bold))
-                    .foregroundColor(done ? LaChartColor.success : catColor)
-            }
+        HStack(spacing: large ? 8 : (compact ? 5 : 6)) {
+            Image(systemName: sportSymbol(workout.sport))
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundColor(done ? LaChartColor.success : catColor)
+                .frame(width: iconSize + 2, alignment: .center)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(workout.title)
                     .font(.system(size: titleSize, weight: done ? .semibold : .medium))
-                    .foregroundColor(done ? LaChartColor.ink : LaChartColor.ink.opacity(0.7))
+                    .foregroundColor(done ? LaChartColor.ink : LaChartColor.ink.opacity(colorScheme == .dark ? 0.88 : 0.7))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if let line = composeDetailLine(), !line.isEmpty {
                     Text(line)
                         .font(.system(size: detailSize, weight: .regular))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                         .lineLimit(1)
                 }
             }
@@ -237,17 +243,19 @@ struct WorkoutRow: View {
 // MARK: - Empty / stale states
 
 struct EmptyHint: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(LaChartColor.muted)
+                .foregroundColor(LaChartColor.muted(colorScheme))
             Text("Open LaChart")
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundColor(LaChartColor.primary)
             Text("to sync data")
                 .font(.system(size: 9, weight: .medium))
-                .foregroundColor(LaChartColor.muted)
+                .foregroundColor(LaChartColor.muted(colorScheme))
         }
     }
 }
@@ -255,6 +263,7 @@ struct EmptyHint: View {
 // MARK: - Small
 
 struct SmallTodayView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entry: FormFitnessEntry
 
     var body: some View {
@@ -277,7 +286,7 @@ struct SmallTodayView: View {
                 Spacer(minLength: 0)
             } else {
                 KPIRow(snapshot: entry.snapshot, compact: true)
-                Divider().opacity(0.4)
+                Divider().opacity(LaChartColor.dividerOpacity(colorScheme))
                 content
             }
         }
@@ -297,17 +306,17 @@ struct SmallTodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("TOMORROW")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     WorkoutRow(workout: plan, done: false, compact: true)
                 }
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "moon.zzz.fill")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     Text("Rest day")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     Spacer()
                 }
             }
@@ -332,6 +341,7 @@ struct SmallTodayView: View {
 // MARK: - Medium
 
 struct MediumTodayView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entry: FormFitnessEntry
 
     var body: some View {
@@ -359,11 +369,10 @@ struct MediumTodayView: View {
                 Spacer(minLength: 0)
             } else {
                 Spacer(minLength: 2)
-                // Big KPI row — fills the width with larger numbers.
                 KPIRow(snapshot: entry.snapshot, big: true)
-                Spacer(minLength: 8)
-                Divider().opacity(0.35)
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
+                Divider().opacity(LaChartColor.dividerOpacity(colorScheme))
+                Spacer(minLength: 6)
                 content
                 Spacer(minLength: 0)
             }
@@ -389,7 +398,7 @@ struct MediumTodayView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("TOMORROW")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     ForEach(upcoming) { w in
                         WorkoutRow(workout: w, done: false, large: true)
                     }
@@ -398,10 +407,10 @@ struct MediumTodayView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "moon.zzz.fill")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     Text("Rest day")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                     Spacer()
                 }
             }
@@ -422,7 +431,7 @@ struct MediumTodayView: View {
                 if moreCount > 0 {
                     Text("+\(moreCount) more")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(LaChartColor.muted)
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                         .padding(.top, 1)
                 }
             }
@@ -433,6 +442,7 @@ struct MediumTodayView: View {
 // MARK: - Large
 
 struct LargeTodayView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entry: FormFitnessEntry
 
     var body: some View {
@@ -463,7 +473,7 @@ struct LargeTodayView: View {
                 Spacer(minLength: 0)
             } else {
                 KPIRow(snapshot: entry.snapshot)
-                Divider().opacity(0.35)
+                Divider().opacity(LaChartColor.dividerOpacity(colorScheme))
                 content
                 Spacer(minLength: 0)
             }
@@ -511,17 +521,17 @@ struct LargeTodayView: View {
         Text(text)
             .font(.system(size: 11, weight: .heavy))
             .tracking(0.7)
-            .foregroundColor(LaChartColor.muted)
+            .foregroundColor(LaChartColor.muted(colorScheme))
     }
 
     private var restRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(LaChartColor.muted)
+                .foregroundColor(LaChartColor.muted(colorScheme))
             Text("Rest day")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(LaChartColor.muted)
+                .foregroundColor(LaChartColor.muted(colorScheme))
             Spacer()
         }
     }
@@ -533,15 +543,7 @@ struct FormFitnessWidget: Widget {
     let kind: String = "FormFitnessWidget"
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: FormFitnessProvider()) { entry in
-            // iOS 17 requires `containerBackground` for the widget to render
-            // without the system's grey fallback. Older OSes silently ignore.
-            if #available(iOS 17.0, *) {
-                FormFitnessWidgetView(entry: entry)
-                    .containerBackground(.background, for: .widget)
-            } else {
-                FormFitnessWidgetView(entry: entry)
-                    .padding(0)
-            }
+            FormFitnessWidgetView(entry: entry)
         }
         .configurationDisplayName("Today's Training")
         .description("Form / Fitness / Fatigue plus today's completed & planned workouts.")
@@ -554,13 +556,6 @@ struct FormFitnessWidgetView: View {
     @Environment(\.colorScheme) var colorScheme
     let entry: FormFitnessEntry
 
-    // Adaptive widget background: near-black in dark mode, white in light mode.
-    private var widgetBackground: Color {
-        colorScheme == .dark
-            ? Color(red: 0.08, green: 0.09, blue: 0.12)
-            : Color.white
-    }
-
     var body: some View {
         Group {
             switch family {
@@ -569,8 +564,19 @@ struct FormFitnessWidgetView: View {
             default:            SmallTodayView(entry: entry)
             }
         }
-        .background(widgetBackground)
-        // Fallback: tapping anywhere that isn't a workout Link opens the app.
         .widgetURL(URL(string: "com.lachart.app://open"))
+        .modifier(WidgetSurfaceBackground(colorScheme: colorScheme))
+    }
+}
+
+private struct WidgetSurfaceBackground: ViewModifier {
+    let colorScheme: ColorScheme
+
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.containerBackground(LaChartColor.surface(colorScheme), for: .widget)
+        } else {
+            content.background(LaChartColor.surface(colorScheme))
+        }
     }
 }

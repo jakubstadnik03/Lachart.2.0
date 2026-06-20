@@ -1,23 +1,16 @@
 import React, { useState } from 'react';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
+import { resolveSportKey, SportGlyph, SPORT_ICON_COLORS } from '../shared/SportIcon';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Sport dot colours — mirrors CalendarView mini-calendar
 const SPORT_DOT = {
-  bike:  '#3b82f6',
-  run:   '#f97316',
-  swim:  '#06b6d4',
-  walk:  '#22c55e',
+  ...SPORT_ICON_COLORS,
   other: '#8b5cf6',
 };
 
-// Sport icon paths — same as CalendarView SPORT_COLORS_CELL
-const SPORT_ICON = {
-  bike: '/icon/bike.svg',
-  run:  '/icon/run.svg',
-  swim: '/icon/swim.svg',
-};
+const normaliseSport = resolveSportKey;
 
 // Returns Mon..Sun for the week containing `ref`. Defaults to current week.
 function getWeekDays(ref = new Date()) {
@@ -42,15 +35,7 @@ function isSameDay(a, b) {
          a.getDate()     === b.getDate();
 }
 
-// Normalise a sport string to a key
-function normaliseSport(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-  if (s.includes('run'))  return 'run';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('walk')) return 'walk';
-  return 'other';
-}
+// Normalise a sport string to a key — see shared/SportIcon.resolveSportKey
 
 // Returns array of distinct sport keys for activities on a date
 function getDaySports(activities, date) {
@@ -227,9 +212,7 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
         const isPlan     = hasPlannedOnly(activities, plannedWorkouts, d);
         const isPaired   = hasPairedDay(activities, plannedWorkouts, d);
 
-        // Primary sport (first found) for icon
         const primarySport = sports[0] || null;
-        const iconSrc      = primarySport ? SPORT_ICON[primarySport] : null;
 
         // Background rules
         const dayBg = isSelected
@@ -361,23 +344,11 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
             </span>
 
             {/* Sport icon (if activities exist) — tinted to match sport dot colour */}
-            {iconSrc ? (
-              <span
-                aria-label={primarySport}
-                style={{
-                  width: 14, height: 14, display: 'block',
-                  // Use the SVG as a mask and color via background — gives full sport-colour tint
-                  background: isSelected ? '#fff' : (SPORT_DOT[primarySport] || SPORT_DOT.other),
-                  WebkitMaskImage: `url(${iconSrc})`,
-                  maskImage:       `url(${iconSrc})`,
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskPosition: 'center',
-                  maskPosition: 'center',
-                  WebkitMaskSize: 'contain',
-                  maskSize: 'contain',
-                  transition: 'background .18s',
-                }}
+            {primarySport ? (
+              <SportGlyph
+                sport={primarySport}
+                size={14}
+                color={isSelected ? '#fff' : (SPORT_DOT[primarySport] || SPORT_DOT.other)}
               />
             ) : (
               <span style={{ width: 14, height: 14, display: 'block' }} />

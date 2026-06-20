@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -225,6 +226,7 @@ const navBtnStyle = {
 
 export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], tests = [] }) {
   const [metric, setMetric] = useState('TSS');
+  const [ffHelpOpen, setFfHelpOpen] = useState(false);
   // Week offset: 0 = current, +1 = next, -1 = previous, etc. Lets the user
   // peek at next-week planned totals without leaving the dashboard.
   const [weekOffset, setWeekOffset] = useState(0);
@@ -476,13 +478,29 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
 
       {/* ── Form / Fitness / Fatigue snapshot for this week ── */}
       {ffStats && (
-        <div
-          key={`ff-${weekOffset}`}
-          style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginBottom: 12,
-            animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
-          }}
-        >
+        <div key={`ff-${weekOffset}`} style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9CA3AF' }}>
+              Training balance
+            </span>
+            <button
+              type="button"
+              onClick={() => setFfHelpOpen(true)}
+              aria-label="What do Form, Fitness and Fatigue mean?"
+              style={{
+                border: 'none', background: 'transparent', padding: '2px 4px',
+                fontSize: 10, fontWeight: 700, color: '#5E6590', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              What is this?
+            </button>
+          </div>
+          <div
+            style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7,
+              animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
+            }}
+          >
           {[
             { label: 'Form',    value: ffStats.form,    delta: ffStats.dForm,    accent: ffStats.form >= 0 ? '#15803D' : '#B45309' },
             { label: 'Fitness', value: ffStats.fitness, delta: ffStats.dFitness, accent: '#5E6590' },
@@ -524,8 +542,11 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
               </div>
             );
           })}
+          </div>
         </div>
       )}
+
+      <FormFitnessHelpSheet open={ffHelpOpen} onClose={() => setFfHelpOpen(false)} />
 
       {/* ── Divider + toggle ── */}
       <div style={{ borderTop: '1px solid rgba(118,126,181,.14)', paddingTop: 10 }}>

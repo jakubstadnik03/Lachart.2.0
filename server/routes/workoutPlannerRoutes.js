@@ -187,11 +187,13 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
       return res.status(400).json({ error: 'date, sport and title are required' });
     }
 
+    const normalizedSport = String(sport).toLowerCase() === 'gym' ? 'strength' : sport;
+
     const pw = await PlannedWorkout.create({
       athleteId,
       createdBy: String(req.user.userId),
       date: new Date(date),
-      sport, title, description,
+      sport: normalizedSport, title, description,
       templateId: templateId || null,
       steps: steps || [],
       coachNotes, comment, targetTss,
@@ -224,6 +226,12 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
                     'executionData','fitTrainingId','stravaActivityId'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
     if (req.body.date) pw.date = new Date(req.body.date);
+    if (req.body.sport !== undefined) {
+      const s = String(req.body.sport).toLowerCase();
+      pw.sport = s === 'gym' ? 'strength' : req.body.sport;
+    } else if (String(pw.sport).toLowerCase() === 'gym') {
+      pw.sport = 'strength';
+    }
 
     await pw.save();
     res.json(pw);

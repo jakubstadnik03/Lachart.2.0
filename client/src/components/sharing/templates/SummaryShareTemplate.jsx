@@ -88,25 +88,40 @@ export default function SummaryShareTemplate({ summary = {}, accent = '#5E6590',
         </g>
       )}
 
-      {/* Totals row */}
-      {stats.length > 0 && (
-        <g transform={`translate(0, ${kpis ? 880 : 760})`}>
-          {stats.map((s, i) => {
-            const n = stats.length;
-            const x = (W / (n + 1)) * (i + 1);
-            return (
-              <g key={s.label} transform={`translate(${x}, 0)`}>
-                <text x="0" y="0" textAnchor="middle" style={{ fontFamily: FONT, fontSize: 26, fontWeight: 700, fill: 'rgba(255,255,255,.55)', letterSpacing: '1.2px' }}>{s.label.toUpperCase()}</text>
-                <text x="0" y="64" textAnchor="middle" style={{ fontFamily: FONT, fontSize: 56, fontWeight: 800, fill: '#fff' }}>{s.value}</text>
-              </g>
-            );
-          })}
-        </g>
-      )}
+      {/* Totals — 2×2 grid when 4 metrics, otherwise a single centred row */}
+      {stats.length > 0 && (() => {
+        const baseY = kpis ? 880 : 760;
+        const useGrid = stats.length >= 4;
+        const slotW = useGrid ? W / 2 : W / stats.length;
+        return (
+          <g transform={`translate(0, ${baseY})`}>
+            {stats.map((s, i) => {
+              const col = useGrid ? i % 2 : i;
+              const row = useGrid ? Math.floor(i / 2) : 0;
+              const x = useGrid
+                ? slotW * col + slotW / 2
+                : slotW * col + slotW / 2;
+              const y = row * 118;
+              const valueSize = useGrid ? 48 : stats.length >= 3 ? 50 : 56;
+              return (
+                <g key={s.label} transform={`translate(${x}, ${y})`}>
+                  <text x="0" y="0" textAnchor="middle" style={{ fontFamily: FONT, fontSize: 24, fontWeight: 700, fill: 'rgba(255,255,255,.55)', letterSpacing: '1px' }}>{s.label.toUpperCase()}</text>
+                  <text x="0" y="58" textAnchor="middle" style={{ fontFamily: FONT, fontSize: valueSize, fontWeight: 800, fill: '#fff' }}>{s.value}</text>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })()}
 
       {/* Workout list */}
       {shown.length > 0 && (
-        <g transform={`translate(90, ${(kpis ? 880 : 760) + (stats.length > 0 ? 160 : 0)})`}>
+        <g transform={`translate(90, ${(() => {
+          const baseY = kpis ? 880 : 760;
+          const statsRows = stats.length >= 4 ? 2 : stats.length > 0 ? 1 : 0;
+          const statsBlock = statsRows > 0 ? statsRows * 118 + 42 : 0;
+          return baseY + statsBlock;
+        })()})`}>
           {shown.map((w, i) => {
             const y = i * 132;
             return (

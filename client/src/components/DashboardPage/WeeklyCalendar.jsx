@@ -29,6 +29,8 @@ import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStrav
 import api from '../../services/api';
 import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
+import { fetchWellness } from '../../services/wellnessData';
+import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
@@ -147,6 +149,23 @@ function getLocalDateString(date) {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/** Small Apple Health recovery indicator shown in a day header. */
+function RecoveryDot({ status, size = 7 }) {
+  if (!status) return null;
+  const title = status.level === 'high'
+    ? 'Poor recovery (elevated HR + low HRV)'
+    : status.level === 'watch'
+      ? 'Watch recovery'
+      : 'Good recovery';
+  return (
+    <span
+      title={title}
+      style={{ width: size, height: size, backgroundColor: status.hex }}
+      className="inline-block rounded-full ring-1 ring-white shadow-sm shrink-0"
+    />
+  );
 }
 
 
@@ -935,7 +954,39 @@ const WeeklyCalendar = ({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [wellnessDays, setWellnessDays] = useState([]);
   const [cachedActivities, setCachedActivities] = useState([]);
+
+  // Apple Health recovery for per-day badges (own data or coach viewing athlete).
+  const wellnessAthleteId = selectedAthleteId || user?._id || null;
+  const isCoachWellnessView = selectedAthleteId && user?._id && String(selectedAthleteId) !== String(user._id);
+  useEffect(() => {
+    let cancelled = false;
+    if (!wellnessAthleteId) { setWellnessDays([]); return undefined; }
+    const load = async () => {
+      try {
+        const w = await fetchWellness(30, isCoachWellnessView ? wellnessAthleteId : null);
+        if (!cancelled) setWellnessDays(w.days || []);
+      } catch { if (!cancelled) setWellnessDays([]); }
+    };
+    load();
+    const onSynced = () => load();
+    window.addEventListener('appleHealth:synced', onSynced);
+    return () => { cancelled = true; window.removeEventListener('appleHealth:synced', onSynced); };
+  }, [wellnessAthleteId, isCoachWellnessView]);
+
+  const recoveryByDate = useMemo(() => {
+    if (!wellnessDays || wellnessDays.length === 0) return {};
+    const rhrBase = baseline(wellnessDays, 'restingHeartRate', false);
+    const hrvBase = baseline(wellnessDays, 'hrvMs', false);
+    const map = {};
+    wellnessDays.forEach((d) => {
+      if (!d?.date) return;
+      const status = dayRecoveryStatus(d, rhrBase, hrvBase);
+      if (status) map[d.date] = status;
+    });
+    return map;
+  }, [wellnessDays]);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');
@@ -1747,8 +1798,9 @@ const WeeklyCalendar = ({
                           <div className={`text-xs font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                             {day.getDate()}
                           </div>
-                          <div className="text-[11px] text-gray-400 mt-0.5">
+                          <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
                             {dayNames[idx].substring(0, 3)}
+                            <RecoveryDot status={recoveryByDate[getLocalDateString(day)]} size={6} />
                           </div>
                         </div>
                         {onPlanWorkout && (
@@ -1824,8 +1876,9 @@ const WeeklyCalendar = ({
                       <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
+                      <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
                         {dayNames[idx].substring(0, 3)}
+                        <RecoveryDot status={recoveryByDate[getLocalDateString(day)]} size={6} />
                       </div>
                     </div>
                     {onPlanWorkout && (
@@ -2499,8 +2552,9 @@ const WeeklyCalendar = ({
                       <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
+                      <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
                         {dayNames[idx].substring(0, 3)}
+                        <RecoveryDot status={recoveryByDate[getLocalDateString(day)]} size={6} />
                       </div>
                     </div>
                     {(() => {
@@ -2602,8 +2656,9 @@ const WeeklyCalendar = ({
                       <div className={`text-base font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-xs text-gray-400 mt-0.5 truncate">
+                      <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
                         {dayNames[idx].substring(0, 3)}
+                        <RecoveryDot status={recoveryByDate[getLocalDateString(day)]} size={6} />
                       </div>
                     </div>
                     {onPlanWorkout && (

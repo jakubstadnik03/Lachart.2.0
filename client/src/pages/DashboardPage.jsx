@@ -19,6 +19,7 @@ import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
+import WellnessCard from "../components/DashboardPage/WellnessCard";
 import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -2365,6 +2366,18 @@ export default function DashboardPage() {
             onAddLactate={handleDashboardAddLactate}
           />
         </motion.div>
+
+        {/* Recovery & readiness — own Apple Health data or coach viewing athlete */}
+        {dashboardDataAthleteId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <WellnessCard athleteId={dashboardDataAthleteId} />
+          </motion.div>
+        )}
 
         {/* Form & Fitness Chart + Weekly Training Load — side by side, equal height */}
         <motion.div

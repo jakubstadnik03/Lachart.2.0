@@ -58,6 +58,14 @@ async function sendNotification(recipientIds, opts = {}) {
       const tokens = Array.isArray(recipient.expoPushTokens) ? recipient.expoPushTokens : [];
       if (!tokens.length) continue;
 
+      const prefs = recipient.notifications || {};
+      if (type === 'strava_import' && prefs.pushStravaImport === false) continue;
+      if ((type === 'garmin_import' || type === 'apple_health_sync') && prefs.pushStravaImport === false) continue;
+      if ((type === 'training_comment' || type === 'test_comment') && prefs.trainingComments === false) continue;
+      if (type === 'lactate_test_complete' || type === 'lactate_test_followup') {
+        if (prefs.pushLactateTest === false) continue;
+      }
+
       await sendExpoPushToTokens(tokens, {
         title,
         body,

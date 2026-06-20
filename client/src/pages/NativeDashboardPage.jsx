@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
-import SharedSportIcon from '../components/shared/SportIcon';
+import SharedSportIcon, { resolveSportKey, SPORT_ICON_COLORS } from '../components/shared/SportIcon';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import StatusHeroCard    from '../components/NativeDashboard/StatusHeroCard';
@@ -55,21 +55,11 @@ function fmtDuration(secs) {
 
 // Sport colours — mirrors CalendarView SPORT_COLORS_CELL
 const SPORT_COLORS = {
-  bike:  '#767EB5',
-  run:   '#f97316',
-  swim:  '#38bdf8',
-  walk:  '#22c55e',
+  ...SPORT_ICON_COLORS,
   other: '#8b5cf6',
 };
 
-function normSport(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-  if (s.includes('run'))  return 'run';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('walk')) return 'walk';
-  return 'other';
-}
+const normSport = resolveSportKey;
 
 function getSportColor(sport) {
   return SPORT_COLORS[normSport(sport)] || SPORT_COLORS.other;
@@ -344,7 +334,6 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
 
         const sport     = pw.sport || linkedAct?.sport || '';
         const color     = getSportColor(sport);
-        const actTitle  = linkedAct?.title || linkedAct?.name || linkedAct?.titleManual || null;
         const pwTitle   = pw.title || pw.name || 'Planned workout';
 
         // Compliance
@@ -404,7 +393,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               {/* Title row + mini step chart for planned workouts */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {actTitle || pwTitle}
+                  {pwTitle}
                 </div>
                 {/* Mini step chart — only for purely planned workouts with structured steps */}
                 {hasSteps && (
@@ -1083,6 +1072,7 @@ export default function NativeDashboardPage({
               activities={activities}
               plannedWorkouts={plannedWorkouts}
               sparklineData={sparklineData}
+              tests={tests}
               kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
             />
           </div>

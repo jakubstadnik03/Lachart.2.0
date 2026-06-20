@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -82,6 +83,63 @@ function hasLaps(a) {
   if (!a) return false;
   return (Array.isArray(a.laps) && a.laps.length > 1) ||
          (Array.isArray(a.results) && a.results.length > 1);
+}
+
+/** List API returns laps with lactate only — not enough for TrainingForm. */
+function lapHasMetrics(lap) {
+  if (!lap || typeof lap !== 'object') return false;
+  const dur = Number(lap.moving_time ?? lap.totalTimerTime ?? lap.totalElapsedTime ?? lap.elapsed_time ?? lap.duration ?? 0);
+  const dist = Number(lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? 0);
+  const pow = Number(lap.average_watts ?? lap.avgPower ?? lap.average_power ?? 0);
+  const hr = Number(lap.average_heartrate ?? lap.avgHeartRate ?? lap.avg_heart_rate ?? 0);
+  const speed = Number(lap.average_speed ?? lap.avgSpeed ?? lap.avg_speed ?? 0);
+  return dur > 0 || dist > 0 || pow > 0 || hr > 0 || speed > 0.05;
+}
+
+function hasDetailedLaps(a) {
+  const laps = a?.laps;
+  if (!Array.isArray(laps) || laps.length <= 1) return false;
+  const sample = laps.slice(0, Math.min(6, laps.length));
+  return sample.some(lapHasMetrics);
+}
+
+function resultsHaveContent(results) {
+  if (!Array.isArray(results) || results.length === 0) return false;
+  return results.some((r) => {
+    if (!r) return false;
+    if (Number(r.durationSeconds) > 0 || Number(r.distanceMeters) > 0) return true;
+    const p = r.power;
+    if (p != null && String(p).trim() !== '' && String(p) !== '0') return true;
+    if (Number(r.lactate) > 0 || Number(r.mmol) > 0) return true;
+    return false;
+  });
+}
+
+function resolveStravaNumericId(act) {
+  if (!act) return '';
+  if (act.source === 'strava' && act.sourceId) {
+    return String(act.sourceId).replace(/^strava-/i, '');
+  }
+  return String(act.stravaId || act.id || act._id || '').replace(/^strava-/i, '');
+}
+
+function isStravaActivityShape(act) {
+  if (!act) return false;
+  const idStr = String(act.id || act._id || '');
+  return act.type === 'strava' ||
+    act.source === 'strava' ||
+    !!act.stravaId ||
+    /^strava-/i.test(idStr) ||
+    (act.source === 'strava' && !!act.sourceId);
+}
+
+function mergeLapsPreserveLactate(freshLaps, stubLaps) {
+  if (!Array.isArray(stubLaps) || stubLaps.length === 0) return freshLaps;
+  return freshLaps.map((lap, i) => {
+    const stub = stubLaps[i];
+    const lac = lap.lactate ?? stub?.lactate ?? stub?.lactateValue;
+    return lac != null && lap.lactate == null ? { ...lap, lactate: lac } : lap;
+  });
 }
 
 function activityKey(a) { if (!a) return ''; return String(a.stravaId || a._id || a.id || ''); }
@@ -1268,6 +1326,7 @@ export default function NativeTrainingPage({
   onTrainingsChanged,
 }) {
   const navigate = useNavigate();
+  useNativeTabScrollToTop('training');
   const [selectedSport, setSelectedSport] = useState('all');
   const [showRecordLactate, setShowRecordLactate] = useState(false);
 
@@ -1494,8 +1553,13 @@ export default function NativeTrainingPage({
   const [activityModal, setActivityModal] = useState(null);
   // ── TrainingForm sheet — opens directly when user taps "Add" lactate pill ──
   const [trainingFormActivity, setTrainingFormActivity] = useState(null);
+  const [trainingFormLoading, setTrainingFormLoading] = useState(false);
+  const [trainingFormError, setTrainingFormError] = useState(null);
   const openTrainingForm = async (act) => {
     if (!act) return;
+    setTrainingFormLoading(true);
+    setTrainingFormError(null);
+    try {
     // Strip native-only / runtime fields and ensure date is parseable
     const { _animDelay, _ndKey, ...clean } = act;
 
@@ -1530,6 +1594,7 @@ export default function NativeTrainingPage({
     // The matched Training carries `results` with the user's edits, so we
     // splice it on top of the activity payload — keeping the rich Strava
     // laps array for re-import if the user wants to refresh metrics.
+    let linkedTrainingId = null;
     if (Array.isArray(trainings) && trainings.length > 0) {
       const actStravaId = String(clean.stravaId || clean.id || clean._id || '').replace(/^strava-/i, '');
       const actStart    = getDate(clean)?.getTime?.() ?? 0;
@@ -1541,11 +1606,12 @@ export default function NativeTrainingPage({
         const tStart = getDate(t)?.getTime?.() ?? 0;
         return tStart && actStart && Math.abs(tStart - actStart) < 90_000 && normSport(t.sport) === actSport;
       });
-      if (saved && Array.isArray(saved.results) && saved.results.length > 0) {
+      if (saved && Array.isArray(saved.results) && saved.results.length > 0 && resultsHaveContent(saved.results)) {
         // The saved record IS what the user worked on before. Use its _id
         // so the form's submit handler goes down the `updateTraining` path
         // instead of trying to create a new duplicate.
-        clean._id      = saved._id || clean._id;
+        linkedTrainingId = saved._id || null;
+        clean._id      = linkedTrainingId || clean._id;
         clean.results  = saved.results;
         clean.title    = saved.title || clean.title;
         clean.description = saved.description ?? clean.description;
@@ -1558,54 +1624,48 @@ export default function NativeTrainingPage({
       }
     }
 
-    // Strava activities from the listing payload have no `laps` (server omits
-    // them for performance). If the user opens the form for one without the
-    // detail having been fetched yet, the form would render empty. Fetch the
-    // detail now so we always end up with usable laps.
-    //
-    // Detection has to be broad: depending on which list the activity was
-    // tapped from (assignment sheet, lactate-tested grid, annotate queue), the
-    // shape varies — `type`, `stravaId`, `source`, even just a bare numeric id
-    // are all possible signals. Previously the narrow check missed activities
-    // whose `type` was 'Ride' (raw Strava sport type) and no `stravaId`/`id`
-    // prefix, so the form would open completely empty.
-    const idStr = String(clean.id || clean._id || clean.stravaId || '');
-    const isStravaActivity =
-      clean.type === 'strava' ||
-      clean.source === 'strava' ||
-      !!clean.stravaId ||
-      /^strava-/i.test(idStr) ||
-      // bare numeric id (>8 digits) with sport-type field set — Strava-ish
-      (/^\d{8,}$/.test(idStr) && !clean._id);
-    const hasUsableLaps = Array.isArray(clean.laps) && clean.laps.length > 0;
-    const hasUsableResults = Array.isArray(clean.results) && clean.results.length > 0;
-    if (isStravaActivity && !hasUsableLaps && !hasUsableResults) {
+    const rawId = resolveStravaNumericId(clean);
+    const isStravaActivity = isStravaActivityShape(clean);
+    const stubLaps = Array.isArray(clean.laps) ? clean.laps : [];
+    const hasUsableLaps = hasDetailedLaps(clean);
+    const hasUsableResults = resultsHaveContent(clean.results);
+    if (isStravaActivity && rawId) {
+      clean.stravaId = rawId;
+      clean.type = clean.type || 'strava';
+      clean.source = clean.source || 'strava';
+    }
+    if (isStravaActivity && rawId && (!hasUsableLaps || !hasUsableResults)) {
       try {
-        const rawId = String(clean.stravaId || clean.id || clean._id || '').replace(/^strava-/i, '');
-        if (rawId) {
-          const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
-          const integAthleteId = isCoachViewing ? String(athleteId) : null;
-          const data = await getStravaActivityDetail(rawId, integAthleteId);
-          if (Array.isArray(data?.laps) && data.laps.length > 0) {
-            clean.laps = data.laps;
-          } else {
-            console.warn('[openTrainingForm] Strava detail returned no laps for id', rawId, data);
-          }
-          if (data?.titleManual && !clean.titleManual) clean.titleManual = data.titleManual;
-          if (data?.category && !clean.category) clean.category = data.category;
-          if (data?.description && !clean.description) clean.description = data.description;
-          // Capture sport for the laps→results mapper below
-          if (data?.sport && !clean.sport) clean.sport = data.sport;
+        const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+        const integAthleteId = isCoachViewing ? String(athleteId) : null;
+        const data = await getStravaActivityDetail(rawId, integAthleteId);
+        if (Array.isArray(data?.laps) && data.laps.length > 0) {
+          clean.laps = mergeLapsPreserveLactate(data.laps, stubLaps);
+          // Fresh detail → rebuild results from full laps unless saved edits exist.
+          if (!hasUsableResults) clean.results = undefined;
+        } else {
+          console.warn('[openTrainingForm] Strava detail returned no laps for id', rawId, data);
+          setTrainingFormError('No intervals found — try opening the activity in Calendar first.');
         }
+        const detail = data?.detail || {};
+        if (data?.titleManual && !clean.titleManual) clean.titleManual = data.titleManual;
+        if (data?.category && !clean.category) clean.category = data.category;
+        if (data?.description && !clean.description) clean.description = data.description;
+        if (detail.sport && !clean.sport) clean.sport = detail.sport;
+        if (detail.sport_type && !clean.sport) clean.sport = detail.sport_type;
+        if (detail.start_date_local && !clean.date) clean.date = detail.start_date_local;
+        if (detail.start_date && !clean.date) clean.date = detail.start_date;
       } catch (e) {
         console.error('[openTrainingForm] Failed to fetch Strava detail:', e?.message || e);
-        // Fall through — form will open empty, user can still add rows manually
+        setTrainingFormError(
+          e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Could not load Strava intervals.'
+        );
       }
     }
 
     // TrainingForm needs `results` (intervals). Strava/FIT activities arrive
     // with `laps` instead — map them so the form has rows to annotate.
-    if (!Array.isArray(clean.results) || clean.results.length === 0) {
+    if (!resultsHaveContent(clean.results)) {
       const laps = Array.isArray(clean.laps) ? clean.laps : [];
       const sportRaw = String(clean.sport || clean.sportType || '').toLowerCase();
       const sport = sportRaw.includes('swim') ? 'swim' : sportRaw.includes('run') ? 'run' : 'bike';
@@ -1657,10 +1717,31 @@ export default function NativeTrainingPage({
       });
     }
 
+    if (!resultsHaveContent(clean.results)) {
+      setTrainingFormError((prev) => prev || 'No intervals to annotate — check Strava sync or open this workout in Calendar.');
+      return;
+    }
+
+    // Strava activities carry a Mongo _id from the integrations collection —
+    // that is NOT a Training document id. Passing it to updateTraining 404s.
+    // Only keep _id when we matched a saved Training row above.
+    if (isStravaActivityShape(clean)) {
+      if (linkedTrainingId) {
+        clean._id = linkedTrainingId;
+        clean._fromSavedTraining = true;
+      } else {
+        delete clean._id;
+      }
+    }
+
     setTrainingFormActivity(clean);
+    } finally {
+      setTrainingFormLoading(false);
+    }
   };
   const closeTrainingForm = () => {
     setTrainingFormActivity(null);
+    setTrainingFormError(null);
     // Drop any pending field-lactate context — user cancelled without
     // assigning, so the measurement stays in the log for them to
     // re-pick later from the hero / log.
@@ -1685,10 +1766,17 @@ export default function NativeTrainingPage({
         })
       : formData.results;
 
-    const cleanedFormData = { ...formData, results: cleanedResults };
+    const { _fromSavedTraining, laps: _laps, ...formFields } = formData;
+    const cleanedFormData = { ...formFields, results: cleanedResults };
 
-    if (formData?._id) {
-      await updateTraining(formData._id, cleanedFormData);
+    // Never PUT /training/:id with a Strava activity's integrations _id.
+    const trainingRecordId =
+      formData._fromSavedTraining && formData._id
+        ? formData._id
+        : (!isStravaActivityShape(formData) && formData._id ? formData._id : null);
+
+    if (trainingRecordId) {
+      await updateTraining(trainingRecordId, { ...cleanedFormData, athleteId: targetAthleteId });
     } else {
       // Check for existing training by sourceStravaActivityId (primary) or title+date (fallback)
       // to avoid duplicates when re-exporting / re-adding lactate to an already-saved training.
@@ -2846,6 +2934,49 @@ export default function NativeTrainingPage({
         </Suspense>
       )}
 
+      {/* Loading overlay while Strava laps are fetched for Add lactate */}
+      {trainingFormLoading && ReactDOM.createPortal(
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9998,
+          background: 'rgba(10,14,26,.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'auto',
+        }}>
+          <div style={{
+            padding: '16px 22px', borderRadius: 14,
+            background: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,.12)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            fontSize: 13, fontWeight: 600, color: '#374151',
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}>
+              <circle cx="12" cy="12" r="10" stroke="#7C3AED" strokeWidth="3" fill="none" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+            </svg>
+            Loading intervals…
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {trainingFormError && !trainingFormActivity && ReactDOM.createPortal(
+        <div style={{
+          position: 'fixed', left: 16, right: 16, bottom: 'calc(72px + env(safe-area-inset-bottom))',
+          zIndex: 9997, padding: '12px 14px', borderRadius: 12,
+          background: '#FEF2F2', border: '1px solid #FECACA',
+          color: '#B91C1C', fontSize: 12, fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,.08)',
+        }}>
+          {trainingFormError}
+          <button
+            type="button"
+            onClick={() => setTrainingFormError(null)}
+            style={{ float: 'right', marginLeft: 8, border: 'none', background: 'transparent', color: '#B91C1C', fontWeight: 800, cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>,
+        document.body,
+      )}
+
       {/* TrainingForm sheet — opens directly from the "Add lactate" pill so
           users can record values without going through the preview modal.
           TrainingForm itself reserves space for the native tab bar in its
@@ -2889,7 +3020,9 @@ export default function NativeTrainingPage({
                 onClose={closeTrainingForm}
                 onSubmit={handleTrainingFormSubmit}
                 initialData={trainingFormActivity}
-                isEditing={!!trainingFormActivity._id}
+                isEditing={!!(trainingFormActivity._fromSavedTraining || (
+                  trainingFormActivity._id && !isStravaActivityShape(trainingFormActivity)
+                ))}
               />
             </Suspense>
           </div>

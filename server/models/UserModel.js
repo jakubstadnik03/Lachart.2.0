@@ -409,6 +409,13 @@ const userSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  /** Native iOS/Android app usage (updated on launch / foreground). */
+  mobileApp: {
+    platform: { type: String, enum: ['ios', 'android'], default: null },
+    appVersion: { type: String, default: null },
+    firstSeenAt: { type: Date, default: null },
+    lastSeenAt: { type: Date, default: null },
+  },
   // Subscription reference (populated when needed)
   subscriptionId: {
     type: mongoose.Schema.Types.ObjectId,

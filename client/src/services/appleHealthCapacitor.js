@@ -1,7 +1,10 @@
 /**
- * Apple Health (HealthKit) via @capgo/capacitor-health — iOS native shell only.
+ * Apple Health (HealthKit) — iOS native shell only.
+ * Uses in-app LaChartHealthPlugin (Capacitor 6). Falls back to @capgo/capacitor-health if present.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+export const LaChartHealth = registerPlugin('LaChartHealth');
 
 export const APPLE_HEALTH_READ_TYPES = [
   'restingHeartRate',
@@ -9,49 +12,244 @@ export const APPLE_HEALTH_READ_TYPES = [
   'heartRateVariability',
   'respiratoryRate',
   'workouts',
+  'heartRate',
 ];
 
 export function isAppleHealthSupported() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
 }
 
+/** Reject if a native HealthKit call hangs (common on Simulator when the auth sheet is missed). */
+function withTimeout(promise, ms, label = 'HealthKit') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s. Check for a Health permission dialog, or try a physical iPhone.`)), ms);
+    }),
+  ]);
+}
+
+/** Capacitor bridge can register plugins slightly after the WebView loads. */
+async function waitForBridge(maxMs = 3500) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    if (Capacitor.isPluginAvailable('LaChartHealth') || Capacitor.isPluginAvailable('Health')) {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return false;
+}
+
+/**
+ * Resolve the native Health plugin. Probes LaChartHealth with a real call — more
+ * reliable than Capacitor.isPluginAvailable() right after mount.
+ */
+async function resolveHealthPlugin() {
+  try {
+    const v = await Promise.race([
+      LaChartHealth.getPluginVersion(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500)),
+    ]);
+    if (v?.version && v.version !== 'web') {
+      return { plugin: LaChartHealth, name: 'LaChartHealth', version: v.version };
+    }
+  } catch {
+    /* LaChartHealth not responding yet */
+  }
+
+  if (Capacitor.isPluginAvailable('Health')) {
+    try {
+      const { Health } = await import('@capgo/capacitor-health');
+      const v = await Health.getPluginVersion?.().catch(() => ({}));
+      if (v?.version && v.version !== 'web') {
+        return { plugin: Health, name: 'Health', version: v.version };
+      }
+    } catch {
+      /* capgo fallback unavailable */
+    }
+  }
+
+  return { plugin: null, name: 'none', version: null };
+}
+
 async function getHealth() {
+  const resolved = await resolveHealthPlugin();
+  if (resolved.plugin) return resolved.plugin;
+  if (Capacitor.isPluginAvailable('LaChartHealth')) return LaChartHealth;
   const { Health } = await import('@capgo/capacitor-health');
   return Health;
 }
 
-/** @returns {Promise<boolean>} */
-export async function checkAppleHealthAvailable() {
-  if (!isAppleHealthSupported()) return false;
+function unavailableUserHint({ platform, pluginVersion, reason, isSimulator, pluginName }) {
+  if (isSimulator) {
+    return 'Apple Health v simulátoru má omezení. Pro plný sync použij fyzický iPhone (Xcode → Run na zařízení).';
+  }
+  if (!pluginName || pluginName === 'none') {
+    return 'Health plugin se nenačetl. V terminálu: cd client && npm run cap:sync:ios — pak Xcode Product → Clean Build Folder → Run na iPhonu.';
+  }
+  if (platform === 'web' || pluginVersion === 'web') {
+    return 'Health plugin se nenačetl v tomto buildu. Rebuild z Xcode na fyzickém iPhonu (ne TestFlight starší build).';
+  }
+  if (reason) return reason;
+  return 'Apple Health není na tomto zařízení dostupné.';
+}
+
+export async function detectAppleHealthSimulator() {
   try {
-    const Health = await getHealth();
-    const { available } = await Health.isAvailable();
-    return Boolean(available);
+    const { Device } = await import('@capacitor/device');
+    const info = await Device.getInfo();
+    return Boolean(info?.isVirtual);
   } catch {
     return false;
   }
 }
 
 /**
- * Request HealthKit read permissions.
- * @returns {Promise<{ granted: boolean, status?: object }>}
+ * @returns {Promise<{ available: boolean, reason?: string, platform?: string, pluginLoaded?: boolean, pluginVersion?: string, pluginName?: string, hint?: string, isSimulator?: boolean }>}
  */
+export async function getAppleHealthDiagnostics() {
+  if (!isAppleHealthSupported()) {
+    return {
+      available: false,
+      reason: 'not_ios',
+      platform: 'unsupported',
+      pluginLoaded: false,
+      pluginVersion: null,
+      pluginName: 'none',
+      isSimulator: false,
+      hint: 'Open the LaChart iOS app on an iPhone.',
+    };
+  }
+
+  const isSimulator = await detectAppleHealthSimulator();
+  await waitForBridge();
+
+  const resolved = await resolveHealthPlugin();
+  const pluginName = resolved.name;
+  const pluginVersion = resolved.version;
+
+  if (!resolved.plugin) {
+    return {
+      available: false,
+      reason: 'plugin_not_loaded',
+      platform: 'ios',
+      pluginLoaded: false,
+      pluginVersion: null,
+      pluginName: 'none',
+      isSimulator,
+      hint: unavailableUserHint({ platform: 'ios', pluginVersion: null, isSimulator, pluginName: 'none' }),
+    };
+  }
+
+  try {
+    const Health = resolved.plugin;
+    const result = await Health.isAvailable();
+    const platform = result?.platform || 'ios';
+    const nativeAvailable = Boolean(result?.available);
+    // Our in-app plugin is always valid on iOS when it responds to getPluginVersion.
+    const pluginLoaded = pluginName === 'LaChartHealth'
+      || (pluginName === 'Health' && platform === 'ios' && pluginVersion !== 'web');
+    const available = nativeAvailable && pluginLoaded;
+
+    return {
+      available,
+      reason: !nativeAvailable ? (result?.reason || 'unavailable') : (!pluginLoaded ? 'plugin_not_loaded' : null),
+      platform,
+      pluginLoaded,
+      pluginVersion,
+      pluginName,
+      isSimulator,
+      hint: available
+        ? (isSimulator ? unavailableUserHint({ isSimulator: true }) : null)
+        : unavailableUserHint({ platform, pluginVersion, reason: result?.reason, isSimulator, pluginName }),
+    };
+  } catch (e) {
+    return {
+      available: false,
+      reason: e?.message || 'plugin_error',
+      platform: 'error',
+      pluginLoaded: false,
+      pluginVersion,
+      pluginName,
+      isSimulator,
+      hint: unavailableUserHint({ platform: 'error', reason: e?.message, isSimulator, pluginName }),
+    };
+  }
+}
+
+export async function checkAppleHealthAvailable() {
+  const { available } = await getAppleHealthDiagnostics();
+  return available;
+}
+
 export async function requestAppleHealthAccess() {
   if (!isAppleHealthSupported()) {
     return { granted: false, reason: 'not_ios' };
   }
   const Health = await getHealth();
-  const { available, reason } = await Health.isAvailable();
-  if (!available) return { granted: false, reason: reason || 'unavailable' };
+  let available = true;
+  let reason = null;
+  try {
+    const check = await Health.isAvailable();
+    available = Boolean(check?.available);
+    reason = check?.reason || null;
+  } catch (e) {
+    if (!Capacitor.isPluginAvailable('LaChartHealth')) {
+      return { granted: false, reason: e?.message || 'unavailable' };
+    }
+  }
+  if (!available && !Capacitor.isPluginAvailable('LaChartHealth')) {
+    return { granted: false, reason: reason || 'unavailable' };
+  }
 
-  const status = await Health.requestAuthorization({
-    read: APPLE_HEALTH_READ_TYPES,
-    write: [],
-  });
-  const denied = status?.readDenied || [];
-  const authorized = status?.readAuthorized || [];
-  const granted = authorized.length > 0 && denied.length < APPLE_HEALTH_READ_TYPES.length;
-  return { granted, status };
+  let authWarning = null;
+  try {
+    const result = await withTimeout(
+      Health.requestAuthorization({
+        read: APPLE_HEALTH_READ_TYPES,
+        write: [],
+      }),
+      12000,
+      'Health permission',
+    );
+    if (result?.timedOut) {
+      authWarning = 'Permission dialog timed out — continuing sync. Enable Resting Heart Rate, Sleep and HRV in Health → Apps → LaChart.';
+    }
+  } catch (e) {
+    authWarning = e?.message || 'Permission request incomplete — trying to read available data anyway.';
+  }
+
+  // HealthKit never tells us if read access was granted — always try reading next.
+  return { granted: true, warning: authWarning };
+}
+
+/** Which wellness types iOS has been asked about (not whether read succeeded). */
+export async function getAppleHealthPermissionStatus() {
+  if (!isAppleHealthSupported()) return { types: [] };
+  try {
+    const Health = await getHealth();
+    if (!Health.getAuthorizationStatus) return { types: [] };
+    const result = await Health.getAuthorizationStatus();
+    return { types: result?.types || [] };
+  } catch {
+    return { types: [] };
+  }
+}
+
+export const WELLNESS_PERMISSION_IDS = ['restingHeartRate', 'sleep', 'heartRateVariability'];
+
+export function wellnessPermissionHint(types = []) {
+  const byId = Object.fromEntries((types || []).map((t) => [t.id, t.status]));
+  const missing = WELLNESS_PERMISSION_IDS.filter((id) => byId[id] === 'notDetermined' || byId[id] === 'denied');
+  if (missing.length === 0) return null;
+  const labels = {
+    restingHeartRate: 'Resting Heart Rate',
+    sleep: 'Sleep',
+    heartRateVariability: 'Heart Rate Variability',
+  };
+  const names = missing.map((id) => labels[id] || id).join(', ');
+  return `In Health → Profile → Apps → LaChart, turn ON: ${names}.`;
 }
 
 function dateKeyFromIso(iso) {
@@ -64,11 +262,6 @@ function dateKeyFromIso(iso) {
   return `${y}-${m}-${day}`;
 }
 
-/**
- * Merge daily aggregated buckets into wellness rows for the API.
- * @param {number} days
- * @returns {Promise<Array<{ date: string, restingHeartRate?: number, sleepMinutes?: number, hrvMs?: number }>>}
- */
 export async function collectAppleHealthWellness(days = 14) {
   if (!isAppleHealthSupported()) return [];
 
@@ -79,28 +272,22 @@ export async function collectAppleHealthWellness(days = 14) {
   const startIso = start.toISOString();
   const endIso = end.toISOString();
 
+  const query = (dataType) => withTimeout(
+    Health.queryAggregated({
+      dataType,
+      startDate: startIso,
+      endDate: endIso,
+      bucket: 'day',
+      aggregation: dataType === 'sleep' ? 'sum' : 'average',
+    }),
+    30000,
+    `Read ${dataType}`,
+  ).catch(() => ({ samples: [] }));
+
   const [rhrRes, sleepRes, hrvRes] = await Promise.all([
-    Health.queryAggregated({
-      dataType: 'restingHeartRate',
-      startDate: startIso,
-      endDate: endIso,
-      bucket: 'day',
-      aggregation: 'average',
-    }).catch(() => ({ samples: [] })),
-    Health.queryAggregated({
-      dataType: 'sleep',
-      startDate: startIso,
-      endDate: endIso,
-      bucket: 'day',
-      aggregation: 'sum',
-    }).catch(() => ({ samples: [] })),
-    Health.queryAggregated({
-      dataType: 'heartRateVariability',
-      startDate: startIso,
-      endDate: endIso,
-      bucket: 'day',
-      aggregation: 'average',
-    }).catch(() => ({ samples: [] })),
+    query('restingHeartRate'),
+    query('sleep'),
+    query('heartRateVariability'),
   ]);
 
   const byDate = new Map();
@@ -118,7 +305,6 @@ export async function collectAppleHealthWellness(days = 14) {
   }
   for (const s of sleepRes?.samples || []) {
     if (s.value > 0) {
-      // HealthKit sleep sum may be minutes or seconds depending on unit
       const mins = s.unit === 'second' || s.unit === 's'
         ? Math.round(s.value / 60)
         : Math.round(s.value);
@@ -148,22 +334,41 @@ const WORKOUT_TYPE_MAP = {
   crossTraining: 'CrossTraining',
 };
 
-/**
- * @param {string} sinceIso
- * @returns {Promise<Array<object>>}
- */
-export async function collectAppleHealthWorkouts(sinceIso) {
+async function avgHeartRateForWindow(Health, startIso, endIso) {
+  if (!startIso || !endIso) return null;
+  try {
+    const { samples = [] } = await Health.queryAggregated({
+      dataType: 'heartRate',
+      startDate: startIso,
+      endDate: endIso,
+      bucket: 'hour',
+      aggregation: 'average',
+    });
+    const vals = samples.map((s) => Number(s.value)).filter((v) => v > 0);
+    if (vals.length === 0) return null;
+    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  } catch {
+    return null;
+  }
+}
+
+export async function collectAppleHealthWorkouts(sinceIso, opts = {}) {
   if (!isAppleHealthSupported()) return [];
+  const { enrichHeartRate = false, enrichLimit = 25 } = opts;
 
   const Health = await getHealth();
-  const { workouts = [] } = await Health.queryWorkouts({
-    startDate: sinceIso,
-    endDate: new Date().toISOString(),
-    limit: 300,
-    ascending: false,
-  });
+  const { workouts = [] } = await withTimeout(
+    Health.queryWorkouts({
+      startDate: sinceIso,
+      endDate: new Date().toISOString(),
+      limit: 300,
+      ascending: false,
+    }),
+    60000,
+    'Read workouts',
+  );
 
-  return workouts.map((w) => {
+  const mapped = workouts.map((w) => {
     const rawType = String(w.workoutType || 'other').toLowerCase();
     const type = WORKOUT_TYPE_MAP[rawType] || 'Other';
     const start = w.startDate;
@@ -182,16 +387,24 @@ export async function collectAppleHealthWorkouts(sinceIso) {
       sourceName: w.sourceName || 'Apple Health',
     };
   });
+
+  if (enrichHeartRate && mapped.length > 0) {
+    const toEnrich = mapped.slice(0, enrichLimit);
+    // Sequential — parallel HR queries easily freeze the Simulator / block the UI thread.
+    for (const m of toEnrich) {
+      m.avgHeartRate = await avgHeartRateForWindow(Health, m.startDate, m.endDate);
+    }
+  }
+
+  return mapped;
 }
 
-/** Open iOS Settings → Health → LaChart */
 export async function openAppleHealthSettings() {
   if (!isAppleHealthSupported()) return;
   try {
     const { App } = await import('@capacitor/app');
     await App.openUrl({ url: 'x-apple-health://' });
   } catch {
-    // fallback: general settings
     try {
       const { App } = await import('@capacitor/app');
       await App.openUrl({ url: 'app-settings:' });

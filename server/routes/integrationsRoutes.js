@@ -13,7 +13,7 @@ const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
-const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
+const { notifyCoachesOfAthlete, notifyAthlete, sendNotification } = require('../utils/notificationHelper');
 const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const router = express.Router();
 
@@ -2410,6 +2410,19 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 
     // Stamp sync date
     await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+
+    if (imported > 0) {
+      const body = imported === 1
+        ? '1 new activity imported from Garmin.'
+        : `${imported} new activities imported from Garmin.`;
+      sendNotification(String(user._id), {
+        type: 'garmin_import',
+        title: 'New training synced 🎉',
+        body,
+        resourceType: 'garmin',
+        pushData: { type: 'garmin_import', activityType: 'garmin' },
+      }).catch(() => {});
+    }
 
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
@@ -5531,25 +5544,32 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       const durationSec = Number(w.durationSeconds) || 0;
       const distanceMeters = Number(w.distanceMeters) || 0;
 
-      // Use StravaActivity model with source=apple_health to reuse existing pipeline
-      const doc = {
+      // Identity / immutable fields — only written on first insert so we never
+      // clobber the user's manual edits (title/category live on the doc too).
+      const setOnInsert = {
         userId,
         healthKitId: w.id,
         name: w.type ? `${w.type} (Apple Health)` : 'Apple Health Workout',
         type: w.type ?? 'Other',
         sport,
         startDate,
+        sourceName: w.sourceName ?? 'Apple Health',
+      };
+      // Derived metrics — refreshed on every sync so a later HR backfill
+      // updates previously-imported workouts (avgHeartRate was null before).
+      const setAlways = {
         endDate: w.endDate ? new Date(w.endDate) : null,
         durationSeconds: durationSec,
         distanceMeters,
         calories: Number(w.calories) || null,
-        avgHeartRate: w.avgHeartRate ?? null,
-        sourceName: w.sourceName ?? 'Apple Health',
       };
+      if (w.avgHeartRate != null && Number(w.avgHeartRate) > 0) {
+        setAlways.avgHeartRate = Math.round(Number(w.avgHeartRate));
+      }
 
       const result = await AppleHealthActivity.updateOne(
-        { userId, healthKitId: doc.healthKitId },
-        { $setOnInsert: doc },
+        { userId, healthKitId: w.id },
+        { $setOnInsert: setOnInsert, $set: setAlways },
         { upsert: true }
       );
 
@@ -5626,13 +5646,17 @@ router.post('/apple-health/wellness-sync', verifyToken, async (req, res) => {
 });
 
 /**
- * GET /api/integrations/apple-health/wellness?days=14
+ * GET /api/integrations/apple-health/wellness?days=14&athleteId=...
+ * Coaches may pass athleteId to read a linked athlete's synced wellness rows.
  */
 router.get('/apple-health/wellness', verifyToken, async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const resolved = await resolveIntegrationTargetUserId(req);
+    if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
+    const { targetUserId } = resolved;
+
     const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 90);
-    const user = await User.findById(userId).select('appleHealth').lean();
+    const user = await User.findById(targetUserId).select('appleHealth').lean();
     const connected = Boolean(user?.appleHealth?.connectedAt);
 
     const since = new Date();
@@ -5640,7 +5664,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
     const sinceKey = since.toISOString().slice(0, 10);
 
     const rows = await AppleHealthWellness.find({
-      userId,
+      userId: targetUserId,
       date: { $gte: sinceKey },
     })
       .sort({ date: 1 })
@@ -5648,6 +5672,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
 
     res.json({
       connected,
+      athleteId: String(targetUserId),
       lastWellnessSync: user?.appleHealth?.lastWellnessSyncAt ?? null,
       days: rows.map((r) => ({
         date: r.date,

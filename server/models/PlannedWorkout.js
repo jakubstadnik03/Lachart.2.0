@@ -43,7 +43,7 @@ const plannedWorkoutSchema = new mongoose.Schema({
   },
   sport: {
     type: String,
-    enum: ['run', 'bike', 'swim', 'strength', 'walk', 'brick', 'crosstrain', 'mtbike', 'rowing', 'lactate', 'other'],
+    enum: ['run', 'bike', 'swim', 'strength', 'gym', 'walk', 'brick', 'crosstrain', 'mtbike', 'rowing', 'lactate', 'other'],
     required: true,
   },
   title:       { type: String, required: true, trim: true },

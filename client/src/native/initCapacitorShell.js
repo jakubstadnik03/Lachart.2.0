@@ -38,6 +38,20 @@ export async function initCapacitorShell() {
     // ignore
   }
 
+  // ── Apple Health: silent background sync ────────────────────────────
+  // Runs on launch and whenever the app returns to the foreground (throttled
+  // to ~30 min, and only when the user has already connected + authorized).
+  try {
+    const { autoSyncAppleHealth } = await import('../utils/appleHealthAutoSync');
+    autoSyncAppleHealth().catch(() => {});
+    const { App: AppForHealth } = await import('@capacitor/app');
+    AppForHealth.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) autoSyncAppleHealth().catch(() => {});
+    });
+  } catch (err) {
+    console.warn('[Init] Apple Health auto-sync setup failed:', err?.message || err);
+  }
+
   try {
     const { App } = await import('@capacitor/app');
     if (!backListenerHandle) {
@@ -129,80 +143,18 @@ export async function initCapacitorShell() {
 
   // ── Push notifications ─────────────────────────────────────────────────────
   try {
-    const { PushNotifications } = await import('@capacitor/push-notifications');
-    const { registerPushToken } = await import('../services/api');
+    const { ensurePushNotificationsSetup } = await import('../utils/pushTokenSync');
+    const { syncMobileAppActivity } = await import('../utils/mobileAppSync');
+    await ensurePushNotificationsSetup();
+    syncMobileAppActivity({ force: true }).catch(() => {});
 
-    // Check current permission (no prompt)
-    let permStatus = await PushNotifications.checkPermissions();
-
-    // Only request permission if not yet decided
-    if (permStatus.receive === 'prompt') {
-      permStatus = await PushNotifications.requestPermissions();
-    }
-
-    if (permStatus.receive === 'granted') {
-      // Register with APNs (iOS) / FCM (Android)
-      await PushNotifications.register();
-
-      // Send token to our backend once received
-      await PushNotifications.addListener('registration', async (token) => {
-        console.log('[Push] Device token:', token.value);
-        try {
-          await registerPushToken(token.value);
-          console.log('[Push] Token registered on server');
-        } catch (err) {
-          console.warn('[Push] Failed to register token on server:', err);
-        }
-      });
-
-      await PushNotifications.addListener('registrationError', (err) => {
-        console.error('[Push] Registration error:', err);
-      });
-
-      // Foreground notification — show in-app via NotificationContext is not available here,
-      // so we dispatch a custom event that NotificationBell can listen for
-      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        console.log('[Push] Received in foreground:', notification);
-        window.dispatchEvent(new CustomEvent('pushNotificationReceived', {
-          detail: notification,
-        }));
-      });
-
-      // Notification tap — navigate to the relevant screen.
-      // Strava imports + activity-type pushes route to the dashboard with
-      // `?openActivity=<prefix>-<id>` so the dashboard auto-opens the
-      // ActivityFullModal (Lactate button included) for one-tap annotation.
-      await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-        console.log('[Push] Tapped:', action);
-        const data = action.notification?.data || {};
-
-        const resourceId   = data.resourceId   || data.resource_id;
-        const resourceType = data.resourceType || data.resource_type || 'training';
-        const pushType     = data.type;
-        const activityId   = data.activityId   || data.activity_id;
-        const activityType = data.activityType || data.activity_type;
-
-        // Activity deep-link → dashboard with auto-opened ActivityFullModal
-        const isActivityDeepLink =
-          (activityId && activityType) ||
-          (pushType === 'strava_import' && (activityId || resourceId));
-
-        let path;
-        if (isActivityDeepLink) {
-          const id     = activityId || resourceId;
-          const prefix = activityType || (pushType === 'strava_import' ? 'strava' : resourceType);
-          path = `/?openActivity=${encodeURIComponent(`${prefix}-${id}`)}`;
-        } else if (resourceId) {
-          path = resourceType === 'training'
-            ? `/training-calendar/training-${resourceId}`
-            : `/training-calendar/${resourceId}`;
-        } else {
-          path = '/';
-        }
-
-        window.location.replace(`${window.location.origin}${path}`);
-      });
-    }
+    const { App } = await import('@capacitor/app');
+    App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        ensurePushNotificationsSetup().catch(() => {});
+        syncMobileAppActivity().catch(() => {});
+      }
+    });
   } catch (err) {
     console.warn('[Push] Plugin init failed:', err);
   }

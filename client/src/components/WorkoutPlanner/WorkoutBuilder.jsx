@@ -16,8 +16,74 @@
  *  - buildPresetSteps(key) – returns step array for a given preset key
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { PlusIcon, TrashIcon, ChevronDownIcon,
-         ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
+         ArrowPathIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/outline';
+
+/** Normalize drag/drop ids — dataset attrs are always strings. */
+function normalizeReorderId(id) {
+  if (id == null || id === '') return null;
+  if (typeof id === 'string' && id.startsWith('g:')) return id;
+  const n = Number(id);
+  return Number.isNaN(n) ? id : n;
+}
+
+function DragHandle({ dragHandleProps = {}, label = 'Drag to reorder' }) {
+  const { onDragStart, onDragEnd, onTouchStart, ...rest } = dragHandleProps;
+  return (
+    <div
+      {...rest}
+      draggable={rest.draggable ?? true}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onTouchStart={(e) => {
+        onTouchStart?.(e);
+        onDragStart?.(e);
+      }}
+      className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-400 shrink-0 touch-none select-none flex items-center justify-center w-8 h-8 -ml-1"
+      style={{ touchAction: 'none' }}
+      title={label}
+      aria-label={label}
+    >
+      <Bars3Icon className="w-5 h-5" />
+    </div>
+  );
+}
+
+function ReorderButtons({ index, total, onMoveUp, onMoveDown, onDelete }) {
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <div className="flex flex-col border border-slate-100 rounded-lg overflow-hidden bg-slate-50">
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={index <= 0}
+          className="w-8 h-7 flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-25"
+          aria-label="Move up"
+        >
+          <ChevronUpIcon className="w-4 h-4" />
+        </button>
+        <div className="h-px bg-slate-100" />
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={index >= total - 1}
+          className="w-8 h-7 flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-25"
+          aria-label="Move down"
+        >
+          <ChevronDownIcon className="w-4 h-4" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="w-8 h-8 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors flex items-center justify-center"
+        aria-label="Delete step"
+      >
+        <TrashIcon className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
 
 // ─── Colours ────────────────────────────────────────────────────────────────
 const STEP_COLORS = {
@@ -747,7 +813,7 @@ function WorkoutSummary({ steps, context }) {
   const T = stats.totalSecs;
 
   return (
-    <div className="mt-3 pt-3 border-t border-slate-100">
+    <div>
       <div className="grid grid-cols-4 gap-2 text-center mb-2">
         {[
           ['Duration',  fmtShort(stats.totalSecs)],
@@ -1213,15 +1279,69 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
 }
 
 // ─── Single step row ────────────────────────────────────────────────────────
+function DurationStepper({ value, display, onDisplayChange, onCommit, onBump, isDistMode, distDisplay, onDistChange, onDistCommit, onToggleMode }) {
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => onBump(-30)}
+          className="px-2 py-2 text-sm font-bold text-slate-500 active:bg-slate-200 min-w-[36px]"
+          aria-label="Shorter"
+        >
+          −
+        </button>
+        {isDistMode ? (
+          <input
+            type="text"
+            value={distDisplay}
+            onChange={(e) => onDistChange(e.target.value)}
+            onBlur={onDistCommit}
+            onKeyDown={(e) => e.key === 'Enter' && onDistCommit()}
+            className="w-[4.5rem] text-sm text-center border-0 bg-transparent py-2 focus:outline-none tabular-nums"
+            placeholder="400m"
+          />
+        ) : (
+          <input
+            type="text"
+            value={display}
+            onChange={(e) => onDisplayChange(e.target.value)}
+            onBlur={onCommit}
+            onKeyDown={(e) => e.key === 'Enter' && onCommit()}
+            className="w-[4.5rem] text-sm text-center border-0 bg-transparent py-2 focus:outline-none tabular-nums"
+            placeholder="mm:ss"
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => onBump(30)}
+          className="px-2 py-2 text-sm font-bold text-slate-500 active:bg-slate-200 min-w-[36px]"
+          aria-label="Longer"
+        >
+          +
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onToggleMode}
+        title={isDistMode ? 'Switch to time' : 'Switch to distance'}
+        className={`text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-all ${
+          isDistMode ? 'bg-sky-50 border-sky-300 text-sky-600' : 'border-slate-200 text-slate-500'
+        }`}
+      >
+        {isDistMode ? 'dist' : 'time'}
+      </button>
+    </div>
+  );
+}
+
 function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
-  const [expanded, setExpanded]   = useState(false);
   const [powerOpen, setPowerOpen] = useState(false);
-  const [noteOpen,  setNoteOpen]  = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   const col = STEP_COLORS[step.stepType] || STEP_COLORS.work;
 
-  // Duration / distance input state
   const isDistMode = step.durationType === 'distance';
-  const [durInput,  setDurInput]  = useState(fmtDuration(step.durationSeconds));
+  const [durInput, setDurInput] = useState(fmtDuration(step.durationSeconds));
   const [distInput, setDistInput] = useState(fmtDistance(step.distanceMeters || 0));
 
   useEffect(() => { setDurInput(fmtDuration(step.durationSeconds)); }, [step.durationSeconds]);
@@ -1236,19 +1356,23 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
   const commitDist = () => {
     const meters = parseDistance(distInput);
     if (meters > 0) {
-      // Estimate durationSeconds from pace for chart rendering
       const pi = resolvePaceForSport(step.powerTarget, context);
-      const estSecs = pi ? Math.round((meters / (context.sport === 'swim' ? 100 : 1000)) * pi.pace) : Math.round(meters * 0.36); // ~2:30/km fallback
+      const estSecs = pi ? Math.round((meters / (context.sport === 'swim' ? 100 : 1000)) * pi.pace) : Math.round(meters * 0.36);
       onUpdate({ ...step, distanceMeters: meters, durationSeconds: estSecs });
     } else setDistInput(fmtDistance(step.distanceMeters || 0));
   };
 
   const toggleDurType = () => {
-    const next = isDistMode ? 'time' : 'distance';
-    onUpdate({ ...step, durationType: next });
+    onUpdate({ ...step, durationType: isDistMode ? 'time' : 'distance' });
   };
 
-  const STEP_TYPES = ['warmup','work','recovery','cooldown','rest'];
+  const bumpDur = (delta) => {
+    if (isDistMode) return;
+    const secs = Math.max(30, (step.durationSeconds || 0) + delta);
+    onUpdate({ ...step, durationSeconds: secs });
+  };
+
+  const STEP_TYPES = ['warmup', 'work', 'recovery', 'cooldown', 'rest'];
   const watts = resolveTargetWatts(step.powerTarget, context);
   const powerLabel = formatTargetLabel(step.powerTarget);
   const paceInfo = resolvePaceForSport(step.powerTarget, context);
@@ -1261,134 +1385,120 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
         highlighted ? 'ring-2 ring-primary ring-offset-1 shadow-md border-primary/30' : 'border-slate-100'
       }`}
     >
-      <div className="h-1" style={{ backgroundColor: col.bg }}/>
-      <div className="flex items-center gap-2 px-3 py-2">
-        {/* Drag handle */}
-        <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-400 shrink-0 touch-none select-none px-0.5" title="Drag to reorder">
-          <svg viewBox="0 0 10 16" className="w-2.5 h-4" fill="currentColor">
-            <circle cx="3" cy="3"  r="1.5"/><circle cx="7" cy="3"  r="1.5"/>
-            <circle cx="3" cy="8"  r="1.5"/><circle cx="7" cy="8"  r="1.5"/>
-            <circle cx="3" cy="13" r="1.5"/><circle cx="7" cy="13" r="1.5"/>
-          </svg>
-        </div>
-        <select value={step.stepType} onChange={e=>onUpdate({...step,stepType:e.target.value})}
-          className="text-xs font-semibold px-2 py-0.5 rounded-full border-0 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-          style={{ backgroundColor:col.light, color:col.text }}>
-          {STEP_TYPES.map(t=><option key={t} value={t} style={{backgroundColor:'#fff',color:'#374151'}}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
-        </select>
-
-        {/* Duration / Distance input with toggle */}
-        <div className="flex items-center gap-1 ml-1">
-          {isDistMode ? (
-            <input type="text" value={distInput}
-              onChange={e=>setDistInput(e.target.value)}
-              onBlur={commitDist} onKeyDown={e=>e.key==='Enter'&&commitDist()}
-              className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary" placeholder="400m"/>
-          ) : (
-            <input type="text" value={durInput}
-              onChange={e=>setDurInput(e.target.value)}
-              onBlur={commitDur} onKeyDown={e=>e.key==='Enter'&&commitDur()}
-              className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary" placeholder="mm:ss"/>
-          )}
-          {/* Toggle time ⇔ dist */}
-          <button onClick={toggleDurType} title={isDistMode ? 'Switch to time' : 'Switch to distance'}
-            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-all leading-none ${
-              isDistMode
-                ? 'bg-sky-50 border-sky-300 text-sky-600'
-                : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-500'
-            }`}>
-            {isDistMode ? 'dist' : 'time'}
-          </button>
-        </div>
-
-        {/* Power/Pace badge */}
-        <div className="flex-1 min-w-0">
-          <button
-            onClick={() => { setPowerOpen(v => !v); setExpanded(false); }}
-            title="Click to edit target"
-            className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 transition-all border ${
-              powerOpen
-                ? 'bg-primary text-white border-primary'
-                : step.powerTarget && step.powerTarget.type !== 'open'
-                  ? 'text-primary bg-primary/10 border-transparent hover:bg-primary/20'
-                  : 'text-slate-400 bg-slate-50 border-slate-200 hover:border-slate-300'
-            }`}
+      <div className="h-1" style={{ backgroundColor: col.bg }} />
+      <div className="px-3 py-2.5 flex flex-col gap-2">
+        {/* Row 1 — drag, type, reorder (duration on its own row so controls don't overlap) */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <DragHandle dragHandleProps={dragHandleProps} />
+          <select
+            value={step.stepType}
+            onChange={(e) => onUpdate({ ...step, stepType: e.target.value })}
+            className="text-xs font-semibold px-2.5 py-2 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer flex-1 min-w-0 max-w-[8.5rem]"
+            style={{ backgroundColor: col.light, color: col.text }}
           >
+            {STEP_TYPES.map((t) => (
+              <option key={t} value={t} style={{ backgroundColor: '#fff', color: '#374151' }}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </option>
+            ))}
+          </select>
+          <ReorderButtons
+            index={index}
+            total={total}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            onDelete={onDelete}
+          />
+        </div>
+        <div className="pl-1">
+          <DurationStepper
+            value={step.durationSeconds}
+            display={durInput}
+            onDisplayChange={setDurInput}
+            onCommit={commitDur}
+            onBump={bumpDur}
+            isDistMode={isDistMode}
+            distDisplay={distInput}
+            onDistChange={setDistInput}
+            onDistCommit={commitDist}
+            onToggleMode={toggleDurType}
+          />
+        </div>
+
+        {/* Row 2 — intensity target (full width, easy tap) */}
+        <button
+          type="button"
+          onClick={() => { setPowerOpen((v) => !v); setNoteOpen(false); }}
+          className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-all ${
+            powerOpen
+              ? 'bg-primary text-white border-primary'
+              : step.powerTarget && step.powerTarget.type !== 'open'
+                ? 'bg-primary/5 border-primary/20 hover:bg-primary/10'
+                : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <span className={`text-[10px] font-bold uppercase tracking-wide ${powerOpen ? 'text-white/80' : 'text-slate-400'}`}>
+            Intensity
+          </span>
+          <span className={`text-sm font-semibold truncate ${powerOpen ? 'text-white' : 'text-slate-800'}`}>
             {step.powerTarget && step.powerTarget.type !== 'open' ? (
               <>
                 {powerLabel}
-                {paceInfo
-                  ? <span className={`font-normal ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>· ~{paceInfo.label}{paceInfo.unit}</span>
-                  : isBike && context.ftp && step.powerTarget?.type !== 'watts'
-                    ? <span className={`font-normal ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>· ~{Math.round(watts)}W</span>
-                    : null
-                }
+                {paceInfo && (
+                  <span className={`font-normal ml-1 ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>
+                    · ~{paceInfo.label}{paceInfo.unit}
+                  </span>
+                )}
+                {!paceInfo && isBike && context.ftp && step.powerTarget?.type !== 'watts' && (
+                  <span className={`font-normal ml-1 ${powerOpen ? 'text-white/70' : 'text-slate-400'}`}>
+                    · ~{Math.round(watts)}W
+                  </span>
+                )}
               </>
             ) : (
-              <span>set target</span>
+              <span className={powerOpen ? 'text-white/90' : 'text-slate-400'}>Tap to set target</span>
             )}
-          </button>
-        </div>
+          </span>
+          <ChevronDownIcon className={`w-4 h-4 shrink-0 transition-transform ${powerOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+        </button>
 
-        <div className="flex items-center gap-0.5 shrink-0">
-          {/* Inline note button */}
-          <button onClick={()=>{ setNoteOpen(v=>!v); setPowerOpen(false); setExpanded(false); }}
-            title={step.notes ? step.notes : 'Add note / description'}
-            className={`p-1 rounded-lg transition-colors ${step.notes ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}>
-            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
-              <path d="M2 2h12v9H9l-3 3v-3H2V2zm1 1v7h3v1.6L8.4 10H13V3H3z"/>
-            </svg>
+        {/* Optional note — collapsed by default */}
+        {(noteOpen || step.notes) && (
+          <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-2">
+            {!noteOpen && step.notes ? (
+              <button type="button" onClick={() => setNoteOpen(true)} className="w-full text-left text-xs text-slate-500 truncate">
+                📝 {step.notes}
+              </button>
+            ) : (
+              <textarea
+                autoFocus={noteOpen}
+                value={step.notes || ''}
+                onChange={(e) => onUpdate({ ...step, notes: e.target.value })}
+                rows={2}
+                placeholder="Coach note for this step…"
+                className="w-full text-xs border border-amber-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-300 resize-none bg-white"
+              />
+            )}
+          </div>
+        )}
+        {!noteOpen && !step.notes && (
+          <button
+            type="button"
+            onClick={() => setNoteOpen(true)}
+            className="text-[11px] text-slate-400 hover:text-slate-600 text-left"
+          >
+            + Add note
           </button>
-          <button onClick={()=>{ setExpanded(v=>!v); setPowerOpen(false); setNoteOpen(false); }} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-            <ChevronDownIcon className={`w-3 h-3 transition-transform duration-150 ${expanded?'rotate-180':''}`}/>
-          </button>
-          <button onClick={onDelete} className="p-1 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
-            <TrashIcon className="w-3.5 h-3.5"/>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Inline note editor */}
-      {noteOpen && (
-        <div className="px-3 pb-2 pt-1 border-t border-amber-100 bg-amber-50/30">
-          <textarea
-            autoFocus
-            value={step.notes||''} onChange={e=>onUpdate({...step,notes:e.target.value})} rows={2}
-            placeholder="e.g. 400 fre, 4×50 kick + 4×50 progressive..."
-            className="w-full text-xs border border-amber-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-300 resize-none bg-white"/>
-        </div>
-      )}
-
-      {/* Note preview when note is set and panel is closed */}
-      {!noteOpen && step.notes && (
-        <button onClick={()=>setNoteOpen(true)}
-          className="w-full text-left px-3 pb-1.5 text-[10px] text-slate-400 hover:text-slate-600 truncate border-t border-slate-50 bg-slate-50/30 pt-1">
-          📝 {step.notes}
-        </button>
-      )}
-
-      {/* Inline power editor */}
       {powerOpen && (
         <InlinePowerEditor
           value={step.powerTarget}
-          onChange={pt => onUpdate({ ...step, powerTarget: pt })}
+          onChange={(pt) => onUpdate({ ...step, powerTarget: pt })}
           onClose={() => setPowerOpen(false)}
           context={context}
         />
-      )}
-
-      {/* Full expanded section (label, HR) */}
-      {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-slate-50 bg-slate-50/50 flex flex-col gap-3">
-          <TargetEditor label="Power target" value={step.powerTarget} onChange={pt=>onUpdate({...step,powerTarget:pt})}/>
-          <TargetEditor label="HR target" value={step.hrTarget} onChange={ht=>onUpdate({...step,hrTarget:ht})}/>
-          <div>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Label</span>
-            <input type="text" value={step.label||''} onChange={e=>onUpdate({...step,label:e.target.value})}
-              placeholder="e.g. Main set interval"
-              className="mt-1 w-full text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"/>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -1397,7 +1507,7 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
 // ═══════════════════════════════════════════════════════════════════════════
 // Main WorkoutBuilder
 // ═══════════════════════════════════════════════════════════════════════════
-export default function WorkoutBuilder({ initialSteps = [], context = {}, sport = 'bike', onChange }) {
+export default function WorkoutBuilder({ initialSteps = [], context = {}, sport = 'bike', onChange, stickyPreview = true }) {
   const [steps, setSteps] = useState(initialSteps.length > 0 ? initialSteps : []);
   // Merge sport into context so sub-components can detect run/swim/bike
   const ctx = useMemo(() => ({ ...context, sport }), [context, sport]);
@@ -1416,10 +1526,11 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
 
-  const handleDragStart = useCallback((id) => setDragIdx(id), []);
-  const handleDragOver  = useCallback((id) => setDragOverIdx(id), []);
+  const handleDragStart = useCallback((id) => setDragIdx(normalizeReorderId(id)), []);
+  const handleDragOver  = useCallback((id) => setDragOverIdx(normalizeReorderId(id)), []);
   const handleDrop      = useCallback((dropId) => {
-    if (dragIdx == null || dragIdx === dropId) { setDragIdx(null); setDragOverIdx(null); return; }
+    const drop = normalizeReorderId(dropId);
+    if (dragIdx == null || dragIdx === drop) { setDragIdx(null); setDragOverIdx(null); return; }
 
     // Helper: contiguous indices for a given drag target. For a single step
     // that's just [idx]; for a group it's every step sharing the groupId.
@@ -1432,7 +1543,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     };
 
     const srcIdxs = idsOf(dragIdx);
-    const dstIdxs = idsOf(dropId);
+    const dstIdxs = idsOf(drop);
     if (srcIdxs.length === 0 || dstIdxs.length === 0) {
       setDragIdx(null); setDragOverIdx(null); return;
     }
@@ -1450,6 +1561,32 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     setDragOverIdx(null);
   }, [dragIdx, steps, notify]);
   const handleDragEnd   = useCallback(() => { setDragIdx(null); setDragOverIdx(null); }, []);
+
+  // Touch drag on iOS — HTML5 draggable doesn't fire there; track finger globally.
+  useEffect(() => {
+    if (dragIdx == null) return;
+    const onTouchMove = (e) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      e.preventDefault();
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const zone = el?.closest('[data-reorder-id]');
+      if (!zone) return;
+      handleDragOver(zone.getAttribute('data-reorder-id'));
+    };
+    const finishTouch = () => {
+      if (dragOverIdx != null && dragIdx !== dragOverIdx) handleDrop(dragOverIdx);
+      else handleDragEnd();
+    };
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', finishTouch, { passive: true });
+    document.addEventListener('touchcancel', finishTouch, { passive: true });
+    return () => {
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', finishTouch);
+      document.removeEventListener('touchcancel', finishTouch);
+    };
+  }, [dragIdx, dragOverIdx, handleDrop, handleDragOver, handleDragEnd]);
 
   const addStep = (type='work') => {
     // Swim and run default to distance-based steps; bike defaults to time
@@ -1515,34 +1652,49 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Chart preview + summary */}
-      <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-xs">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
-          <span className="text-[10px] text-slate-400">{fmtDuration(totalSecs)} total</span>
+      {/* Sticky chart preview — stays visible while scrolling through steps */}
+      <div className={stickyPreview
+        ? 'sticky top-0 z-20 -mx-5 px-5 py-2 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm'
+        : ''}>
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
+            <span className="text-[10px] text-slate-400">{fmtDuration(totalSecs)} total</span>
+          </div>
+          <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize} onStepClick={handleChartStepClick}/>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+            {Object.entries(STEP_COLORS).map(([k,v])=>(
+              <span key={k} className="flex items-center gap-1 text-[10px] text-slate-500">
+                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{backgroundColor:v.bg}}/>{k}
+              </span>
+            ))}
+            {(ctx.lt2Power || ctx.lt1Power) && (
+              <span className="flex items-center gap-2 ml-auto text-[10px] text-slate-400">
+                {ctx.lt2Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-red-400 border-dashed"/><span className="text-red-400">LT2 = {Math.round(ctx.lt2Power)}W</span></span>}
+                {ctx.lt1Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-emerald-400 border-dashed"/><span className="text-emerald-600">LT1 = {Math.round(ctx.lt1Power)}W</span></span>}
+              </span>
+            )}
+          </div>
         </div>
-        <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize} onStepClick={handleChartStepClick}/>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-          {Object.entries(STEP_COLORS).map(([k,v])=>(
-            <span key={k} className="flex items-center gap-1 text-[10px] text-slate-500">
-              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{backgroundColor:v.bg}}/>{k}
-            </span>
-          ))}
-          {(ctx.lt2Power || ctx.lt1Power) && (
-            <span className="flex items-center gap-2 ml-auto text-[10px] text-slate-400">
-              {ctx.lt2Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-red-400 border-dashed"/><span className="text-red-400">LT2 = {Math.round(ctx.lt2Power)}W</span></span>}
-              {ctx.lt1Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-emerald-400 border-dashed"/><span className="text-emerald-600">LT1 = {Math.round(ctx.lt1Power)}W</span></span>}
-            </span>
-          )}
-        </div>
-        {steps.length > 0 && <WorkoutSummary steps={steps} context={ctx}/>}
       </div>
 
-      {/* Quick builders row */}
-      <div className="flex flex-col gap-2">
-        <QuickIntervalAdder context={ctx} onAdd={(ns)=>notify([...steps,...ns])}/>
-        <QuickProgressiveAdder context={ctx} onAdd={(ns)=>notify([...steps,...ns])}/>
-      </div>
+      {steps.length > 0 && (
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-xs -mt-2">
+          <WorkoutSummary steps={steps} context={ctx}/>
+        </div>
+      )}
+
+      {/* Quick builders — collapsed when steps already exist */}
+      <details className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
+        <summary className="px-3 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer list-none flex items-center justify-between">
+          <span>Quick add blocks</span>
+          <ChevronDownIcon className="w-4 h-4 text-slate-400" />
+        </summary>
+        <div className="px-3 pb-3 flex flex-col gap-2 border-t border-slate-100">
+          <QuickIntervalAdder context={ctx} onAdd={(ns) => notify([...steps, ...ns])} />
+          <QuickProgressiveAdder context={ctx} onAdd={(ns) => notify([...steps, ...ns])} />
+        </div>
+      </details>
 
       {/* Step list */}
       <div className="flex flex-col gap-2">
@@ -1568,34 +1720,47 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                   rendered.push(
                   <div
                     key={`g-${s.groupId}`}
+                    data-reorder-id={dragId}
                     className={`rounded-xl border-2 border-dashed border-violet-200 bg-violet-50/20 transition-opacity ${isBeingDragged ? 'opacity-40' : ''} ${isDropTarget ? 'ring-2 ring-primary/40' : ''}`}
                     onDragOver={e => { e.preventDefault(); handleDragOver(dragId); }}
                     onDrop={() => handleDrop(dragId)}
                   >
-                    {/* Repeat header IS the drag handle for the whole group.
-                        Grabbing here picks up every child step + the header
-                        as one cohesive block (handleDrop expands g:<id> to
-                        all member indices). */}
+                    {/* Repeat header IS the drag handle for the whole group. */}
                     <div
-                      className="flex items-center gap-2 py-1.5 px-3 cursor-grab active:cursor-grabbing select-none"
+                      className="flex flex-col gap-2 py-2 px-3 cursor-grab active:cursor-grabbing select-none border-b border-violet-100"
                       draggable
+                      style={{ touchAction: 'none' }}
                       onDragStart={() => handleDragStart(dragId)}
                       onDragEnd={handleDragEnd}
+                      onTouchStart={(e) => { e.stopPropagation(); handleDragStart(dragId); }}
                       title="Drag to reorder the entire repeat block"
                     >
-                      <span className="text-slate-300 hover:text-slate-400 shrink-0 leading-none" aria-hidden>⠿</span>
-                      <ArrowPathIcon className="w-3.5 h-3.5 text-violet-400 shrink-0"/>
-                      <span className="text-xs font-bold text-violet-600">Repeat</span>
-                      <input type="number" min={1} max={99} value={reps}
-                        onChange={e=>updateGroupRepeat(s.groupId,Math.max(1,Number(e.target.value)))}
-                        className="w-12 text-xs text-center border border-violet-200 rounded-lg px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-violet-400"/>
-                      <span className="text-xs text-violet-500">x times</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Bars3Icon className="w-5 h-5 text-slate-300 shrink-0" aria-hidden />
+                        <ArrowPathIcon className="w-4 h-4 text-violet-500 shrink-0" />
+                        <span className="text-sm font-bold text-violet-600">Repeat</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={reps}
+                          onChange={(e) => updateGroupRepeat(s.groupId, Math.max(1, Number(e.target.value)))}
+                          className="w-14 text-sm text-center border border-violet-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
+                        />
+                        <span className="text-sm text-violet-500">×</span>
+                        <button
+                          type="button"
+                          onClick={() => ungroupGroup(s.groupId)}
+                          className="ml-auto text-xs font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50"
+                        >
+                          Ungroup
+                        </button>
+                      </div>
                       {lapSecs > 0 && (
-                        <span className="text-[10px] text-slate-400 ml-1">
-                          {fmtDuration(lapSecs)} / lap · {fmtShort(reps*lapSecs)} total
-                        </span>
+                        <div className="text-xs text-slate-500 pl-7">
+                          {fmtDuration(lapSecs)} per lap · <span className="font-semibold text-slate-700">{fmtShort(reps * lapSecs)}</span> total
+                        </div>
                       )}
-                      <button onClick={()=>ungroupGroup(s.groupId)} className="ml-auto text-[10px] text-slate-400 hover:text-red-400 hover:underline">Ungroup</button>
                     </div>
                     <div className="px-2 pb-2 flex flex-col gap-1.5">
                       {gIdxs.map(gi=>(
@@ -1613,6 +1778,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
               rendered.push(
                 <div
                   key={s.clientId||idx}
+                  data-reorder-id={idx}
                   className={`flex gap-2 items-start transition-opacity ${dragIdx === idx ? 'opacity-40' : ''} ${dragOverIdx === idx && dragIdx !== idx ? 'ring-2 ring-primary/40 rounded-xl' : ''}`}
                   onDragOver={e => { e.preventDefault(); handleDragOver(idx); }}
                   onDrop={() => handleDrop(idx)}
@@ -1628,6 +1794,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                         draggable: true,
                         onDragStart: () => handleDragStart(idx),
                         onDragEnd: handleDragEnd,
+                        onTouchStart: (e) => { e.stopPropagation(); },
                       }}
                     />
                   </div>
@@ -1649,16 +1816,22 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         </div>
       )}
 
-      {/* Add step buttons */}
-      <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-        {['warmup','work','recovery','cooldown','rest'].map(type=>(
-          <button key={type} onClick={()=>addStep(type)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium hover:border-primary hover:text-primary transition-colors bg-white"
-            style={{borderColor:STEP_COLORS[type]?.bg+'80'}}>
-            <PlusIcon className="w-3 h-3"/>
-            <span style={{color:STEP_COLORS[type]?.text}}>{type.charAt(0).toUpperCase()+type.slice(1)}</span>
-          </button>
-        ))}
+      {/* Add step buttons — horizontal scroll on mobile */}
+      <div className="border-t border-slate-100 pt-3 -mx-1 px-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex gap-2 min-w-max pb-1">
+          {['warmup', 'work', 'recovery', 'cooldown', 'rest'].map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => addStep(type)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors bg-white min-h-[44px]"
+              style={{ borderColor: `${STEP_COLORS[type]?.bg}99`, color: STEP_COLORS[type]?.text }}
+            >
+              <PlusIcon className="w-4 h-4" />
+              {type.charAt(0).toUpperCase() + type.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -5,6 +5,30 @@ import api from './api';
 
 const BASE = '/api/workout-planner';
 
+/** Map UI / legacy sport labels to PlannedWorkout enum values accepted by the API. */
+export function normalizePlannedSportForApi(sport) {
+  const s = String(sport || '').toLowerCase().trim();
+  if (!s) return 'other';
+  if (s === 'gym' || s.includes('weight') || s.includes('crossfit') || s.includes('fitness')) return 'strength';
+  if (['run', 'bike', 'swim', 'strength', 'walk', 'brick', 'crosstrain', 'mtbike', 'rowing', 'lactate', 'other'].includes(s)) {
+    return s;
+  }
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+  if (s.includes('run') || s.includes('trail')) return 'run';
+  if (s.includes('swim')) return 'swim';
+  if (s.includes('walk') || s.includes('hike')) return 'walk';
+  if (s.includes('strength')) return 'strength';
+  if (s.includes('row')) return 'rowing';
+  if (s.includes('lactate')) return 'lactate';
+  return 'other';
+}
+
+function normalizePlannedPayload(payload = {}) {
+  const next = { ...payload };
+  if (next.sport !== undefined) next.sport = normalizePlannedSportForApi(next.sport);
+  return next;
+}
+
 // ── Templates ──────────────────────────────────────────────────────────────
 
 export const getWorkoutTemplates = async (sport) => {
@@ -50,13 +74,13 @@ export const getPlannedWorkout = async (id) => {
 
 export const createPlannedWorkout = async (payload, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
-  const { data } = await api.post(`${BASE}/planned`, payload, { params });
+  const { data } = await api.post(`${BASE}/planned`, normalizePlannedPayload(payload), { params });
   return data;
 };
 
 export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
-  const { data } = await api.put(`${BASE}/planned/${id}`, payload, { params });
+  const { data } = await api.put(`${BASE}/planned/${id}`, normalizePlannedPayload(payload), { params });
   return data;
 };
 

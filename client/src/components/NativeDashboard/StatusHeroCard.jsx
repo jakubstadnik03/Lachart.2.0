@@ -1,15 +1,8 @@
 import React, { useState } from 'react';
 import useElementWidth from '../../hooks/useElementWidth';
 import { NativeSkeleton } from '../native/shared/Tiles';
-
-// TSB → status label + color
-function getTsbStatus(tsb) {
-  if (tsb > 25)  return { label: 'Detraining',   color: '#599FD0' };
-  if (tsb > 5)   return { label: 'Fresh',         color: '#4BA87D' };
-  if (tsb > -10) return { label: 'Optimal',       color: '#5E6590' };
-  if (tsb > -30) return { label: 'Productive',    color: '#F59E0B' };
-  return          { label: 'Overreaching',         color: '#E05347' };
-}
+import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
+import { getTsbStatus } from '../../utils/formFitnessMetrics';
 
 function DeltaPill({ value }) {
   if (value === undefined || value === null) return null;
@@ -59,6 +52,7 @@ function readField(d, ...keys) {
 
 export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], loading = false }) {
   const [heroView, setHeroView] = useState('status');
+  const [helpOpen, setHelpOpen] = useState(false);
   const [formRange, setFormRange] = useState('3m');
   // Which metric to highlight in the status sparkline
   const [statusMetric, setStatusMetric] = useState('form'); // 'fitness' | 'fatigue' | 'form'
@@ -159,7 +153,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
 
   // ring fill % — clamp TSB to -40..+40 range, map to 0–100%
   const ringPct = Math.min(1, Math.max(0, (form + 40) / 80));
-  const r = 38;
+  const r = 30;
   const circ = 2 * Math.PI * r;
   const dash = ringPct * circ * 0.82; // 82% of circumference = full
 
@@ -172,14 +166,16 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // without horizontal stretch on iPad (both the status sparkline and the form
   // chart render full-width and share this ref — only one shows at a time).
   const [wrapRef, measuredW] = useElementWidth(320);
-  const H_SPARK = 120, H_FORM = 170;
+  const H_SPARK = 72;
+  const H_FORM = 128;
+  const RING = 72;
   const W = measuredW > 0 ? measuredW : 320;
 
   // Shared y-domain for form chart: all three series + 0
   const allFormVals = [...ctlSeries, ...atlSeries, ...tsbSeries, 0];
   const domMin = Math.min(...allFormVals) - 2;
   const domMax = Math.max(...allFormVals) + 2;
-  const zeroY  = yForVal(0, H_FORM, domMin, domMax, 10);
+  const zeroY  = yForVal(0, H_FORM, domMin, domMax, 8);
 
   // Date tick labels (first and last)
   const firstLabel = pts.length > 0 ? (pts[0].dateLabel || '') : '';
@@ -195,18 +191,18 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
           </div>
           <NativeSkeleton width={86} height={26} radius={999} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '112px 1fr', gap: 18, alignItems: 'center' }}>
-          <NativeSkeleton width={112} height={112} radius={999} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <NativeSkeleton width="72%" height={13} />
-            <NativeSkeleton width="92%" height={54} radius={14} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <NativeSkeleton height={36} radius={10} />
-              <NativeSkeleton height={36} radius={10} />
-              <NativeSkeleton height={36} radius={10} />
+        <div style={{ display: 'grid', gridTemplateColumns: '76px 1fr', gap: 10, alignItems: 'center' }}>
+          <NativeSkeleton width={76} height={76} radius={999} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <NativeSkeleton width="60%" height={12} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+              <NativeSkeleton height={28} radius={8} />
+              <NativeSkeleton height={28} radius={8} />
+              <NativeSkeleton height={28} radius={8} />
             </div>
           </div>
         </div>
+        <NativeSkeleton width="100%" height={72} radius={10} style={{ marginTop: 8 }} />
       </div>
     );
   }
@@ -265,158 +261,120 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
         ) : (
           <span style={styles.eyebrow}>Form · last {formRange}</span>
         )}
-        <div style={styles.seg}>
-          {['status', 'form'].map(v => (
-            <button key={v} style={{ ...styles.segBtn, ...(heroView === v ? styles.segBtnOn : {}) }}
-              onClick={() => setHeroView(v)}>
-              {v === 'status' ? 'Status' : 'Form chart'}
-            </button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            aria-label="What do Fitness, Fatigue and Form mean?"
+            style={infoBtn}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v5" />
+              <circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+          <div style={styles.seg}>
+            {['status', 'form'].map(v => (
+              <button key={v} style={{ ...styles.segBtn, ...(heroView === v ? styles.segBtnOn : {}) }}
+                onClick={() => setHeroView(v)}>
+                {v === 'status' ? 'Status' : 'Form chart'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Body — fixed min-height so Status ↔ Form chart toggle doesn't shrink
           or grow the surrounding layout. Picked to fit the taller of the two
           views (Form chart with H_FORM=150 + header + footer ≈ 220 px). */}
-      <div style={{ minHeight: 250 }}>
+      <div style={{ minHeight: heroView === 'status' ? 168 : 188 }}>
       {heroView === 'status' ? (
         <>
-          {/* Ring + stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: 14, alignItems: 'center', marginBottom: 10 }}>
-            {/* Ring — sweeps in on mount, retransitions smoothly when value changes */}
-            <div style={{ position: 'relative', width: 92, height: 92 }}>
-              <svg width="92" height="92" viewBox="0 0 92 92">
-                <circle cx="46" cy="46" r={r} fill="none" stroke="rgba(118,126,181,.12)" strokeWidth="8" />
+          {/* Ring + compact stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: `${RING}px 1fr`, gap: 10, alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ position: 'relative', width: RING, height: RING }}>
+              <svg width={RING} height={RING} viewBox={`0 0 ${RING} ${RING}`}>
+                <circle cx={RING / 2} cy={RING / 2} r={r} fill="none" stroke="rgba(118,126,181,.12)" strokeWidth="6" />
                 <circle
-                  cx="46" cy="46" r={r}
+                  cx={RING / 2} cy={RING / 2} r={r}
                   fill="none"
                   stroke={status.color}
-                  strokeWidth="8"
+                  strokeWidth="6"
                   strokeDasharray={`${dash} 999`}
                   strokeLinecap="round"
-                  transform="rotate(-90 46 46)"
+                  transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
                   style={{
                     transition: 'stroke-dasharray .8s cubic-bezier(.22,1,.36,1), stroke .35s ease',
-                    animation: 'ndRingSweep 1s cubic-bezier(.22,1,.36,1) both',
                   }}
                 />
               </svg>
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
-                animation: 'ndPopIn .5s .25s cubic-bezier(.22,1.4,.36,1) both',
               }}>
                 <span style={{
-                  fontSize: 22, fontWeight: 700, color: '#0A0E1A',
+                  fontSize: 18, fontWeight: 700, color: '#0A0E1A',
                   fontVariantNumeric: 'tabular-nums', lineHeight: 1, letterSpacing: '-0.02em',
-                  transition: 'color .35s ease',
                 }}>
                   {form >= 0 ? `+${form}` : form}
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', letterSpacing: '0.08em', marginTop: 2 }}>TSB</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#6B7280', letterSpacing: '0.08em', marginTop: 1 }}>TSB</span>
               </div>
             </div>
 
-            {/* Stats — labels are clickable to switch sparkline metric */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Status pill — pops in, smoothly tween color when crossing thresholds */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <div
                 key={status.label}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 9999,
+                  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 9999,
                   background: status.color + '1f', alignSelf: 'flex-start',
-                  transition: 'background .35s ease',
-                  animation: 'ndPopIn .5s .15s cubic-bezier(.22,1.4,.36,1) both',
                 }}
               >
-                <span style={{
-                  width: 6, height: 6, borderRadius: '50%', background: status.color, display: 'inline-block',
-                  transition: 'background .35s ease',
-                  animation: 'ndPulse 2.4s 1s ease-in-out infinite',
-                }} />
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: status.color, transition: 'color .35s ease' }}>{status.label}</span>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: status.color, display: 'inline-block' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>{status.label}</span>
               </div>
 
-              {/* Fitness / Fatigue — clickable */}
-              <div style={{ display: 'flex', gap: 14 }}>
+              {/* Fitness / Fatigue / Form — one row */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
                 {[
                   { key: 'fitness', label: 'Fitness', val: fitness, delta: fitnessDelta, color: '#3b82f6' },
                   { key: 'fatigue', label: 'Fatigue', val: fatigue, delta: fatigueDelta, color: '#9333ea' },
-                ].map(({ key, label, val, delta, color }) => {
+                  { key: 'form', label: 'Form', val: form >= 0 ? `+${form}` : form, delta: formDelta, color: status.color, isForm: true },
+                ].map(({ key, label, val, delta, color, isForm }) => {
                   const on = statusMetric === key;
                   return (
                     <button
                       key={key}
                       onClick={() => { setStatusMetric(key); setAnimTick(t => t + 1); }}
                       style={{
-                        display: 'flex', alignItems: 'baseline', gap: 5,
-                        padding: '2px 0',
-                        background: 'transparent', border: 'none', cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        position: 'relative',
-                        transition: 'transform .15s ease',
-                        transform: on ? 'scale(1.02)' : 'scale(1)',
+                        display: 'flex', alignItems: 'baseline', gap: 4,
+                        padding: '1px 0', background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', position: 'relative',
                       }}
                     >
                       <span style={{
-                        fontSize: 10, fontWeight: 700,
-                        color: on ? color : '#6B7280',
-                        letterSpacing: '0.06em', textTransform: 'uppercase',
-                        transition: 'color .25s ease',
+                        fontSize: 9, fontWeight: 700,
+                        color: on ? color : '#9CA3AF',
+                        letterSpacing: '0.05em', textTransform: 'uppercase',
                       }}>{label}</span>
                       <span style={{
-                        fontSize: 18, fontWeight: 700,
+                        fontSize: isForm ? 14 : 15, fontWeight: 700,
                         color: on ? color : '#0A0E1A',
                         fontVariantNumeric: 'tabular-nums',
-                        transition: 'color .25s ease',
                       }}>{val}</span>
                       <DeltaPill value={delta} />
-                      {/* Underline indicator */}
                       <span style={{
                         position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 2,
                         background: color,
                         opacity: on ? 1 : 0,
                         transform: on ? 'scaleX(1)' : 'scaleX(0)',
-                        transition: 'opacity .25s ease, transform .25s ease',
+                        transition: 'opacity .2s ease, transform .2s ease',
                       }} />
                     </button>
                   );
                 })}
               </div>
-
-              {/* Form — clickable */}
-              <button
-                onClick={() => { setStatusMetric('form'); setAnimTick(t => t + 1); }}
-                style={{
-                  display: 'flex', alignItems: 'baseline', gap: 5,
-                  padding: '2px 0', background: 'transparent', border: 'none', cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  position: 'relative', alignSelf: 'flex-start',
-                  transition: 'transform .15s ease',
-                  transform: statusMetric === 'form' ? 'scale(1.02)' : 'scale(1)',
-                }}
-              >
-                <span style={{
-                  fontSize: 10, fontWeight: 700,
-                  color: statusMetric === 'form' ? status.color : '#6B7280',
-                  letterSpacing: '0.06em', textTransform: 'uppercase',
-                  transition: 'color .25s ease',
-                }}>Form</span>
-                <span style={{
-                  fontSize: 14, fontWeight: 700,
-                  color: statusMetric === 'form' ? status.color : '#0A0E1A',
-                  fontVariantNumeric: 'tabular-nums',
-                  transition: 'color .25s ease',
-                }}>{form >= 0 ? `+${form}` : form}</span>
-                <DeltaPill value={formDelta} />
-                <span style={{
-                  position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 2,
-                  background: status.color,
-                  opacity: statusMetric === 'form' ? 1 : 0,
-                  transform: statusMetric === 'form' ? 'scaleX(1)' : 'scaleX(0)',
-                  transition: 'opacity .25s ease, transform .25s ease, background .25s ease',
-                }} />
-              </button>
             </div>
           </div>
 
@@ -443,7 +401,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
                 key={animTick}
                 ref={wrapRef}
                 style={{
-                  marginTop: 4,
+                  marginTop: 2,
                   animation: 'ndFadeIn .4s cubic-bezier(.22,1,.36,1) both',
                 }}
               >
@@ -485,16 +443,16 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
       ) : (
         <>
           {/* Form chart header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
               {[
                 { l: 'CTL', v: fitness, c: '#3b82f6' },
                 { l: 'ATL', v: fatigue, c: '#9333ea' },
                 { l: 'TSB', v: form,    c: '#f97316' },
               ].map(({ l, v, c }) => (
-                <div key={l} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <span style={{ fontSize: 9, color: '#6B7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
-                  <span style={{ fontSize: 17, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                <div key={l} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  <span style={{ fontSize: 8.5, color: '#6B7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
                     {l === 'TSB' && v >= 0 ? `+${v}` : v}
                   </span>
                 </div>
@@ -546,35 +504,32 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
                   stroke="rgba(10,14,26,.14)" strokeDasharray="3 4" />
 
                 {/* CTL fill + line — animated draw */}
-                <path
-                  d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${H_FORM} L 0 ${H_FORM} Z`}
+                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${H_FORM} L 0 ${H_FORM} Z`}
                   fill="url(#ndctl-g)"
                   style={{ animation: 'ndFadeIn .5s ease both' }}
                 />
-                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 10)}
-                  fill="none" stroke="#3b82f6" strokeWidth="2.2"
+                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 8)}
+                  fill="none" stroke="#3b82f6" strokeWidth="2"
                   style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.1s cubic-bezier(.22,1,.36,1) forwards' }}
                 />
 
-                {/* ATL line (dashed) — animated draw */}
-                <path d={makePath(atlSeries, W, H_FORM, domMin, domMax, 0, 10)}
-                  fill="none" stroke="#9333ea" strokeWidth="1.8" strokeDasharray="4 3"
+                <path d={makePath(atlSeries, W, H_FORM, domMin, domMax, 0, 8)}
+                  fill="none" stroke="#9333ea" strokeWidth="1.6" strokeDasharray="4 3"
                   style={{ animation: 'ndFadeIn .8s .15s ease both' }}
                 />
 
-                {/* TSB fill (green above 0, red below 0) + line — animated */}
                 <path
-                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
+                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
                   fill="rgba(34,197,94,.15)" clipPath="url(#ndAboveZero)"
                   style={{ animation: 'ndFadeIn .6s .2s ease both' }}
                 />
                 <path
-                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
+                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
                   fill="rgba(239,68,68,.12)" clipPath="url(#ndBelowZero)"
                   style={{ animation: 'ndFadeIn .6s .2s ease both' }}
                 />
-                <path d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 10)}
-                  fill="none" stroke="#f97316" strokeWidth="2.4"
+                <path d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8)}
+                  fill="none" stroke="#f97316" strokeWidth="2.2"
                   style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.2s .15s cubic-bezier(.22,1,.36,1) forwards' }}
                 />
               </svg>
@@ -595,7 +550,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
           )}
 
           {/* Legend */}
-          <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6, alignItems: 'center' }}>
             {[['#3b82f6', 'CTL (Fitness)', false], ['#9333ea', 'ATL (Fatigue)', true], ['#f97316', 'TSB (Form)', false]].map(([c, l, dashed]) => (
               <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#6B7280', fontWeight: 600 }}>
                 <span style={{
@@ -606,15 +561,36 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
                 {l}
               </span>
             ))}
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              style={{
+                marginLeft: 'auto', border: 'none', background: 'transparent', padding: 0,
+                fontSize: 10, fontWeight: 700, color: '#5E6590', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Learn more
+            </button>
           </div>
         </>
       )}
       </div>
+
+      <FormFitnessHelpSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
 
 // Compact circular chevron button used by the day navigator at the top.
+const infoBtn = {
+  width: 28, height: 28, borderRadius: '50%',
+  background: 'rgba(118,126,181,.1)', border: 'none',
+  color: '#5E6590', fontFamily: 'inherit',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: 0, flexShrink: 0, cursor: 'pointer',
+  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+};
+
 const dateNavBtn = {
   width: 22, height: 22, borderRadius: '50%',
   background: 'rgba(118,126,181,.12)', border: 'none',
@@ -632,10 +608,10 @@ const styles = {
     border: '1px solid rgba(255,255,255,.7)',
     boxShadow: '0 1px 0 rgba(255,255,255,.7) inset, 0 8px 24px -10px rgba(10,14,26,.08)',
     borderRadius: 22,
-    padding: '14px 16px',
+    padding: '12px 14px',
     marginBottom: 0,
   },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 },
+  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 },
   eyebrow: { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6B7280' },
   seg: { display: 'inline-flex', padding: 3, borderRadius: 10, background: 'rgba(118,126,181,.12)' },
   segBtn: { border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: '#6B7280', padding: '4px 10px', borderRadius: 8, cursor: 'pointer' },
