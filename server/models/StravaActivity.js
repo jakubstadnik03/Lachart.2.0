@@ -43,6 +43,13 @@ const stravaActivitySchema = new mongoose.Schema({
   weightedAveragePower: Number,
   /** Strava activity total elevation gain (m), when synced from API */
   total_elevation_gain: Number,
+  /** User-edited TSS override (Completed editor). */
+  manualTss: Number,
+  calories: Number,
+  rpe: Number,
+  lactate: Number,
+  /** When true, Strava sync must not overwrite movingTime/distance/elapsedTime. */
+  metricsManualized: { type: Boolean, default: false },
   laps: [stravaLapSchema], // Store laps with lactate values
   raw: Object
 }, { timestamps: true });

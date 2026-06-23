@@ -643,31 +643,28 @@ function ZonesStep({ user, onSkip, onSave, saving }) {
   ];
 
   const ZoneEditor = ({ zonesObj, type, unit }) => (
-    <div className="space-y-1.5">
+    <div className="rounded-lg border border-gray-200 overflow-hidden divide-y divide-gray-100 bg-white">
       {Object.entries(zonesObj).filter(([k]) => k.startsWith('zone')).map(([key, z], i) => {
         const c = ZONE_COLORS[i];
+        const zoneNum = key.replace('zone', '');
         return (
-          <div key={key} className={`rounded-xl px-3 py-2.5 border ${c.row}`}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className={`text-xs font-bold ${c.text}`}>{key.replace('zone', 'Zone ')}</span>
-              <span className="text-[10px] text-gray-400">{z.description}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={z.min}
-                onChange={e => updateZone(type, key, 'min', e.target.value)}
-                className={`flex-1 text-center text-xs font-semibold rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
-              />
-              <span className={`text-xs font-bold ${c.text}`}>–</span>
-              <input
-                type="number"
-                value={z.max}
-                onChange={e => updateZone(type, key, 'max', e.target.value)}
-                className={`flex-1 text-center text-xs font-semibold rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
-              />
-              <span className={`text-[10px] font-medium w-8 flex-shrink-0 ${c.text}`}>{unit}</span>
-            </div>
+          <div key={key} className={`flex items-center gap-1 px-1.5 py-0.5 ${c.row}`}>
+            <span className={`w-5 flex-shrink-0 text-[9px] font-bold leading-none ${c.text}`}>Z{zoneNum}</span>
+            <span className="hidden sm:inline flex-1 min-w-0 text-[8px] text-gray-400 truncate leading-tight pr-0.5">{z.description}</span>
+            <input
+              type="number"
+              value={z.min}
+              onChange={e => updateZone(type, key, 'min', e.target.value)}
+              className={`w-[2.75rem] sm:w-12 h-7 text-center text-[11px] font-semibold rounded border px-0.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
+            />
+            <span className={`text-[9px] font-bold flex-shrink-0 ${c.text}`}>–</span>
+            <input
+              type="number"
+              value={z.max}
+              onChange={e => updateZone(type, key, 'max', e.target.value)}
+              className={`w-[2.75rem] sm:w-12 h-7 text-center text-[11px] font-semibold rounded border px-0.5 focus:outline-none focus:ring-1 focus:ring-primary ${c.input} ${c.text}`}
+            />
+            <span className={`w-4 flex-shrink-0 text-[8px] font-medium text-right leading-none ${c.text}`}>{unit}</span>
           </div>
         );
       })}
@@ -676,17 +673,16 @@ function ZonesStep({ user, onSkip, onSave, saving }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Scrollable body */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
-        <div className="text-center">
-          <div className="flex justify-center mb-2"><Zap className="w-10 h-10 text-primary" /></div>
-          <h3 className="text-lg font-bold text-gray-900">Generate Training Zones</h3>
-          <p className="text-sm text-gray-500 mt-1">Enter your LT1 & LT2 thresholds to auto-calculate zones</p>
-        </div>
+      <div className={`flex-1 min-h-0 ${editableZones?.hr ? 'overflow-y-auto' : 'overflow-hidden'} ${editableZones ? 'space-y-1.5' : 'space-y-3 overflow-y-auto'}`}>
+        {!editableZones && (
+          <div className="text-center">
+            <div className="flex justify-center mb-1"><Zap className="w-8 h-8 text-primary" /></div>
+            <h3 className="text-base font-bold text-gray-900">Generate Training Zones</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Enter LT1 & LT2 to auto-calculate zones</p>
+          </div>
+        )}
 
-        {/* Sport selector — switching sport only changes the unit label; generated
-            zones stay visible so the user doesn't lose their work. */}
-        <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm font-medium">
+        <div className={`flex rounded-lg border border-gray-200 overflow-hidden font-medium text-xs ${editableZones ? '' : 'text-sm'}`}>
           {['cycling', 'running', 'swimming'].map(s => (
             <button key={s} type="button" onClick={() => {
               const zonesForSport = getExistingZonesForSport(user, s);
@@ -698,61 +694,59 @@ function ZonesStep({ user, onSkip, onSave, saving }) {
               setMaxhr(zonesForSport?.maxhr || '');
               setEditableZones(zonesForSport?.editableZones || null);
             }}
-              className={`flex-1 py-2 capitalize transition-all ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+              className={`flex-1 capitalize transition-all py-1.5 ${sport === s ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
               {s}
             </button>
           ))}
         </div>
 
-        {/* LT inputs — hidden once zones are generated */}
         {!editableZones && (
-          <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power / Pace Thresholds ({sportLabel})</p>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gray-50 rounded-xl p-3 space-y-2 border border-gray-100">
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Thresholds ({sportLabel})</p>
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 (Aerobic)</label>
-                <input type="number" value={lt1} onChange={e => setLt1(e.target.value)} placeholder={sport === 'cycling' ? '180' : '240'} className={INPUT} />
+                <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">LT1</label>
+                <input type="number" value={lt1} onChange={e => setLt1(e.target.value)} placeholder={sport === 'cycling' ? '180' : '240'} className={INPUT_COMPACT} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 (Anaerobic)</label>
-                <input type="number" value={lt2} onChange={e => setLt2(e.target.value)} placeholder={sport === 'cycling' ? '250' : '290'} className={INPUT} />
+                <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">LT2</label>
+                <input type="number" value={lt2} onChange={e => setLt2(e.target.value)} placeholder={sport === 'cycling' ? '250' : '290'} className={INPUT_COMPACT} />
               </div>
             </div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Heart Rate (bpm) — optional</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">HR (bpm) — optional</p>
+            <div className="grid grid-cols-3 gap-1.5">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">LT1 HR</label>
-                <input type="number" value={lt1hr} onChange={e => setLt1hr(e.target.value)} placeholder="145" className={INPUT} />
+                <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">LT1</label>
+                <input type="number" value={lt1hr} onChange={e => setLt1hr(e.target.value)} placeholder="145" className={INPUT_COMPACT} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">LT2 HR</label>
-                <input type="number" value={lt2hr} onChange={e => setLt2hr(e.target.value)} placeholder="168" className={INPUT} />
+                <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">LT2</label>
+                <input type="number" value={lt2hr} onChange={e => setLt2hr(e.target.value)} placeholder="168" className={INPUT_COMPACT} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Max HR</label>
-                <input type="number" value={maxhr} onChange={e => setMaxhr(e.target.value)} placeholder="185" className={INPUT} />
+                <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">Max</label>
+                <input type="number" value={maxhr} onChange={e => setMaxhr(e.target.value)} placeholder="185" className={INPUT_COMPACT} />
               </div>
             </div>
           </div>
         )}
 
-        {err && <p className="text-xs text-red-600 text-center">{err}</p>}
+        {err && <p className="text-[10px] text-red-600 text-center">{err}</p>}
 
-        {/* Editable zone tables — shown after generation */}
         {editableZones && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Power Zones ({sportLabel})</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wide">Power zones ({sportLabel})</p>
               <button type="button" onClick={() => setEditableZones(null)}
-                className="text-[11px] text-primary font-semibold hover:underline">
-                ← Recalculate
+                className="text-[9px] text-primary font-semibold hover:underline flex-shrink-0">
+                Recalculate
               </button>
             </div>
             <ZoneEditor zonesObj={editableZones.power} type="power" unit={sportLabel} />
 
             {editableZones.hr && (
               <>
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Heart Rate Zones (bpm)</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wide pt-0.5">HR zones (bpm)</p>
                 <ZoneEditor zonesObj={editableZones.hr} type="hr" unit="bpm" />
               </>
             )}
@@ -760,17 +754,23 @@ function ZonesStep({ user, onSkip, onSave, saving }) {
         )}
       </div>
 
-      {/* Sticky bottom actions */}
-      <div className="flex-shrink-0 pt-3 border-t border-gray-100 space-y-2"
-           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
-        {!editableZones ? (
-          <button type="button" onClick={handleGenerate} className={BTN_PRIMARY}>Generate Zones</button>
+      <div className={`flex-shrink-0 border-t border-gray-100 ${editableZones ? 'pt-1.5' : 'pt-2 space-y-1.5'}`}
+           style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom, 6px))' }}>
+        {editableZones ? (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleSave} disabled={saving} className={`flex-1 ${BTN_PRIMARY_COMPACT}`}>
+              {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Confirm & Save'}
+            </button>
+            <button type="button" onClick={onSkip} className="text-[11px] text-gray-400 font-medium px-2 py-2 whitespace-nowrap hover:text-gray-600">
+              Skip
+            </button>
+          </div>
         ) : (
-          <button type="button" onClick={handleSave} disabled={saving} className={BTN_PRIMARY}>
-            {saving ? <span className="flex items-center justify-center gap-2"><Spinner /> Saving…</span> : 'Confirm & Save Zones'}
-          </button>
+          <>
+            <button type="button" onClick={handleGenerate} className={BTN_PRIMARY_COMPACT}>Generate Zones</button>
+            <button type="button" onClick={onSkip} className={BTN_GHOST_COMPACT}>Skip — I'll set zones later</button>
+          </>
         )}
-        <button type="button" onClick={onSkip} className={BTN_GHOST}>Skip — I'll set zones later</button>
       </div>
     </div>
   );
@@ -906,11 +906,14 @@ function FirstTestStep({ user, navigate, onClose, onSkip }) {
 // ─── Shared UI helpers ────────────────────────────────────────────────────────
 
 const INPUT = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-400 box-border min-w-0';
+const INPUT_COMPACT = 'w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-400 box-border min-w-0 h-9';
 /* iOS date inputs ignore vertical padding and render taller than text fields — fixed height keeps rows aligned */
 const INPUT_CONTROL = `${INPUT} h-11 py-0 leading-tight appearance-none`;
 const INPUT_DATE = `${INPUT_CONTROL} [color-scheme:light]`;
 const BTN_PRIMARY = 'w-full py-3 px-4 rounded-2xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50';
+const BTN_PRIMARY_COMPACT = 'w-full py-2.5 px-4 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50';
 const BTN_GHOST = 'w-full py-2.5 px-4 rounded-2xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-all';
+const BTN_GHOST_COMPACT = 'w-full py-2 px-4 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-all';
 
 function SaveButton({ saving, label }) {
   return (
@@ -1342,8 +1345,8 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
 
         {/* ── TOP BAR: progress + close ─────────────────────────────────── */}
         <div
-          className="flex-shrink-0 px-5 pb-3"
-          style={{ paddingTop: 'max(16px, env(safe-area-inset-top, 16px))' }}
+          className={`flex-shrink-0 px-5 ${phase === 'setup' && setupStep === 2 ? 'pb-1.5' : 'pb-3'}`}
+          style={{ paddingTop: phase === 'setup' && setupStep === 2 ? 'max(10px, env(safe-area-inset-top, 10px))' : 'max(16px, env(safe-area-inset-top, 16px))' }}
         >
           <div className="flex items-center gap-2">
             <div className="flex-1 flex gap-[3px]">
@@ -1468,9 +1471,24 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
 
               {/* ── SETUP PHASE ─────────────────────────────────────────── */}
               {phase === 'setup' && (
-                <div className="flex-1 flex flex-col px-6 min-h-0">
+                <div className={`flex-1 flex flex-col min-h-0 ${setupStep === 2 ? 'px-4' : 'px-6'}`}>
 
-                  {/* Step header */}
+                  {/* Step header — minimal on zones step to save vertical space */}
+                  {setupStep === 2 ? (
+                    <div className="flex items-center gap-2 mt-0.5 mb-1 flex-shrink-0">
+                      <button
+                        onClick={goPrevSetup}
+                        className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 active:scale-95 transition-all"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                        Step {setupStep + 1} of {SETUP_STEPS.length} · {SETUP_STEPS[setupStep]?.label}
+                      </p>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-3 mt-3 mb-4 flex-shrink-0">
                     <button
                       onClick={goPrevSetup}
@@ -1489,6 +1507,7 @@ export function IntroSlides({ user, onDone, startAtSetup = false }) {
                       </p>
                     </div>
                   </div>
+                  )}
 
                   {/* Step body — flex column so each step component can fill + scroll internally */}
                   <div className="flex-1 min-h-0 flex flex-col">

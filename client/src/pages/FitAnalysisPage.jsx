@@ -9,6 +9,7 @@ import TrainingComments from '../components/TrainingComments';
 import { motion } from 'framer-motion';
 import CalendarView, { DayPlanEditSheet, PeriodEditSheet } from '../components/Calendar/CalendarView';
 import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
+import { buildActivityMatcher, metricsPatchFromDetail, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
@@ -1513,11 +1514,32 @@ const FitAnalysisPage = () => {
       setExternalActivities(prev => prev.map(t => matches(t) ? patch(t) : t));
       cachePatch(matches, patch);
     };
+    const onMetricsUpdated = (e) => {
+      const detail = e?.detail || {};
+      const { id } = detail;
+      if (!id) return;
+      const matches = buildActivityMatcher(id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      setRegularTrainings(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      setExternalActivities(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      cachePatch(matches, patch);
+    };
+    const onPlannedUpdated = (e) => {
+      const planned = e?.detail?.planned;
+      if (!planned?._id) return;
+      setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, planned));
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
+    window.addEventListener('plannedWorkoutUpdated', onPlannedUpdated);
     return () => {
       window.removeEventListener('activityTitleUpdated', onTitleUpdated);
       window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
+      window.removeEventListener('plannedWorkoutUpdated', onPlannedUpdated);
     };
   }, []);
   
@@ -3473,9 +3495,11 @@ const FitAnalysisPage = () => {
         type: 'fit',
         distance: t.totalDistance || t.distance,
         // FIT files store time as numeric seconds; convert any string fallback just in case.
-        totalElapsedTime: t.totalElapsedTime || t.totalTimerTime
+        totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
           || parseDurationToSeconds(t.duration) || 0,
-        tss: t.tss || t.totalTSS,
+        totalTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
+          || parseDurationToSeconds(t.duration) || 0,
+        tss: t.trainingStressScore || t.tss || t.totalTSS,
         avgPower: t.avgPower || t.averagePower || null,
         avgSpeed: t.avgSpeed || t.averageSpeed || null,
         avgHeartRate: hrFrom(t),
@@ -3492,27 +3516,40 @@ const FitAnalysisPage = () => {
           distance: t.totalDistance || t.distance,
           // Training model stores duration as a String ("H:MM:SS") — parse to seconds
           // so CalendarPeriodStats can sum it correctly.
-          totalElapsedTime: t.totalElapsedTime || t.totalTimerTime
+          totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
             || parseDurationToSeconds(t.duration) || 0,
-          tss: t.tss || t.totalTSS,
+          totalTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
+            || parseDurationToSeconds(t.duration) || 0,
+          tss: t.trainingStressScore || t.tss || t.totalTSS,
           avgPower: t.avgPower || t.averagePower || null,
           avgSpeed: t.avgSpeed || t.averageSpeed || null,
           avgHeartRate: hrFrom(t),
         })),
       ...externalActivities.map((a) => {
         const linked = trainingByStravaId.get(String(a.stravaId));
+        const source = a.source || (a.stravaId != null ? 'strava' : a.garminId != null ? 'garmin' : 'strava');
+        const extId = source === 'garmin'
+          ? `garmin-${a.garminId}`
+          : source === 'apple_health'
+            ? `apple-${a.healthKitId || a.sourceId}`
+            : `strava-${a.stravaId}`;
         return {
-          _id: a._id,                        // keep MongoDB _id for lactate form lookup
-          id: `strava-${a.stravaId}`,
+          _id: a._id,
+          stravaId: a.stravaId ?? null,
+          garminId: a.garminId ?? null,
+          source,
+          id: extId,
           date: a.startDate,
           title: linked?.title || a.titleManual || a.name || 'Untitled Activity',
           linkedTrainingTitle: linked?.title || null,
           sport: a.sport,
           category: a.category || linked?.category || null,
-          type: 'strava',
+          type: source === 'garmin' ? 'garmin' : source === 'apple_health' ? 'apple_health' : 'strava',
           distance: a.distance,
-          totalElapsedTime: a.movingTime || a.elapsedTime,
-          tss: a.tss || a.totalTSS,
+          totalElapsedTime: a.movingTime || a.elapsedTime || a.totalTime,
+          totalTime: a.movingTime || a.elapsedTime || a.totalTime,
+          movingTime: a.movingTime || a.elapsedTime,
+          tss: a.manualTss ?? a.tss ?? a.totalTSS,
           avgPower: a.averagePower || a.average_watts || null,
           avgSpeed: a.averageSpeed || a.average_speed || null,
           avgHeartRate: hrFrom(a),
@@ -4504,6 +4541,16 @@ const FitAnalysisPage = () => {
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onDeletePlannedWorkout={handlePlanDelete}
           onOpenActivity={handleCalendarActivitySelect}
+          onPlannedSaved={(saved) => setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved))}
+          onCompletedSaved={(detail) => {
+            if (!detail?.id) return;
+            const matches = buildActivityMatcher(detail.id);
+            const patch = metricsPatchFromDetail(detail);
+            if (!Object.keys(patch).length) return;
+            setTrainings((prev) => prev.map((t) => (matches(t) ? { ...t, ...patch } : t)));
+            setRegularTrainings((prev) => prev.map((t) => (matches(t) ? { ...t, ...patch } : t)));
+            setExternalActivities((prev) => prev.map((t) => (matches(t) ? { ...t, ...patch } : t)));
+          }}
           athleteId={selectedAthleteId || null}
           mobileChartsContent={calendarPeriod ? (
             <CalendarPeriodStats

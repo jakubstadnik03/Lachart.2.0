@@ -27,6 +27,8 @@ import LapsTable from '../FitAnalysis/LapsTable';
 import { ActivityFullModal } from '../Calendar/CalendarView';
 import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, createFieldLactateMeasurement } from '../../services/api';
 import api from '../../services/api';
+import { resolveActivityTss } from '../../utils/computeTss';
+import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
 import { fetchWellness } from '../../services/wellnessData';
@@ -178,97 +180,6 @@ function activityCalendarDateKey(act) {
   return getLocalDateString(d);
 }
 
-function readExplicitTss(act) {
-  const v =
-    act?.tss ??
-    act?.TSS ??
-    act?.totalTSS ??
-    act?.total_tss ??
-    act?.trainingStressScore ??
-    act?.training_stress_score ??
-    act?.totalTss ??
-    act?.totalTssValue ??
-    act?.icu_training_load ??
-    act?.load;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/** Same heuristics as server `calculateActivityTSS` (weeklyReport / fitness metrics). */
-function estimateTssFromActivity(act, userProfile) {
-  try {
-    const seconds = Number(
-      act?.movingTime ??
-        act?.elapsedTime ??
-        act?.totalElapsedTime ??
-        act?.totalTimerTime ??
-        act?.duration ??
-        act?.totalTime ??
-        0
-    );
-    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-
-    const ftp =
-      userProfile?.powerZones?.cycling?.lt2 ||
-      userProfile?.powerZones?.cycling?.zone5?.min ||
-      userProfile?.ftp ||
-      250;
-
-    const thresholdPace =
-      userProfile?.powerZones?.running?.lt2 || userProfile?.runningZones?.lt2 || null;
-
-    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null;
-
-    const sport = String(act?.sport || '').toLowerCase();
-
-    if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
-      const avgPower = Number(
-        act?.averagePower ?? act?.avgPower ?? act?.average_watts ?? act?.weighted_average_watts ?? 0
-      );
-      if (avgPower > 0 && ftp > 0) {
-        const np = avgPower;
-        return Math.round(((seconds * np * np) / (ftp * ftp * 3600)) * 100);
-      }
-      const kj = Number(act?.kilojoules ?? act?.raw?.kilojoules ?? 0);
-      if (kj > 0) {
-        return Math.round(kj * 0.84);
-      }
-    }
-
-    if (sport.includes('run') || sport.includes('walk') || sport.includes('hike') || sport === 'running') {
-      const avgSpeed = Number(act?.averageSpeed ?? act?.avgSpeed ?? act?.average_speed ?? 0);
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(1000 / avgSpeed);
-        let referencePace = thresholdPace;
-        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
-        const intensityRatio = referencePace / avgPaceSeconds;
-        return Math.round(((seconds * intensityRatio * intensityRatio) / 3600) * 100);
-      }
-    }
-
-    if (sport.includes('swim') || sport === 'swimming') {
-      const avgSpeed = Number(act?.averageSpeed ?? act?.avgSpeed ?? act?.average_speed ?? 0);
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(100 / avgSpeed);
-        let referencePace = thresholdSwimPace;
-        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
-        const intensityRatio = referencePace / avgPaceSeconds;
-        return Math.round(((seconds * intensityRatio * intensityRatio) / 3600) * 100);
-      }
-    }
-
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
-function activityTssResolved(act, userProfile) {
-  const explicit = readExplicitTss(act);
-  if (explicit > 0) return explicit;
-  return estimateTssFromActivity(act, userProfile);
-}
-
 function activityDurationSec(act) {
   const v = act?.totalTime ?? act?.totalElapsedTime ?? act?.totalTimerTime ?? act?.movingTime ?? act?.elapsedTime;
   const n = Number(v);
@@ -325,7 +236,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
   const showTrend = prevRounded != null && prevRounded > 0 && tssRounded !== prevRounded;
 
   // Planned totals from weekPlannedWorkouts
-  const plannedTotalSec = weekPlannedWorkouts.reduce((s, pw) => s + (planStepTotalSecs(pw.steps) || pw.plannedDuration || 0), 0);
+  const plannedTotalSec = weekPlannedWorkouts.reduce((s, pw) => s + plannedWorkoutDurationSecs(pw), 0);
   const hasPlan = plannedTotalSec > 0;
   const completionPct = hasPlan && totalSec > 0 ? Math.min(100, Math.round((totalSec / plannedTotalSec) * 100)) : null;
 
@@ -375,7 +286,7 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
                 <div className="flex-1 min-w-0 space-y-0.5">
                   {pws.map((pw, i) => {
                     const color = sportColorForSummary(pw.sport || 'bike');
-                    const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+                    const secs = plannedWorkoutDurationSecs(pw);
                     return (
                       <div key={i} className="flex items-center gap-1 min-w-0">
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
@@ -516,6 +427,13 @@ function planStepTotalSecs(steps) {
     group.forEach(gs => { total += Number(gs.durationSeconds || gs.duration || 0) * reps; });
   });
   return total;
+}
+
+function plannedWorkoutDurationSecs(pw) {
+  if (!pw) return 0;
+  const explicit = Number(pw.plannedDuration || 0);
+  if (explicit > 0) return explicit;
+  return planStepTotalSecs(pw.steps) || 0;
 }
 
 function secsToHMShort(secs) {
@@ -665,7 +583,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
     if (Math.hypot(dx, dy) > 8) cancelLongPress();
   };
 
-  const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+  const plannedSecs = plannedWorkoutDurationSecs(pw);
   const isCompletedPair = pw.status === 'completed' || pairingState === 'completed';
   const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
   const isPurelyPlanned = !isCompletedPair && !isMissedPair && !linkedActivity;
@@ -928,6 +846,7 @@ const WeeklyCalendar = ({
   onDeletePlannedWorkout = null,
   onAddLactate = null,
   onAddTraining = null,
+  onPlannedSaved = null,
 }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
@@ -954,6 +873,13 @@ const WeeklyCalendar = ({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
+
+  useEffect(() => {
+    const onTssModeChange = () => setTssDisplayMode(getTssDisplayMode());
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+  }, []);
   const [wellnessDays, setWellnessDays] = useState([]);
   const [cachedActivities, setCachedActivities] = useState([]);
 
@@ -1370,7 +1296,7 @@ const WeeklyCalendar = ({
       const inPrev = prevWeekKeys.has(key);
       if (!inCurrent && !inPrev) return;
 
-      const tss = activityTssResolved(act, userProfile);
+      const tss = resolveActivityTss(act, userProfile, { user: userProfile, mode: tssDisplayMode });
       const sec = activityDurationSec(act);
       const dist = activityDistanceMeters(act);
 
@@ -1401,7 +1327,7 @@ const WeeklyCalendar = ({
       weekSummary: { sessions, totalTss, totalSec, totalDist, bySport },
       prevWeekSummary: { totalTss: prevTotalTss }
     };
-  }, [effectiveActivities, weekDays, userProfile]);
+  }, [effectiveActivities, weekDays, userProfile, tssDisplayMode]);
 
   // Store handleActivityClick in ref whenever it changes
   useEffect(() => {
@@ -2741,6 +2667,10 @@ const WeeklyCalendar = ({
           }}
           athleteId={selectedAthleteId}
           onDeleted={onActivityDeleted}
+          onPlannedSaved={(saved) => {
+            setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev);
+            onPlannedSaved?.(saved);
+          }}
         />
       )}
 

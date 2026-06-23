@@ -14,7 +14,8 @@ import { useAuth } from '../context/AuthProvider';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNotification } from '../context/NotificationContext';
 import WorkoutPlanModal, {
-  SPORT_ICONS, SPORT_COLORS, stepTotalSecs, fmtDuration, toLocalISO, MiniWorkoutChart,
+  SPORT_COLORS, stepTotalSecs, fmtDuration, toLocalISO, MiniWorkoutChart,
+  PlannerSportIcon, plannerSportColor, plannerSportKey, sportMatchesPlanner,
 } from '../components/WorkoutPlanner/WorkoutPlanModal';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
@@ -75,14 +76,20 @@ function completedSecs(t) {
 }
 
 // ─── Planned Workout Card (inside calendar cell) ─────────────────────────────
-function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
-  const col = SPORT_COLORS[pw.sport] || '#94a3b8';
+function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart, isMissed = false }) {
+  const col = isMissed ? '#ef4444' : plannerSportColor(pw.sport);
   const dur = stepTotalSecs(pw.steps);
+  const isSkipped = pw.status === 'skipped';
+  const cardRing = isMissed ? 'ring-red-200' : 'ring-slate-200/70';
+  const cardBg = isMissed ? 'bg-red-50' : 'bg-white';
+  const borderStyle = isMissed ? 'solid' : 'dashed';
+  const borderColor = isMissed ? '#fecaca' : col + '55';
+
   return (
     <div
-      className={`group relative rounded-xl bg-white ring-1 ring-slate-200/70 shadow-sm cursor-pointer overflow-hidden transition-all hover:shadow-md hover:ring-slate-300
-        ${pw.status === 'completed' ? 'opacity-60' : ''}
-        ${pw.status === 'skipped' ? 'opacity-40' : ''}`}
+      className={`group relative rounded-xl ${cardBg} ring-1 ${cardRing} shadow-sm cursor-pointer overflow-hidden transition-all hover:shadow-md
+        ${isSkipped ? 'opacity-40' : ''}`}
+      style={{ borderWidth: 1, borderStyle, borderColor }}
       onClick={() => onEdit(pw)}
     >
       {/* Left sport accent bar */}
@@ -91,12 +98,19 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
         <div className="flex items-center gap-1.5 mb-1.5">
           <span
             className="flex items-center justify-center w-5 h-5 rounded-md shrink-0"
-            style={{ backgroundColor: col + '1a' }}
+            style={{ backgroundColor: (isMissed ? '#ef4444' : col) + '1a' }}
           >
-            <img src={SPORT_ICONS[pw.sport] || '/icon/default.svg'} alt={pw.sport} className="w-3 h-3" />
+            <PlannerSportIcon sport={pw.sport} size={12} color={isMissed ? '#ef4444' : col} />
           </span>
-          <span className="text-xs font-semibold text-slate-700 truncate flex-1 leading-tight">{pw.title}</span>
-          {pw.status === 'completed' && <CheckCircleIcon className="w-4 h-4 text-emerald-500 shrink-0" />}
+          <span
+            className="text-xs font-semibold truncate flex-1 leading-tight"
+            style={{ color: isMissed ? '#991b1b' : isSkipped ? '#9ca3af' : '#334155' }}
+          >
+            {pw.title}
+          </span>
+          {isMissed && (
+            <span className="text-[9px] font-bold uppercase tracking-wide text-red-500 shrink-0">Missed</span>
+          )}
         </div>
         {pw.steps?.length > 0 && <MiniWorkoutChart steps={pw.steps} />}
         {(dur > 0 || pw.targetTss) && (
@@ -115,7 +129,7 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
         )}
       </div>
       {/* Hover actions */}
-      {pw.status === 'planned' && (
+      {pw.status === 'planned' && !isMissed && (
         <div className="hidden group-hover:flex items-center gap-1 px-2 pb-2 pl-3">
           {onStart && (
             <button
@@ -141,19 +155,24 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart }) {
 }
 
 // ─── Completed Training Card (inside calendar cell) ──────────────────────────
-function CompletedCard({ training, onOpen }) {
-  // Normalise Strava ("Ride"/"Run"/"Swim") + manual sports to icon/colour keys.
-  const raw = String(training.sport || '').toLowerCase();
-  const sport = raw.includes('ride') || raw.includes('bike') || raw.includes('cycl') ? 'bike'
-              : raw.includes('run')  ? 'run'
-              : raw.includes('swim') ? 'swim'
-              : (SPORT_COLORS[raw] ? raw : 'bike');
-  const col = SPORT_COLORS[sport] || '#94a3b8';
+function CompletedCard({ training, onOpen, paired = false }) {
+  const sport = training.sport || training.type;
+  const col = paired ? plannerSportColor(sport) : '#94a3b8';
   const title = training.title || training.name || training.titleManual || 'Activity';
   const secs = completedSecs(training);
+
+  const shellClass = paired
+    ? 'bg-emerald-50/40 ring-emerald-200/60 hover:ring-emerald-300'
+    : 'bg-slate-50 ring-slate-200/70 hover:ring-slate-300';
+  const titleClass = paired ? 'text-slate-700' : 'text-slate-500';
+  const durClass = paired
+    ? 'text-emerald-700/80 bg-emerald-100/70'
+    : 'text-slate-500 bg-slate-100/80';
+  const checkClass = paired ? 'text-emerald-500' : 'text-slate-400';
+
   return (
     <div
-      className={`group relative rounded-xl bg-emerald-50/40 ring-1 ring-emerald-200/60 overflow-hidden transition-all ${onOpen ? 'cursor-pointer hover:shadow-md hover:ring-emerald-300' : ''}`}
+      className={`group relative rounded-xl ring-1 overflow-hidden transition-all ${shellClass} ${onOpen ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onOpen ? () => onOpen(training) : undefined}
       title={onOpen ? 'Open activity' : undefined}
     >
@@ -161,14 +180,14 @@ function CompletedCard({ training, onOpen }) {
       <div className="pl-3 pr-2.5 py-2">
         <div className="flex items-center gap-1.5">
           <span className="flex items-center justify-center w-5 h-5 rounded-md shrink-0" style={{ backgroundColor: col + '1a' }}>
-            <img src={SPORT_ICONS[sport] || '/icon/default.svg'} alt={sport} className="w-3 h-3 opacity-80" />
+            <PlannerSportIcon sport={sport} size={12} color={col} />
           </span>
-          <span className="text-xs font-medium text-slate-600 truncate flex-1 leading-tight">{title}</span>
-          <CheckCircleIcon className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span className={`text-xs font-medium truncate flex-1 leading-tight ${titleClass}`}>{title}</span>
+          <CheckCircleIcon className={`w-4 h-4 shrink-0 ${checkClass}`} />
         </div>
         {secs > 0 && (
           <div className="mt-1.5 pl-[26px]">
-            <span className="text-[10px] font-medium text-emerald-700/80 bg-emerald-100/70 rounded-md px-1.5 py-0.5 tabular-nums">
+            <span className={`text-[10px] font-medium rounded-md px-1.5 py-0.5 tabular-nums ${durClass}`}>
               {fmtDuration(secs)}
             </span>
           </div>
@@ -423,13 +442,7 @@ export default function WorkoutPlannerPage() {
 
   // ── Week summary (planned + completed totals, per-sport breakdown) ────────
   const weekSummary = useMemo(() => {
-    const sportKey = (s) => {
-      const x = String(s || '').toLowerCase();
-      if (x.includes('run')) return 'run';
-      if (x.includes('swim')) return 'swim';
-      if (x.includes('ride') || x.includes('cycle') || x.includes('bike') || x.includes('virtual')) return 'bike';
-      return 'other';
-    };
+    const sportKey = (s) => plannerSportKey(s);
     const sec = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
 
     const plannedTotals = { sec: 0, tss: 0, run: 0, bike: 0, swim: 0, other: 0 };
@@ -437,7 +450,9 @@ export default function WorkoutPlannerPage() {
       const s = (stepTotalSecs(pw.steps) || 0) || sec(pw.plannedDuration);
       plannedTotals.sec += s;
       plannedTotals.tss += sec(pw.targetTss);
-      plannedTotals[sportKey(pw.sport)] += s;
+      const sk = sportKey(pw.sport);
+      if (sk === 'run' || sk === 'swim' || sk === 'bike') plannedTotals[sk] += s;
+      else plannedTotals.other += s;
     });
 
     const doneTotals = { sec: 0, tss: 0, run: 0, bike: 0, swim: 0, other: 0 };
@@ -445,7 +460,9 @@ export default function WorkoutPlannerPage() {
       const s = sec(t.totalTimerTime || t.moving_time || t.movingTime || t.totalElapsedTime || t.elapsedTime || t.duration);
       doneTotals.sec += s;
       doneTotals.tss += sec(t.tss || t.TSS || t.totalTSS);
-      doneTotals[sportKey(t.sport || t.sport_type || t.type)] += s;
+      const sk = sportKey(t.sport || t.sport_type || t.type);
+      if (sk === 'run' || sk === 'swim' || sk === 'bike') doneTotals[sk] += s;
+      else doneTotals.other += s;
     });
 
     return { planned: plannedTotals, done: doneTotals };
@@ -622,19 +639,15 @@ export default function WorkoutPlannerPage() {
           // each completed activity claims one same-sport plan, so a finished
           // workout shows ONCE as a green "done" card instead of appearing
           // twice (planned + completed).
-          const normSportKey = (s) => {
-            const v = String(s || '').toLowerCase();
-            if (v.includes('ride') || v.includes('bike') || v.includes('cycl')) return 'bike';
-            if (v.includes('run')) return 'run';
-            if (v.includes('swim')) return 'swim';
-            return v || 'other';
-          };
+          const todayStr = toLocalISO(today);
+          const isPastDay = dateStr < todayStr;
+
           const ckey = (t) => String(t._id || t.id || t.stravaId || '');
           const claimedDone = new Set();
           const planMatch = new Map(); // pw._id → matched completed training
           for (const pw of dayPlanned) {
             let m = dayCompleted.find(t => !claimedDone.has(ckey(t)) && pw.completedTrainingId && String(pw.completedTrainingId) === ckey(t));
-            if (!m) m = dayCompleted.find(t => !claimedDone.has(ckey(t)) && normSportKey(t.sport || t.type) === normSportKey(pw.sport));
+            if (!m) m = dayCompleted.find(t => !claimedDone.has(ckey(t)) && sportMatchesPlanner(pw.sport, t.sport || t.type));
             if (m) { claimedDone.add(ckey(m)); planMatch.set(pw._id, m); }
           }
           const standaloneCompleted = dayCompleted.filter(t => !claimedDone.has(ckey(t)));
@@ -691,11 +704,22 @@ export default function WorkoutPlannerPage() {
                   recorded activity) renders as the single green "done" card. */}
               {dayPlanned.map(pw => {
                 const matched = planMatch.get(pw._id);
-                if (matched) return <CompletedCard key={pw._id} training={matched} onOpen={(tr) => openCompleted(tr, pw)} />;
+                if (matched) {
+                  return (
+                    <CompletedCard
+                      key={pw._id}
+                      training={matched}
+                      paired
+                      onOpen={(tr) => openCompleted(tr, pw)}
+                    />
+                  );
+                }
+                const isMissed = isPastDay && pw.status !== 'completed' && pw.status !== 'skipped';
                 return (
                   <PlannedCard
                     key={pw._id}
                     pw={pw}
+                    isMissed={isMissed}
                     onEdit={pw => setModal({ date: day, workout: pw })}
                     onDelete={handleDelete}
                     onComplete={handleComplete}
@@ -704,7 +728,7 @@ export default function WorkoutPlannerPage() {
                 );
               })}
 
-              {/* Completed activities not tied to any plan */}
+              {/* Completed activities not tied to any plan — grey cards */}
               {standaloneCompleted.map(t => (
                 <CompletedCard key={ckey(t)} training={t} onOpen={openCompleted} />
               ))}

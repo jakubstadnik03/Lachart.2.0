@@ -1,29 +1,12 @@
-import { getTssDisplayMode } from './uiPrefs';
-
 /**
- * Client-side Training Stress Score (TSS) calculator.
- * branded metric they don't compute), so imported activities arrive with
- * `tss == 0`. This helper falls back to a computation based on the user's
- * thresholds:
- *
- *   • Cycling — TSS = (sec × NP²) / (FTP² × 3600) × 100.
- *     If normalised power isn't available we use average power as a
- *     conservative proxy (slight underestimate vs. NP for variable rides).
- *   • Running — TSS = (sec × intensityRatio²) / 3600 × 100 where
- *     intensityRatio = thresholdPace / avgPace (faster pace ⇒ higher TSS).
- *   • Swimming — same form as running but pace is per-100m.
- *   • Fallback (no power, no threshold pace) — heart-rate TSS via TRIMP-ish
- *     formula: scale (avgHR-restHR) / (maxHR-restHR), squared, × duration.
- *     Works for any activity where the user has logged max HR.
- *
- * Returns an integer TSS, or 0 when we genuinely can't compute (no
- * useful inputs at all). Never throws.
+ * Server-side TSS resolution — mirrors client/src/utils/computeTss.js so
+ * Form/Fitness and weekly totals respect power vs hrTSS preference.
  */
 
 function activityDuration(activity) {
   return Number(
-    activity.totalTimerTime || activity.moving_time || activity.movingTime ||
-    activity.totalElapsedTime || activity.elapsedTime || activity.duration || 0,
+    activity.movingTime || activity.moving_time || activity.totalElapsedTime
+    || activity.elapsedTime || activity.duration || activity.totalTimerTime || 0,
   );
 }
 
@@ -41,21 +24,21 @@ function ftpFromProfile(profile) {
 }
 
 function thresholdPaceFromProfile(profile) {
-  return Number(profile?.runningZones?.lt2 || profile?.thresholdPace || 0); // sec/km
+  return Number(profile?.runningZones?.lt2 || profile?.thresholdPace || profile?.powerZones?.running?.lt2 || 0);
 }
 
 function thresholdSwimPaceFromProfile(profile) {
-  return Number(profile?.powerZones?.swimming?.lt2 || profile?.thresholdSwimPace || 0); // sec/100m
+  return Number(profile?.powerZones?.swimming?.lt2 || profile?.thresholdSwimPace || 0);
 }
 
 function lthrFromProfile(profile, sport) {
-  const key = sport.includes('swim') ? 'swimming' : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
+  const key = sport.includes('swim') ? 'swimming'
+    : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
   const hz = profile?.heartRateZones?.[key];
   return Number(hz?.lt2 || hz?.lt2Hr || hz?.threshold || hz?.zone4?.max || 0);
 }
 
-/** Power- or pace-based TSS only (no HR fallback). */
-export function computePowerTss(activity, profile) {
+function computePowerTss(activity, profile) {
   if (!activity) return 0;
   const sport = activitySport(activity);
   const duration = activityDuration(activity);
@@ -67,7 +50,7 @@ export function computePowerTss(activity, profile) {
 
   if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
     const np = Number(activity.normalizedPower || activity.weightedAveragePower || activity.weighted_average_watts || 0);
-    const avg = Number(activity.avgPower || activity.averagePower || activity.average_watts || 0);
+    const avg = Number(activity.averagePower || activity.avgPower || activity.average_watts || 0);
     const watts = np > 0 ? np : avg;
     if (watts > 0 && ftp > 0) {
       return Math.round((duration * watts * watts) / (ftp * ftp * 3600) * 100);
@@ -75,7 +58,7 @@ export function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
-    const avgSpeed = Number(activity.avgSpeed || activity.averageSpeed || activity.average_speed || 0);
+    const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || activity.average_speed || 0);
     if (avgSpeed > 0 && thresholdPace > 0) {
       const avgPace = 1000 / avgSpeed;
       const intensity = thresholdPace / avgPace;
@@ -84,7 +67,7 @@ export function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('swim')) {
-    const avgSpeed = Number(activity.avgSpeed || activity.averageSpeed || activity.average_speed || 0);
+    const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || activity.average_speed || 0);
     if (avgSpeed > 0 && thresholdSwimPace > 0) {
       const avgPace = 100 / avgSpeed;
       const intensity = thresholdSwimPace / avgPace;
@@ -95,8 +78,7 @@ export function computePowerTss(activity, profile) {
   return 0;
 }
 
-/** Heart-rate TSS only (LTHR-based, then TRIMP fallback). */
-export function computeHrTss(activity, profile) {
+function computeHrTss(activity, profile) {
   if (!activity) return 0;
   const stored = Number(activity.hrTSS || activity.hrTss || 0);
   if (stored > 0) return Math.round(stored);
@@ -106,7 +88,8 @@ export function computeHrTss(activity, profile) {
   if (!duration || duration <= 0) return 0;
 
   const avgHr = Number(
-    activity.averageHeartRate || activity.average_heartrate || activity.avgHR || activity.avgHeartRate || 0,
+    activity.averageHeartRate || activity.average_heartrate || activity.avgHR
+    || activity.avgHeartRate || 0,
   );
   if (avgHr <= 0) return 0;
 
@@ -128,7 +111,15 @@ export function computeHrTss(activity, profile) {
   return 0;
 }
 
-export function defaultTssMode(powerTss, hrTss, explicitTss = 0) {
+function readExplicitTss(activity) {
+  const explicit = Number(
+    activity.tss || activity.TSS || activity.totalTSS || activity.trainingLoad
+    || activity.trainingStressScore || 0,
+  );
+  return explicit > 0 ? Math.round(explicit) : 0;
+}
+
+function defaultTssMode(powerTss, hrTss, explicitTss = 0) {
   if (powerTss > 0 && hrTss > 0) {
     if (explicitTss > 0) {
       return Math.abs(explicitTss - powerTss) <= Math.abs(explicitTss - hrTss) ? 'power' : 'hr';
@@ -139,47 +130,32 @@ export function defaultTssMode(powerTss, hrTss, explicitTss = 0) {
   return 'hr';
 }
 
-export function canToggleTss(powerTss, hrTss) {
-  return powerTss > 0 && hrTss > 0 && Math.abs(powerTss - hrTss) >= 1;
+function buildUserProfile(user) {
+  if (!user) return null;
+  return {
+    powerZones: user.powerZones || {},
+    runningZones: user.runningZones || {},
+    heartRateZones: user.heartRateZones || {},
+    ftp: user.ftp || 250,
+    maxHr: user.maxHr || user.maxHeartRate,
+    restingHr: user.restingHr || user.restingHeartRate,
+    thresholdPace: user.thresholdPace,
+    thresholdSwimPace: user.thresholdSwimPace,
+    tssDisplayMode: user.trainingPreferences?.tssDisplayMode || 'power',
+  };
 }
 
-function readExplicitTss(activity) {
-  const manual = Number(activity.manualTss ?? 0);
-  if (manual > 0) return Math.round(manual);
-
-  const explicit = Number(
-    activity.tss || activity.TSS || activity.totalTSS || activity.trainingLoad
-    || activity.trainingStressScore || 0,
-  );
-  return explicit > 0 ? Math.round(explicit) : 0;
-}
-
-/**
- * Single source of truth for which TSS value to use in totals, Form/Fitness, etc.
- * Respects the user's power vs hrTSS preference when both are available.
- */
-export function resolveActivityTss(activity, profile, options = {}) {
+function resolveActivityTss(activity, profile) {
   if (!activity) return 0;
 
-  // User-edited override (Strava manualTss or FIT trainingStressScore via readExplicitTss).
   const explicitTss = readExplicitTss(activity);
-  if (explicitTss > 0 && Number(activity.manualTss ?? 0) > 0) {
-    return explicitTss;
-  }
   const powerTss = computePowerTss(activity, profile);
   const hrTss = computeHrTss(activity, profile);
 
-  const savedMode = options.mode
-    ?? getTssDisplayMode()
-    ?? options.user?.trainingPreferences?.tssDisplayMode
-    ?? null;
-
-  let mode = savedMode;
+  let mode = profile?.tssDisplayMode || 'power';
   if (mode === 'power' && powerTss <= 0) mode = null;
   if (mode === 'hr' && hrTss <= 0) mode = null;
-  if (!mode) {
-    mode = defaultTssMode(powerTss, hrTss, explicitTss);
-  }
+  if (!mode) mode = defaultTssMode(powerTss, hrTss, explicitTss);
 
   if (mode === 'power' && powerTss > 0) return powerTss;
   if (mode === 'hr' && hrTss > 0) return hrTss;
@@ -187,6 +163,15 @@ export function resolveActivityTss(activity, profile, options = {}) {
   return 0;
 }
 
-export function computeActivityTss(activity, profile, options = {}) {
-  return resolveActivityTss(activity, profile, options);
+/** @deprecated use resolveActivityTss */
+function calculateActivityTSS(activity, userProfile = null) {
+  return resolveActivityTss(activity, userProfile);
 }
+
+module.exports = {
+  buildUserProfile,
+  resolveActivityTss,
+  calculateActivityTSS,
+  computePowerTss,
+  computeHrTss,
+};

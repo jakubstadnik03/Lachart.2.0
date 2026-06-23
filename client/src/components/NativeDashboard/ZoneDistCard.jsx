@@ -1,6 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getMonthlyPowerAnalysis } from '../../services/api';
 import { NativeSkeleton } from '../native/shared/Tiles';
+import { SportGlyph } from '../shared/SportIcon';
+import {
+  getSportsWithZoneData,
+  pickZoneTimes,
+  pickZoneDefs,
+  SPORT_LABELS,
+  SPORT_ICON_COLORS,
+} from '../../utils/zoneSportStats';
 
 // ─── Zone definitions ─────────────────────────────────────────────────────────
 
@@ -51,88 +59,6 @@ function weekBounds(offset = 0) {
   return { startDate: monday, endDate: sunday };
 }
 
-/**
- * Pick zone times from a month object depending on sport + metric.
- * Returns { z1, z2, z3, z4, z5 } in seconds, or null if no data.
- */
-function pickZoneTimes(month, sport, metric) {
-  if (!month) return null;
-
-  const zOut = (src) => {
-    if (!src) return null;
-    const out = {};
-    for (let z = 1; z <= 5; z++) {
-      const b = src[z] ?? src[String(z)];
-      out[`z${z}`] = Number(b?.time) || 0;
-    }
-    return out;
-  };
-
-  if (sport === 'bike') {
-    return metric === 'hr'
-      ? zOut(month.bikeHrZones || month.hrZones)
-      : zOut(month.zones); // power
-  }
-
-  if (sport === 'run') {
-    return metric === 'hr'
-      ? zOut(month.runningHrZones)
-      : zOut(month.runningZoneTimes); // pace
-  }
-
-  if (sport === 'swim') {
-    return zOut(month.swimmingZoneTimes);
-  }
-
-  // "all" — aggregate bike + run HR zones
-  const bikeHr = month.bikeHrZones || month.hrZones;
-  const runHr  = month.runningHrZones;
-  if (!bikeHr && !runHr) return null;
-  const out = {};
-  for (let z = 1; z <= 5; z++) {
-    const bk = bikeHr ? (bikeHr[z] ?? bikeHr[String(z)]) : null;
-    const rn = runHr  ? (runHr[z]  ?? runHr[String(z)])  : null;
-    out[`z${z}`] = (Number(bk?.time) || 0) + (Number(rn?.time) || 0);
-  }
-  return out;
-}
-
-/**
- * Pick zone boundary definitions for tooltip display.
- * Returns { defs, type: 'power'|'hr'|'pace' } or null.
- */
-function pickZoneDefs(month, sport, metric) {
-  if (!month) return null;
-
-  if (sport === 'bike') {
-    if (metric === 'power' && month.powerZones)
-      return { defs: month.powerZones, type: 'power' };
-    const hrDefs = month.bikeHeartRateZones || month.heartRateZones;
-    if (metric === 'hr' && hrDefs)
-      return { defs: hrDefs, type: 'hr' };
-    return null;
-  }
-
-  if (sport === 'run') {
-    if (metric === 'pace' && month.runningZones)
-      return { defs: month.runningZones, type: 'pace' };
-    const hrDefs = month.runningHeartRateZones || month.heartRateZones;
-    if (metric === 'hr' && hrDefs)
-      return { defs: hrDefs, type: 'hr' };
-    return null;
-  }
-
-  if (sport === 'swim') {
-    if (month.swimmingZones) return { defs: month.swimmingZones, type: 'pace' };
-    return null;
-  }
-
-  // "all" — use generic HR zones
-  const hrDefs = month.heartRateZones || month.bikeHeartRateZones;
-  if (hrDefs) return { defs: hrDefs, type: 'hr' };
-  return null;
-}
-
 /** Format a zone boundary range string from a def object. */
 function zoneRangeLabel(zoneDef, type) {
   if (!zoneDef) return null;
@@ -156,19 +82,6 @@ function zoneRangeLabel(zoneDef, type) {
   if (lo == null || lo === 0) return `< ${hi} ${unit}`;
   return `${lo}–${hi} ${unit}`;
 }
-
-// ─── Sport icon config ────────────────────────────────────────────────────────
-
-const SPORT_ICONS = {
-  bike: '/icon/bike.svg',
-  run:  '/icon/run.svg',
-  swim: '/icon/swim.svg',
-};
-const SPORT_TINT = {
-  bike: '#3b82f6',
-  run:  '#f97316',
-  swim: '#06b6d4',
-};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -198,7 +111,8 @@ export default function ZoneDistCard({ athleteId = null }) {
     if (sport === 'bike')       setMetric('power');
     else if (sport === 'run')   setMetric('pace');
     else if (sport === 'swim')  setMetric('pace');
-    else /* 'all' */            setMetric('hr');
+    else if (sport === 'all')   setMetric('hr');
+    else                        setMetric('hr');
   }, [sport]);
 
   // Reset cached data when athleteId changes
@@ -248,14 +162,29 @@ export default function ZoneDistCard({ athleteId = null }) {
     return () => { cancelled = true; };
   }, [range, athleteId]);
 
-  // ── Aggregate zone totals ──────────────────────────────────────────────────
-  const activeEntries = (() => {
+  const activeEntries = useMemo(() => {
     if (range === 'week' || range === 'lastweek') {
       return weekData[range] || [];
     }
     const mk = range === 'thismonth' ? monthKey(0) : monthKey(-1);
     return [monthsData[mk]].filter(Boolean);
-  })();
+  }, [range, weekData, monthsData]);
+
+  const availableSports = useMemo(
+    () => getSportsWithZoneData(activeEntries),
+    [activeEntries]
+  );
+
+  useEffect(() => {
+    if (!availableSports.length) return;
+    const sportOk = sport === 'all' ? availableSports.length > 1 : availableSports.includes(sport);
+    if (!sportOk) {
+      if (availableSports.length > 1) setSport('all');
+      else setSport(availableSports[0]);
+    }
+  }, [availableSports, sport]);
+
+  // ── Aggregate zone totals ──────────────────────────────────────────────────
 
   const totals  = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
   let hasData   = false;
@@ -294,20 +223,10 @@ export default function ZoneDistCard({ athleteId = null }) {
   }
 
   // ── Available sports ───────────────────────────────────────────────────────
-  const sportsWithData = new Set();
-  for (const m of activeEntries) {
-    if (!m) continue;
-    if (m.bikeTime > 0 || m.bikeTrainings > 0 || m.zones) sportsWithData.add('bike');
-    if (m.runningTime > 0 || m.runningTrainings > 0)       sportsWithData.add('run');
-    if (m.swimmingTime > 0 || m.swimmingTrainings > 0)     sportsWithData.add('swim');
-  }
-
   const sportToggles = [
-    { key: 'all',  label: 'All',  icon: null },
-    { key: 'bike', label: 'Bike', icon: SPORT_ICONS.bike },
-    { key: 'run',  label: 'Run',  icon: SPORT_ICONS.run  },
-    { key: 'swim', label: 'Swim', icon: SPORT_ICONS.swim },
-  ].filter(t => t.key === 'all' || sportsWithData.has(t.key));
+    ...(availableSports.length > 1 ? [{ key: 'all', label: 'All' }] : []),
+    ...availableSports.map((key) => ({ key, label: SPORT_LABELS[key] || key })),
+  ];
 
   // ── Available metrics for the current sport ────────────────────────────────
   const metricOptions = (() => {
@@ -321,13 +240,21 @@ export default function ZoneDistCard({ athleteId = null }) {
     }
     if (sport === 'run') {
       const hasPace = activeEntries.some(m => m?.runningZoneTimes);
-      const hasHr   = activeEntries.some(m => m?.runningHrZones);
+      const hasHr   = activeEntries.some(m => m?.runningHrZones || m?.sportStats?.run?.hrZones);
       const opts = [];
       if (hasPace) opts.push({ key: 'pace', label: '🏃 Pace' });
       if (hasHr)   opts.push({ key: 'hr',   label: '♥ HR'   });
       return opts;
     }
-    // swim → pace only, all → hr only — no toggle needed
+    if (sport === 'swim') {
+      const hasPace = activeEntries.some(m => m?.swimmingZoneTimes);
+      if (hasPace) return [{ key: 'pace', label: '🏊 Pace' }];
+      return [];
+    }
+    if (sport !== 'all') {
+      const hasHr = activeEntries.some(m => m?.sportStats?.[sport]?.hrZones);
+      if (hasHr) return [{ key: 'hr', label: '♥ HR' }];
+    }
     return [];
   })();
 
@@ -379,8 +306,9 @@ export default function ZoneDistCard({ athleteId = null }) {
       {/* Sport toggle row */}
       {sportToggles.length > 1 && (
         <div style={{ display: 'flex', gap: 6, marginBottom: metricOptions.length > 1 ? 7 : 11, flexWrap: 'wrap' }}>
-          {sportToggles.map(({ key, label, icon }, idx) => {
+          {sportToggles.map(({ key, label }, idx) => {
             const on = sport === key;
+            const tint = SPORT_ICON_COLORS[key] || '#6B7280';
             return (
               <button
                 key={key}
@@ -392,7 +320,7 @@ export default function ZoneDistCard({ athleteId = null }) {
                 onTouchEnd={e  => { e.currentTarget.style.transform = ''; }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: icon ? '4px 9px 4px 6px' : '4px 10px',
+                  padding: key !== 'all' ? '4px 9px 4px 6px' : '4px 10px',
                   borderRadius: 9999,
                   border: on ? '1px solid #5E6590' : '1px solid rgba(118,126,181,.18)',
                   background: on ? '#5E6590' : 'rgba(255,255,255,.5)',
@@ -403,19 +331,8 @@ export default function ZoneDistCard({ athleteId = null }) {
                   animation: `ndPopIn .35s ${idx * 50}ms cubic-bezier(.22,1.4,.36,1) both`,
                 }}
               >
-                {icon && (
-                  <span
-                    aria-label={label}
-                    style={{
-                      width: 13, height: 13, display: 'block', flexShrink: 0,
-                      background: on ? '#fff' : (SPORT_TINT[key] || '#6B7280'),
-                      WebkitMaskImage: `url(${icon})`,
-                      maskImage:       `url(${icon})`,
-                      WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                      WebkitMaskPosition: 'center',  maskPosition: 'center',
-                      WebkitMaskSize: 'contain',     maskSize: 'contain',
-                    }}
-                  />
+                {key !== 'all' && (
+                  <SportGlyph sport={key} size={13} color={on ? '#fff' : tint} />
                 )}
                 {label}
               </button>

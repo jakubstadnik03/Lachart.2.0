@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { resolveSportKey, SportGlyph, SPORT_ICON_COLORS } from '../shared/SportIcon';
+import { resolveActivityTss } from '../../utils/computeTss';
+import { useAuth } from '../../context/AuthProvider';
+import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -76,11 +79,11 @@ function hasLactate(activities, date) {
 // Aggregates completed activities for the day. Falls back to planned totals
 // for future days where nothing's been done yet — gives the user a feel for
 // the workload on each cell at a glance, TrainingPeaks-style.
-function dailyTotals(activities, plannedWorkouts, date) {
+function dailyTotals(activities, plannedWorkouts, date, userProfile) {
   const acts = activities.filter(a => isSameDay(new Date(a.date || a.startDate || a.timestamp || 0), date));
   let tss = 0, secs = 0;
   for (const a of acts) {
-    tss  += Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0) || 0;
+    tss  += resolveActivityTss(a, userProfile, { user: userProfile }) || 0;
     secs += Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0) || 0;
   }
   if (acts.length === 0) {
@@ -106,6 +109,14 @@ function fmtDur(secs) {
 }
 
 export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], selectedDate, onSelectDate, onPlanWorkout = null }) {
+  const { user } = useAuth() || {};
+  const [tssModeTick, setTssModeTick] = React.useState(0);
+  React.useEffect(() => {
+    const onTssModeChange = () => setTssModeTick((t) => t + 1);
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+  }, []);
+  void tssModeTick;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -385,7 +396,7 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
                 the "3 sessions" count in the TODAY card below, which is a
                 bigger, unambiguous tap target and reads more naturally. */}
             {(() => {
-              const tot = dailyTotals(activities, plannedWorkouts, d);
+              const tot = dailyTotals(activities, plannedWorkouts, d, user);
               const durStr = fmtDur(tot.secs);
               if (!tot.tss && !durStr) return null;
 

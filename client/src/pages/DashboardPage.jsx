@@ -31,6 +31,7 @@ import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
+import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
@@ -461,11 +462,31 @@ export default function DashboardPage() {
       setCalendarData(prev => prev.map(t => matches(t) ? patch(t) : t));
       cachePatch(matches, patch);
     };
+    const onMetricsUpdated = (e) => {
+      const detail = e?.detail || {};
+      const { id } = detail;
+      if (!id) return;
+      const matches = buildActivityMatcher(id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      setCalendarData(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      patchCalendarCache(matches, patch);
+    };
+    const onPlannedUpdated = (e) => {
+      const planned = e?.detail?.planned;
+      if (!planned?._id) return;
+      setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, planned));
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
+    window.addEventListener('plannedWorkoutUpdated', onPlannedUpdated);
     return () => {
       window.removeEventListener('activityTitleUpdated', onTitleUpdated);
       window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
+      window.removeEventListener('plannedWorkoutUpdated', onPlannedUpdated);
     };
   }, []);
 
@@ -899,7 +920,7 @@ export default function DashboardPage() {
           maxHeartRate: t.maxHeartRate,
           totalTime: t.totalElapsedTime || t.totalTimerTime,
           distance: t.totalDistance,
-          tss: t.tss || t.totalTSS || t.trainingStressScore
+          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS
         })),
         ...(regTrainings || [])
           .filter(t => !t?.sourceStravaActivityId)
@@ -939,12 +960,13 @@ export default function DashboardPage() {
           totalTime: a.movingTime || a.elapsedTime,
           distance: a.distance,
           tss:
-            linkedTraining?.tss ||
-            linkedTraining?.totalTSS ||
-            a.tss ||
-            a.totalTSS ||
-            a.total_tss ||
-            null,
+            a.manualTss ??
+            (linkedTraining?.tss ||
+              linkedTraining?.totalTSS ||
+              a.tss ||
+              a.totalTSS ||
+              a.total_tss ||
+              null),
           kilojoules: a.kilojoules ?? a.raw?.kilojoules
           };
         })
@@ -2364,6 +2386,7 @@ export default function DashboardPage() {
             onDeletePlannedWorkout={handleDashboardPlanDelete}
             onAddTraining={() => setIsTrainingFormOpen(true)}
             onAddLactate={handleDashboardAddLactate}
+            onPlannedSaved={(saved) => setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved))}
           />
         </motion.div>
 

@@ -4162,6 +4162,112 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
     }
 });
 
+// Send "download the iOS app" email (admin only)
+router.post("/admin/send-app-download-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
+        const { userId } = req.params;
+        const targetUser = await userDao.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        if (!targetUser.email) {
+            return res.status(400).json({ error: "User has no email address configured" });
+        }
+        // Respect global emailNotifications preference
+        if (targetUser.notifications && targetUser.notifications.emailNotifications === false) {
+            return res.status(400).json({ error: "Email notifications are disabled for this user" });
+        }
+
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const appStoreUrl = 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs';
+        const userName = targetUser.name || 'there';
+
+        const cardStyle = 'background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;';
+        const cardTitleStyle = 'font-weight: 700; color: #0A0E1A; font-size: 15px;';
+        const cardBodyStyle = 'color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;';
+
+        const emailContent = `
+            <p>Hi <strong>${userName}</strong>,</p>
+            <p>LaChart is now on the App Store — the full training brain, in your pocket. Install it once and your dashboard, calendar, workouts and lactate curves travel with you.</p>
+
+            <p style="margin-top: 22px; font-size: 15.5px;"><strong>What you get on iPhone:</strong></p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 12px 0 18px; border-collapse: separate; border-spacing: 0 8px;">
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">📲 Home-screen widget</div>
+                <div style="${cardBodyStyle}">Form, fitness &amp; fatigue plus today's planned workout — right on your home screen.</div>
+              </td></tr>
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">⌚ Apple Health &amp; workouts</div>
+                <div style="${cardBodyStyle}">Sync activities and send planned workouts straight to your watch.</div>
+              </td></tr>
+              <tr><td style="${cardStyle}">
+                <div style="${cardTitleStyle}">⚡ Faster on the go</div>
+                <div style="${cardBodyStyle}">Log lactate, check the calendar and share your sessions — anywhere, instantly.</div>
+              </td></tr>
+            </table>
+
+            <p style="margin-top: 20px;">Sign in with the same account you already use. Everything's already there.</p>
+            <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart · <a href="https://lachart.net" style="color: #767EB5; text-decoration: none;">lachart.net</a></span></p>
+        `;
+
+        const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER, EMAIL_APP_PASSWORD, and optionally SMTP_HOST/SMTP_PORT (or default Zoho service)."
+            });
+        }
+
+        await transporter.sendMail({
+            from: { name: 'Jakub - LaChart', address: process.env.EMAIL_USER },
+            to: targetUser.email,
+            subject: 'LaChart is on the App Store — get the iPhone app',
+            html: generateEmailTemplate({
+                title: 'Download LaChart for iPhone',
+                content: emailContent,
+                buttonText: 'Download on the App Store',
+                buttonUrl: appStoreUrl,
+                loginButtonText: 'Open my dashboard',
+                loginButtonUrl: `${clientUrl}/dashboard`,
+                footerText: 'Available on iPhone. Sign in with your existing LaChart account.'
+            })
+        });
+
+        const updateData = {
+            appDownloadEmail: {
+                sent: true,
+                sentCount: (targetUser.appDownloadEmail?.sentCount || 0) + 1,
+                lastSent: new Date()
+            }
+        };
+        try { await userDao.updateUser(userId, updateData); } catch (_) { /* tracking is best-effort */ }
+
+        res.status(200).json({ ok: true, message: "App download email sent" });
+    } catch (error) {
+        console.error("Error sending app download email:", error);
+        const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
+        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        if (isAuthError) {
+            return res.status(400).json({ error: 'SMTP authentication failed', reason: rawMessage, smtp: smtpDiagFromError(error) });
+        }
+        res.status(500).json({ error: "Failed to send app download email", reason: process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs.", smtp: smtpDiagFromError(error) });
+    }
+});
+
 // Send custom outreach email to a coach/tester contact (admin only)
 router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) => {
     try {

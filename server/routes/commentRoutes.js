@@ -12,16 +12,7 @@ const FitTraining = require('../models/fitTraining');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { sendNotification } = require('../utils/notificationHelper');
-
-// Maps raw sport string → 'bike' | 'run' | 'swim' | null
-function normalizeSportForNotif(sport) {
-  if (!sport) return null;
-  const s = String(sport).toLowerCase();
-  if (/ride|bike|cycl|velo|virtual/.test(s)) return 'bike';
-  if (/run|trail|treadmill/.test(s))          return 'run';
-  if (/swim/.test(s))                          return 'swim';
-  return null;
-}
+const { normalizeSportForNotif } = require('../utils/sportNotif');
 
 // GET /api/comments/test/:testId
 // Get all comments for a test (auth required, only coach or the athlete who owns the test)

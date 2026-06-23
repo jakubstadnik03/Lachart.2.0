@@ -6,16 +6,14 @@ const FitParser = require('fit-file-parser').default;
 const TrainingAbl = require('../abl/trainingAbl');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
-
-/** Normalize any sport string → 'bike' | 'run' | 'swim' | null for notification icons. */
-function normalizeSportForNotif(sport) {
-  if (!sport) return null;
-  const s = String(sport).toLowerCase();
-  if (/ride|bike|cycl|velo/.test(s)) return 'bike';
-  if (/run|trail|treadmill/.test(s)) return 'run';
-  if (/swim/.test(s)) return 'swim';
-  return null;
-}
+const { normalizeSportForNotif } = require('../utils/sportNotif');
+const {
+  resolveAnalysisSportKey,
+  resolveFitSportKey,
+  hrZoneProfileSport,
+  addSportHrZone,
+  addSportActivity,
+} = require('../utils/analysisSportKey');
 
 /**
  * Parse FIT file and extract training data
@@ -660,7 +658,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-  const { title, description, category, selectedLapIndices } = req.body;
+    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -688,7 +686,37 @@ async function updateFitTraining(req, res) {
       training.category = category || null;
     }
 
+    const durationSecs = movingTime ?? duration ?? elapsedTime;
+    if (durationSecs !== undefined && durationSecs !== null && durationSecs !== '') {
+      const secs = Math.max(0, Math.round(Number(durationSecs)));
+      if (Number.isFinite(secs)) {
+        training.totalElapsedTime = secs;
+        training.totalTimerTime = secs;
+      }
+    }
+    if (distance !== undefined && distance !== null && distance !== '') {
+      const metres = Math.max(0, Math.round(Number(distance)));
+      if (Number.isFinite(metres)) training.totalDistance = metres;
+    }
+    if (calories !== undefined && calories !== null && calories !== '') {
+      const kcal = Math.max(0, Math.round(Number(calories)));
+      if (Number.isFinite(kcal)) training.totalCalories = kcal;
+    }
+    if (tss !== undefined && tss !== null && tss !== '') {
+      const load = Math.max(0, Math.round(Number(tss)));
+      if (Number.isFinite(load)) training.trainingStressScore = load;
+    }
+    if (rpe !== undefined && rpe !== null && rpe !== '') {
+      const rpeVal = Math.max(0, Math.round(Number(rpe)));
+      if (Number.isFinite(rpeVal)) training.rpe = rpeVal;
+    }
+    if (lactate !== undefined && lactate !== null && lactate !== '') {
+      const lac = Number(lactate);
+      if (Number.isFinite(lac)) training.lactate = lac;
+    }
+
     await training.save();
+    invalidateFitCacheForUser(userId);
 
     // Update Training records with the same title
     if (title !== undefined && title) {
@@ -1541,6 +1569,7 @@ async function analyzeTrainingsByMonth(req, res) {
 
       // Get training sport type
       const trainingSport = training.sport || 'generic';
+      const fitSportKey = resolveFitSportKey(trainingSport);
       const isRunning = trainingSport === 'running';
       const isSwimming = trainingSport === 'swimming';
       const isCycling = trainingSport === 'cycling';
@@ -1610,7 +1639,7 @@ async function analyzeTrainingsByMonth(req, res) {
           const maxHR = isRunning 
             ? (monthlyAnalysis[monthKey].runningMaxHeartRate || monthlyAnalysis[monthKey].maxHeartRate)
             : monthlyAnalysis[monthKey].maxHeartRate;
-          const sportType = isRunning ? 'running' : 'cycling';
+          const sportType = hrZoneProfileSport(fitSportKey);
           const hrZones = getHeartRateZones(maxHR, sportType);
           let hrZone = 1;
           if (hr >= hrZones[5].min) hrZone = 5;
@@ -1622,6 +1651,8 @@ async function analyzeTrainingsByMonth(req, res) {
           monthlyAnalysis[monthKey].hrZones[hrZone].time += hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].avgHeartRate += hr * hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].heartRateCount += hrTimeIncrement;
+          
+          addSportHrZone(monthlyAnalysis[monthKey], fitSportKey, hrZone, hrTimeIncrement, hr);
           
           // Add to sport-specific HR zones
           if (isRunning) {
@@ -1860,6 +1891,8 @@ async function analyzeTrainingsByMonth(req, res) {
         speed: training.avgSpeed || 0
       };
       monthlyAnalysis[monthKey].trainingList.push(trainingInfo);
+      const fitActivityTime = training.totalElapsedTime || training.totalTimerTime || runningTimeInTraining || 0;
+      addSportActivity(monthlyAnalysis[monthKey], fitSportKey, fitActivityTime);
     }
 
     // Get Strava activities from database (same as in calendar)
@@ -1983,13 +2016,15 @@ async function analyzeTrainingsByMonth(req, res) {
 
           // Get sport type from activity
           const activitySport = activity.sport || activity.sport_type || 'Ride';
-          const isStravaRunning = ['Run', 'VirtualRun', 'Walk', 'Hike'].includes(activitySport);
-          const isStravaSwimming = ['Swim'].includes(activitySport);
+          const stravaSportKey = resolveAnalysisSportKey(activitySport);
+          const isStravaRunning = stravaSportKey === 'run';
+          const isStravaSwimming = stravaSportKey === 'swim';
+          const isStravaCycling = stravaSportKey === 'bike';
 
           // Request appropriate streams based on sport
-          const streamKeys = isStravaRunning || isStravaSwimming
-            ? 'time,velocity_smooth,heartrate' // velocity_smooth for pace calculation
-            : 'time,watts,heartrate'; // watts for cycling
+          const streamKeys = isStravaCycling
+            ? 'time,watts,heartrate'
+            : 'time,velocity_smooth,heartrate';
 
           const stravaBudget = require('../utils/stravaBudget');
           await stravaBudget.take();
@@ -2014,9 +2049,10 @@ async function analyzeTrainingsByMonth(req, res) {
       
       // Get sport type from activity (need to check before using streams)
       const activitySport = activity.sport || activity.sport_type || 'Ride';
-      const isStravaRunning = ['Run', 'VirtualRun', 'Walk', 'Hike'].includes(activitySport);
-      const isStravaSwimming = ['Swim'].includes(activitySport);
-      const isStravaCycling = !isStravaRunning && !isStravaSwimming;
+      const stravaSportKey = resolveAnalysisSportKey(activitySport);
+      const isStravaRunning = stravaSportKey === 'run';
+      const isStravaSwimming = stravaSportKey === 'swim';
+      const isStravaCycling = stravaSportKey === 'bike';
       
       // Check if we have required streams based on sport type
       const hasPowerStream = streams && streams.watts && streams.watts.data && streams.watts.data.length > 0;
@@ -2205,8 +2241,7 @@ async function analyzeTrainingsByMonth(req, res) {
           if (activity.distance) {
             monthlyAnalysis[monthKey].swimmingDistance += activity.distance;
           }
-        } else {
-          // Default to bike for cycling or other activities
+        } else if (isStravaCycling) {
           monthlyAnalysis[monthKey].bikeTrainings++;
           monthlyAnalysis[monthKey].bikeTime += stravaTotalTime;
           monthlyAnalysis[monthKey].totalTime += stravaTotalTime;
@@ -2227,7 +2262,16 @@ async function analyzeTrainingsByMonth(req, res) {
             monthlyAnalysis[monthKey].totalHeartRateSum += stravaAvgHeartRate * stravaTotalTime;
             monthlyAnalysis[monthKey].heartRateCount += stravaTotalTime;
           }
+        } else {
+          monthlyAnalysis[monthKey].totalTime += stravaTotalTime;
+          if (stravaAvgHeartRate > 0) {
+            monthlyAnalysis[monthKey].maxHeartRate = Math.max(monthlyAnalysis[monthKey].maxHeartRate || 0, stravaMaxHeartRate);
+            monthlyAnalysis[monthKey].totalHeartRateSum += stravaAvgHeartRate * stravaTotalTime;
+            monthlyAnalysis[monthKey].heartRateCount += stravaTotalTime;
+          }
         }
+
+        addSportActivity(monthlyAnalysis[monthKey], stravaSportKey, stravaTotalTime);
         
         // Store Strava activity info
         if (!monthlyAnalysis[monthKey].trainingList) {
@@ -2436,10 +2480,10 @@ async function analyzeTrainingsByMonth(req, res) {
           }
           
           // Determine HR zone based on sport type
-          const maxHR = isStravaRunning 
+          const maxHR = isStravaRunning
             ? (monthlyAnalysis[monthKey].runningMaxHeartRate || monthlyAnalysis[monthKey].maxHeartRate)
             : monthlyAnalysis[monthKey].maxHeartRate;
-          const sportType = isStravaRunning ? 'running' : 'cycling';
+          const sportType = hrZoneProfileSport(stravaSportKey);
           const hrZones = getHeartRateZones(maxHR, sportType);
           let hrZone = 1;
           if (heartRate >= hrZones[5].min) hrZone = 5;
@@ -2451,6 +2495,8 @@ async function analyzeTrainingsByMonth(req, res) {
           monthlyAnalysis[monthKey].hrZones[hrZone].time += hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].avgHeartRate += heartRate * hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].heartRateCount += hrTimeIncrement;
+
+          addSportHrZone(monthlyAnalysis[monthKey], stravaSportKey, hrZone, hrTimeIncrement, heartRate);
           
           // Add to sport-specific HR zones
           if (isStravaRunning) {
@@ -2492,11 +2538,13 @@ async function analyzeTrainingsByMonth(req, res) {
         if (activity.distance) {
           monthlyAnalysis[monthKey].swimmingDistance += activity.distance;
         }
-      } else {
-        // Default to bike for cycling or other activities
+      } else if (isStravaCycling) {
+        // Default to bike for cycling activities
         monthlyAnalysis[monthKey].bikeTrainings++;
         monthlyAnalysis[monthKey].bikeTime += stravaTotalTime;
       }
+
+      addSportActivity(monthlyAnalysis[monthKey], stravaSportKey, stravaTotalTime);
 
       // Store Strava activity info
       if (!monthlyAnalysis[monthKey].trainingList) {

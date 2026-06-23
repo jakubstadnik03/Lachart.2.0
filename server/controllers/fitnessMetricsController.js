@@ -3,6 +3,7 @@ const StravaActivity = require('../models/StravaActivity');
 const Training = require('../models/training');
 const User = require('../models/UserModel');
 const mongoose = require('mongoose');
+const { buildUserProfile, resolveActivityTss } = require('../utils/activityTss');
 
 /**
  * Calculate Fitness, Fatigue, and Form over time
@@ -24,77 +25,14 @@ function matchesSportFilter(sport, filter) {
   return true;
 }
 
-// Helper function to calculate TSS for activity (same logic as CalendarView.jsx)
+// Legacy alias — prefer resolveActivityTss from ../utils/activityTss
 function calculateActivityTSS(activity, userProfile = null) {
-  try {
-    // Get duration - try different field names
-    const seconds = Number(activity.movingTime || activity.totalElapsedTime || activity.elapsedTime || activity.duration || 0);
-    if (seconds === 0) return 0;
-    
-    // Get FTP and threshold paces from user profile (same as CalendarView.jsx)
-    const ftp = userProfile?.powerZones?.cycling?.lt2 || 
-                userProfile?.powerZones?.cycling?.zone5?.min || 
-                userProfile?.ftp || 
-                250; // Default estimate
-    const thresholdPace = userProfile?.powerZones?.running?.lt2 || 
-                          userProfile?.runningZones?.lt2 || 
-                          null;
-    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null;
-    
-    const sport = (activity.sport || '').toLowerCase();
-    
-    // For cycling: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
-    if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
-      const avgPower = Number(activity.averagePower || activity.avgPower || 0);
-      if (avgPower > 0 && ftp > 0) {
-        const np = avgPower; // Using avgPower as NP approximation
-        return Math.round((seconds * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
-      }
-    }
-    
-    // For running: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-    if (sport.includes('run') || sport.includes('walk') || sport.includes('hike') || sport === 'running') {
-      const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || 0); // m/s
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(1000 / avgSpeed); // seconds per km
-        let referencePace = thresholdPace;
-        // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-        if (!referencePace || referencePace <= 0) {
-          referencePace = avgPaceSeconds;
-        }
-        // Faster pace (lower seconds) = higher intensity = higher TSS
-        const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
-        return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-      }
-    }
-    
-    // For swimming: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-    // Swimming pace is per 100m (not per km)
-    if (sport.includes('swim') || sport === 'swimming') {
-      const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || 0); // m/s
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(100 / avgSpeed); // seconds per 100m
-        let referencePace = thresholdSwimPace;
-        // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-        if (!referencePace || referencePace <= 0) {
-          referencePace = avgPaceSeconds;
-        }
-        // Faster pace (lower seconds) = higher intensity = higher TSS
-        const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
-        return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-      }
-    }
-    
-    return 0;
-  } catch (error) {
-    console.error('Error calculating activity TSS:', error);
-    return 0;
-  }
+  return resolveActivityTss(activity, userProfile);
 }
 
 // Helper function to calculate TSS for Strava activity (alias for consistency)
 function calculateStravaTSS(activity, userProfile = null) {
-  return calculateActivityTSS(activity, userProfile);
+  return resolveActivityTss(activity, userProfile);
 }
 
 async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all') {
@@ -133,10 +71,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       }
     }
     
-    const userProfile = user ? {
-      powerZones: user.powerZones || {},
-      ftp: user.ftp || 250
-    } : null;
+    const userProfile = buildUserProfile(user);
 
     // Try both String and ObjectId formats for athleteId
     const athleteIdStr = String(athleteId);
@@ -152,7 +87,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       athleteId: athleteIdStr,
       timestamp: { $gte: queryStartDate }
     })
-      .select('timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed')
+      .select('timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate')
       .sort({ timestamp: 1 })
       .lean();
 
@@ -161,7 +96,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       userId: athleteIdStr,
       startDate: { $gte: queryStartDate }
     })
-      .select('startDate movingTime averagePower averageSpeed sport')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
       .sort({ startDate: 1 })
       .lean();
 
@@ -171,7 +106,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         userId: athleteIdObj,
         startDate: { $gte: queryStartDate }
       })
-        .select('startDate movingTime averagePower averageSpeed sport')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
         .sort({ startDate: 1 })
         .lean();
     }
@@ -189,28 +124,36 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     const allActivities = [
       ...fitTrainings
         .filter(t => matchesSportFilter(t.sport, sportFilter))
-        .map(t => {
-          // Use stored TSS if available, otherwise calculate it
-          let tss = Number(t.trainingStressScore || 0);
-          if ((!tss || tss === 0) && t.totalElapsedTime > 0) {
-            tss = calculateActivityTSS({
-              sport: t.sport,
-              totalElapsedTime: t.totalElapsedTime,
-              avgPower: t.avgPower,
-              avgSpeed: t.avgSpeed
-            }, userProfile);
-          }
-          return {
-            date: t.timestamp,
-            tss: tss,
-            sport: t.sport || 'generic'
-          };
-        }),
+        .map(t => ({
+          date: t.timestamp,
+          tss: resolveActivityTss({
+            sport: t.sport,
+            totalElapsedTime: t.totalElapsedTime,
+            movingTime: t.totalElapsedTime,
+            avgPower: t.avgPower,
+            normalizedPower: t.normalizedPower,
+            averageHeartRate: t.avgHeartRate,
+            avgHeartRate: t.avgHeartRate,
+            maxHeartRate: t.maxHeartRate,
+            avgSpeed: t.avgSpeed,
+            tss: t.trainingStressScore,
+            trainingStressScore: t.trainingStressScore,
+          }, userProfile),
+          sport: t.sport || 'generic'
+        })),
       ...stravaActivities
         .filter(a => matchesSportFilter(a.sport, sportFilter))
         .map(a => ({
           date: a.startDate,
-          tss: calculateActivityTSS(a, userProfile),
+          tss: resolveActivityTss({
+            sport: a.sport,
+            movingTime: a.movingTime,
+            averagePower: a.averagePower,
+            weighted_average_watts: a.weighted_average_watts,
+            averageSpeed: a.averageSpeed,
+            average_heartrate: a.average_heartrate,
+            max_heartrate: a.max_heartrate,
+          }, userProfile),
           sport: a.sport || 'generic'
         })),
       ...trainings
@@ -427,10 +370,7 @@ async function calculateTrainingStatus(athleteId) {
       console.error('Error fetching user:', userError);
     }
     
-    const userProfile = user ? {
-      powerZones: user.powerZones || {},
-      ftp: user.ftp || 250
-    } : null;
+    const userProfile = buildUserProfile(user);
 
     const today = new Date();
     const weekAgo = new Date(today);
@@ -451,7 +391,7 @@ async function calculateTrainingStatus(athleteId) {
       athleteId: athleteIdStr,
       timestamp: { $gte: fourWeeksAgo }
     })
-      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed')
+      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate')
       .lean();
 
     // StravaActivity uses userId
@@ -459,7 +399,7 @@ async function calculateTrainingStatus(athleteId) {
       userId: athleteIdStr,
       startDate: { $gte: fourWeeksAgo }
     })
-      .select('startDate movingTime averagePower averageSpeed sport')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -467,30 +407,42 @@ async function calculateTrainingStatus(athleteId) {
         userId: athleteIdObj,
         startDate: { $gte: fourWeeksAgo }
       })
-        .select('startDate movingTime averagePower averageSpeed sport')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
         .lean();
     }
 
+    const mapFitTss = (t) => resolveActivityTss({
+      sport: t.sport,
+      totalElapsedTime: t.totalElapsedTime,
+      movingTime: t.totalElapsedTime,
+      avgPower: t.avgPower,
+      normalizedPower: t.normalizedPower,
+      averageHeartRate: t.avgHeartRate,
+      avgHeartRate: t.avgHeartRate,
+      maxHeartRate: t.maxHeartRate,
+      avgSpeed: t.avgSpeed,
+      tss: t.trainingStressScore,
+      trainingStressScore: t.trainingStressScore,
+    }, userProfile);
+
+    const mapStravaTss = (a) => resolveActivityTss({
+      sport: a.sport,
+      movingTime: a.movingTime,
+      averagePower: a.averagePower,
+      weighted_average_watts: a.weighted_average_watts,
+      averageSpeed: a.averageSpeed,
+      average_heartrate: a.average_heartrate,
+      max_heartrate: a.max_heartrate,
+    }, userProfile);
+
     const allActivities = [
-      ...fitTrainings.map(t => {
-        // Use stored TSS if available, otherwise calculate it (same logic as CalendarView.jsx)
-        let tss = Number(t.trainingStressScore || 0);
-        if ((!tss || tss === 0) && t.totalElapsedTime > 0) {
-          tss = calculateActivityTSS({
-            sport: t.sport,
-            totalElapsedTime: t.totalElapsedTime,
-            avgPower: t.avgPower,
-            avgSpeed: t.avgSpeed
-          }, userProfile);
-        }
-        return {
-          date: t.timestamp,
-          tss: tss
-        };
-      }),
+      ...fitTrainings.map(t => ({
+        date: t.timestamp,
+        tss: mapFitTss(t)
+      })),
       ...stravaActivities.map(a => ({
         date: a.startDate,
-        tss: calculateActivityTSS(a, userProfile)
+        tss: mapStravaTss(a)
       }))
     ].filter(a => a.date);
 
@@ -586,10 +538,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       console.error('Error fetching user:', userError);
     }
     
-    const userProfile = user ? {
-      powerZones: user.powerZones || {},
-      ftp: user.ftp || 250
-    } : null;
+    const userProfile = buildUserProfile(user);
 
     const today = new Date();
     const startDate = new Date(today);
@@ -608,7 +557,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       athleteId: athleteIdStr,
       timestamp: { $gte: startDate }
     })
-      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed')
+      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate')
       .lean();
 
     // StravaActivity uses userId
@@ -616,7 +565,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       userId: athleteIdStr,
       startDate: { $gte: startDate }
     })
-      .select('startDate movingTime averagePower averageSpeed sport')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -624,34 +573,46 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
         userId: athleteIdObj,
         startDate: { $gte: startDate }
       })
-        .select('startDate movingTime averagePower averageSpeed sport')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
         .lean();
     }
+
+    const mapFitTss = (t) => resolveActivityTss({
+      sport: t.sport,
+      totalElapsedTime: t.totalElapsedTime,
+      movingTime: t.totalElapsedTime,
+      avgPower: t.avgPower,
+      normalizedPower: t.normalizedPower,
+      averageHeartRate: t.avgHeartRate,
+      avgHeartRate: t.avgHeartRate,
+      maxHeartRate: t.maxHeartRate,
+      avgSpeed: t.avgSpeed,
+      tss: t.trainingStressScore,
+      trainingStressScore: t.trainingStressScore,
+    }, userProfile);
+
+    const mapStravaTss = (a) => resolveActivityTss({
+      sport: a.sport,
+      movingTime: a.movingTime,
+      averagePower: a.averagePower,
+      weighted_average_watts: a.weighted_average_watts,
+      averageSpeed: a.averageSpeed,
+      average_heartrate: a.average_heartrate,
+      max_heartrate: a.max_heartrate,
+    }, userProfile);
 
     const allActivities = [
       ...fitTrainings
         .filter(t => matchesSportFilter(t.sport, sportFilter))
-        .map(t => {
-          // Use stored TSS if available, otherwise calculate it (same logic as CalendarView.jsx)
-          let tss = Number(t.trainingStressScore || 0);
-          if ((!tss || tss === 0) && t.totalElapsedTime > 0) {
-            tss = calculateActivityTSS({
-              sport: t.sport,
-              totalElapsedTime: t.totalElapsedTime,
-              avgPower: t.avgPower,
-              avgSpeed: t.avgSpeed
-            }, userProfile);
-          }
-          return {
-            date: t.timestamp,
-            tss: tss
-          };
-        }),
+        .map(t => ({
+          date: t.timestamp,
+          tss: mapFitTss(t)
+        })),
       ...stravaActivities
         .filter(a => matchesSportFilter(a.sport, sportFilter))
         .map(a => ({
           date: a.startDate,
-          tss: calculateActivityTSS(a, userProfile)
+          tss: mapStravaTss(a)
         }))
     ].filter(a => a.date);
 

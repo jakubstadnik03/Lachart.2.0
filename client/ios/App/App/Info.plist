@@ -18,10 +18,66 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.lachart.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.lachart.app</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>GoogleSignIn</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GIDClientID</key>
+	<string>962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
+		<string>instagram-stories</string>
+		<string>strava</string>
+		<string>fb</string>
+		<string>whatsapp</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>LaChart connects to your smart trainer, heart rate monitor, and other training sensors via Bluetooth to record power, cadence, heart rate, and other metrics.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>LaChart uses the camera only if you choose "Take Photo or Video" while attaching a FIT/workout file. We don't capture photos for any other purpose.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>LaChart reads resting heart rate, sleep and heart-rate variability from Apple Health to show recovery on your dashboard and keep training data in one place.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>LaChart does not write health data to Apple Health unless you explicitly save a metric.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LaChart doesn't record audio. iOS may request microphone permission only when you choose "Take Photo or Video" from a file picker.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>LaChart saves your shareable activity image (route, stats, lap breakdown) to Photos so you can post it to Instagram, Strava, or any other app.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LaChart accesses Photos only if you pick "Photo Library" when attaching a workout file or profile picture. Nothing is read automatically.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>LaChart uses notifications to remind you about training sessions, lactate test intervals, and recovery periods.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -45,82 +101,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>NSUserNotificationsUsageDescription</key>
-	<string>LaChart uses notifications to remind you about training sessions, lactate test intervals, and recovery periods.</string>
-	<!-- NSBluetoothAlwaysUsageDescription only (NSBluetoothPeripheralUsageDescription is deprecated since iOS 13) -->
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>LaChart connects to your smart trainer, heart rate monitor, and other training sensors via Bluetooth to record power, cadence, heart rate, and other metrics.</string>
-<!-- Required by iOS for ANY <input type="file"> in WKWebView. Even though
-	     LaChart's only file input accepts FIT files, iOS' file picker UI
-	     still shows "Take Photo or Video" and "Photo Library" options to the
-	     user, and tapping them without these usage strings present makes
-	     the WebView crash hard (App Store Review test on iPad caught this). -->
-	<key>NSCameraUsageDescription</key>
-	<string>LaChart uses the camera only if you choose "Take Photo or Video" while attaching a FIT/workout file. We don't capture photos for any other purpose.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>LaChart accesses Photos only if you pick "Photo Library" when attaching a workout file or profile picture. Nothing is read automatically.</string>
-	<!-- Required so Save / Share Activity can write the generated PNG into
-	     the camera roll (so the user can then share it from Photos to
-	     Instagram Stories / Strava / wherever). Without this key iOS denies
-	     the write silently and the share button looks like it does nothing. -->
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>LaChart saves your shareable activity image (route, stats, lap breakdown) to Photos so you can post it to Instagram, Strava, or any other app.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>LaChart doesn't record audio. iOS may request microphone permission only when you choose "Take Photo or Video" from a file picker.</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>LaChart reads resting heart rate, sleep and heart-rate variability from Apple Health to show recovery on your dashboard and keep training data in one place.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>LaChart does not write health data to Apple Health unless you explicitly save a metric.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<!-- Export compliance: app uses only standard HTTPS – no custom encryption -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<!-- Google Sign-In iOS client ID -->
-	<key>GIDClientID</key>
-	<string>962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a.apps.googleusercontent.com</string>
-
-	<!-- URL schemes: Strava OAuth + Google Sign-In reversed client ID -->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.lachart.app</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.lachart.app</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>GoogleSignIn</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a</string>
-			</array>
-		</dict>
-	</array>
-	<!-- Apps we want to detect / hand off to. iOS 9+ requires every URL
-	     scheme we call canOpenURL: on (or that a third-party SDK uses) to be
-	     declared here, otherwise the call silently returns false. Strava
-	     does the same trick to make its "Share to Instagram Stories" button
-	     work — without `instagram-stories` listed, the share extension
-	     refuses to launch Instagram from our PNG. -->
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>instagram</string>
-		<string>instagram-stories</string>
-		<string>strava</string>
-		<string>fb</string>
-		<string>whatsapp</string>
-	</array>
-	<!-- ATS: all API and asset traffic is HTTPS — no arbitrary loads needed -->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-	</dict>
 </dict>
 </plist>

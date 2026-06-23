@@ -75,6 +75,10 @@ const fitTrainingSchema = new mongoose.Schema({
   normalizedPower: Number, // watts
   avgCadence: Number, // rpm
   maxCadence: Number, // rpm
+  /** User-edited training load (Completed editor). */
+  trainingStressScore: Number,
+  lactate: Number,
+  rpe: Number,
   // Training zones
   timeInZone: [{
     zone: Number,

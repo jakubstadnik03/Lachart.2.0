@@ -257,53 +257,66 @@ export function WeeklyDaysStory({ week, accent = '#767EB5', transparent = false,
 }
 
 // ════════════════════════════════════════════ 3 · HERO STAT ════════════════
-export function WeeklyHeroStory({ week, accent = '#767EB5', transparent = false, metric = 'distance', theme = 'dark' }) {
+export function WeeklyHeroStory({
+  week,
+  accent = '#767EB5',
+  transparent = false,
+  metric = 'distance',
+  theme = 'dark',
+  secondaryMetrics = { time: true, tss: true, fitness: true, form: false },
+}) {
   const C = useSharePalette();
   const t = week.totals;
+  const k = week.kpis;
   const M = {
-    distance:   { value: `${t.distance}`, unit: t.distanceUnit, label: 'Distance this week', sub: `across ${t.activities} activities`, size: 250 },
-    tss:        { value: `${t.tss}`, unit: 'TSS', label: 'Training load this week', sub: `${t.time} of training`, size: 300 },
-    time:       { value: t.time, unit: '', label: 'Time trained this week', sub: `${t.activities} activities`, size: 156 },
-    activities: { value: `${t.activities}`, unit: 'sessions', label: 'Sessions this week', sub: `${t.time} · ${t.distance} ${t.distanceUnit}`, size: 300 },
+    distance:   { value: `${t.distance}`, unit: t.distanceUnit, label: 'Distance', sub: `across ${t.activities} activities`, size: 250 },
+    tss:        { value: `${t.tss}`, unit: 'TSS', label: 'Training load', sub: `${t.time} of training`, size: 300 },
+    time:       { value: t.time, unit: '', label: 'Time trained', sub: `${t.activities} activities`, size: 156 },
+    activities: { value: `${t.activities}`, unit: 'sessions', label: 'Sessions', sub: `${t.time} · ${t.distance} ${t.distanceUnit}`, size: 300 },
   }[metric];
   const secondary = [
-    { label: 'TIME', value: t.time },
-    { label: 'TSS', value: `${t.tss}` },
-    { label: 'FITNESS', value: `${week.kpis.fitness}` },
-  ];
+    { key: 'time', label: 'TIME', value: t.time },
+    { key: 'tss', label: 'TSS', value: `${t.tss}` },
+    { key: 'fitness', label: 'FITNESS', value: `${k.fitness}`, color: accent },
+    { key: 'form', label: 'FORM', value: k.form > 0 ? `+${k.form}` : `${k.form}`, color: k.form >= 0 ? C.pos : C.neg },
+  ].filter((s) => secondaryMetrics[s.key] !== false);
   const maxTss = Math.max(1, ...week.days.map(d => d.tss));
   const cx = W / 2;
+  const unitSize = Math.round(M.size * 0.28);
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} width={W} height={H}>
       <StoryBackground transparent={transparent} theme={theme} />
       <Vignette transparent={transparent} />
       <Header accent={accent} chip={week.rangeShort} />
 
-      <Txt x={cx} y={760} size={26} weight={700} fill={accent} anchor="middle" ls="5px">{M.label.toUpperCase()}</Txt>
-      {/* hero value + unit, centred */}
-      {(() => {
-        const unitSize = Math.round(M.size * 0.28);
-        const gap = M.unit ? 18 : 0;
-        const valW = M.value.length * M.size * 0.52;
-        const unitW = M.unit ? M.unit.length * unitSize * 0.6 : 0;
-        const totalW = valW + gap + unitW;
-        const startX = cx - totalW / 2;
-        return (
-          <g>
-            <Txt x={startX} y={920} size={M.size} weight={800} ls="-0.04em">{M.value}</Txt>
-            {M.unit && <Txt x={startX + valW + gap} y={920} size={unitSize} weight={800} fill={accent}>{M.unit}</Txt>}
-          </g>
-        );
-      })()}
-      <Txt x={cx} y={1000} size={40} weight={600} fill={C.muted} anchor="middle">{M.sub}</Txt>
+      <Txt x={cx} y={620} size={96} weight={800} anchor="middle" ls="-0.03em">This week</Txt>
+      <Txt x={cx} y={700} size={26} weight={700} fill={accent} anchor="middle" ls="5px">{M.label.toUpperCase()}</Txt>
+      {/* hero value + unit — single <text> so the unit flows after the digits (no overlap) */}
+      <Txt x={cx} y={900} size={M.size} weight={800} anchor="middle" ls="-0.04em">
+        {M.value}
+        {M.unit ? (
+          <tspan
+            dx={16}
+            dy={-Math.round(M.size * 0.2)}
+            style={{ fontSize: unitSize, fontWeight: 800, fill: accent }}
+          >
+            {M.unit}
+          </tspan>
+        ) : null}
+      </Txt>
+      <Txt x={cx} y={980} size={40} weight={600} fill={C.muted} anchor="middle">{M.sub}</Txt>
 
       {/* secondary tiles */}
       {secondary.map((s, i) => {
-        const bw = (W - PAD * 2 - 48) / 3, x = PAD + i * (bw + 24);
+        const n = secondary.length;
+        const gap = 24;
+        const bw = (W - PAD * 2 - gap * Math.max(0, n - 1)) / Math.max(1, n);
+        const x = PAD + i * (bw + gap);
+        const valSize = n >= 4 ? 52 : 62;
         return (
-          <g key={s.label}>
+          <g key={s.key}>
             <Box x={x} y={1120} w={bw} h={180} r={28} />
-            <Txt x={x + bw / 2} y={1218} size={62} weight={800} anchor="middle">{s.value}</Txt>
+            <Txt x={x + bw / 2} y={1218} size={valSize} weight={800} anchor="middle" fill={s.color}>{s.value}</Txt>
             <Txt x={x + bw / 2} y={1262} size={24} weight={700} fill={C.faint} anchor="middle" ls="2px">{s.label}</Txt>
           </g>
         );

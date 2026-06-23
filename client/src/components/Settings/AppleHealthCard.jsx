@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Heart } from 'lucide-react';
 import {
   collectAppleHealthWellness,
@@ -8,6 +8,7 @@ import {
   isAppleHealthSupported,
   openAppleHealthSettings,
   requestAppleHealthAccess,
+  requestWellnessAuthorizationOnly,
   wellnessPermissionHint,
 } from '../../services/appleHealthCapacitor';
 import {
@@ -37,6 +38,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   const [status, setStatus] = useState(null);
   const [latest, setLatest] = useState(null);
   const [diagInfo, setDiagInfo] = useState(null);
+  const syncAbortRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!supported) return;
@@ -82,6 +84,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   }, [refresh]);
 
   const runSync = async () => {
+    syncAbortRef.current = false;
     setSyncing(true);
     setSyncStep(null);
     setError(null);
@@ -89,6 +92,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       setSyncStep('Checking HealthKit…');
       if (!available) {
         const diag = await getAppleHealthDiagnostics();
+        if (syncAbortRef.current) return;
         setDiagInfo(diag);
         setAvailable(diag.available);
         setUnavailableReason(diag.available ? null : (diag.hint || diag.reason || 'Apple Health is not available.'));
@@ -104,15 +108,26 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       }
 
       setSyncStep('Requesting access…');
-      const { warning: authWarning } = await requestAppleHealthAccess();
+      const authPromise = requestAppleHealthAccess();
+      const authTimeout = new Promise((resolve) => {
+        setTimeout(() => resolve({
+          granted: true,
+          warning: 'Permission step took too long. If no dialog appeared, open Health → Profile → Apps → LaChart and enable Resting Heart Rate, Sleep and HRV, then tap Sync again.',
+        }), 14000);
+      });
+      const { warning: authWarning } = await Promise.race([authPromise, authTimeout]);
+      if (syncAbortRef.current) return;
+
       const permStatus = await getAppleHealthPermissionStatus();
       const permHint = wellnessPermissionHint(permStatus.types);
 
       setSyncStep('Reading wellness…');
       const wellness = await collectAppleHealthWellness(14);
+      if (syncAbortRef.current) return;
       const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
       setSyncStep('Reading workouts…');
       const workouts = await collectAppleHealthWorkouts(since, { enrichHeartRate: false });
+      if (syncAbortRef.current) return;
 
       setSyncStep('Uploading…');
       await syncAppleHealthWellness({
@@ -154,6 +169,40 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     } finally {
       setSyncStep(null);
       setSyncing(false);
+      syncAbortRef.current = false;
+    }
+  };
+
+  const cancelSync = () => {
+    syncAbortRef.current = true;
+    setSyncing(false);
+    setSyncStep(null);
+    setError('Cancelled. Tap Enable recovery data or Connect & sync again.');
+  };
+
+  const runWellnessAuth = async () => {
+    setSyncing(true);
+    setSyncStep('Requesting Sleep, RHR & HRV…');
+    setError(null);
+    try {
+      const result = await requestWellnessAuthorizationOnly();
+      const types = result?.requestedTypes || result?.readAuthorized || [];
+      if (result?.timedOut) {
+        setError(
+          'Permission dialog timed out. Open Health → Profile → Apps → LaChart and scroll down past Workouts — turn ON Resting Heart Rate, Sleep and Heart Rate Variability.',
+        );
+      } else if (types.length > 0) {
+        setError(
+          'Done — open Health → Profile → Apps → LaChart, scroll down and enable Resting Heart Rate, Sleep and HRV (they appear below the workout types from Apple Watch). Then tap Connect & sync.',
+        );
+      } else {
+        setError('Could not register wellness types. Rebuild from Xcode (⌘R on iPhone) and try again.');
+      }
+    } catch (e) {
+      setError(e?.message || 'Wellness permission failed');
+    } finally {
+      setSyncing(false);
+      setSyncStep(null);
     }
   };
 
@@ -209,7 +258,11 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
         Import resting heart rate, sleep duration and heart-rate variability (recovery) from Apple Health.
         Workouts from the last 90 days are imported too.
-        {' '}After sync, enable <strong>Resting Heart Rate</strong>, <strong>Sleep</strong> and <strong>Heart Rate Variability</strong> under Health → Profile → Apps → LaChart.
+      </p>
+
+      <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5`}>
+        <strong>What you see in Health now</strong> (Workouts, Running Power, Heart Rate…) is from the <strong>Apple Watch</strong> app.
+        Sleep, Resting HR and HRV are requested from the <strong>iPhone</strong> — tap <strong>Enable recovery data</strong> first, then scroll down in Health → Apps → LaChart for the new toggles.
       </p>
 
       {!available && unavailableReason && (
@@ -269,6 +322,16 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       )}
 
       <div className={`flex flex-wrap gap-2 ${isMobile ? '' : ''}`}>
+        {!connected && (
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={runWellnessAuth}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} rounded-lg font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50`}
+          >
+            {syncing ? (syncStep || 'Working…') : 'Enable recovery data'}
+          </button>
+        )}
         <button
           type="button"
           disabled={syncing}
@@ -277,6 +340,15 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         >
           {syncing ? (syncStep || 'Syncing…') : connected ? 'Sync now' : 'Connect & sync'}
         </button>
+        {syncing && (
+          <button
+            type="button"
+            onClick={cancelSync}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+          >
+            Cancel
+          </button>
+        )}
         {!available && !syncing && (
           <button
             type="button"

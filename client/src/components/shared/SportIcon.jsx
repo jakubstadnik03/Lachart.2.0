@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bike, WavesLadder, Footprints, Dumbbell, Mountain, Zap as ZapIcon } from 'lucide-react';
+import { Bike, Footprints, Dumbbell, Mountain, Snowflake, Zap as ZapIcon } from 'lucide-react';
 
 // Detailed runner figure — path data inlined from /public/icon/run.svg
 // so we can colorize via currentColor (Tailwind text-* classes).
@@ -10,11 +10,28 @@ export const RunnerSvg = ({ className = '', style }) => (
   </svg>
 );
 
+/** Swim ladder icon — inlined so we don't depend on lucide WavesLadder export. */
+export const SwimSvg = ({ className = '', style }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+    <path d="M19 5a2 2 0 0 0-2 2v11" />
+    <path d="M7 13h10" />
+    <path d="M7 9h10" />
+    <path d="M9 5a2 2 0 0 0-2 2v11" />
+    <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+  </svg>
+);
+
 /** Canonical sport keys used across dashboard, calendar, and native tiles. */
 export function resolveSportKey(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
   if (s.includes('swim')) return 'swim';
+  if (
+    s.includes('nordic') ||
+    s.includes('backcountry') ||
+    s.includes('rollerski') ||
+    (s.includes('ski') && !s.includes('kite'))
+  ) return 'ski';
   if (s.includes('hike')) return 'hike';
   if (s.includes('walk')) return 'walk';
   if (s.includes('run') || s.includes('trail')) return 'run';
@@ -30,9 +47,24 @@ export const SPORT_ICON_COLORS = {
   swim:  '#06b6d4',
   hike:  '#a16207',
   walk:  '#22c55e',
+  ski:   '#0ea5e9',
   gym:   '#8b5cf6',
   other: '#9ca3af',
 };
+
+export const SPORT_LABELS = {
+  bike: 'Bike',
+  run: 'Run',
+  swim: 'Swim',
+  hike: 'Hike',
+  walk: 'Walk',
+  ski: 'Ski',
+  gym: 'Gym',
+  other: 'Other',
+};
+
+/** Display order for sport filter chips */
+export const SPORT_TOGGLE_ORDER = ['bike', 'run', 'swim', 'hike', 'walk', 'ski', 'gym', 'other'];
 
 const SPORT_TAILWIND = {
   bike: 'text-blue-500',
@@ -40,6 +72,7 @@ const SPORT_TAILWIND = {
   swim: 'text-cyan-500',
   hike: 'text-amber-700',
   walk: 'text-green-500',
+  ski: 'text-sky-500',
   gym: 'text-purple-500',
   other: 'text-gray-400',
 };
@@ -64,18 +97,26 @@ export function SportGlyph({ sport, size, color, className = '' }) {
       />
     );
   }
+  if (key === 'swim') {
+    return (
+      <SwimSvg
+        className={cls}
+        style={{ color: tint, ...dimStyle }}
+      />
+    );
+  }
   const iconProps = {
     color: tint,
     strokeWidth: stroke,
     className: cls,
     ...(size != null ? { size } : {}),
   };
-  if (key === 'bike') return <Bike {...iconProps} />;
-  if (key === 'swim') return <WavesLadder {...iconProps} />;
-  if (key === 'hike') return <Mountain {...iconProps} />;
-  if (key === 'walk') return <Footprints {...iconProps} />;
-  if (key === 'gym') return <Dumbbell {...iconProps} />;
-  return <ZapIcon {...iconProps} />;
+  if (key === 'bike') return Bike ? <Bike {...iconProps} /> : null;
+  if (key === 'hike') return Mountain ? <Mountain {...iconProps} /> : null;
+  if (key === 'walk') return Footprints ? <Footprints {...iconProps} /> : null;
+  if (key === 'ski') return Snowflake ? <Snowflake {...iconProps} /> : null;
+  if (key === 'gym') return Dumbbell ? <Dumbbell {...iconProps} /> : null;
+  return ZapIcon ? <ZapIcon {...iconProps} /> : null;
 }
 
 /**

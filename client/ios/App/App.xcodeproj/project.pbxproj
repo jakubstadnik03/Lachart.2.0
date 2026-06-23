@@ -82,14 +82,14 @@
 		5C0355C12FD049C60045BD7A /* LaChartWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LaChartWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C0356142FD050C10045BD7A /* LaChartSharedPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaChartSharedPlugin.swift; path = App/Plugins/LaChartSharedPlugin.swift; sourceTree = "<group>"; };
 		5C0356152FD050C20045BD7A /* LaChartSharedPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LaChartSharedPlugin.m; path = App/Plugins/LaChartSharedPlugin.m; sourceTree = "<group>"; };
+		5C68A3262FAC8A82009ED39F /* AppRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppRelease.entitlements; sourceTree = "<group>"; };
+		5CD969062FB2FC9A00A50C51 /* AppDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppDebug.entitlements; sourceTree = "<group>"; };
 		5CFEED032FD050C10045BD7A /* LaChartWorkoutPlanPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaChartWorkoutPlanPlugin.swift; path = App/Plugins/LaChartWorkoutPlanPlugin.swift; sourceTree = "<group>"; };
 		5CFEED042FD050C20045BD7A /* LaChartWorkoutPlanPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LaChartWorkoutPlanPlugin.m; path = App/Plugins/LaChartWorkoutPlanPlugin.m; sourceTree = "<group>"; };
 		5CFEED072FD050C10045BD7A /* LaChartWatchSyncPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaChartWatchSyncPlugin.swift; path = App/Plugins/LaChartWatchSyncPlugin.swift; sourceTree = "<group>"; };
 		5CFEED082FD050C20045BD7A /* LaChartWatchSyncPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LaChartWatchSyncPlugin.m; path = App/Plugins/LaChartWatchSyncPlugin.m; sourceTree = "<group>"; };
 		5D0A00032FD061C10045BD7A /* LaChartHealthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaChartHealthPlugin.swift; path = App/Plugins/LaChartHealthPlugin.swift; sourceTree = "<group>"; };
 		5D0A00042FD061C20045BD7A /* LaChartHealthPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LaChartHealthPlugin.m; path = App/Plugins/LaChartHealthPlugin.m; sourceTree = "<group>"; };
-		5C68A3262FAC8A82009ED39F /* AppRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppRelease.entitlements; sourceTree = "<group>"; };
-		5CD969062FB2FC9A00A50C51 /* AppDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppDebug.entitlements; sourceTree = "<group>"; };
 		AAAA0000000000000000C002 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
@@ -614,7 +614,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = App/AppDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 255PBXWZSR;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -622,7 +622,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -641,7 +641,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = App/AppRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 255PBXWZSR;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -649,7 +649,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lachart.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

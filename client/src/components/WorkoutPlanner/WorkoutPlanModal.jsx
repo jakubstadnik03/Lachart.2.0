@@ -19,7 +19,7 @@ import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
-import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal } from 'lucide-react';
+import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { sendPlannedWorkoutToWatch, isAppleWorkoutPlanSupported } from '../../services/appleWorkoutPlan';
@@ -27,7 +27,6 @@ import { useCategories } from '../../context/CategoryContext';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
-export const SPORT_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
 const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
 
 // ─── Sport SVG icons (lucide-react) ─────────────────────────────────────────
@@ -36,6 +35,8 @@ const SPORT_LUCIDE_ICONS = {
   swim:       WavesLadder,
   strength:   Dumbbell,
   walk:       PersonStanding,
+  hike:       Mountain,
+  ski:        Snowflake,
   brick:      Repeat2,
   crosstrain: Sparkles,
   mtbike:     Bike,
@@ -60,6 +61,8 @@ const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
   return <Icon size={size} color={color} strokeWidth={1.8} />;
 };
 
+export { SportSVG };
+
 // ─── Sport picker options ────────────────────────────────────────────────────
 const SPORT_OPTIONS = [
   { key: 'bike',       label: 'Bike',         color: '#767EB5', svgName: 'bike' },
@@ -67,6 +70,8 @@ const SPORT_OPTIONS = [
   { key: 'swim',       label: 'Swim',         color: '#38bdf8', svgName: 'swim' },
   { key: 'strength',   label: 'Strength',     color: '#8b5cf6', svgName: 'strength' },
   { key: 'walk',       label: 'Walk',         color: '#22c55e', svgName: 'walk' },
+  { key: 'hike',       label: 'Hike',         color: '#a16207', svgName: 'hike' },
+  { key: 'ski',        label: 'Ski',          color: '#0ea5e9', svgName: 'ski' },
   { key: 'brick',      label: 'Brick',        color: '#f59e0b', svgName: 'brick' },
   { key: 'crosstrain', label: 'Cross-train',  color: '#ec4899', svgName: 'crosstrain' },
   { key: 'mtbike',     label: 'MTB',          color: '#a16207', svgName: 'mtbike' },
@@ -74,6 +79,60 @@ const SPORT_OPTIONS = [
   { key: 'lactate',    label: 'Lactate Test', color: '#ef4444', svgName: 'lactate', isTest: true },
   { key: 'other',      label: 'Other',        color: '#6b7280', svgName: 'other' },
 ];
+
+export const SPORT_COLORS = Object.fromEntries(SPORT_OPTIONS.map((o) => [o.key, o.color]));
+
+/** Normalise any sport string to a planner sport key. */
+export function plannerSportKey(sport) {
+  const v = String(sport || '').toLowerCase();
+  if (v.includes('bike') || v.includes('ride') || v.includes('cycl') || v.includes('virtual')) return 'bike';
+  if (v.includes('swim')) return 'swim';
+  if (v.includes('strength') || v.includes('gym') || v.includes('weight') || v.includes('workout') || v.includes('crossfit') || v.includes('yoga') || v.includes('fitness')) return 'strength';
+  if (v.includes('nordic') || v.includes('ski')) return 'ski';
+  if (v.includes('hike')) return 'hike';
+  if (v.includes('walk')) return 'walk';
+  if (v.includes('run') || v.includes('trail')) return 'run';
+  if (v.includes('brick')) return 'brick';
+  if (v.includes('row')) return 'rowing';
+  if (v.includes('mtb') || v.includes('mountain')) return 'mtbike';
+  if (v.includes('cross') || v.includes('elliptical') || v.includes('yoga')) return 'crosstrain';
+  if (v.includes('lactate')) return 'lactate';
+  const exact = SPORT_OPTIONS.find((o) => o.key === v);
+  if (exact) return exact.key;
+  return v || 'other';
+}
+
+export function plannerSportColor(sport) {
+  const key = plannerSportKey(sport);
+  return SPORT_COLORS[key] || SPORT_COLORS.other;
+}
+
+export function plannerSportSvgName(sport) {
+  const key = plannerSportKey(sport);
+  return SPORT_OPTIONS.find((o) => o.key === key)?.svgName || 'other';
+}
+
+/** Match planned sport with a completed activity sport (Strava / FIT / manual). */
+export function sportMatchesPlanner(pwSport, actSport) {
+  const p = plannerSportKey(pwSport);
+  const a = plannerSportKey(actSport);
+  if (p === 'bike' && a === 'bike') return true;
+  if (p === 'run' && a === 'run') return true;
+  if (p === 'swim' && a === 'swim') return true;
+  if (p === 'walk' && a === 'walk') return true;
+  if (p === 'hike' && (a === 'hike' || a === 'walk')) return true;
+  if (p === 'ski' && a === 'ski') return true;
+  if (p === 'strength' && a === 'strength') return true;
+  if (p === 'mtbike' && (a === 'mtbike' || a === 'bike')) return true;
+  if (p === 'brick' && (a === 'bike' || a === 'run')) return true;
+  return p === a;
+}
+
+export function PlannerSportIcon({ sport, size = 14, color }) {
+  const svgName = plannerSportSvgName(sport);
+  const tint = color || plannerSportColor(sport);
+  return <SportSVG name={svgName} color={tint} size={size} />;
+}
 
 // Helper: render sport icon (img or svg)
 function SportOptIcon({ opt, size = 22, className = '' }) {

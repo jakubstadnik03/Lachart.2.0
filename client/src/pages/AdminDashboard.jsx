@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -77,6 +77,7 @@ const AdminDashboard = () => {
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community', 'thresholdLogicUpdate'
   const [stravaReminderEmailLoadingUserId, setStravaReminderEmailLoadingUserId] = useState(null);
+  const [appDownloadEmailLoadingUserId, setAppDownloadEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
   const [chartTimeRange, setChartTimeRange] = useState(30); // days
@@ -397,6 +398,35 @@ const AdminDashboard = () => {
       console.error('Strava reminder email error:', err);
     } finally {
       setStravaReminderEmailLoadingUserId(null);
+    }
+  };
+
+  const handleSendAppDownloadEmail = async (targetUser) => {
+    try {
+      setAppDownloadEmailLoadingUserId(targetUser._id);
+      await sendAppDownloadEmail(targetUser._id);
+      const nowIso = new Date().toISOString();
+      setUsers((prev) =>
+        prev.map((u) =>
+          u._id === targetUser._id
+            ? {
+                ...u,
+                appDownloadEmail: {
+                  sent: true,
+                  sentCount: (u.appDownloadEmail?.sentCount || 0) + 1,
+                  lastSent: nowIso,
+                },
+              }
+            : u
+        )
+      );
+      addNotification(`App download email sent to ${targetUser.email}`, 'success');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send app download email';
+      addNotification(message, 'error');
+      console.error('App download email error:', err);
+    } finally {
+      setAppDownloadEmailLoadingUserId(null);
     }
   };
 
@@ -2232,6 +2262,19 @@ const AdminDashboard = () => {
                             {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send Strava reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          disabled={appDownloadEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                          onClick={() => handleSendAppDownloadEmail(user)}
+                          className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center gap-1.5 ${
+                            user.notifications?.emailNotifications === false
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                              : 'border-blue-500 text-blue-600 hover:bg-blue-50'
+                          } ${appDownloadEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          <span>📲</span>
+                          {appDownloadEmailLoadingUserId === user._id ? 'Sending…' : `Send app download${user.appDownloadEmail?.sent ? ` (${user.appDownloadEmail.sentCount || 1}x)` : ''}`}
+                        </button>
                         <button
                           type="button"
                           disabled={emailLoadingUserId === user._id || user.notifications?.emailNotifications === false}

@@ -22,6 +22,7 @@ import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
 import api from '../services/api';
+import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import RecordLactateModal from '../components/training/RecordLactateModal';
@@ -1551,6 +1552,35 @@ export default function NativeTrainingPage({
 
   // ── Activity full modal ───────────────────────────────────────────────────
   const [activityModal, setActivityModal] = useState(null);
+
+  useEffect(() => {
+    const onMetrics = (e) => {
+      const detail = e?.detail || {};
+      if (!detail.id) return;
+      const matches = buildActivityMatcher(detail.id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setActivityModal((prev) => {
+        if (!prev?.activity || !matches(prev.activity)) return prev;
+        return { ...prev, activity: { ...prev.activity, ...patch } };
+      });
+    };
+    const onPlanned = (e) => {
+      const planned = e?.detail?.planned;
+      if (!planned?._id) return;
+      setActivityModal((prev) => {
+        if (!prev?.plannedWorkout || String(prev.plannedWorkout._id) !== String(planned._id)) return prev;
+        return { ...prev, plannedWorkout: planned };
+      });
+    };
+    window.addEventListener('activityMetricsUpdated', onMetrics);
+    window.addEventListener('plannedWorkoutUpdated', onPlanned);
+    return () => {
+      window.removeEventListener('activityMetricsUpdated', onMetrics);
+      window.removeEventListener('plannedWorkoutUpdated', onPlanned);
+    };
+  }, []);
+
   // ── TrainingForm sheet — opens directly when user taps "Add" lactate pill ──
   const [trainingFormActivity, setTrainingFormActivity] = useState(null);
   const [trainingFormLoading, setTrainingFormLoading] = useState(false);

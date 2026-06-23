@@ -133,6 +133,7 @@ export default function ActivityShareSheet({
   summary = null, // { title, subtitle, sport, kpis, totals, workouts } → daily/weekly summary card
 }) {
   const [heroMetric, setHeroMetric] = useState('distance');
+  const [heroSecondary, setHeroSecondary] = useState({ time: true, tss: true, fitness: true, form: false });
   const [shareTheme, setShareTheme] = useState('dark');
   const [topMetric, setTopMetric] = useState('tss');
   const [topShowMap, setTopShowMap] = useState(false);
@@ -181,7 +182,7 @@ export default function ActivityShareSheet({
             week,
             accent,
             theme: shareTheme,
-            ...(s.id === 'hero' ? { metric: heroMetric } : {}),
+            ...(s.id === 'hero' ? { metric: heroMetric, secondaryMetrics: heroSecondary } : {}),
             ...(s.id === 'top' ? {
               heroMetric: topMetric,
               showMap: topShowMap && topCanMap,
@@ -203,7 +204,7 @@ export default function ActivityShareSheet({
       out.push({ id: 'laps', label: 'Laps + elevation + lactate', Comp: LapsElevationLactateTemplate, props: { activity: activity || {}, laps, records, accent } });
     }
     return out;
-  }, [activity, gpsPoints, laps, records, test, thresholds, accent, summary, heroMetric, shareTheme, topMetric, topShowMap, topGpsPoints, topCanMap, weekData]);
+  }, [activity, gpsPoints, laps, records, test, thresholds, accent, summary, heroMetric, heroSecondary, shareTheme, topMetric, topShowMap, topGpsPoints, topCanMap, weekData]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -258,6 +259,7 @@ export default function ActivityShareSheet({
     if (open) {
       setActiveIdx(0);
       setHeroMetric('distance');
+      setHeroSecondary({ time: true, tss: true, fitness: true, form: false });
       setShareTheme('dark');
       setTopMetric('tss');
       setTopShowMap(false);
@@ -290,7 +292,7 @@ export default function ActivityShareSheet({
       delete next.hero;
       return next;
     });
-  }, [heroMetric, open, summary]);
+  }, [heroMetric, heroSecondary, open, summary]);
 
   // Re-render all weekly cards when light/dark theme changes.
   useEffect(() => {
@@ -734,18 +736,37 @@ export default function ActivityShareSheet({
 
         {/* Hero stat metric picker (weekly summary only) */}
         {summary && templates[activeIdx]?.id === 'hero' && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap', padding: '0 16px', marginBottom: 10 }}>
-            {[
-              { id: 'distance', label: 'Distance' },
-              { id: 'tss', label: 'TSS' },
-              { id: 'time', label: 'Time' },
-              { id: 'activities', label: 'Sessions' },
-            ].map((opt) => (
-              <button key={opt.id} type="button" onClick={() => setHeroMetric(opt.id)} style={pillBtn(heroMetric === opt.id)}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap', padding: '0 16px', marginBottom: 8 }}>
+              {[
+                { id: 'distance', label: 'Distance' },
+                { id: 'tss', label: 'TSS' },
+                { id: 'time', label: 'Time' },
+                { id: 'activities', label: 'Sessions' },
+              ].map((opt) => (
+                <button key={opt.id} type="button" onClick={() => setHeroMetric(opt.id)} style={pillBtn(heroMetric === opt.id)}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap', padding: '0 16px', marginBottom: 10 }}>
+              {[
+                { id: 'time', label: 'Time' },
+                { id: 'tss', label: 'TSS' },
+                { id: 'fitness', label: 'Fitness' },
+                { id: 'form', label: 'Form' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setHeroSecondary((prev) => ({ ...prev, [opt.id]: !prev[opt.id] }))}
+                  style={pillBtn(heroSecondary[opt.id])}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         {/* Top session options */}

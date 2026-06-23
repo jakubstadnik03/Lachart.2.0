@@ -7,6 +7,7 @@ const User = require('../models/UserModel');
 // codebase still imports helpers from THIS file, so we keep this file as a
 // thin facade that delegates to the new module. No caller code changes.
 const { sendApnsToTokens } = require('./apnsPushNotifications');
+const { normalizeSportForNotif, sportNotifLabel } = require('./sportNotif');
 
 /**
  * Send push messages to a list of device tokens. Now routes through the
@@ -28,14 +29,7 @@ function fmtDistance(metres) {
 
 /** Human-readable sport label from Strava sport_type */
 function fmtSport(sport) {
-  if (!sport) return 'activity';
-  const s = String(sport).toLowerCase();
-  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('velo')) return 'ride';
-  if (s.includes('run') || s.includes('trail')) return 'run';
-  if (s.includes('walk') || s.includes('hike')) return 'walk';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('weight') || s.includes('strength') || s.includes('gym') || s.includes('workout')) return 'workout';
-  return 'activity';
+  return sportNotifLabel(normalizeSportForNotif(sport));
 }
 
 /**

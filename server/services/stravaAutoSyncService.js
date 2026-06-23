@@ -29,6 +29,7 @@ async function syncStravaForUser(user, opts = {}) {
   // Track stravaId of newly-imported activities so the push notification can
   // deep-link to the most recent one (great for the "tap → add lactate" flow).
   const importedActivityIds = [];
+  let latestImportedDoc = null;
   let updated = 0;
   let rateLimited = false;
 
@@ -145,6 +146,10 @@ async function syncStravaForUser(user, opts = {}) {
         
         for (const a of arr) {
           try {
+            const existing = await StravaActivity.findOne(
+              { userId: user._id, stravaId: a.id },
+              { movingTime: 1, elapsedTime: 1, distance: 1, manualTss: 1, metricsManualized: 1 },
+            ).lean();
             const doc = {
               userId: user._id.toString(),
               stravaId: a.id,
@@ -163,6 +168,12 @@ async function syncStravaForUser(user, opts = {}) {
                   : null,
               raw: a
             };
+            if (existing?.metricsManualized) {
+              if (existing.movingTime != null) doc.movingTime = existing.movingTime;
+              if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
+              if (existing.distance != null) doc.distance = existing.distance;
+              if (existing.manualTss != null) doc.manualTss = existing.manualTss;
+            }
             
             const resUp = await StravaActivity.updateOne(
               { userId: user._id, stravaId: a.id },
@@ -173,6 +184,9 @@ async function syncStravaForUser(user, opts = {}) {
             if (resUp.upsertedCount > 0) {
               imported += 1;
               importedActivityIds.push(a.id);
+              if (!latestImportedDoc || doc.startDate > latestImportedDoc.startDate) {
+                latestImportedDoc = doc;
+              }
             } else if (resUp.modifiedCount > 0) updated += 1;
 
             // Track the newest start_date we saw so lastSyncDate can be
@@ -270,32 +284,18 @@ async function syncStravaForUser(user, opts = {}) {
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
 
     if (imported > 0) {
-      // Push the newest imported activity ID so the mobile app can deep-link
-      // straight into that activity (single-activity case = "tap → add lactate")
       const latestImportedId = importedActivityIds.length === 1
         ? importedActivityIds[0]
-        : null;
+        : (latestImportedDoc?.stravaId ?? null);
 
-      const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-      notifyUserStravaActivitiesImported(user._id, imported, { latestActivityId: latestImportedId }).catch((e) =>
-        console.error('[StravaAutoSync] push notify:', e.message || e)
+      const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
+      notifyStravaImportedPush(
+        user._id,
+        imported,
+        latestImportedId,
+        latestImportedDoc?.sport,
+        latestImportedDoc,
       );
-
-      // In-app notification (bell). The manual sync does this too via
-      // notifyStravaImportedPush — auto-sync was missing it, so the bell
-      // stayed empty after a background import.
-      const { sendNotification } = require('../utils/notificationHelper');
-      const body = imported === 1
-        ? '1 new activity imported — tap to add lactate.'
-        : `${imported} new activities imported from Strava.`;
-      sendNotification(String(user._id), {
-        type: 'strava_import',
-        title: 'Strava sync',
-        body,
-        resourceType: 'strava',
-        resourceId: latestImportedId ? String(latestImportedId) : undefined,
-        skipPush: true,
-      }).catch((e) => console.error('[StravaAutoSync] in-app notify:', e.message || e));
     }
 
     const latestImportedId = importedActivityIds.length === 1

@@ -486,69 +486,6 @@ const TARGET_TYPES = [
   { value: 'watts',       label: 'Exact watts' },
 ];
 
-function TargetEditor({ value = {}, onChange, label = 'Power target' }) {
-  const t = value || {};
-  const set = (k, v) => onChange({ ...t, [k]: v });
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide w-full">{label}</span>
-      <select value={t.type||'open'} onChange={e=>onChange({type:e.target.value,value:null,useRange:false})}
-        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary">
-        {TARGET_TYPES.map(tt=><option key={tt.value} value={tt.value}>{tt.label}</option>)}
-      </select>
-      {t.type==='zone' && (
-        <>
-          <select value={t.value||2} onChange={e=>set('value',Number(e.target.value))}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
-            {[1,2,3,4,5].map(z=><option key={z} value={z}>Z{z}</option>)}
-          </select>
-          <input
-            type="number" step={1} min={1}
-            className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center focus:outline-none focus:ring-1 focus:ring-primary"
-            placeholder="W"
-            value={t.override != null ? t.override : ''}
-            onChange={e => {
-              const w = e.target.value === '' ? undefined : Number(e.target.value);
-              set('override', w != null && w > 0 ? w : undefined);
-            }}
-          />
-          {t.override > 0 && <span className="text-xs text-slate-400">W</span>}
-        </>
-      )}
-      {['percent_ftp','percent_lt1','percent_lt2'].includes(t.type) && (
-        <div className="flex items-center gap-1">
-          {t.useRange ? (
-            <>
-              <input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
-              <span className="text-xs text-slate-400">-</span>
-              <input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
-              <span className="text-xs text-slate-400">%</span>
-            </>
-          ) : (
-            <><input type="number" step={1} min={1} max={300} className="w-14 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="%" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">%</span></>
-          )}
-          <button onClick={()=>set('useRange',!t.useRange)} className="text-[10px] text-primary hover:underline">{t.useRange?'Fixed':'Range'}</button>
-        </div>
-      )}
-      {t.type==='watts' && (
-        <div className="flex items-center gap-1">
-          {t.useRange ? (
-            <>
-              <input type="number" step={1} min={1} className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="min W" value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}/>
-              <span className="text-xs text-slate-400">-</span>
-              <input type="number" step={1} min={1} className="w-16 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="max W" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}/>
-              <span className="text-xs text-slate-400">W</span>
-            </>
-          ) : (
-            <><input type="number" step={1} min={1} className="w-20 text-xs border border-slate-200 rounded-lg px-1.5 py-1 text-center" placeholder="watts" value={t.value||''} onChange={e=>set('value',Number(e.target.value))}/><span className="text-xs text-slate-400">W</span></>
-          )}
-          <button onClick={()=>set('useRange',!t.useRange)} className="text-[10px] text-primary hover:underline">{t.useRange?'Fixed':'Range'}</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Workout Preview Chart – hover tooltips, power labels, drag-to-resize ────
 export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
   const svgRef = useRef(null);

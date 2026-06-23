@@ -41,11 +41,31 @@ async function waitForBridge(maxMs = 3500) {
   return false;
 }
 
+/** On iOS we ship LaChartHealthPlugin in-app — never route auth through Capgo (can hang). */
+function iosHealthPlugin() {
+  return LaChartHealth;
+}
+
 /**
  * Resolve the native Health plugin. Probes LaChartHealth with a real call — more
  * reliable than Capacitor.isPluginAvailable() right after mount.
  */
 async function resolveHealthPlugin() {
+  if (Capacitor.getPlatform() === 'ios') {
+    try {
+      const v = await Promise.race([
+        LaChartHealth.getPluginVersion(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+      ]);
+      if (v?.version && v.version !== 'web') {
+        return { plugin: LaChartHealth, name: 'LaChartHealth', version: v.version };
+      }
+    } catch {
+      /* getPluginVersion slow — still use in-app plugin on device */
+    }
+    return { plugin: LaChartHealth, name: 'LaChartHealth', version: 'ios-native' };
+  }
+
   try {
     const v = await Promise.race([
       LaChartHealth.getPluginVersion(),
@@ -61,7 +81,7 @@ async function resolveHealthPlugin() {
   if (Capacitor.isPluginAvailable('Health')) {
     try {
       const { Health } = await import('@capgo/capacitor-health');
-      const v = await Health.getPluginVersion?.().catch(() => ({}));
+      const v = await withTimeout(Health.getPluginVersion?.() ?? Promise.resolve({}), 3000, 'Health plugin');
       if (v?.version && v.version !== 'web') {
         return { plugin: Health, name: 'Health', version: v.version };
       }
@@ -74,6 +94,9 @@ async function resolveHealthPlugin() {
 }
 
 async function getHealth() {
+  if (Capacitor.getPlatform() === 'ios') {
+    return iosHealthPlugin();
+  }
   const resolved = await resolveHealthPlugin();
   if (resolved.plugin) return resolved.plugin;
   if (Capacitor.isPluginAvailable('LaChartHealth')) return LaChartHealth;
@@ -183,6 +206,28 @@ export async function checkAppleHealthAvailable() {
   return available;
 }
 
+/** Wellness-only — registers Sleep / Resting HR / HRV in Health → Apps → LaChart (iPhone). */
+export async function requestWellnessAuthorizationOnly() {
+  if (!isAppleHealthSupported()) {
+    return { ok: false, reason: 'not_ios' };
+  }
+  const Health = iosHealthPlugin();
+  if (typeof Health.requestWellnessAuthorization === 'function') {
+    const result = await withTimeout(
+      Health.requestWellnessAuthorization(),
+      10000,
+      'Wellness permission',
+    );
+    return { ok: true, ...result };
+  }
+  const result = await withTimeout(
+    Health.requestAuthorization({ read: WELLNESS_PERMISSION_IDS, write: [] }),
+    10000,
+    'Wellness permission',
+  );
+  return { ok: true, ...result };
+}
+
 export async function requestAppleHealthAccess() {
   if (!isAppleHealthSupported()) {
     return { granted: false, reason: 'not_ios' };
@@ -191,36 +236,48 @@ export async function requestAppleHealthAccess() {
   let available = true;
   let reason = null;
   try {
-    const check = await Health.isAvailable();
+    const check = await withTimeout(Health.isAvailable(), 8000, 'Health availability');
     available = Boolean(check?.available);
     reason = check?.reason || null;
   } catch (e) {
-    if (!Capacitor.isPluginAvailable('LaChartHealth')) {
+    if (Capacitor.getPlatform() !== 'ios') {
       return { granted: false, reason: e?.message || 'unavailable' };
     }
+    available = true;
   }
-  if (!available && !Capacitor.isPluginAvailable('LaChartHealth')) {
+  if (!available && Capacitor.getPlatform() !== 'ios') {
     return { granted: false, reason: reason || 'unavailable' };
   }
 
   let authWarning = null;
+
+  // Step 1: wellness-only — registers Sleep / Resting HR / HRV in Health → Apps → LaChart (iPhone).
+  try {
+    const wellnessAuth = await requestWellnessAuthorizationOnly();
+    if (wellnessAuth?.timedOut) {
+      authWarning = 'Wellness permission timed out. Open Health → Profile → Apps → LaChart and scroll down — enable Resting Heart Rate, Sleep and HRV (below workout types from Apple Watch).';
+    }
+  } catch (e) {
+    authWarning = e?.message || 'Wellness permission incomplete — will still try to read data.';
+  }
+
+  // Step 2: workouts + heart rate (full sync).
   try {
     const result = await withTimeout(
       Health.requestAuthorization({
         read: APPLE_HEALTH_READ_TYPES,
         write: [],
       }),
-      12000,
+      10000,
       'Health permission',
     );
     if (result?.timedOut) {
-      authWarning = 'Permission dialog timed out — continuing sync. Enable Resting Heart Rate, Sleep and HRV in Health → Apps → LaChart.';
+      authWarning = authWarning || 'Permission dialog timed out. Enable Resting Heart Rate, Sleep and HRV in Health → Apps → LaChart.';
     }
   } catch (e) {
-    authWarning = e?.message || 'Permission request incomplete — trying to read available data anyway.';
+    authWarning = authWarning || e?.message || 'Permission request incomplete — trying to read available data anyway.';
   }
 
-  // HealthKit never tells us if read access was granted — always try reading next.
   return { granted: true, warning: authWarning };
 }
 

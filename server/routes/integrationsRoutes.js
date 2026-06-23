@@ -15,6 +15,7 @@ const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { notifyCoachesOfAthlete, notifyAthlete, sendNotification } = require('../utils/notificationHelper');
 const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
+const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -175,6 +176,16 @@ function invalidateActivitiesCacheForUser(userId) {
   for (const key of keys) {
     if (key.includes(`:${uid}:`)) activitiesCache.del(key);
   }
+}
+
+/** Keep user-edited duration/distance/TSS when Strava sync re-fetches the activity. */
+function preserveManualStravaMetrics(existing, doc) {
+  if (!existing?.metricsManualized || !doc) return doc;
+  if (existing.movingTime != null) doc.movingTime = existing.movingTime;
+  if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
+  if (existing.distance != null) doc.distance = existing.distance;
+  if (existing.manualTss != null) doc.manualTss = existing.manualTss;
+  return doc;
 }
 
 // Produkční API URL pro Strava redirect (callback musí směřovat na backend)
@@ -420,6 +431,10 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null) {
         }
 
         for (const a of arr) {
+          const existing = await StravaActivity.findOne(
+            { userId: user._id, stravaId: a.id },
+            { movingTime: 1, elapsedTime: 1, distance: 1, manualTss: 1, metricsManualized: 1 },
+          ).lean();
           const doc = {
             userId: user._id.toString(),
             stravaId: a.id,
@@ -434,6 +449,7 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null) {
             averagePower: a.average_watts || null,
             raw: a
           };
+          preserveManualStravaMetrics(existing, doc);
 
           await StravaActivity.updateOne(
             { userId: user._id, stravaId: a.id },
@@ -952,62 +968,6 @@ function invalidateStravaActivityCache(userId, stravaId) {
   if (userId && stravaId) stravaActivityCache.delete(`${userId}:${stravaId}`);
 }
 
-/** Normalize Strava / Garmin sport type → 'bike' | 'run' | 'swim' | null */
-function normalizeSportForNotif(sport) {
-  if (!sport) return null;
-  const s = String(sport).toLowerCase();
-  if (/ride|bike|cycl|velo/.test(s)) return 'bike';
-  if (/run|trail|treadmill|walk|hike/.test(s)) return 'run';
-  if (/swim/.test(s)) return 'swim';
-  return null;
-}
-
-function notifyStravaImportedPush(userId, imported, latestStravaId = null, latestSport = null, activityDoc = null) {
-  const n = Number(imported);
-  if (!userId || !Number.isFinite(n) || n < 1) return;
-
-  // Expo push (mobile) — pass full activity doc so the helper can build a
-  // rich "You logged a 10.2 km run!" message.
-  const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
-  notifyUserStravaActivitiesImported(userId, n, {
-    latestActivityId: latestStravaId,
-    activity: activityDoc || null,
-  }).catch((e) => console.error('[Strava sync push]', e.message || e));
-
-  // In-app notification (bell) — when we have the full activity doc, use its
-  // NAME as the title (e.g. "Ranní plavání") and put the sport + distance in
-  // the body so the user can scan the bell at a glance and know what's
-  // waiting. When we only know "N new activities were imported" (batch case
-  // from polling) we fall back to a generic title.
-  const { sendNotification } = require('../utils/notificationHelper');
-  let title = 'New training synced';
-  let body;
-  const sportLabel = normalizeSportForNotif(latestSport || activityDoc?.sport);
-  if (n === 1 && activityDoc) {
-    const dist = activityDoc.distance >= 1000
-      ? `${(activityDoc.distance / 1000).toFixed(1)} km`
-      : activityDoc.distance > 0 ? `${Math.round(activityDoc.distance)} m` : null;
-    // Activity name when present — fall back to "New {sport} synced" so we
-    // never produce an empty / "Untitled" title.
-    const actName = activityDoc.name && String(activityDoc.name).trim();
-    title = actName || `New ${sportLabel || 'activity'} synced`;
-    const sport = sportLabel || 'activity';
-    body = dist
-      ? `${sport.charAt(0).toUpperCase() + sport.slice(1)} · ${dist} · Tap to add lactate`
-      : `${sport.charAt(0).toUpperCase() + sport.slice(1)} · Tap to add lactate`;
-  } else {
-    body = n === 1 ? '1 new activity imported from Strava.' : `${n} new activities imported from Strava.`;
-  }
-  sendNotification(String(userId), {
-    type: 'strava_import',
-    title,
-    body,
-    resourceType: 'strava',
-    sport: sportLabel,
-    skipPush: true,
-    ...(latestStravaId ? { resourceId: String(latestStravaId) } : {}),
-  }).catch((e) => console.error('[Strava sync notification]', e.message || e));
-}
 
 // ─── Strava webhook (push subscription) ──────────────────────────────────────
 // Real-time activity sync. Strava sends a POST when an athlete creates or
@@ -1059,8 +1019,9 @@ async function fetchAndSaveStravaActivity(user, stravaActivityId, opts = {}) {
   try {
     const existing = await StravaActivity.findOne(
       { userId: user._id, stravaId: a.id },
-      { category: 1 },
+      { category: 1, movingTime: 1, elapsedTime: 1, distance: 1, manualTss: 1, metricsManualized: 1 },
     ).lean();
+    preserveManualStravaMetrics(existing, doc);
     if (!existing?.category) {
       const { category: titleCat, matchedKeyword } = _acCategorizeByTitle(a.name);
       if (titleCat) {
@@ -1506,6 +1467,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         // Process activities in batch to avoid overwhelming the database
         for (const a of arr) {
           try {
+            const existing = await StravaActivity.findOne(
+              { userId: user._id, stravaId: a.id },
+              { movingTime: 1, elapsedTime: 1, distance: 1, manualTss: 1, metricsManualized: 1 },
+            ).lean();
             const doc = {
               userId: user._id.toString(),
               stravaId: a.id,
@@ -1524,6 +1489,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
                   : null,
               raw: a
             };
+            preserveManualStravaMetrics(existing, doc);
             
             const resUp = await StravaActivity.updateOne(
               { userId: user._id, stravaId: a.id },
@@ -2901,136 +2867,237 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
 // ── Similar activities (for Compare tab) ─────────────────────────────────────
 // GET /api/integrations/activities/similar
 // Must be declared BEFORE /activities to avoid the :id wildcard catching it.
+
+const SIMILAR_TITLE_STOPWORDS = new Set([
+  'morning', 'evening', 'afternoon', 'night', 'midday',
+  'ride', 'run', 'swim', 'bike', 'cycling', 'running', 'swimming',
+  'training', 'workout', 'session', 'activity', 'indoor', 'outdoor',
+  'easy', 'long', 'hard', 'short', 'recovery', 'active', 'rest',
+  'virtual', 'zwift', 'trainer', 'commute', 'lunch',
+]);
+
+function distinctiveTitleTokens(title) {
+  return String(title || '').toLowerCase()
+    .replace(/[·\-_,/;:!?@#()]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.replace(/[^a-z0-9]/gi, ''))
+    .filter((t) => t.length >= 3 && !SIMILAR_TITLE_STOPWORDS.has(t));
+}
+
+function buildTitleOrConditions(title, titleKeywords) {
+  const or = [];
+  const addRegex = (field, pattern) => { or.push({ [field]: pattern }); };
+
+  const keywordList = String(titleKeywords || '').split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length >= 3);
+
+  const tokens = keywordList.length > 0 ? keywordList : distinctiveTitleTokens(title);
+  const raw = String(title || '').trim();
+
+  if (raw) {
+    const esc = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const fullRegex = new RegExp(esc, 'i');
+    ['titleManual', 'titleAuto', 'title', 'name'].forEach((f) => addRegex(f, fullRegex));
+  }
+
+  tokens.forEach((tok) => {
+    const esc = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const r = new RegExp(esc, 'i');
+    ['titleManual', 'titleAuto', 'title', 'name'].forEach((f) => addRegex(f, r));
+  });
+
+  return or;
+}
+
+function applySimilarExcludeId(filter, excludeId, source) {
+  if (!excludeId) return;
+  if (source === 'strava') {
+    const numId = parseInt(String(excludeId).replace(/^strava-/i, ''), 10);
+    if (!isNaN(numId)) filter.stravaId = { $ne: numId };
+  } else if (source === 'fit' && String(excludeId).startsWith('fit-')) {
+    filter._id = { $ne: String(excludeId).replace(/^fit-/, '') };
+  } else if (source === 'regular' && String(excludeId).startsWith('regular-')) {
+    filter._id = { $ne: String(excludeId).replace(/^regular-/, '') };
+  }
+}
+
+function similarSportQuery(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (/bike|cycling|ride/.test(s)) return { $in: ['bike', 'cycling', 'ride', 'Bike', 'Ride', 'Cycling', 'VirtualRide', 'virtualride'] };
+  if (/run/.test(s)) return { $in: ['run', 'running', 'Run', 'Running', 'TrailRun', 'trailrun'] };
+  if (/swim/.test(s)) return { $in: ['swim', 'swimming', 'Swim', 'Swimming'] };
+  return sport;
+}
+
+function buildStructureFilter(base, duration, distance, lapCount, source) {
+  const f = { ...base };
+  const dur = parseFloat(duration);
+  const dist = parseFloat(distance);
+  const laps = parseInt(lapCount, 10);
+
+  if (dur > 0) {
+    const min = dur * 0.72;
+    const max = dur * 1.28;
+    if (source === 'strava') f.elapsed_time = { $gte: min, $lte: max };
+    else if (source === 'fit') f.totalElapsedTime = { $gte: min, $lte: max };
+  }
+  if (dist > 0) {
+    const min = dist * 0.78;
+    const max = dist * 1.22;
+    if (source === 'strava') f.distance = { $gte: min, $lte: max };
+    else if (source === 'fit') f.totalDistance = { $gte: min, $lte: max };
+  }
+  if (laps > 2) {
+    f['laps.0'] = { $exists: true };
+  }
+  return f;
+}
+
+function normalizeSimilarActivity(a, source) {
+  if (source === 'strava') {
+    return {
+      id: `strava-${a.stravaId}`,
+      type: 'strava',
+      date: a.startDate,
+      title: a.titleManual || a.name || 'Activity',
+      category: a.category || null,
+      lactate: a.lactate != null ? Number(a.lactate) : null,
+      sport: a.sport || null,
+      distance: Number(a.distance || 0),
+      duration: Number(a.elapsed_time || 0),
+      avgHr: Number(a.average_heartrate || 0),
+      avgPower: Number(a.average_watts || 0),
+      avgSpeed: Number(a.average_speed || 0),
+      elevation: Number(a.total_elevation_gain || 0),
+      laps: Array.isArray(a.laps) ? a.laps : [],
+    };
+  }
+  if (source === 'fit') {
+    return {
+      id: `fit-${a._id}`,
+      type: 'fit',
+      date: a.timestamp,
+      title: a.titleManual || a.titleAuto || 'FIT Activity',
+      category: a.category || null,
+      lactate: a.lactate != null ? Number(a.lactate) : null,
+      sport: a.sport || null,
+      distance: Number(a.totalDistance || 0),
+      duration: Number(a.totalElapsedTime || 0),
+      avgHr: Number(a.avgHeartRate || 0),
+      avgPower: Number(a.avgPower || 0),
+      avgSpeed: Number(a.avgSpeed || 0),
+      elevation: 0,
+      laps: Array.isArray(a.laps) ? a.laps : [],
+    };
+  }
+  return {
+    id: `regular-${a._id}`,
+    type: 'regular',
+    date: a.date,
+    title: a.title || 'Training',
+    category: a.category || null,
+    lactate: null,
+    sport: a.sport || null,
+    distance: 0,
+    duration: Number(a.duration || 0),
+    avgHr: 0,
+    avgPower: 0,
+    avgSpeed: 0,
+    elevation: 0,
+    laps: [],
+  };
+}
+
 router.get('/activities/similar', verifyToken, async (req, res) => {
   try {
-    const { title, category, sport, lactate, excludeId, limit = 30 } = req.query;
-    const limitNum = Math.min(parseInt(limit, 10) || 30, 100);
+    const {
+      title, titleKeywords, category, sport, lactate, excludeId,
+      duration, distance, lapCount, structure,
+      limit = 40,
+    } = req.query;
+    const limitNum = Math.min(parseInt(limit, 10) || 40, 100);
+    const wantStructure = structure === '1' || structure === 'true';
 
-    // Resolve target user (supports coach athleteId param)
     const resolved = await resolveIntegrationTargetUserId(req);
     if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
     const { targetUserId } = resolved;
 
-    // Build OR filter conditions based on provided params
-    const orConditions = [];
-    if (title) {
-      const titleRegex = new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      orConditions.push(
-        { titleManual: titleRegex },
-        { titleAuto: titleRegex },
-        { title: titleRegex },
-        { name: titleRegex }
-      );
-    }
-    if (category) {
-      orConditions.push({ category });
-    }
+    const orConditions = buildTitleOrConditions(title, titleKeywords);
+    if (category) orConditions.push({ category });
     if (lactate != null && !isNaN(parseFloat(lactate))) {
       const la = parseFloat(lactate);
       orConditions.push({ lactate: { $gte: la - 1.5, $lte: la + 1.5, $gt: 0 } });
     }
 
-    if (orConditions.length === 0) {
+    const hasMetaSearch = orConditions.length > 0;
+    const hasStructureSearch = wantStructure && (parseFloat(duration) > 0 || parseFloat(distance) > 0);
+
+    if (!hasMetaSearch && !hasStructureSearch) {
       return res.json([]);
     }
 
     const FitTraining = require('../models/fitTraining');
+    const uid = targetUserId.toString();
 
-    // Build queries for each source
-    const stravaFilter = { userId: targetUserId.toString(), $or: orConditions };
-    if (sport) stravaFilter.sport = sport;
-    if (excludeId) {
-      const numId = parseInt(String(excludeId).replace(/^strava-/i, ''), 10);
-      if (!isNaN(numId)) stravaFilter.stravaId = { $ne: numId };
+    const stravaSelect = 'stravaId titleManual name category lactate sport startDate distance elapsed_time average_heartrate average_watts average_speed total_elevation_gain laps';
+    const fitSelect = '_id titleManual titleAuto category lactate sport timestamp totalDistance totalElapsedTime avgHeartRate avgPower avgSpeed laps';
+
+    const queryJobs = [];
+
+    if (hasMetaSearch) {
+      const stravaFilter = { userId: uid, $or: orConditions };
+      if (sport) stravaFilter.sport = similarSportQuery(sport);
+      applySimilarExcludeId(stravaFilter, excludeId, 'strava');
+
+      const fitFilter = { athleteId: uid, $or: orConditions };
+      if (sport) fitFilter.sport = similarSportQuery(sport);
+      applySimilarExcludeId(fitFilter, excludeId, 'fit');
+
+      const trainingFilter = { athleteId: uid, $or: orConditions.filter((c) => c.title || c.category) };
+      if (sport) trainingFilter.sport = similarSportQuery(sport);
+      applySimilarExcludeId(trainingFilter, excludeId, 'regular');
+
+      queryJobs.push(
+        { promise: StravaActivity.find(stravaFilter).sort({ startDate: -1 }).limit(limitNum).select(stravaSelect).lean(), source: 'strava' },
+        { promise: FitTraining.find(fitFilter).sort({ timestamp: -1 }).limit(limitNum).select(fitSelect).lean(), source: 'fit' },
+        trainingFilter.$or?.length
+          ? { promise: Training.find(trainingFilter).sort({ date: -1 }).limit(limitNum).select('_id title category sport date duration results').lean(), source: 'regular' }
+          : null,
+      );
     }
 
-    const fitFilter = { athleteId: targetUserId.toString(), $or: orConditions };
-    if (sport) fitFilter.sport = sport;
-    if (excludeId && String(excludeId).startsWith('fit-')) {
-      fitFilter._id = { $ne: String(excludeId).replace(/^fit-/, '') };
+    if (hasStructureSearch) {
+      const stravaStruct = buildStructureFilter({ userId: uid }, duration, distance, lapCount, 'strava');
+      const fitStruct = buildStructureFilter({ athleteId: uid }, duration, distance, lapCount, 'fit');
+      if (sport) {
+        stravaStruct.sport = similarSportQuery(sport);
+        fitStruct.sport = similarSportQuery(sport);
+      }
+      applySimilarExcludeId(stravaStruct, excludeId, 'strava');
+      applySimilarExcludeId(fitStruct, excludeId, 'fit');
+
+      queryJobs.push(
+        { promise: StravaActivity.find(stravaStruct).sort({ startDate: -1 }).limit(limitNum).select(stravaSelect).lean(), source: 'strava' },
+        { promise: FitTraining.find(fitStruct).sort({ timestamp: -1 }).limit(limitNum).select(fitSelect).lean(), source: 'fit' },
+      );
     }
 
-    const trainingFilter = { athleteId: targetUserId.toString(), $or: orConditions.filter(c => c.title || c.category) };
-    if (sport) trainingFilter.sport = sport;
-    if (excludeId && String(excludeId).startsWith('regular-')) {
-      trainingFilter._id = { $ne: String(excludeId).replace(/^regular-/, '') };
-    }
+    const batches = await Promise.all(queryJobs.filter(Boolean).map((j) => j.promise));
+    const seen = new Set();
+    const unified = [];
 
-    const [stravaActs, fitActs, trainingActs] = await Promise.all([
-      StravaActivity.find(stravaFilter)
-        .sort({ startDate: -1 })
-        .limit(limitNum)
-        .select('stravaId titleManual category lactate sport startDate distance elapsed_time average_heartrate average_watts average_speed total_elevation_gain laps')
-        .lean(),
-      FitTraining.find(fitFilter)
-        .sort({ timestamp: -1 })
-        .limit(limitNum)
-        .select('_id titleManual titleAuto category lactate sport timestamp totalDistance totalElapsedTime avgHeartRate avgPower avgSpeed laps')
-        .lean(),
-      trainingFilter.$or && trainingFilter.$or.length > 0
-        ? Training.find(trainingFilter)
-            .sort({ date: -1 })
-            .limit(limitNum)
-            .select('_id title category sport date duration results')
-            .lean()
-        : Promise.resolve([]),
-    ]);
+    batches.forEach((batch, i) => {
+      const source = queryJobs.filter(Boolean)[i].source;
+      (Array.isArray(batch) ? batch : []).forEach((a) => {
+        const norm = normalizeSimilarActivity(a, source);
+        if (seen.has(norm.id)) return;
+        seen.add(norm.id);
+        unified.push(norm);
+      });
+    });
 
-    // Normalize to unified shape
-    const unified = [
-      ...stravaActs.map(a => ({
-        id: `strava-${a.stravaId}`,
-        type: 'strava',
-        date: a.startDate,
-        title: a.titleManual || a.name || 'Activity',
-        category: a.category || null,
-        lactate: a.lactate != null ? Number(a.lactate) : null,
-        sport: a.sport || null,
-        distance: Number(a.distance || 0),
-        duration: Number(a.elapsed_time || 0),
-        avgHr: Number(a.average_heartrate || 0),
-        avgPower: Number(a.average_watts || 0),
-        avgSpeed: Number(a.average_speed || 0),
-        elevation: Number(a.total_elevation_gain || 0),
-        laps: Array.isArray(a.laps) ? a.laps : [],
-      })),
-      ...fitActs.map(a => ({
-        id: `fit-${a._id}`,
-        type: 'fit',
-        date: a.timestamp,
-        title: a.titleManual || a.titleAuto || 'FIT Activity',
-        category: a.category || null,
-        lactate: a.lactate != null ? Number(a.lactate) : null,
-        sport: a.sport || null,
-        distance: Number(a.totalDistance || 0),
-        duration: Number(a.totalElapsedTime || 0),
-        avgHr: Number(a.avgHeartRate || 0),
-        avgPower: Number(a.avgPower || 0),
-        avgSpeed: Number(a.avgSpeed || 0),
-        elevation: 0,
-        laps: Array.isArray(a.laps) ? a.laps : [],
-      })),
-      ...trainingActs.map(a => ({
-        id: `regular-${a._id}`,
-        type: 'regular',
-        date: a.date,
-        title: a.title || 'Training',
-        category: a.category || null,
-        lactate: null,
-        sport: a.sport || null,
-        distance: 0,
-        duration: 0,
-        avgHr: 0,
-        avgPower: 0,
-        avgSpeed: 0,
-        elevation: 0,
-        laps: [],
-      })),
-    ];
-
-    // Sort by date descending
     unified.sort((a, b) => new Date(b.date) - new Date(a.date));
-
     return res.json(unified.slice(0, limitNum));
   } catch (err) {
     console.error('[integrations] similar activities:', err);
@@ -3105,8 +3172,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       dateFilter.$lte = requestedTo;
     }
     const stravaSelect = summaryOnly
-      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate'
-      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate laps.lactate';
+      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss calories rpe'
+      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss calories rpe laps.lactate';
     const garminSelect = summaryOnly
       ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate'
       : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate laps.lactate';
@@ -3948,12 +4015,25 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     }
     
     res.json({ 
-      detail: detailResp.data, 
+      detail: {
+        ...detailResp.data,
+        moving_time: savedActivity?.movingTime ?? detailResp.data?.moving_time,
+        movingTime: savedActivity?.movingTime ?? detailResp.data?.moving_time ?? detailResp.data?.movingTime,
+        elapsed_time: savedActivity?.elapsedTime ?? detailResp.data?.elapsed_time,
+        distance: savedActivity?.distance ?? detailResp.data?.distance,
+      },
       streams: streamsData, 
       laps: mergedLaps,
       titleManual: savedActivity?.titleManual || null,
       description: savedActivity?.description || null,
-      category: savedActivity?.category || null
+      category: savedActivity?.category || null,
+      movingTime: savedActivity?.movingTime ?? null,
+      elapsedTime: savedActivity?.elapsedTime ?? null,
+      distance: savedActivity?.distance ?? null,
+      manualTss: savedActivity?.manualTss ?? null,
+      calories: savedActivity?.calories ?? null,
+      rpe: savedActivity?.rpe ?? null,
+      lactate: savedActivity?.lactate ?? null,
     });
   } catch (e) {
     console.error('Strava activity detail error', e.response?.data || e.message);
@@ -3964,20 +4044,40 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
 // Update Strava activity title and description
 router.put('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    if (!user) {
+    const requester = await User.findById(req.user.userId);
+    if (!requester) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+
     const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     if (!Number.isFinite(stravaId) || stravaId < 1) {
       return res.status(400).json({ error: 'Invalid Strava activity ID' });
     }
+
+    let targetUserId = requester._id;
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && isCoachLike) {
+      if (String(athleteIdParam) !== String(requester._id)) {
+        const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+        if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+        const isLinkedCoach = Array.isArray(athlete.coaches) &&
+          athlete.coaches.some((c) => String(c) === String(requester._id));
+        if (!isLinkedCoach && role !== 'admin') {
+          return res.status(403).json({ error: 'Not authorised to manage this athlete' });
+        }
+        targetUserId = athlete._id;
+      }
+    } else if (athleteIdParam && String(athleteIdParam) !== String(requester._id)) {
+      return res.status(403).json({ error: 'You are not authorized to update this activity' });
+    }
     
-    const { title, description, category } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate } = req.body;
 
     const activity = await StravaActivity.findOne({
-      userId: user._id,
+      userId: targetUserId,
       stravaId: stravaId
     });
 
@@ -4020,12 +4120,45 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       }
     }
 
+    const durationSecs = movingTime ?? duration ?? elapsedTime;
+    if (durationSecs !== undefined && durationSecs !== null && durationSecs !== '') {
+      const secs = Math.max(0, Math.round(Number(durationSecs)));
+      if (Number.isFinite(secs)) {
+        activity.movingTime = secs;
+        activity.elapsedTime = secs;
+        activity.metricsManualized = true;
+      }
+    }
+    if (distance !== undefined && distance !== null && distance !== '') {
+      const metres = Math.max(0, Math.round(Number(distance)));
+      if (Number.isFinite(metres)) {
+        activity.distance = metres;
+        activity.metricsManualized = true;
+      }
+    }
+    if (calories !== undefined && calories !== null && calories !== '') {
+      const kcal = Math.max(0, Math.round(Number(calories)));
+      if (Number.isFinite(kcal)) activity.calories = kcal;
+    }
+    if (tss !== undefined && tss !== null && tss !== '') {
+      const load = Math.max(0, Math.round(Number(tss)));
+      if (Number.isFinite(load)) {
+        activity.manualTss = load;
+        activity.metricsManualized = true;
+      }
+    }
+    if (rpe !== undefined && rpe !== null && rpe !== '') {
+      const rpeVal = Math.max(0, Math.round(Number(rpe)));
+      if (Number.isFinite(rpeVal)) activity.rpe = rpeVal;
+    }
+    if (lactate !== undefined && lactate !== null && lactate !== '') {
+      const lac = Number(lactate);
+      if (Number.isFinite(lac)) activity.lactate = lac;
+    }
+
     await activity.save();
-    // Bust the 2-min server cache so the next /activities GET returns the
-    // updated title/category immediately instead of the stale snapshot.
-    // Without this, Training History (which re-fetches /activities) won't
-    // see the new titleManual for up to 2 minutes after the edit.
-    invalidateActivitiesCacheForUser(user._id);
+    invalidateActivitiesCacheForUser(targetUserId);
+    invalidateStravaActivityCache(targetUserId, stravaId);
 
     // Update Training records with the same title
     if (title !== undefined && title && typeof title === 'string' && title.trim()) {
@@ -4042,7 +4175,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
         
         // Find Training records with the same title (old or new)
         const trainingRecords = await Training.find({
-          athleteId: user._id ? user._id.toString() : String(user._id),
+          athleteId: targetUserId ? targetUserId.toString() : String(targetUserId),
           title: { $in: titleQuery.filter(t => t) }
         });
         
@@ -4068,6 +4201,79 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating Strava activity:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update Garmin activity metadata (title, duration, distance, etc.)
+router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
+  try {
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+
+    const garminId = String(req.params.id || '').trim();
+    if (!garminId) return res.status(400).json({ error: 'Invalid Garmin activity ID' });
+
+    let targetUserId = requester._id;
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && isCoachLike) {
+      if (String(athleteIdParam) !== String(requester._id)) {
+        const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+        if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+        const isLinkedCoach = Array.isArray(athlete.coaches) &&
+          athlete.coaches.some((c) => String(c) === String(requester._id));
+        if (!isLinkedCoach && role !== 'admin') {
+          return res.status(403).json({ error: 'Not authorised to manage this athlete' });
+        }
+        targetUserId = athlete._id;
+      }
+    } else if (athleteIdParam && String(athleteIdParam) !== String(requester._id)) {
+      return res.status(403).json({ error: 'You are not authorized to update this activity' });
+    }
+
+    const GarminActivity = require('../models/GarminActivity');
+    const activity = await GarminActivity.findOne({ userId: targetUserId, garminId });
+    if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
+
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, rpe, lactate } = req.body;
+    if (title !== undefined) {
+      activity.titleManual = (title && typeof title === 'string' && title.trim()) ? title.trim() : null;
+    }
+    if (description !== undefined) {
+      activity.description = (description && typeof description === 'string' && description.trim()) ? description.trim() : null;
+    }
+    if (category !== undefined) {
+      activity.category = category || null;
+    }
+    const durationSecs = movingTime ?? duration ?? elapsedTime;
+    if (durationSecs !== undefined && durationSecs !== null && durationSecs !== '') {
+      const secs = Math.max(0, Math.round(Number(durationSecs)));
+      if (Number.isFinite(secs)) {
+        activity.movingTime = secs;
+        activity.elapsedTime = secs;
+      }
+    }
+    if (distance !== undefined && distance !== null && distance !== '') {
+      const metres = Math.max(0, Math.round(Number(distance)));
+      if (Number.isFinite(metres)) activity.distance = metres;
+    }
+    if (rpe !== undefined && rpe !== null && rpe !== '') {
+      const rpeVal = Math.max(0, Math.round(Number(rpe)));
+      if (Number.isFinite(rpeVal)) activity.rpe = rpeVal;
+    }
+    if (lactate !== undefined && lactate !== null && lactate !== '') {
+      const lac = Number(lactate);
+      if (Number.isFinite(lac)) activity.lactate = lac;
+    }
+
+    await activity.save();
+    invalidateActivitiesCacheForUser(targetUserId);
+    res.json({ success: true, activity });
+  } catch (error) {
+    console.error('Error updating Garmin activity:', error);
     res.status(500).json({ error: error.message });
   }
 });

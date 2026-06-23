@@ -867,6 +867,17 @@ export const sendStravaReminderEmail = async (userId) => {
   }
 };
 
+// Send "download the iOS app" email to a user (admin only)
+export const sendAppDownloadEmail = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/send-app-download-email/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending app download email:', error);
+    throw error;
+  }
+};
+
 // Send custom coach outreach email to arbitrary contact (admin only)
 // preview: true → delivers to admin's own email and skips lead tracking
 export const sendCoachOutreachEmail = async ({ name, email, subject, body, preview = false }) => {
@@ -1218,14 +1229,9 @@ export const updateLactateValues = async (trainingId, lactateValues) => {
   }
 };
 
-export const updateFitTraining = async (trainingId, { title, description, category, selectedLapIndices }) => {
+export const updateFitTraining = async (trainingId, payload = {}) => {
   try {
-    const response = await api.put(`/api/fit/trainings/${trainingId}`, {
-      title,
-      description,
-      category,
-      selectedLapIndices
-    });
+    const response = await api.put(`/api/fit/trainings/${trainingId}`, payload);
     // Drop every cached payload that could echo the old value (FIT list,
     // integrations activities, monthly aggregates, etc.) — otherwise a quick
     // reload re-serves the pre-update snapshot.
@@ -1629,14 +1635,31 @@ export const deleteStravaActivity = async (stravaId, athleteId = null) => {
   return data; // { ok: true, deleted: { activity, streams } }
 };
 
-export const updateStravaActivity = async (stravaId, { title, description, category }) => {
+export const updateGarminActivity = async (garminId, payload = {}, athleteId = null) => {
+  try {
+    const params = athleteId ? { athleteId } : {};
+    const response = await api.put(
+      `/api/integrations/garmin/activities/${encodeURIComponent(garminId)}`,
+      payload,
+      { params },
+    );
+    invalidateTrainingCaches();
+    return response.data;
+  } catch (error) {
+    console.error('Error updating Garmin activity:', error);
+    throw error;
+  }
+};
+
+export const updateStravaActivity = async (stravaId, payload = {}, athleteId = null) => {
   try {
     const id = normalizeStravaActivityRouteId(stravaId);
-    const response = await api.put(`/api/integrations/strava/activities/${encodeURIComponent(id)}`, {
-      title,
-      description,
-      category
-    });
+    const params = athleteId ? { athleteId } : {};
+    const response = await api.put(
+      `/api/integrations/strava/activities/${encodeURIComponent(id)}`,
+      payload,
+      { params },
+    );
     // The integrations/activities list is heavily cached (120s TTL +
     // localStorage). Without this, the page reloads after a category edit
     // re-serve the stale entry and the user thinks the save failed.
@@ -1823,15 +1846,32 @@ export const deleteFieldLactateMeasurement = (id) => api.delete(`/api/field-lact
 export const assignFieldLactateMeasurement = (id, assignment) => api.put(`/api/field-lactate/${id}/assign`, assignment).then(r => r.data);
 
 // Similar activities (for Compare tab in ActivityFullModal)
-export const getSimilarActivities = async ({ title, category, sport, lactate, excludeId, athleteId, limit = 30 } = {}) => {
-  const params = {};
-  if (title)     params.title = title;
-  if (category)  params.category = category;
-  if (sport)     params.sport = sport;
+export const getSimilarActivities = async ({
+  title,
+  titleKeywords,
+  category,
+  sport,
+  lactate,
+  excludeId,
+  athleteId,
+  duration,
+  distance,
+  lapCount,
+  structure,
+  limit = 40,
+} = {}) => {
+  const params = { limit };
+  if (title) params.title = title;
+  if (titleKeywords) params.titleKeywords = titleKeywords;
+  if (category) params.category = category;
+  if (sport) params.sport = sport;
   if (lactate != null) params.lactate = lactate;
   if (excludeId) params.excludeId = excludeId;
   if (athleteId) params.athleteId = athleteId;
-  params.limit = limit;
+  if (duration > 0) params.duration = duration;
+  if (distance > 0) params.distance = distance;
+  if (lapCount > 0) params.lapCount = lapCount;
+  if (structure) params.structure = '1';
   const { data } = await api.get('/api/integrations/activities/similar', { params });
-  return data; // array
+  return data;
 };

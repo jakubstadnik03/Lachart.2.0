@@ -10,6 +10,7 @@ import {
   writePremiumPreviewNoAccess,
   userWithPremiumPreviewApplied,
 } from '../utils/premiumPreview';
+import { syncTssDisplayModeFromUser } from '../utils/uiPrefs';
 
 const AuthContext = createContext(null);
 
@@ -135,6 +136,7 @@ export const AuthProvider = ({ children }) => {
 
           setToken(storedToken);
           setUser(response.data);
+          syncTssDisplayModeFromUser(response.data);
           setIsAuthenticated(true);
           saveUserToStorage(response.data);
 
@@ -228,6 +230,7 @@ export const AuthProvider = ({ children }) => {
       const updatedUser = event.detail;
       if (updatedUser) {
         setUser(updatedUser);
+        syncTssDisplayModeFromUser(updatedUser);
         saveUserToStorage(updatedUser);
       }
     };
@@ -283,6 +286,7 @@ export const AuthProvider = ({ children }) => {
       const applyLogin = (loginToken, loginUser) => {
         setToken(loginToken);
         setUser(loginUser);
+        syncTssDisplayModeFromUser(loginUser);
         saveToken(loginToken);
         saveUserToStorage(loginUser);
         setIsAuthenticated(true);

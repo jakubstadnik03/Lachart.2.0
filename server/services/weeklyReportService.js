@@ -129,7 +129,7 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
       .select('stravaId name titleManual category sport startDate movingTime distance averageHeartRate averagePower averageSpeed'),
     FitTraining.find({ athleteId: String(userId), timestamp: { $gte: weekStart, $lt: weekEnd } })
       .sort({ timestamp: 1 })
-      .select('_id titleManual titleAuto category sport timestamp totalElapsedTime totalDistance avgHeartRate avgPower avgSpeed'),
+      .select('_id titleManual titleAuto category sport timestamp totalElapsedTime totalDistance avgHeartRate maxHeartRate avgPower normalizedPower avgSpeed trainingStressScore'),
     Training.find({ athleteId: String(userId), date: { $gte: weekStart, $lt: weekEnd } })
       .sort({ date: 1 })
       .select('_id title sport date duration results sourceFitTrainingId sourceStravaActivityId')
@@ -173,11 +173,19 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
     const name = (f.titleManual && f.titleManual.trim()) ? f.titleManual : (f.titleAuto || f.originalFileName || 'Untitled');
     const linkUrl = `${clientUrl}/training-calendar?fitTrainingId=${encodeURIComponent(String(f._id))}`;
     // Reuse TSS logic with a Strava-like object
-    const tss = calculateActivityTSS({
+    const tss = resolveActivityTss({
       sport: f.sport,
       totalElapsedTime: seconds,
+      movingTime: seconds,
       averagePower: f.avgPower,
-      averageSpeed: f.avgSpeed
+      normalizedPower: f.normalizedPower,
+      averageHeartRate: f.avgHeartRate,
+      avgHeartRate: f.avgHeartRate,
+      maxHeartRate: f.maxHeartRate,
+      averageSpeed: f.avgSpeed,
+      avgSpeed: f.avgSpeed,
+      tss: f.trainingStressScore,
+      trainingStressScore: f.trainingStressScore,
     }, userProfile);
     sessions.push({
       source: 'fit',
@@ -284,65 +292,9 @@ function aggregateSessions(sessions) {
   return totals;
 }
 
-// Copy of the TSS logic used in server/controllers/fitnessMetricsController.js
-function calculateActivityTSS(activity, userProfile = null) {
-  try {
-    const seconds = Number(activity.movingTime || activity.totalElapsedTime || activity.elapsedTime || activity.duration || 0);
-    if (seconds === 0) return 0;
+const { buildUserProfile, resolveActivityTss } = require('../utils/activityTss');
 
-    const ftp =
-      userProfile?.powerZones?.cycling?.lt2 ||
-      userProfile?.powerZones?.cycling?.zone5?.min ||
-      userProfile?.ftp ||
-      250;
-
-    const thresholdPace =
-      userProfile?.powerZones?.running?.lt2 ||
-      userProfile?.runningZones?.lt2 ||
-      null;
-
-    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null;
-
-    const sport = (activity.sport || '').toLowerCase();
-
-    // Cycling
-    if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
-      const avgPower = Number(activity.averagePower || activity.avgPower || 0);
-      if (avgPower > 0 && ftp > 0) {
-        const np = avgPower; // NP approximation
-        return Math.round((seconds * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
-      }
-    }
-
-    // Running
-    if (sport.includes('run') || sport.includes('walk') || sport.includes('hike') || sport === 'running') {
-      const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || 0); // m/s
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(1000 / avgSpeed); // sec per km
-        let referencePace = thresholdPace;
-        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
-        const intensityRatio = referencePace / avgPaceSeconds;
-        return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-      }
-    }
-
-    // Swimming
-    if (sport.includes('swim') || sport === 'swimming') {
-      const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || 0); // m/s
-      if (avgSpeed > 0) {
-        const avgPaceSeconds = Math.round(100 / avgSpeed); // sec per 100m
-        let referencePace = thresholdSwimPace;
-        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
-        const intensityRatio = referencePace / avgPaceSeconds;
-        return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-      }
-    }
-
-    return 0;
-  } catch (e) {
-    return 0;
-  }
-}
+const calculateActivityTSS = resolveActivityTss;
 
 function computeTrainingStatusFromWeeklyTSS(currentWeekTSS, pastWeeksAvgTSS) {
   const averageTSS = Number(pastWeeksAvgTSS) || 0;
@@ -445,10 +397,7 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
 }
 
 async function buildWeeklyReportSummary(user, weekStart, weekEnd) {
-  const userProfile = {
-    powerZones: user.powerZones || {},
-    ftp: user.ftp || 250
-  };
+  const userProfile = buildUserProfile(user);
 
   const [currentSessions, prevSessions] = await Promise.all([
     loadWeekSessions(user._id, weekStart, weekEnd, userProfile),

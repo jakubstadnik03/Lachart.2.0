@@ -17,6 +17,7 @@ import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
+import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -81,16 +82,6 @@ function sportMatches(pwSport, actSport) {
   if (p === 'walk' && a.includes('walk')) return true;
   if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
   return p === a;
-}
-
-// Mirror of CalendarView's getCompliance
-function getCompliance(plannedSecs, actualSecs) {
-  if (!plannedSecs || !actualSecs) return null;
-  const r = actualSecs / plannedSecs;
-  if (r >= 0.9)  return { color: '#22c55e', bg: '#f0fdf4', label: 'On target' };
-  if (r >= 0.75) return { color: '#eab308', bg: '#fefce8', label: 'Good' };
-  if (r >= 0.55) return { color: '#f97316', bg: '#fff7ed', label: 'Short' };
-  return           { color: '#ef4444', bg: '#fef2f2', label: 'Missed' };
 }
 
 // Mirror of CalendarView's pairPlannedWithActivities
@@ -336,12 +327,10 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         const color     = getSportColor(sport);
         const pwTitle   = pw.title || pw.name || 'Planned workout';
 
-        // Compliance
         const pwSecs = pw.plannedDuration || 0;
         const actSecs = linkedAct
           ? Number(linkedAct.totalTime || linkedAct.duration || linkedAct.movingTime || linkedAct.elapsed_time || linkedAct.elapsedTime || linkedAct.totalTimerTime || 0)
           : 0;
-        const compliance = isPaired ? getCompliance(pwSecs, actSecs) : null;
 
         // Style by state — mirrors PlannedMiniCard in WeeklyCalendar
         const isPurelyPlanned = !isPaired && !isMissed;
@@ -441,19 +430,9 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               </div>
             </div>
 
-            {/* Right side: compliance badge or status */}
+            {/* Right side: status */}
             <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-              {isPaired && compliance && (
-                <span style={{
-                  fontSize: 9.5, fontWeight: 700,
-                  padding: '2px 7px', borderRadius: 9999,
-                  background: compliance.color + '22',
-                  color: compliance.color,
-                }}>
-                  {compliance.label}
-                </span>
-              )}
-              {isPaired && !compliance && (
+              {isPaired && (
                 <span style={{
                   fontSize: 9.5, fontWeight: 700,
                   padding: '2px 7px', borderRadius: 9999,
@@ -712,6 +691,36 @@ export default function NativeDashboardPage({
     if (actOrId) setActivityModal({ activity: actOrId, plannedWorkout });
   };
   const closeActivityModal = () => setActivityModal(null);
+
+  // Keep the open modal's activity snapshot in sync after Completed edits.
+  useEffect(() => {
+    const onMetrics = (e) => {
+      const detail = e?.detail || {};
+      if (!detail.id) return;
+      const matches = buildActivityMatcher(detail.id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setActivityModal((prev) => {
+        if (!prev?.activity || !matches(prev.activity)) return prev;
+        return { ...prev, activity: { ...prev.activity, ...patch } };
+      });
+    };
+    const onPlanned = (e) => {
+      const planned = e?.detail?.planned;
+      if (!planned?._id) return;
+      setActivityModal((prev) => {
+        if (!prev?.plannedWorkout || String(prev.plannedWorkout._id) !== String(planned._id)) return prev;
+        return { ...prev, plannedWorkout: planned };
+      });
+      onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned });
+    };
+    window.addEventListener('activityMetricsUpdated', onMetrics);
+    window.addEventListener('plannedWorkoutUpdated', onPlanned);
+    return () => {
+      window.removeEventListener('activityMetricsUpdated', onMetrics);
+      window.removeEventListener('plannedWorkoutUpdated', onPlanned);
+    };
+  }, [onPlannedWorkoutChanged]);
 
   // Deep-link from a push notification: `?openActivity=<prefix>-<id>` opens
   // the activity in the modal so the user can immediately add lactate.

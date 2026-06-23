@@ -3,6 +3,7 @@
  */
 
 const TSS_DISPLAY_MODE_KEY = 'lachart_activity_tssDisplayMode';
+export const TSS_DISPLAY_MODE_EVENT = 'lachart:tssDisplayModeChanged';
 const EDIT_PROFILE_ZONES_KEY = 'lachart_editProfile_zones';
 
 const TSS_MODES = new Set(['power', 'hr']);
@@ -33,6 +34,37 @@ export function getTssDisplayMode() {
 export function setTssDisplayMode(mode) {
   if (!TSS_MODES.has(mode)) return;
   safeSet(TSS_DISPLAY_MODE_KEY, mode);
+}
+
+/** Pull server-side preference into localStorage (cross-device sync). */
+export function syncTssDisplayModeFromUser(user) {
+  const mode = user?.trainingPreferences?.tssDisplayMode;
+  if (TSS_MODES.has(mode)) setTssDisplayMode(mode);
+}
+
+export function getEffectiveTssDisplayMode(user) {
+  return getTssDisplayMode() || user?.trainingPreferences?.tssDisplayMode || null;
+}
+
+export function notifyTssDisplayModeChanged(mode) {
+  try {
+    window.dispatchEvent(new CustomEvent(TSS_DISPLAY_MODE_EVENT, { detail: { mode } }));
+  } catch {
+    // SSR / tests
+  }
+}
+
+export function clearFormFitnessCache() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('formFitness_') || k.startsWith('widget_formFitness'))) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
 }
 
 /** Pick saved mode when valid for this activity, else fall back to default. */

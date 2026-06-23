@@ -7,19 +7,13 @@
  * columns can read it on drop.
  */
 import React, { useMemo, useState } from 'react';
+import { PlannerSportIcon, plannerSportKey, plannerSportColor } from './WorkoutPlanModal';
 
-const SPORTS = ['all', 'run', 'bike', 'swim', 'strength', 'other'];
+const SPORTS = ['all', 'run', 'bike', 'swim', 'strength', 'hike', 'ski', 'walk', 'other'];
 
 function normSport(s) {
-  const v = String(s || '').toLowerCase();
-  if (v.includes('bike') || v.includes('ride') || v.includes('cycl')) return 'bike';
-  if (v.includes('run')) return 'run';
-  if (v.includes('swim')) return 'swim';
-  if (v.includes('strength') || v.includes('gym') || v.includes('weight')) return 'strength';
-  return v || 'other';
+  return plannerSportKey(s);
 }
-
-const SPORT_DOT = { run: '#f97316', bike: '#767EB5', swim: '#38bdf8', strength: '#8b5cf6', other: '#94a3b8' };
 
 function stepSecs(steps) {
   if (!Array.isArray(steps)) return 0;
@@ -94,7 +88,9 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
                 title="Click to open & edit · drag onto a day to plan"
                 className="group flex items-center gap-2 px-2.5 py-2 rounded-xl ring-1 ring-slate-200/70 bg-white hover:ring-primary/40 hover:shadow-sm cursor-pointer transition-all"
               >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: SPORT_DOT[sp] || SPORT_DOT.other }} />
+                <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                  <PlannerSportIcon sport={t.sport} size={14} color={plannerSportColor(t.sport)} />
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[12.5px] font-semibold text-slate-800 truncate">{t.name}</div>
                   <div className="text-[10.5px] text-slate-400 truncate">

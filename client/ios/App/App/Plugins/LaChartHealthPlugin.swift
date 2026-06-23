@@ -22,10 +22,16 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestWellnessAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAuthorizationStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readSamples", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+    ]
+
+    /// Shown on Home / Settings wellness sync — must be requested from the iPhone app.
+    private let wellnessReadIds = [
+        "restingHeartRate", "sleep", "heartRateVariability",
     ]
 
     /// Wellness + workouts — always requested so they appear under Health → Apps → LaChart.
@@ -119,21 +125,31 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["types": rows])
     }
 
+    /// Wellness-only auth — registers Sleep / Resting HR / HRV under Health → Apps → LaChart (iPhone).
+    @objc func requestWellnessAuthorization(_ call: CAPPluginCall) {
+        performAuthorization(for: wellnessReadIds, call: call)
+    }
+
     @objc func requestAuthorization(_ call: CAPPluginCall) {
+        let readIds = readIdsFromCall(call)
+        var mergedIds = Set(wellnessReadIds)
+        mergedIds.formUnion(requiredReadIds)
+        readIds.forEach { mergedIds.insert($0) }
+        performAuthorization(for: Array(mergedIds), call: call)
+    }
+
+    private func performAuthorization(for ids: [String], call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("Health data is not available on this device.")
             return
         }
 
-        let readIds = readIdsFromCall(call)
         var readTypes = Set<HKObjectType>()
-        var mergedIds = Set(requiredReadIds)
-        readIds.forEach { mergedIds.insert($0) }
-
-        for id in mergedIds {
-            if let t = objectType(for: id) {
-                readTypes.insert(t)
-            }
+        var registeredIds: [String] = []
+        for id in ids {
+            guard let t = objectType(for: id) else { continue }
+            readTypes.insert(t)
+            registeredIds.append(id)
         }
 
         if readTypes.isEmpty {
@@ -141,41 +157,46 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        NSLog("[LaChartHealth] requestAuthorization types: %@", registeredIds.joined(separator: ", "))
+
         var resolved = false
-        let timeout = DispatchWorkItem { [weak call] in
-            guard let call = call, !resolved else { return }
+        var timeoutWork: DispatchWorkItem?
+
+        timeoutWork = DispatchWorkItem { [weak pluginCall = call] in
+            guard let call = pluginCall, !resolved else { return }
             resolved = true
             call.resolve([
-                "readAuthorized": Array(mergedIds),
+                "readAuthorized": registeredIds,
                 "readDenied": [] as [String],
                 "writeAuthorized": [] as [String],
                 "writeDenied": [] as [String],
                 "success": false,
                 "timedOut": true,
+                "requestedTypes": registeredIds,
             ])
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
+        if let timeoutWork {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeoutWork)
+        }
 
-            self.store.requestAuthorization(toShare: [], read: readTypes) { success, error in
-                DispatchQueue.main.async {
-                    timeout.cancel()
-                    guard !resolved else { return }
-                    resolved = true
-                    if let error = error {
-                        call.reject(error.localizedDescription, nil, error)
-                        return
-                    }
-                    call.resolve([
-                        "readAuthorized": Array(mergedIds),
-                        "readDenied": [] as [String],
-                        "writeAuthorized": [] as [String],
-                        "writeDenied": [] as [String],
-                        "success": success,
-                    ])
+        store.requestAuthorization(toShare: [], read: readTypes) { success, error in
+            DispatchQueue.main.async {
+                timeoutWork?.cancel()
+                guard !resolved else { return }
+                resolved = true
+                if let error = error {
+                    call.reject(error.localizedDescription, nil, error)
+                    return
                 }
+                call.resolve([
+                    "readAuthorized": registeredIds,
+                    "readDenied": [] as [String],
+                    "writeAuthorized": [] as [String],
+                    "writeDenied": [] as [String],
+                    "success": success,
+                    "requestedTypes": registeredIds,
+                ])
             }
         }
     }

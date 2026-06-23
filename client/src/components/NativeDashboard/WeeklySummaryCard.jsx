@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
+import { resolveActivityTss } from '../../utils/computeTss';
+import { useAuth } from '../../context/AuthProvider';
+import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -56,120 +59,9 @@ function actTss(a) {
   return Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0);
 }
 
-// ─── client-side TSS fallback (mirrors server `calculateActivityTSS`) ─────────
-// Used when activities don't have stored TSS (typical for Strava activities).
-// `thresholds` is { bike: { lt2Power }, run: { lt2Pace }, swim: { lt2Pace } }
-
-function normalizeSportKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (v.includes('ride') || v.includes('cycle') || v.includes('bike') || v.includes('virtual')) return 'bike';
-  if (v.includes('run')  || v.includes('walk')  || v.includes('hike')) return 'run';
-  if (v.includes('swim')) return 'swim';
-  return null;
-}
-
-// Extract LT2 thresholds per sport from lactate tests (most recent test per sport)
-function extractThresholds(tests) {
-  const out = { bike: null, run: null, swim: null };
-  if (!Array.isArray(tests) || !tests.length) return out;
-  const bySport = {};
-  tests.forEach(t => {
-    if (!t) return;                      // guard against undefined entries
-    const sp = normalizeSportKey(t.sport || t.testType);
-    if (!sp) return;
-    if (!bySport[sp]) bySport[sp] = [];
-    bySport[sp].push(t);
-  });
-  Object.keys(bySport).forEach(sp => {
-    bySport[sp].sort((a, b) => new Date(b?.date || b?.testDate || 0) - new Date(a?.date || a?.testDate || 0));
-    const t = bySport[sp][0];
-    if (!t) return;                      // guard against empty bucket
-    const ov = t.thresholdOverrides || {};
-    // For bike: LTP2 = power (Watts). For run/swim: LTP2 = pace (sec/km or sec/100m)
-    const ltp2 = Number(ov.LTP2) || null;
-    out[sp] = {
-      lt2Power: sp === 'bike' ? ltp2 : null,
-      lt2Pace:  sp !== 'bike' ? ltp2 : null,
-      lt2Hr:    Number(ov.LTP2_hr) || null,
-    };
-    // Fallback: derive from results array (find first stage at lactate >= 4)
-    if (Array.isArray(t.results)) {
-      const stage = t.results.find(r => Number(r.lactate) >= 4);
-      if (stage) {
-        if (sp === 'bike' && !out[sp].lt2Power) {
-          out[sp].lt2Power = Number(stage.power) || Number(stage.interval) || null;
-        } else if (sp !== 'bike' && !out[sp].lt2Pace) {
-          // For run/swim: `interval` field on a stage is the pace
-          out[sp].lt2Pace = Number(stage.interval) || Number(stage.pace) || null;
-        }
-        out[sp].lt2Hr = out[sp].lt2Hr || Number(stage.heartRate) || null;
-      }
-    }
-  });
-  return out;
-}
-
-// Compute TSS for an activity. Returns 0 if not computable.
-function computeActivityTSS(a, thresholds) {
-  if (!a) return 0;
-  const sport = normalizeSportKey(a.sport);
-  const secs  = actSecs(a);
-  if (!sport || secs <= 0) return 0;
-  const th = thresholds?.[sport];
-
-  // ─── Bike: power-based TSS ────────────────────────────────────────────────
-  if (sport === 'bike') {
-    const np  = Number(a.weightedAveragePower || a.normalizedPower || a.avgPower || a.averagePower || a.average_watts || 0);
-    const ftp = Number(th?.lt2Power || 0);
-    if (np > 0 && ftp > 0) {
-      return Math.round((secs * np * np) / (ftp * ftp * 3600) * 100);
-    }
-    // hrTSS fallback: use HR with LT2 HR if available
-    const avgHr = Number(a.avgHeartRate || a.averageHeartRate || a.average_heartrate || 0);
-    const lthr  = Number(th?.lt2Hr || 0);
-    if (avgHr > 0 && lthr > 0) {
-      const ratio = avgHr / lthr;
-      return Math.round((secs * ratio * ratio) / 3600 * 100);
-    }
-  }
-
-  // ─── Run: pace-based TSS ──────────────────────────────────────────────────
-  if (sport === 'run') {
-    const speed = Number(a.avgSpeed || a.averageSpeed || a.average_speed || 0); // m/s
-    const refPace = Number(th?.lt2Pace || 0); // sec/km
-    if (speed > 0 && refPace > 0) {
-      const avgPace = 1000 / speed; // sec/km
-      const ratio = refPace / avgPace; // >1 if faster than reference
-      return Math.round((secs * ratio * ratio) / 3600 * 100);
-    }
-    // hrTSS fallback
-    const avgHr = Number(a.avgHeartRate || a.averageHeartRate || a.average_heartrate || 0);
-    const lthr  = Number(th?.lt2Hr || 0);
-    if (avgHr > 0 && lthr > 0) {
-      const ratio = avgHr / lthr;
-      return Math.round((secs * ratio * ratio) / 3600 * 100);
-    }
-  }
-
-  // ─── Swim: pace-based TSS (per 100 m) ─────────────────────────────────────
-  if (sport === 'swim') {
-    const speed = Number(a.avgSpeed || a.averageSpeed || a.average_speed || 0); // m/s
-    const refPace = Number(th?.lt2Pace || 0); // sec / 100m
-    if (speed > 0 && refPace > 0) {
-      const avgPace = 100 / speed;
-      const ratio = refPace / avgPace;
-      return Math.round((secs * ratio * ratio) / 3600 * 100);
-    }
-  }
-
-  return 0;
-}
-
-// TSS for an activity: stored value if present, else computed
-function tssOrCompute(a, thresholds) {
-  const stored = actTss(a);
-  if (stored > 0) return stored;
-  return computeActivityTSS(a, thresholds);
+// TSS for an activity: respects power vs hrTSS preference
+function tssOrCompute(a, userProfile, mode) {
+  return resolveActivityTss(a, userProfile, { user: userProfile, mode });
 }
 
 // Planned workout accessors
@@ -224,8 +116,15 @@ const navBtnStyle = {
   WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
 };
 
-export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], tests = [] }) {
+export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [] }) {
+  const { user } = useAuth() || {};
   const [metric, setMetric] = useState('TSS');
+  const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
+  React.useEffect(() => {
+    const onTssModeChange = () => setTssDisplayMode(getTssDisplayMode());
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+  }, []);
   const [ffHelpOpen, setFfHelpOpen] = useState(false);
   // Week offset: 0 = current, +1 = next, -1 = previous, etc. Lets the user
   // peek at next-week planned totals without leaving the dashboard.
@@ -252,9 +151,6 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const { monday, sunday } = getWeekBounds(refDate);
   const weekDays = getWeekDays(refDate);
   const isCurrentWeek = weekOffset === 0;
-
-  // Threshold map for client-side TSS fallback
-  const thresholds = extractThresholds(tests);
 
   // ── filter this week ───────────────────────────────────────────────────────
   const weekActs = activities.filter(a => {
@@ -331,7 +227,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const totalDist    = weekActs.reduce((s, a) => s + actDist(a), 0);
   // Use sparkline TSS when available (has Strava TSS, FIT TSS, all computed server-side)
   // Fall back to activity-level tss field, then client-side computed TSS using lactate-test thresholds
-  const activityTss  = weekActs.reduce((s, a) => s + tssOrCompute(a, thresholds), 0);
+  const activityTss  = weekActs.reduce((s, a) => s + tssOrCompute(a, user, tssDisplayMode), 0);
   const totalTss     = weekSparkTss > 0 ? weekSparkTss : activityTss;
   const sessions     = weekActs.length;
 
@@ -350,7 +246,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
       // Fall back to stored or client-computed activity TSS
       return weekActs
         .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
-        .reduce((s, a) => s + tssOrCompute(a, thresholds), 0);
+        .reduce((s, a) => s + tssOrCompute(a, user, tssDisplayMode), 0);
     }
     return weekActs
       .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))

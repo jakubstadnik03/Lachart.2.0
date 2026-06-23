@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { getTodayMetrics } from '../../services/api';
 import { fetchWellness } from '../../services/wellnessData';
 import { assessReadiness, baseline, READINESS_COLORS } from '../../utils/recovery';
+import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
 function fmtSleep(mins) {
   if (!mins || mins <= 0) return '—';
@@ -58,6 +59,13 @@ export default function WellnessCard({ athleteId = null }) {
   const [connected, setConnected] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [tsb, setTsb] = useState(null);
+  const [tsbTick, setTsbTick] = useState(0);
+
+  useEffect(() => {
+    const onTssModeChange = () => setTsbTick((t) => t + 1);
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -89,7 +97,7 @@ export default function WellnessCard({ athleteId = null }) {
       } catch { if (!cancelled) setTsb(null); }
     })();
     return () => { cancelled = true; };
-  }, [targetId]);
+  }, [targetId, tsbTick]);
 
   const latest = days.length ? days[days.length - 1] : null;
   const readiness = useMemo(() => assessReadiness(days, { tsb }), [days, tsb]);

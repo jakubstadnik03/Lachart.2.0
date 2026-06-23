@@ -12,6 +12,7 @@ import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalN
 import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache } from '../utils/activityEventPatches';
 import NativeTrainingPage from './NativeTrainingPage';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import QuickAddLactateModal from '../components/training/QuickAddLactateModal';
@@ -91,11 +92,23 @@ export default function TrainingPage() {
       setTrainings(prev => prev.map(t => matches(t) ? patch(t) : t));
       cachePatch(matches, patch);
     };
+    const onMetricsUpdated = (e) => {
+      const detail = e?.detail || {};
+      const { id } = detail;
+      if (!id) return;
+      const matches = buildActivityMatcher(id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setTrainings(prev => prev.map(t => matches(t) ? { ...t, ...patch } : t));
+      patchCalendarCache(matches, patch);
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
     return () => {
       window.removeEventListener('activityTitleUpdated', onTitleUpdated);
       window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
     };
   }, []);
   const [selectedTitle, setSelectedTitle] = useState(null);

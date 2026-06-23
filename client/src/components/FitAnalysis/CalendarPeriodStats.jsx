@@ -5,6 +5,13 @@ import { getFormFitnessData, getMonthlyPowerAnalysis } from '../../services/api'
 import { useCategories } from '../../context/CategoryContext';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
+import {
+  resolveSportKey,
+  SportGlyph,
+  SPORT_LABELS,
+  SPORT_ICON_COLORS,
+  SPORT_TOGGLE_ORDER,
+} from '../shared/SportIcon';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
@@ -25,7 +32,7 @@ const HR_ZONE_FILL = ['#fecaca', '#f87171', '#ef4444', '#dc2626', '#991b1b'];
 const POWER_ZONE_NAMES = ['Endurance', 'Moderate', 'Tempo', 'Threshold', 'VO₂max'];
 const HR_ZONE_NAMES = ['Easy', 'Aerobic', 'Tempo', 'Threshold', 'Max'];
 
-const BUCKET_COLOR = { bike: '#3b82f6', run: '#f97316', swim: '#06b6d4', other: '#9ca3af' };
+const BUCKET_COLOR = { ...SPORT_ICON_COLORS };
 
 const UNCATEGORIZED_KEY = '__uncategorized__';
 
@@ -73,17 +80,13 @@ function actDurationSec(act) {
 }
 
 function sportBucket(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'bike';
-  return 'other';
+  return resolveSportKey(sport);
 }
 
 function profileSportFromActivity(sport) {
   const b = sportBucket(sport);
   if (b === 'bike') return 'cycling';
-  if (b === 'run') return 'running';
+  if (b === 'run' || b === 'hike' || b === 'walk' || b === 'ski') return 'running';
   if (b === 'swim') return 'swimming';
   return null;
 }
@@ -510,7 +513,7 @@ export default function CalendarPeriodStats({
     let totalSec = 0;
     let totalDist = 0;
     let totalTss = 0;
-    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    const bySportSec = {};
     const byDaySec = new Map();
     const byDayCount = new Map();
     const byDayTss = new Map();
@@ -547,7 +550,7 @@ export default function CalendarPeriodStats({
       if (tssVal > 0) totalTss += tssVal;
 
       const b = sportBucket(act.sport);
-      bySportSec[b] += sec;
+      bySportSec[b] = (bySportSec[b] || 0) + sec;
 
       const ps = profileSportFromActivity(act.sport);
       const psk = ps || 'other';
@@ -571,12 +574,8 @@ export default function CalendarPeriodStats({
         byDayCount.set(dk, (byDayCount.get(dk) || 0) + 1);
         if (tssVal > 0) byDayTss.set(dk, (byDayTss.get(dk) || 0) + tssVal);
 
-        ['bike', 'run', 'swim'].forEach((sport) => {
-          if (b === sport) {
-            const key = `${dk}-${sport}`;
-            byDaySportSec.set(key, (byDaySportSec.get(key) || 0) + sec);
-          }
-        });
+        const daySportKey = `${dk}-${b}`;
+        byDaySportSec.set(daySportKey, (byDaySportSec.get(daySportKey) || 0) + sec);
       }
 
       if (userProfile && ps) {
@@ -1379,7 +1378,7 @@ export default function CalendarPeriodStats({
 
   const aggCmpThis = useMemo(() => {
     let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
-    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    const bySportSec = {};
     filteredCmpThis.forEach((act) => {
       count++;
       const sec = actDurationSec(act);
@@ -1387,14 +1386,14 @@ export default function CalendarPeriodStats({
       totalDist += Number(act.distance || 0);
       const tss = computeTssForAct(act, userProfile);
       if (tss > 0) totalTss += tss;
-      bySportSec[sportBucket(act.sport)] += sec;
+      bySportSec[sportBucket(act.sport)] = (bySportSec[sportBucket(act.sport)] || 0) + sec;
     });
     return { count, totalSec, totalDist, totalTss, bySportSec };
   }, [filteredCmpThis, userProfile]);
 
   const aggCmpPrev = useMemo(() => {
     let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
-    const bySportSec = { bike: 0, run: 0, swim: 0, other: 0 };
+    const bySportSec = {};
     filteredCmpPrev.forEach((act) => {
       count++;
       const sec = actDurationSec(act);
@@ -1402,7 +1401,7 @@ export default function CalendarPeriodStats({
       totalDist += Number(act.distance || 0);
       const tss = computeTssForAct(act, userProfile);
       if (tss > 0) totalTss += tss;
-      bySportSec[sportBucket(act.sport)] += sec;
+      bySportSec[sportBucket(act.sport)] = (bySportSec[sportBucket(act.sport)] || 0) + sec;
     });
     return { count, totalSec, totalDist, totalTss, bySportSec };
   }, [filteredCmpPrev, userProfile]);
@@ -1768,31 +1767,22 @@ export default function CalendarPeriodStats({
                     Sport split
                   </div>
                   <div className="space-y-2.5">
-                    {(['bike', 'run', 'swim', 'other']).map((b) => {
+                    {SPORT_TOGGLE_ORDER.filter((b) => (aggregates.bySportSec[b] || 0) > 0).map((b) => {
                       const sec = aggregates.bySportSec[b] || 0;
                       if (sec <= 0) return null;
                       const pct = (sec / aggregates.totalSec) * 100;
                       const h = Math.floor(sec / 3600);
                       const m = Math.floor((sec % 3600) / 60);
                       const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
-                      const sportBucketLabel = { bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
-                      const icon = sportIconSrc(b);
-                      const psKey = b === 'bike' ? 'cycling' : b === 'run' ? 'running' : b === 'swim' ? 'swimming' : null;
+                      const psKey = profileSportFromActivity(b);
                       const dist = psKey ? (aggregates.distByProfileSport?.[psKey] || 0) : 0;
                       return (
                         <div key={b} className="flex items-center gap-2">
                           <div className="w-5 h-5 shrink-0 flex items-center justify-center">
-                            {icon ? (
-                              <img src={icon} alt={b} className="w-4 h-4 object-contain" />
-                            ) : (
-                              <span
-                                className="w-3 h-3 rounded-full block"
-                                style={{ backgroundColor: BUCKET_COLOR[b] }}
-                              />
-                            )}
+                            <SportGlyph sport={b} size={16} color={BUCKET_COLOR[b] || BUCKET_COLOR.other} />
                           </div>
-                          <span className="w-8 text-sm text-gray-500 shrink-0">
-                            {sportBucketLabel[b]}
+                          <span className="w-10 text-sm text-gray-500 shrink-0">
+                            {SPORT_LABELS[b] || b}
                           </span>
                           <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
                             <div
@@ -2257,10 +2247,10 @@ export default function CalendarPeriodStats({
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
                   <div className="flex gap-3 mb-1 text-xs text-gray-400">
-                    {['bike', 'run', 'swim', 'other'].map((b) => (
+                    {SPORT_TOGGLE_ORDER.filter((b) => (aggregates.bySportSec[b] || 0) > 0).map((b) => (
                       <span key={b} className="flex items-center gap-1">
-                        <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: BUCKET_COLOR[b] }} />
-                        {b.charAt(0).toUpperCase() + b.slice(1)}
+                        <SportGlyph sport={b} size={12} color={BUCKET_COLOR[b] || BUCKET_COLOR.other} />
+                        {SPORT_LABELS[b] || b}
                       </span>
                     ))}
                   </div>
@@ -2404,17 +2394,13 @@ export default function CalendarPeriodStats({
                 )}
 
                 {/* Sport volume rows */}
-                {(['bike', 'run', 'swim'].some(
+                {SPORT_TOGGLE_ORDER.some(
                   (b) => (aggCmpThis.bySportSec[b] || 0) > 0 || (aggCmpPrev.bySportSec[b] || 0) > 0
-                )) && (
+                ) && (
                   <div className="bg-gray-50 rounded-xl p-4">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Volume by sport</div>
                     <div className="space-y-3">
-                      {[
-                        { b: 'bike', ps: 'cycling' },
-                        { b: 'run', ps: 'running' },
-                        { b: 'swim', ps: 'swimming' },
-                      ].map(({ b, ps }) => {
+                      {SPORT_TOGGLE_ORDER.map((b) => {
                         const curSec = aggCmpThis.bySportSec[b] || 0;
                         const lySec = aggCmpPrev.bySportSec[b] || 0;
                         if (curSec === 0 && lySec === 0) return null;
@@ -2428,8 +2414,8 @@ export default function CalendarPeriodStats({
                         return (
                           <div key={b}>
                             <div className="flex items-center gap-2 mb-1">
-                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain" />
-                              <span className="text-xs font-semibold text-gray-600">{SPORT_LABEL[ps]}</span>
+                              <SportGlyph sport={b} size={16} color={BUCKET_COLOR[b] || BUCKET_COLOR.other} />
+                              <span className="text-xs font-semibold text-gray-600">{SPORT_LABELS[b] || b}</span>
                               {delta !== null && (
                                 <span className={`text-xs font-semibold ml-auto ${delta > 2 ? 'text-green-600' : delta < -2 ? 'text-red-500' : 'text-gray-400'}`}>
                                   {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}{Math.abs(delta).toFixed(0)}%

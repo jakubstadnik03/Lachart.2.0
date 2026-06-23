@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
-import { Bike, WavesLadder } from 'lucide-react';
-import { RunnerSvg } from '../shared/SportIcon';
+import { SportGlyph } from '../shared/SportIcon';
 import { getMonthlyPowerAnalysis } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
+import {
+  getSportsWithZoneData,
+  SPORT_LABELS,
+  SPORT_ICON_COLORS,
+} from '../../utils/zoneSportStats';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -296,25 +300,23 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
     [isWeekPeriod, weekData, period, monthKeys, loadedMonths]
   );
 
-  const hasBike = periodMonths.some(m => Number(m.bikeTime) > 0 || m.zones || Number(m.bikeTrainings) > 0);
-  const hasRun  = periodMonths.some(m => Number(m.runningTime) > 0 || m.runningZoneTimes || Number(m.runningTrainings) > 0);
-  const hasSwim = periodMonths.some(m => Number(m.swimmingTime) > 0 || m.swimmingZoneTimes || Number(m.swimmingTrainings) > 0);
-  const sportCount = Number(hasBike) + Number(hasRun) + Number(hasSwim);
+  const availableSports = useMemo(
+    () => getSportsWithZoneData(periodMonths),
+    [periodMonths]
+  );
+  const sportCount = availableSports.length;
 
   // Auto-switch to a sport that has data
   useEffect(() => {
     if (!periodMonths.length) return;
     const sportOk =
-      (sport === 'all'  && sportCount > 1) ||
-      (sport === 'bike' && hasBike)        ||
-      (sport === 'run'  && hasRun)         ||
-      (sport === 'swim' && hasSwim);
+      (sport === 'all' && sportCount > 1) ||
+      availableSports.includes(sport);
     if (!sportOk) {
-      if (hasBike) setSport('bike');
-      else if (hasRun) setSport('run');
-      else if (hasSwim) setSport('swim');
+      if (availableSports.length > 1) setSport('all');
+      else if (availableSports[0]) setSport(availableSports[0]);
     }
-  }, [hasBike, hasRun, hasSwim, sportCount, periodMonths.length, sport]);
+  }, [availableSports, sportCount, periodMonths.length, sport]);
 
   // Auto-select default metric when sport changes; collapse expanded zone
   const prevSportRef = useRef(null);
@@ -325,7 +327,8 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
     if (sport === 'bike')       setMetric('power');
     else if (sport === 'run')   setMetric('pace');
     else if (sport === 'swim')  setMetric('pace');
-    else /* 'all' */            setMetric('hr');
+    else if (sport === 'all')  setMetric('hr');
+    else                        setMetric('hr');
   }, [sport]);
 
   // Collapse expanded zone when metric changes
@@ -374,23 +377,53 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         za = aggregateZoneAvgs(periodMonths, m => m.swimmingHrZones, 'avgHeartRate', 'heartRateCount');
         zd = getZoneBoundaries(periodMonths, m => m.swimmingHeartRateZones || m.heartRateZones);
       }
+    } else if (sport !== 'all') {
+      totalSecs = periodMonths.reduce((s, m) => s + (Number(m.sportStats?.[sport]?.time) || 0), 0);
+      sessions  = periodMonths.reduce((s, m) => s + (Number(m.sportStats?.[sport]?.trainings) || 0), 0);
+      zt = aggregateZoneTimes(periodMonths, m => m.sportStats?.[sport]?.hrZones);
+      za = aggregateZoneAvgs(periodMonths, m => m.sportStats?.[sport]?.hrZones, 'avgHeartRate', 'heartRateCount');
+      zd = getZoneBoundaries(periodMonths, m => m.runningHeartRateZones || m.heartRateZones);
     } else {
       // 'all' — aggregate HR zones from all sports
       totalSecs = periodMonths.reduce((s, m) => s + (Number(m.totalTime) || 0), 0);
       sessions  = periodMonths.reduce((s, m) => s + (Number(m.trainings) || 0), 0);
-      const bhr = aggregateZoneTimes(periodMonths, m => m.bikeHrZones || m.hrZones);
-      const rhr = aggregateZoneTimes(periodMonths, m => m.runningHrZones);
-      zt = { 1:0, 2:0, 3:0, 4:0, 5:0 };
-      for (let z = 1; z <= 5; z++) zt[z] = (bhr[z] || 0) + (rhr[z] || 0);
-      // Weighted avg across bike+run HR — compute sums/counts manually
-      const bha = aggregateZoneAvgs(periodMonths, m => m.bikeHrZones || m.hrZones, 'avgHeartRate', 'heartRateCount');
-      const rha = aggregateZoneAvgs(periodMonths, m => m.runningHrZones, 'avgHeartRate', 'heartRateCount');
-      za = {};
-      for (let z = 1; z <= 5; z++) {
-        const bt = bhr[z] || 0, rt = rhr[z] || 0;
-        const ba = bha[z] ?? 0,  ra = rha[z] ?? 0;
-        const total = bt + rt;
-        za[z] = total > 0 ? (bt * ba + rt * ra) / total : null;
+      const hasSportStats = periodMonths.some((m) => m?.sportStats && Object.keys(m.sportStats).length > 0);
+      if (hasSportStats) {
+        zt = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        const zaSum = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        const zaCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        periodMonths.forEach((m) => {
+          if (!m?.sportStats) return;
+          Object.values(m.sportStats).forEach((stat) => {
+            if (!stat?.hrZones) return;
+            for (let z = 1; z <= 5; z++) {
+              const t = Number(stat.hrZones[z]?.time) || 0;
+              zt[z] += t;
+              if (t > 0 && stat.hrZones[z]?.avgHeartRate != null) {
+                zaSum[z] += Number(stat.hrZones[z].avgHeartRate) * t;
+                zaCount[z] += t;
+              }
+            }
+          });
+        });
+        za = {};
+        for (let z = 1; z <= 5; z++) {
+          za[z] = zaCount[z] > 0 ? zaSum[z] / zaCount[z] : null;
+        }
+      } else {
+        const bhr = aggregateZoneTimes(periodMonths, m => m.bikeHrZones || m.hrZones);
+        const rhr = aggregateZoneTimes(periodMonths, m => m.runningHrZones);
+        zt = { 1:0, 2:0, 3:0, 4:0, 5:0 };
+        for (let z = 1; z <= 5; z++) zt[z] = (bhr[z] || 0) + (rhr[z] || 0);
+        const bha = aggregateZoneAvgs(periodMonths, m => m.bikeHrZones || m.hrZones, 'avgHeartRate', 'heartRateCount');
+        const rha = aggregateZoneAvgs(periodMonths, m => m.runningHrZones, 'avgHeartRate', 'heartRateCount');
+        za = {};
+        for (let z = 1; z <= 5; z++) {
+          const bt = bhr[z] || 0, rt = rhr[z] || 0;
+          const ba = bha[z] ?? 0,  ra = rha[z] ?? 0;
+          const total = bt + rt;
+          za[z] = total > 0 ? (bt * ba + rt * ra) / total : null;
+        }
       }
       zd = getZoneBoundaries(periodMonths, m => m.heartRateZones || m.bikeHeartRateZones);
     }
@@ -525,39 +558,23 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
             All
           </button>
         )}
-        {hasBike && (
-          <button
-            onClick={() => setSport('bike')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              sport === 'bike' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <Bike className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
-            Bike
-          </button>
-        )}
-        {hasRun && (
-          <button
-            onClick={() => setSport('run')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              sport === 'run' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <RunnerSvg className="w-3.5 h-3.5 flex-shrink-0" />
-            Run
-          </button>
-        )}
-        {hasSwim && (
-          <button
-            onClick={() => setSport('swim')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              sport === 'swim' ? 'bg-cyan-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <WavesLadder className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
-            Swim
-          </button>
-        )}
+        {availableSports.map((key) => {
+          const active = sport === key;
+          const tint = SPORT_ICON_COLORS[key] || '#6B7280';
+          const bgActive = key === 'bike' ? 'bg-blue-500' : key === 'run' ? 'bg-orange-500' : key === 'swim' ? 'bg-cyan-500' : 'bg-gray-800';
+          return (
+            <button
+              key={key}
+              onClick={() => setSport(key)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                active ? `${bgActive} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <SportGlyph sport={key} size={14} color={active ? '#fff' : tint} />
+              {SPORT_LABELS[key] || key}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Metric sub-tabs ── */}

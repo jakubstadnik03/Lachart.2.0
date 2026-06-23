@@ -7,6 +7,7 @@ import { fetchWellness } from '../../services/wellnessData';
 import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
 import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
+import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -94,6 +95,7 @@ const FormFitnessChart = ({ athleteId }) => {
   });
   const [raceTarget, setRaceTarget] = useState(null); // next race with a CTL target → drawn as a reference line
   const [loading, setLoading] = useState(true);
+  const [tssModeTick, setTssModeTick] = useState(0);
   const [zoomRange, setZoomRange] = useState(null); // { start: number, end: number } indices in chartData
   const [refAreaLeft, setRefAreaLeft] = useState(null); // global index in chartData
   const [refAreaRight, setRefAreaRight] = useState(null); // global index in chartData
@@ -134,6 +136,15 @@ const FormFitnessChart = ({ athleteId }) => {
       console.error('Error saving to localStorage:', error);
     }
   };
+
+  useEffect(() => {
+    const onTssModeChange = () => {
+      clearFormFitnessCache();
+      setTssModeTick((t) => t + 1);
+    };
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -250,7 +261,7 @@ const FormFitnessChart = ({ athleteId }) => {
     };
 
     loadData();
-  }, [athleteId, timeRange, sportFilter]);
+  }, [athleteId, timeRange, sportFilter, tssModeTick]);
 
   // Next race with a CTL target → draw it as a horizontal reference line so the
   // athlete sees the fitness they're building toward (TrainingPeaks-style).

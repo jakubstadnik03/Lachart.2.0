@@ -21,6 +21,7 @@ import { getNotifications, markAllNotificationsRead, markNotificationRead, delet
 import { useNotification } from '../../context/NotificationContext';
 import { syncWidgetFromApi } from '../../utils/widgetCache';
 import NotifIcon from '../Notifications/NotifIcon';
+import { SPORT_ICON_COLORS } from '../shared/SportIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 import { Skeleton } from '../common/Skeleton';
 
@@ -276,16 +277,8 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
                         <span
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide"
                           style={{
-                            // Sport colours mirror CalendarView's per-sport
-                            // tint so the bell + calendar look consistent.
-                            backgroundColor:
-                              n.sport === 'run' ? '#FEF3C7' :
-                              n.sport === 'bike' ? '#DBEAFE' :
-                              n.sport === 'swim' ? '#CFFAFE' : '#F3F4F6',
-                            color:
-                              n.sport === 'run' ? '#92400E' :
-                              n.sport === 'bike' ? '#1E40AF' :
-                              n.sport === 'swim' ? '#155E75' : '#4B5563',
+                            backgroundColor: `${SPORT_ICON_COLORS[n.sport] || SPORT_ICON_COLORS.other}22`,
+                            color: SPORT_ICON_COLORS[n.sport] || SPORT_ICON_COLORS.other,
                           }}
                         >
                           {n.sport}

@@ -284,6 +284,12 @@ const userSchema = new mongoose.Schema({
       enum: ['minpkm', 'kmh'],
       default: 'minpkm'
     },
+    /** Prefer power/pace TSS or hrTSS when both are available (Form, Fitness, weekly totals). */
+    tssDisplayMode: {
+      type: String,
+      enum: ['power', 'hr'],
+      default: 'power'
+    },
     zonesMethod: {
       type: String,
       enum: ['lactate', 'hrmax', 'ftp'],
@@ -352,6 +358,11 @@ const userSchema = new mongoose.Schema({
     lastSent: { type: Date, default: null }
   },
   stravaReminderEmail: {
+    sent: { type: Boolean, default: false },
+    sentCount: { type: Number, default: 0 },
+    lastSent: { type: Date, default: null }
+  },
+  appDownloadEmail: {
     sent: { type: Boolean, default: false },
     sentCount: { type: Number, default: 0 },
     lastSent: { type: Date, default: null }

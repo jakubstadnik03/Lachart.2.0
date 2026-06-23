@@ -126,6 +126,7 @@ class UserDao {
             key === 'reactivationEmail' ||
             key === 'featureAnnouncementEmail' ||
             key === 'stravaReminderEmail' ||
+            key === 'appDownloadEmail' ||
             key === 'onboarding' ||
             key === 'registrationLocation' ||
             key === 'lastLoginLocation' ||

@@ -8,7 +8,6 @@
 
 import UIKit
 import Capacitor
-import CapgoCapacitorHealth
 
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
@@ -19,8 +18,6 @@ class MainViewController: CAPBridgeViewController {
         }
         bridge.registerPluginInstance(LaChartSharedPlugin())
         bridge.registerPluginInstance(LaChartHealthPlugin())
-        // Capgo HealthPlugin kept as fallback if pod registration works on a future Capacitor upgrade.
-        bridge.registerPluginInstance(HealthPlugin())
-        NSLog("[LaChart] LaChartHealth + HealthPlugin registered")
+        NSLog("[LaChart] LaChartHealth registered")
     }
 }

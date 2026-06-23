@@ -4,6 +4,7 @@ import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import TimeInZonesBar from '../training/TimeInZonesBar';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
+import RunSplitsTable from '../training/RunSplitsTable';
 import ActivityShareSheet from '../sharing/ActivityShareSheet';
 import {
   ChevronLeftIcon,
@@ -24,13 +25,22 @@ import {
   HeartIcon,
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
-import api, { getSimilarActivities, getRaceEvents } from '../../services/api';
+import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
+import api, { getSimilarActivities, getRaceEvents, updateUserProfile } from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
-import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { distinctiveTitleTokens, isGenericTitle, titleTokens } from '../../utils/compareSimilarity';
+import {
+  buildActivityMatcher,
+  getActivityAppId,
+  metricsPatchFromDetail,
+  patchCalendarCache,
+  resolveActivitySaveKind,
+} from '../../utils/activityEventPatches';
 import { useAuth } from '../../context/AuthProvider';
+import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
-import { computeActivityTss, computePowerTss, computeHrTss, defaultTssMode, canToggleTss } from '../../utils/computeTss';
-import { getTssDisplayMode, setTssDisplayMode, resolveTssDisplayMode } from '../../utils/uiPrefs';
+import { computePowerTss, computeHrTss, defaultTssMode, canToggleTss, resolveActivityTss } from '../../utils/computeTss';
+import { getTssDisplayMode, setTssDisplayMode, resolveTssDisplayMode, notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
@@ -79,10 +89,89 @@ function planStepTotalSecs(steps) {
   return total;
 }
 
+/** Prefer explicit plannedDuration (simple editor) over structured step sum. */
+function plannedWorkoutDurationSecs(pw) {
+  if (!pw) return 0;
+  const explicit = Number(pw.plannedDuration || 0);
+  if (explicit > 0) return explicit;
+  return planStepTotalSecs(pw.steps) || 0;
+}
+
 function fmtPlanDuration(s) {
   if (!s) return '';
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  if (h > 0) return m > 0 ? `${h}h${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+/** Longhand borders only — avoids React warning when mixing border + borderLeft*. */
+function outlineBorder({ color, leftColor, leftWidth = 2, width = 1, style = 'solid' }) {
+  const lc = leftColor ?? color;
+  return {
+    borderTopWidth: width,
+    borderRightWidth: width,
+    borderBottomWidth: width,
+    borderLeftWidth: leftWidth,
+    borderTopStyle: style,
+    borderRightStyle: style,
+    borderBottomStyle: style,
+    borderLeftStyle: 'solid',
+    borderTopColor: color,
+    borderRightColor: color,
+    borderBottomColor: color,
+    borderLeftColor: lc,
+  };
+}
+
+/** Compact completed line: time · distance · avg power (bike) or avg pace (run/swim). */
+function activityCompletedStats(activity) {
+  if (!activity) return null;
+  const dur = Number(
+    activity.movingTime || activity.moving_time || activity.duration
+    || activity.elapsed_time || activity.totalTimerTime || activity.totalElapsedTime || 0,
+  );
+  const dist = Number(activity.distance || activity.totalDistance || 0);
+  const power = Number(
+    activity.normalizedPower || activity.avgPower || activity.average_watts || activity.averagePower || 0,
+  );
+  const s = String(activity.sport || activity.type || '').toLowerCase();
+  const isSwim = s.includes('swim');
+  const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
+  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+
+  const durStr = dur > 0 ? fmtPlanDuration(dur) : null;
+  const distStr = dist > 0
+    ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`)
+    : null;
+
+  let paceOrPower = null;
+  if (isBike && power > 0) {
+    paceOrPower = `${Math.round(power)} W`;
+  } else if (isSwim && dist > 0 && dur > 0) {
+    const sper100 = dur / (dist / 100);
+    paceOrPower = `${Math.floor(sper100 / 60)}:${String(Math.round(sper100 % 60)).padStart(2, '0')}/100m`;
+  } else if (isRun && dist > 0 && dur > 0) {
+    const sperkm = dur / (dist / 1000);
+    paceOrPower = `${Math.floor(sperkm / 60)}:${String(Math.round(sperkm % 60)).padStart(2, '0')}/km`;
+  }
+
+  const parts = [durStr, distStr, paceOrPower].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+function plannedWorkoutPreviewStats(pw, sportKey) {
+  if (!pw) return null;
+  const dur = plannedWorkoutDurationSecs(pw);
+  const distM = (() => {
+    const n = Number(pw.plannedDistance || 0);
+    return n > 0 && n < 100 ? n * 1000 : n;
+  })();
+  const sp = String(sportKey || pw.sport || '').toLowerCase();
+  const distStr = distM > 0
+    ? (sp.includes('swim') || distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`)
+    : null;
+  const parts = [dur > 0 ? fmtPlanDuration(dur) : null, distStr].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 // Tiny inline SVG power profile for planned workout cards
@@ -198,7 +287,24 @@ function endOfMonth(date) {
 }
 
 function addDays(date, n) { const d = safeDate(date); d.setDate(d.getDate()+n); return d; }
+function addMonths(date, n) {
+  const d = safeDate(date);
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+/** Month grid with only the weeks that contain days from `anchorDate`'s month (4–6 rows, never a trailing all-grey week). */
+function getCompactMonthDays(anchorDate) {
+  const monthEnd = endOfMonth(anchorDate);
+  let weekStart = startOfWeek(startOfMonth(anchorDate));
+  const result = [];
+  while (true) {
+    for (let i = 0; i < 7; i++) result.push(addDays(weekStart, i));
+    if (addDays(weekStart, 6) >= monthEnd) break;
+    weekStart = addDays(weekStart, 7);
+  }
+  return result;
+}
 
 // Helper function to get local date string (YYYY-MM-DD) without timezone issues
 function getLocalDateString(date) {
@@ -243,7 +349,7 @@ function getCompliance(plannedSecs, actualSecs) {
 
 function findCompliance(pw, acts) {
   if (!acts || acts.length === 0) return null;
-  const plannedSecs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+  const plannedSecs = plannedWorkoutDurationSecs(pw);
   if (!plannedSecs) return null;
   const match = acts.find(a => sportMatches(pw.sport, a.sport || a.type || ''));
   if (!match) return null;
@@ -321,7 +427,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const plannedSport = (pw.sport || 'bike').toLowerCase();
   const color = SPORT_PLAN_COLORS[plannedSport] || '#767EB5';
   // Fall back to plannedDuration (seconds) when workout has no structured steps
-  const plannedDur = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+  const plannedDur = plannedWorkoutDurationSecs(pw);
   const isCompleted = pw.status === 'completed';
   const isSkipped   = pw.status === 'skipped';
 
@@ -329,22 +435,13 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const actSecs = Number(linkedActivity?.duration || linkedActivity?.moving_time
                 || linkedActivity?.elapsed_time || linkedActivity?.movingTime
                 || linkedActivity?.totalTimerTime || linkedActivity?.totalElapsedTime || 0);
-  const actDistMeters = Number(linkedActivity?.distance || linkedActivity?.totalDistance || 0);
   const sport = linkedActivity ? (linkedActivity.sport || linkedActivity.type || plannedSport) : plannedSport;
-  const duration = (linkedActivity && actSecs > 0) ? actSecs : plannedDur;
-  const linkedDistStr = (linkedActivity && actDistMeters > 0)
-    ? (actDistMeters >= 1000 ? `${(actDistMeters/1000).toFixed(actDistMeters % 1000 === 0 ? 0 : 1)} km` : `${Math.round(actDistMeters)} m`)
-    : null;
-  // plannedDistance is stored in metres; heal legacy entries where < 100 means km
-  const plannedDistM = (() => { const n = Number(pw.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })();
-  const plannedDistStr = (!linkedActivity && plannedDistM > 0)
-    ? (sport === 'swim' || plannedDistM < 1000
-        ? `${Math.round(plannedDistM)} m`
-        : `${(plannedDistM / 1000).toFixed(plannedDistM % 1000 === 0 ? 0 : 1)} km`)
-    : null;
+  const duration = linkedActivity ? actSecs : plannedDur;
   // Category: prefer linked activity's category (user may set it after completing)
   // over the planned workout's category
   const effectiveCategory = linkedActivity?.category || pw.category || null;
+  const completedStats = linkedActivity ? activityCompletedStats(linkedActivity) : null;
+  const plannedStats = !linkedActivity ? plannedWorkoutPreviewStats(pw, sport) : null;
 
   if (compact) {
     const isCompletedPair = pairingState === 'completed' || isCompleted;
@@ -389,70 +486,36 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
             else if (onSelect) onSelect(pw);
           }}
-          className="w-full max-w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 hover:brightness-95"
+          className="w-full max-w-full text-left rounded-lg transition-all px-1.5 py-1 flex flex-col gap-0.5 hover:brightness-95"
           style={{
             backgroundColor: cardBgColor,
-            borderColor: cardBorderColor,
-            borderStyle: cardBorderStyle,
-            borderLeftColor: color,
-            borderLeftWidth: 3,
-            borderLeftStyle: 'solid',
+            ...outlineBorder({ color: cardBorderColor, leftColor: color, leftWidth: 2, style: cardBorderStyle }),
             minWidth: 0, overflow: 'hidden',
             cursor: (!isCompleted && !isSkipped) ? 'grab' : 'pointer',
           }}
           title={pw.title}
         >
-          {/* Title row — sport icon + title (+ tiny check overlay when completed) */}
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="relative flex-shrink-0">
-              <SportIcon sport={sport} className="w-3.5 h-3.5" />
-              {isCompletedPair && (
-                <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
-              )}
-            </span>
+          <div className="flex items-center gap-1 min-w-0">
+            <SportIcon sport={sport} className="w-3 h-3 flex-shrink-0" />
             <span
-              className="text-[11px] font-bold truncate flex-1"
+              className="text-[10px] font-bold truncate flex-1 leading-tight"
               style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : isPurelyPlanned ? color : '#1e293b' }}
             >
               {pw.title || 'Planned'}
             </span>
-            {/* Compliance dot — hidden when card is already tinted */}
-            {compliance && !isCompletedPair && !isMissedPair && (
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: compliance.color }} />
+            {effectiveCategory && getCategory(effectiveCategory) && (
+              <span
+                className="text-[7px] uppercase tracking-wide px-1 py-0 rounded font-bold border leading-none flex-shrink-0 max-w-[56px] truncate"
+                style={getCatStyle(effectiveCategory)}
+                title={getCategory(effectiveCategory)?.label}
+              >
+                {getCategory(effectiveCategory)?.label}
+              </span>
             )}
           </div>
-          {/* Category + duration + stats row */}
-          {(effectiveCategory || duration > 0 || pw.targetTss > 0 || linkedDistStr || plannedDistStr) && (
-            <div className="flex items-center gap-1.5 text-[10px] mt-0.5 flex-wrap">
-              {effectiveCategory && getCategory(effectiveCategory) && (
-                <span
-                  className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0"
-                  style={getCatStyle(effectiveCategory)}
-                  title={getCategory(effectiveCategory)?.label}
-                >
-                  {getCategory(effectiveCategory)?.label}
-                </span>
-              )}
-              {duration > 0 && (
-                <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{fmtPlanDuration(duration)}</span>
-              )}
-              {(linkedDistStr || plannedDistStr) && (
-                <>
-                  <span style={{ color: '#d1d5db' }}>·</span>
-                  <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{linkedDistStr || plannedDistStr}</span>
-                </>
-              )}
-              {!(linkedDistStr || plannedDistStr) && pw.targetTss > 0 && (
-                <>
-                  <span style={{ color: '#d1d5db' }}>·</span>
-                  <span style={{ color: isPurelyPlanned ? color + 'cc' : '#6b7280' }}>{pw.targetTss} TSS</span>
-                </>
-              )}
-              {compliance && (
-                <span className="ml-auto text-[9px] font-bold" style={{ color: compliance.color }}>
-                  {compliance.label}
-                </span>
-              )}
+          {(completedStats || plannedStats) && (
+            <div className={`text-[9px] leading-tight truncate tabular-nums ${isCompletedPair ? 'text-green-800' : 'text-gray-500'}`}>
+              {completedStats || plannedStats}
             </div>
           )}
         </button>
@@ -565,14 +628,6 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-sm font-semibold text-gray-900 truncate flex-1">{pw.title || 'Planned workout'}</span>
-            {/* Compliance badge */}
-            {compliance && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0"
-                style={{ backgroundColor: compliance.color + '20', color: compliance.color }}>
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: compliance.color }} />
-                {compliance.label}
-              </span>
-            )}
             {!compliance && isCompleted && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
             {isSkipped && <span className="text-xs text-gray-400 flex-shrink-0">skipped</span>}
             {!isCompleted && !isSkipped && (
@@ -629,36 +684,9 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 }
 
 // ─── Week view activity card (richer, TrainingPeaks style) ───────────────────
-function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel }) {
+function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel, userProfile = null }) {
   const title = a.title || a.name || a.originalFileName || 'Activity';
-
-  const dur  = Number(a.duration || a.elapsed_time || a.movingTime || 0);
-  const dist = Number(a.distance || a.totalDistance || 0);
-  const tss  = Number(a.tss || a.trainingLoad || 0);
-  const hr   = Number(a.averageHeartRate || a.average_heartrate || 0);
-  const power = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
-
-  const s = String(a.sport || '').toLowerCase();
-  const isSwim = s.includes('swim');
-  const isRun  = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
-  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
-
-  const durStr = dur > 0 ? `${Math.floor(dur/3600)}h ${String(Math.floor((dur%3600)/60)).padStart(2,'0')}m` : null;
-  const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(1)} km` : `${Math.round(dist)} m`) : null;
-
-  // Pace: sec/km for run, sec/100m for swim
-  const paceStr = (() => {
-    if (isSwim && dist > 0 && dur > 0) {
-      const sper100 = dur / (dist / 100);
-      return `${Math.floor(sper100/60)}:${String(Math.round(sper100%60)).padStart(2,'0')}/100m`;
-    }
-    if (isRun && dist > 0 && dur > 0) {
-      const sperkm = dur / (dist / 1000);
-      return `${Math.floor(sperkm/60)}:${String(Math.round(sperkm%60)).padStart(2,'0')}/km`;
-    }
-    return null;
-  })();
-
+  const statsLine = activityCompletedStats(a);
   const color = sportColor(a.sport);
 
   const handleClick = (e) => {
@@ -675,20 +703,19 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
     <div className="relative group/act w-full">
       <button
         onClick={handleClick}
-        className={`w-full text-left rounded-xl border transition-all p-2 flex flex-col gap-1 ${
+        className={`w-full text-left rounded-lg transition-all px-1.5 py-1 flex flex-col gap-0.5 ${
           isSelected
             ? 'bg-gradient-to-br from-primary to-primary-dark text-white shadow-md ring-2 ring-primary/20'
-            : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md border-gray-200'
+            : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
         }`}
-        style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+        style={outlineBorder({ color: isSelected ? 'transparent' : '#e5e7eb', leftColor: color, leftWidth: 2 })}
       >
-        {/* Title row */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="text-[11px] font-bold truncate flex-1">{title}</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <SportIcon sport={a.sport} className="w-3 h-3 flex-shrink-0" />
+          <span className="text-[10px] font-bold truncate flex-1 leading-tight">{title}</span>
           {a.category && catBadgeStyle && catLabel && (
             <span
-              className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md border flex-shrink-0 leading-none"
+              className="text-[7px] font-bold uppercase tracking-wide px-1 py-0 rounded border flex-shrink-0 leading-none max-w-[56px] truncate"
               style={isSelected
                 ? { backgroundColor: 'rgba(255,255,255,.18)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }
                 : catBadgeStyle(a.category)}
@@ -698,23 +725,9 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
             </span>
           )}
         </div>
-        {/* Single stats row: duration · distance · pace/power · HR */}
-        {(durStr || distStr || paceStr || (isBike && power > 0) || hr > 0) && (
-          <div className={`flex items-center gap-1.5 text-[10px] flex-wrap ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
-            {durStr && <span>{durStr}</span>}
-            {distStr && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span>{distStr}</span></>}
-            {paceStr && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span className="font-medium">{paceStr}</span></>}
-            {isBike && power > 0 && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span className="font-medium">{Math.round(power)} W</span></>}
-            {hr > 0 && <><span className={isSelected ? 'text-white/30' : 'text-gray-300'}>·</span><span>♥ {Math.round(hr)}</span></>}
-          </div>
-        )}
-        {/* TSS bar */}
-        {tss > 0 && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (tss/150)*100)}%`, backgroundColor: tss > 100 ? '#ef4444' : tss > 70 ? '#f59e0b' : '#22c55e' }} />
-            </div>
-            <span className={`text-[9px] font-bold flex-shrink-0 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tss)} TSS</span>
+        {statsLine && (
+          <div className={`text-[9px] leading-tight truncate tabular-nums ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+            {statsLine}
           </div>
         )}
       </button>
@@ -858,6 +871,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     if (isRun || isSwim) {
       if ((e.dur || 0) < 30) return false;
       if ((e.dist || 0) < 100) return false;
+      // GPS glitches / standing still → 20–30 min/km and wreck the Y-axis.
+      if (isRun && e.value > 900) return false;   // > 15:00/km
+      if (isSwim && e.value > 600) return false;  // > 10:00/100m
     }
     return true;
   }).map(e => e.value);
@@ -919,24 +935,43 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
     // SYMMETRIC range around the average just big enough to cover the farthest
     // lap from it, so: the average sits in the middle, no lap (fast OR slow)
     // clamps off the bottom/top, and a small padding keeps bars off the edges.
-    // Use ALL non-pause laps (not just the IQR-trimmed work laps) so warm-up /
-    // recovery laps stay visible instead of falling below the axis.
-    // Honza (2026-06): "průměr ať je uprostřed a všechny lapy ať jsou vidět".
-    let rangeVals = nonZero.slice();
+    // Size the Y-axis from work laps (scaleValues), not every raw segment.
+    // Outlier / pause laps still render — getBarH clamps them to the edge.
+    let rangeVals = scaleValues.length >= 2 ? scaleValues.slice() : nonZero.slice();
     if (rangeVals.length >= 6) {
       const s = [...rangeVals].sort((a, b) => a - b);
       const q1 = s[Math.floor(s.length * 0.1)];
       const q3 = s[Math.floor(s.length * 0.9)];
       const iqr = q3 - q1;
-      // Wide fence — drops only an absurd stray lap (a mis-recorded wall touch),
-      // while keeping genuine warm-up / recovery laps in range.
       const f = rangeVals.filter(v => v >= q1 - 2.5 * iqr && v <= q3 + 2.5 * iqr);
       if (f.length >= 3) rangeVals = f;
     }
     const maxDev = Math.max(...rangeVals.map(v => Math.abs(v - avgValue)), avgValue * 0.03);
     const spread = maxDev * 1.1; // 10 % headroom so the most extreme bar isn't glued to the edge
-    chartMin = Math.max(0, avgValue - spread);
-    chartMax = avgValue + spread;
+    // Every real lap pace for the FAST edge (include 80 m sprints); exclude only
+    // pauses and absurd GPS-slow paces — not the <30 s filter used for scaleValues.
+    const allPaceBounds = entries
+      .filter((e) => {
+        if (e.isPause || !e.value || e.value <= 0) return false;
+        if (isRun && e.value > 900) return false;
+        if (isSwim && e.value > 600) return false;
+        return true;
+      })
+      .map((e) => e.value);
+    if (isInverted) {
+      const sorted = [...rangeVals].sort((a, b) => a - b);
+      const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))] ?? avgValue;
+      const slowPad = Math.max(20, p90 * 0.1);
+      const globalFast = allPaceBounds.length
+        ? Math.min(...allPaceBounds)
+        : (sorted[0] ?? avgValue);
+      chartMin = Math.max(60, globalFast * 0.92);
+      chartMax = Math.min(avgValue + spread, p90 + slowPad);
+      chartMax = Math.max(chartMax, chartMin + 30);
+    } else {
+      chartMin = Math.max(0, avgValue - spread);
+      chartMax = avgValue + spread;
+    }
   }
   const range    = chartMax - chartMin || 1;
 
@@ -1394,6 +1429,21 @@ function CategoryPicker({ value, onChange }) {
   );
 }
 
+// Stable row shell for Planned | Completed grid — must live at module scope so
+// React doesn't remount inputs on every parent re-render (mobile keyboard drop).
+function PlannedVsCompletedRow({ label, labelCol, plannedInput, children, accent, compact = false }) {
+  return (
+    <div
+      className={`grid items-center ${compact ? 'gap-1 py-0.5' : 'gap-2 py-1.5'}`}
+      style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: accent || '#6b7280' }}>{label}</div>
+      <div>{plannedInput || <div className="text-sm text-gray-300 text-right pr-1">—</div>}</div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
 // Small dropdown filter for the calendar toolbar — choose a category and
 // hide every activity that isn't tagged with it (or leave "All" to keep them).
 function CalendarCategoryFilter({ value, onChange, activities }) {
@@ -1698,12 +1748,17 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const isSwim = /swim/i.test(sport);
   const normSport = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
 
+  const currentTitleStr = String(merged?.titleManual || merged?.title || merged?.name || '').trim();
+  const hasDistinctTitle = distinctiveTitleTokens(currentTitleStr).length > 0;
+  const hasLapsForCompare = Array.isArray(merged?.laps) && merged.laps.length > 0;
+
   const [activeFilters, setActiveFilters] = useState(() => {
     const init = [];
-    if (hasTitle)    init.push('title');
+    if (hasTitle && hasDistinctTitle) init.push('title');
     if (hasCategory) init.push('category');
-    if (hasLactate)  init.push('lactate');
-    return init;
+    if (hasLactate) init.push('lactate');
+    if (hasLapsForCompare || isGenericTitle(currentTitleStr)) init.push('structure');
+    return init.length ? init : ['structure'];
   });
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1729,20 +1784,11 @@ function CompareContent({ merged, athleteId, onOpen }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLaps]);
 
-  // Title token-overlap helper: extracts meaningful words (≥3 chars, lowercased)
-  // so "5x10min LT2" and "5x10min LT2 power" share tokens {"5x10min","lt2"}.
-  // Drops short connectors ("a", "do", "on") that would otherwise inflate
-  // the overlap score for any two titles in the same language.
-  const titleTokens = (s) => new Set(
-    String(s || '').toLowerCase()
-      .replace(/[·\-_,/;:!?@#]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length >= 3)
-  );
-
-  const currentTitle    = String(merged?.titleManual || merged?.title || merged?.name || '').trim();
+  // Title token-overlap helper: extracts meaningful words (≥3 chars, lowercased).
+  const currentTitle    = currentTitleStr;
   const currentCategory = merged?.category || null;
   const currentTokens   = useMemo(() => titleTokens(currentTitle), [currentTitle]);
+  const currentDistM    = Number(merged?.distance || merged?.totalDistance || 0);
 
   const similarityScore = useCallback((r) => {
     let score = 0;
@@ -1771,16 +1817,21 @@ function CompareContent({ merged, athleteId, onOpen }) {
       score += 0.20;
     }
 
-    // ── Duration similarity (down-weighted vs old formula: 0.60 → 0.15).
-    //    Two workouts can hit the same duration by coincidence; title +
-    //    category should beat it for ranking purposes.
+    // ── Duration similarity.
     const dur = Number(r.duration || r.elapsed_time || r.totalElapsedTime || 0);
     if (currentDurSec > 0 && dur > 0) {
       const durScore = Math.max(0, 1 - Math.abs(currentDurSec - dur) / Math.max(currentDurSec, dur));
-      score += durScore * 0.15;
+      score += durScore * 0.18;
     }
 
-    // ── Work-lap-count similarity (0.40 → 0.15).
+    // ── Distance similarity (endurance rides/runs with similar length).
+    const rDist = Number(r.distance || 0);
+    if (currentDistM > 0 && rDist > 0) {
+      const distScore = Math.max(0, 1 - Math.abs(currentDistM - rDist) / Math.max(currentDistM, rDist));
+      score += distScore * 0.15;
+    }
+
+    // ── Work-lap-count similarity.
     const laps = Array.isArray(r.laps) ? r.laps : [];
     const wlCount = laps.filter((l, i) => detectLapType(l, i, laps.length) === 'work').length;
     if (currentWorkLapCount > 0 && wlCount > 0) {
@@ -1808,35 +1859,60 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
     return score;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDurSec, currentWorkLapCount, currentTitle, currentCategory, currentTokens, currentLaps]);
+  }, [currentDurSec, currentWorkLapCount, currentTitle, currentCategory, currentTokens, currentLaps, currentDistM]);
+
+  const matchLabel = (score) => {
+    if (score >= 0.65) return 'Strong match';
+    if (score >= 0.40) return 'Good match';
+    if (score >= 0.22) return 'Similar';
+    return 'Weak match';
+  };
 
   useEffect(() => {
     if (activeFilters.length === 0) { setResults([]); return; }
     let cancelled = false;
     setLoading(true); setError(null);
-    const params = { athleteId, sport: sport || undefined };
+    const params = { athleteId, sport: normSport || undefined, limit: 50 };
     const rawId = merged?.id || merged?._id || merged?.stravaId;
     if (rawId) params.excludeId = String(rawId);
-    if (activeFilters.includes('title')) { const t = merged?.titleManual || merged?.title || ''; if (t.trim()) params.title = t.trim(); }
+
+    if (activeFilters.includes('title')) {
+      const tokens = distinctiveTitleTokens(currentTitle);
+      if (tokens.length > 0) {
+        params.titleKeywords = tokens.join(',');
+        params.title = tokens.join(' ');
+      } else if (currentTitle) {
+        params.title = currentTitle;
+      }
+    }
     if (activeFilters.includes('category') && merged?.category) params.category = merged.category;
     if (activeFilters.includes('lactate') && Number(merged?.lactate) > 0) params.lactate = Number(merged.lactate);
+    if (activeFilters.includes('structure')) {
+      params.structure = true;
+      if (currentDurSec > 0) params.duration = currentDurSec;
+      if (currentDistM > 0) params.distance = currentDistM;
+      if (currentLaps.length > 0) params.lapCount = currentLaps.length;
+    }
+
     getSimilarActivities(params)
       .then(d => {
         if (cancelled) return;
-        // Sort by combined duration + work-lap similarity so the closest
-        // structural matches appear first (recent date as tiebreaker).
-        const sorted = [...d].sort((a, b) => {
-          const sd = similarityScore(b) - similarityScore(a);
-          if (Math.abs(sd) > 0.02) return sd;
-          return new Date(b.date) - new Date(a.date);
-        });
+        const minScore = activeFilters.includes('structure') && !activeFilters.includes('title') ? 0.18 : 0.12;
+        const sorted = [...d]
+          .map((r) => ({ ...r, _matchScore: similarityScore(r) }))
+          .filter((r) => r._matchScore >= minScore)
+          .sort((a, b) => {
+            const sd = b._matchScore - a._matchScore;
+            if (Math.abs(sd) > 0.02) return sd;
+            return new Date(b.date) - new Date(a.date);
+          });
         setResults(sorted);
         setLoading(false);
       })
       .catch(e => { if (!cancelled) { setError(e?.message || 'Failed'); setLoading(false); } });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilters]);
+  }, [activeFilters, merged?.id, merged?._id, currentDurSec, currentDistM, currentLaps.length]);
 
   const toggleFilter = id => setActiveFilters(p => p.includes(id) ? p.filter(f => f !== id) : [...p, id]);
   const toggleCard   = id => setExpandedCards(p => ({ ...p, [id]: !p[id] }));
@@ -1996,10 +2072,16 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
       {/* ── Filter chips ── */}
       <div className="flex flex-wrap gap-2 items-center">
-        {hasTitle && (
+        {(hasTitle && hasDistinctTitle) && (
           <button onClick={() => toggleFilter('title')}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('title') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200'}`}>
             Same name
+          </button>
+        )}
+        {hasLapsForCompare && (
+          <button onClick={() => toggleFilter('structure')}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${activeFilters.includes('structure') ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+            Similar structure
           </button>
         )}
         {hasCategory && (
@@ -2162,7 +2244,12 @@ function CompareContent({ merged, athleteId, onOpen }) {
       )}
       {!loading && error && <div className="text-xs text-red-500 py-2">{error}</div>}
       {!loading && !error && results.length === 0 && activeFilters.length > 0 && (
-        <div className="text-xs text-gray-400 py-4 text-center">No similar sessions found.</div>
+        <div className="text-xs text-gray-400 py-4 text-center space-y-1">
+          <div>No similar sessions found.</div>
+          {activeFilters.includes('title') && !activeFilters.includes('structure') && (
+            <div className="text-[10px]">Try enabling <span className="font-semibold text-emerald-600">Similar structure</span> for rides with generic titles.</div>
+          )}
+        </div>
       )}
 
       {/* ── Current activity reference card ── */}
@@ -2205,6 +2292,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
         const compLaps  = Array.isArray(act.laps) ? act.laps : [];
         const isExpanded = !!expandedCards[act.id];
         const isStrava  = String(act.id || '').startsWith('strava-') || act.type === 'strava';
+        const matchScore = act._matchScore ?? similarityScore(act);
 
         return (
           <div key={act.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
@@ -2213,6 +2301,9 @@ function CompareContent({ merged, athleteId, onOpen }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-bold text-gray-400 tabular-nums">{fmtDate(act.date)}</span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${matchScore >= 0.4 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {Math.round(matchScore * 100)}% · {matchLabel(matchScore)}
+                  </span>
                   {act.category && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{act.category}</span>
                   )}
@@ -2277,16 +2368,13 @@ function CompareContent({ merged, athleteId, onOpen }) {
   );
 }
 
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onCompletedSaved = null, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null }) {
   const a = activity;
 
   // Read highlightMetric + radarWatts from props (passed by SpiderChart navigation) or URL params
   const _urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const highlightMetric = highlightMetricProp || _urlParams.get('highlightMetric') || null;
   const radarWatts = radarWattsProp != null ? radarWattsProp : (Number(_urlParams.get('radarWatts')) || null);
-  const [highlightCleared, setHighlightCleared] = useState(false);
-  const activeHighlight = highlightCleared ? null : highlightMetric;
-  const activeRadarWatts = highlightCleared ? null : radarWatts;
 
   // Full detail loaded async (for laps)
   const [detail, setDetail] = useState(null);
@@ -2351,7 +2439,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (id.startsWith('strava-')) {
           const { getStravaActivityDetail } = await import('../../services/api.js');
           const raw = await getStravaActivityDetail(id.replace('strava-', ''), athleteId || null);
-          data = { ...raw.detail, laps: raw.laps || [], description: raw.description, titleManual: raw.titleManual, category: raw.category };
+          data = {
+            ...raw.detail,
+            laps: raw.laps || [],
+            description: raw.description,
+            titleManual: raw.titleManual,
+            category: raw.category,
+            movingTime: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            moving_time: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            distance: raw.distance ?? raw.detail?.distance,
+            manualTss: raw.manualTss ?? raw.detail?.manualTss,
+            tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
+          };
           // Helper: any array regardless of whether it's {data:[...]} or a flat array
           const arrLen = a => Array.isArray(a?.data) ? a.data.length : Array.isArray(a) ? a.length : 0;
           // "chart data" = time/distance/heartrate that drives the Training Overview chart
@@ -2413,13 +2512,50 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
   }, [a.id, a._id, athleteId]);
 
-  // Merge summary + full detail — detail wins for laps/stats, but preserve
-  // the app-level `type` ('strava'|'fit'|'regular') from the original activity
-  // because Strava's raw detail has type:'Run'/'Ride' which would overwrite it.
-  const merged = useMemo(
-    () => (detail ? { ...a, ...detail, type: a.type } : a),
-    [a, detail]
-  );
+  // Merge summary + detail. Keep app ids/type/source from the calendar row and
+  // prefer list-level metrics (user edits) over Strava raw detail fields.
+  const merged = useMemo(() => {
+    if (!detail) return a;
+    const pickNum = (...vals) => {
+      for (const v of vals) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+      return undefined;
+    };
+    const moving = pickNum(
+      a.movingTime, a.moving_time, a.totalElapsedTime, a.duration, a.elapsed_time, a.elapsedTime,
+      detail.movingTime, detail.moving_time, detail.totalElapsedTime, detail.duration, detail.elapsed_time,
+    );
+    const distVal = pickNum(a.distance, a.totalDistance, detail.distance, detail.totalDistance);
+    const tssVal = pickNum(
+      a.manualTss, a.tss, a.trainingStressScore, a.trainingLoad,
+      detail.manualTss, detail.tss, detail.trainingStressScore,
+    );
+    return {
+      ...detail,
+      ...a,
+      id: getActivityAppId(a),
+      stravaId: a.stravaId ?? detail.stravaId,
+      garminId: a.garminId ?? detail.garminId,
+      source: a.source || detail.source,
+      type: a.type || detail.type,
+      titleManual: detail.titleManual ?? a.titleManual,
+      title: detail.titleManual ?? a.title ?? detail.title ?? detail.name,
+      category: detail.category ?? a.category,
+      description: detail.description ?? a.description ?? a.notes,
+      movingTime: moving,
+      moving_time: moving,
+      duration: moving,
+      elapsed_time: moving,
+      totalElapsedTime: moving,
+      distance: distVal,
+      totalDistance: distVal,
+      manualTss: tssVal,
+      tss: tssVal,
+      trainingStressScore: tssVal,
+    };
+  }, [a, detail]);
 
   // Build GPS points from streams (Strava) or FIT records
   const gpsData = useMemo(() => {
@@ -2804,7 +2940,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Completed metadata edit state
   const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '' });
   const [savingCompleted, setSavingCompleted] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [editingCompleted, setEditingCompleted] = useState(false); // desktop inline edit of the completed activity
+  const [durationPickerField, setDurationPickerField] = useState(null); // 'planned' | 'completed' | null (mobile wheel)
+
+  useEffect(() => {
+    if (mobileView !== 'edit') setDurationPickerField(null);
+  }, [mobileView]);
 
   // Smart duration parser: "2" → 120 min, "2:30" → 150 min, "90" → 90 min, "1:30:00" → 90 min
   const parseDurationToMinutes = (raw) => {
@@ -2909,34 +3051,41 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // a client-side calculation using the user's thresholds (FTP / threshold
   // pace) so Strava activities — which never carry TSS — always show
   // something instead of being hidden.
-  const explicitTss = Number(merged.tss || merged.trainingLoad || merged.totalTSS || 0);
+  const explicitTss = Number(
+    merged.manualTss || merged.tss || merged.trainingStressScore || merged.trainingLoad || merged.totalTSS || 0,
+  );
   const powerTss = computePowerTss(merged, authUser);
-  const hrTssValue = computeHrTss(merged, authUser);
-  const tssToggleable = canToggleTss(powerTss, hrTssValue);
+  const hrTss = computeHrTss(merged, authUser);
+  const tssToggleable = canToggleTss(powerTss, hrTss) && !(Number(merged.manualTss ?? 0) > 0);
   const tssLabel = tssMode === 'power'
     ? (isBike ? 'Power TSS' : (isRun ? 'Pace TSS' : isSwim ? 'Pace TSS' : 'TSS'))
     : 'hrTSS';
-  const tss = (() => {
-    if (tssMode === 'power' && powerTss > 0) return powerTss;
-    if (tssMode === 'hr' && hrTssValue > 0) return hrTssValue;
-    return explicitTss > 0 ? explicitTss : computeActivityTss(merged, authUser);
-  })();
-  const hrTss = hrTssValue;
-  const activityKey = String(merged.id || merged._id || merged.stravaId || merged.strava_id || title);
+  const tss = resolveActivityTss(merged, authUser, { user: authUser, mode: tssMode });
+  const activityKey = getActivityAppId(a);
   useEffect(() => {
-    const fallback = defaultTssMode(powerTss, hrTssValue, explicitTss);
+    const fallback = defaultTssMode(powerTss, hrTss, explicitTss);
     setTssMode(resolveTssDisplayMode({
       powerTss,
-      hrTss: hrTssValue,
+      hrTss,
       explicitTss,
       defaultMode: fallback,
     }));
-  }, [activityKey, powerTss, hrTssValue, explicitTss]);
+  }, [activityKey, powerTss, hrTss, explicitTss]);
   const flipTssMode = () => {
     if (!tssToggleable) return;
     setTssMode((m) => {
       const next = m === 'power' ? 'hr' : 'power';
       setTssDisplayMode(next);
+      clearFormFitnessCache();
+      notifyTssDisplayModeChanged(next);
+      if (authUser?._id) {
+        updateUserProfile({
+          trainingPreferences: {
+            ...(authUser.trainingPreferences || {}),
+            tssDisplayMode: next,
+          },
+        }).catch(() => {});
+      }
       return next;
     });
   };
@@ -2981,7 +3130,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   };
 
   // Planned workout data
-  const plannedDur  = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
+  const plannedDur  = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout) : 0;
   const plannedTss  = plannedWorkout ? Number(plannedWorkout.targetTss || 0) : 0;
   // Treat plannedDistance as metres, but heal legacy km-stored values
   // (< 100 means it's km from the old buggy build).
@@ -3000,21 +3149,36 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const { createPlannedWorkout, updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
       const dateForPlan = actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
       const sportForPlan = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
+      const durSecsFromForm = parseDurationToSeconds(planForm.durationDisplay);
       const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
       // Fall back to re-parsing the display (e.g. user typed "3000" and hit
       // Save before the field blurred) so swim metres still convert to km.
-      const distKm = planForm.distanceKm > 0 ? planForm.distanceKm : parseDistanceToKm(planForm.distanceDisplay);
+      const distKmRaw = planForm.distanceKm !== '' && planForm.distanceKm != null
+        ? Number(String(planForm.distanceKm).replace(',', '.'))
+        : parseDistanceToKm(planForm.distanceDisplay);
+      const distKm = Number.isFinite(distKmRaw) && distKmRaw > 0 ? distKmRaw : null;
       const payload = {
         title: planForm.title || title,
         description: planForm.description,
         coachNotes: planForm.notes,
         sport: sportForPlan,
         date: dateForPlan,
-        plannedDuration: durMins ? durMins * 60 : dur,
-        // Server schema is metres — convert from the form's km value.
-        ...(distKm > 0 && { plannedDistance: Math.round(distKm * 1000) }),
-        targetTss: planForm.targetTss ? Number(planForm.targetTss) : (tss || undefined),
+        plannedDuration: (durSecsFromForm != null && durSecsFromForm > 0)
+          ? durSecsFromForm
+          : (durMins ? Math.round(durMins * 60) : (plannedWorkoutDurationSecs(plannedWorkout) || undefined)),
+        ...(distKm != null && { plannedDistance: Math.round(distKm * 1000) }),
+        ...(planForm.targetTss !== '' && { targetTss: Number(planForm.targetTss) || 0 }),
       };
+      // Link this plan to the open completed activity so planner/calendar pairing stays stable.
+      const activityId = getActivityAppId(merged);
+      if (activityId && dur > 0) {
+        payload.status = 'completed';
+        payload.completedTrainingId = activityId;
+        if (merged.stravaId) payload.stravaActivityId = String(merged.stravaId);
+        const isFitLink = merged.source === 'fit' || merged.type === 'fit'
+          || activityId.startsWith('fit-') || (!!merged.timestamp && !merged.stravaId && merged._id);
+        if (isFitLink && merged._id) payload.fitTrainingId = String(merged._id);
+      }
       let saved;
       if (plannedWorkout?._id) {
         saved = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
@@ -3023,7 +3187,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
       setPlannedWorkout(saved);
       setEditingPlanned(false);
+      const savedDistKm = planDistanceMetresToKm(saved.plannedDistance);
+      setPlanForm({
+        title: saved.title || '',
+        description: saved.description || '',
+        notes: saved.coachNotes || saved.comment || '',
+        durationDisplay: saved.plannedDuration ? fmtDur(saved.plannedDuration) : '',
+        durationMins: saved.plannedDuration ? saved.plannedDuration / 60 : null,
+        distanceKm: savedDistKm ?? '',
+        distanceDisplay: savedDistKm ? `${savedDistKm % 1 === 0 ? savedDistKm : savedDistKm.toFixed(2)} km` : '',
+        targetTss: saved.targetTss != null ? String(saved.targetTss) : '',
+      });
       if (onPlannedSaved) onPlannedSaved(saved);
+      try {
+        window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: saved } }));
+      } catch { /* ignore */ }
+      clearFormFitnessCache();
 
       // Propagate the title change to the underlying activity (Strava / FIT / regular)
       // so it shows up in TrainingStats, FitAnalysis, calendar lists, etc.
@@ -3060,6 +3239,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
     } catch (err) {
       console.error('Failed to save planned workout', err);
+      throw err;
     } finally {
       setSavingPlan(false);
     }
@@ -3067,7 +3247,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   const planSteps = Array.isArray(plannedWorkout?.steps) ? plannedWorkout.steps : [];
 
-  // ── Seed completed-metadata form once activity title/notes are known ──
+  // ── Seed completed-metadata form when opening a different activity ──
   useEffect(() => {
     const distKm = dist > 0 ? (dist >= 1000 ? (dist / 1000).toFixed(2) : (dist / 1000).toFixed(3)) : '';
     const durDisplay = dur > 0 ? fmtDur(dur) : '';
@@ -3081,47 +3261,33 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       rpe: rpe > 0 ? String(rpe) : '',
       lactate: sessionLactate != null ? String(sessionLactate) : '',
     });
-  }, [title, notes, dist, dur, tss, calories, rpe, sessionLactate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist a category change immediately (no submit button — quick tag).
   const handleCategoryChange = useCallback(async (nextCategory) => {
     try {
-      const id = String(merged.id || merged._id || '');
+      const appId = getActivityAppId(merged);
+      const { kind, externalId } = resolveActivitySaveKind(merged);
       const value = nextCategory || null;
-      // Optimistic local update so the badge re-renders right away.
       setDetail(prev => ({ ...(prev || {}), category: value }));
 
-      // Detect the source from multiple signals — the id alone can be a bare
-      // numeric Strava id (e.g. "18440432318") without the "strava-" prefix,
-      // which previously fell through to updateTraining() and 500'd because
-      // Mongo couldn't ObjectId-cast it.
-      const isStrava = !!merged.stravaId
-        || merged.source === 'strava'
-        || merged.type === 'strava'
-        || id.startsWith('strava-');
-      const isFit = merged.source === 'fit'
-        || merged.type === 'fit'
-        || id.startsWith('fit-')
-        || (!!merged.timestamp && !isStrava && !merged._id);
+      if (!kind || !externalId) return;
 
-      if (isStrava) {
-        const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
+      if (kind === 'strava') {
         const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(stravaId, { category: value });
-      } else if (isFit) {
-        const fitId = String(merged._id || id.replace(/^fit-/, ''));
+        await updateStravaActivity(externalId, { category: value }, athleteId);
+      } else if (kind === 'garmin') {
+        const { updateGarminActivity } = await import('../../services/api.js');
+        await updateGarminActivity(externalId, { category: value }, athleteId);
+      } else if (kind === 'fit') {
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(fitId, { category: value });
-      } else if (merged._id) {
+        await updateFitTraining(externalId, { category: value });
+      } else if (kind === 'regular') {
         const { updateTraining } = await import('../../services/api.js');
-        await updateTraining(String(merged._id), { category: value });
-      } else {
-        return; // nothing to update
+        await updateTraining(externalId, { category: value });
       }
-      // Let TrainingPage / DashboardPage / FitAnalysisPage refresh their lists
-      // so the category badge shows up in calendar cells, dropdowns, etc.
       try {
-        window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id, category: value } }));
+        window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id: appId, category: value } }));
       } catch { /* ignore */ }
 
       // Mirror the category to the linked planned workout so the plan card
@@ -3169,84 +3335,165 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return null;
   };
 
+  const parseDistanceKm = (raw) => {
+    if (raw == null || String(raw).trim() === '') return null;
+    const n = Number(String(raw).replace(',', '.').trim());
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  const propagateCompletedSave = (eventDetail) => {
+    try {
+      window.dispatchEvent(new CustomEvent('activityMetricsUpdated', { detail: eventDetail }));
+    } catch { /* ignore */ }
+    try {
+      const matches = buildActivityMatcher(eventDetail.id);
+      const listPatch = metricsPatchFromDetail(eventDetail);
+      if (Object.keys(listPatch).length) patchCalendarCache(matches, listPatch);
+    } catch { /* ignore */ }
+    onCompletedSaved?.(eventDetail);
+  };
+
   const handleSaveCompleted = async () => {
     setSavingCompleted(true);
     try {
-      const id = String(merged.id || merged._id || '');
-      // Build the "what's editable from this form" payload. Distance,
-      // duration and TSS are now first-class — they're written to the
-      // activity record AND the local `detail` state below so the
-      // dashboard / week strip / calendar cards re-render immediately
-      // instead of waiting for the next refetch.
+      const appId = getActivityAppId(merged);
+      const { kind, externalId } = resolveActivitySaveKind(merged);
       const extraFields = {};
       if (completedForm.calories !== '') extraFields.calories = Number(completedForm.calories) || 0;
       if (completedForm.rpe !== '')      extraFields.rpe = Number(completedForm.rpe) || 0;
       if (completedForm.lactate !== '')  extraFields.lactate = Number(completedForm.lactate) || 0;
       if (completedForm.tss !== '')      extraFields.tss = Number(completedForm.tss) || 0;
-      // Distance is stored in metres on the backend; the form is km.
-      if (completedForm.distanceKm !== '') {
-        const km = Number(completedForm.distanceKm);
-        if (Number.isFinite(km) && km >= 0) extraFields.distance = Math.round(km * 1000);
-      }
-      // Duration is stored as seconds (movingTime / duration); convert from
-      // the human-readable display the user typed.
-      if (completedForm.durationDisplay !== '') {
-        const secs = parseDurationToSeconds(completedForm.durationDisplay);
-        if (secs != null) {
-          extraFields.movingTime = secs;
-          extraFields.duration   = secs;
-        }
-      }
-      const basePayload = { title: completedForm.title, description: completedForm.description };
-      const isStravaC = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
-      const isFitC    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStravaC && !merged._id);
-      // Strava + FIT branches used to send only `basePayload` (title +
-      // description) and silently drop manual overrides for distance /
-      // duration / TSS / calories / RPE / lactate. That meant the user
-      // could edit those fields, see the input update, hit Save, but the
-      // numbers never propagated. Now extraFields go on all branches.
-      if (isStravaC) {
-        const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
-        const { updateStravaActivity } = await import('../../services/api.js');
-        await updateStravaActivity(stravaId, { ...basePayload, ...extraFields });
-      } else if (isFitC) {
-        const fitId = String(merged._id || id.replace(/^fit-/, ''));
-        const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(fitId, { ...basePayload, ...extraFields });
-      } else if (merged._id) {
-        const { updateTraining } = await import('../../services/api.js');
-        await updateTraining(String(merged._id), { ...basePayload, ...extraFields });
-      }
-      // Mirror the edited fields back into `merged` (via setDetail) so the
-      // header chips ("3h 40m · 109.6 km · 160 TSS") update immediately
-      // without waiting for the parent's next refetch. Also broadcast a
-      // generic event the dashboard / weekly card / calendar grids listen
-      // for, so they can patch their own copies of this activity in-place.
-      setDetail(prev => ({ ...(prev || {}), titleManual: completedForm.title, description: completedForm.description, ...extraFields }));
-      try {
-        window.dispatchEvent(new CustomEvent('activityMetricsUpdated', {
-          detail: { id, ...extraFields },
-        }));
-      } catch { /* ignore */ }
-      try {
-        window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id, title: completedForm.title } }));
-      } catch { /* ignore */ }
 
-      // Mirror the title to the linked planned workout so the plan card on
-      // the calendar matches the renamed activity.
+      if (String(completedForm.durationDisplay || '').trim()) {
+        const secs = parseDurationToSeconds(completedForm.durationDisplay);
+        if (secs == null) throw new Error('Invalid duration — use 1:30:00, 1:30, 90m or 2h30m');
+        extraFields.movingTime = secs;
+        extraFields.duration = secs;
+      }
+      if (String(completedForm.distanceKm || '').trim()) {
+        const km = parseDistanceKm(completedForm.distanceKm);
+        if (km == null) throw new Error('Invalid distance — use km, e.g. 53.4');
+        extraFields.distance = Math.round(km * 1000);
+      }
+
+      const basePayload = { title: completedForm.title, description: completedForm.description };
+
+      const buildDetailPatch = (fields) => {
+        const patch = { titleManual: completedForm.title, title: completedForm.title, description: completedForm.description };
+        const secs = fields.movingTime ?? fields.duration;
+        if (secs != null) {
+          patch.movingTime = secs;
+          patch.moving_time = secs;
+          patch.duration = secs;
+          patch.elapsedTime = secs;
+          patch.elapsed_time = secs;
+          patch.totalElapsedTime = secs;
+          patch.totalTimerTime = secs;
+          patch.totalTime = secs;
+        }
+        if (fields.distance != null) {
+          patch.distance = fields.distance;
+          patch.totalDistance = fields.distance;
+        }
+        if (fields.calories != null) {
+          patch.calories = fields.calories;
+          patch.totalCalories = fields.calories;
+        }
+        if (fields.tss != null) {
+          patch.tss = fields.tss;
+          patch.trainingStressScore = fields.tss;
+          patch.manualTss = fields.tss;
+        }
+        if (fields.rpe != null) patch.rpe = fields.rpe;
+        if (fields.lactate != null) patch.lactate = fields.lactate;
+        return patch;
+      };
+
+      if (!kind || !externalId) {
+        throw new Error('Could not determine activity type to save');
+      }
+
+      let savedResponse = null;
+      if (kind === 'strava') {
+        const { updateStravaActivity } = await import('../../services/api.js');
+        savedResponse = await updateStravaActivity(externalId, { ...basePayload, ...extraFields }, athleteId);
+      } else if (kind === 'garmin') {
+        const { updateGarminActivity } = await import('../../services/api.js');
+        savedResponse = await updateGarminActivity(externalId, { ...basePayload, ...extraFields }, athleteId);
+      } else if (kind === 'fit') {
+        const { updateFitTraining } = await import('../../services/api.js');
+        savedResponse = await updateFitTraining(externalId, { ...basePayload, ...extraFields });
+      } else if (kind === 'regular') {
+        const { updateTraining } = await import('../../services/api.js');
+        const trainingPayload = { ...basePayload, ...extraFields };
+        if (extraFields.movingTime != null) {
+          trainingPayload.duration = fmtDur(extraFields.movingTime);
+        }
+        savedResponse = await updateTraining(externalId, trainingPayload);
+      }
+
+      const savedAct = savedResponse?.activity || savedResponse || {};
+      const savedMoving = savedAct.movingTime ?? savedAct.totalElapsedTime ?? savedAct.totalTimerTime ?? extraFields.movingTime;
+      const savedDist = savedAct.distance ?? savedAct.totalDistance ?? extraFields.distance;
+      const savedTss = savedAct.manualTss ?? savedAct.trainingStressScore ?? savedAct.tss ?? extraFields.tss;
+
+      const detailPatch = buildDetailPatch({
+        ...extraFields,
+        movingTime: savedMoving,
+        distance: savedDist,
+        tss: savedTss,
+      });
+      setDetail((prev) => ({ ...(prev || {}), ...detailPatch }));
+      if (savedMoving != null) {
+        setCompletedForm((p) => ({
+          ...p,
+          durationDisplay: fmtDur(savedMoving),
+        }));
+      }
+      if (savedDist != null) {
+        setCompletedForm((p) => ({
+          ...p,
+          distanceKm: savedDist >= 1000 ? (savedDist / 1000).toFixed(2) : (savedDist / 1000).toFixed(3),
+        }));
+      }
+
+      const eventDetail = {
+        id: appId,
+        stravaId: merged.stravaId ?? (kind === 'strava' ? externalId : null),
+        garminId: merged.garminId ?? (kind === 'garmin' ? externalId : null),
+        _id: kind === 'fit' || kind === 'regular' ? externalId : merged._id || null,
+        title: completedForm.title,
+        description: completedForm.description,
+        movingTime: savedMoving,
+        duration: savedMoving,
+        distance: savedDist,
+        tss: savedTss,
+        calories: savedAct.calories ?? extraFields.calories,
+        rpe: savedAct.rpe ?? extraFields.rpe,
+        lactate: savedAct.lactate ?? extraFields.lactate,
+      };
+      propagateCompletedSave(eventDetail);
+      clearFormFitnessCache();
+      if (completedForm.title) {
+        try {
+          window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: appId, title: completedForm.title } }));
+        } catch { /* ignore */ }
+      }
+
       const completedTitle = (completedForm.title || '').trim();
       if (plannedWorkout?._id && completedTitle && completedTitle !== plannedWorkout.title) {
         try {
           const { updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
-          const saved = await updatePlannedWorkout(plannedWorkout._id, { title: completedTitle }, athleteId);
-          setPlannedWorkout(saved);
-          if (onPlannedSaved) onPlannedSaved(saved);
+          const planSaved = await updatePlannedWorkout(plannedWorkout._id, { title: completedTitle }, athleteId);
+          setPlannedWorkout(planSaved);
+          if (onPlannedSaved) onPlannedSaved(planSaved);
         } catch (planErr) {
           console.error('Failed to mirror title to planned workout', planErr);
         }
       }
     } catch (err) {
       console.error('Failed to save completed metadata', err);
+      throw err;
     } finally {
       setSavingCompleted(false);
     }
@@ -3255,10 +3502,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Shared Planned | Completed editor (mobile Edit tab + desktop inline edit).
   const renderPlannedVsCompletedEditor = ({ mobile = false, onCancel, onSaved } = {}) => {
     const inputCls = mobile
-      ? 'w-full px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500'
+      ? 'w-full px-2 py-1.5 rounded-md border border-gray-200 text-[13px] bg-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500'
       : 'w-full px-2.5 py-1.5 rounded-md border border-gray-200 text-sm bg-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500';
     const plannedCls = mobile
-      ? 'w-full px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 text-right tabular-nums text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-400'
+      ? 'w-full px-2 py-1.5 rounded-md border border-gray-200 text-[13px] bg-gray-50 text-right tabular-nums text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-400'
       : 'w-full px-2.5 py-1.5 rounded-md border border-gray-200 text-sm bg-gray-50 text-right tabular-nums text-gray-600 focus:outline-none focus:ring-2 focus:ring-slate-400';
     const num = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isNaN(n) ? null : n; };
     const durMins = (s) => { const m = parseDurationToMinutes(s); return (m != null && m > 0) ? m : null; };
@@ -3274,27 +3521,70 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const tssColor = ratioColor(num(completedForm.tss), num(planForm.targetTss));
     const doneStyle = (c) => (c ? { color: c, fontWeight: 700 } : undefined);
     const labelCol = mobile ? '56px' : '78px';
-    const Row = ({ label, plannedInput, children, accent }) => (
-      <div className="grid items-center gap-2 py-1.5" style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
-        <div className="text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: accent || '#6b7280' }}>{label}</div>
-        <div>{plannedInput || <div className="text-sm text-gray-300 text-right pr-1">—</div>}</div>
-        <div>{children}</div>
-      </div>
-    );
+
+    const plannedDurationSecs = () => {
+      const parsed = parseDurationToSeconds(planForm.durationDisplay);
+      if (parsed != null && parsed >= 0) return parsed;
+      if (planForm.durationMins > 0) return Math.round(planForm.durationMins * 60);
+      return 0;
+    };
+    const completedDurationSecs = () => {
+      const parsed = parseDurationToSeconds(completedForm.durationDisplay);
+      return (parsed != null && parsed >= 0) ? parsed : 0;
+    };
+    const applyPlannedDurationSecs = (secs) => {
+      const s = Math.max(0, Math.floor(secs));
+      setPlanForm((p) => ({
+        ...p,
+        durationDisplay: fmtDur(s),
+        durationMins: s / 60,
+      }));
+    };
+    const applyCompletedDurationSecs = (secs) => {
+      const s = Math.max(0, Math.floor(secs));
+      setCompletedForm((p) => ({ ...p, durationDisplay: fmtDur(s) }));
+    };
 
     const saveAll = async () => {
-      const hasPlanData = plannedWorkout?._id
-        || planForm.durationDisplay || planForm.distanceDisplay || planForm.targetTss
-        || planForm.title || planForm.description || planForm.notes;
-      if (hasPlanData) {
-        try { await handleSavePlan(); } catch (_) { /* plan save errors logged in handleSavePlan */ }
+      setSaveError('');
+      const planNeedsCreate = !plannedWorkout?._id && (
+        planForm.durationDisplay || planForm.distanceDisplay || planForm.targetTss
+        || planForm.title || planForm.description || planForm.notes
+      );
+      const baselineDur = plannedWorkout?.plannedDuration ? fmtDur(plannedWorkout.plannedDuration) : '';
+      const baselineDistKm = (() => {
+        const n = Number(plannedWorkout?.plannedDistance || 0);
+        const metres = n > 0 && n < 100 ? n * 1000 : n;
+        return metres > 0 ? (metres / 1000).toFixed(2) : '';
+      })();
+      const planDirty = Boolean(plannedWorkout?._id && (
+        (planForm.title || '') !== (plannedWorkout.title || '')
+        || (planForm.description || '') !== (plannedWorkout.description || '')
+        || (planForm.notes || '') !== (plannedWorkout.coachNotes || plannedWorkout.comment || '')
+        || (planForm.durationDisplay || '') !== baselineDur
+        || (planForm.distanceKm || '') !== baselineDistKm
+        || (planForm.targetTss !== '' && Number(planForm.targetTss) !== Number(plannedWorkout.targetTss || 0))
+      ));
+      try {
+        await handleSaveCompleted();
+        if (planDirty || planNeedsCreate) {
+          try {
+            await handleSavePlan();
+          } catch (planErr) {
+            console.error('Failed to save planned workout (completed was saved)', planErr);
+          }
+        }
+        onSaved?.();
+      } catch (err) {
+        const msg = err?.response?.data?.error || err?.message || 'Save failed';
+        setSaveError(String(msg));
+        throw err;
       }
-      await handleSaveCompleted();
-      onSaved?.();
     };
 
     return (
-      <div className={mobile ? 'px-4 py-4 space-y-4' : 'px-5 py-4 border-b border-gray-100 bg-gray-50/60'}>
+      <>
+      <div className={mobile ? 'px-4 py-3 space-y-2.5' : 'px-5 py-4 border-b border-gray-100 bg-gray-50/60'}>
         {!mobile && (
           <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Edit activity</div>
         )}
@@ -3310,19 +3600,29 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               setPlanForm((p) => ({ ...p, title: v }));
             }}
             placeholder="Activity title"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${mobile ? 'py-2' : 'py-2.5'}`}
           />
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white px-3 py-1 divide-y divide-gray-100">
-          <div className="grid gap-2 pb-1.5 pt-1" style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
+        <div className={`rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 ${mobile ? 'px-2 py-0.5' : 'px-3 py-1'}`}>
+          <div className={`grid ${mobile ? 'gap-1 pb-0.5 pt-0.5' : 'gap-2 pb-1.5 pt-1'}`} style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
             <div />
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right pr-1">Planned</div>
             <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wide text-right pr-1">Completed</div>
           </div>
-          <Row
+          <PlannedVsCompletedRow
+            labelCol={labelCol}
             label="Duration"
-            plannedInput={(
+            compact={mobile}
+            plannedInput={mobile ? (
+              <DurationPickerField
+                value={planForm.durationDisplay}
+                placeholder="0:00"
+                active={durationPickerField === 'planned'}
+                onOpen={() => setDurationPickerField('planned')}
+                className={plannedCls}
+              />
+            ) : (
               <input
                 type="text"
                 value={planForm.durationDisplay}
@@ -3336,17 +3636,36 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               />
             )}
           >
-            <input
-              type="text"
-              value={completedForm.durationDisplay}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, durationDisplay: e.target.value }))}
-              placeholder="3:34:53"
-              className={inputCls}
-              style={doneStyle(durColor)}
-            />
-          </Row>
-          <Row
+            {mobile ? (
+              <DurationPickerField
+                value={completedForm.durationDisplay}
+                placeholder="0:00"
+                active={durationPickerField === 'completed'}
+                onOpen={() => setDurationPickerField('completed')}
+                className={inputCls}
+                style={doneStyle(durColor)}
+              />
+            ) : (
+              <input
+                type="text"
+                value={completedForm.durationDisplay}
+                onChange={(e) => setCompletedForm((p) => ({ ...p, durationDisplay: e.target.value }))}
+                onBlur={() => {
+                  const secs = parseDurationToSeconds(completedForm.durationDisplay);
+                  if (secs != null && secs > 0) {
+                    setCompletedForm((p) => ({ ...p, durationDisplay: fmtDur(secs) }));
+                  }
+                }}
+                placeholder="3:34:53"
+                className={inputCls}
+                style={doneStyle(durColor)}
+              />
+            )}
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow
+            labelCol={labelCol}
             label="Distance"
+            compact={mobile}
             plannedInput={(
               <input
                 type="text"
@@ -3370,9 +3689,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               className={inputCls}
               style={doneStyle(distColor)}
             />
-          </Row>
-          <Row
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow
+            labelCol={labelCol}
             label="TSS"
+            compact={mobile}
             plannedInput={(
               <input
                 type="number"
@@ -3395,8 +3716,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               className={inputCls}
               style={doneStyle(tssColor)}
             />
-          </Row>
-          <Row label="Calories">
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow labelCol={labelCol} label="Calories" compact={mobile}>
             <input
               type="number"
               inputMode="numeric"
@@ -3405,8 +3726,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               placeholder="kcal"
               className={inputCls}
             />
-          </Row>
-          <Row label="RPE">
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow labelCol={labelCol} label="RPE" compact={mobile}>
             <input
               type="number"
               inputMode="numeric"
@@ -3417,8 +3738,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               max="10"
               className={inputCls}
             />
-          </Row>
-          <Row label="Lactate" accent="#7c3aed">
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow labelCol={labelCol} label="Lactate" accent="#7c3aed" compact={mobile}>
             <input
               type="number"
               inputMode="decimal"
@@ -3428,10 +3749,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               step="0.1"
               className={inputCls}
             />
-          </Row>
+          </PlannedVsCompletedRow>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${mobile ? 'gap-2' : 'gap-3'}`}>
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Planned description</div>
             <textarea
@@ -3472,12 +3793,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </div>
         )}
 
-        <div className={`flex gap-2 ${mobile ? 'pt-1' : 'mt-1'}`}>
+        <div className={`flex gap-2 ${mobile ? '' : 'mt-1'}`}>
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className={`${mobile ? 'flex-1 py-3' : 'px-4 py-2'} rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 active:bg-gray-50`}
+              className={`${mobile ? 'flex-1 py-2.5' : 'px-4 py-2'} rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 active:bg-gray-50`}
             >
               Cancel
             </button>
@@ -3486,13 +3807,29 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             type="button"
             onClick={saveAll}
             disabled={savingCompleted || savingPlan}
-            className={`${mobile ? 'flex-[2] py-3' : 'px-5 py-2'} rounded-xl text-sm font-bold text-white disabled:opacity-50`}
+            className={`${mobile ? 'flex-[2] py-2.5' : 'px-5 py-2'} rounded-xl text-sm font-bold text-white disabled:opacity-50`}
             style={{ backgroundColor: color }}
           >
             {(savingCompleted || savingPlan) ? 'Saving…' : 'Save changes'}
           </button>
         </div>
+        {saveError && (
+          <div className={`text-xs text-red-600 font-medium ${mobile ? 'mt-2' : 'mt-1'}`}>
+            {saveError}
+          </div>
+        )}
       </div>
+
+      {mobile && (
+        <DurationPickerSheet
+          open={!!durationPickerField}
+          title={durationPickerField === 'planned' ? 'Planned duration' : 'Completed duration'}
+          seconds={durationPickerField === 'planned' ? plannedDurationSecs() : completedDurationSecs()}
+          onChange={durationPickerField === 'planned' ? applyPlannedDurationSecs : applyCompletedDurationSecs}
+          onClose={() => setDurationPickerField(null)}
+        />
+      )}
+      </>
     );
   };
 
@@ -3500,7 +3837,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const hasCategory  = !!(merged?.category);
   const hasTitle     = !!(merged?.titleManual || (merged?.title && String(merged.title).trim()));
   const hasLactateVal = Number(merged?.lactate) > 0;
-  const showCompare  = hasCategory || hasTitle || hasLactateVal;
+  const hasLapsCompare = Array.isArray(merged?.laps) && merged.laps.length > 0;
+  const showCompare  = hasCategory || hasTitle || hasLactateVal || hasLapsCompare;
 
   // ── MOBILE LAYOUT ──
   if (isMobile) {
@@ -3534,12 +3872,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
-          {/* Edit — jumps straight to the Edit tab so the completed activity
-              (title / distance / duration / TSS …) can be changed on mobile. */}
+          {/* Edit — scrolls to Summary editor when a plan is linked */}
           <button
-            onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
+            onClick={() => { setEditingPlanned(true); setMobileView('summary'); }}
             title="Edit activity"
-            className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 ${mobileView === 'edit' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+            className="p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 text-gray-500"
           >
             <PencilIcon className="w-4 h-4" />
           </button>
@@ -3594,7 +3931,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {mobileView === 'summary' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-            {/* Stats — TrainingPeaks-style Planned | Completed comparison */}
+            {/* Paired workout: editable Planned | Completed on Summary (TrainingPeaks-style) */}
+            {plannedWorkout ? (
+              renderPlannedVsCompletedEditor({ mobile: true })
+            ) : (
             <div className="px-4 pt-3 pb-3 space-y-3 border-b border-gray-50">
               {(() => {
                 const elapsedTime = Number(merged.elapsed_time || merged.totalElapsedTime || merged.elapsedTime || merged.totalTimerTime || 0);
@@ -3815,6 +4155,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
               </div>
             </div>
+            )}
 
             {/* Map · Training Overview · Time-in-zones moved → Map/Graph tab */}
 
@@ -3935,8 +4276,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   userProfile={null}
                   onHover={() => {}}
                   onLeave={() => {}}
-                  highlightMetric={activeHighlight}
-                  radarWatts={activeRadarWatts}
+                  highlightMetric={highlightMetric}
+                  radarWatts={radarWatts}
                   focusTimeSec={peaksFocus?.focusTimeSec ?? null}
                   focusMetric={peaksFocus?.metric ?? null}
                 />
@@ -3947,6 +4288,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             ) : (
               <div className="px-4 py-10 text-center text-sm text-gray-400">No graph data available</div>
+            )}
+
+            {isRun && (
+              <RunSplitsTable
+                laps={laps}
+                records={chartTraining?.records || []}
+                lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+              />
             )}
 
             {/* Time in zones */}
@@ -4333,8 +4682,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             {renderPlannedVsCompletedEditor({
               mobile: true,
-              onCancel: () => setMobileView('summary'),
-              onSaved: () => setMobileView('summary'),
+              onCancel: () => { setDurationPickerField(null); setMobileView('summary'); },
+              onSaved: () => { setDurationPickerField(null); setMobileView('summary'); },
             })}
             <div className="px-4 pb-6">
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Category</div>
@@ -4636,6 +4985,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               />
             </div>
           ) : null}
+
+          {isRun && (
+            <RunSplitsTable
+              laps={laps}
+              records={chartTraining?.records || []}
+              lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+              className="px-5"
+            />
+          )}
 
           {/* ── Lap chart — sticky on desktop so the bars stay visible
               while the user scrolls through the laps table below. Mobile
@@ -5001,7 +5359,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   }, [onClose]);
 
   // Planned vs completed — computed early so POPUP_W/H can depend on hasPlanned
-  const plannedDur = plannedWorkout ? (planStepTotalSecs(plannedWorkout.steps) || plannedWorkout.plannedDuration || 0) : 0;
+  const plannedDur = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout) : 0;
   const plannedDist = plannedWorkout
     ? (() => { const n = Number(plannedWorkout.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })()
     : 0;
@@ -5751,7 +6109,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
     rowH:   L ? 'text-base'   : 'text-[10px]',
     rowSub: L ? 'text-sm'     : 'text-[9px]',
     icon:   L ? 'w-5 h-5'     : 'w-3.5 h-3.5',
-    rows:   L ? 'space-y-2.5' : 'space-y-1',
+    rows:   L ? 'space-y-2.5' : 'space-y-0.5',
     bar:    L ? 'h-2.5'       : 'h-1.5',
     fire:   L ? 'w-4 h-4'     : 'w-3 h-3',
     arrow:  L ? 'w-6 h-6'     : 'w-4 h-4',
@@ -5779,7 +6137,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
     weekPlannedWorkouts.forEach(pw => {
       const sport = (pw.sport || 'other').toLowerCase();
       if (!bySport[sport]) bySport[sport] = { secs: 0, dist: 0, tss: 0 };
-      bySport[sport].secs += planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+      bySport[sport].secs += plannedWorkoutDurationSecs(pw);
       bySport[sport].dist += pw.plannedDistance || 0;
       bySport[sport].tss  += pw.targetTss || 0;
     });
@@ -6384,6 +6742,10 @@ export default function CalendarView({
   /** Optional: called with { type, id } when the user deletes an activity from
    *  ActivityFullModal — parent should refresh its activity list. */
   onActivityDeleted = null,
+  /** Called with the saved PlannedWorkout after edits in ActivityFullModal. */
+  onPlannedSaved = null,
+  /** Called after completed metrics are saved — parent should patch its activity list. */
+  onCompletedSaved = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -6485,6 +6847,9 @@ export default function CalendarView({
   const isAutoScrollingRef = useRef(false);
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
+  const miniCalScrollRef = useRef(null);
+  const miniCalScrollLockRef = useRef(false);
+  const miniCalScrollTimerRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
   // Day-theme editor — open by tapping the badge area in the day header
   // (or via the "+" menu when no theme is set yet). Holds the date string
@@ -6547,7 +6912,7 @@ export default function CalendarView({
     const ps = periodsByDate.get(key);
     if (!ps || !ps.length) return null;
     return (
-      <span className="flex gap-px mt-0.5" style={{ width: 18, height: 3 }} title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}>
+      <span className="flex gap-px mt-0.5" style={{ width: 16, height: 2 }} title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}>
         {ps.slice(0, 2).map((p, i) => (
           <span key={p._id || i} style={{ flex: 1, background: periodColor(p), borderRadius: 2 }} />
         ))}
@@ -6636,6 +7001,13 @@ export default function CalendarView({
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
+  const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
+
+  useEffect(() => {
+    const onTssModeChange = () => setTssDisplayMode(getTssDisplayMode());
+    window.addEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
+    return () => window.removeEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
+  }, []);
 
   // Drag & drop state for planned workout rescheduling
   const [draggedPw, setDraggedPw] = useState(null); // { pw, isCopy }
@@ -6645,6 +7017,23 @@ export default function CalendarView({
   const [activityPopup, setActivityPopup] = useState(null);
   // Full activity modal state: { activity, plannedWorkout }
   const [activityModal, setActivityModal] = useState(null);
+
+  // Keep the open modal's activity snapshot in sync after Completed edits.
+  useEffect(() => {
+    const onMetrics = (e) => {
+      const detail = e?.detail || {};
+      if (!detail.id) return;
+      const matches = buildActivityMatcher(detail.id);
+      const patch = metricsPatchFromDetail(detail);
+      if (!Object.keys(patch).length) return;
+      setActivityModal((prev) => {
+        if (!prev?.activity || !matches(prev.activity)) return prev;
+        return { ...prev, activity: { ...prev.activity, ...patch } };
+      });
+    };
+    window.addEventListener('activityMetricsUpdated', onMetrics);
+    return () => window.removeEventListener('activityMetricsUpdated', onMetrics);
+  }, []);
 
   // Detect mobile
   useEffect(() => {
@@ -6991,23 +7380,8 @@ export default function CalendarView({
     if (onSelectActivity) onSelectActivity(a);
   };
 
-  // Activity click handler: show popup and also select
-  // `rectOrEvent` can be a DOMRect (from WeekActivityCard) or a React event (from month-view inline buttons)
-  const handleActivityClick = (a, rectOrEvent) => {
-    if (onActivityClick) {
-      // Parent wants to handle it — pass element or null
-      const el = rectOrEvent instanceof Element ? rectOrEvent : null;
-      onActivityClick(a, el);
-    } else {
-      // Both desktop and mobile open the same ActivityFullModal so the
-      // experience matches WeeklyCalendar (consistent across surfaces).
-      const actDate = a.date || a.timestamp || a.startDate || a.start_time;
-      const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
-      const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
-      const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
-      setActivityModal({ activity: a, plannedWorkout: matchPw });
-    }
-  };
+  const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const filteredActivities = useMemo(() => {
     let list = activities;
@@ -7067,6 +7441,105 @@ export default function CalendarView({
     });
     return map;
   }, [plannedWorkouts, categoryFilter]);
+
+  // `rectOrEvent` can be a DOMRect (from WeekActivityCard) or a React event (from month-view inline buttons)
+  const handleActivityClick = (a, rectOrEvent) => {
+    if (onActivityClick) {
+      const el = rectOrEvent instanceof Element ? rectOrEvent : null;
+      onActivityClick(a, el);
+    } else {
+      const actDate = a.date || a.timestamp || a.startDate || a.start_time;
+      const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
+      const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
+      const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
+      setActivityModal({ activity: a, plannedWorkout: matchPw });
+    }
+  };
+
+  const renderMobileMiniCalMonth = (monthDate, variant = 'calendar') => {
+    const gridDays = getCompactMonthDays(monthDate);
+    const monthIdx = monthDate.getMonth();
+    const monthYear = monthDate.getFullYear();
+    const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+
+    return (
+      <div className="grid grid-cols-7">
+        {gridDays.map((dayDate) => {
+          const key = getLocalDateString(dayDate);
+          const isCurrentMonth = dayDate.getMonth() === monthIdx && dayDate.getFullYear() === monthYear;
+          const isToday = isSameDay(dayDate, new Date());
+          const isSelected = variant === 'calendar' && key === selectedMobileDay;
+          const acts = activitiesByDay.get(key) || [];
+          const planned = plannedByDay.get(key) || [];
+          const dots = [...new Set(acts.map((a) => {
+            const s = (a.sport || '').toLowerCase();
+            if (s.includes('run') || s.includes('walk')) return 'run';
+            if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+            if (s.includes('swim')) return 'swim';
+            return 'other';
+          }))].slice(0, 3);
+          const hasPlanOnly = planned.length > 0 && acts.length === 0;
+          const isSunday = dayDate.getDay() === 0;
+          const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
+
+          return (
+            <button
+              key={`${monthYear}-${monthIdx}-${key}`}
+              onClick={() => {
+                if (variant === 'charts') {
+                  const targetMonth = new Date(dayDate.getFullYear(), dayDate.getMonth(), 1);
+                  setAnchorDate(targetMonth);
+                  setSelectedMobileDay(key);
+                  setMobileTab('calendar');
+                  setShowMiniCal(true);
+                  isAutoScrollingRef.current = true;
+                  setTimeout(() => {
+                    const el = dayRefs.current[key];
+                    if (el) scrollToEl(el);
+                    setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+                  }, 150);
+                  return;
+                }
+                if (!isCurrentMonth) {
+                  setAnchorDate(new Date(dayDate.getFullYear(), dayDate.getMonth(), 1));
+                }
+                setSelectedMobileDay(key);
+                isAutoScrollingRef.current = true;
+                setTimeout(() => {
+                  const targetEl = (isSunday && weekSummaryRefs.current[weekKey])
+                    ? weekSummaryRefs.current[weekKey]
+                    : dayRefs.current[key];
+                  scrollToEl(targetEl);
+                  setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
+                }, isCurrentMonth ? 50 : 150);
+              }}
+              className="flex flex-col items-center py-px touch-manipulation"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <span className={`w-6 h-6 flex items-center justify-center text-[11px] font-semibold rounded-full transition-all ${
+                isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
+                isToday ? 'bg-primary text-white' :
+                isSelected ? 'bg-gray-200 text-gray-900' :
+                isCurrentMonth ? 'text-gray-700' : 'text-gray-400'
+              }`}>
+                {dayDate.getDate()}
+              </span>
+              {renderMiniPeriodBar(key)}
+              <div className="flex gap-0.5 h-1 mt-px items-center">
+                {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
+                {dots.map((sport, si) => (
+                  <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
+                ))}
+                {isSunday && isCurrentMonth && (
+                  <span className="w-1 h-1 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Deep-link mode: when called via push-notification deep-link the parent
   // sets `autoOpenSelectedActivity` so we open ActivityFullModal the moment
@@ -7164,8 +7637,7 @@ export default function CalendarView({
       const start = startOfWeek(anchorDate);
       return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
     }
-    const start = startOfWeek(startOfMonth(anchorDate));
-    return Array.from({ length: 42 }).map((_, i) => addDays(start, i));
+    return getCompactMonthDays(anchorDate);
   }, [view, anchorDate, isMobile]);
 
   // Fullscreen: 16 weeks starting 2 weeks before anchor
@@ -7232,6 +7704,52 @@ export default function CalendarView({
     }
   };
 
+  const miniCalScrollMonths = useMemo(() => {
+    const center = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+    return [addMonths(center, -1), center, addMonths(center, 1)];
+  }, [anchorDate]);
+
+  const miniCalViewportRows = useMemo(
+    () => Math.ceil(getCompactMonthDays(anchorDate).length / 7),
+    [anchorDate],
+  );
+
+  // Keep the scroll stack centred on the middle (current) month panel.
+  useLayoutEffect(() => {
+    if (!isMobile) return;
+    const calVisible = (mobileTab === 'calendar' && showMiniCal) || (mobileTab === 'charts' && showMiniCalCharts);
+    if (!calVisible) return;
+    const el = miniCalScrollRef.current;
+    if (!el?.children?.[0]) return;
+    miniCalScrollLockRef.current = true;
+    el.scrollTop = el.children[0].offsetHeight;
+    requestAnimationFrame(() => { miniCalScrollLockRef.current = false; });
+  }, [anchorDate, isMobile, mobileTab, showMiniCal, showMiniCalCharts]);
+
+  const handleMiniCalScroll = useCallback(() => {
+    if (miniCalScrollLockRef.current) return;
+    const el = miniCalScrollRef.current;
+    if (!el || el.children.length < 3) return;
+    if (miniCalScrollTimerRef.current) clearTimeout(miniCalScrollTimerRef.current);
+    miniCalScrollTimerRef.current = setTimeout(() => {
+      if (miniCalScrollLockRef.current) return;
+      const prevH = el.children[0].offsetHeight;
+      const curH = el.children[1].offsetHeight;
+      const st = el.scrollTop;
+      if (st <= 12) {
+        setDirection(-1);
+        setAnchorDate((d) => addMonths(d, -1));
+      } else if (st >= prevH + curH - 12) {
+        setDirection(1);
+        setAnchorDate((d) => addMonths(d, 1));
+      }
+    }, 100);
+  }, []);
+
+  useEffect(() => () => {
+    if (miniCalScrollTimerRef.current) clearTimeout(miniCalScrollTimerRef.current);
+  }, []);
+
   // Fullscreen infinite scroll: restore scroll position after prepending past weeks
   useLayoutEffect(() => {
     if (pendingScrollRestore.current && fullscreenScrollRef.current) {
@@ -7257,9 +7775,6 @@ export default function CalendarView({
     }
   }, []);
 
-  const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
   // Weekly summary (last 4 weeks)
   // Weekly summary only for weeks currently visible in the calendar grid
   // In week view, show only the current week
@@ -7276,15 +7791,7 @@ export default function CalendarView({
       mobileWeeks.forEach(wk => visibleWeekKeys.add(startOfWeek(wk[0]).toISOString().slice(0,10)));
     }
 
-    // Get FTP and threshold pace from user profile
-    const ftp = userProfile?.powerZones?.cycling?.lt2 ||
-                userProfile?.powerZones?.cycling?.zone5?.min ||
-                250; // Default estimate
-    const thresholdPace = userProfile?.runningZones?.lt2 ||
-                          userProfile?.powerZones?.running?.lt2 ||
-                          null;
-    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null; // Threshold pace in seconds per 100m
-
+    // Get FTP and threshold pace from user profile — used by resolveActivityTss
     const summary = filteredActivities.reduce((acc, act) => {
       const actDate = act.date ? new Date(act.date) : null;
       if (!actDate || isNaN(actDate.getTime())) return acc;
@@ -7317,49 +7824,7 @@ export default function CalendarView({
       const duration = Number(act.totalTimerTime || act.moving_time || act.movingTime || act.totalElapsedTime || act.elapsedTime || act.duration || 0);
       const distance = Number(act.distance || 0);
 
-      // Calculate TSS for this activity
-      let tssVal = Number(act.tss || act.TSS || act.totalTSS || 0);
-
-      // If TSS is not available, calculate it based on sport type
-      if ((!tssVal || tssVal === 0) && duration > 0) {
-        if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
-          // Bike TSS: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
-          const avgPower = Number(act.avgPower || 0);
-          if (avgPower > 0 && ftp > 0) {
-            const np = avgPower; // Using avgPower as NP approximation
-            tssVal = Math.round((duration * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
-          }
-        } else if (sport.includes('run')) {
-          // Running TSS: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-          const avgSpeed = Number(act.avgSpeed || 0); // m/s
-          if (avgSpeed > 0) {
-            const avgPaceSeconds = Math.round(1000 / avgSpeed); // seconds per km
-            let referencePace = thresholdPace;
-            // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-            if (!referencePace || referencePace <= 0) {
-              referencePace = avgPaceSeconds;
-            }
-            // Faster pace (lower seconds) = higher intensity = higher TSS
-            const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
-            tssVal = Math.round((duration * Math.pow(intensityRatio, 2)) / 3600 * 100);
-          }
-        } else if (sport.includes('swim')) {
-          // Swimming TSS: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-          // Swimming pace is per 100m (not per km)
-          const avgSpeed = Number(act.avgSpeed || 0); // m/s
-          if (avgSpeed > 0) {
-            const avgPaceSeconds = Math.round(100 / avgSpeed); // seconds per 100m
-            let referencePace = thresholdSwimPace;
-            // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-            if (!referencePace || referencePace <= 0) {
-              referencePace = avgPaceSeconds;
-            }
-            // Faster pace (lower seconds) = higher intensity = higher TSS
-            const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
-            tssVal = Math.round((duration * Math.pow(intensityRatio, 2)) / 3600 * 100);
-          }
-        }
-      }
+      const tssVal = resolveActivityTss(act, userProfile, { user: userProfile, mode: tssDisplayMode });
 
       entry.totalSeconds += duration;
       if (sport.includes('run')) {
@@ -7417,7 +7882,7 @@ export default function CalendarView({
       // summary fast and matches what the user can see.
       if (!visibleWeekKeys.has(key)) return;
       if (!plannedByWeek[key]) plannedByWeek[key] = { weekStart, plannedSeconds: 0, plannedTSS: 0 };
-      const secs = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
+      const secs = plannedWorkoutDurationSecs(pw);
       plannedByWeek[key].plannedSeconds += secs;
       plannedByWeek[key].plannedTSS += Number(pw.targetTss || 0);
     });
@@ -7459,7 +7924,17 @@ export default function CalendarView({
         plannedTSS: plannedByWeek[wk]?.plannedTSS || 0,
       };
     });
-  }, [filteredActivities, plannedWorkouts, days, fullscreenWeeks, mobileWeeks, userProfile, view, anchorDate]);
+  }, [
+    filteredActivities,
+    plannedWorkouts,
+    days,
+    fullscreenWeeks,
+    mobileWeeks,
+    userProfile,
+    view,
+    anchorDate,
+    tssDisplayMode,
+  ]);
 
   const formatHours = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0h';
@@ -7640,79 +8115,32 @@ export default function CalendarView({
 
               {/* ── Mini month grid (collapsible) ── */}
               {showMiniCal && (
-                <div className="px-3 pb-2"
-                  onTouchStart={handleCalSwipeStart}
-                  onTouchEnd={handleCalSwipeEnd}
-                >
+                <div className="px-3 pb-2">
                   <div className="grid grid-cols-7 mb-0.5">
                     {['M','T','W','T','F','S','S'].map((d, i) => (
                       <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-7">
-                    {days.map(dayDate => {
-                      const key = getLocalDateString(dayDate);
-                      const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-                      const isToday = isSameDay(dayDate, new Date());
-                      const isSelected = key === selectedMobileDay;
-                      const acts = activitiesByDay.get(key) || [];
-                      const planned = plannedByDay.get(key) || [];
-                      const dots = [...new Set(acts.map(a => {
-                        const s = (a.sport || '').toLowerCase();
-                        if (s.includes('run') || s.includes('walk')) return 'run';
-                        if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-                        if (s.includes('swim')) return 'swim';
-                        return 'other';
-                      }))].slice(0, 3);
-                      const hasPlanOnly = planned.length > 0 && acts.length === 0;
-                      const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
-                      const isSunday = dayDate.getDay() === 0;
-                      const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => {
-                            // If tapping a day from an adjacent month, navigate there first
-                            if (!isCurrentMonth) {
-                              setAnchorDate(new Date(dayDate.getFullYear(), dayDate.getMonth(), 1));
-                            }
-                            setSelectedMobileDay(key);
-                            isAutoScrollingRef.current = true;
-                            setTimeout(() => {
-                              // On Sunday click, scroll to the weekly summary card
-                              const targetEl = (isSunday && weekSummaryRefs.current[weekKey])
-                                ? weekSummaryRefs.current[weekKey]
-                                : dayRefs.current[key];
-                              scrollToEl(targetEl);
-                              setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-                            }, isCurrentMonth ? 50 : 150); // extra delay for month change to render
-                          }}
-                          className="flex flex-col items-center py-0.5 touch-manipulation"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
-                            isToday && isSelected ? 'bg-primary text-white ring-2 ring-primary/30 ring-offset-1' :
-                            isToday ? 'bg-primary text-white' :
-                            isSelected ? 'bg-gray-200 text-gray-900' :
-                            isCurrentMonth ? 'text-gray-700' : 'text-gray-400'
-                          }`}>
-                            {dayDate.getDate()}
-                          </span>
-                          {/* Period (illness / camp / travel…) — colored underline so it's visible in the mini grid too */}
-                          {renderMiniPeriodBar(key)}
-                          <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
-                            {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
-                            {dots.map((sport, si) => (
-                              <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
-                            ))}
-                            {/* Violet dot on Sundays indicates weekly summary */}
-                            {isSunday && isCurrentMonth && (
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  <div
+                    ref={miniCalScrollRef}
+                    onScroll={handleMiniCalScroll}
+                    onTouchStart={handleCalSwipeStart}
+                    onTouchEnd={handleCalSwipeEnd}
+                    className="overflow-y-auto overscroll-contain touch-pan-y"
+                    style={{
+                      maxHeight: `${miniCalViewportRows * 38 + 4}px`,
+                      scrollSnapType: 'y mandatory',
+                      WebkitOverflowScrolling: 'touch',
+                    }}
+                  >
+                    {miniCalScrollMonths.map((monthDate) => (
+                      <div
+                        key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
+                        className="snap-start snap-always"
+                      >
+                        {renderMobileMiniCalMonth(monthDate, 'calendar')}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -7749,73 +8177,32 @@ export default function CalendarView({
 
               {/* ── Mini month grid (collapsed by default in Charts) ── */}
               {showMiniCalCharts && (
-                <div className="px-3 pb-2"
-                  onTouchStart={handleCalSwipeStart}
-                  onTouchEnd={handleCalSwipeEnd}
-                >
+                <div className="px-3 pb-2">
                   <div className="grid grid-cols-7 mb-0.5">
                     {['M','T','W','T','F','S','S'].map((d, i) => (
                       <div key={i} className="text-[10px] font-bold text-gray-400 text-center py-0.5">{d}</div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-7">
-                    {days.map(dayDate => {
-                      const key = getLocalDateString(dayDate);
-                      const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-                      const isToday = isSameDay(dayDate, new Date());
-                      const acts = activitiesByDay.get(key) || [];
-                      const planned = plannedByDay.get(key) || [];
-                      const dots = [...new Set(acts.map(a => {
-                        const s = (a.sport || '').toLowerCase();
-                        if (s.includes('run') || s.includes('walk')) return 'run';
-                        if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
-                        if (s.includes('swim')) return 'swim';
-                        return 'other';
-                      }))].slice(0, 3);
-                      const hasPlanOnly = planned.length > 0 && acts.length === 0;
-                      const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
-                      const isSunday = dayDate.getDay() === 0;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => {
-                            // Tapping a day in Charts mode jumps back to Calendar view.
-                            // If the day is from an adjacent month, navigate there first.
-                            const targetMonth = new Date(dayDate.getFullYear(), dayDate.getMonth(), 1);
-                            setAnchorDate(targetMonth);
-                            setSelectedMobileDay(key);
-                            setMobileTab('calendar');
-                            setShowMiniCal(true);
-                            isAutoScrollingRef.current = true;
-                            setTimeout(() => {
-                              const el = dayRefs.current[key];
-                              if (el) scrollToEl(el);
-                              setTimeout(() => { isAutoScrollingRef.current = false; }, 700);
-                            }, 150);
-                          }}
-                          className="flex flex-col items-center py-0.5 touch-manipulation"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          <span className={`w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full transition-all ${
-                            isToday ? 'bg-primary text-white' :
-                            isCurrentMonth ? 'text-gray-700' : 'text-gray-400'
-                          }`}>
-                            {dayDate.getDate()}
-                          </span>
-                          {/* Period (illness / camp / travel…) — colored underline */}
-                          {renderMiniPeriodBar(key)}
-                          <div className="flex gap-0.5 h-1.5 mt-0.5 items-center">
-                            {hasPlanOnly && <span className="w-1 h-1 rounded-full bg-gray-300" />}
-                            {dots.map((sport, si) => (
-                              <span key={si} className="w-1 h-1 rounded-full" style={{ backgroundColor: dotColors[sport] }} />
-                            ))}
-                            {isSunday && isCurrentMonth && (
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  <div
+                    ref={miniCalScrollRef}
+                    onScroll={handleMiniCalScroll}
+                    onTouchStart={handleCalSwipeStart}
+                    onTouchEnd={handleCalSwipeEnd}
+                    className="overflow-y-auto overscroll-contain touch-pan-y"
+                    style={{
+                      maxHeight: `${miniCalViewportRows * 38 + 4}px`,
+                      scrollSnapType: 'y mandatory',
+                      WebkitOverflowScrolling: 'touch',
+                    }}
+                  >
+                    {miniCalScrollMonths.map((monthDate) => (
+                      <div
+                        key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
+                        className="snap-start snap-always"
+                      >
+                        {renderMobileMiniCalMonth(monthDate, 'charts')}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -7950,42 +8337,21 @@ export default function CalendarView({
                               {pairs.map(({ pw, act }, pi) => {
                                 const pwSport = (pw.sport || 'bike').toLowerCase();
                                 const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
-                                // Fall back to plannedDuration when no structured steps exist
-                                const duration = planStepTotalSecs(pw.steps) || pw.plannedDuration || 0;
-                                // plannedDistance is stored in metres; heal legacy entries < 100 (old km values)
-                                const plannedDistMMobile = (() => { const n = Number(pw.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })();
                                 const isSkipped = pw.status === 'skipped';
                                 const compliance = act ? findCompliance(pw, [act]) : null;
 
                                 if (act) {
                                   // Linked pair — clicking opens the activity modal
-                                  const actDur = Number(act.duration || act.elapsed_time || act.movingTime || act.moving_time || act.totalTimerTime || act.totalElapsedTime || 0);
-                                  const actDist = Number(act.distance || act.totalDistance || 0);
-                                  const actDurStr  = actDur > 0 ? `${Math.floor(actDur/3600)}h${String(Math.floor((actDur%3600)/60)).padStart(2,'0')}` : null;
-                                  const actDistStr = actDist > 0 ? (actDist >= 1000 ? `${(actDist/1000).toFixed(1)}km` : `${Math.round(actDist)}m`) : null;
-                                  const actHr    = Number(act.averageHeartRate || act.average_heartrate || 0);
-                                  const actPower = Number(act.normalizedPower || act.avgPower || act.average_watts || 0);
-                                  const actSport = String(act.sport || pwSport || '').toLowerCase();
-                                  const actIsSwim = actSport.includes('swim');
-                                  const actIsRun  = actSport.includes('run') || actSport.includes('hike') || actSport.includes('walk') || actSport.includes('trail');
-                                  const actIsBike = actSport.includes('ride') || actSport.includes('cycle') || actSport.includes('bike') || actSport.includes('virtual');
-                                  const actPaceStr = (() => {
-                                    if (actIsSwim && actDist > 0 && actDur > 0) { const s = actDur/(actDist/100); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/100m`; }
-                                    if (actIsRun  && actDist > 0 && actDur > 0) { const s = actDur/(actDist/1000); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/km`; }
-                                    return null;
-                                  })();
+                                  const actStats = activityCompletedStats(act);
                                   const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
                                   return (
                                     <button key={`pw-${pi}`}
                                       onClick={e => { e.stopPropagation(); handleActivityClick(act, null); }}
-                                      className="w-full text-left flex flex-col px-3 py-2.5 rounded-xl border touch-manipulation active:opacity-70 gap-1.5"
+                                      className="w-full text-left flex flex-col px-3 py-2.5 rounded-xl touch-manipulation active:opacity-70 gap-1.5"
                                       style={{
-                                        borderStyle: 'solid',
-                                        borderColor: cc.color,          // top/right/bottom = green
-                                        borderLeftColor: planColor,     // left = sport color
-                                        borderLeftWidth: 4,
+                                        ...outlineBorder({ color: cc.color, leftColor: planColor, leftWidth: 4 }),
                                         backgroundColor: cc.bg,
-                                        WebkitTapHighlightColor: 'transparent'
+                                        WebkitTapHighlightColor: 'transparent',
                                       }}>
                                       {/* Row 1: green dot + planned title + Done/compliance badge */}
                                       <div className="flex items-center gap-2">
@@ -7993,16 +8359,14 @@ export default function CalendarView({
                                         <span className="text-sm font-bold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
-                                      {/* Row 2: sport icon + stats (dur · dist · pace/power · HR) + category */}
+                                      {/* Row 2: sport icon + completed stats + category */}
                                       <div className="flex items-center gap-2 pl-0.5">
                                         <SportIcon sport={act.sport || pwSport} className="w-4 h-4 flex-shrink-0" />
-                                        <div className="flex items-center gap-1.5 text-[12px] text-gray-600 flex-1 min-w-0 flex-wrap">
-                                          {actDurStr && <span className="font-semibold">{actDurStr}</span>}
-                                          {actDistStr && <><span className="text-gray-300">·</span><span className="font-semibold">{actDistStr}</span></>}
-                                          {actPaceStr && <><span className="text-gray-300">·</span><span className="font-bold">{actPaceStr}</span></>}
-                                          {actIsBike && actPower > 0 && <><span className="text-gray-300">·</span><span className="font-bold">{Math.round(actPower)}W</span></>}
-                                          {actHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(actHr)}</span></>}
-                                        </div>
+                                        {actStats && (
+                                          <div className="text-[12px] text-gray-600 font-semibold flex-1 min-w-0 truncate tabular-nums">
+                                            {actStats}
+                                          </div>
+                                        )}
                                         {act.category && (
                                           <div className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
                                             style={catBadgeStyle(act.category)}
@@ -8017,16 +8381,18 @@ export default function CalendarView({
 
                                 // Planned only — no matching activity yet
                                 const isMissed = !isSkipped && !isToday && dayDate < new Date();
+                                const plannedPreview = plannedWorkoutPreviewStats(pw, pwSport);
                                 return (
                                   <button key={`pw-${pi}`}
                                     onClick={e => { e.stopPropagation(); onSelectPlannedWorkout && onSelectPlannedWorkout(pw); }}
-                                    className="w-full text-left flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border touch-manipulation active:opacity-70"
+                                    className="w-full text-left flex flex-col gap-1.5 px-3 py-2.5 rounded-xl touch-manipulation active:opacity-70"
                                     style={{
-                                      borderStyle: isMissed ? 'solid' : 'dashed',
-                                      borderColor: isMissed ? '#fca5a5' : planColor + '55',
-                                      borderLeftColor: isMissed ? '#ef4444' : planColor,
-                                      borderLeftWidth: 4,
-                                      borderLeftStyle: 'solid',
+                                      ...outlineBorder({
+                                        color: isMissed ? '#fca5a5' : planColor + '55',
+                                        leftColor: isMissed ? '#ef4444' : planColor,
+                                        leftWidth: 4,
+                                        style: isMissed ? 'solid' : 'dashed',
+                                      }),
                                       backgroundColor: isMissed ? '#fef2f2' : planColor + '10',
                                       WebkitTapHighlightColor: 'transparent'
                                     }}>
@@ -8040,11 +8406,9 @@ export default function CalendarView({
                                       {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={42} height={14} />}
                                     </div>
                                     {/* Stats row */}
-                                    {(duration > 0 || plannedDistMMobile > 0 || pw.targetTss > 0) && (
-                                      <div className="flex items-center gap-1.5 text-[12px] font-semibold pl-0.5" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
-                                        {duration > 0 && <span>{fmtPlanDuration(duration)}</span>}
-                                        {plannedDistMMobile > 0 && <><span className="opacity-40">·</span><span>{pwSport === 'swim' || plannedDistMMobile < 1000 ? `${Math.round(plannedDistMMobile)} m` : `${(plannedDistMMobile / 1000).toFixed(plannedDistMMobile % 1000 === 0 ? 0 : 1)} km`}</span></>}
-                                        {pw.targetTss > 0 && <><span className="opacity-40">·</span><span>{pw.targetTss} TSS</span></>}
+                                    {plannedPreview && (
+                                      <div className="text-[12px] font-semibold pl-0.5 truncate tabular-nums" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
+                                        {plannedPreview}
                                       </div>
                                     )}
                                   </button>
@@ -8057,22 +8421,7 @@ export default function CalendarView({
                                 const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
                                 const color = sportColor(a.sport);
                                 const title = a.title || a.name || a.originalFileName || 'Activity';
-                                const dur = Number(a.duration || a.elapsed_time || a.movingTime || a.moving_time || a.totalTimerTime || a.totalElapsedTime || 0);
-                                const dist = Number(a.distance || a.totalDistance || 0);
-                                const tss = Number(a.tss || a.trainingLoad || 0);
-                                const mHr = Number(a.averageHeartRate || a.average_heartrate || 0);
-                                const mPower = Number(a.normalizedPower || a.avgPower || a.average_watts || 0);
-                                const mSport = String(a.sport || '').toLowerCase();
-                                const mIsSwim = mSport.includes('swim');
-                                const mIsRun  = mSport.includes('run') || mSport.includes('hike') || mSport.includes('walk') || mSport.includes('trail');
-                                const mIsBike = mSport.includes('ride') || mSport.includes('cycle') || mSport.includes('bike') || mSport.includes('virtual');
-                                const durStr  = dur > 0 ? `${Math.floor(dur/3600)}h${String(Math.floor((dur%3600)/60)).padStart(2,'0')}` : null;
-                                const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
-                                const mPaceStr = (() => {
-                                  if (mIsSwim && dist > 0 && dur > 0) { const s = dur/(dist/100); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/100m`; }
-                                  if (mIsRun  && dist > 0 && dur > 0) { const s = dur/(dist/1000); return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}/km`; }
-                                  return null;
-                                })();
+                                const statsLine = activityCompletedStats(a);
                                 return (
                                   <button key={`act-${i}`}
                                     onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
@@ -8091,14 +8440,11 @@ export default function CalendarView({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-1.5 text-[12px] text-gray-600 pl-7 flex-wrap">
-                                      {durStr && <span className="font-semibold">{durStr}</span>}
-                                      {distStr && <><span className="text-gray-300">·</span><span className="font-semibold">{distStr}</span></>}
-                                      {mPaceStr && <><span className="text-gray-300">·</span><span className="font-bold">{mPaceStr}</span></>}
-                                      {mIsBike && mPower > 0 && <><span className="text-gray-300">·</span><span className="font-bold">{Math.round(mPower)}W</span></>}
-                                      {mHr > 0 && <><span className="text-gray-300">·</span><span>♥ {Math.round(mHr)}</span></>}
-                                      {tss > 0 && <><span className="text-gray-300">·</span><span className="font-bold text-primary">{Math.round(tss)} TSS</span></>}
-                                    </div>
+                                    {statsLine && (
+                                      <div className="text-[12px] text-gray-600 font-semibold pl-7 truncate tabular-nums">
+                                        {statsLine}
+                                      </div>
+                                    )}
                                   </button>
                                 );
                               })}
@@ -8431,6 +8777,7 @@ export default function CalendarView({
                               onAddLactate={onAddLactate}
                               catBadgeStyle={catBadgeStyle}
                               catLabel={catLabel}
+                              userProfile={userProfile}
                             />
                           );
                         })}
@@ -8588,7 +8935,7 @@ export default function CalendarView({
                     </div>
                     <motion.div
                       layout
-                      className="space-y-1 w-full"
+                      className="space-y-0.5 w-full"
                       style={{ maxWidth: '100%', overflow: 'hidden' }}
                       transition={{ layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } }}
                     >
@@ -8627,6 +8974,7 @@ export default function CalendarView({
                               onAddLactate={onAddLactate}
                               catBadgeStyle={catBadgeStyle}
                               catLabel={catLabel}
+                              userProfile={userProfile}
                             />
                           );
                         }
@@ -8641,7 +8989,7 @@ export default function CalendarView({
                           <div key={i} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
                             <button
                               onClick={(e) => { const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                              className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex flex-col gap-0.5 ${
+                              className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg transition-all flex flex-col gap-0.5 ${
                                 isSelected
                                   ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
                                   : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
@@ -8649,12 +8997,13 @@ export default function CalendarView({
                               style={{
                                 minWidth: 0,
                                 overflow: 'hidden',
-                                borderColor: a.category
-                                  ? (isSelected ? catBorderColor(a.category) || undefined : catBorderColor(a.category) || '#e5e7eb')
-                                  : (isSelected ? undefined : '#e5e7eb'),
-                                // Always show a sport-color left rail (or category color when assigned)
-                                borderLeftColor: a.category ? (catBorderColor(a.category) || sportColor(a.sport)) : sportColor(a.sport),
-                                borderLeftWidth: '3px',
+                                ...outlineBorder({
+                                  color: a.category
+                                    ? (catBorderColor(a.category) || '#e5e7eb')
+                                    : (isSelected ? 'transparent' : '#e5e7eb'),
+                                  leftColor: a.category ? (catBorderColor(a.category) || sportColor(a.sport)) : sportColor(a.sport),
+                                  leftWidth: 3,
+                                }),
                               }}
                               title={activityTitle}
                             >
@@ -8779,7 +9128,18 @@ export default function CalendarView({
           onClose={() => setActivityModal(null)}
           onEditPlanned={onSelectPlannedWorkout}
           onAddLactate={onAddLactate}
-          onPlannedSaved={(saved) => setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev)}
+          onPlannedSaved={(saved) => {
+            setActivityModal(prev => prev ? { ...prev, plannedWorkout: saved } : prev);
+            onPlannedSaved?.(saved);
+          }}
+          onCompletedSaved={(detail) => {
+            setActivityModal((prev) => {
+              if (!prev?.activity) return prev;
+              const patch = metricsPatchFromDetail(detail);
+              return { ...prev, activity: { ...prev.activity, ...patch } };
+            });
+            onCompletedSaved?.(detail);
+          }}
           onOpenFull={onOpenActivity ? () => { setActivityModal(null); onOpenActivity(activityModal.activity); } : null}
           onDeleted={onActivityDeleted}
         />
