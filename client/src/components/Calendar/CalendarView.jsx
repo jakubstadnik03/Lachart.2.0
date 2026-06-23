@@ -34,6 +34,7 @@ import {
   getActivityAppId,
   metricsPatchFromDetail,
   patchCalendarCache,
+  resolveActivityCaloriesKcal,
   resolveActivitySaveKind,
 } from '../../utils/activityEventPatches';
 import { useAuth } from '../../context/AuthProvider';
@@ -2450,6 +2451,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             distance: raw.distance ?? raw.detail?.distance,
             manualTss: raw.manualTss ?? raw.detail?.manualTss,
             tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
+            calories: raw.calories ?? raw.detail?.calories ?? null,
+            kilojoules: raw.detail?.kilojoules ?? null,
+            rpe: raw.rpe ?? null,
+            lactate: raw.lactate ?? null,
           };
           // Helper: any array regardless of whether it's {data:[...]} or a flat array
           const arrLen = a => Array.isArray(a?.data) ? a.data.length : Array.isArray(a) ? a.length : 0;
@@ -2532,6 +2537,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       a.manualTss, a.tss, a.trainingStressScore, a.trainingLoad,
       detail.manualTss, detail.tss, detail.trainingStressScore,
     );
+    const caloriesVal = resolveActivityCaloriesKcal({ ...detail, ...a });
     return {
       ...detail,
       ...a,
@@ -2554,6 +2560,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       manualTss: tssVal,
       tss: tssVal,
       trainingStressScore: tssVal,
+      ...(caloriesVal > 0 ? { calories: caloriesVal, totalCalories: caloriesVal } : {}),
     };
   }, [a, detail]);
 
@@ -3096,7 +3103,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const hr    = Number(merged.averageHeartRate || merged.average_heartrate || merged.avgHR || merged.avgHeartRate || 0);
   const maxHR = Number(merged.maxHeartRate || merged.max_heartrate || merged.maxHr || 0);
   const maxPower = Number(merged.maxPower || merged.max_watts || merged.maxWatts || 0);
-  const calories = Number(merged.calories || merged.totalCalories || merged.kilojoules || 0);
+  const calories = resolveActivityCaloriesKcal(merged);
   const rpe = Number(merged.rpe || merged.RPE || 0);
   const sessionLactate = merged.lactate != null ? Number(merged.lactate) : null;
   const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0);
@@ -3262,6 +3269,24 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       lactate: sessionLactate != null ? String(sessionLactate) : '',
     });
   }, [activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Strava detail (kilojoules, saved calories, rpe) loads after the modal opens —
+  // back-fill completed fields when they arrive without clobbering user edits.
+  useEffect(() => {
+    if (!detail) return;
+    const kcal = resolveActivityCaloriesKcal(merged);
+    const detailRpe = Number(merged.rpe || merged.RPE || 0);
+    const detailLactate = merged.lactate != null ? Number(merged.lactate) : null;
+    setCompletedForm((p) => {
+      const next = { ...p };
+      if (kcal > 0 && p.calories === '') next.calories = String(kcal);
+      if (detailRpe > 0 && p.rpe === '') next.rpe = String(detailRpe);
+      if (detailLactate != null && Number.isFinite(detailLactate) && p.lactate === '') {
+        next.lactate = String(detailLactate);
+      }
+      return next;
+    });
+  }, [activityKey, detail, merged]);
 
   // Persist a category change immediately (no submit button — quick tag).
   const handleCategoryChange = useCallback(async (nextCategory) => {
@@ -4870,6 +4895,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{isSwim ? 'SPM' : 'Cad'}</span>
                 <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</span>
+              </div>
+            )}
+            {calories > 0 && (
+              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Calories</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(calories).toLocaleString()}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">kcal</span></span>
               </div>
             )}
             {/* Category picker + Compliance badge */}

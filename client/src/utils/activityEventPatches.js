@@ -17,6 +17,44 @@ export function getActivityAppId(activity) {
   return rawId;
 }
 
+/** Resolve nutritional calories (kcal) from stored or Strava-derived activity fields. */
+export function resolveActivityCaloriesKcal(activity) {
+  if (!activity || typeof activity !== 'object') return 0;
+
+  const explicit = Number(activity.calories ?? activity.totalCalories ?? 0);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
+
+  const kj = Number(
+    activity.kilojoules
+    ?? activity.workout_kilojoules
+    ?? activity.work_kilojoules
+    ?? activity.work
+    ?? activity.raw?.kilojoules
+    ?? 0,
+  );
+  if (Number.isFinite(kj) && kj > 0) return Math.round(kj / 4.184);
+
+  const power = Number(
+    activity.avgPower
+    ?? activity.averagePower
+    ?? activity.average_watts
+    ?? activity.averageWatts
+    ?? 0,
+  );
+  const dur = Number(
+    activity.movingTime
+    ?? activity.moving_time
+    ?? activity.duration
+    ?? activity.elapsed_time
+    ?? activity.totalElapsedTime
+    ?? activity.elapsedTime
+    ?? 0,
+  );
+  if (power > 0 && dur > 0) return Math.round((power * dur) / 4184);
+
+  return 0;
+}
+
 /** Decide which backend update endpoint to hit for an activity snapshot. */
 export function resolveActivitySaveKind(activity) {
   const appId = getActivityAppId(activity);

@@ -143,6 +143,230 @@ function getHeartRate(act) {
   return Number.isFinite(hr) && hr > 0 ? hr : null;
 }
 
+function getNormalizedPower(act) {
+  const np = Number(
+    act.normalizedPower
+    ?? act.NP
+    ?? act.weightedAveragePower
+    ?? act.weighted_average_watts
+    ?? 0,
+  );
+  return Number.isFinite(np) && np > 0 ? np : null;
+}
+
+function fmtPaceFromSec(secPerUnit) {
+  const total = Math.max(0, Math.round(secPerUnit || 0));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function fmtSignedPct(pct) {
+  if (pct == null || !Number.isFinite(pct)) return '—';
+  const rounded = Math.round(pct);
+  if (rounded === 0) return '±0%';
+  return `${rounded > 0 ? '+' : ''}${rounded}%`;
+}
+
+function fmtSportDuration(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function computeSportBucketStats(acts, userProfile) {
+  const byBucket = {};
+  const empty = () => ({
+    sec: 0,
+    dist: 0,
+    tss: 0,
+    count: 0,
+    powerWeighted: 0,
+    powerSec: 0,
+    npWeighted: 0,
+    npSec: 0,
+    paceWeighted: 0,
+    paceSec: 0,
+    hrWeighted: 0,
+    hrSec: 0,
+  });
+
+  (acts || []).forEach((act) => {
+    const b = sportBucket(act.sport);
+    if (!byBucket[b]) byBucket[b] = empty();
+    const st = byBucket[b];
+    const sec = actDurationSec(act);
+    if (sec <= 0) return;
+
+    st.sec += sec;
+    st.count += 1;
+    const dist = Number(act.distance || 0);
+    if (dist > 0) st.dist += dist;
+    const tss = computeTssForAct(act, userProfile);
+    if (tss > 0) st.tss += tss;
+
+    const ps = profileSportFromActivity(act.sport);
+    if (b === 'bike' || ps === 'cycling') {
+      const p = Number(act.avgPower ?? act.averagePower ?? act.average_watts ?? 0);
+      if (Number.isFinite(p) && p > 0) {
+        st.powerWeighted += p * sec;
+        st.powerSec += sec;
+      }
+      const np = getNormalizedPower(act);
+      if (np) {
+        st.npWeighted += np * sec;
+        st.npSec += sec;
+      }
+    }
+
+    if (b === 'swim' || ps === 'swimming') {
+      const pace = getPowerOrPaceMetric(act, 'swimming');
+      if (pace) {
+        st.paceWeighted += pace * sec;
+        st.paceSec += sec;
+      }
+    } else if (['run', 'hike', 'walk', 'ski'].includes(b) || ps === 'running') {
+      const pace = getPowerOrPaceMetric(act, 'running');
+      if (pace) {
+        st.paceWeighted += pace * sec;
+        st.paceSec += sec;
+      }
+    }
+
+    const hr = getHeartRate(act);
+    if (hr) {
+      st.hrWeighted += hr * sec;
+      st.hrSec += sec;
+    }
+  });
+
+  Object.keys(byBucket).forEach((key) => {
+    const st = byBucket[key];
+    st.avgPower = st.powerSec > 0 ? st.powerWeighted / st.powerSec : null;
+    st.avgNp = st.npSec > 0 ? st.npWeighted / st.npSec : null;
+    st.avgPace = st.paceSec > 0 ? st.paceWeighted / st.paceSec : null;
+    st.avgHr = st.hrSec > 0 ? st.hrWeighted / st.hrSec : null;
+  });
+
+  return byBucket;
+}
+
+function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
+  if (!cur) return null;
+
+  const deltaColor = (pct) => {
+    if (pct == null) return 'text-white/60';
+    if (pct > 2) return 'text-green-300';
+    if (pct < -2) return 'text-red-300';
+    return 'text-white/60';
+  };
+
+  const metricRows = [];
+  if (bucket === 'bike') {
+    if (cur.avgPower) metricRows.push({ label: 'Avg power', value: `${Math.round(cur.avgPower)} W` });
+    if (cur.avgNp && (!cur.avgPower || Math.abs(cur.avgNp - cur.avgPower) > 1)) {
+      metricRows.push({ label: 'Norm. power', value: `${Math.round(cur.avgNp)} W` });
+    }
+  }
+  if (bucket === 'swim' && cur.avgPace) {
+    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace)} /100m` });
+  }
+  if (['run', 'hike', 'walk', 'ski'].includes(bucket) && cur.avgPace) {
+    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace)} /km` });
+  }
+  if (cur.avgHr) metricRows.push({ label: 'Avg HR', value: `${Math.round(cur.avgHr)} bpm` });
+  if (cur.tss > 0) metricRows.push({ label: 'TSS', value: String(Math.round(cur.tss)) });
+  if (cur.count > 0) metricRows.push({ label: 'Activities', value: String(cur.count) });
+
+  const cmpRows = [];
+  if (prev?.sec > 0) {
+    const timePct = ((cur.sec - prev.sec) / prev.sec) * 100;
+    cmpRows.push({
+      label: 'Time',
+      value: `${fmtSportDuration(prev.sec)} → ${fmtSportDuration(cur.sec)}`,
+      pct: timePct,
+    });
+    if (cur.dist > 0 || prev.dist > 0) {
+      const distPct = prev.dist > 0 ? ((cur.dist - prev.dist) / prev.dist) * 100 : null;
+      cmpRows.push({
+        label: 'Distance',
+        value: `${prev.dist > 0 ? formatDistance(prev.dist, user) : '—'} → ${cur.dist > 0 ? formatDistance(cur.dist, user) : '—'}`,
+        pct: distPct,
+      });
+    }
+    if (bucket === 'bike' && cur.avgPower && prev.avgPower) {
+      cmpRows.push({
+        label: 'Avg power',
+        value: `${Math.round(prev.avgPower)} → ${Math.round(cur.avgPower)} W`,
+        pct: ((cur.avgPower - prev.avgPower) / prev.avgPower) * 100,
+      });
+    }
+    if (bucket === 'bike' && cur.avgNp && prev.avgNp) {
+      cmpRows.push({
+        label: 'Norm. power',
+        value: `${Math.round(prev.avgNp)} → ${Math.round(cur.avgNp)} W`,
+        pct: ((cur.avgNp - prev.avgNp) / prev.avgNp) * 100,
+      });
+    }
+    if (cur.avgPace && prev.avgPace) {
+      const pacePct = ((cur.avgPace - prev.avgPace) / prev.avgPace) * 100;
+      cmpRows.push({
+        label: 'Avg pace',
+        value: bucket === 'swim'
+          ? `${fmtPaceFromSec(prev.avgPace)} → ${fmtPaceFromSec(cur.avgPace)} /100m`
+          : `${fmtPaceFromSec(prev.avgPace)} → ${fmtPaceFromSec(cur.avgPace)} /km`,
+        pct: -pacePct,
+      });
+    }
+    if (cur.tss > 0 || prev.tss > 0) {
+      const tssPct = prev.tss > 0 ? ((cur.tss - prev.tss) / prev.tss) * 100 : null;
+      cmpRows.push({
+        label: 'TSS',
+        value: `${Math.round(prev.tss || 0)} → ${Math.round(cur.tss || 0)}`,
+        pct: tssPct,
+      });
+    }
+  }
+
+  if (metricRows.length === 0 && cmpRows.length === 0) return null;
+
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-full z-50 mb-1.5 w-60 rounded-xl bg-gray-900 text-white text-[11px] shadow-xl p-3 pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150">
+      <div className="font-semibold text-white mb-1.5">{SPORT_LABELS[bucket] || bucket}</div>
+      {metricRows.length > 0 && (
+        <div className="space-y-0.5">
+          {metricRows.map((row) => (
+            <div key={row.label} className="flex items-baseline justify-between gap-2">
+              <span className="text-white/55">{row.label}</span>
+              <span className="font-semibold tabular-nums text-right">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {cmpRows.length > 0 && (
+        <div className={metricRows.length > 0 ? 'border-t border-white/10 mt-2 pt-2' : ''}>
+          <div className="text-[10px] uppercase tracking-wide text-white/45 mb-1.5">vs {prevLabel}</div>
+          <div className="space-y-1">
+            {cmpRows.map((row) => (
+              <div key={row.label}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-white/55">{row.label}</span>
+                  {row.pct != null && (
+                    <span className={`font-semibold tabular-nums ${deltaColor(row.pct)}`}>
+                      {fmtSignedPct(row.pct)}
+                    </span>
+                  )}
+                </div>
+                <div className="text-white/80 tabular-nums">{row.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function computeTssForAct(act, profile) {
   const seconds = actDurationSec(act);
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
@@ -762,6 +986,38 @@ export default function CalendarPeriodStats({
       prevDistByProfileSport,
     };
   }, [periodView, period?.periodStart, period?.periodEnd, activities, userProfile, aggregates.totalTss]);
+
+  const prevPeriodBounds = useMemo(() => {
+    if (!period?.periodStart || !period?.periodEnd) return null;
+    if (periodView === 'week') {
+      const prevStart = new Date(period.periodStart);
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevEnd = new Date(period.periodEnd);
+      prevEnd.setDate(prevEnd.getDate() - 7);
+      return { start: prevStart, end: prevEnd, label: 'last week' };
+    }
+    const anchor = new Date(period.periodStart);
+    const prevStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
+    const prevEnd = new Date(anchor.getFullYear(), anchor.getMonth(), 0);
+    return { start: prevStart, end: prevEnd, label: 'last month' };
+  }, [period?.periodStart, period?.periodEnd, periodView]);
+
+  const filteredPrevPeriod = useMemo(() => {
+    if (!prevPeriodBounds) return [];
+    const s = getLocalDateString(prevPeriodBounds.start);
+    const e = getLocalDateString(prevPeriodBounds.end);
+    if (!s || !e) return [];
+    return activities.filter((act) => {
+      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      return k && k >= s && k <= e;
+    });
+  }, [activities, prevPeriodBounds]);
+
+  const sportSplitStats = useMemo(() => ({
+    current: computeSportBucketStats(filtered, userProfile),
+    previous: computeSportBucketStats(filteredPrevPeriod, userProfile),
+    prevLabel: prevPeriodBounds?.label || 'previous period',
+  }), [filtered, filteredPrevPeriod, userProfile, prevPeriodBounds?.label]);
 
   // Performance Management Chart (CTL / ATL / TSB).
   // Prefer the SERVER's authoritative series so the numbers match the
@@ -1762,7 +2018,7 @@ export default function CalendarPeriodStats({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
               {/* Sport split */}
               {aggregates.totalSec > 0 && (
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="bg-gray-50 rounded-xl p-4 overflow-visible">
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                     Sport split
                   </div>
@@ -1777,7 +2033,14 @@ export default function CalendarPeriodStats({
                       const psKey = profileSportFromActivity(b);
                       const dist = psKey ? (aggregates.distByProfileSport?.[psKey] || 0) : 0;
                       return (
-                        <div key={b} className="flex items-center gap-2">
+                        <div key={b} className="relative group flex items-center gap-2 rounded-lg px-1 -mx-1 py-0.5 cursor-default hover:bg-white/70">
+                          <SportSplitTooltip
+                            bucket={b}
+                            cur={sportSplitStats.current[b]}
+                            prev={sportSplitStats.previous[b]}
+                            prevLabel={sportSplitStats.prevLabel}
+                            user={user}
+                          />
                           <div className="w-5 h-5 shrink-0 flex items-center justify-center">
                             <SportGlyph sport={b} size={16} color={BUCKET_COLOR[b] || BUCKET_COLOR.other} />
                           </div>
@@ -1790,11 +2053,11 @@ export default function CalendarPeriodStats({
                               style={{ width: `${pct}%`, backgroundColor: BUCKET_COLOR[b] }}
                             />
                           </div>
-                          <span className="w-10 text-[13px] font-semibold text-gray-700 shrink-0 text-right">
+                          <span className="text-[13px] font-semibold text-gray-700 shrink-0 whitespace-nowrap tabular-nums text-right">
                             {timeStr}
                           </span>
                           {dist > 0 && (
-                            <span className="w-14 text-xs text-gray-400 shrink-0 text-right">
+                            <span className="w-14 text-xs text-gray-400 shrink-0 text-right whitespace-nowrap">
                               {formatDistance(dist, user)}
                             </span>
                           )}

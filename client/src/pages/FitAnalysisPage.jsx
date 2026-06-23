@@ -3553,6 +3553,7 @@ const FitAnalysisPage = () => {
           avgPower: a.averagePower || a.average_watts || null,
           avgSpeed: a.averageSpeed || a.average_speed || null,
           avgHeartRate: hrFrom(a),
+          calories: a.calories ?? null,
         };
       }),
     ];
