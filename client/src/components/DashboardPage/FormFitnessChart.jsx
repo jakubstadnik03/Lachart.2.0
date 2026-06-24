@@ -142,8 +142,16 @@ const FormFitnessChart = ({ athleteId }) => {
       clearFormFitnessCache();
       setTssModeTick((t) => t + 1);
     };
+    const onMetricsUpdated = () => {
+      clearFormFitnessCache();
+      setTssModeTick((t) => t + 1);
+    };
     window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
-    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
+    return () => {
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
+    };
   }, []);
 
   useEffect(() => {

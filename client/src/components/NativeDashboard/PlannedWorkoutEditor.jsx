@@ -54,6 +54,22 @@ function hmToSecs(h, m) {
   return (hh * 60 + mm) * 60;
 }
 
+/** Server stores metres; legacy builds sometimes wrote km (< 100). */
+function planDistanceToDisplay(raw, sport) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (sport === 'swim') return String(Math.round(n));
+  const km = n >= 100 ? n / 1000 : n;
+  const rounded = Math.round(km * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function displayDistanceToMetres(str, sport) {
+  const n = parseFloat(String(str).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return sport === 'swim' ? Math.round(n) : Math.round(n * 1000);
+}
+
 export default function PlannedWorkoutEditor({
   plannedWorkout,
   linkedActivity,
@@ -72,6 +88,7 @@ export default function PlannedWorkoutEditor({
   const [date, setDate]         = useState('');
   const [durH, setDurH]         = useState('');
   const [durM, setDurM]         = useState('');
+  const [plannedDist, setPlannedDist] = useState('');
   const [targetTss, setTargetTss] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -133,6 +150,7 @@ export default function PlannedWorkoutEditor({
     const { h, m } = secsToHM(durSecs);
     setDurH(h);
     setDurM(m);
+    setPlannedDist(planDistanceToDisplay(plannedWorkout.plannedDistance, ns === 'gym' ? 'strength' : ns));
     setTargetTss(plannedWorkout.targetTss != null ? String(plannedWorkout.targetTss) : '');
     setDescription(plannedWorkout.description || plannedWorkout.notes || '');
     setCategory(plannedWorkout.category || '');
@@ -242,6 +260,7 @@ export default function PlannedWorkoutEditor({
         sport,
         date,                                    // YYYY-MM-DD
         plannedDuration: hmToSecs(durH, durM),   // seconds
+        plannedDistance: displayDistanceToMetres(plannedDist, sport),
         targetTss: targetTss !== '' ? Number(targetTss) : null,
         description: description.trim(),
         category: category || null,
@@ -528,7 +547,7 @@ export default function PlannedWorkoutEditor({
             />
           </Field>
 
-          {/* Duration (h + m) + target TSS */}
+          {/* Duration (h + m) + planned distance */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label="Duration">
               <div style={{ display: 'flex', gap: 6 }}>
@@ -560,18 +579,32 @@ export default function PlannedWorkoutEditor({
               </div>
             </Field>
 
-            <Field label="Target TSS">
-              <input
-                type="number"
-                inputMode="numeric"
-                min="0"
-                placeholder="—"
-                value={targetTss}
-                onChange={(e) => setTargetTss(e.target.value)}
-                style={input}
-              />
+            <Field label="Planned distance">
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="—"
+                  value={plannedDist}
+                  onChange={(e) => setPlannedDist(e.target.value)}
+                  style={input}
+                />
+                <span style={inputUnit}>{sport === 'swim' ? 'm' : 'km'}</span>
+              </div>
             </Field>
           </div>
+
+          <Field label="Target TSS">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              placeholder="—"
+              value={targetTss}
+              onChange={(e) => setTargetTss(e.target.value)}
+              style={input}
+            />
+          </Field>
 
           {/* Category */}
           <Field label="Category">

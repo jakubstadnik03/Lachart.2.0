@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { normalizeNotificationActivityId, requestOpenActivity } from '../../utils/activityEventPatches';
 import { syncWidgetFromApi } from '../../utils/widgetCache';
 import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
@@ -804,14 +805,16 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     const t = setInterval(loadNotifs, 60000);
     const onPush = (e) => {
       loadNotifs();
-      // Show in-app toast for foreground push notifications
       const notif = e?.detail;
       const title = notif?.title || notif?.data?.title;
       const body = notif?.body || notif?.data?.body;
+      const resourceType = notif?.data?.resourceType || notif?.resourceType;
+      const resourceId = notif?.data?.resourceId || notif?.resourceId;
+      const openActivity = normalizeNotificationActivityId(resourceType, resourceId);
       if (body) {
-        addNotification(body, 'info');
+        addNotification(body, 'info', openActivity ? { openActivity } : null);
       } else if (title) {
-        addNotification(title, 'info');
+        addNotification(title, 'info', openActivity ? { openActivity } : null);
       }
       // Strava import push → tell dashboard to reload activities
       const notifType = notif?.data?.type || notif?.type;
@@ -842,16 +845,13 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
     }
     setShowNotifs(false);
-    if (!n.resourceId) return; // no resource — just close the sheet
-    const rt = String(n.resourceType || '').toLowerCase();
-    let target;
-    if (rt === 'strava' || rt === 'strava_import') target = `strava-${n.resourceId}`;
-    else if (rt === 'fit') target = `fit-${n.resourceId}`;
-    else if (rt === 'training') target = `training-${n.resourceId}`;
-    else target = String(n.resourceId);
-    // Navigate to /dashboard?openActivity=… so the native dashboard opens the
-    // activity sheet — avoids pushing the web FitAnalysisPage (which uses the
-    // non-native Layout and breaks the native tab bar).
+    const target = normalizeNotificationActivityId(n.resourceType, n.resourceId);
+    if (!target) return;
+    // Open on the native dashboard (modal) — works from any tab.
+    if (location.pathname.startsWith('/dashboard')) {
+      requestOpenActivity(target);
+      return;
+    }
     navigate(`/dashboard?openActivity=${encodeURIComponent(target)}`);
   };
 

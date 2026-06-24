@@ -96,7 +96,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       userId: athleteIdStr,
       startDate: { $gte: queryStartDate }
     })
-      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
       .sort({ startDate: 1 })
       .lean();
 
@@ -106,7 +106,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         userId: athleteIdObj,
         startDate: { $gte: queryStartDate }
       })
-        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
         .sort({ startDate: 1 })
         .lean();
     }
@@ -153,6 +153,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
             averageSpeed: a.averageSpeed,
             average_heartrate: a.average_heartrate,
             max_heartrate: a.max_heartrate,
+            manualTss: a.manualTss,
           }, userProfile),
           sport: a.sport || 'generic'
         })),
@@ -399,7 +400,7 @@ async function calculateTrainingStatus(athleteId) {
       userId: athleteIdStr,
       startDate: { $gte: fourWeeksAgo }
     })
-      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -407,7 +408,7 @@ async function calculateTrainingStatus(athleteId) {
         userId: athleteIdObj,
         startDate: { $gte: fourWeeksAgo }
       })
-        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
         .lean();
     }
 
@@ -433,6 +434,7 @@ async function calculateTrainingStatus(athleteId) {
       averageSpeed: a.averageSpeed,
       average_heartrate: a.average_heartrate,
       max_heartrate: a.max_heartrate,
+      manualTss: a.manualTss,
     }, userProfile);
 
     const allActivities = [
@@ -565,7 +567,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       userId: athleteIdStr,
       startDate: { $gte: startDate }
     })
-      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -573,7 +575,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
         userId: athleteIdObj,
         startDate: { $gte: startDate }
       })
-        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts')
+        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
         .lean();
     }
 
@@ -599,6 +601,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       averageSpeed: a.averageSpeed,
       average_heartrate: a.average_heartrate,
       max_heartrate: a.max_heartrate,
+      manualTss: a.manualTss,
     }, userProfile);
 
     const allActivities = [

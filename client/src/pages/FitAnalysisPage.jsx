@@ -3542,7 +3542,7 @@ const FitAnalysisPage = () => {
           date: a.startDate,
           title: linked?.title || a.titleManual || a.name || 'Untitled Activity',
           linkedTrainingTitle: linked?.title || null,
-          sport: a.sport,
+          sport: a.sport || a.sport_type || a.sportType || null,
           category: a.category || linked?.category || null,
           type: source === 'garmin' ? 'garmin' : source === 'apple_health' ? 'apple_health' : 'strava',
           distance: a.distance,

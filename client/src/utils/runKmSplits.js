@@ -46,9 +46,15 @@ function buildKmLapFromRecords(segRecs, kmNumber) {
   const segmentMeters = Math.max(0, segEndDist - segStartDist);
   const speeds = movingRecs.map(speedMps).filter((v) => v > 0);
   const heartRates = movingRecs.map((r) => r.heartRate ?? r.heart_rate).filter((v) => v && v > 0);
+  const cadences = movingRecs
+    .map((r) => r.cadence ?? r.cadence_rpm ?? r.average_cadence)
+    .filter((v) => v != null && Number(v) > 0);
   const avgSpeedMps = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
   const avgHeartRate = heartRates.length > 0
     ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length)
+    : 0;
+  const avgCadence = cadences.length > 0
+    ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length)
     : 0;
 
   return {
@@ -57,6 +63,8 @@ function buildKmLapFromRecords(segRecs, kmNumber) {
     moving_time: movingTimeSec,
     average_speed: avgSpeedMps,
     average_heartrate: avgHeartRate,
+    average_cadence: avgCadence,
+    avgCadence: avgCadence,
     lapNumber: kmNumber,
     _elevDelta: elevationDeltaFromRecords(segRecs),
   };
@@ -163,10 +171,14 @@ function lapsToSplitRows(laps, records, lapTimeSource) {
     const hrRaw = Number(
       lap.average_heartrate ?? lap.avgHeartRate ?? lap.averageHeartRate ?? lap.avgHR ?? 0
     );
+    const cadRaw = Number(
+      lap.average_cadence ?? lap.avgCadence ?? lap.avg_cadence ?? lap.averageCadence ?? 0
+    );
     return {
       km: lap.lapNumber ?? lap.lap_number ?? (i + 1),
       paceSecPerKm,
       hr: hrRaw > 0 ? Math.round(hrRaw) : null,
+      cadence: cadRaw > 0 ? Math.round(cadRaw) : null,
       elev: elevationFromLap(lap),
       distM,
     };

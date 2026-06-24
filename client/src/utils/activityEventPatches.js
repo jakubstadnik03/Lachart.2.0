@@ -3,6 +3,33 @@
  * Keeps calendar lists, dashboard totals and modal state in sync after edits.
  */
 
+/** Build `openActivity` deep-link id from a stored notification resource. */
+export function normalizeNotificationActivityId(resourceType, resourceId) {
+  if (!resourceId) return null;
+  const rid = String(resourceId).trim();
+  const rt = String(resourceType || '').toLowerCase();
+  if (rt === 'strava' || rt === 'strava_import') {
+    return rid.startsWith('strava-') ? rid : `strava-${rid.replace(/^strava-/, '')}`;
+  }
+  if (rt === 'fit') {
+    return rid.startsWith('fit-') ? rid : `fit-${rid}`;
+  }
+  if (rt === 'training' || rt === 'regular') {
+    return rid.startsWith('regular-') || rid.startsWith('training-')
+      ? rid
+      : `regular-${rid}`;
+  }
+  return rid;
+}
+
+/** Dispatch event consumed by NativeDashboardPage to open an activity modal. */
+export function requestOpenActivity(activityId) {
+  if (!activityId) return;
+  try {
+    window.dispatchEvent(new CustomEvent('openActivityRequest', { detail: { id: String(activityId) } }));
+  } catch { /* ignore */ }
+}
+
 /** Stable app-level id used in calendar lists and save/event routing. */
 export function getActivityAppId(activity) {
   if (!activity) return '';

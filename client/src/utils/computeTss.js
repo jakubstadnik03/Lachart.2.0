@@ -143,6 +143,11 @@ export function canToggleTss(powerTss, hrTss) {
   return powerTss > 0 && hrTss > 0 && Math.abs(powerTss - hrTss) >= 1;
 }
 
+/** True when the athlete explicitly saved a TSS override (not FIT file import). */
+export function hasUserManualTss(activity) {
+  return Number(activity?.manualTss ?? 0) > 0;
+}
+
 function readExplicitTss(activity) {
   const manual = Number(activity.manualTss ?? 0);
   if (manual > 0) return Math.round(manual);

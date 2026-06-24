@@ -24,7 +24,7 @@ export const NotificationProvider = ({ children }) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
-  const addNotification = useCallback((message, type = 'success') => {
+  const addNotification = useCallback((message, type = 'success', options = null) => {
     const now = Date.now();
     const last = recentRef.current.get(message);
     // Suppress identical messages shown within DEDUP_MS
@@ -32,7 +32,8 @@ export const NotificationProvider = ({ children }) => {
     recentRef.current.set(message, now);
 
     const id = now + Math.random();
-    setNotifications((prev) => [...prev, { id, message, type }]);
+    const openActivity = options?.openActivity ? String(options.openActivity) : null;
+    setNotifications((prev) => [...prev, { id, message, type, openActivity }]);
 
     // Auto-remove after 4 seconds
     setTimeout(() => {
@@ -82,6 +83,16 @@ export const NotificationProvider = ({ children }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -20, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
+                onClick={() => {
+                  if (notification.openActivity) {
+                    try {
+                      window.dispatchEvent(new CustomEvent('openActivityRequest', {
+                        detail: { id: notification.openActivity },
+                      }));
+                    } catch { /* ignore */ }
+                  }
+                  removeNotification(notification.id);
+                }}
                 style={{
                   ...styleObj,
                   borderRadius: '0.75rem', // rounded-lg
@@ -90,6 +101,7 @@ export const NotificationProvider = ({ children }) => {
                   boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                   pointerEvents: 'auto',
                   fontFamily: 'inherit',
+                  cursor: notification.openActivity ? 'pointer' : 'default',
                 }}
               >
                 {notification.message}

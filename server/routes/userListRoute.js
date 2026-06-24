@@ -2306,7 +2306,7 @@ router.post("/google-auth", async (req, res) => {
             return res.status(400).json({ error: "Missing Google credential" });
         }
 
-        const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
+        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
 
         // Accept both web and iOS client IDs as valid audiences
         // iOS native sign-in produces tokens with the iOS client ID as `aud`
@@ -2354,7 +2354,7 @@ router.post("/google-auth", async (req, res) => {
                 emailVerificationToken,
                 emailVerificationTokenExpires,
                 role: normalizedRole,
-                athletes: normalizedRole === 'coach' ? [] : undefined,
+                athletes: (normalizedRole === 'coach' || normalizedRole === 'tester' || normalizedRole === 'testing') ? [] : undefined,
                 isRegistrationComplete: true,
                 onboarding: {
                     basicProfileDone: false,
@@ -2503,7 +2503,7 @@ router.post("/apple-auth", async (req, res) => {
             return res.status(400).json({ error: 'Apple token missing subject (user ID)' });
         }
 
-        const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
+        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
 
         // Apple only provides email on first sign-in. After that, look up by appleId.
         let user;

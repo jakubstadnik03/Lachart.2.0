@@ -18,6 +18,7 @@ import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLacta
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
+import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -72,7 +73,7 @@ function SportIcon({ sport, size = 22 }) {
   return <SharedSportIcon sport={sport} className={cls} />;
 }
 
-// Mirror of CalendarView's sportMatches
+// Mirror of CalendarView's sportMatches — kept for pairing only.
 function sportMatches(pwSport, actSport) {
   const p = (pwSport  || '').toLowerCase();
   const a = (actSport || '').toLowerCase();
@@ -82,27 +83,6 @@ function sportMatches(pwSport, actSport) {
   if (p === 'walk' && a.includes('walk')) return true;
   if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
   return p === a;
-}
-
-// Mirror of CalendarView's pairPlannedWithActivities
-function pairActivities(plannedForDay, acts) {
-  const pwToAct = new Map();
-  const claimed = new Set();
-  if (!plannedForDay?.length || !acts?.length) return { pwToAct, claimed };
-  const actKey = (a) => String(a?._id ?? a?.id ?? '');
-  for (const pw of plannedForDay) {
-    if (!pw?._id) continue;
-    const prelinked = pw.completedTrainingId
-      ? acts.find(a => actKey(a) === String(pw.completedTrainingId))
-      : null;
-    const match = prelinked
-      || acts.find(a => !claimed.has(actKey(a)) && sportMatches(pw.sport, a.sport || a.type || ''));
-    if (match) {
-      pwToAct.set(String(pw._id), match);
-      claimed.add(actKey(match));
-    }
-  }
-  return { pwToAct, claimed };
 }
 
 // ─── Planned workout mini step-chart (mirrors WeeklyCalendar PlanMiniChart) ───
@@ -206,22 +186,18 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
   // Activities and planned for this day — sorted chronologically (earliest
   // first) so the pairing always claims the FIRST activity of the day for
   // that sport, not whichever happened to arrive first from the API.
-  const dayActs = activities
-    .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), date))
-    .sort((a, b) => {
-      const ta = new Date(a.date || a.startDate || a.timestamp || 0).getTime();
-      const tb = new Date(b.date || b.startDate || b.timestamp || 0).getTime();
-      return ta - tb;
-    });
+  const dayActs = dedupeCalendarActivities(
+    activities.filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), date)),
+  ).sort(compareActivitiesChronologically);
   const dayPlanned = plannedWorkouts.filter(p =>
     String(p.date || '').slice(0, 10) === dateStr
   );
 
-  // Pair planned ↔ activities (same logic as CalendarView)
-  const { pwToAct, claimed } = pairActivities(dayPlanned, dayActs);
-
-  // Unclaimed standalone activities
-  const unclaimedActs = dayActs.filter(a => !claimed.has(String(a._id ?? a.id ?? '')));
+  const { items: dayItems } = buildChronologicalDayItems(
+    dayPlanned,
+    dayActs,
+    (planned, acts) => pairPlannedWithActivities(planned, acts, sportMatches),
+  );
 
   const hasContent = dayActs.length > 0 || dayPlanned.length > 0;
   const label = isToday
@@ -309,9 +285,70 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         </div>
       </div>
 
-      {/* ── Paired planned+activity (green merged card like calendar) ── */}
-      {dayPlanned.map((pw, pi) => {
-        const linkedAct = pwToAct.get(String(pw._id));
+      {dayItems.map((item, pi) => {
+        if (item.kind === 'activity') {
+          const act = item.act;
+          const id = act._id || act.id;
+          const sport = act.sport || '';
+          const color = getSportColor(sport);
+          const title = act.title || act.name || act.titleManual || 'Training';
+          const secs = Number(act.totalTime || act.duration || act.movingTime || act.elapsed_time || act.elapsedTime || act.totalTimerTime || 0);
+          const dur = fmtDuration(secs);
+          const dist = Number(act.distance || act.totalDistance || 0);
+          const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
+          const pwr = Number(act.avgPower || act.average_watts || 0);
+
+          return (
+            <button
+              key={id || `act-${pi}`}
+              onClick={() => onOpenActivity(act)}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.98)'; }}
+              onMouseUp={(e)   => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onMouseLeave={(e)=> { e.currentTarget.style.transform = 'scale(1)'; }}
+              onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.98)'; }}
+              onTouchEnd={(e)  => { e.currentTarget.style.transform = 'scale(1)'; }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '10px 11px', borderRadius: 13,
+                background: 'rgba(255,255,255,.55)',
+                border: '1px solid rgba(255,255,255,.6)',
+                borderLeft: `3px solid ${color}`,
+                marginBottom: pi < dayItems.length - 1 ? 6 : 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontFamily: 'inherit',
+                animation: `ndFadeIn .35s ${pi * 50}ms cubic-bezier(.22,1,.36,1) both`,
+                transition: 'transform .15s ease',
+              }}
+            >
+              <SportIcon sport={sport} size={22} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {title}
+                  </div>
+                  {act.category && catStyle(act.category) && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                      flexShrink: 0, whiteSpace: 'nowrap',
+                      ...catStyle(act.category),
+                    }}>
+                      {catLabel(act.category)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null].filter(Boolean).join(' · ') || 'Completed'}
+                </div>
+              </div>
+              <span style={{ fontSize: 13, color: '#9CA3AF', flexShrink: 0 }}>›</span>
+            </button>
+          );
+        }
+
+        const pw = item.pw;
+        const linkedAct = item.act;
         const isPaired  = !!linkedAct;
         // "Missed" = unpaired AND the planned date is *strictly before today*.
         // Compare by calendar day only — otherwise a workout planned for today
@@ -365,7 +402,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               background: bg,
               border: `1px ${borderStyle} ${borderColor}`,
               borderLeft: `3px solid ${leftC}`,
-              marginBottom: pi < dayPlanned.length - 1 || unclaimedActs.length > 0 ? 6 : 0,
+              marginBottom: pi < dayItems.length - 1 ? 6 : 0,
               cursor: linkedAct ? 'pointer' : 'default',
               textAlign: 'left',
               fontFamily: 'inherit',
@@ -466,66 +503,6 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               )}
               {linkedAct && <span style={{ fontSize: 13, color: '#9CA3AF' }}>›</span>}
             </div>
-          </button>
-        );
-      })}
-
-      {/* ── Standalone activities (not claimed by any planned) ── */}
-      {unclaimedActs.map((act, i) => {
-        const id      = act._id || act.id;
-        const sport   = act.sport || '';
-        const color   = getSportColor(sport);
-        const title   = act.title || act.name || act.titleManual || 'Training';
-        const secs    = Number(act.totalTime || act.duration || act.movingTime || act.elapsed_time || act.elapsedTime || act.totalTimerTime || 0);
-        const dur     = fmtDuration(secs);
-        const dist    = Number(act.distance || act.totalDistance || 0);
-        const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
-        const pwr     = Number(act.avgPower || act.average_watts || 0);
-
-        return (
-          <button
-            key={id || `act-${i}`}
-            onClick={() => onOpenActivity(act)}
-            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.98)'; }}
-            onMouseUp={(e)   => { e.currentTarget.style.transform = 'scale(1)'; }}
-            onMouseLeave={(e)=> { e.currentTarget.style.transform = 'scale(1)'; }}
-            onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.98)'; }}
-            onTouchEnd={(e)  => { e.currentTarget.style.transform = 'scale(1)'; }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              width: '100%', padding: '10px 11px', borderRadius: 13,
-              background: 'rgba(255,255,255,.55)',
-              border: '1px solid rgba(255,255,255,.6)',
-              borderLeft: `3px solid ${color}`,
-              marginBottom: i < unclaimedActs.length - 1 ? 6 : 0,
-              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-              animation: `ndFadeIn .35s ${(dayPlanned.length + i) * 50}ms cubic-bezier(.22,1,.36,1) both`,
-              transition: 'transform .15s ease',
-            }}
-          >
-            <SportIcon sport={sport} size={22} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Title + category badge */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {title}
-                </div>
-                {act.category && catStyle(act.category) && (
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
-                    flexShrink: 0, whiteSpace: 'nowrap',
-                    ...catStyle(act.category),
-                  }}>
-                    {catLabel(act.category)}
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null].filter(Boolean).join(' · ') || 'Completed'}
-              </div>
-            </div>
-            <span style={{ fontSize: 13, color: '#9CA3AF', flexShrink: 0 }}>›</span>
           </button>
         );
       })}
@@ -722,37 +699,41 @@ export default function NativeDashboardPage({
     };
   }, [onPlannedWorkoutChanged]);
 
-  // Deep-link from a push notification: `?openActivity=<prefix>-<id>` opens
-  // the activity in the modal so the user can immediately add lactate.
-  // Looks the activity up in the loaded `activities` list and waits until it
-  // arrives if needed (covers the cold-start case after a notification tap).
+  // Deep-link from a push notification or in-app toast: `?openActivity=<id>`
+  // opens the activity modal. Waits until activities load on cold start.
+  const openActivityById = useCallback((param) => {
+    if (!param) return;
+    const matches = buildActivityMatcher(param);
+    const found = activities.find(matches);
+    if (found) {
+      setActivityModal({ activity: found, plannedWorkout: null });
+      return true;
+    }
+    return false;
+  }, [activities]);
+
   useEffect(() => {
     const param = searchParams.get('openActivity');
     if (!param) return;
-
-    // Expect format `<prefix>-<id>` — but accept a bare id too
-    const dashIdx = param.indexOf('-');
-    const prefix  = dashIdx > 0 ? param.slice(0, dashIdx) : null;
-    const rawId   = dashIdx > 0 ? param.slice(dashIdx + 1) : param;
-
-    const found = activities.find(a => {
-      if (prefix === 'strava' && (String(a.stravaId) === rawId || String(a.id) === rawId)) return true;
-      if (prefix === 'fit'    && String(a._id) === rawId) return true;
-      if (prefix === 'regular'&& String(a._id) === rawId) return true;
-      if (String(a._id) === rawId || String(a.id) === rawId || String(a.stravaId) === rawId) return true;
-      return false;
-    });
-
-    if (found) {
-      setActivityModal({ activity: found, plannedWorkout: null });
-      // Strip the param so refreshing or back-navigation doesn't re-open the modal
+    if (openActivityById(param)) {
       const next = new URLSearchParams(searchParams);
       next.delete('openActivity');
       setSearchParams(next, { replace: true });
     }
-    // If not found yet (activities still loading), the effect will re-run when
-    // activities update because `activities` is a dependency.
-  }, [searchParams, activities, setSearchParams]);
+  }, [searchParams, openActivityById, setSearchParams]);
+
+  useEffect(() => {
+    const onOpenRequest = (e) => {
+      const id = e?.detail?.id;
+      if (!id) return;
+      if (openActivityById(id)) return;
+      const next = new URLSearchParams(searchParams);
+      next.set('openActivity', id);
+      setSearchParams(next, { replace: true });
+    };
+    window.addEventListener('openActivityRequest', onOpenRequest);
+    return () => window.removeEventListener('openActivityRequest', onOpenRequest);
+  }, [openActivityById, searchParams, setSearchParams]);
 
   // ── Planned-workout editor (bottom sheet) ────────────────────────────────
   const [editingPlanned, setEditingPlanned] = useState(null); // { pw, linkedAct }

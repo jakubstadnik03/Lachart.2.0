@@ -280,6 +280,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     };
   }, [chartData, smoothing]);
 
+  // Running: show cadence trace by default when the activity has cadence data.
+  useEffect(() => {
+    if (!isRunning) return;
+    if (processedData?.maxCadence != null && processedData.maxCadence > 0) {
+      setShowCadence(true);
+    }
+  }, [isRunning, training?.id, training?._id, processedData?.maxCadence]);
+
   // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
   const chartHeight = isMobile ? 250 : 400;
   const isNarrow = containerWidth < 800;

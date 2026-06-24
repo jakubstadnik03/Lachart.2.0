@@ -86,7 +86,12 @@ const SignUpPage = () => {
 
       navigate('/login', { replace: true });
     } catch (error) {
-      setError(error.response?.data?.message || 'Registration failed');
+      setError(
+        error.response?.data?.error
+        || error.response?.data?.message
+        || error.response?.data?.details
+        || 'Registration failed',
+      );
       trackEvent('register_error', { 
         method: 'email', 
         error: error.response?.data?.message || 'Registration failed' 
@@ -243,20 +248,16 @@ const SignUpPage = () => {
   if (isCapacitorNative()) {
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'white', overflow: 'hidden' }}>
-        {/* Inner layer: scrollable with rubber-band contained, respects safe areas */}
         <div style={{
           height: '100%',
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           paddingTop: 'env(safe-area-inset-top)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          display: 'flex',
-          flexDirection: 'column',
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)',
         }}>
 
-        {/* Navigation back to Sign In */}
-        <div className="px-4 pt-2 pb-0">
+        <div className="px-5 pt-1 pb-2">
           <button
             type="button"
             onClick={() => navigate('/login')}
@@ -269,19 +270,17 @@ const SignUpPage = () => {
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col justify-center px-6" style={{ minHeight: 0 }}>
-          {/* Logo + Title */}
-          <div className="mb-4 text-center">
-            <div className="mx-auto h-20 w-20 rounded-2xl shadow-md mb-3 flex items-center justify-center bg-white p-3.5">
+        <div className="px-5 pb-4">
+          <div className="mb-3 text-center">
+            <div className="mx-auto h-14 w-14 rounded-xl shadow-sm mb-2 flex items-center justify-center bg-white p-2.5">
               <img className="w-full h-full object-contain" src="/images/LaChart.png" alt="LaChart" />
             </div>
-            <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
-            <p className="mt-0.5 text-sm text-gray-500">Join LaChart to start tracking</p>
+            <h1 className="text-xl font-bold text-primary tracking-tight">LaChart</h1>
+            <p className="mt-0.5 text-xs text-gray-500">Join LaChart to start tracking</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-2">
-            {/* Name row */}
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <input
                 type="text"
                 autoComplete="given-name"
@@ -289,7 +288,7 @@ const SignUpPage = () => {
                 placeholder="First Name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="flex-1 min-w-0 px-4 py-3 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+                className="flex-1 min-w-0 px-3.5 py-2.5 bg-gray-100 rounded-xl text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
               />
               <input
                 type="text"
@@ -298,7 +297,7 @@ const SignUpPage = () => {
                 placeholder="Last Name"
                 value={formData.surname}
                 onChange={(e) => setFormData({ ...formData, surname: e.target.value })}
-                className="flex-1 min-w-0 px-4 py-3 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+                className="flex-1 min-w-0 px-3.5 py-2.5 bg-gray-100 rounded-xl text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
               />
             </div>
 
@@ -309,7 +308,7 @@ const SignUpPage = () => {
               placeholder="Email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+              className="w-full px-3.5 py-2.5 bg-gray-100 rounded-xl text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
             />
 
             <div className="relative">
@@ -320,9 +319,9 @@ const SignUpPage = () => {
                 placeholder="Password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-12"
+                className="w-full px-3.5 py-2.5 bg-gray-100 rounded-xl text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-11"
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
                 {showPassword
                   ? <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                   : <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
@@ -338,9 +337,9 @@ const SignUpPage = () => {
                 placeholder="Confirm Password"
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-12"
+                className="w-full px-3.5 py-2.5 bg-gray-100 rounded-xl text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-11"
               />
-              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
                 {showConfirmPassword
                   ? <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                   : <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
@@ -348,40 +347,32 @@ const SignUpPage = () => {
               </button>
             </div>
 
-            {/* Role segmented control */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">I am a...</p>
-              {[
-                { id: 'athlete', icon: '🏃', label: 'Athlete', desc: 'Track my own training & tests' },
-                { id: 'coach', icon: '📋', label: 'Coach', desc: 'Manage athletes & analyse training' },
-                { id: 'tester', icon: '🔬', label: 'Tester / Lab', desc: 'Run lactate tests & generate reports' },
-              ].map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, role: r.id })}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2 text-left transition-all ${
-                    formData.role === r.id
-                      ? 'border-primary bg-primary/5 text-gray-900'
-                      : 'border-gray-200 bg-white text-gray-600'
-                  }`}
-                >
-                  <span className="text-xl shrink-0">{r.icon}</span>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{r.label}</div>
-                    <div className="text-xs text-gray-500 truncate">{r.desc}</div>
-                  </div>
-                  {formData.role === r.id && (
-                    <svg className="w-4 h-4 text-primary ml-auto shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </button>
-              ))}
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide px-0.5 mb-1.5">I am a...</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'athlete', icon: '🏃', label: 'Athlete' },
+                  { id: 'coach', icon: '📋', label: 'Coach' },
+                  { id: 'tester', icon: '🔬', label: 'Lab' },
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, role: r.id })}
+                    className={`flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-xl border-2 text-center transition-all min-h-[72px] ${
+                      formData.role === r.id
+                        ? 'border-primary bg-primary/5 text-gray-900'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{r.icon}</span>
+                    <span className="text-[11px] font-semibold leading-tight">{r.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Terms checkbox */}
-            <div className="flex items-start gap-3 py-1">
+            <div className="flex items-start gap-2.5 pt-0.5">
               <input
                 type="checkbox"
                 id="nativeAcceptTerms"
@@ -390,7 +381,7 @@ const SignUpPage = () => {
                 className="mt-0.5 h-4 w-4 accent-primary shrink-0"
                 required
               />
-              <label htmlFor="nativeAcceptTerms" className="text-sm text-gray-500 leading-snug">
+              <label htmlFor="nativeAcceptTerms" className="text-xs text-gray-500 leading-snug">
                 I agree to the{' '}
                 <button type="button" onClick={() => setShowTermsModal(true)} className="text-primary font-medium">
                   Terms &amp; Conditions
@@ -403,66 +394,62 @@ const SignUpPage = () => {
             </div>
 
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-2xl px-4 py-3">{error}</p>
+              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={!acceptedTerms}
-              className="w-full py-3.5 rounded-2xl bg-primary text-white text-base font-semibold disabled:opacity-40 active:opacity-70 transition-opacity"
+              className="w-full py-3 rounded-xl bg-primary text-white text-[15px] font-semibold disabled:opacity-40 active:opacity-70 transition-opacity"
             >
               Create Account
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-3 flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-xs text-gray-400 font-medium">nebo</span>
+            <span className="text-[11px] text-gray-400 font-medium">nebo</span>
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
-          {/* Native Google Sign-Up */}
           <button
             type="button"
             onClick={handleNativeGoogleSignUp}
-            className="mt-3 w-full flex items-center justify-center gap-3 py-3 px-4 bg-white border border-gray-300 rounded-2xl shadow-sm active:bg-gray-50 transition-colors"
+            className="mt-2.5 w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-white border border-gray-300 rounded-xl shadow-sm active:bg-gray-50 transition-colors"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24">
+            <svg width="18" height="18" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
-            <span className="text-base font-medium text-gray-700">Continue with Google</span>
+            <span className="text-[15px] font-medium text-gray-700">Continue with Google</span>
           </button>
 
-          {/* Native Apple Sign-Up (App Store guideline 4.8) */}
           <button
             type="button"
             onClick={handleNativeAppleSignUp}
-            className="mt-2.5 w-full flex items-center justify-center gap-3 py-3 px-4 bg-black rounded-2xl shadow-sm active:opacity-80 transition-opacity"
+            className="mt-2 w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-black rounded-xl shadow-sm active:opacity-80 transition-opacity"
           >
-            <svg width="18" height="22" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <svg width="16" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
               <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.54 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09z"/>
               <path d="M15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/>
             </svg>
-            <span className="text-base font-medium text-white">Continue with Apple</span>
+            <span className="text-[15px] font-medium text-white">Continue with Apple</span>
           </button>
 
-          <p className="mt-4 text-center text-sm text-gray-500">
+          <p className="mt-3 text-center text-xs text-gray-500">
             Already have an account?{' '}
             <Link to="/login" className="font-semibold text-primary">Sign In</Link>
           </p>
 
-          {/* Privacy & Terms inline */}
-          <div className="mt-3 mb-2 flex items-center justify-center gap-3 text-xs text-gray-400">
+          <div className="mt-2 flex items-center justify-center gap-2 text-[11px] text-gray-400">
             <a href="https://lachart.net/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             <span>·</span>
             <a href="/terms">Terms of Use</a>
           </div>
         </div>
-        </div>{/* end scrollable */}
+        </div>
 
         {/* Terms modal */}
         <AnimatePresence>

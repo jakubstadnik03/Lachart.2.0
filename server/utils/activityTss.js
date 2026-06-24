@@ -112,6 +112,9 @@ function computeHrTss(activity, profile) {
 }
 
 function readExplicitTss(activity) {
+  const manual = Number(activity.manualTss ?? 0);
+  if (manual > 0) return Math.round(manual);
+
   const explicit = Number(
     activity.tss || activity.TSS || activity.totalTSS || activity.trainingLoad
     || activity.trainingStressScore || 0,
@@ -147,6 +150,9 @@ function buildUserProfile(user) {
 
 function resolveActivityTss(activity, profile) {
   if (!activity) return 0;
+
+  const manual = Number(activity.manualTss ?? 0);
+  if (manual > 0) return Math.round(manual);
 
   const explicitTss = readExplicitTss(activity);
   const powerTss = computePowerTss(activity, profile);

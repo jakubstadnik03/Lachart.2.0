@@ -422,7 +422,7 @@ const userSchema = new mongoose.Schema({
   },
   /** Native iOS/Android app usage (updated on launch / foreground). */
   mobileApp: {
-    platform: { type: String, enum: ['ios', 'android'], default: null },
+    platform: { type: String, enum: ['ios', 'android'] },
     appVersion: { type: String, default: null },
     firstSeenAt: { type: Date, default: null },
     lastSeenAt: { type: Date, default: null },
@@ -445,10 +445,13 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Legacy rows / partial updates can leave signupMethod as null; Mongoose enum rejects null on save().
+// Legacy rows / partial updates can leave enum fields as null; Mongoose enum rejects null on save().
 userSchema.pre('validate', function normalizeSignupMethod(next) {
   if (this.signupMethod === null) {
     this.set('signupMethod', undefined);
+  }
+  if (this.mobileApp?.platform === null) {
+    this.set('mobileApp.platform', undefined);
   }
   next();
 });

@@ -1,11 +1,9 @@
 import React, { useMemo } from 'react';
 import { buildRunKmSplits, formatSplitPace } from '../../utils/runKmSplits';
 
-/** Shared column template — header + rows must match exactly. */
-const SPLITS_GRID = 'grid-cols-[22px_44px_minmax(48px,1fr)_36px_40px]';
-
 /**
  * Strava-style per-km splits table for running activities.
+ * Cadence column appears only when at least one split has cadence data.
  */
 export default function RunSplitsTable({
   laps = [],
@@ -17,6 +15,15 @@ export default function RunSplitsTable({
     () => buildRunKmSplits(laps, records, { lapTimeSource }),
     [laps, records, lapTimeSource]
   );
+
+  const hasCadence = useMemo(
+    () => splits.some((s) => s.cadence != null && s.cadence > 0),
+    [splits]
+  );
+
+  const splitsGrid = hasCadence
+    ? 'grid-cols-[22px_44px_minmax(48px,1fr)_36px_40px_40px]'
+    : 'grid-cols-[22px_44px_minmax(48px,1fr)_36px_40px]';
 
   const barRange = useMemo(() => {
     const paces = splits.map((s) => s.paceSecPerKm).filter((p) => p > 0);
@@ -38,19 +45,22 @@ export default function RunSplitsTable({
       <h3 className="text-sm font-semibold text-gray-900 mb-2">Splits</h3>
 
       <div className="w-full max-w-md">
-        <div className={`grid ${SPLITS_GRID} gap-x-2 items-center mb-1`}>
+        <div className={`grid ${splitsGrid} gap-x-2 items-center mb-1`}>
           <div className="text-[10px] font-medium text-gray-400">Km</div>
           <div className="text-[10px] font-medium text-gray-400">Pace</div>
           <div />
           <div className="text-[10px] font-medium text-gray-400 text-right">Elev</div>
           <div className="text-[10px] font-medium text-gray-400 text-right">HR</div>
+          {hasCadence && (
+            <div className="text-[10px] font-medium text-gray-400 text-right">Cad</div>
+          )}
         </div>
 
         <div className="divide-y divide-gray-100">
           {splits.map((split) => (
             <div
               key={split.km}
-              className={`grid ${SPLITS_GRID} gap-x-2 items-center py-1.5`}
+              className={`grid ${splitsGrid} gap-x-2 items-center py-1.5`}
             >
               <div className="text-[13px] font-semibold text-gray-900 tabular-nums">{split.km}</div>
               <div className="text-[13px] font-semibold text-gray-900 tabular-nums whitespace-nowrap">
@@ -68,6 +78,11 @@ export default function RunSplitsTable({
               <div className="text-[13px] font-medium text-gray-700 tabular-nums text-right">
                 {split.hr != null ? split.hr : '—'}
               </div>
+              {hasCadence && (
+                <div className="text-[13px] font-medium text-gray-700 tabular-nums text-right">
+                  {split.cadence != null && split.cadence > 0 ? split.cadence : '—'}
+                </div>
+              )}
             </div>
           ))}
         </div>
