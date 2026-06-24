@@ -45,6 +45,8 @@ const stravaActivitySchema = new mongoose.Schema({
   total_elevation_gain: Number,
   /** User-edited TSS override (Completed editor). */
   manualTss: Number,
+  /** Per-workout TSS source: manual | power | hr */
+  tssDisplayMode: { type: String, enum: ['manual', 'power', 'hr', null], default: null },
   calories: Number,
   rpe: Number,
   lactate: Number,

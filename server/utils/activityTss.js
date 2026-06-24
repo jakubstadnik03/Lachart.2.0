@@ -1,7 +1,9 @@
 /**
  * Server-side TSS resolution — mirrors client/src/utils/computeTss.js so
- * Form/Fitness and weekly totals respect power vs hrTSS preference.
+ * Form/Fitness and weekly totals respect per-workout power vs hrTSS vs manual.
  */
+
+const TSS_DISPLAY_MODES = ['manual', 'power', 'hr'];
 
 function activityDuration(activity) {
   return Number(
@@ -24,11 +26,22 @@ function ftpFromProfile(profile) {
 }
 
 function thresholdPaceFromProfile(profile) {
-  return Number(profile?.runningZones?.lt2 || profile?.thresholdPace || profile?.powerZones?.running?.lt2 || 0);
+  const rz = profile?.powerZones?.running || profile?.runningZones;
+  return Number(rz?.lt2 || rz?.zone4?.min || profile?.thresholdPace || 0);
 }
 
 function thresholdSwimPaceFromProfile(profile) {
-  return Number(profile?.powerZones?.swimming?.lt2 || profile?.thresholdSwimPace || 0);
+  const sz = profile?.powerZones?.swimming || profile?.swimmingZones;
+  return Number(sz?.lt2 || sz?.zone4?.min || profile?.thresholdSwimPace || 0);
+}
+
+function activityAvgSpeedMps(activity) {
+  const stored = Number(activity.averageSpeed || activity.avgSpeed || activity.average_speed || 0);
+  if (stored > 0) return stored;
+  const dist = Number(activity.distance || activity.totalDistance || 0);
+  const dur = activityDuration(activity);
+  if (dist > 0 && dur > 0) return dist / dur;
+  return 0;
 }
 
 function lthrFromProfile(profile, sport) {
@@ -58,7 +71,7 @@ function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
-    const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || activity.average_speed || 0);
+    const avgSpeed = activityAvgSpeedMps(activity);
     if (avgSpeed > 0 && thresholdPace > 0) {
       const avgPace = 1000 / avgSpeed;
       const intensity = thresholdPace / avgPace;
@@ -67,7 +80,7 @@ function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('swim')) {
-    const avgSpeed = Number(activity.averageSpeed || activity.avgSpeed || activity.average_speed || 0);
+    const avgSpeed = activityAvgSpeedMps(activity);
     if (avgSpeed > 0 && thresholdSwimPace > 0) {
       const avgPace = 100 / avgSpeed;
       const intensity = thresholdSwimPace / avgPace;
@@ -111,33 +124,57 @@ function computeHrTss(activity, profile) {
   return 0;
 }
 
-function readExplicitTss(activity) {
-  const manual = Number(activity.manualTss ?? 0);
-  if (manual > 0) return Math.round(manual);
-
-  const explicit = Number(
-    activity.tss || activity.TSS || activity.totalTSS || activity.trainingLoad
-    || activity.trainingStressScore || 0,
+function getManualTssValue(activity) {
+  const userManual = Number(activity?.manualTss ?? 0);
+  if (userManual > 0) return Math.round(userManual);
+  const fileTss = Number(
+    activity?.trainingStressScore || activity?.tss || activity?.TSS
+    || activity?.totalTSS || activity?.trainingLoad || 0,
   );
-  return explicit > 0 ? Math.round(explicit) : 0;
+  return fileTss > 0 ? Math.round(fileTss) : 0;
 }
 
-function defaultTssMode(powerTss, hrTss, explicitTss = 0) {
+function defaultTssMode(powerTss, hrTss, manualTss = 0) {
   if (powerTss > 0 && hrTss > 0) {
-    if (explicitTss > 0) {
-      return Math.abs(explicitTss - powerTss) <= Math.abs(explicitTss - hrTss) ? 'power' : 'hr';
+    if (manualTss > 0) {
+      const dPower = Math.abs(manualTss - powerTss);
+      const dHr = Math.abs(manualTss - hrTss);
+      return dPower <= dHr ? 'power' : 'hr';
     }
     return 'power';
   }
   if (powerTss > 0) return 'power';
+  if (hrTss > 0) return 'hr';
+  if (manualTss > 0) return 'manual';
   return 'hr';
+}
+
+function getActivityTssDisplayMode(activity, profile) {
+  const powerTss = computePowerTss(activity, profile);
+  const hrTss = computeHrTss(activity, profile);
+  const manualVal = getManualTssValue(activity);
+  const available = [];
+  if (manualVal > 0) available.push('manual');
+  if (powerTss > 0) available.push('power');
+  if (hrTss > 0) available.push('hr');
+  if (!available.length) return 'manual';
+
+  const saved = activity?.tssDisplayMode;
+  if (TSS_DISPLAY_MODES.includes(saved) && available.includes(saved)) return saved;
+  if (Number(activity?.manualTss ?? 0) > 0 && available.includes('manual')) return 'manual';
+
+  const globalMode = profile?.tssDisplayMode;
+  if (globalMode && available.includes(globalMode)) return globalMode;
+
+  return defaultTssMode(powerTss, hrTss, manualVal);
 }
 
 function buildUserProfile(user) {
   if (!user) return null;
   return {
     powerZones: user.powerZones || {},
-    runningZones: user.runningZones || {},
+    runningZones: user.runningZones || user.powerZones?.running || {},
+    swimmingZones: user.swimmingZones || user.powerZones?.swimming || {},
     heartRateZones: user.heartRateZones || {},
     ftp: user.ftp || 250,
     maxHr: user.maxHr || user.maxHeartRate,
@@ -151,21 +188,17 @@ function buildUserProfile(user) {
 function resolveActivityTss(activity, profile) {
   if (!activity) return 0;
 
-  const manual = Number(activity.manualTss ?? 0);
-  if (manual > 0) return Math.round(manual);
-
-  const explicitTss = readExplicitTss(activity);
   const powerTss = computePowerTss(activity, profile);
   const hrTss = computeHrTss(activity, profile);
+  const manualVal = getManualTssValue(activity);
 
-  let mode = profile?.tssDisplayMode || 'power';
-  if (mode === 'power' && powerTss <= 0) mode = null;
-  if (mode === 'hr' && hrTss <= 0) mode = null;
-  if (!mode) mode = defaultTssMode(powerTss, hrTss, explicitTss);
+  let mode = TSS_DISPLAY_MODES.includes(activity.tssDisplayMode) ? activity.tssDisplayMode : null;
+  if (!mode) mode = getActivityTssDisplayMode(activity, profile);
 
+  if (mode === 'manual' && manualVal > 0) return manualVal;
   if (mode === 'power' && powerTss > 0) return powerTss;
   if (mode === 'hr' && hrTss > 0) return hrTss;
-  if (explicitTss > 0) return explicitTss;
+  if (manualVal > 0) return manualVal;
   return 0;
 }
 

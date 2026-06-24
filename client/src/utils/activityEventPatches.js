@@ -189,6 +189,8 @@ export function metricsPatchFromDetail(detail = {}) {
   if (detail.rpe != null) patch.rpe = Number(detail.rpe) || 0;
   if (detail.lactate != null) patch.lactate = Number(detail.lactate) || 0;
 
+  if (detail.tssDisplayMode) patch.tssDisplayMode = detail.tssDisplayMode;
+
   return patch;
 }
 

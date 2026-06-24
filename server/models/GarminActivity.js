@@ -36,6 +36,8 @@ const garminActivitySchema = new mongoose.Schema({
   averageSpeed: Number, // m/s
   averageHeartRate: Number,
   averagePower: Number,
+  manualTss: Number,
+  tssDisplayMode: { type: String, enum: ['manual', 'power', 'hr', null], default: null },
   laps: [garminLapSchema], // Store laps with lactate values
   raw: Object
 }, { timestamps: true });

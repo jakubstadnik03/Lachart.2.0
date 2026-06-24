@@ -1362,7 +1362,7 @@ const WeeklyCalendar = ({
       const inPrev = prevWeekKeys.has(key);
       if (!inCurrent && !inPrev) return;
 
-      const tss = resolveActivityTss(act, userProfile, { user: userProfile, mode: tssDisplayMode });
+      const tss = resolveActivityTss(act, userProfile, { user: userProfile });
       const sec = activityDurationSec(act);
       const dist = activityDistanceMeters(act);
 

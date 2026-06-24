@@ -173,6 +173,7 @@ async function syncStravaForUser(user, opts = {}) {
               if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
               if (existing.distance != null) doc.distance = existing.distance;
               if (existing.manualTss != null) doc.manualTss = existing.manualTss;
+              if (existing.tssDisplayMode != null) doc.tssDisplayMode = existing.tssDisplayMode;
             }
             
             const resUp = await StravaActivity.updateOne(

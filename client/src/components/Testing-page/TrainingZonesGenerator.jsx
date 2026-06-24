@@ -7,7 +7,7 @@ import api, { updateUserProfile, updateTest } from '../../services/api';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
-import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
+import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
@@ -42,7 +42,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
-  const inputMode = getEffectiveLactateInputMode(mockData);
+  const storageMode = getEffectiveLactateInputMode(mockData);
+  const displayMode = getLactateDisplayMode(mockData, user);
   const selectedTestDate = mockData?.date || mockData?.createdAt || mockData?.timestamp;
 
   const formatPace = (seconds) => {
@@ -83,6 +84,12 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     return 3600 / seconds;
   };
 
+  const toDisplaySpeed = useCallback((kmh) => {
+    if (!Number.isFinite(kmh)) return 0;
+    const v = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+    return Number(v.toFixed(1));
+  }, [unitSystem]);
+
   const mapSportToProfileKey = (sport) => (
     sport === 'bike' ? 'cycling' :
     sport === 'run' ? 'running' :
@@ -96,8 +103,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     const overrideHr = overrideRoot?.heartRateZones?.[profileSport];
     if (!overridePower && !overrideHr) return calculatedZones;
 
+    const isSpeedRun = sport !== 'bike' && getEffectiveLactateInputMode(mockData) === 'speed';
     const next = { ...(calculatedZones || {}) };
-    const paceOrPowerKey = sport === 'bike' ? 'power' : 'pace';
+    const paceOrPowerKey = sport === 'bike' ? 'power' : (isSpeedRun ? 'speed' : 'pace');
     if (!next[paceOrPowerKey]) next[paceOrPowerKey] = {};
     if (!next.heartRate) next.heartRate = {};
 
@@ -110,8 +118,12 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         const maxVal = Number(pz.max);
         next[paceOrPowerKey][zoneKey] = {
           ...existing,
-          min: sport === 'bike' ? (Number.isFinite(minVal) ? minVal : existing.min) : (Number.isFinite(minVal) ? formatPace(minVal) : existing.min),
-          max: sport === 'bike' ? (Number.isFinite(maxVal) ? maxVal : existing.max) : (Number.isFinite(maxVal) ? formatPace(maxVal) : existing.max),
+          min: sport === 'bike' || isSpeedRun
+            ? (Number.isFinite(minVal) ? minVal : existing.min)
+            : (Number.isFinite(minVal) ? formatPace(minVal) : existing.min),
+          max: sport === 'bike' || isSpeedRun
+            ? (Number.isFinite(maxVal) ? maxVal : existing.max)
+            : (Number.isFinite(maxVal) ? formatPace(maxVal) : existing.max),
           description: pz.description || existing.description,
           lactate: (Number.isFinite(Number(pz?.lactate?.min)) || Number.isFinite(Number(pz?.lactate?.max)))
             ? `${Number.isFinite(Number(pz?.lactate?.min)) ? Number(pz.lactate.min).toFixed(1) : '0.0'}–${Number.isFinite(Number(pz?.lactate?.max)) ? Number(pz.lactate.max).toFixed(1) : '0.0'}`
@@ -141,7 +153,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   }, [mockData?.zoneOverrides, mockData?._id]);
 
   // Helper function to interpolate lactate value for a given power/pace using polynomial regression
-  const getLactateForPower = (powerValue, results, sport) => {
+  const getLactateForPower = (powerValue, results, sport, isSpeedStorage = false) => {
     if (!results || results.length === 0) return null;
     
     try {
@@ -176,15 +188,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
       // Fallback to linear interpolation from actual results
       const sortedResults = [...results].sort((a, b) => {
-        if (sport === 'bike') {
+        if (sport === 'bike' || isSpeedStorage) {
           return a.power - b.power;
-        } else {
-          return b.power - a.power;
         }
+        return b.power - a.power;
       });
       
       // Check boundaries
-      if (sport === 'bike') {
+      if (sport === 'bike' || isSpeedStorage) {
         if (powerValue <= sortedResults[0].power) {
           return sortedResults[0].lactate;
         }
@@ -205,7 +216,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         const prev = sortedResults[i];
         const next = sortedResults[i + 1];
         
-        const isBetween = sport === 'bike'
+        const isBetween = (sport === 'bike' || isSpeedStorage)
           ? (prev.power <= powerValue && next.power >= powerValue)
           : (prev.power >= powerValue && next.power <= powerValue);
         
@@ -394,8 +405,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         return;
       }
     } else {
-      // Pro run/swim: pace v sekundách, takže LTP2 (rychlejší tempo) musí být < LTP1 (pomalejší tempo)
-      if (lt2_value >= lt1_value) {
+      const isSpeed = storageMode === 'speed';
+      if (isSpeed) {
+        if (lt2_value <= lt1_value) {
+          console.warn('[Zones] LTP2 <= LTP1, invalid combination for run/swim (speed)', { lt1_value, lt2_value, sport });
+          setZones(null);
+          return;
+        }
+      } else if (lt2_value >= lt1_value) {
         console.warn('[Zones] LTP2 >= LTP1, invalid combination for run/swim (pace)', { lt1_value, lt2_value, sport });
       setZones(null);
       return;
@@ -404,12 +421,44 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     
     // ── Seiler polarized 3-zone model ──────────────────────────────────────
     if (zoneModel === 'seiler') {
-      const isPace = sport === 'run' || sport === 'swim';
+      const isPaceSport = sport === 'run' || sport === 'swim';
+      const isSpeed = isPaceSport && storageMode === 'speed';
       const fmt = s => formatPace(s);
 
-      // Bike: Z1 up to LT1, Z2 LT1→LT2, Z3 above LT2
-      // Run/swim: pace inverted (LT1 > LT2 in seconds)
-      const seilerZones = isPace ? {
+      const seilerZones = isPaceSport ? (
+        isSpeed ? {
+          speed: {
+            zone1: {
+              min: toDisplaySpeed(lt1_value * 0.50),
+              max: toDisplaySpeed(lt1_value * 1.00),
+              description: 'Polarized Base (< LT1)',
+              hr: hasHR ? `${Math.round(hr1 * 0.50)}–${Math.round(hr1 * 1.00)} BPM` : 'N/A',
+              percent: '< LT1',
+              lactate: lt1_lactate ? `< ${Number(lt1_lactate).toFixed(1)}` : '-',
+            },
+            zone2: {
+              min: toDisplaySpeed(lt1_value * 1.00),
+              max: toDisplaySpeed(lt2_value * 1.00),
+              description: 'Tempo / Threshold (LT1–LT2)',
+              hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+              percent: 'LT1–LT2',
+              lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+            },
+            zone3: {
+              min: toDisplaySpeed(lt2_value * 1.00),
+              max: toDisplaySpeed(lt2_value * 1.20),
+              description: 'High Intensity (> LT2)',
+              hr: hasHR ? `> ${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+              percent: '> LT2',
+              lactate: lt2_lactate ? `> ${Number(lt2_lactate).toFixed(1)}` : '-',
+            },
+          },
+          heartRate: hasHR ? {
+            zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 1.00) },
+            zone2: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 1.00) },
+            zone3: { min: Math.round(hr2 * 1.00), max: Math.round(hr2 * 1.15) },
+          } : null,
+        } : {
         pace: {
           zone1: {
             min: fmt(lt1_value / 0.50),
@@ -441,7 +490,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone2: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 1.00) },
           zone3: { min: Math.round(hr2 * 1.00), max: Math.round(hr2 * 1.15) },
         } : null,
-      } : {
+      }
+      ) : {
         power: {
           zone1: {
             min: Math.round(lt1_value * 0.50),
@@ -608,6 +658,113 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         } : null
       };
       setZones(applyTestZoneOverrides(calculated, sport));
+    } else if (storageMode === 'speed') {
+      const lt1_kmh = lt1_value;
+      const lt2_kmh = lt2_value;
+
+      console.log(`[Zones Run/Swim Speed] LTP1: ${lt1_kmh} km/h LTP2: ${lt2_kmh} km/h`);
+
+      const zone1_min_speed = lt1_kmh * 0.50;
+      const zone1_max_speed = lt1_kmh * 0.90;
+      const zone2_min_speed = lt1_kmh * 0.90;
+      const zone2_max_speed = lt1_kmh * 1.00;
+      const zone3_min_speed = lt1_kmh * 1.00;
+      const zone3_max_speed = lt2_kmh * 0.95;
+      const zone4_min_speed = lt2_kmh * 0.96;
+      const zone4_max_speed = lt2_kmh * 1.04;
+      const zone5_min_speed = lt2_kmh * 1.05;
+      const zone5_max_speed = lt2_kmh * 1.30;
+
+      const lt1_lactate_value_speed = lt1_lactate || getLactateForPower(lt1_kmh, mockData.results, sport, true) || 2.0;
+      const lt2_lactate_value_speed = lt2_lactate || getLactateForPower(lt2_kmh, mockData.results, sport, true) || 4.0;
+
+      const ltGapSpeed = Math.max(0.4, lt2_lactate_value_speed - lt1_lactate_value_speed);
+      const z2HeadroomSpeed = Math.max(0.5, Math.min(1.2, ltGapSpeed * 0.45));
+
+      const zone1_min_lactate_speed = Math.max(0.7, baseLactate);
+      const zone1_max_lactate_speed = Math.max(zone1_min_lactate_speed + 0.2, lt1_lactate_value_speed - z2HeadroomSpeed);
+      const zone2_min_lactate_speed = zone1_max_lactate_speed;
+      const zone2_max_lactate_speed = lt1_lactate_value_speed;
+      const zone3_min_lactate_speed = lt1_lactate_value_speed;
+      const zone3_max_lactate_speed = Math.max(zone3_min_lactate_speed + 0.4, lt2_lactate_value_speed - Math.max(0.2, ltGapSpeed * 0.15));
+      const zone4_min_lactate_speed = Math.max(zone3_max_lactate_speed, lt2_lactate_value_speed - Math.max(0.2, ltGapSpeed * 0.08));
+      const zone4_max_lactate_speed = lt2_lactate_value_speed + Math.max(0.2, ltGapSpeed * 0.12);
+      const zone5_min_lactate_speed = zone4_max_lactate_speed;
+      const zone5_max_lactate_speed = Math.max(zone5_min_lactate_speed + 0.6, lt2_lactate_value_speed + Math.max(0.8, ltGapSpeed * 0.8));
+
+      const finalZone1Speed = {
+        min: Math.max(0.5, Math.min(zone1_min_lactate_speed, zone1_max_lactate_speed)),
+        max: Math.max(zone1_min_lactate_speed, zone1_max_lactate_speed, 1.0),
+      };
+      const finalZone2Speed = {
+        min: Math.max(finalZone1Speed.max, Math.min(zone2_min_lactate_speed, zone2_max_lactate_speed)),
+        max: Math.max(zone2_min_lactate_speed, zone2_max_lactate_speed),
+      };
+      const finalZone3Speed = {
+        min: Math.max(finalZone2Speed.max, Math.min(zone3_min_lactate_speed, zone3_max_lactate_speed)),
+        max: Math.min(lt2_lactate_value_speed * 0.95, Math.max(zone3_min_lactate_speed, zone3_max_lactate_speed)),
+      };
+      const finalZone4Speed = {
+        min: Math.max(finalZone3Speed.max, Math.min(zone4_min_lactate_speed, zone4_max_lactate_speed)),
+        max: Math.max(zone4_min_lactate_speed, zone4_max_lactate_speed),
+      };
+      const finalZone5Speed = {
+        min: Math.max(finalZone4Speed.max, Math.min(zone5_min_lactate_speed, zone5_max_lactate_speed)),
+        max: Math.max(zone5_min_lactate_speed, zone5_max_lactate_speed),
+      };
+
+      const calculated = {
+        speed: {
+          zone1: {
+            min: toDisplaySpeed(zone1_min_speed),
+            max: toDisplaySpeed(zone1_max_speed),
+            description: '< 90% LT1 (recovery / easy)',
+            hr: hasHR ? `${Math.round(hr1 * 0.50)}–${Math.round(hr1 * 0.90)} BPM` : 'N/A',
+            percent: '< 90% LT1',
+            lactate: `${finalZone1Speed.min.toFixed(1)}–${finalZone1Speed.max.toFixed(1)}`,
+          },
+          zone2: {
+            min: toDisplaySpeed(zone2_min_speed),
+            max: toDisplaySpeed(zone2_max_speed),
+            description: '90%–100% LT1',
+            hr: hasHR ? `${Math.round(hr1 * 0.90)}–${Math.round(hr1 * 1.00)} BPM` : 'N/A',
+            percent: '90–100% LT1',
+            lactate: `${finalZone2Speed.min.toFixed(1)}–${finalZone2Speed.max.toFixed(1)}`,
+          },
+          zone3: {
+            min: toDisplaySpeed(zone3_min_speed),
+            max: toDisplaySpeed(zone3_max_speed),
+            description: '100% LT1 – 95% LT2',
+            hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 0.95)} BPM` : 'N/A',
+            percent: '100% LT1 – 95% LT2',
+            lactate: `${finalZone3Speed.min.toFixed(1)}–${finalZone3Speed.max.toFixed(1)}`,
+          },
+          zone4: {
+            min: toDisplaySpeed(zone4_min_speed),
+            max: toDisplaySpeed(zone4_max_speed),
+            description: '96%–104% LT2 (threshold)',
+            hr: hasHR ? `${Math.round(hr2 * 0.96)}–${Math.round(hr2 * 1.04)} BPM` : 'N/A',
+            percent: '96–104% LT2',
+            lactate: `${finalZone4Speed.min.toFixed(1)}–${finalZone4Speed.max.toFixed(1)}`,
+          },
+          zone5: {
+            min: toDisplaySpeed(zone5_min_speed),
+            max: toDisplaySpeed(zone5_max_speed),
+            description: '> 105% LT2 (VO₂max+ / sprint)',
+            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM` : 'N/A',
+            percent: '> 105% LT2',
+            lactate: `${finalZone5Speed.min.toFixed(1)}–${finalZone5Speed.max.toFixed(1)}`,
+          },
+        },
+        heartRate: hasHR ? {
+          zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 0.90) },
+          zone2: { min: Math.round(hr1 * 0.90), max: Math.round(hr1 * 1.00) },
+          zone3: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 0.95) },
+          zone4: { min: Math.round(hr2 * 0.96), max: Math.round(hr2 * 1.04) },
+          zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.30) },
+        } : null,
+      };
+      setZones(applyTestZoneOverrides(calculated, sport));
     } else {
       // Pro run/swim: použít tempo (sekundy)
       const lt1_sec = lt1_value;
@@ -730,7 +887,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     };
     setZones(applyTestZoneOverrides(calculated, sport));
     }
-  }, [mockData, applyTestZoneOverrides, zoneModel]);
+  }, [mockData, applyTestZoneOverrides, zoneModel, storageMode, toDisplaySpeed]);
 
   useEffect(() => {
     if (mockData && mockData.results && mockData.results.length > 0) {
@@ -868,7 +1025,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 )}
                 {(selectedSport === 'run' || selectedSport === 'swim') && (
                     <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
-                    {inputMode === 'pace' ? 
+                    {displayMode === 'pace' ? 
                       (selectedSport === 'swim' ? 
                         (unitSystem === 'imperial' ? 'Pace /100yd' : 'Pace /100m') :
                         (unitSystem === 'imperial' ? 'Pace /mile' : 'Pace /km')
@@ -882,10 +1039,10 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
               </tr>
             </thead>
             <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
-              {Object.entries(zones.power || zones.pace || zones.speed || zones.heartRate).map(([zoneKey, zone], index) => {
+              {Object.entries(zones.power || zones.speed || zones.pace || zones.heartRate).map(([zoneKey, zone], index) => {
                 const zoneNumber = parseInt(zoneKey.replace('zone', ''));
                 const currentZones = zones;
-                const powerZone = currentZones.power || currentZones.pace || currentZones.speed;
+                const powerZone = currentZones.power || currentZones.speed || currentZones.pace;
                 const hrZone = currentZones.heartRate;
 
                 // Use actual lactate values from zone calculation if available
@@ -942,17 +1099,15 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight break-words">
                             {powerZone[zoneKey] ? 
-                              (inputMode === 'speed' ? 
+                              (displayMode === 'speed' ? 
                                 (() => {
-                                  // Convert pace to speed
-                                  // Note: For pace zones, min is slower (higher seconds), max is faster (lower seconds)
-                                  // For speed display: min should be slower (lower speed), max should be faster (higher speed)
-                                  // So: slower pace (zone.min, higher seconds) -> lower speed
-                                  //     faster pace (zone.max, lower seconds) -> higher speed
-                                  const minSpeed = convertPaceToSpeed(powerZone[zoneKey].min, unitSystem); // Slower pace (higher seconds) = lower speed
-                                  const maxSpeed = convertPaceToSpeed(powerZone[zoneKey].max, unitSystem); // Faster pace (lower seconds) = higher speed
+                                  const z = powerZone[zoneKey];
                                   const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
-                                  // Display: slower speed first, then faster speed (e.g., "10.0–15.0 km/h")
+                                  if (currentZones.speed && typeof z.min === 'number') {
+                                    return `${Number(z.min).toFixed(1)}–${Number(z.max).toFixed(1)} ${speedUnit}`;
+                                  }
+                                  const minSpeed = convertPaceToSpeed(z.min, unitSystem);
+                                  const maxSpeed = convertPaceToSpeed(z.max, unitSystem);
                                   return `${minSpeed.toFixed(1)}–${maxSpeed.toFixed(1)} ${speedUnit}`;
                                 })() :
                                 (powerZone[zoneKey].max && powerZone[zoneKey].min) ?

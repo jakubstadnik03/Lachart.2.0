@@ -27,7 +27,7 @@ import DataTable, {
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
-import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
+import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import UpgradeModal from '../UpgradeModal';
 import { usePremium } from '../../hooks/usePremium';
@@ -462,6 +462,30 @@ const convertPaceToSpeed = (seconds, unitSystem = 'metric', isSwimming = false) 
   }
   // Run: s is sec/km (metric) or sec/mile (imperial) → km/h or mph via 3600/s
   return 3600 / s;
+};
+
+/** Stored load (power field) → chart X coordinate. */
+const loadToChartX = (rawPower, { dataIsSpeed, displayIsSpeed, unitSystem, isSwimming }) => {
+  const v = Number(String(rawPower ?? '').replace(',', '.'));
+  if (!Number.isFinite(v)) return NaN;
+  if (dataIsSpeed) {
+    if (displayIsSpeed && unitSystem === 'imperial') return v * 0.621371;
+    return v;
+  }
+  if (!displayIsSpeed) return v;
+  return convertPaceToSpeed(v, unitSystem, isSwimming);
+};
+
+/** Stored X (same units as loads) → chart X — e.g. polynomial / threshold raw values. */
+const storedXToChartX = (x, opts) => {
+  const v = Number(x);
+  if (!Number.isFinite(v)) return NaN;
+  if (opts.dataIsSpeed) {
+    if (opts.displayIsSpeed && opts.unitSystem === 'imperial') return v * 0.621371;
+    return v;
+  }
+  if (!opts.displayIsSpeed) return v;
+  return convertPaceToSpeed(v, opts.unitSystem, opts.isSwimming);
 };
 
 /** Zóny + LT1/LT2 tooltipy — musí být v Chart.register + options.plugins (react-chartjs-2 ignoruje změny plugins z props po mountu). */
@@ -934,8 +958,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   /** How run pace was saved on this test (sec/mile vs sec/km) — independent of user display override. */
   const testRunPerMileStorage = testRunPaceStoredPerMile(mockData, sportKey);
-  // Case + nesoulad metadat (speed) vs skutečná data v sekundách po přepnutí jiného testu
-  const inputMode = getEffectiveLactateInputMode({ ...mockData, sport: sportKey });
+  const storageMode = getEffectiveLactateInputMode({ ...mockData, sport: sportKey });
+  const dataIsSpeed = storageMode === 'speed';
+  const displayMode = getLactateDisplayMode({ ...mockData, sport: sportKey }, user);
+  const chartXOpts = { dataIsSpeed, displayIsSpeed: displayMode === 'speed', unitSystem, isSwimming };
+  const inputMode = displayMode;
   const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set
 
   // Popisek přepínače: bike = Power, běh/plavání podle inputMode (pace vs speed)
@@ -1411,10 +1438,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // For pace sports in pace-mode: keep X axis in seconds (pace) so we can reverse it (slower -> faster)
   const xValsMeasured = validResults.map(r => {
     const power = r.power?.toString().replace(',', '.');
-    const v = Number(power);
-    if (!isPaceSport) return v;
-    if (inputMode === 'pace') return v; // seconds
-    return convertPaceToSpeed(v, unitSystem, isSwimming); // speed mode
+    if (!isPaceSport) return Number(power);
+    return loadToChartX(power, chartXOpts);
   });
   
   const yValsMeasured = validResults.map(r => {
@@ -1439,7 +1464,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     // For bike: use the lowest power and go proportionally lower
     let baseX;
     if (isPaceSport) {
-      if (inputMode === 'pace') {
+      if (!dataIsSpeed && displayMode === 'pace') {
         // In pace mode: xVals are in seconds, highest = slowest
         const maxPace = Math.max(...xValsMeasured); // Slowest pace (highest seconds)
         const minPace = Math.min(...xValsMeasured); // Fastest pace (lowest seconds)
@@ -1450,33 +1475,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const basePace = maxPace + proportionalGap;
         baseX = basePace;
       } else {
-        // In speed mode: xVals are already in km/h (converted from pace)
-        // We need to find the slowest and fastest pace from valid data, then convert to speed
-        const slowestPace = Math.max(...validResults.map(r => {
-          const power = r.power?.toString().replace(',', '.');
-          return Number(power);
-        })); // Slowest pace in seconds
-        const fastestPace = Math.min(...validResults.map(r => {
-          const power = r.power?.toString().replace(',', '.');
-          return Number(power);
-        })); // Fastest pace in seconds
+        // Speed display: loads stored as km/h or converted from pace
+        const speeds = xValsMeasured.filter((x) => Number.isFinite(x));
+        const slowestSpeed = Math.min(...speeds);
+        const fastestSpeed = Math.max(...speeds);
+        const speedRange = fastestSpeed - slowestSpeed;
         
-        const slowestSpeed = convertPaceToSpeed(slowestPace, unitSystem, isSwimming); // Convert to km/h
-        const fastestSpeed = convertPaceToSpeed(fastestPace, unitSystem, isSwimming); // Convert to km/h
-        const speedRange = slowestSpeed - fastestSpeed;
+        const proportionalGap = speedRange * 0.05;
+        baseX = Math.max(0.1, slowestSpeed - proportionalGap);
         
-        // Place base lactate closer to the slowest point - smaller gap
-        const proportionalGap = speedRange * 0.05; // 5% of the range - smaller gap
-        baseX = Math.max(0.1, slowestSpeed + proportionalGap);
-        
-        // Validate: for running, speed should be reasonable (max ~30 km/h for elite, ~20 km/h for normal)
-        // For swimming, max ~8 km/h
         const maxReasonableSpeed = isSwimming ? 10 : 30;
         if (baseX > maxReasonableSpeed) {
-          // If calculated speed is too high, use an even smaller proportional gap
-          baseX = slowestSpeed + (speedRange * 0.03); // 3% instead
+          baseX = slowestSpeed - (speedRange * 0.03);
           if (baseX > maxReasonableSpeed) {
-            // If still too high, don't show base lactate point
             return null;
           }
         }
@@ -1511,7 +1522,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ? [...validResults].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
         const bPower = Number(b.power?.toString().replace(',', '.'));
-        return bPower - aPower; // Descending (slowest to fastest)
+        return dataIsSpeed ? aPower - bPower : bPower - aPower;
       })
     : [...validResults].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
@@ -1524,9 +1535,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     const power = r.power?.toString().replace(',', '.');
     const lactate = r.lactate?.toString().replace(',', '.');
     const xRaw = Number(power);
-    const x = isPaceSport
-      ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem, isSwimming))
-      : xRaw;
+    const x = isPaceSport ? loadToChartX(power, chartXOpts) : xRaw;
     return { x, y: Number(lactate) };
   });
 
@@ -1558,9 +1567,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Also ensure lactate values are never negative
   const polyPoints = polyPointsRaw.map(point => {
     const y = Math.max(0, point.y); // Ensure lactate is never negative
-    if (isPaceSport && inputMode === 'speed') {
-      // Convert from pace (seconds) to speed (km/h or mph)
-      const speed = convertPaceToSpeed(point.x, unitSystem, isSwimming);
+    if (isPaceSport && displayMode === 'speed') {
+      const speed = storedXToChartX(point.x, chartXOpts);
       return { x: speed, y };
     }
     // For pace mode or bike, x is already correct (seconds for pace, watts for bike)
@@ -1572,7 +1580,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ? [...allResultsForDisplay].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
         const bPower = Number(b.power?.toString().replace(',', '.'));
-        return bPower - aPower; // Descending (slowest to fastest)
+        return dataIsSpeed ? aPower - bPower : bPower - aPower;
       })
     : [...allResultsForDisplay].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
@@ -1585,9 +1593,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       const power = r.power?.toString().replace(',', '.');
       const lactate = r.lactate?.toString().replace(',', '.');
       const xRaw = Number(power);
-      const x = isPaceSport
-        ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem, isSwimming))
-        : xRaw;
+      const x = isPaceSport ? loadToChartX(power, chartXOpts) : xRaw;
       
       // Keep all measured points visible in chart; only reject non-finite X.
       if (!Number.isFinite(x)) {
@@ -1686,16 +1692,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const ratio = (targetLactate - prev.y) / (next.y - prev.y);
         const interpolatedX = prev.x + (next.x - prev.x) * ratio;
         // Convert to display units
-        if (isPaceSport && inputMode === 'speed') {
-          return convertPaceToSpeed(interpolatedX, unitSystem, isSwimming);
+        if (isPaceSport && displayMode === 'speed') {
+          return storedXToChartX(interpolatedX, chartXOpts);
         }
         return interpolatedX;
       }
     }
     
-    // Convert to display units
-    if (isPaceSport && inputMode === 'speed') {
-      return convertPaceToSpeed(closestPoint.x, unitSystem, isSwimming);
+    if (isPaceSport && displayMode === 'speed') {
+      return storedXToChartX(closestPoint.x, chartXOpts);
     }
     return closestPoint.x;
   };
@@ -1719,14 +1724,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       if (!isPaceSport && (key === 'LTP1' || key === 'LTP2') && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
         xValue = Number(thresholds[key]);
       } else if (isPaceSport && key === 'LTP1' && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
-        xValue = inputMode === 'pace'
-          ? Number(thresholds[key])
-          : convertPaceToSpeed(Number(thresholds[key]), unitSystem, isSwimming);
+        xValue = storedXToChartX(Number(thresholds[key]), chartXOpts);
       } else {
         xValue = xValueFromCurve != null
           ? xValueFromCurve
           : (isPaceSport
-              ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem, isSwimming))
+              ? storedXToChartX(thresholds[key], chartXOpts)
               : thresholds[key]);
       }
       

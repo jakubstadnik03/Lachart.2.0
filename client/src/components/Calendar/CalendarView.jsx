@@ -26,7 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
-import api, { getSimilarActivities, getRaceEvents, updateUserProfile } from '../../services/api';
+import api, { getSimilarActivities, getRaceEvents } from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { distinctiveTitleTokens, isGenericTitle, titleTokens } from '../../utils/compareSimilarity';
 import {
@@ -40,9 +40,9 @@ import {
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
-import { computePowerTss, computeHrTss, defaultTssMode, canToggleTss, resolveActivityTss, hasUserManualTss } from '../../utils/computeTss';
+import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip } from '../../utils/calendarDayOrdering';
-import { getTssDisplayMode, setTssDisplayMode, resolveTssDisplayMode, notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
+import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
@@ -2370,7 +2370,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   );
 }
 
-export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onCompletedSaved = null, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null }) {
+export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onCompletedSaved = null, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null, profile: profileProp = null }) {
   const a = activity;
 
   // Read highlightMetric + radarWatts from props (passed by SpiderChart navigation) or URL params
@@ -2451,6 +2451,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             moving_time: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
             distance: raw.distance ?? raw.detail?.distance,
             manualTss: raw.manualTss ?? raw.detail?.manualTss,
+            tssDisplayMode: raw.tssDisplayMode ?? raw.detail?.tssDisplayMode,
             tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
             calories: raw.calories ?? raw.detail?.calories ?? null,
             kilojoules: raw.detail?.kilojoules ?? null,
@@ -2959,7 +2960,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, []);
   const [mobileView, setMobileView] = useState('summary'); // 'summary' | 'laps' | 'edit'
   const [peaksFocus, setPeaksFocus] = useState(null);
-  const [tssMode, setTssMode] = useState(() => getTssDisplayMode() || 'power');
+  const [tssMode, setTssMode] = useState('power');
 
   useEffect(() => {
     setPeaksFocus(null);
@@ -3068,6 +3069,31 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // ── Activity data (use merged = summary + full detail) ──
   const { user: authUser } = useAuth() || {};
+  const [loadedProfile, setLoadedProfile] = useState(null);
+
+  useEffect(() => {
+    if (profileProp) {
+      setLoadedProfile(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const selfId = String(authUser?._id || authUser?.id || '');
+        const aid = String(athleteId || selfId || '');
+        const path = aid && aid !== selfId ? `/user/athlete/${aid}/profile` : '/user/profile';
+        const { data } = await api.get(path);
+        if (!cancelled) setLoadedProfile(data);
+      } catch (e) {
+        console.warn('ActivityFullModal: profile load failed, using auth user', e);
+        if (!cancelled) setLoadedProfile(null);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [profileProp, athleteId, authUser?._id, authUser?.id]);
+
+  const tssProfile = profileProp || loadedProfile || authUser;
   const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
   // Prefer *moving* time (excludes pauses / auto-stop) over elapsed time so
   // a Strava ride with 30 min of coffee-stop pauses reports the actual saddle
@@ -3079,60 +3105,60 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     0
   );
   const dist = Number(merged.distance || merged.totalDistance || 0);
-  // TSS — prefer the stored value (FIT uploads include it), fall back to
-  // a client-side calculation using the user's thresholds (FTP / threshold
-  // pace) so Strava activities — which never carry TSS — always show
-  // something instead of being hidden.
-  const explicitTss = Number(
-    merged.manualTss || merged.tss || merged.trainingStressScore || merged.trainingLoad || merged.totalTSS || 0,
-  );
-  const powerTss = computePowerTss(merged, authUser);
-  const hrTss = computeHrTss(merged, authUser);
-  const userManualTss = hasUserManualTss(merged);
-  const tssToggleable = canToggleTss(powerTss, hrTss) && !userManualTss;
-  const tssLabel = userManualTss
-    ? 'TSS (manual)'
-    : tssMode === 'power'
-      ? (isBike ? 'Power TSS' : (isRun ? 'Pace TSS' : isSwim ? 'Pace TSS' : 'TSS'))
-      : 'hrTSS';
-  const tss = resolveActivityTss(merged, authUser, { user: authUser, mode: tssMode });
+  const powerTss = computePowerTss(merged, tssProfile);
+  const hrTss = computeHrTss(merged, tssProfile);
+  const availableTssModes = getAvailableTssModes(merged, tssProfile);
+  const tssToggleable = canToggleTss(merged, tssProfile);
+  const tssLabel = tssModeLabel(tssMode, { isBike, isRun, isSwim, activity: merged });
+  const nextTssLabel = tssModeLabel(cycleTssMode(tssMode, availableTssModes), { isBike, isRun, isSwim, activity: merged });
+  const tssToggleHint = tssToggleable ? `Switch to ${nextTssLabel}` : tssToggleDisabledReason(merged, tssProfile);
+  const tss = resolveActivityTss(merged, tssProfile, { user: tssProfile, mode: tssMode });
   const activityKey = getActivityAppId(a);
   useEffect(() => {
-    const fallback = defaultTssMode(powerTss, hrTss, explicitTss);
-    setTssMode(resolveTssDisplayMode({
-      powerTss,
-      hrTss,
-      explicitTss,
-      defaultMode: fallback,
-    }));
-  }, [activityKey, powerTss, hrTss, explicitTss]);
+    setTssMode(getActivityTssDisplayMode(merged, tssProfile, tssProfile));
+    // Granular deps — avoid resetting mode on every merged object reference change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activityKey, powerTss, hrTss, merged.tssDisplayMode, merged.manualTss, merged.trainingStressScore, tssProfile?.powerZones, tssProfile?.trainingPreferences?.tssDisplayMode]);
+
+  const persistTssMode = async (nextMode) => {
+    const { kind, externalId } = resolveActivitySaveKind(merged);
+    if (!kind || !externalId) return;
+    const payload = { tssDisplayMode: nextMode };
+    if (kind === 'strava') {
+      const { updateStravaActivity } = await import('../../services/api.js');
+      await updateStravaActivity(externalId, payload, athleteId);
+    } else if (kind === 'garmin') {
+      const { updateGarminActivity } = await import('../../services/api.js');
+      await updateGarminActivity(externalId, payload, athleteId);
+    } else if (kind === 'fit') {
+      const { updateFitTraining } = await import('../../services/api.js');
+      await updateFitTraining(externalId, payload);
+    }
+    setDetail((prev) => ({ ...(prev || {}), tssDisplayMode: nextMode }));
+    const appId = getActivityAppId(merged);
+    propagateCompletedSave({ id: appId, tssDisplayMode: nextMode });
+  };
+
   const flipTssMode = () => {
     if (!tssToggleable) return;
-    setTssMode((m) => {
-      const next = m === 'power' ? 'hr' : 'power';
-      setTssDisplayMode(next);
-      clearFormFitnessCache();
-      notifyTssDisplayModeChanged(next);
-      if (authUser?._id) {
-        updateUserProfile({
-          trainingPreferences: {
-            ...(authUser.trainingPreferences || {}),
-            tssDisplayMode: next,
-          },
-        }).catch(() => {});
-      }
-      return next;
+    const next = cycleTssMode(tssMode, availableTssModes);
+    setTssMode(next);
+    clearFormFitnessCache();
+    notifyTssDisplayModeChanged(next);
+    persistTssMode(next).catch((err) => {
+      console.error('Failed to save per-workout TSS mode', err);
+      setTssMode(tssMode);
     });
   };
 
   // Keep edit-form TSS in sync when toggling power ↔ hr (computed only, not manual override).
   useEffect(() => {
-    if (userManualTss) return;
-    const computed = resolveActivityTss(merged, authUser, { user: authUser, mode: tssMode });
+    if (tssMode === 'manual') return;
+    const computed = resolveActivityTss(merged, tssProfile, { user: tssProfile, mode: tssMode });
     if (computed > 0) {
       setCompletedForm((p) => ({ ...p, tss: String(Math.round(computed)) }));
     }
-  }, [tssMode, userManualTss, activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tssMode, activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Use actual average power for `power` — don't fall through to NP, otherwise
   // np === power and the NP label is never shown (the condition below checks ≠).
   const power = Number(merged.avgPower || merged.averagePower || merged.average_watts || 0);
@@ -3424,7 +3450,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (completedForm.calories !== '') extraFields.calories = Number(completedForm.calories) || 0;
       if (completedForm.rpe !== '')      extraFields.rpe = Number(completedForm.rpe) || 0;
       if (completedForm.lactate !== '')  extraFields.lactate = Number(completedForm.lactate) || 0;
-      if (completedForm.tss !== '')      extraFields.tss = Number(completedForm.tss) || 0;
+      if (completedForm.tss !== '') {
+        extraFields.tss = Number(completedForm.tss) || 0;
+        extraFields.tssDisplayMode = 'manual';
+      }
 
       if (String(completedForm.durationDisplay || '').trim()) {
         const secs = parseDurationToSeconds(completedForm.durationDisplay);
@@ -3466,6 +3495,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           patch.trainingStressScore = fields.tss;
           patch.manualTss = fields.tss;
         }
+        if (fields.tssDisplayMode) patch.tssDisplayMode = fields.tssDisplayMode;
         if (fields.rpe != null) patch.rpe = fields.rpe;
         if (fields.lactate != null) patch.lactate = fields.lactate;
         return patch;
@@ -3537,12 +3567,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         distance: savedDist,
         tss: savedTss,
         manualTss: savedTss,
+        tssDisplayMode: savedAct.tssDisplayMode ?? (extraFields.tss != null ? 'manual' : merged.tssDisplayMode),
         calories: savedAct.calories ?? extraFields.calories,
         rpe: savedAct.rpe ?? extraFields.rpe,
         lactate: savedAct.lactate ?? extraFields.lactate,
       };
       propagateCompletedSave(eventDetail);
       clearFormFitnessCache();
+      if (extraFields.tssDisplayMode === 'manual') setTssMode('manual');
       notifyTssDisplayModeChanged(tssMode);
       if (completedForm.title) {
         try {
@@ -3768,12 +3800,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   type="button"
                   onClick={flipTssMode}
                   className="text-left text-[10px] font-semibold uppercase tracking-wide text-blue-600 active:opacity-70"
-                  title={`Switch to ${tssMode === 'power' ? 'hrTSS' : (isBike ? 'Power TSS' : 'Pace TSS')}`}
+                  title={`Switch to ${nextTssLabel}`}
                 >
                   {tssLabel} ⇄
                 </button>
               ) : (
-                <span>{userManualTss ? 'TSS (manual)' : tssLabel}</span>
+                <span>{tssLabel}</span>
               )
             )}
             compact={mobile}
@@ -3955,11 +3987,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <span>Lactate</span>
             </button>
           )}
-          {/* Edit — scrolls to Summary editor when a plan is linked */}
+          {/* Edit — opens the Planned | Completed editor (Edit tab; not on tab bar) */}
           <button
-            onClick={() => { setEditingPlanned(true); setMobileView('summary'); }}
+            type="button"
+            onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
             title="Edit activity"
-            className="p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 text-gray-500"
+            className="p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 text-gray-500 touch-manipulation"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             <PencilIcon className="w-4 h-4" />
           </button>
@@ -3998,6 +4032,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         <div className="flex border-b border-gray-100 flex-shrink-0">
           {[
             { id: 'summary', label: 'Summary' },
+            { id: 'edit', label: 'Edit' },
             ...((gpsData.length > 0 || chartTraining?.records?.length > 0) ? [{ id: 'mapgraph', label: 'Map/Graph' }] : []),
             ...(hasLaps ? [{ id: 'laps', label: 'Laps' }] : []),
             ...((chartTraining?.records?.length > 10) ? [{ id: 'peaks', label: 'Peaks' }] : []),
@@ -4097,7 +4132,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           onClick={flipTssMode}
                           disabled={!tssToggleable}
                           className={`text-right ${tssToggleable ? 'cursor-pointer active:opacity-70' : 'cursor-default'}`}
-                          title={tssToggleable ? `Switch to ${tssMode === 'power' ? 'hrTSS' : (isBike ? 'Power TSS' : 'Power / Pace TSS')}` : undefined}
+                          title={tssToggleHint || undefined}
                         >
                           <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{tss > 0 ? Math.round(tss) : '—'}</span>
                           <span className={`text-[11px] font-semibold ml-1 ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
@@ -4106,6 +4141,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         </button>
                       </div>
                     </div>
+                    {!tssToggleable && tssToggleHint && (
+                      <p className="text-[10px] text-gray-400 text-right leading-snug">{tssToggleHint}</p>
+                    )}
 
                     {/* Compliance bar — TrainingPeaks gauge */}
                     {compliancePct != null && (
@@ -4897,7 +4935,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               onClick={flipTssMode}
               disabled={!tssToggleable}
               className={`rounded-xl bg-gray-50 px-3 py-2 flex flex-col text-left ${tssToggleable ? 'hover:bg-gray-100 active:bg-gray-200' : ''}`}
-              title={tssToggleable ? `Switch to ${tssMode === 'power' ? 'hrTSS' : (isBike ? 'Power TSS' : 'Power / Pace TSS')}` : undefined}
+              title={tssToggleHint || undefined}
             >
               <span className={`text-[9px] font-bold uppercase tracking-wide leading-none ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
                 {tssLabel}{tssToggleable ? ' ⇄' : ''}
@@ -7086,10 +7124,10 @@ export default function CalendarView({
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
-  const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
+  const [tssRecalcTick, setTssRecalcTick] = useState(0);
 
   useEffect(() => {
-    const onTssModeChange = () => setTssDisplayMode(getTssDisplayMode());
+    const onTssModeChange = () => setTssRecalcTick((t) => t + 1);
     window.addEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
     return () => window.removeEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
   }, []);
@@ -7858,6 +7896,7 @@ export default function CalendarView({
   // Weekly summary only for weeks currently visible in the calendar grid
   // In week view, show only the current week
   const weeklySummary = useMemo(() => {
+    void tssRecalcTick; // bust cache when per-workout TSS mode changes
     if (!days || days.length === 0) return [];
 
     let visibleWeekKeys;
@@ -7903,7 +7942,7 @@ export default function CalendarView({
       const duration = Number(act.totalTimerTime || act.moving_time || act.movingTime || act.totalElapsedTime || act.elapsedTime || act.duration || 0);
       const distance = Number(act.distance || 0);
 
-      const tssVal = resolveActivityTss(act, userProfile, { user: userProfile, mode: tssDisplayMode });
+      const tssVal = resolveActivityTss(act, userProfile, { user: userProfile });
 
       entry.totalSeconds += duration;
       if (sport.includes('run')) {
@@ -8012,7 +8051,7 @@ export default function CalendarView({
     userProfile,
     view,
     anchorDate,
-    tssDisplayMode,
+    tssRecalcTick,
   ]);
 
   const formatHours = (seconds) => {
@@ -9196,6 +9235,7 @@ export default function CalendarView({
           activity={activityModal.activity}
           plannedWorkout={activityModal.plannedWorkout}
           athleteId={athleteId}
+          profile={userProfile}
           onClose={() => setActivityModal(null)}
           onEditPlanned={onSelectPlannedWorkout}
           onAddLactate={onAddLactate}

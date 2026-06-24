@@ -185,6 +185,7 @@ function preserveManualStravaMetrics(existing, doc) {
   if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
   if (existing.distance != null) doc.distance = existing.distance;
   if (existing.manualTss != null) doc.manualTss = existing.manualTss;
+  if (existing.tssDisplayMode != null) doc.tssDisplayMode = existing.tssDisplayMode;
   return doc;
 }
 
@@ -3172,8 +3173,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       dateFilter.$lte = requestedTo;
     }
     const stravaSelect = summaryOnly
-      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss calories rpe'
-      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss calories rpe laps.lactate';
+      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss tssDisplayMode calories rpe'
+      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss tssDisplayMode calories rpe laps.lactate';
     const garminSelect = summaryOnly
       ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate'
       : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate laps.lactate';
@@ -4074,7 +4075,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to update this activity' });
     }
     
-    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode } = req.body;
 
     const activity = await StravaActivity.findOne({
       userId: targetUserId,
@@ -4154,6 +4155,13 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     if (lactate !== undefined && lactate !== null && lactate !== '') {
       const lac = Number(lactate);
       if (Number.isFinite(lac)) activity.lactate = lac;
+    }
+    if (tssDisplayMode !== undefined) {
+      if (tssDisplayMode === null || tssDisplayMode === '') {
+        activity.tssDisplayMode = null;
+      } else if (['manual', 'power', 'hr'].includes(String(tssDisplayMode))) {
+        activity.tssDisplayMode = String(tssDisplayMode);
+      }
     }
 
     await activity.save();
@@ -4238,7 +4246,7 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
     const activity = await GarminActivity.findOne({ userId: targetUserId, garminId });
     if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
 
-    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, rpe, lactate } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, rpe, lactate, tss, tssDisplayMode } = req.body;
     if (title !== undefined) {
       activity.titleManual = (title && typeof title === 'string' && title.trim()) ? title.trim() : null;
     }
@@ -4267,6 +4275,17 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
     if (lactate !== undefined && lactate !== null && lactate !== '') {
       const lac = Number(lactate);
       if (Number.isFinite(lac)) activity.lactate = lac;
+    }
+    if (tss !== undefined && tss !== null && tss !== '') {
+      const load = Math.max(0, Math.round(Number(tss)));
+      if (Number.isFinite(load)) activity.manualTss = load;
+    }
+    if (tssDisplayMode !== undefined) {
+      if (tssDisplayMode === null || tssDisplayMode === '') {
+        activity.tssDisplayMode = null;
+      } else if (['manual', 'power', 'hr'].includes(String(tssDisplayMode))) {
+        activity.tssDisplayMode = String(tssDisplayMode);
+      }
     }
 
     await activity.save();

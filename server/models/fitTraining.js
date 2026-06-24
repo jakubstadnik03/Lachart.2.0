@@ -77,6 +77,8 @@ const fitTrainingSchema = new mongoose.Schema({
   maxCadence: Number, // rpm
   /** User-edited training load (Completed editor). */
   trainingStressScore: Number,
+  /** Per-workout TSS source: manual | power | hr */
+  tssDisplayMode: { type: String, enum: ['manual', 'power', 'hr', null], default: null },
   lactate: Number,
   rpe: Number,
   // Training zones

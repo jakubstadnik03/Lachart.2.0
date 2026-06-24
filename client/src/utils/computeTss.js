@@ -41,11 +41,25 @@ function ftpFromProfile(profile) {
 }
 
 function thresholdPaceFromProfile(profile) {
-  return Number(profile?.runningZones?.lt2 || profile?.thresholdPace || 0); // sec/km
+  const rz = profile?.powerZones?.running || profile?.runningZones;
+  return Number(rz?.lt2 || rz?.zone4?.min || profile?.thresholdPace || 0); // sec/km
 }
 
 function thresholdSwimPaceFromProfile(profile) {
-  return Number(profile?.powerZones?.swimming?.lt2 || profile?.thresholdSwimPace || 0); // sec/100m
+  const sz = profile?.powerZones?.swimming || profile?.swimmingZones;
+  return Number(sz?.lt2 || sz?.zone4?.min || profile?.thresholdSwimPace || 0); // sec/100m
+}
+
+/** m/s from device fields, or distance ÷ duration when Strava omits average_speed (common on swims). */
+function activityAvgSpeedMps(activity) {
+  const stored = Number(
+    activity?.avgSpeed || activity?.averageSpeed || activity?.average_speed || 0,
+  );
+  if (stored > 0) return stored;
+  const dist = Number(activity?.distance || activity?.totalDistance || 0);
+  const dur = activityDuration(activity);
+  if (dist > 0 && dur > 0) return dist / dur;
+  return 0;
 }
 
 function lthrFromProfile(profile, sport) {
@@ -75,7 +89,7 @@ export function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
-    const avgSpeed = Number(activity.avgSpeed || activity.averageSpeed || activity.average_speed || 0);
+    const avgSpeed = activityAvgSpeedMps(activity);
     if (avgSpeed > 0 && thresholdPace > 0) {
       const avgPace = 1000 / avgSpeed;
       const intensity = thresholdPace / avgPace;
@@ -84,7 +98,7 @@ export function computePowerTss(activity, profile) {
   }
 
   if (sport.includes('swim')) {
-    const avgSpeed = Number(activity.avgSpeed || activity.averageSpeed || activity.average_speed || 0);
+    const avgSpeed = activityAvgSpeedMps(activity);
     if (avgSpeed > 0 && thresholdSwimPace > 0) {
       const avgPace = 100 / avgSpeed;
       const intensity = thresholdSwimPace / avgPace;
@@ -128,35 +142,125 @@ export function computeHrTss(activity, profile) {
   return 0;
 }
 
-export function defaultTssMode(powerTss, hrTss, explicitTss = 0) {
+export const TSS_DISPLAY_MODES = ['manual', 'power', 'hr'];
+
+export function defaultTssMode(powerTss, hrTss, manualTss = 0) {
   if (powerTss > 0 && hrTss > 0) {
-    if (explicitTss > 0) {
-      return Math.abs(explicitTss - powerTss) <= Math.abs(explicitTss - hrTss) ? 'power' : 'hr';
+    if (manualTss > 0) {
+      const dPower = Math.abs(manualTss - powerTss);
+      const dHr = Math.abs(manualTss - hrTss);
+      if (dPower <= dHr) return 'power';
+      return 'hr';
     }
     return 'power';
   }
   if (powerTss > 0) return 'power';
+  if (hrTss > 0) return 'hr';
+  if (manualTss > 0) return 'manual';
   return 'hr';
 }
 
-export function canToggleTss(powerTss, hrTss) {
-  return powerTss > 0 && hrTss > 0 && Math.abs(powerTss - hrTss) >= 1;
+/** Stored manual / file TSS value (not computed power or hr). */
+export function getManualTssValue(activity) {
+  const userManual = Number(activity?.manualTss ?? 0);
+  if (userManual > 0) return Math.round(userManual);
+  const fileTss = Number(
+    activity?.trainingStressScore || activity?.tss || activity?.TSS
+    || activity?.totalTSS || activity?.trainingLoad || 0,
+  );
+  return fileTss > 0 ? Math.round(fileTss) : 0;
 }
 
-/** True when the athlete explicitly saved a TSS override (not FIT file import). */
-export function hasUserManualTss(activity) {
+export function getAvailableTssModes(activity, profile) {
+  const modes = [];
+  if (getManualTssValue(activity) > 0) modes.push('manual');
+  if (computePowerTss(activity, profile) > 0) modes.push('power');
+  if (computeHrTss(activity, profile) > 0) modes.push('hr');
+  return modes;
+}
+
+export function cycleTssMode(current, available) {
+  if (!available?.length) return current;
+  const idx = available.indexOf(current);
+  const next = idx < 0 ? available[0] : available[(idx + 1) % available.length];
+  return next;
+}
+
+/** User typed / saved TSS in the editor (vs. value imported from file). */
+export function hasExplicitManualTss(activity) {
   return Number(activity?.manualTss ?? 0) > 0;
 }
 
-function readExplicitTss(activity) {
-  const manual = Number(activity.manualTss ?? 0);
-  if (manual > 0) return Math.round(manual);
+export function tssModeLabel(mode, { isBike = false, isRun = false, isSwim = false, activity = null } = {}) {
+  if (mode === 'manual') {
+    return (activity && hasExplicitManualTss(activity)) ? 'TSS (manual)' : 'TSS (file)';
+  }
+  if (mode === 'hr') return 'hrTSS';
+  if (mode === 'power') {
+    if (isBike) return 'Power TSS';
+    if (isRun || isSwim) return 'Pace TSS';
+    return 'TSS';
+  }
+  return 'TSS';
+}
 
-  const explicit = Number(
-    activity.tss || activity.TSS || activity.totalTSS || activity.trainingLoad
-    || activity.trainingStressScore || 0,
-  );
-  return explicit > 0 ? Math.round(explicit) : 0;
+/** Short hint when only one TSS source is available (tap target shows this as title). */
+export function tssToggleDisabledReason(activity, profile) {
+  if (!activity || getAvailableTssModes(activity, profile).length > 1) return null;
+  const sport = activitySport(activity);
+  const missing = [];
+  if (computePowerTss(activity, profile) <= 0) {
+    if (sport.includes('swim')) {
+      const sz = profile?.powerZones?.swimming || profile?.swimmingZones;
+      if (!Number(sz?.lt2 || sz?.zone4?.min)) missing.push('set swim LT2 in profile');
+      if (!activityAvgSpeedMps(activity)) missing.push('missing pace data');
+    } else if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
+      const rz = profile?.powerZones?.running || profile?.runningZones;
+      if (!Number(rz?.lt2 || rz?.zone4?.min)) missing.push('set run LT2 in profile');
+      if (!activityAvgSpeedMps(activity)) missing.push('missing pace data');
+    } else if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
+      if (!ftpFromProfile(profile)) missing.push('set cycling FTP/LT2 in profile');
+      const watts = Number(activity.normalizedPower || activity.averagePower || activity.average_watts || 0);
+      if (!watts) missing.push('missing power data');
+    }
+  }
+  if (computeHrTss(activity, profile) <= 0) {
+    const avgHr = Number(
+      activity.averageHeartRate || activity.average_heartrate || activity.avgHR || activity.avgHeartRate || 0,
+    );
+    if (!avgHr) missing.push('missing heart-rate data');
+    else if (!lthrFromProfile(profile, sport) && !profile?.maxHr) missing.push('set HR zones in profile');
+  }
+  if (!missing.length) return 'Only one TSS value available for this workout';
+  return `To switch TSS: ${missing.join(', ')}`;
+}
+
+/** Per-activity display mode (saved on workout, else global preference, else default). */
+export function getActivityTssDisplayMode(activity, profile, user) {
+  const available = getAvailableTssModes(activity, profile);
+  if (!available.length) return 'manual';
+
+  const saved = activity?.tssDisplayMode;
+  if (TSS_DISPLAY_MODES.includes(saved) && available.includes(saved)) return saved;
+
+  if (Number(activity?.manualTss ?? 0) > 0 && available.includes('manual')) return 'manual';
+
+  const powerTss = computePowerTss(activity, profile);
+  const hrTss = computeHrTss(activity, profile);
+  const manualVal = getManualTssValue(activity);
+  const globalMode = getTssDisplayMode() || user?.trainingPreferences?.tssDisplayMode;
+  if (globalMode && available.includes(globalMode)) return globalMode;
+
+  return defaultTssMode(powerTss, hrTss, manualVal);
+}
+
+export function canToggleTss(activity, profile) {
+  return getAvailableTssModes(activity, profile).length > 1;
+}
+
+/** @deprecated use getManualTssValue > 0 */
+export function hasUserManualTss(activity) {
+  return Number(activity?.manualTss ?? 0) > 0;
 }
 
 /**
@@ -166,29 +270,31 @@ function readExplicitTss(activity) {
 export function resolveActivityTss(activity, profile, options = {}) {
   if (!activity) return 0;
 
-  // User-edited override (Strava manualTss or FIT trainingStressScore via readExplicitTss).
-  const explicitTss = readExplicitTss(activity);
-  if (explicitTss > 0 && Number(activity.manualTss ?? 0) > 0) {
-    return explicitTss;
-  }
   const powerTss = computePowerTss(activity, profile);
   const hrTss = computeHrTss(activity, profile);
+  const manualVal = getManualTssValue(activity);
 
-  const savedMode = options.mode
-    ?? getTssDisplayMode()
-    ?? options.user?.trainingPreferences?.tssDisplayMode
+  let mode = options.mode
+    ?? (TSS_DISPLAY_MODES.includes(activity.tssDisplayMode) ? activity.tssDisplayMode : null)
     ?? null;
 
-  let mode = savedMode;
+  if (!mode && !options.mode) {
+    mode = getActivityTssDisplayMode(activity, profile, options.user);
+  }
+
+  if (mode === 'manual') {
+    if (manualVal > 0) return manualVal;
+  }
   if (mode === 'power' && powerTss <= 0) mode = null;
   if (mode === 'hr' && hrTss <= 0) mode = null;
   if (!mode) {
-    mode = defaultTssMode(powerTss, hrTss, explicitTss);
+    mode = defaultTssMode(powerTss, hrTss, manualVal);
   }
 
+  if (mode === 'manual' && manualVal > 0) return manualVal;
   if (mode === 'power' && powerTss > 0) return powerTss;
   if (mode === 'hr' && hrTss > 0) return hrTss;
-  if (explicitTss > 0) return explicitTss;
+  if (manualVal > 0) return manualVal;
   return 0;
 }
 

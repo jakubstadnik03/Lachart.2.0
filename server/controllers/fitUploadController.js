@@ -658,7 +658,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss } = req.body;
+    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -705,6 +705,13 @@ async function updateFitTraining(req, res) {
     if (tss !== undefined && tss !== null && tss !== '') {
       const load = Math.max(0, Math.round(Number(tss)));
       if (Number.isFinite(load)) training.trainingStressScore = load;
+    }
+    if (tssDisplayMode !== undefined) {
+      if (tssDisplayMode === null || tssDisplayMode === '') {
+        training.tssDisplayMode = null;
+      } else if (['manual', 'power', 'hr'].includes(String(tssDisplayMode))) {
+        training.tssDisplayMode = String(tssDisplayMode);
+      }
     }
     if (rpe !== undefined && rpe !== null && rpe !== '') {
       const rpeVal = Math.max(0, Math.round(Number(rpe)));

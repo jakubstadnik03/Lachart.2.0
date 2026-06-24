@@ -15,6 +15,7 @@ import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -156,27 +157,13 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   // priority for DISPLAY so switching the setting immediately updates every
   // chart without re-saving each test.
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
-  // displayMode = how the user wants to SEE values (pace vs speed)
-  const inputMode = (() => {
-    const pd = user?.trainingPreferences?.paceDisplay;
-    if (pd === 'kmh')    return 'speed';
-    if (pd === 'minpkm') return 'pace';
-    return mockData?.inputMode || 'pace';
-  })();
+  const storageMode = getEffectiveLactateInputMode(mockData);
+  const inputMode = getLactateDisplayMode(mockData, user);
 
   // ── Critical separation (2026-05) ────────────────────────────────────────
-  // `inputMode` above tells us how the user wants the axis LABELED, but it
-  // says nothing about how the underlying `power` numbers are STORED. A test
-  // recorded in Pace mode keeps pace-seconds (300, 290, …); a test recorded
-  // in Speed mode keeps km/h (12.0, 13.0, …). If we don't distinguish, the
-  // two combinations that involve a mismatch produce the famous "300 km/h"
-  // bug Honza saw — pace-second data labelled as raw km/h.
-  //
-  // `dataIsSpeed` = the underlying storage mode of THIS test. We trust the
-  // saved mockData.inputMode flag (set by TestingForm when the test was
-  // entered). Older tests without the flag fall through to 'pace' which
-  // matches the original behaviour of the form.
-  const dataIsSpeed = mockData?.inputMode === 'speed';
+  // `inputMode` = axis label preference; `storageMode` = how `power` is stored.
+  // Mismatch (pace-seconds shown as km/h) produced bogus axes like "500 km/h".
+  const dataIsSpeed = storageMode === 'speed';
 
   // Always return the X value as a numeric speed (km/h or mph), regardless
   // of how it's stored. Two paths:
