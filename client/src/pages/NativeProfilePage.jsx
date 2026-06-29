@@ -12,15 +12,18 @@ import {
 } from '../components/NativeDashboard/animations';
 import EditProfileModal from '../components/Profile/EditProfileModal';
 import { useNotification } from '../context/NotificationContext';
+import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculator';
+import {
+  extractLactateThresholds,
+  formatThresholdIntensity,
+  isPaceLactateSport,
+} from '../utils/extractLactateThresholds';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPace(secPerKm) {
-  if (!secPerKm || !Number.isFinite(secPerKm) || secPerKm <= 0) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
-}
+function isPaceSport(s) { return isPaceLactateSport(s); }
+
+const extractThresholds = extractLactateThresholds;
 
 function fmtDuration(secs) {
   if (!secs) return '0m';
@@ -29,48 +32,6 @@ function fmtDuration(secs) {
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
-}
-
-function isPaceSport(s) { return s === 'run' || s === 'swim'; }
-
-// Lightweight threshold extraction (mirrors ThresholdHistory.jsx)
-function extractThresholds(test) {
-  if (!test) return null;
-  const sport = normSport(test.sport);
-  const isPace = isPaceSport(sport);
-  const ov = test.thresholdOverrides || {};
-  let lt1 = ov.LTP1 != null ? Number(ov.LTP1) : null;
-  let lt2 = ov.LTP2 != null ? Number(ov.LTP2) : null;
-  let lt1Lac = ov.LTP1_lactate != null ? Number(ov.LTP1_lactate) : null;
-  let lt2Lac = ov.LTP2_lactate != null ? Number(ov.LTP2_lactate) : null;
-
-  const pts = (Array.isArray(test.results) ? test.results : [])
-    .map(r => ({
-      x: Number(String(r.power ?? r.interval ?? '').replace(',', '.')),
-      y: Number(String(r.lactate ?? '').replace(',', '.')),
-    }))
-    .filter(p => Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y) && p.y > 0);
-
-  if (pts.length >= 3) {
-    pts.sort((a, b) => isPace ? b.x - a.x : a.x - b.x);
-    const base = Number(test.baseLactate) || pts[0]?.y || 1.0;
-    const lt1Target = base + 1.5;
-    const lt2Target = Math.max(4.0, base + 3.0);
-    const interp = (target) => {
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i], b = pts[i + 1];
-        if ((a.y - target) * (b.y - target) <= 0) {
-          const t = (target - a.y) / (b.y - a.y || 1);
-          return Math.round((a.x + t * (b.x - a.x)) * 10) / 10;
-        }
-      }
-      return null;
-    };
-    if (lt1 == null) { lt1 = interp(lt1Target); lt1Lac = lt1Lac ?? lt1Target; }
-    if (lt2 == null) { lt2 = interp(lt2Target) ?? interp(4.0); lt2Lac = lt2Lac ?? 4.0; }
-  }
-
-  return { sport, isPace, lt1, lt2, lt1Lac, lt2Lac };
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -409,27 +370,22 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
                           </div>
                           {/* LT chips inline */}
                           {th && (th.lt1 != null || th.lt2 != null) && (
-                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                               {th.lt1 != null && (
-                                <ThresholdChip label="LT1" value={th.lt1} unit={th.isPace ? '' : 'W'} color="#4BA87D" />
+                                <ThresholdChip
+                                  label="LT1"
+                                  value={formatThresholdIntensity(th.lt1, last, sp)}
+                                  unit=""
+                                  color="#4BA87D"
+                                />
                               )}
                               {th.lt2 != null && (
-                                <ThresholdChip label="LT2" value={th.lt2} unit={th.isPace ? '' : 'W'} color="#E05347" />
-                              )}
-                            </div>
-                          )}
-                          {/* Pace label override for run/swim */}
-                          {th?.isPace && (th.lt1 != null || th.lt2 != null) && (
-                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              {th.lt1 != null && (
-                                <span style={{ fontSize: 10.5, color: '#4BA87D', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                                  LT1 {fmtPace(th.lt1)}
-                                </span>
-                              )}
-                              {th.lt2 != null && (
-                                <span style={{ fontSize: 10.5, color: '#E05347', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                                  · LT2 {fmtPace(th.lt2)}
-                                </span>
+                                <ThresholdChip
+                                  label="LT2"
+                                  value={formatThresholdIntensity(th.lt2, last, sp)}
+                                  unit=""
+                                  color="#E05347"
+                                />
                               )}
                             </div>
                           )}
@@ -669,27 +625,82 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
   const tint = SPORT_TINT[sport];
   const initial = useMemo(() => pickInitialThresholds(user, tests, sport), [user, tests, sport]);
 
-  // Computed zones for display (local override > user.powerZones > derived from latest test)
+  const latestTest = useMemo(() => {
+    const sportTests = (tests || [])
+      .filter((t) => normSport(t?.sport) === sport)
+      .sort((a, b) => new Date(b?.date || b?.testDate || 0) - new Date(a?.date || a?.testDate || 0));
+    return sportTests[0] || null;
+  }, [tests, sport]);
+
+  const latestTh = useMemo(
+    () => (latestTest ? extractThresholds(latestTest) : null),
+    [latestTest],
+  );
+
+  const zonesFromLatestTest = useMemo(
+    () => (latestTest ? calculateZonesFromTest(latestTest) : null),
+    [latestTest],
+  );
+
+  // Prefer zones from the latest lab test when it is newer than saved profile zones.
   const display = useMemo(() => {
     if (override?.primary || override?.heartRateZones) return override;
+
     const longKey = SHORT_TO_LONG[sport];
     const userPZ = user?.powerZones?.[longKey];
     const userHR = user?.heartRateZones?.[longKey];
     const hasUserPrimary = userPZ?.zone1 && userPZ?.zone1.min != null;
-    const hasUserHR      = userHR?.zone1 && userHR?.zone1.min != null;
+    const hasUserHR = userHR?.zone1 && userHR?.zone1.min != null;
+
+    const testDate = latestTest ? new Date(latestTest.date || latestTest.testDate || 0).getTime() : 0;
+    const zonesUpdated = userPZ?.lastUpdated ? new Date(userPZ.lastUpdated).getTime() : 0;
+    const preferTestZones = zonesFromLatestTest && (!hasUserPrimary || testDate > zonesUpdated);
+
+    const packFromTest = () => {
+      const primaryRaw = sport === 'bike' ? zonesFromLatestTest.power : zonesFromLatestTest.pace;
+      if (!primaryRaw) return null;
+      return {
+        primary: {
+          ...primaryRaw,
+          lt1: latestTh?.lt1,
+          lt2: latestTh?.lt2,
+        },
+        heartRateZones: zonesFromLatestTest.heartRate || (hasUserHR ? userHR : null),
+      };
+    };
+
+    if (preferTestZones) {
+      const packed = packFromTest();
+      if (packed) return packed;
+    }
+
     if (hasUserPrimary || hasUserHR) {
       return {
         primary: hasUserPrimary ? userPZ : null,
         heartRateZones: hasUserHR ? userHR : null,
       };
     }
-    // fall back to derive from initial extracted thresholds
+
+    const packed = packFromTest();
+    if (packed) return packed;
+
     return computeZonesFromThresholds({
       sport,
-      lt1: initial.lt1, lt2: initial.lt2,
-      hr1: initial.hr1, hr2: initial.hr2,
+      lt1: initial.lt1,
+      lt2: initial.lt2,
+      hr1: initial.hr1,
+      hr2: initial.hr2,
     });
-  }, [override, user, sport, initial]);
+  }, [override, user, sport, initial, latestTest, latestTh, zonesFromLatestTest]);
+
+  const fmtLtLabel = (value) => {
+    if (value == null) return '—';
+    if (latestTest) return formatThresholdIntensity(value, latestTest, sport);
+    return isPace ? fmtPaceVal(value) : `${Math.round(value)} W`;
+  };
+
+  const lt1Show = latestTh?.lt1 ?? display?.primary?.lt1 ?? initial.lt1;
+  const lt2Show = latestTh?.lt2 ?? display?.primary?.lt2 ?? initial.lt2;
 
   const hasAnything = display?.primary || display?.heartRateZones;
   return (
@@ -711,7 +722,9 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
             {sport}
           </div>
           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600 }}>
-            {hasAnything ? `LT1 ${isPace ? fmtPaceVal(display.primary?.lt1 || initial.lt1) : `${Math.round(display.primary?.lt1 || initial.lt1 || 0)} W`} · LT2 ${isPace ? fmtPaceVal(display.primary?.lt2 || initial.lt2) : `${Math.round(display.primary?.lt2 || initial.lt2 || 0)} W`}` : 'No thresholds set'}
+            {hasAnything && (lt1Show != null || lt2Show != null)
+              ? `LT1 ${fmtLtLabel(lt1Show)} · LT2 ${fmtLtLabel(lt2Show)}`
+              : 'No thresholds set'}
           </div>
         </div>
         <button

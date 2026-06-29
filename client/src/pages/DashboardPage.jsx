@@ -32,6 +32,7 @@ import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deleteP
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
+import { TSS_DISPLAY_MODE_EVENT } from '../utils/uiPrefs';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
@@ -848,6 +849,7 @@ export default function DashboardPage() {
       
       // Use cache if it exists and is less than 24 hours old
       // Also use cache if it exists but is expired (as fallback while loading)
+      let paintedFromCache = false;
       if (cachedData) {
         try {
           const parsed = JSON.parse(cachedData);
@@ -858,11 +860,10 @@ export default function DashboardPage() {
           // had synced) must NOT be served for 24h — fall through and refetch,
           // otherwise the calendar stays blank even after activities arrive.
           if (isCacheValid && parsed.length > 0) {
-            // Cache is valid, use it immediately
             setCalendarData(parsed);
+            paintedFromCache = true;
             setCalendarLoading(false);
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
-            return parsed;
           } else if (parsed.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
             setCalendarData(parsed);
@@ -879,7 +880,7 @@ export default function DashboardPage() {
       const inFlightCalendar = calendarRequestRef.current.get(targetId);
       if (inFlightCalendar) return inFlightCalendar;
 
-      setCalendarLoading(true);
+      if (!paintedFromCache) setCalendarLoading(true);
       const request = (async () => {
       let externalActivitiesError = null;
       const [fitData, stravaData] = await Promise.all([
@@ -920,7 +921,8 @@ export default function DashboardPage() {
           maxHeartRate: t.maxHeartRate,
           totalTime: t.totalElapsedTime || t.totalTimerTime,
           distance: t.totalDistance,
-          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS
+          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
+          tssDisplayMode: t.tssDisplayMode ?? null,
         })),
         ...(regTrainings || [])
           .filter(t => !t?.sourceStravaActivityId)
@@ -935,6 +937,7 @@ export default function DashboardPage() {
             distance: t.totalDistance || t.distance,
             totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
             tss: t.tss || t.totalTSS,
+            tssDisplayMode: t.tssDisplayMode ?? null,
             avgPower: t.avgPower || t.averagePower || null,
             avgSpeed: t.avgSpeed || t.averageSpeed || null
           })),
@@ -967,6 +970,7 @@ export default function DashboardPage() {
               a.totalTSS ||
               a.total_tss ||
               null),
+          tssDisplayMode: a.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
           kilojoules: a.kilojoules ?? a.raw?.kilojoules
           };
         })
@@ -1660,6 +1664,18 @@ export default function DashboardPage() {
     loadFormFitness(dashboardDataAthleteId);
   }, [dashboardDataAthleteId, loadFormFitness]);
 
+  // Re-fetch CTL/ATL/TSB when a workout's TSS, duration or display mode changes.
+  useEffect(() => {
+    if (!isCapacitorNative() || !dashboardDataAthleteId) return;
+    const refresh = () => loadFormFitness(dashboardDataAthleteId);
+    window.addEventListener('activityMetricsUpdated', refresh);
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
+    return () => {
+      window.removeEventListener('activityMetricsUpdated', refresh);
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
+    };
+  }, [dashboardDataAthleteId, loadFormFitness]);
+
   // ── Strava webhook → live dashboard refresh ───────────────────────────────
   // When the server receives a Strava webhook and saves a new activity it:
   //   (native) sends a push notification → NativeLayout dispatches stravaSyncComplete
@@ -1784,6 +1800,10 @@ export default function DashboardPage() {
     showEmptyWelcomeDelayed &&
     (!recentTrainings || recentTrainings.length === 0) &&
     (!calendarData || calendarData.length === 0);
+
+  const hasCalendarData = (calendarData?.length ?? 0) > 0;
+  const showCalendarSkeleton = calendarLoading && !hasCalendarData;
+  const showCalendarEmpty = trainingsInitialized && !calendarLoading && !calendarError && !hasCalendarData;
 
   // Filter tests based on selected sport
   const filteredTests = selectedSport === 'all' 
@@ -2208,9 +2228,7 @@ export default function DashboardPage() {
             calendar looks unhelpfully empty and they don't know it can be
             planned ahead. Restricted to the user's own dashboard so coaches
             looking at athletes don't see it. */}
-        {!isCoachLikeRole &&
-          Array.isArray(calendarData) &&
-          calendarData.length === 0 && (
+        {!isCoachLikeRole && showCalendarEmpty && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -2236,7 +2254,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.2 }}
           className="lg:col-span-5 md:col-span-2"
         >
-          {loading && (!calendarData || calendarData.length === 0) && (
+          {showCalendarSkeleton && (
             <div className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm" aria-busy="true">
               <div className="mb-4 flex items-center justify-between">
                 <div className="space-y-2">
@@ -2255,16 +2273,15 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          {(calendarLoading || calendarError || (!calendarLoading && !calendarError && (calendarData || []).length === 0)) && (
+          {(calendarError || showCalendarEmpty) && (
             <div className={`mb-3 rounded-xl border px-4 py-3 text-sm shadow-sm ${
               calendarError ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-white text-gray-600'
             }`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-start gap-2">
-                  {calendarLoading && <div className="mt-0.5 h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />}
                   <div>
                     <div className="font-semibold">
-                      {calendarError ? 'Calendar sync needs attention' : calendarLoading ? 'Loading calendar activities…' : 'No calendar activities yet'}
+                      {calendarError ? 'Calendar sync needs attention' : 'No calendar activities yet'}
                     </div>
                     <div className="text-xs mt-0.5">
                       {calendarError || (stravaConnected
@@ -2299,9 +2316,11 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          {!showCalendarSkeleton && (
           <WeeklyCalendar
             selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}
+            activitiesLoading={calendarLoading && !hasCalendarData}
             onSelectActivity={(activity) => {
               if (!activity) return;
               // Determine kind + id (same logic as NativeTrainingPage / detectActivityKind)
@@ -2388,6 +2407,7 @@ export default function DashboardPage() {
             onAddLactate={handleDashboardAddLactate}
             onPlannedSaved={(saved) => setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved))}
           />
+          )}
         </motion.div>
 
         {/* Recovery & readiness — own Apple Health data or coach viewing athlete */}

@@ -21,11 +21,25 @@ export const SwimSvg = ({ className = '', style }) => (
   </svg>
 );
 
+/** Elliptical trainer — side view with stride orbit and pedals. */
+export const EllipticalSvg = ({ className = '', style }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+    <path d="M3 20h18" />
+    <path d="M6 20V9" />
+    <path d="M6 9h5" />
+    <path d="M11 9v2" />
+    <ellipse cx="15.5" cy="13.5" rx="5.5" ry="2.75" />
+    <circle cx="11" cy="13.5" r="1.35" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="13.5" r="1.35" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 /** Canonical sport keys used across dashboard, calendar, and native tiles. */
 export function resolveSportKey(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
   if (s.includes('swim')) return 'swim';
+  if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return 'elliptical';
   if (
     s.includes('nordic') ||
     s.includes('backcountry') ||
@@ -36,7 +50,7 @@ export function resolveSportKey(sport) {
   if (s.includes('walk')) return 'walk';
   if (s.includes('run') || s.includes('trail')) return 'run';
   if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') ||
-      s.includes('crossfit') || s.includes('yoga') || s.includes('elliptical') || s.includes('fitness'))
+      s.includes('crossfit') || s.includes('yoga') || s.includes('fitness'))
     return 'gym';
   return 'other';
 }
@@ -49,6 +63,7 @@ export const SPORT_ICON_COLORS = {
   walk:  '#22c55e',
   ski:   '#0ea5e9',
   gym:   '#8b5cf6',
+  elliptical: '#a855f7',
   other: '#9ca3af',
 };
 
@@ -60,11 +75,12 @@ export const SPORT_LABELS = {
   walk: 'Walk',
   ski: 'Ski',
   gym: 'Gym',
+  elliptical: 'Elliptical',
   other: 'Other',
 };
 
 /** Display order for sport filter chips */
-export const SPORT_TOGGLE_ORDER = ['bike', 'run', 'swim', 'hike', 'walk', 'ski', 'gym', 'other'];
+export const SPORT_TOGGLE_ORDER = ['bike', 'run', 'swim', 'hike', 'walk', 'ski', 'elliptical', 'gym', 'other'];
 
 const SPORT_TAILWIND = {
   bike: 'text-blue-500',
@@ -74,6 +90,7 @@ const SPORT_TAILWIND = {
   walk: 'text-green-500',
   ski: 'text-sky-500',
   gym: 'text-purple-500',
+  elliptical: 'text-fuchsia-500',
   other: 'text-gray-400',
 };
 
@@ -100,6 +117,14 @@ export function SportGlyph({ sport, size, color, className = '' }) {
   if (key === 'swim') {
     return (
       <SwimSvg
+        className={cls}
+        style={{ color: tint, ...dimStyle }}
+      />
+    );
+  }
+  if (key === 'elliptical') {
+    return (
+      <EllipticalSvg
         className={cls}
         style={{ color: tint, ...dimStyle }}
       />

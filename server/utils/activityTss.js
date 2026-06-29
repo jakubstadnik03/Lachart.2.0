@@ -176,13 +176,70 @@ function buildUserProfile(user) {
     runningZones: user.runningZones || user.powerZones?.running || {},
     swimmingZones: user.swimmingZones || user.powerZones?.swimming || {},
     heartRateZones: user.heartRateZones || {},
-    ftp: user.ftp || 250,
+    ftp: user.ftp || user.powerZones?.cycling?.lt2 || user.powerZones?.cycling?.ftp || 0,
     maxHr: user.maxHr || user.maxHeartRate,
     restingHr: user.restingHr || user.restingHeartRate,
     thresholdPace: user.thresholdPace,
     thresholdSwimPace: user.thresholdSwimPace,
     tssDisplayMode: user.trainingPreferences?.tssDisplayMode || 'power',
   };
+}
+
+function normalizeSportBucket(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycle')) return 'bike';
+  if (s.includes('run')) return 'run';
+  if (s.includes('swim')) return 'swim';
+  if (s.includes('walk') || s.includes('hike')) return 'walk';
+  return 'other';
+}
+
+function activityDurationSec(activity) {
+  return Number(
+    activity.movingTime || activity.moving_time || activity.totalElapsedTime
+    || activity.elapsedTime || activity.duration || 0,
+  );
+}
+
+/**
+ * Drop duplicate workouts (Strava + FIT import of the same session) so daily
+ * TSS is not counted twice in CTL / ATL.
+ */
+function dedupeActivitiesForLoad(activities) {
+  const kept = [];
+  for (const act of activities) {
+    const actDay = new Date(act.date).toISOString().slice(0, 10);
+    const sport = normalizeSportBucket(act.sport);
+    const dur = activityDurationSec(act);
+    const idx = kept.findIndex((k) => {
+      const kDay = new Date(k.date).toISOString().slice(0, 10);
+      if (kDay !== actDay) return false;
+      if (normalizeSportBucket(k.sport) !== sport) return false;
+      const kDur = activityDurationSec(k);
+      if (!dur || !kDur) return dur === kDur;
+      return Math.abs(dur - kDur) <= Math.max(180, 0.1 * Math.max(dur, kDur));
+    });
+    if (idx === -1) {
+      kept.push({ ...act });
+      continue;
+    }
+    const existing = kept[idx];
+    const tssA = Number(act.tss) || 0;
+    const tssB = Number(existing.tss) || 0;
+    const mergedTss = (tssA > 0 && tssB > 0) ? Math.min(tssA, tssB) : Math.max(tssA, tssB);
+    kept[idx] = { ...existing, tss: mergedTss };
+  }
+  return kept;
+}
+
+/**
+ * Soft cap on very heavy days — keeps CTL/ATL in a realistic range for
+ * multi-sport blocks without zeroing real training load.
+ */
+function effectiveDailyTss(total) {
+  const tss = Number(total) || 0;
+  if (tss <= 90) return tss;
+  return Math.round(90 + (tss - 90) * 0.42);
 }
 
 function resolveActivityTss(activity, profile) {
@@ -213,4 +270,6 @@ module.exports = {
   calculateActivityTSS,
   computePowerTss,
   computeHrTss,
+  dedupeActivitiesForLoad,
+  effectiveDailyTss,
 };

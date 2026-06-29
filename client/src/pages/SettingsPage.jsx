@@ -3311,10 +3311,16 @@ const SettingsPage = () => {
                     </div>
                   )}
                   {stravaBackfill?.state === 'done' && (
-                    <div className={`${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-xs'} flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-medium`}>
-                      ✓ Full history imported from Strava
+                    <div className={`${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-xs'} flex flex-col gap-1 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700`}>
+                      <span className="font-medium">✓ Strava history import finished{stravaBackfill.cursorDate ? ` (reached ${stravaBackfill.cursorDate})` : ''}</span>
+                      <span className="text-emerald-600">Missing older rides? Tap <strong>Import history</strong> again — import continues from where it stopped.</span>
                     </div>
                   )}
+
+                  <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-500`}>
+                    <strong>Sync now</strong> = only recent activities (last sync + 7 days).
+                    <strong> Import history</strong> = full archive going back years (runs in background, may take hours).
+                  </p>
 
                   <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
                     <button

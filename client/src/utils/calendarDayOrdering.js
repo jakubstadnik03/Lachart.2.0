@@ -48,12 +48,39 @@ export function activitySortTime(act) {
 }
 
 function plannedItemSortTime(pw, act, fallbackIndex = 0) {
-  if (act) return activitySortTime(act);
-  const day = String(pw?.date || '').slice(0, 10);
-  if (!day) return fallbackIndex;
-  const noon = new Date(`${day}T12:00:00`).getTime();
-  const created = pw?.createdAt ? new Date(pw.createdAt).getTime() : 0;
-  return (Number.isFinite(noon) ? noon : 0) + (fallbackIndex * 1000) + (created % 1000);
+  const order = Number(pw?.dayOrder);
+  if (Number.isFinite(order)) return order * 1e10;
+  if (act) return 5e10 + activitySortTime(act);
+  return 5e9 + fallbackIndex;
+}
+
+/** Sort planned workouts for one calendar day (manual stack order). */
+export function sortPlannedWorkoutsForDay(planned = []) {
+  return [...(planned || [])].sort((a, b) => {
+    const oa = Number(a?.dayOrder ?? 0);
+    const ob = Number(b?.dayOrder ?? 0);
+    if (oa !== ob) return oa - ob;
+    const ca = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const cb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (ca !== cb) return ca - cb;
+    return String(a?._id ?? '').localeCompare(String(b?._id ?? ''));
+  });
+}
+
+/** Insert dragged planned workout before/after target; returns full id list for the day. */
+export function reorderPlannedWorkoutIds(plannedForDay, draggedId, targetId, position = 'before') {
+  const sorted = sortPlannedWorkoutsForDay(plannedForDay);
+  const dragId = String(draggedId);
+  const tgtId = String(targetId);
+  if (dragId === tgtId) return sorted.map((p) => String(p._id));
+  const dragged = sorted.find((p) => String(p._id) === dragId);
+  if (!dragged) return sorted.map((p) => String(p._id));
+  const without = sorted.filter((p) => String(p._id) !== dragId);
+  let insertAt = without.findIndex((p) => String(p._id) === tgtId);
+  if (insertAt === -1) return sorted.map((p) => String(p._id));
+  if (position === 'after') insertAt += 1;
+  without.splice(insertAt, 0, dragged);
+  return without.map((p) => String(p._id));
 }
 
 /** Compare two activities chronologically (earliest first). */
@@ -187,14 +214,15 @@ export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = 
  * pairFn: (planned, acts) => { pwToAct, claimed | claimedKeys }
  */
 export function buildChronologicalDayItems(plannedForDay, acts, pairFn) {
+  const sortedPlanned = sortPlannedWorkoutsForDay(plannedForDay);
   const dedupedActs = dedupeCalendarActivities(acts);
-  const pairing = pairFn(plannedForDay || [], dedupedActs);
+  const pairing = pairFn(sortedPlanned, dedupedActs);
   const pwToAct = pairing.pwToAct;
   const claimed = pairing.claimed || pairing.claimedKeys || new Set();
 
   const items = [];
 
-  (plannedForDay || []).forEach((pw, idx) => {
+  sortedPlanned.forEach((pw, idx) => {
     const act = pw?._id ? pwToAct.get(String(pw._id)) || null : null;
     items.push({
       kind: act ? 'pair' : 'planned',
@@ -210,7 +238,7 @@ export function buildChronologicalDayItems(plannedForDay, acts, pairFn) {
       kind: 'activity',
       pw: null,
       act,
-      sortTime: activitySortTime(act),
+      sortTime: 1e11 + activitySortTime(act),
     });
   });
 

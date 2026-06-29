@@ -2,7 +2,7 @@
  * WeeklySummaryCarousel
  * ─────────────────────
  * Swipeable weekly-summary strip for the top of the native dashboard.
- *   • Swipe left/right between cards: This week · By sport · Training load · Streak.
+ *   • Swipe left/right between cards: Performance Insights · This week · By sport · Training load · Streak.
  *   • ‹ › in the card header browses weeks — back into history (actual) and
  *     forward into what's planned in the calendar.
  *   • The data cards compare ACTUAL vs PLANNED (from plannedWorkouts).
@@ -10,9 +10,13 @@
  * Reads the dashboard's existing activities / plannedWorkouts / sparklineData,
  * so it needs no extra fetch.
  */
-import React, { useMemo, useRef, useState, lazy, Suspense } from 'react';
+import React, { useMemo, useRef, useState, useEffect, lazy, Suspense } from 'react';
 import { Flame, RotateCcw, Share2 } from 'lucide-react';
 import SportIcon from '../shared/SportIcon';
+import PerformanceInsightsSlide from './PerformanceInsightsSlide';
+import { resolveActivityTss } from '../../utils/computeTss';
+import { useAuth } from '../../context/AuthProvider';
+import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 const ActivityShareSheet = lazy(() => import('../sharing/ActivityShareSheet'));
 
 // ─── glass card look (matches the rest of the dashboard) ─────────────────────
@@ -41,7 +45,6 @@ function getWeekBounds(ref) {
 const actDate = (a) => new Date(a?.date || a?.startDate || a?.timestamp || 0);
 const actSecs = (a) => Number(a?.totalTime || a?.duration || a?.movingTime || a?.moving_time || a?.elapsedTime || a?.elapsed_time || a?.totalTimerTime || 0);
 const actDist = (a) => Number(a?.distance || a?.totalDistance || 0);
-const actTss  = (a) => Number(a?.tss || a?.trainingLoad || a?.totalTSS || a?.hrTSS || a?.hrTss || 0);
 // Planned-workout accessors
 const planDate = (p) => { const s = String(p?.date || ''); return new Date(s.length === 10 ? `${s}T12:00:00` : (s || 0)); };
 const planSecs = (p) => Number(p?.plannedDuration || 0);
@@ -145,14 +148,34 @@ const DAY_STATUS = {
   rest:    { bg: 'rgba(10,14,26,.06)', fg: '#9ca3af', mark: '', ring: 'none' },             // grey — rest
 };
 
-export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts = [], sparklineData = [], kpis = null, tests = [] }) {
+export default function WeeklySummaryCarousel({
+  activities = [],
+  plannedWorkouts = [],
+  sparklineData = [],
+  kpis = null,
+  tests = [],
+  todayMetrics = {},
+  loading = false,
+  onReadinessPress = null,
+}) {
   const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
   const [page, setPage] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
   const [dir, setDir] = useState(1); // 1 = moved forward, -1 = back (drives the slide-in direction)
-
+  const { user } = useAuth() || {};
+  const [metricsTick, setMetricsTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setMetricsTick((t) => t + 1);
+    window.addEventListener('activityMetricsUpdated', bump);
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, bump);
+    return () => {
+      window.removeEventListener('activityMetricsUpdated', bump);
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, bump);
+    };
+  }, []);
   const data = useMemo(() => {
+    const actTss = (a) => (resolveActivityTss(a, user, { user }) || 0) + metricsTick * 0;
     const now = new Date();
     const ref = new Date(now); ref.setDate(now.getDate() + weekOffset * 7);
     const wb = getWeekBounds(ref);
@@ -174,25 +197,9 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
     };
     const prevActs = activities.filter((a) => inPrev(actDate(a)));
 
-    // Weekly TSS: prefer backend sparklineData, else sum activity TSS.
-    const sparkMap = {};
-    for (const pt of sparklineData || []) {
-      if (pt?.date && pt.TSS != null) sparkMap[String(pt.date).slice(0, 10)] = Number(pt.TSS);
-    }
-    const sumWeekTss = (bounds) => {
-      let t = 0, any = false;
-      const d = new Date(bounds.monday);
-      for (let i = 0; i < 7; i++) {
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        if (sparkMap[key] != null) { t += sparkMap[key]; any = true; }
-        d.setDate(d.getDate() + 1);
-      }
-      return { t, any };
-    };
-    const wkTss = sumWeekTss(wb);
-    const actTssTotal = wkTss.any ? wkTss.t : Math.round(sum(curActs, actTss));
-    const pvTss = sumWeekTss(pwb);
-    const prevTssTotal = pvTss.any ? pvTss.t : Math.round(sum(prevActs, actTss));
+    // Weekly TSS from activities (respects per-workout TSS mode + manual overrides).
+    const actTssTotal = Math.round(sum(curActs, actTss));
+    const prevTssTotal = Math.round(sum(prevActs, actTss));
 
     const bySport = SPORTS.map((s) => {
       const acts = curActs.filter((a) => normSport(a.sport) === s.key);
@@ -255,7 +262,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
       curActs,
       range: `${wb.monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${wb.sunday.toLocaleDateString('en', { month: 'short', day: 'numeric' })}`,
     };
-  }, [activities, plannedWorkouts, sparklineData, weekOffset]);
+  }, [activities, plannedWorkouts, weekOffset, user, metricsTick]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -273,7 +280,7 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
   // Re-keyed + re-animated whenever the week changes, so the figures slide in.
   const contentAnim = { animation: `${dir >= 0 ? 'ndWkInR' : 'ndWkInL'} .3s cubic-bezier(.22,1,.36,1) both` };
 
-  const PAGES = 4;
+  const PAGES = 5;
 
   // Build the shareable weekly-summary payload (IG-story card) from the
   // currently-selected week. KPIs (Fitness/Form/Fatigue) come from the parent.
@@ -340,6 +347,16 @@ export default function WeeklySummaryCarousel({ activities = [], plannedWorkouts
           gap: 10,
         }}
       >
+        {/* ── Card 0: Performance Insights (Fitness / Form / Fatigue) ─── */}
+        <div style={SLIDE}>
+          <PerformanceInsightsSlide
+            todayMetrics={todayMetrics}
+            sparklineData={sparklineData}
+            loading={loading}
+            onReadinessPress={onReadinessPress}
+          />
+        </div>
+
         {/* ── Card 1: This week (actual vs planned) ─────────────────────── */}
         <div style={SLIDE}>
           <div style={CARD}>

@@ -676,7 +676,14 @@ function invalidateTrainingCaches() {
     const toRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith('athleteTrainings_v3_')) toRemove.push(k);
+      if (!k) continue;
+      if (
+        k.startsWith('athleteTrainings_v3_')
+        || k.startsWith('calendarData_')
+        || k.startsWith('weeklyCalendar_')
+      ) {
+        toRemove.push(k);
+      }
     }
     toRemove.forEach(k => localStorage.removeItem(k));
   } catch { /* ignore */ }

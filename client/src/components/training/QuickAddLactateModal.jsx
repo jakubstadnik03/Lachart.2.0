@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { BeakerIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import BottomSheet from '../shared/BottomSheet';
+import { sanitizeLactateInput, parseLactateValue } from '../../utils/lactateInput';
 
 const SPORT_LABELS = { bike: 'Bike', run: 'Run', swim: 'Swim' };
 
@@ -47,7 +48,8 @@ export default function QuickAddLactateModal({ isOpen, onClose, trainings = [], 
   useEffect(() => { setSelectedIntervalIdx(''); }, [selectedTrainingId]);
 
   const handleSave = async () => {
-    if (!lactateValue || isNaN(parseFloat(lactateValue))) {
+    const parsed = parseLactateValue(lactateValue);
+    if (parsed == null) {
       setError('Please enter a valid lactate value.');
       return;
     }
@@ -55,7 +57,7 @@ export default function QuickAddLactateModal({ isOpen, onClose, trainings = [], 
     setIsSaving(true);
     try {
       await onSave({
-        lactateValue: parseFloat(lactateValue),
+        lactateValue: parsed,
         blockTitle: blockTitle.trim(),
         trainingId: selectedTrainingId || null,
         intervalIndex: selectedIntervalIdx !== '' ? parseInt(selectedIntervalIdx) : null,
@@ -91,13 +93,11 @@ export default function QuickAddLactateModal({ isOpen, onClose, trainings = [], 
           <div className="relative">
             <input
               ref={lactateInputRef}
-              type="number"
-              step="0.1"
-              min="0"
-              max="30"
+              type="text"
+              inputMode="decimal"
               placeholder="e.g. 2.5"
               value={lactateValue}
-              onChange={e => setLactateValue(e.target.value)}
+              onChange={e => setLactateValue(sanitizeLactateInput(e.target.value))}
               className="w-full h-12 px-4 text-lg font-semibold rounded-2xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all bg-gray-50 focus:bg-white"
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">mmol/L</span>

@@ -2,17 +2,11 @@
 //  LaChartHealthPlugin.m
 //  App
 //
+//  Capacitor 6 registers this plugin through the Swift `CAPBridgedPlugin`
+//  conformance in LaChartHealthPlugin.swift and MainViewController.registerPluginInstance.
+//  Do NOT use the legacy CAP_PLUGIN macro here — it would duplicate registration
+//  and can cause HealthKit auth calls to hang without returning to JS.
+//
 
 #import <Foundation/Foundation.h>
 #import <Capacitor/Capacitor.h>
-
-CAP_PLUGIN(LaChartHealthPlugin, "LaChartHealth",
-    CAP_PLUGIN_METHOD(isAvailable, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(getPluginVersion, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(requestAuthorization, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(requestWellnessAuthorization, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(getAuthorizationStatus, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(queryAggregated, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(readSamples, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(queryWorkouts, CAPPluginReturnPromise);
-)

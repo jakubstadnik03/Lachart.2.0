@@ -18,6 +18,8 @@ import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLacta
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
+import { resolveActivityTss } from '../utils/computeTss';
+import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
@@ -162,6 +164,7 @@ function AnimatedCard({ children, animKey }) {
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
 function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout }) {
+  const { user } = useAuth() || {};
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
@@ -297,6 +300,8 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           const dist = Number(act.distance || act.totalDistance || 0);
           const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
           const pwr = Number(act.avgPower || act.average_watts || 0);
+          const tssVal = resolveActivityTss(act, user, { user });
+          const tssStr = tssVal > 0 ? `${Math.round(tssVal)} TSS` : null;
 
           return (
             <button
@@ -339,7 +344,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                  {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null].filter(Boolean).join(' · ') || 'Completed'}
+                  {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null, tssStr].filter(Boolean).join(' · ') || 'Completed'}
                 </div>
               </div>
               <span style={{ fontSize: 13, color: '#9CA3AF', flexShrink: 0 }}>›</span>
@@ -382,6 +387,8 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         const actDur  = linkedAct ? fmtDuration(actSecs) : null;
         const dist    = linkedAct ? Number(linkedAct.distance || linkedAct.totalDistance || 0) : 0;
         const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
+        const actTssVal = linkedAct ? resolveActivityTss(linkedAct, user, { user }) : 0;
+        const actTssStr = actTssVal > 0 ? `${Math.round(actTssVal)} TSS` : null;
 
         return (
           <button
@@ -463,7 +470,8 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                 )}
                 {isPaired && distStr && <span>{distStr}</span>}
                 {!isPaired && dur   && <span>{isPurelyPlanned ? dur : `Plan: ${dur}`}</span>}
-                {pw.targetTss > 0   && <span>{pw.targetTss} TSS</span>}
+                {isPaired && actTssStr && <span>{actTssStr}</span>}
+                {!isPaired && pw.targetTss > 0 && <span>{pw.targetTss} TSS</span>}
               </div>
             </div>
 
@@ -604,6 +612,7 @@ export default function NativeDashboardPage({
   // and applies `scroll-snap-type: y proximity`. Restores on unmount so the
   // setting doesn't leak to other pages.
   const pageRef = useRef(null);
+  const statusHeroRef = useRef(null);
   const scrollContainerRef = useRef(null); // kept so the tab-reclicked handler can reach it
   useEffect(() => {
     const el = pageRef.current;
@@ -1063,7 +1072,12 @@ export default function NativeDashboardPage({
               plannedWorkouts={plannedWorkouts}
               sparklineData={sparklineData}
               tests={tests}
+              todayMetrics={todayMetrics}
+              loading={loading}
               kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
+              onReadinessPress={() => {
+                statusHeroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
             />
           </div>
 
@@ -1106,7 +1120,7 @@ export default function NativeDashboardPage({
           </div>
 
           {/* 3 · Status hero */}
-          <div style={{ ...cardEntry(3), ...snapStyle }}>
+          <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
             <StatusHeroCard
               todayMetrics={todayMetrics}
               sparklineData={sparklineData}

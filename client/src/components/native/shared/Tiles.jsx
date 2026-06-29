@@ -98,7 +98,11 @@ export function ThresholdChip({ label, value, unit = 'W', color = '#5E6590' }) {
         fontSize: 13, fontWeight: 700, color,
         fontVariantNumeric: 'tabular-nums',
       }}>
-        {value != null ? `${Math.round(value)} ${unit}` : '—'}
+        {value == null
+          ? '—'
+          : unit === '' && typeof value === 'string'
+            ? value
+            : `${Math.round(Number(value))} ${unit}`.trim()}
       </span>
     </div>
   );

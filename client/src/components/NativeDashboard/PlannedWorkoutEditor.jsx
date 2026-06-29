@@ -307,6 +307,9 @@ export default function PlannedWorkoutEditor({
       }
 
       onSaved && onSaved(updated);
+      try {
+        window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: updated } }));
+      } catch { /* ignore */ }
       onClose && onClose();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to save');

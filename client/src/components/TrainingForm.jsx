@@ -7,6 +7,7 @@ import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
 import { isCapacitorNative } from "../utils/isNativeApp";
+import { sanitizeLactateInput, parseLactateValue } from "../utils/lactateInput";
 import LapsBarChart from "./FitAnalysis/LapsBarChart";
 import { Zap, TrendingUp, TrendingDown, RotateCcw } from 'lucide-react';
 
@@ -807,6 +808,11 @@ const TrainingForm = ({
     try {
       const dataToSubmit = { ...formData };
 
+      if (dataToSubmit.lactate !== undefined && dataToSubmit.lactate !== null && dataToSubmit.lactate !== '') {
+        const lactate = parseLactateValue(dataToSubmit.lactate);
+        dataToSubmit.lactate = lactate != null ? String(lactate) : '';
+      }
+
       // Rozepsání opakujících se intervalů
       if (dataToSubmit.results) {
         const expandedResults = [];
@@ -950,6 +956,10 @@ const TrainingForm = ({
           } else {
             delete updatedInterval.elevation;
           }
+          if (updatedInterval.lactate !== undefined && updatedInterval.lactate !== null && updatedInterval.lactate !== '') {
+            const lactate = parseLactateValue(updatedInterval.lactate);
+            updatedInterval.lactate = lactate != null ? String(lactate) : '';
+          }
           return updatedInterval;
         });
       }
@@ -1071,7 +1081,7 @@ const TrainingForm = ({
       average_watts,
       average_speed,
       average_heartrate: parseFloat(interval.heartRate) || 0,
-      lactate: interval.lactate ? parseFloat(interval.lactate) : null,
+      lactate: parseLactateValue(interval.lactate),
       distance: interval.distanceMeters || 0,
       moving_time: durSec,
       elapsed_time: durSec,
@@ -1402,10 +1412,10 @@ const TrainingForm = ({
                       </div>
                       <div>
                         <label className="text-[10px] font-bold uppercase tracking-wide block mb-1" style={{ color: '#7c3aed' }}>Lactate (mmol/L)</label>
-                        <input type="number" inputMode="decimal" step="0.1"
+                        <input type="text" inputMode="decimal"
                           placeholder="—"
                           value={formData.lactate || ''}
-                          onChange={(e) => setFormData(prev => ({ ...prev, lactate: e.target.value }))}
+                          onChange={(e) => setFormData(prev => ({ ...prev, lactate: sanitizeLactateInput(e.target.value) }))}
                           className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2" style={{ '--tw-ring-color': '#7c3aed' }} />
                       </div>
                     </div>
@@ -1770,9 +1780,9 @@ const TrainingForm = ({
                           <span className="text-[9px] text-primary uppercase leading-none shrink-0">la</span>
                           <input
                             id={`training-form-lactate-compact-${index}`}
-                            type="number" inputMode="decimal" placeholder="—"
+                            type="text" inputMode="decimal" placeholder="—"
                             value={interval.lactate ?? ''}
-                            onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                            onChange={(e) => { const r=[...formData.results]; r[index].lactate=sanitizeLactateInput(e.target.value); setFormData(p=>({...p,results:r})); }}
                             className="w-10 text-[11px] text-primary font-semibold bg-transparent outline-none placeholder-gray-300"
                           />
                         </div>
@@ -1838,8 +1848,8 @@ const TrainingForm = ({
                           {/* Lactate */}
                           <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary">
                             <label className={`${labelBase} text-primary`}>Lactate</label>
-                            <input id={`training-form-lactate-${index}`} type="number" inputMode="decimal" placeholder="—" value={interval.lactate}
-                              onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                            <input id={`training-form-lactate-${index}`} type="text" inputMode="decimal" placeholder="—" value={interval.lactate}
+                              onChange={(e) => { const r=[...formData.results]; r[index].lactate=sanitizeLactateInput(e.target.value); setFormData(p=>({...p,results:r})); }}
                               className="w-full text-sm bg-transparent outline-none placeholder-gray-300 min-h-[36px] font-semibold text-primary" />
                           </div>
                           {/* RPE */}

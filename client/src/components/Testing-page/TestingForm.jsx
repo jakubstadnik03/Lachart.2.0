@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
+import { sanitizeLactateInput } from '../../utils/lactateInput';
 
 // Tutorial steps configuration
 const tutorialSteps = [
@@ -27,7 +28,7 @@ const tutorialSteps = [
   {
     field: 'baseLa',
     message: 'Enter your baseline lactate level',
-    example: 'Value in mmol/L measured before the test (e.g., 1.2)'
+    example: 'Resting sample before warm-up (e.g., 1.2 mmol/L). Not the same as lactate from step 1 — see Protocol tips below.'
   },
   {
     field: 'power_0',
@@ -42,9 +43,52 @@ const tutorialSteps = [
   {
     field: 'lactate_0',
     message: 'Enter measured lactate value',
-    example: 'Value in mmol/L (e.g., 2.5)'
+    example: 'Value at sampling time for this step (mmol/L, e.g. 2.5). Power/HR = full step intensity.'
   }
 ];
+
+const PROTOCOL_TIPS = [
+  { label: 'Base La', text: 'at rest, before test' },
+  { label: 'Row 1', text: 'first workload step' },
+  { label: 'Lactate column', text: 'measured value at sampling time' },
+  { label: 'Power / HR', text: 'intensity of that step' },
+];
+
+const FieldHint = ({ children, wide = false }) => (
+  <span
+    className="relative group inline-flex items-center justify-center w-3.5 h-3.5 ml-0.5 align-middle rounded-full bg-gray-200/90 text-gray-500 cursor-help flex-shrink-0"
+    tabIndex={0}
+    role="button"
+    aria-label="More info"
+    onClick={(e) => e.preventDefault()}
+  >
+    <HelpCircle size={11} strokeWidth={2.5} />
+    <span
+      className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 rounded-xl bg-gray-900 px-3 py-2 text-white text-[10px] sm:text-[11px] leading-snug opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible transition-opacity z-[60] shadow-xl font-normal normal-case text-left ${
+        wide ? 'w-64 sm:w-72' : 'w-52 sm:w-60'
+      }`}
+    >
+      {children}
+      <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+    </span>
+  </span>
+);
+
+const ProtocolTipsPanel = ({ className = '' }) => (
+  <details className={`rounded-lg border border-primary/15 bg-primary/5 ${className}`}>
+    <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold text-primary select-none">
+      Protocol tips — how to enter your test
+    </summary>
+    <ul className="px-3 pb-2 pt-0 text-[11px] text-gray-600 space-y-1">
+      {PROTOCOL_TIPS.map(({ label, text }) => (
+        <li key={label} className="flex gap-1.5">
+          <span className="text-primary font-semibold shrink-0">{label}</span>
+          <span>= {text}</span>
+        </li>
+      ))}
+    </ul>
+  </details>
+);
 
 // Portal-based Tutorial message component
 const TutorialMessagePortal = ({ step, onNext, onSkip, inputRef }) => {
@@ -549,12 +593,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   }, [showFormSettings]);
 
   const handleValueChange = (rowIndex, field, value) => {
-    console.log('Input change:', { rowIndex, field, value });
+    const nextValue = (field === 'lactate' || field === 'glucose')
+      ? sanitizeLactateInput(value)
+      : value;
+    console.log('Input change:', { rowIndex, field, value: nextValue });
     
     // Always store the value as a string
     const updatedRows = rows.map((row, index) => {
       if (index === rowIndex) {
-        return { ...row, [field]: String(value) };
+        return { ...row, [field]: String(nextValue) };
       }
       return row;
     });
@@ -961,7 +1008,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     // Mark that we're updating from user input to prevent useEffect from overwriting
     if (field === 'baseLa') {
       isUpdatingFromUserInput.current = true;
-      const stringValue = typeof value === 'string' ? value : String(value);
+      const stringValue = sanitizeLactateInput(typeof value === 'string' ? value : String(value));
       lastBaseLaValue.current = stringValue;
       setFormData(prev => ({ ...prev, baseLa: stringValue }));
       const updatedTestData = {
@@ -1016,7 +1063,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
     // For other field changes
     // IMPORTANT: For baseLa, preserve the exact string value as typed by user (including "1." or "1,")
-    const newFormData = { ...formData, [field]: value };
+    const lactateFields = new Set(['maxLactate', 'recoveryLactate3min']);
+    const nextValue = lactateFields.has(field)
+      ? sanitizeLactateInput(value)
+      : value;
+    const newFormData = { ...formData, [field]: nextValue };
     setFormData(newFormData);
 
     // Spread newFormData FIRST so optional fields (restingHR, maxLactate,
@@ -1109,7 +1160,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const stageColumnLabel = isDistanceMode ? 'Dist' : 'Dur';
   const stageColumnTooltip = isDistanceMode
     ? 'Distance of this stage in meters. Leave blank to use the test-level default. Shorter stages are excluded from the curve so they don\'t pull the regression.'
-    : 'Duration of this stage (MM:SS). Leave blank to use the test-level stage duration. Shorter stages are excluded from the curve so they don\'t pull the regression.';
+    : 'Duration from step start to blood sample (MM:SS). E.g. 5:00 if sampled at minute 5 of a 6 min stage. Leave blank to use test-level stage duration.';
 
   const formatPaceSeconds = (totalSec) => {
     const s = Math.max(0, Math.round(Number(totalSec) || 0));
@@ -1407,6 +1458,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       <input
           ref={el => inputRefs.current[`${field}_${index}`] = el}
         type="text"
+          inputMode={field === 'lactate' || field === 'glucose' ? 'decimal' : undefined}
           value={displayValue === undefined || displayValue === null ? '' : String(displayValue)}
           onChange={(e) => {
             handleValueChange(index, field, e.target.value);
@@ -1800,8 +1852,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
 
           <div className="relative min-w-0">
-            <label className="block text-xs font-medium text-gray-700 mb-0.5">
+            <label className="flex items-center text-xs font-medium text-gray-700 mb-0.5">
               Base La
+              <FieldHint>
+                Resting sample before warm-up / first step. Not the same as lactate from step 1.
+              </FieldHint>
               {isBaseLaInvalid && (
                 <span className="text-red-500 ml-1">*</span>
               )}
@@ -1810,6 +1865,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <input 
                 ref={el => inputRefs.current['baseLa'] = el}
                 type="text"
+                inputMode="decimal"
                 value={formData.baseLa}
                 onChange={(e) => handleFormDataChange('baseLa', e.target.value)}
                 className={`w-full p-1 border rounded-lg text-sm ${
@@ -1822,6 +1878,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 disabled={!isNewTest && !isEditMode}
                 placeholder="mmol/L"
               />
+              <p className="mt-0.5 text-[10px] text-gray-400 leading-tight">
+                Before warm-up — not step 1 lactate
+              </p>
               {isBaseLaInvalid && (
                 <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
                   <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">
@@ -1964,6 +2023,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Max Lactate</label>
               <input
                 type="text"
+                inputMode="decimal"
                 value={formData.maxLactate ?? ''}
                 onChange={(e) => handleFormDataChange('maxLactate', e.target.value)}
                 className="w-full p-1 border rounded-lg text-sm"
@@ -1984,6 +2044,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Recovery La +3min</label>
               <input
                 type="text"
+                inputMode="decimal"
                 value={formData.recoveryLactate3min ?? ''}
                 onChange={(e) => handleFormDataChange('recoveryLactate3min', e.target.value)}
                 className="w-full p-1 border rounded-lg text-sm"
@@ -1991,7 +2052,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               />
             </div>
             <div className="min-w-0">
-              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Stage duration</label>
+              <label className="flex items-center text-[11px] font-medium text-gray-600 mb-0.5">
+                Stage duration
+                <FieldHint wide>
+                  Time from step start to blood sample. For 6 min stages sampled at min 5, enter 5:00 (300 s). Stages ≥ 4 min do not change threshold math.
+                </FieldHint>
+              </label>
               <input
                 type="number"
                 min={30}
@@ -2000,7 +2066,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 value={formData.stageDurationSec ?? ''}
                 onChange={(e) => handleFormDataChange('stageDurationSec', e.target.value)}
                 className="w-full p-1 border rounded-lg text-sm"
-                placeholder="seconds"
+                placeholder="e.g. 300 (5 min)"
               />
             </div>
             <div className="min-w-0">
@@ -2035,6 +2101,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       </div>
 
         {/* Data Table */}
+      <ProtocolTipsPanel className="mb-2 flex-shrink-0" />
       <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {(() => {
             // Auto-show stage column if any row has actual duration/distance data
@@ -2136,7 +2203,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                     })()}
                     {shouldShowRunPower && <div className="text-center min-w-0 truncate" title="Running power (watts) — e.g. Stryd">Pwr</div>}
                     <div className="text-center min-w-0 truncate">HR</div>
-                    <div className="text-center min-w-0 truncate">La</div>
+                    <div className="text-center min-w-0 truncate flex items-center justify-center">
+                      La
+                      <FieldHint>Measured at sampling time for this step (mmol/L).</FieldHint>
+                    </div>
                     {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 truncate">Glu</div>}
                     {(hasVO2Data || showVO2) && <div className="text-center min-w-0 truncate">VO₂</div>}
                     {/* RPE / Borg toggle — RPE is 1–10, Borg is 6–20. Persisted

@@ -15,7 +15,7 @@ import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, reorderPlannedWorkouts, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
 import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModal';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
@@ -2438,13 +2438,17 @@ const FitAnalysisPage = () => {
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
 
+      let saved;
       if (planModal?.workout?._id) {
-        const updated = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
-        setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === updated._id ? updated : p));
+        saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
+        setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === saved._id ? saved : p));
       } else {
-        const created = await createPlannedWorkout(data, coachAthleteId);
-        setPlannedWorkoutsCalendar(prev => [...prev, created]);
+        saved = await createPlannedWorkout(data, coachAthleteId);
+        setPlannedWorkoutsCalendar(prev => [...prev, saved]);
       }
+      try {
+        window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: saved } }));
+      } catch { /* ignore */ }
       setPlanModal(null);
     } catch (_) {}
   }, [planModal, selectedAthleteId, user?.role]);
@@ -2479,6 +2483,19 @@ const FitAnalysisPage = () => {
       const { _id, status, executionData, ...rest } = pw;
       const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' }, coachAthleteId);
       setPlannedWorkoutsCalendar(prev => [...prev, created]);
+    } catch (_) {}
+  }, [selectedAthleteId, user?.role]);
+
+  const handleReorderPlannedWorkouts = useCallback(async (dateKey, orderedIds) => {
+    try {
+      const role = String(user?.role || '').toLowerCase();
+      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+      const updated = await reorderPlannedWorkouts(dateKey, orderedIds, coachAthleteId);
+      const byId = new Map((updated || []).map((p) => [String(p._id), p]));
+      setPlannedWorkoutsCalendar((prev) => prev.map((p) => (
+        byId.has(String(p._id)) ? { ...p, ...byId.get(String(p._id)) } : p
+      )));
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);
 
@@ -4540,6 +4557,7 @@ const FitAnalysisPage = () => {
           onPlanWorkout={(date) => setPlanModal({ date, workout: null })}
           onMovePlannedWorkout={handleMovePlannedWorkout}
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
+          onReorderPlannedWorkouts={handleReorderPlannedWorkouts}
           onDeletePlannedWorkout={handlePlanDelete}
           onOpenActivity={handleCalendarActivitySelect}
           onPlannedSaved={(saved) => setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved))}

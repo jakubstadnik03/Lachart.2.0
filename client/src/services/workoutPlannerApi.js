@@ -84,6 +84,13 @@ export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
   return data;
 };
 
+/** Reorder planned workouts within one calendar day (orderedIds = full stack top→bottom). */
+export const reorderPlannedWorkouts = async (date, orderedIds, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.put(`${BASE}/planned/reorder`, { date, orderedIds }, { params });
+  return data;
+};
+
 export const deletePlannedWorkout = async (id, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const { data } = await api.delete(`${BASE}/planned/${id}`, { params });

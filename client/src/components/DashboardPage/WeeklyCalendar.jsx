@@ -919,6 +919,8 @@ const WeeklyCalendar = ({
   onAddLactate = null,
   onAddTraining = null,
   onPlannedSaved = null,
+  /** When true, ignore local weeklyCalendar cache — parent is still fetching activities. */
+  activitiesLoading = false,
 }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
@@ -1264,9 +1266,14 @@ const WeeklyCalendar = ({
     }
   }, [activities]);
 
-  // Use activities prop directly (don't use cache if activities are provided)
-  // Cache is only used as fallback when activities prop is empty
-  const effectiveActivities = activities && activities.length > 0 ? activities : cachedActivities;
+  // Use activities from parent. Only fall back to local cache when the parent
+  // has finished loading and still has nothing (avoids stale calendar flashing
+  // under the dashboard skeleton / "No activities" banner).
+  const effectiveActivities = useMemo(() => (
+    activitiesLoading
+      ? (activities || [])
+      : ((activities && activities.length > 0) ? activities : cachedActivities)
+  ), [activities, activitiesLoading, cachedActivities]);
 
   // Debug logging removed to keep console clean in dev
 
@@ -1362,7 +1369,7 @@ const WeeklyCalendar = ({
       const inPrev = prevWeekKeys.has(key);
       if (!inCurrent && !inPrev) return;
 
-      const tss = resolveActivityTss(act, userProfile, { user: userProfile });
+      const tss = (resolveActivityTss(act, userProfile, { user: userProfile }) || 0) + tssDisplayMode * 0;
       const sec = activityDurationSec(act);
       const dist = activityDistanceMeters(act);
 

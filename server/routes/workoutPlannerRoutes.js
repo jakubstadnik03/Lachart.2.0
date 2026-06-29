@@ -162,6 +162,54 @@ router.get('/planned', verifyToken, async (req, res) => {
   }
 });
 
+/** PUT /api/workout-planner/planned/reorder — set stack order for one day */
+router.put('/planned/reorder', verifyToken, requirePlanWorkouts, async (req, res) => {
+  try {
+    const { athleteId } = await resolveAthleteId(req);
+    const { date, orderedIds } = req.body || {};
+    if (!date || !Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return res.status(400).json({ error: 'date and orderedIds are required' });
+    }
+
+    const dayStart = new Date(date);
+    if (Number.isNaN(dayStart.getTime())) {
+      return res.status(400).json({ error: 'Invalid date' });
+    }
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const ids = orderedIds.map((id) => String(id));
+    const workouts = await PlannedWorkout.find({
+      athleteId,
+      _id: { $in: ids },
+      date: { $gte: dayStart, $lte: dayEnd },
+    });
+
+    if (workouts.length !== ids.length) {
+      return res.status(400).json({ error: 'One or more workouts not found for this day' });
+    }
+
+    const byId = new Map(workouts.map((pw) => [String(pw._id), pw]));
+    await Promise.all(ids.map((id, index) => {
+      const pw = byId.get(id);
+      if (!pw) return Promise.resolve();
+      pw.dayOrder = index;
+      return pw.save();
+    }));
+
+    const updated = await PlannedWorkout.find({
+      athleteId,
+      date: { $gte: dayStart, $lte: dayEnd },
+    }).sort({ dayOrder: 1, createdAt: 1 }).lean();
+
+    res.json(updated);
+  } catch (e) {
+    console.error('[WorkoutPlanner] PUT /planned/reorder error:', e);
+    res.status(500).json({ error: 'Failed to reorder planned workouts' });
+  }
+});
+
 /** GET /api/workout-planner/planned/:id */
 router.get('/planned/:id', verifyToken, async (req, res) => {
   try {
@@ -189,10 +237,21 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
 
     const normalizedSport = String(sport).toLowerCase() === 'gym' ? 'strength' : sport;
 
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setHours(23, 59, 59, 999);
+    const maxOrder = await PlannedWorkout.findOne({
+      athleteId,
+      date: { $gte: dayStart, $lte: dayEnd },
+    }).sort({ dayOrder: -1 }).select('dayOrder').lean();
+    const dayOrder = Number(maxOrder?.dayOrder ?? -1) + 1;
+
     const pw = await PlannedWorkout.create({
       athleteId,
       createdBy: String(req.user.userId),
       date: new Date(date),
+      dayOrder,
       sport: normalizedSport, title, description,
       templateId: templateId || null,
       steps: steps || [],
@@ -223,9 +282,26 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
     const fields = ['date','sport','title','description','steps','status',
                     'completedTrainingId','coachNotes','comment','targetTss',
                     'plannedDuration','plannedDistance','isLactateTest','category',
-                    'executionData','fitTrainingId','stravaActivityId'];
+                    'executionData','fitTrainingId','stravaActivityId','dayOrder'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
-    if (req.body.date) pw.date = new Date(req.body.date);
+    if (req.body.date) {
+      const newDate = new Date(req.body.date);
+      const oldKey = pw.date ? new Date(pw.date).toISOString().slice(0, 10) : '';
+      const newKey = newDate.toISOString().slice(0, 10);
+      pw.date = newDate;
+      if (oldKey !== newKey) {
+        const dayStart = new Date(newDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        const maxOrder = await PlannedWorkout.findOne({
+          athleteId,
+          _id: { $ne: pw._id },
+          date: { $gte: dayStart, $lte: dayEnd },
+        }).sort({ dayOrder: -1 }).select('dayOrder').lean();
+        pw.dayOrder = Number(maxOrder?.dayOrder ?? -1) + 1;
+      }
+    }
     if (req.body.sport !== undefined) {
       const s = String(req.body.sport).toLowerCase();
       pw.sport = s === 'gym' ? 'strength' : req.body.sport;

@@ -3,7 +3,7 @@ const StravaActivity = require('../models/StravaActivity');
 const Training = require('../models/training');
 const User = require('../models/UserModel');
 const mongoose = require('mongoose');
-const { buildUserProfile, resolveActivityTss } = require('../utils/activityTss');
+const { buildUserProfile, resolveActivityTss, dedupeActivitiesForLoad, effectiveDailyTss } = require('../utils/activityTss');
 
 /**
  * Calculate Fitness, Fatigue, and Form over time
@@ -174,7 +174,12 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         }))
     ].filter(a => a.date).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    if (allActivities.length === 0) {
+    const dedupedActivities = dedupeActivitiesForLoad(allActivities);
+    if (dedupedActivities.length < allActivities.length) {
+      console.log(`[FormFitness] deduped ${allActivities.length - dedupedActivities.length} duplicate activities for athlete ${athleteId}`);
+    }
+
+    if (dedupedActivities.length === 0) {
       console.log('No activities found for athleteId:', athleteId);
       return [];
     }
@@ -182,9 +187,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     // Calculate Fitness, Fatigue, and Form over time
     // Use the queryStartDate as calculation start (we already limited queries to this date)
     // Find the earliest activity date from loaded data
-    const earliestActivityDate = allActivities.length > 0 
-      ? new Date(allActivities[0].date)
-      : queryStartDate;
+    const earliestActivityDate = new Date(dedupedActivities[0].date);
     earliestActivityDate.setHours(0, 0, 0, 0);
     
     // Calculate start date: either (today - effectiveDays) or earliest activity, whichever is later
@@ -202,7 +205,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
 
     // Group activities by date for easier lookup
     const dailyTSS = {};
-    allActivities.forEach(activity => {
+    dedupedActivities.forEach(activity => {
       const activityDate = new Date(activity.date);
       const dateStr = activityDate.toISOString().split('T')[0];
       if (!dailyTSS[dateStr]) {
@@ -210,6 +213,10 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       }
       dailyTSS[dateStr] += activity.tss || 0;
     });
+
+    for (const key of Object.keys(dailyTSS)) {
+      dailyTSS[key] = effectiveDailyTss(dailyTSS[key]);
+    }
 
     const data = [];
 
@@ -448,6 +455,8 @@ async function calculateTrainingStatus(athleteId) {
       }))
     ].filter(a => a.date);
 
+    const dedupedActivities = dedupeActivitiesForLoad(allActivities);
+
     // Calculate weekly TSS for last 4 weeks
     const weeklyTSSArray = [];
     for (let i = 0; i < 4; i++) {
@@ -456,7 +465,7 @@ async function calculateTrainingStatus(athleteId) {
       const weekEnd = new Date(today);
       weekEnd.setDate(weekEnd.getDate() - i * 7);
       
-      const weekTSS = allActivities
+      const weekTSS = dedupedActivities
         .filter(a => {
           const activityDate = new Date(a.date);
           return activityDate >= weekStart && activityDate < weekEnd;
@@ -619,10 +628,12 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
         }))
     ].filter(a => a.date);
 
+    const dedupedActivities = dedupeActivitiesForLoad(allActivities);
+
     // Group activities by week
     const weeklyData = {};
     
-    allActivities.forEach(activity => {
+    dedupedActivities.forEach(activity => {
       const activityDate = new Date(activity.date);
       if (activityDate < startDate) return;
 

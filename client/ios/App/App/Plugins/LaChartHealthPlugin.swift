@@ -177,10 +177,10 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         if let timeoutWork {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeoutWork)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeoutWork)
         }
 
-        store.requestAuthorization(toShare: [], read: readTypes) { success, error in
+        let finishAuth: (Bool, Error?) -> Void = { success, error in
             DispatchQueue.main.async {
                 timeoutWork?.cancel()
                 guard !resolved else { return }
@@ -198,6 +198,15 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     "requestedTypes": registeredIds,
                 ])
             }
+        }
+
+        let invoke = {
+            self.store.requestAuthorization(toShare: [], read: readTypes, completion: finishAuth)
+        }
+        if Thread.isMainThread {
+            invoke()
+        } else {
+            DispatchQueue.main.async(execute: invoke)
         }
     }
 

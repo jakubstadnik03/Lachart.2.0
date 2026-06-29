@@ -233,49 +233,29 @@ export async function requestAppleHealthAccess() {
     return { granted: false, reason: 'not_ios' };
   }
   const Health = await getHealth();
-  let available = true;
-  let reason = null;
-  try {
-    const check = await withTimeout(Health.isAvailable(), 8000, 'Health availability');
-    available = Boolean(check?.available);
-    reason = check?.reason || null;
-  } catch (e) {
-    if (Capacitor.getPlatform() !== 'ios') {
-      return { granted: false, reason: e?.message || 'unavailable' };
-    }
-    available = true;
-  }
-  if (!available && Capacitor.getPlatform() !== 'ios') {
-    return { granted: false, reason: reason || 'unavailable' };
-  }
-
   let authWarning = null;
 
-  // Step 1: wellness-only — registers Sleep / Resting HR / HRV in Health → Apps → LaChart (iPhone).
   try {
-    const wellnessAuth = await requestWellnessAuthorizationOnly();
-    if (wellnessAuth?.timedOut) {
-      authWarning = 'Wellness permission timed out. Open Health → Profile → Apps → LaChart and scroll down — enable Resting Heart Rate, Sleep and HRV (below workout types from Apple Watch).';
-    }
-  } catch (e) {
-    authWarning = e?.message || 'Wellness permission incomplete — will still try to read data.';
+    await withTimeout(Health.isAvailable(), 5000, 'Health availability');
+  } catch {
+    // On device, continue even if availability probe is slow.
   }
 
-  // Step 2: workouts + heart rate (full sync).
+  // Single authorization request — wellness + workouts together (Swift merges types).
   try {
     const result = await withTimeout(
       Health.requestAuthorization({
         read: APPLE_HEALTH_READ_TYPES,
         write: [],
       }),
-      10000,
+      12000,
       'Health permission',
     );
     if (result?.timedOut) {
-      authWarning = authWarning || 'Permission dialog timed out. Enable Resting Heart Rate, Sleep and HRV in Health → Apps → LaChart.';
+      authWarning = 'Permission dialog timed out. Open Health → Profile → Apps → LaChart and enable Resting Heart Rate, Sleep and HRV (below workout types).';
     }
   } catch (e) {
-    authWarning = authWarning || e?.message || 'Permission request incomplete — trying to read available data anyway.';
+    authWarning = e?.message || 'Permission request incomplete — trying to read available data anyway.';
   }
 
   return { granted: true, warning: authWarning };

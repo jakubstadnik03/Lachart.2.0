@@ -114,7 +114,11 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
   React.useEffect(() => {
     const onTssModeChange = () => setTssModeTick((t) => t + 1);
     window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
-    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    window.addEventListener('activityMetricsUpdated', onTssModeChange);
+    return () => {
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+      window.removeEventListener('activityMetricsUpdated', onTssModeChange);
+    };
   }, []);
   void tssModeTick;
   const today = new Date();

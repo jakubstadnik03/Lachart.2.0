@@ -102,6 +102,14 @@ function startStravaAutoSyncScheduler() {
         skipped: result.skipped,
         errors: result.errors
       });
+      try {
+        const { resumeStaleStravaBackfills } = require('../routes/integrationsRoutes');
+        if (typeof resumeStaleStravaBackfills === 'function') {
+          await resumeStaleStravaBackfills();
+        }
+      } catch (resumeErr) {
+        console.warn('[StravaAutoSyncScheduler] stale backfill resume skipped:', resumeErr?.message);
+      }
     } catch (error) {
       console.error('[StravaAutoSyncScheduler] Scheduled sync error:', error);
       recordStravaSyncLogSafe({

@@ -41,6 +41,8 @@ const plannedWorkoutSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  /** Manual stack order within a calendar day (0 = top). */
+  dayOrder: { type: Number, default: 0 },
   sport: {
     type: String,
     enum: ['run', 'bike', 'swim', 'strength', 'gym', 'walk', 'brick', 'crosstrain', 'mtbike', 'rowing', 'lactate', 'other'],

@@ -32,13 +32,25 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   const [available, setAvailable] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState(null);
   const [connected, setConnected] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [busyKind, setBusyKind] = useState(null); // null | 'wellness' | 'sync'
   const [syncStep, setSyncStep] = useState(null);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
   const [latest, setLatest] = useState(null);
   const [diagInfo, setDiagInfo] = useState(null);
   const syncAbortRef = useRef(false);
+  const syncing = busyKind != null;
+
+  useEffect(() => {
+    if (!busyKind) return undefined;
+    const watchdog = setTimeout(() => {
+      syncAbortRef.current = true;
+      setBusyKind(null);
+      setSyncStep(null);
+      setError('Sync took too long. Open Health → Profile → Apps → LaChart, enable Resting Heart Rate, Sleep and HRV, then tap Connect & sync again.');
+    }, 90000);
+    return () => clearTimeout(watchdog);
+  }, [busyKind]);
 
   const refresh = useCallback(async () => {
     if (!supported) return;
@@ -85,7 +97,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
 
   const runSync = async () => {
     syncAbortRef.current = false;
-    setSyncing(true);
+    setBusyKind('sync');
     setSyncStep(null);
     setError(null);
     try {
@@ -108,14 +120,16 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       }
 
       setSyncStep('Requesting access…');
-      const authPromise = requestAppleHealthAccess();
-      const authTimeout = new Promise((resolve) => {
-        setTimeout(() => resolve({
-          granted: true,
-          warning: 'Permission step took too long. If no dialog appeared, open Health → Profile → Apps → LaChart and enable Resting Heart Rate, Sleep and HRV, then tap Sync again.',
-        }), 14000);
-      });
-      const { warning: authWarning } = await Promise.race([authPromise, authTimeout]);
+      const authResult = await Promise.race([
+        requestAppleHealthAccess(),
+        new Promise((resolve) => {
+          setTimeout(() => resolve({
+            granted: true,
+            warning: 'Permission step took too long. If no dialog appeared, open Health → Profile → Apps → LaChart and enable Resting Heart Rate, Sleep and HRV, then tap Sync again.',
+          }), 9000);
+        }),
+      ]);
+      const authWarning = authResult?.warning;
       if (syncAbortRef.current) return;
 
       const permStatus = await getAppleHealthPermissionStatus();
@@ -168,24 +182,27 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       setError(e?.response?.data?.error || e?.message || 'Sync failed');
     } finally {
       setSyncStep(null);
-      setSyncing(false);
+      setBusyKind(null);
       syncAbortRef.current = false;
     }
   };
 
   const cancelSync = () => {
     syncAbortRef.current = true;
-    setSyncing(false);
+    setBusyKind(null);
     setSyncStep(null);
     setError('Cancelled. Tap Enable recovery data or Connect & sync again.');
   };
 
   const runWellnessAuth = async () => {
-    setSyncing(true);
+    setBusyKind('wellness');
     setSyncStep('Requesting Sleep, RHR & HRV…');
     setError(null);
     try {
-      const result = await requestWellnessAuthorizationOnly();
+      const result = await Promise.race([
+        requestWellnessAuthorizationOnly(),
+        new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 12000)),
+      ]);
       const types = result?.requestedTypes || result?.readAuthorized || [];
       if (result?.timedOut) {
         setError(
@@ -201,14 +218,14 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     } catch (e) {
       setError(e?.message || 'Wellness permission failed');
     } finally {
-      setSyncing(false);
       setSyncStep(null);
+      setBusyKind(null);
     }
   };
 
   const handleDisconnect = async () => {
     if (!window.confirm('Disconnect Apple Health? Workouts and wellness data stored in LaChart will be removed.')) return;
-    setSyncing(true);
+    setBusyKind('sync');
     try {
       await disconnectAppleHealth();
       setConnected(false);
@@ -218,7 +235,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Disconnect failed');
     } finally {
-      setSyncing(false);
+      setBusyKind(null);
     }
   };
 
@@ -329,7 +346,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
             onClick={runWellnessAuth}
             className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} rounded-lg font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50`}
           >
-            {syncing ? (syncStep || 'Working…') : 'Enable recovery data'}
+            {busyKind === 'wellness' ? (syncStep || 'Working…') : 'Enable recovery data'}
           </button>
         )}
         <button
@@ -338,7 +355,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
           onClick={runSync}
           className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} rounded-lg font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50`}
         >
-          {syncing ? (syncStep || 'Syncing…') : connected ? 'Sync now' : 'Connect & sync'}
+          {busyKind === 'sync' ? (syncStep || 'Syncing…') : connected ? 'Sync now' : 'Connect & sync'}
         </button>
         {syncing && (
           <button

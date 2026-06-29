@@ -37,11 +37,12 @@ import {
   resolveActivityCaloriesKcal,
   resolveActivitySaveKind,
 } from '../../utils/activityEventPatches';
+import { sanitizeDecimalInput, parseLactateValue } from '../../utils/lactateInput';
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds } from '../../utils/calendarDayOrdering';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -125,8 +126,8 @@ function outlineBorder({ color, leftColor, leftWidth = 2, width = 1, style = 'so
   };
 }
 
-/** Compact completed line: time · distance · avg power (bike) or avg pace (run/swim). */
-function activityCompletedStats(activity) {
+/** Compact completed line: time · distance · avg power/pace · TSS. */
+function activityCompletedStats(activity, profile = null) {
   if (!activity) return null;
   const dur = Number(
     activity.movingTime || activity.moving_time || activity.duration
@@ -157,7 +158,12 @@ function activityCompletedStats(activity) {
     paceOrPower = `${Math.floor(sperkm / 60)}:${String(Math.round(sperkm % 60)).padStart(2, '0')}/km`;
   }
 
-  const parts = [durStr, distStr, paceOrPower].filter(Boolean);
+  const tssVal = profile
+    ? resolveActivityTss(activity, profile, { user: profile })
+    : Number(activity.tss || activity.trainingStressScore || activity.trainingLoad || activity.manualTss || 0);
+  const tssStr = tssVal > 0 ? `${Math.round(tssVal)} TSS` : null;
+
+  const parts = [durStr, distStr, paceOrPower, tssStr].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -172,7 +178,7 @@ function plannedWorkoutPreviewStats(pw, sportKey) {
   const distStr = distM > 0
     ? (sp.includes('swim') || distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`)
     : null;
-  const parts = [dur > 0 ? fmtPlanDuration(dur) : null, distStr].filter(Boolean);
+  const parts = [dur > 0 ? fmtPlanDuration(dur) : null, distStr, Number(pw.targetTss) > 0 ? `${Math.round(Number(pw.targetTss))} TSS` : null].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -296,14 +302,18 @@ function addMonths(date, n) {
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
 /** Month grid with only the weeks that contain days from `anchorDate`'s month (4–6 rows, never a trailing all-grey week). */
-function getCompactMonthDays(anchorDate) {
+function getCompactMonthDays(anchorDate, { skipLeadingWeek = false } = {}) {
   const monthEnd = endOfMonth(anchorDate);
   let weekStart = startOfWeek(startOfMonth(anchorDate));
   const result = [];
+  let isFirstWeek = true;
   while (true) {
-    for (let i = 0; i < 7; i++) result.push(addDays(weekStart, i));
+    if (!(skipLeadingWeek && isFirstWeek)) {
+      for (let i = 0; i < 7; i++) result.push(addDays(weekStart, i));
+    }
     if (addDays(weekStart, 6) >= monthEnd) break;
     weekStart = addDays(weekStart, 7);
+    isFirstWeek = false;
   }
   return result;
 }
@@ -325,6 +335,7 @@ function sportColor(sport) {
   if (s.includes('run')) return '#f97316';
   if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
   if (s.includes('swim')) return '#06b6d4';
+  if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return '#a855f7';
   return '#8b5cf6';
 }
 
@@ -404,7 +415,7 @@ function pairPlannedWithActivities(plannedForDay, acts) {
 }
 
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
-function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null }) {
+function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null, onReorderDragOver = null, onReorderDrop = null, reorderHint = null }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [repeatOpen, setRepeatOpen] = React.useState(false);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
@@ -482,7 +493,18 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
         draggable={!isCompleted && !isSkipped}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        onDragOver={onReorderDragOver || undefined}
+        onDrop={onReorderDrop || undefined}
+        title={!isCompleted && !isSkipped && onReorderDragOver
+          ? 'Drag to another day to move · drop on another workout to reorder'
+          : undefined}
       >
+        {reorderHint === 'before' && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary z-10 pointer-events-none rounded-full" />
+        )}
+        {reorderHint === 'after' && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary z-10 pointer-events-none rounded-full" />
+        )}
         <button
           onClick={() => {
             if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
@@ -688,7 +710,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 // ─── Week view activity card (richer, TrainingPeaks style) ───────────────────
 function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel, userProfile = null }) {
   const title = a.title || a.name || a.originalFileName || 'Activity';
-  const statsLine = activityCompletedStats(a);
+  const statsLine = activityCompletedStats(a, userProfile);
   const color = sportColor(a.sport);
 
   const handleClick = (e) => {
@@ -2563,6 +2585,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       totalDistance: distVal,
       manualTss: userManualTss,
       tss: displayTss,
+      tssDisplayMode: a.tssDisplayMode ?? detail.tssDisplayMode ?? null,
       trainingStressScore: fileTss ?? userManualTss,
       ...(caloriesVal > 0 ? { calories: caloriesVal, totalCalories: caloriesVal } : {}),
     };
@@ -3135,8 +3158,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       await updateFitTraining(externalId, payload);
     }
     setDetail((prev) => ({ ...(prev || {}), tssDisplayMode: nextMode }));
-    const appId = getActivityAppId(merged);
-    propagateCompletedSave({ id: appId, tssDisplayMode: nextMode });
   };
 
   const flipTssMode = () => {
@@ -3145,6 +3166,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     setTssMode(next);
     clearFormFitnessCache();
     notifyTssDisplayModeChanged(next);
+    const appId = getActivityAppId(merged);
+    const mergedNext = { ...merged, tssDisplayMode: next };
+    const computed = resolveActivityTss(mergedNext, tssProfile, { user: tssProfile, mode: next });
+    propagateCompletedSave({
+      id: appId,
+      tssDisplayMode: next,
+      ...(computed > 0 ? { tss: Math.round(computed) } : {}),
+    });
     persistTssMode(next).catch((err) => {
       console.error('Failed to save per-workout TSS mode', err);
       setTssMode(tssMode);
@@ -3449,7 +3478,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const extraFields = {};
       if (completedForm.calories !== '') extraFields.calories = Number(completedForm.calories) || 0;
       if (completedForm.rpe !== '')      extraFields.rpe = Number(completedForm.rpe) || 0;
-      if (completedForm.lactate !== '')  extraFields.lactate = Number(completedForm.lactate) || 0;
+      if (completedForm.lactate !== '') {
+        const la = parseLactateValue(completedForm.lactate);
+        if (la != null) extraFields.lactate = la;
+      }
       if (completedForm.tss !== '') {
         extraFields.tss = Number(completedForm.tss) || 0;
         extraFields.tssDisplayMode = 'manual';
@@ -3555,6 +3587,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         }));
       }
 
+      const effectiveMode = savedAct.tssDisplayMode
+        ?? (extraFields.tss != null ? 'manual' : merged.tssDisplayMode);
       const eventDetail = {
         id: appId,
         stravaId: merged.stravaId ?? (kind === 'strava' ? externalId : null),
@@ -3565,17 +3599,26 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         movingTime: savedMoving,
         duration: savedMoving,
         distance: savedDist,
-        tss: savedTss,
-        manualTss: savedTss,
-        tssDisplayMode: savedAct.tssDisplayMode ?? (extraFields.tss != null ? 'manual' : merged.tssDisplayMode),
+        tssDisplayMode: effectiveMode,
         calories: savedAct.calories ?? extraFields.calories,
         rpe: savedAct.rpe ?? extraFields.rpe,
         lactate: savedAct.lactate ?? extraFields.lactate,
       };
+      if (extraFields.tss != null) {
+        eventDetail.tss = savedTss;
+        eventDetail.manualTss = savedTss;
+      } else {
+        const patchedForTss = { ...merged, ...metricsPatchFromDetail(eventDetail) };
+        const computed = resolveActivityTss(patchedForTss, tssProfile, {
+          user: tssProfile,
+          mode: effectiveMode || tssMode,
+        });
+        if (computed > 0) eventDetail.tss = Math.round(computed);
+      }
       propagateCompletedSave(eventDetail);
       clearFormFitnessCache();
       if (extraFields.tssDisplayMode === 'manual') setTssMode('manual');
-      notifyTssDisplayModeChanged(tssMode);
+      notifyTssDisplayModeChanged(effectiveMode || tssMode);
       if (completedForm.title) {
         try {
           window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: appId, title: completedForm.title } }));
@@ -3783,10 +3826,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
           >
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
               value={completedForm.distanceKm}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: e.target.value }))}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: sanitizeDecimalInput(e.target.value) }))}
               placeholder="km"
               className={inputCls}
               style={doneStyle(distColor)}
@@ -3856,12 +3899,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </PlannedVsCompletedRow>
           <PlannedVsCompletedRow labelCol={labelCol} label="Lactate" accent="#7c3aed" compact={mobile}>
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
               value={completedForm.lactate}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, lactate: e.target.value }))}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, lactate: sanitizeDecimalInput(e.target.value) }))}
               placeholder="mmol/L"
-              step="0.1"
               className={inputCls}
             />
           </PlannedVsCompletedRow>
@@ -6130,11 +6172,11 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
                 <div>
                   <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Distance (km)</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={form.distanceKm}
-                    onChange={e => set('distanceKm', e.target.value)}
+                    onChange={e => set('distanceKm', sanitizeDecimalInput(e.target.value))}
                     placeholder="0.0"
-                    step="0.1"
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -6850,6 +6892,8 @@ export default function CalendarView({
   onMovePlannedWorkout = null,
   /** Called with (pw, newDateStr) when a workout is copied via Alt+drag */
   onCopyPlannedWorkout = null,
+  /** Called with (dateKey, orderedIds) when workouts are reordered within one day */
+  onReorderPlannedWorkouts = null,
   /** Called with (pw) to delete a planned workout */
   onDeletePlannedWorkout = null,
   /** Optional: called with (activity, element) to open custom popup */
@@ -6893,6 +6937,17 @@ export default function CalendarView({
   const catLabel = (catId) => {
     const cat = getCategory(catId);
     return cat ? cat.label : (catId ? catId.charAt(0).toUpperCase() + catId.slice(1) : 'Uncategorized');
+  };
+
+  const plannedEffectiveCategory = (pw, act) => act?.category || pw?.category || null;
+
+  const renderCategoryBadge = (catId, className = 'text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none') => {
+    if (!catId) return null;
+    return (
+      <span className={className} style={catBadgeStyle(catId)} title={catLabel(catId)}>
+        {catLabel(catId)}
+      </span>
+    );
   };
 
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
@@ -6972,6 +7027,8 @@ export default function CalendarView({
   const monthSentinelTopRef = useRef(null);
   const miniCalScrollRef = useRef(null);
   const miniCalScrollLockRef = useRef(false);
+  const miniCalCenterPanelRef = useRef(null);
+  const [miniCalPanelHeight, setMiniCalPanelHeight] = useState(0);
   const miniCalScrollTimerRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
   // Day-theme editor — open by tapping the badge area in the day header
@@ -7135,6 +7192,55 @@ export default function CalendarView({
   // Drag & drop state for planned workout rescheduling
   const [draggedPw, setDraggedPw] = useState(null); // { pw, isCopy }
   const [dragOverKey, setDragOverKey] = useState(null); // date key being hovered
+  const [reorderDrop, setReorderDrop] = useState(null); // { targetId, position: 'before'|'after' }
+
+  const handlePlanReorderDragOver = useCallback((e, targetPw, dateKey) => {
+    if (!draggedPw || draggedPw.isCopy) return;
+    const drag = draggedPw.pw;
+    const dragDate = String(drag?.date || '').slice(0, 10);
+    if (dragDate !== dateKey) return;
+    if (String(drag._id) === String(targetPw._id)) return;
+    if (drag.status === 'completed' || drag.status === 'skipped') return;
+    if (targetPw.status === 'completed' || targetPw.status === 'skipped') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position = e.clientY >= rect.top + rect.height / 2 ? 'after' : 'before';
+    setReorderDrop({ targetId: String(targetPw._id), position });
+  }, [draggedPw]);
+
+  const handlePlanReorderDrop = useCallback((e, targetPw, dateKey, dayPlanned) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const drop = reorderDrop;
+    setReorderDrop(null);
+    if (!draggedPw || draggedPw.isCopy || !onReorderPlannedWorkouts) return;
+    const drag = draggedPw.pw;
+    const dragDate = String(drag?.date || '').slice(0, 10);
+    if (dragDate !== dateKey) return;
+    const position = drop?.targetId === String(targetPw._id) ? drop.position : 'before';
+    const orderedIds = reorderPlannedWorkoutIds(dayPlanned, drag._id, targetPw._id, position);
+    onReorderPlannedWorkouts(dateKey, orderedIds);
+    setDraggedPw(null);
+    setDragOverKey(null);
+  }, [draggedPw, reorderDrop, onReorderPlannedWorkouts]);
+
+  const planReorderProps = useCallback((pw, dateKey, dayPlanned) => {
+    if (!onReorderPlannedWorkouts) return {};
+    const targetId = String(pw._id);
+    const hint = reorderDrop?.targetId === targetId ? reorderDrop.position : null;
+    return {
+      reorderHint: hint,
+      onReorderDragOver: (e) => handlePlanReorderDragOver(e, pw, dateKey),
+      onReorderDrop: (e) => handlePlanReorderDrop(e, pw, dateKey, dayPlanned),
+    };
+  }, [onReorderPlannedWorkouts, reorderDrop, handlePlanReorderDragOver, handlePlanReorderDrop]);
+
+  const endPlanDrag = useCallback(() => {
+    setDraggedPw(null);
+    setDragOverKey(null);
+    setReorderDrop(null);
+  }, []);
 
   // Activity detail popup state: { activity, rect }
   const [activityPopup, setActivityPopup] = useState(null);
@@ -7556,6 +7662,7 @@ export default function CalendarView({
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(pw);
     });
+    map.forEach((arr, key) => map.set(key, sortPlannedWorkoutsForDay(arr)));
     return map;
   }, [filteredPlannedWorkouts]);
 
@@ -7573,11 +7680,11 @@ export default function CalendarView({
     }
   };
 
-  const renderMobileMiniCalMonth = (monthDate, variant = 'calendar') => {
-    const gridDays = getCompactMonthDays(monthDate);
+  const renderMobileMiniCalMonth = (monthDate, variant = 'calendar', skipLeadingWeek = false) => {
+    const gridDays = getCompactMonthDays(monthDate, { skipLeadingWeek });
     const monthIdx = monthDate.getMonth();
     const monthYear = monthDate.getFullYear();
-    const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', other: '#8b5cf6' };
+    const dotColors = { run: '#f97316', bike: '#3b82f6', swim: '#06b6d4', elliptical: '#a855f7', other: '#8b5cf6' };
 
     return (
       <div className="grid grid-cols-7">
@@ -7593,6 +7700,7 @@ export default function CalendarView({
             if (s.includes('run') || s.includes('walk')) return 'run';
             if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
             if (s.includes('swim')) return 'swim';
+            if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return 'elliptical';
             return 'other';
           }))].slice(0, 3);
           const hasPlanOnly = planned.length > 0 && acts.length === 0;
@@ -7837,6 +7945,8 @@ export default function CalendarView({
     const calVisible = (mobileTab === 'calendar' && showMiniCal) || (mobileTab === 'charts' && showMiniCalCharts);
     if (!calVisible) return;
     const el = miniCalScrollRef.current;
+    const center = miniCalCenterPanelRef.current;
+    if (center) setMiniCalPanelHeight(center.offsetHeight);
     if (!el?.children?.[0]) return;
     miniCalScrollLockRef.current = true;
     el.scrollTop = el.children[0].offsetHeight;
@@ -8246,17 +8356,20 @@ export default function CalendarView({
                     onTouchEnd={handleCalSwipeEnd}
                     className="overflow-y-auto overscroll-contain touch-pan-y"
                     style={{
-                      maxHeight: `${miniCalViewportRows * 38 + 4}px`,
+                      maxHeight: miniCalPanelHeight > 0
+                        ? `${miniCalPanelHeight}px`
+                        : `${miniCalViewportRows * 38 + 4}px`,
                       scrollSnapType: 'y mandatory',
                       WebkitOverflowScrolling: 'touch',
                     }}
                   >
-                    {miniCalScrollMonths.map((monthDate) => (
+                    {miniCalScrollMonths.map((monthDate, i) => (
                       <div
                         key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
+                        ref={i === 1 ? miniCalCenterPanelRef : undefined}
                         className="snap-start snap-always"
                       >
-                        {renderMobileMiniCalMonth(monthDate, 'calendar')}
+                        {renderMobileMiniCalMonth(monthDate, 'calendar', i > 0)}
                       </div>
                     ))}
                   </div>
@@ -8308,17 +8421,20 @@ export default function CalendarView({
                     onTouchEnd={handleCalSwipeEnd}
                     className="overflow-y-auto overscroll-contain touch-pan-y"
                     style={{
-                      maxHeight: `${miniCalViewportRows * 38 + 4}px`,
+                      maxHeight: miniCalPanelHeight > 0
+                        ? `${miniCalPanelHeight}px`
+                        : `${miniCalViewportRows * 38 + 4}px`,
                       scrollSnapType: 'y mandatory',
                       WebkitOverflowScrolling: 'touch',
                     }}
                   >
-                    {miniCalScrollMonths.map((monthDate) => (
+                    {miniCalScrollMonths.map((monthDate, i) => (
                       <div
                         key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
+                        ref={i === 1 ? miniCalCenterPanelRef : undefined}
                         className="snap-start snap-always"
                       >
-                        {renderMobileMiniCalMonth(monthDate, 'charts')}
+                        {renderMobileMiniCalMonth(monthDate, 'charts', i > 0)}
                       </div>
                     ))}
                   </div>
@@ -8457,7 +8573,7 @@ export default function CalendarView({
                                   const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
                                   const color = sportColor(a.sport);
                                   const title = a.title || a.name || a.originalFileName || 'Activity';
-                                  const statsLine = activityCompletedStats(a);
+                                  const statsLine = activityCompletedStats(a, userProfile);
                                   return (
                                     <button key={`act-${pi}`}
                                       onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
@@ -8489,11 +8605,12 @@ export default function CalendarView({
                                 const act = item.act;
                                 const pwSport = (pw.sport || 'bike').toLowerCase();
                                 const planColor = SPORT_PLAN_COLORS[pwSport] || '#767EB5';
+                                const pwCategory = plannedEffectiveCategory(pw, act);
                                 const isSkipped = pw.status === 'skipped';
                                 const compliance = act ? findCompliance(pw, [act]) : null;
 
                                 if (act) {
-                                  const actStats = activityCompletedStats(act);
+                                  const actStats = activityCompletedStats(act, userProfile);
                                   const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
                                   return (
                                     <button key={`pw-${pi}`}
@@ -8516,13 +8633,7 @@ export default function CalendarView({
                                             {actStats}
                                           </div>
                                         )}
-                                        {act.category && (
-                                          <div className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
-                                            style={catBadgeStyle(act.category)}
-                                            title={catLabel(act.category)}>
-                                            {catLabel(act.category)}
-                                          </div>
-                                        )}
+                                        {renderCategoryBadge(pwCategory)}
                                       </div>
                                     </button>
                                   );
@@ -8537,7 +8648,7 @@ export default function CalendarView({
                                     style={{
                                       ...outlineBorder({
                                         color: isMissed ? '#fca5a5' : planColor + '55',
-                                        leftColor: isMissed ? '#ef4444' : planColor,
+                                        leftColor: isMissed ? '#ef4444' : (pwCategory ? (catBorderColor(pwCategory) || planColor) : planColor),
                                         leftWidth: 4,
                                         style: isMissed ? 'solid' : 'dashed',
                                       }),
@@ -8547,6 +8658,7 @@ export default function CalendarView({
                                     <div className="flex items-center gap-2 min-w-0">
                                       <SportIcon sport={pwSport} className="w-4 h-4 flex-shrink-0 opacity-80" style={{ color: isMissed ? '#ef4444' : planColor }} />
                                       <span className="text-sm font-bold flex-1 truncate" style={{ color: isSkipped ? '#9ca3af' : isMissed ? '#991b1b' : planColor }}>{pw.title || 'Planned workout'}</span>
+                                      {renderCategoryBadge(pwCategory, 'text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none max-w-[88px] truncate')}
                                       {isMissed && (
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
                                       )}
@@ -8865,7 +8977,7 @@ export default function CalendarView({
                                 onStart={onStartWorkout}
                                 isDragging={draggedPw?.pw?._id === pw._id}
                                 onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
-                                onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
+                                onDragEnd={endPlanDrag}
                                 compliance={findCompliance(pw, allActs)}
                                 pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
                                 linkedActivity={item.act || pwToAct.get(String(pw._id)) || null}
@@ -8873,6 +8985,7 @@ export default function CalendarView({
                                 onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                                 onDelete={onDeletePlannedWorkout}
                                 onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                                {...planReorderProps(pw, key, planned)}
                               />
                             );
                           }
@@ -9057,7 +9170,7 @@ export default function CalendarView({
                               onStart={onStartWorkout}
                               isDragging={draggedPw?.pw?._id === pw._id}
                               onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
-                              onDragEnd={() => { setDraggedPw(null); setDragOverKey(null); }}
+                              onDragEnd={endPlanDrag}
                               compliance={findCompliance(pw, allActs)}
                               pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
                               linkedActivity={item.act || pwToAct.get(String(pw._id)) || null}
@@ -9065,6 +9178,7 @@ export default function CalendarView({
                               onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                               onDelete={onDeletePlannedWorkout}
                               onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                              {...planReorderProps(pw, key, plannedForDay)}
                             />
                           );
                         }

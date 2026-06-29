@@ -178,7 +178,11 @@ export function metricsPatchFromDetail(detail = {}) {
     const t = Math.round(Number(detail.tss));
     patch.tss = t;
     patch.trainingStressScore = t;
-    patch.manualTss = t;
+    // Only stamp manualTss when the workout is in manual mode — power/hr TSS
+    // is recomputed client-side from duration + zones and must not stick as manual.
+    if (detail.tssDisplayMode === 'manual' || detail.manualTss != null) {
+      patch.manualTss = t;
+    }
   }
 
   if (detail.calories != null && Number.isFinite(Number(detail.calories))) {
