@@ -20,6 +20,7 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { IntroSlides, INTRO_SEEN_KEY } from '../components/Onboarding/OnboardingFlow';
 import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLocalNotifications';
+import { clearFormFitnessCache, notifyTssDisplayModeChanged } from '../utils/uiPrefs';
 
 const DEFAULT_NOTIFICATION_PREFS = {
   emailNotifications: true,
@@ -201,6 +202,12 @@ const SettingsPage = () => {
   const DEFAULT_TRAINING_PREFS = useMemo(() => ({
     rpeScale: 'rpe',
     paceDisplay: 'minpkm',
+    tssDisplayMode: 'power',
+    tssDisplayModeBySport: {
+      cycling: 'power',
+      running: 'power',
+      swimming: 'power',
+    },
     zonesMethod: 'lactate',
     customZones: {
       enabled: false,
@@ -787,7 +794,15 @@ const SettingsPage = () => {
     }
     // Load training preferences from user profile
     if (user?.trainingPreferences) {
-      setTrainingPrefs(prev => ({ ...DEFAULT_TRAINING_PREFS, ...user.trainingPreferences, customZones: { ...DEFAULT_TRAINING_PREFS.customZones, ...user.trainingPreferences.customZones } }));
+      setTrainingPrefs(prev => ({
+        ...DEFAULT_TRAINING_PREFS,
+        ...user.trainingPreferences,
+        tssDisplayModeBySport: {
+          ...DEFAULT_TRAINING_PREFS.tssDisplayModeBySport,
+          ...(user.trainingPreferences?.tssDisplayModeBySport || {}),
+        },
+        customZones: { ...DEFAULT_TRAINING_PREFS.customZones, ...user.trainingPreferences.customZones },
+      }));
     }
   }, [user?.units, user?._id, user?.notifications, user?.trainingPreferences, DEFAULT_TRAINING_PREFS]);
 
@@ -976,6 +991,8 @@ const SettingsPage = () => {
         saveUserToStorage(updatedUser);
         window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
         setTrainingPrefs(newPrefs);
+        clearFormFitnessCache();
+        notifyTssDisplayModeChanged(newPrefs.tssDisplayMode);
         addNotification('Training preferences saved', 'success');
       } else {
         throw new Error('Failed to save training preferences');
@@ -2348,6 +2365,50 @@ const SettingsPage = () => {
                       <div className={`${isMobile ? 'text-[9px]' : 'text-[11px]'} text-gray-400 mt-1`}>{opt.example}</div>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Preferred TSS by sport */}
+              <div>
+                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-gray-700 mb-1`}>Preferred TSS by sport</label>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-3`}>
+                  Default for newly imported workouts. Tap TSS on an individual activity to override for that session only.
+                </p>
+                <div className={`flex flex-col ${isMobile ? 'gap-3' : 'gap-4'}`}>
+                  {[
+                    { key: 'cycling', label: 'Cycling', power: 'Power TSS', hr: 'hrTSS' },
+                    { key: 'running', label: 'Running', power: 'Pace TSS', hr: 'hrTSS' },
+                    { key: 'swimming', label: 'Swimming', power: 'Pace TSS', hr: 'hrTSS' },
+                  ].map((sport) => {
+                    const current = trainingPrefs.tssDisplayModeBySport?.[sport.key] || 'power';
+                    return (
+                      <div key={sport.key} className="rounded-xl border border-gray-200 p-3">
+                        <div className={`font-semibold ${isMobile ? 'text-xs' : 'text-sm'} text-gray-800 mb-2`}>{sport.label}</div>
+                        <div className="flex gap-2">
+                          {[
+                            { value: 'power', label: sport.power },
+                            { value: 'hr', label: sport.hr },
+                          ].map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => saveTrainingPrefs({
+                                ...trainingPrefs,
+                                tssDisplayModeBySport: {
+                                  ...DEFAULT_TRAINING_PREFS.tssDisplayModeBySport,
+                                  ...trainingPrefs.tssDisplayModeBySport,
+                                  [sport.key]: opt.value,
+                                },
+                              })}
+                              className={`flex-1 rounded-lg border-2 px-3 py-2 text-left transition-all ${current === opt.value ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'}`}
+                            >
+                              <div className={`font-semibold ${isMobile ? 'text-[11px]' : 'text-xs'} ${current === opt.value ? 'text-primary' : 'text-gray-800'}`}>{opt.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

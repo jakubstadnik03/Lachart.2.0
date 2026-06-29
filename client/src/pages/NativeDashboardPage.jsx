@@ -532,7 +532,7 @@ export default function NativeDashboardPage({
   onPlannedWorkoutChanged,        // (updatedOrDeletedId) => void — for parent to refresh
   athleteId       = null,         // selected athlete id (coach view) or own id
   stravaConnected = false,        // gates the manual-sync refresh button
-  onRequestStravaSync = null,     // () => Promise<{imported,updated,...}> — bypasses autoSync flag
+  onRequestStravaSync = null,     // () => Promise — full dashboard refresh (+ Strava when connected)
   onPlanWorkout = null,           // (date) => void — opens planned-workout form for that date
   dayPlans = [],                  // [{ date, title, category, notes }] — day-level themes
   onDayPlanSave = null,           // (dateStr, payload) => Promise — upsert a day theme
@@ -893,20 +893,20 @@ export default function NativeDashboardPage({
     }
   }, [athleteId, user, lapsToResults]);
 
-  // ── Pull-to-refresh: swipe down at scrollTop=0 to trigger Strava sync ────
-  const [syncingStrava, setSyncingStrava] = useState(false);
-  const handleManualSync = useCallback(async () => {
-    if (syncingStrava || !onRequestStravaSync) return;
-    setSyncingStrava(true);
-    try { await onRequestStravaSync(); } finally { setSyncingStrava(false); }
-  }, [syncingStrava, onRequestStravaSync]);
+  // ── Pull-to-refresh: swipe down at scrollTop=0 → reload calendar + Form/Fitness ────
+  const [refreshing, setRefreshing] = useState(false);
+  const handleDashboardRefresh = useCallback(async () => {
+    if (refreshing || !onRequestStravaSync) return;
+    setRefreshing(true);
+    try { await onRequestStravaSync(); } finally { setRefreshing(false); }
+  }, [refreshing, onRequestStravaSync]);
 
   const [pullDist, setPullDist] = useState(0);
   const pullStateRef = useRef({ startY: 0, pulling: false });
   const PULL_THRESHOLD = 70;
 
   useEffect(() => {
-    if (!stravaConnected || !onRequestStravaSync) return;
+    if (!onRequestStravaSync) return;
     const scroller = pageRef.current?.parentElement;
     if (!scroller) return;
 
@@ -919,14 +919,13 @@ export default function NativeDashboardPage({
       if (scroller.scrollTop > 0) { pullStateRef.current.pulling = false; setPullDist(0); return; }
       const dy = e.touches[0].clientY - pullStateRef.current.startY;
       if (dy <= 0) { setPullDist(0); return; }
-      // Damped distance so the indicator eases in rather than tracking 1:1.
       setPullDist(Math.min(dy * 0.5, PULL_THRESHOLD * 1.6));
     };
     const onEnd = () => {
       if (!pullStateRef.current.pulling) return;
       pullStateRef.current.pulling = false;
-      if (pullDist >= PULL_THRESHOLD && !syncingStrava) {
-        handleManualSync();
+      if (pullDist >= PULL_THRESHOLD && !refreshing) {
+        handleDashboardRefresh();
       }
       setPullDist(0);
     };
@@ -941,7 +940,7 @@ export default function NativeDashboardPage({
       scroller.removeEventListener('touchend', onEnd);
       scroller.removeEventListener('touchcancel', onEnd);
     };
-  }, [stravaConnected, onRequestStravaSync, pullDist, syncingStrava, handleManualSync]);
+  }, [onRequestStravaSync, pullDist, refreshing, handleDashboardRefresh]);
 
   const handleLactateSubmit = useCallback(async (formData) => {
     try {
@@ -1020,14 +1019,14 @@ export default function NativeDashboardPage({
 
       <div ref={pageRef} style={styles.page}>
         {/* ── Pull-to-refresh indicator — shows while user drags down or syncing ── */}
-        {(pullDist > 0 || syncingStrava) && (
+        {(pullDist > 0 || refreshing) && (
           <div style={{
             position: 'absolute', top: 8, left: 0, right: 0,
             display: 'flex', justifyContent: 'center', pointerEvents: 'none',
             zIndex: 5,
-            opacity: syncingStrava ? 1 : Math.min(pullDist / PULL_THRESHOLD, 1),
-            transform: `translateY(${syncingStrava ? 0 : Math.min(pullDist * 0.4, 18)}px)`,
-            transition: syncingStrava ? 'opacity .2s' : 'none',
+            opacity: refreshing ? 1 : Math.min(pullDist / PULL_THRESHOLD, 1),
+            transform: `translateY(${refreshing ? 0 : Math.min(pullDist * 0.4, 18)}px)`,
+            transition: refreshing ? 'opacity .2s' : 'none',
           }}>
             <div style={{
               width: 28, height: 28, borderRadius: 14,
@@ -1040,7 +1039,7 @@ export default function NativeDashboardPage({
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                   style={syncingStrava
+                   style={refreshing
                      ? { animation: 'ndSpin 0.9s linear infinite' }
                      : { transform: `rotate(${Math.min(pullDist / PULL_THRESHOLD, 1) * 360}deg)`, transition: 'transform .05s' }}>
                 <path d="M21 12a9 9 0 1 1-3-6.7" />

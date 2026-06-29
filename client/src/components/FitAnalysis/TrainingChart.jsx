@@ -71,7 +71,7 @@ const formatPace = (seconds, unitSystem, isSwim = false) => {
 };
 
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null, focusTimeSec = null, focusWindowSec = null, focusLabel = null, focusMetric = null }) => {
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null, focusTimeSec = null, focusWindowSec = null, focusLabel = null, focusMetric = null, onFocusDismiss = null }) => {
   const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
@@ -94,6 +94,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   const [highlightWindow, setHighlightWindow] = useState(null); // { startDistance, endDistance }
   const [highlightSummary, setHighlightSummary] = useState(null); // aggregated metrics for highlighted window
   const touchSelRef = useRef({ startRel: null, endRel: null, selecting: false }); // mobile drag-to-select state
+  const peakFocusAppliedRef = useRef(false);
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const mouseMoveTimeoutRef = useRef(null); // For throttling mouse move events
@@ -364,6 +365,23 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     });
   }, []);
 
+  const clearPeakFocusOverlay = useCallback(() => {
+    setHighlightWindow(null);
+    setHighlightSummary(null);
+    setZoomRange({ min: 0, max: 1 });
+    setHoveredPoint(null);
+    setCursorX(null);
+    setClickedPoint(null);
+    setClickedCursorX(null);
+    setTouchActive(false);
+    peakFocusAppliedRef.current = false;
+  }, []);
+
+  const dismissPeakFocus = useCallback(() => {
+    clearPeakFocusOverlay();
+    onFocusDismiss?.();
+  }, [clearPeakFocusOverlay, onFocusDismiss]);
+
   // Summarise the segment between two in-graph x-pixels (no zoom) — used by the
   // mobile drag-to-select gesture so you can mark a part of the ride and read
   // its averages without losing the full chart.
@@ -557,7 +575,13 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
   // Seek chart to a peak effort selected from the Peaks tab — highlight window + averages.
   useEffect(() => {
-    if (focusTimeSec == null || !processedData?.points?.length) return;
+    if (focusTimeSec == null || !processedData?.points?.length) {
+      if (peakFocusAppliedRef.current) {
+        clearPeakFocusOverlay();
+      }
+      return;
+    }
+
     if (focusMetric === 'power') setShowPower(true);
     if (focusMetric === 'hr') setShowHeartRate(true);
 
@@ -581,9 +605,11 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const startPoint = pts[startIdx];
     const endPoint = pts[endIdx];
     const maxDistance = processedData.maxDistance || endPoint.distance || 0;
+    let startRatio = 0;
+    let endRatio = 1;
     if (maxDistance > 0) {
-      const startRatio = Math.max(0, (startPoint.distance / maxDistance) - 0.05);
-      const endRatio = Math.min(1, (endPoint.distance / maxDistance) + 0.05);
+      startRatio = Math.max(0, (startPoint.distance / maxDistance) - 0.05);
+      endRatio = Math.min(1, (endPoint.distance / maxDistance) + 0.05);
       if (endRatio > startRatio) setZoomRange({ min: startRatio, max: endRatio });
     }
 
@@ -591,16 +617,20 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     summarizeWindow(pts, startIdx, endIdx, label);
 
     const midPoint = pts[Math.round((startIdx + endIdx) / 2)] || endPoint;
+    const zoomedMin = maxDistance * startRatio;
+    const zoomedMax = maxDistance * endRatio;
+    const zr = zoomedMax - zoomedMin || 1;
+    const normalized = Math.max(0, Math.min(1, (midPoint.distance - zoomedMin) / zr));
+    const px = padding.left + normalized * graphWidth;
+
     setHoveredPoint(midPoint);
-    const px = xScale(midPoint.distance);
-    if (px != null && !Number.isNaN(px)) {
-      setCursorX(px);
-      setClickedPoint(midPoint);
-      setClickedCursorX(px);
-      setTouchActive(true);
-      if (onHover) onHover(midPoint);
-    }
-  }, [focusTimeSec, focusWindowSec, focusLabel, focusMetric, processedData, xScale, summarizeWindow, onHover]);
+    setCursorX(px);
+    setClickedPoint(midPoint);
+    setClickedCursorX(px);
+    setTouchActive(true);
+    peakFocusAppliedRef.current = true;
+    if (onHover) onHover(midPoint);
+  }, [focusTimeSec, focusWindowSec, focusLabel, focusMetric, processedData, summarizeWindow, onHover, clearPeakFocusOverlay, graphWidth, padding.left]);
 
   // Add top padding (10% of graph height) so max values don't touch the top
   const topPaddingRatio = 0.1; // 10% padding at top
@@ -1285,7 +1315,21 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
           {/* Reset Zoom Button */}
           {(zoomRange.min > 0 || zoomRange.max < 1) && (
             <button
-              onClick={() => setZoomRange({ min: 0, max: 1 })}
+              type="button"
+              onClick={() => {
+                if (peakFocusAppliedRef.current || focusTimeSec != null) {
+                  dismissPeakFocus();
+                } else {
+                  setZoomRange({ min: 0, max: 1 });
+                  setHighlightWindow(null);
+                  setHighlightSummary(null);
+                  setHoveredPoint(null);
+                  setClickedPoint(null);
+                  setClickedCursorX(null);
+                  setCursorX(null);
+                  setTouchActive(false);
+                }
+              }}
               className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'} bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition-colors`}
             >
               Reset Zoom
@@ -1360,12 +1404,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               </span>
             )}
             <button
-              onClick={() => {
-                setHighlightWindow(null);
-                setHighlightSummary(null);
-                setZoomRange({ min: 0, max: 1 });
-                setHoveredPoint(null);
-              }}
+              type="button"
+              onClick={dismissPeakFocus}
               className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2"
             >
               View Full Training

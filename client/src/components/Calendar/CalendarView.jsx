@@ -3044,15 +3044,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Convert stored value to km for the form (handles legacy km storage too).
   const initDistKm = planDistanceMetresToKm(initialPlannedWorkout?.plannedDistance);
 
+  const plannedDescriptionText = (pw) => {
+    if (!pw) return '';
+    const desc = String(pw.description || '').trim();
+    const coach = String(pw.coachNotes || pw.notes || pw.comment || '').trim();
+    if (desc && coach && desc !== coach) return `${desc}\n\n${coach}`;
+    return desc || coach;
+  };
+
   const [planForm, setPlanForm] = useState({
     title: initialPlannedWorkout?.title || '',
-    description: initialPlannedWorkout?.description || '',
+    description: plannedDescriptionText(initialPlannedWorkout),
     durationDisplay: initDurMins ? formatMinutes(initDurMins) : '',
     durationMins: initDurMins,
     distanceDisplay: initDistKm ? String(initDistKm) : '',
     distanceKm: initDistKm,
     targetTss: initialPlannedWorkout?.targetTss ? String(initialPlannedWorkout.targetTss) : '',
-    notes: initialPlannedWorkout?.notes || '',
   });
   const [savingPlan, setSavingPlan] = useState(false);
 
@@ -3122,7 +3129,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     setTssMode(getActivityTssDisplayMode(merged, tssProfile, tssProfile));
     // Granular deps — avoid resetting mode on every merged object reference change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityKey, powerTss, hrTss, merged.tssDisplayMode, merged.manualTss, merged.trainingStressScore, tssProfile?.powerZones, tssProfile?.trainingPreferences?.tssDisplayMode]);
+  }, [activityKey, powerTss, hrTss, merged.tssDisplayMode, merged.manualTss, merged.trainingStressScore, tssProfile?.powerZones, tssProfile?.trainingPreferences?.tssDisplayMode, tssProfile?.trainingPreferences?.tssDisplayModeBySport]);
 
   const persistTssMode = async (nextMode) => {
     const { kind, externalId } = resolveActivitySaveKind(merged);
@@ -3240,7 +3247,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const payload = {
         title: planForm.title || title,
         description: planForm.description,
-        coachNotes: planForm.notes,
+        coachNotes: '',
         sport: sportForPlan,
         date: dateForPlan,
         plannedDuration: (durSecsFromForm != null && durSecsFromForm > 0)
@@ -3270,8 +3277,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const savedDistKm = planDistanceMetresToKm(saved.plannedDistance);
       setPlanForm({
         title: saved.title || '',
-        description: saved.description || '',
-        notes: saved.coachNotes || saved.comment || '',
+        description: plannedDescriptionText(saved),
         durationDisplay: saved.plannedDuration ? fmtDur(saved.plannedDuration) : '',
         durationMins: saved.plannedDuration ? saved.plannedDuration / 60 : null,
         distanceKm: savedDistKm ?? '',
@@ -3679,7 +3685,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       setSaveError('');
       const planNeedsCreate = !plannedWorkout?._id && (
         planForm.durationDisplay || planForm.distanceDisplay || planForm.targetTss
-        || planForm.title || planForm.description || planForm.notes
+        || planForm.title || planForm.description
       );
       const baselineDur = plannedWorkout?.plannedDuration ? fmtDur(plannedWorkout.plannedDuration) : '';
       const baselineDistKm = (() => {
@@ -3689,8 +3695,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       })();
       const planDirty = Boolean(plannedWorkout?._id && (
         (planForm.title || '') !== (plannedWorkout.title || '')
-        || (planForm.description || '') !== (plannedWorkout.description || '')
-        || (planForm.notes || '') !== (plannedWorkout.coachNotes || plannedWorkout.comment || '')
+        || (planForm.description || '') !== plannedDescriptionText(plannedWorkout)
         || (planForm.durationDisplay || '') !== baselineDur
         || (planForm.distanceKm || '') !== baselineDistKm
         || (planForm.targetTss !== '' && Number(planForm.targetTss) !== Number(plannedWorkout.targetTss || 0))
@@ -3901,7 +3906,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               value={planForm.description}
               onChange={(e) => setPlanForm((p) => ({ ...p, description: e.target.value }))}
               rows={mobile ? 2 : 3}
-              placeholder="Workout description…"
+              placeholder="Workout plan, intervals, coach instructions…"
               className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
@@ -3915,17 +3920,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-        </div>
-
-        <div>
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Coach notes</div>
-          <textarea
-            value={planForm.notes}
-            onChange={(e) => setPlanForm((p) => ({ ...p, notes: e.target.value }))}
-            rows={2}
-            placeholder="Coach notes, instructions…"
-            className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
         </div>
 
         {!mobile && (
@@ -4304,7 +4298,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {/* Map · Training Overview · Time-in-zones moved → Map/Graph tab */}
 
             {/* Description / notes */}
-            {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
+            {(notes || plannedDescriptionText(plannedWorkout)) && (
               <div className="px-4 py-3 space-y-2 border-b border-gray-50">
                 {notes && (
                   <div>
@@ -4312,16 +4306,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
                   </div>
                 )}
-                {plannedWorkout?.description && (
+                {plannedDescriptionText(plannedWorkout) && (
                   <div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
-                  </div>
-                )}
-                {plannedWorkout?.notes && (
-                  <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Coach notes</div>
-                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
+                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedDescriptionText(plannedWorkout)}</p>
                   </div>
                 )}
               </div>
@@ -4400,7 +4388,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     <span className="text-[12px] text-violet-800">
                       Peak at <strong>{peaksFocus.label}</strong>
                     </span>
-                    <button type="button" onClick={() => setPeaksFocus(null)} className="text-[11px] font-semibold text-violet-600 px-2 py-0.5 rounded-lg hover:bg-violet-100">
+                    <button type="button" onClick={() => setPeaksFocus(null)} className="text-[11px] font-semibold text-violet-600 px-3 py-1 rounded-lg hover:bg-violet-100 active:bg-violet-200" style={{ touchAction: 'manipulation' }}>
                       Dismiss
                     </button>
                   </div>
@@ -4426,6 +4414,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   focusWindowSec={peaksFocus?.focusWindowSec ?? null}
                   focusLabel={peaksFocus?.label ?? null}
                   focusMetric={peaksFocus?.metric ?? null}
+                  onFocusDismiss={() => setPeaksFocus(null)}
                 />
               </div>
             ) : laps.length > 0 ? (
@@ -5058,7 +5047,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           })}
 
           {/* ── Description + notes ── */}
-          {(notes || plannedWorkout?.description || plannedWorkout?.notes) && (
+          {(notes || plannedDescriptionText(plannedWorkout)) && (
             <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-4">
               {notes && (
                 <div className="flex-1 min-w-[200px]">
@@ -5066,16 +5055,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
                 </div>
               )}
-              {plannedWorkout?.description && (
+              {plannedDescriptionText(plannedWorkout) && (
                 <div className="flex-1 min-w-[200px]">
                   <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.description}</p>
-                </div>
-              )}
-              {plannedWorkout?.notes && (
-                <div className="flex-1 min-w-[200px]">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Coach notes</div>
-                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedWorkout.notes}</p>
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedDescriptionText(plannedWorkout)}</p>
                 </div>
               )}
             </div>
@@ -5151,6 +5134,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 focusWindowSec={peaksFocus?.focusWindowSec ?? null}
                 focusLabel={peaksFocus?.label ?? null}
                 focusMetric={peaksFocus?.metric ?? null}
+                onFocusDismiss={() => setPeaksFocus(null)}
               />
             </div>
           ) : null}
@@ -5359,17 +5343,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</label>
-                    <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout description…" rows={2}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Coach notes</label>
-                    <textarea value={planForm.notes} onChange={e => setPlanForm(p => ({ ...p, notes: e.target.value }))} placeholder="Coach notes, instructions…" rows={2}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
+                  <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
                 </div>
                 <div className="flex gap-2">
                   {plannedWorkout && (

@@ -149,6 +149,19 @@ function defaultTssMode(powerTss, hrTss, manualTss = 0) {
   return 'hr';
 }
 
+function preferredTssModeForSport(profile, sport) {
+  const s = String(sport || '').toLowerCase();
+  let key = null;
+  if (s.includes('swim')) key = 'swimming';
+  else if (s.includes('run') || s.includes('walk') || s.includes('hike')) key = 'running';
+  else if (s.includes('ride') || s.includes('bike') || s.includes('cycle')) key = 'cycling';
+  if (key && profile?.tssDisplayModeBySport?.[key]) {
+    const mode = profile.tssDisplayModeBySport[key];
+    if (mode === 'power' || mode === 'hr') return mode;
+  }
+  return profile?.tssDisplayMode || 'power';
+}
+
 function getActivityTssDisplayMode(activity, profile) {
   const powerTss = computePowerTss(activity, profile);
   const hrTss = computeHrTss(activity, profile);
@@ -163,8 +176,8 @@ function getActivityTssDisplayMode(activity, profile) {
   if (TSS_DISPLAY_MODES.includes(saved) && available.includes(saved)) return saved;
   if (Number(activity?.manualTss ?? 0) > 0 && available.includes('manual')) return 'manual';
 
-  const globalMode = profile?.tssDisplayMode;
-  if (globalMode && available.includes(globalMode)) return globalMode;
+  const sportPref = preferredTssModeForSport(profile, activity?.sport);
+  if (sportPref && available.includes(sportPref)) return sportPref;
 
   return defaultTssMode(powerTss, hrTss, manualVal);
 }
@@ -182,6 +195,7 @@ function buildUserProfile(user) {
     thresholdPace: user.thresholdPace,
     thresholdSwimPace: user.thresholdSwimPace,
     tssDisplayMode: user.trainingPreferences?.tssDisplayMode || 'power',
+    tssDisplayModeBySport: user.trainingPreferences?.tssDisplayModeBySport || {},
   };
 }
 

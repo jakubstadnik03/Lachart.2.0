@@ -33,7 +33,7 @@ import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deleteP
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
-import { TSS_DISPLAY_MODE_EVENT } from '../utils/uiPrefs';
+import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
@@ -1485,44 +1485,8 @@ export default function DashboardPage() {
   // Bypasses the auto-sync `user.strava.autoSync` gate and the 5-minute
   // sessionStorage throttle — the server still enforces its own cooldown so
   // we won't hammer Strava. Reloads trainings + calendar on success.
-  const performManualStravaSync = useCallback(async () => {
-    if (!user?._id || !user?.strava?.accessToken) {
-      return { imported: 0, updated: 0, error: 'Strava not connected' };
-    }
-    try {
-      // Pull-to-refresh / button-tap → force=true bypasses the server's
-      // 60-second cooldown so the user always sees fresh data, even right
-      // after a webhook event.
-      const result = await autoSyncStravaActivities({ force: true });
-      if (result?.error) {
-        addNotification(`Strava sync: ${result.error}`, 'error');
-        return result;
-      }
-      // Always reload calendar after a manual sync — the Strava webhook may
-      // have already stored the new activity in DB, so `imported` can be 0
-      // even though there IS new data waiting. The user tapped Sync Now and
-      // expects to see fresh data regardless of what the diff says.
-      const trainingsResult = await loadTrainings(user._id);
-      loadCalendarData(user._id, trainingsResult?.regularTrainings);
-
-      if (result?.imported > 0 || result?.updated > 0) {
-        maybeNotifyStravaActivitiesImported(result.imported, user?.notifications, result.latestActivityId);
-        addNotification(
-          `Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`,
-          'success'
-        );
-      } else if (result?.skipped) {
-        addNotification('Up to date — calendar refreshed.', 'info');
-      } else {
-        addNotification('Strava: calendar refreshed.', 'info');
-      }
-      return result;
-    } catch (e) {
-      console.log('Manual Strava sync failed:', e);
-      addNotification('Strava sync failed. Please try again later.', 'error');
-      return { imported: 0, updated: 0, error: e?.message };
-    }
-  }, [user, addNotification, loadTrainings, loadCalendarData]);
+  // Bypasses the auto-sync `user.strava.autoSync` gate and the 5-minute
+  // sessionStorage throttle — also recomputes Form/Fitness from fresh calendar TSS.
 
   // ── Planned workouts + day themes for dashboard calendar ──────────────────
   const [dayPlans, setDayPlans] = useState([]);
@@ -1615,9 +1579,7 @@ export default function DashboardPage() {
     });
   }, []);
 
-  const applyCalendarFormFitness = useCallback(() => {
-    const acts = calendarDataRef.current;
-    const profile = userRef.current;
+  const recomputeFormFitness = useCallback((acts, profile) => {
     if (!acts?.length || !profile) return false;
     const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile);
     if (!tm) return false;
@@ -1626,6 +1588,10 @@ export default function DashboardPage() {
     pushFormFitnessWidget(tm, series);
     return true;
   }, [pushFormFitnessWidget]);
+
+  const applyCalendarFormFitness = useCallback(() => {
+    return recomputeFormFitness(calendarDataRef.current, userRef.current);
+  }, [recomputeFormFitness]);
 
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
@@ -1646,6 +1612,69 @@ export default function DashboardPage() {
       }
     } catch (_) {}
   }, [applyCalendarFormFitness, pushFormFitnessWidget]);
+
+  /** Native pull-to-refresh: reload activities + recompute CTL/ATL/TSB from calendar TSS. */
+  const refreshNativeDashboard = useCallback(async ({ syncStrava = false } = {}) => {
+    const targetId = dashboardDataAthleteId;
+    if (!targetId) return null;
+
+    clearFormFitnessCache();
+    try {
+      localStorage.removeItem(`calendarData_${targetId}`);
+      localStorage.removeItem(`calendarData_timestamp_${targetId}`);
+    } catch (_) {}
+
+    if (syncStrava && user?.strava?.accessToken) {
+      try {
+        const result = await autoSyncStravaActivities({ force: true });
+        if (result?.error) {
+          addNotification(`Strava sync: ${result.error}`, 'error');
+        } else if (result?.imported > 0 || result?.updated > 0) {
+          maybeNotifyStravaActivitiesImported(result.imported, user?.notifications, result.latestActivityId);
+          addNotification(
+            `Strava: ${result.imported || 0} new ${result.imported === 1 ? 'activity' : 'activities'} imported`,
+            'success',
+          );
+        }
+      } catch (e) {
+        console.log('Strava sync during dashboard refresh failed:', e);
+      }
+    }
+
+    const trainingsResult = await loadTrainings(targetId);
+    const acts = await loadCalendarData(targetId, trainingsResult?.regularTrainings);
+    await loadDashboardPlannedWorkouts();
+
+    if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
+      await loadFormFitness(targetId);
+    }
+
+    window.dispatchEvent(new CustomEvent('activityMetricsUpdated'));
+    return acts;
+  }, [
+    dashboardDataAthleteId,
+    user,
+    addNotification,
+    loadTrainings,
+    loadCalendarData,
+    loadDashboardPlannedWorkouts,
+    recomputeFormFitness,
+    loadFormFitness,
+  ]);
+
+  const performManualStravaSync = useCallback(async () => {
+    try {
+      const acts = await refreshNativeDashboard({ syncStrava: !!user?.strava?.accessToken });
+      if (acts?.length) {
+        addNotification('Dashboard refreshed.', 'info');
+      }
+      return acts;
+    } catch (e) {
+      console.log('Dashboard refresh failed:', e);
+      addNotification('Refresh failed. Please try again.', 'error');
+      return { imported: 0, updated: 0, error: e?.message };
+    }
+  }, [user?.strava?.accessToken, refreshNativeDashboard, addNotification]);
 
   // Recompute CTL/ATL/TSB from the same activities + TSS shown in the calendar.
   useEffect(() => {
@@ -1683,14 +1712,21 @@ export default function DashboardPage() {
   // Re-fetch CTL/ATL/TSB when a workout's TSS, duration or display mode changes.
   useEffect(() => {
     if (!isCapacitorNative() || !dashboardDataAthleteId) return;
-    const refresh = () => loadFormFitness(dashboardDataAthleteId);
+    const refresh = () => {
+      clearFormFitnessCache();
+      window.setTimeout(() => {
+        if (!applyCalendarFormFitness()) {
+          loadFormFitness(dashboardDataAthleteId);
+        }
+      }, 0);
+    };
     window.addEventListener('activityMetricsUpdated', refresh);
     window.addEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
     return () => {
       window.removeEventListener('activityMetricsUpdated', refresh);
       window.removeEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
     };
-  }, [dashboardDataAthleteId, loadFormFitness]);
+  }, [dashboardDataAthleteId, loadFormFitness, applyCalendarFormFitness]);
 
   // ── Strava webhook → live dashboard refresh ───────────────────────────────
   // When the server receives a Strava webhook and saves a new activity it:
@@ -1707,13 +1743,17 @@ export default function DashboardPage() {
         localStorage.removeItem(`calendarData_${dashboardDataAthleteId}`);
         localStorage.removeItem(`calendarData_timestamp_${dashboardDataAthleteId}`);
         const trainingsResult = await loadTrainings(dashboardDataAthleteId);
-        loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
-        if (isCapacitorNative()) loadFormFitness(dashboardDataAthleteId);
+        const acts = await loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
+        clearFormFitnessCache();
+        if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
+          await loadFormFitness(dashboardDataAthleteId);
+        }
+        window.dispatchEvent(new CustomEvent('activityMetricsUpdated'));
       } catch (_) {}
     };
     window.addEventListener('stravaSyncComplete', onSync);
     return () => window.removeEventListener('stravaSyncComplete', onSync);
-  }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness]);
+  }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness, recomputeFormFitness]);
 
   const handleDashboardPlanSave = useCallback(async (data) => {
     try {

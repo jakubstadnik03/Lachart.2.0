@@ -171,6 +171,28 @@ export function getManualTssValue(activity) {
   return fileTss > 0 ? Math.round(fileTss) : 0;
 }
 
+/** Map activity sport → training preference key (cycling / running / swimming). */
+export function sportTssProfileKey(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('swim')) return 'swimming';
+  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail')) return 'running';
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'cycling';
+  return null;
+}
+
+/** Default TSS mode for a sport from Settings → Training Preferences (new workouts). */
+export function getPreferredTssModeForSport(user, sport) {
+  const key = sportTssProfileKey(sport);
+  const bySport = user?.trainingPreferences?.tssDisplayModeBySport;
+  if (key && bySport) {
+    const mode = bySport[key];
+    if (mode === 'power' || mode === 'hr') return mode;
+  }
+  const global = user?.trainingPreferences?.tssDisplayMode;
+  if (global === 'power' || global === 'hr') return global;
+  return null;
+}
+
 export function getAvailableTssModes(activity, profile) {
   const modes = [];
   if (getManualTssValue(activity) > 0) modes.push('manual');
@@ -235,7 +257,7 @@ export function tssToggleDisabledReason(activity, profile) {
   return `To switch TSS: ${missing.join(', ')}`;
 }
 
-/** Per-activity display mode (saved on workout, else global preference, else default). */
+/** Per-activity display mode (saved on workout, else sport preference, else global). */
 export function getActivityTssDisplayMode(activity, profile, user) {
   const available = getAvailableTssModes(activity, profile);
   if (!available.length) return 'manual';
@@ -248,7 +270,11 @@ export function getActivityTssDisplayMode(activity, profile, user) {
   const powerTss = computePowerTss(activity, profile);
   const hrTss = computeHrTss(activity, profile);
   const manualVal = getManualTssValue(activity);
-  const globalMode = getTssDisplayMode() || user?.trainingPreferences?.tssDisplayMode;
+
+  const sportPref = getPreferredTssModeForSport(user, activitySport(activity));
+  if (sportPref && available.includes(sportPref)) return sportPref;
+
+  const globalMode = user?.trainingPreferences?.tssDisplayMode || getTssDisplayMode();
   if (globalMode && available.includes(globalMode)) return globalMode;
 
   return defaultTssMode(powerTss, hrTss, manualVal);

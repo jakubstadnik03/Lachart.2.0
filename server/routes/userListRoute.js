@@ -798,6 +798,10 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                     ...(existingTp.customZones || {}),
                     ...(req.body.trainingPreferences.customZones || {}),
                 },
+                tssDisplayModeBySport: {
+                    ...(existingTp.tssDisplayModeBySport || {}),
+                    ...(req.body.trainingPreferences.tssDisplayModeBySport || {}),
+                },
             };
         }
         if (req.body.onboarding && typeof req.body.onboarding === 'object') {

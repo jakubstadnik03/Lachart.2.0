@@ -54,25 +54,56 @@ const PROTOCOL_TIPS = [
   { label: 'Power / HR', text: 'intensity of that step' },
 ];
 
-const FieldHint = ({ children, wide = false }) => (
-  <span
-    className="relative group inline-flex items-center justify-center w-3.5 h-3.5 ml-0.5 align-middle rounded-full bg-gray-200/90 text-gray-500 cursor-help flex-shrink-0"
-    tabIndex={0}
-    role="button"
-    aria-label="More info"
-    onClick={(e) => e.preventDefault()}
-  >
-    <HelpCircle size={11} strokeWidth={2.5} />
+const FieldHint = ({ children, wide = false }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+    };
+  }, [open]);
+
+  return (
     <span
-      className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 rounded-xl bg-gray-900 px-3 py-2 text-white text-[10px] sm:text-[11px] leading-snug opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible transition-opacity z-[60] shadow-xl font-normal normal-case text-left ${
-        wide ? 'w-64 sm:w-72' : 'w-52 sm:w-60'
-      }`}
+      ref={ref}
+      className="relative group inline-flex items-center justify-center w-3.5 h-3.5 ml-0.5 align-middle rounded-full bg-gray-200/90 text-gray-500 cursor-help flex-shrink-0"
+      tabIndex={0}
+      role="button"
+      aria-label="More info"
+      aria-expanded={open}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setOpen((v) => !v);
+        }
+        if (e.key === 'Escape') setOpen(false);
+      }}
     >
-      {children}
-      <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+      <HelpCircle size={11} strokeWidth={2.5} />
+      <span
+        className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 rounded-xl bg-gray-900 px-3 py-2 text-white text-[10px] sm:text-[11px] leading-snug transition-opacity z-[60] shadow-xl font-normal normal-case text-left ${
+          wide ? 'w-64 sm:w-72' : 'w-52 sm:w-60'
+        } ${open ? 'opacity-100 visible' : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible'}`}
+      >
+        {children}
+        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+      </span>
     </span>
-  </span>
-);
+  );
+};
 
 const ProtocolTipsPanel = ({ className = '' }) => (
   <details className={`rounded-lg border border-primary/15 bg-primary/5 ${className}`}>
@@ -1855,7 +1886,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             <label className="flex items-center text-xs font-medium text-gray-700 mb-0.5">
               Base La
               <FieldHint>
-                Resting sample before warm-up / first step. Not the same as lactate from step 1.
+                Before warm-up — not step 1 lactate
               </FieldHint>
               {isBaseLaInvalid && (
                 <span className="text-red-500 ml-1">*</span>
@@ -1878,9 +1909,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 disabled={!isNewTest && !isEditMode}
                 placeholder="mmol/L"
               />
-              <p className="mt-0.5 text-[10px] text-gray-400 leading-tight">
-                Before warm-up — not step 1 lactate
-              </p>
               {isBaseLaInvalid && (
                 <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
                   <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">

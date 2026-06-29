@@ -290,6 +290,12 @@ const userSchema = new mongoose.Schema({
       enum: ['power', 'hr'],
       default: 'power'
     },
+    /** Per-sport default for new workouts (activity.tssDisplayMode overrides when set). */
+    tssDisplayModeBySport: {
+      cycling: { type: String, enum: ['power', 'hr'], default: 'power' },
+      running: { type: String, enum: ['power', 'hr'], default: 'power' },
+      swimming: { type: String, enum: ['power', 'hr'], default: 'power' },
+    },
     zonesMethod: {
       type: String,
       enum: ['lactate', 'hrmax', 'ftp'],
