@@ -2,7 +2,7 @@
  * WeeklySummaryCarousel
  * ─────────────────────
  * Swipeable weekly-summary strip for the top of the native dashboard.
- *   • Swipe left/right between cards: Performance Insights · This week · By sport · Training load · Streak.
+ *   • Swipe left/right between cards: Performance Insights · This week · By sport · Training load.
  *   • ‹ › in the card header browses weeks — back into history (actual) and
  *     forward into what's planned in the calendar.
  *   • The data cards compare ACTUAL vs PLANNED (from plannedWorkouts).
@@ -11,7 +11,7 @@
  * so it needs no extra fetch.
  */
 import React, { useMemo, useRef, useState, useEffect, lazy, Suspense } from 'react';
-import { Flame, RotateCcw, Share2 } from 'lucide-react';
+import { RotateCcw, Share2 } from 'lucide-react';
 import SportIcon from '../shared/SportIcon';
 import PerformanceInsightsSlide from './PerformanceInsightsSlide';
 import { resolveActivityTss } from '../../utils/computeTss';
@@ -138,15 +138,6 @@ const SPORTS = [
   { key: 'run',  label: 'Run',  color: '#f97316' },
   { key: 'swim', label: 'Swim', color: '#06b6d4' },
 ];
-const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-// Day plan-compliance colours for the streak card.
-const DAY_STATUS = {
-  done:    { bg: '#10b981', fg: '#fff', mark: '✓', ring: 'none' },                          // green — plan done
-  missed:  { bg: '#ef4444', fg: '#fff', mark: '✕', ring: 'none' },                          // red — missed
-  pending: { bg: 'rgba(245,158,11,.14)', fg: '#f59e0b', mark: '•', ring: '1.5px solid #f59e0b' }, // amber — to do
-  extra:   { bg: '#0A0E1A', fg: '#fff', mark: '✓', ring: 'none' },                          // navy — trained, no plan
-  rest:    { bg: 'rgba(10,14,26,.06)', fg: '#9ca3af', mark: '', ring: 'none' },             // grey — rest
-};
 
 export default function WeeklySummaryCarousel({
   activities = [],
@@ -156,7 +147,6 @@ export default function WeeklySummaryCarousel({
   tests = [],
   todayMetrics = {},
   loading = false,
-  onReadinessPress = null,
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -206,36 +196,6 @@ export default function WeeklySummaryCarousel({
       return { ...s, count: acts.length, dist: sum(acts, actDist), secs: sum(acts, actSecs) };
     });
 
-    // Per-day plan compliance for the current week (streak card). Each day:
-    //   done    — a planned workout that day was completed   → green
-    //   missed  — planned but not done, day already past     → red
-    //   pending — planned but not done yet (today / future)  → amber
-    //   extra   — trained with no plan for the day           → navy ✓
-    //   rest    — nothing planned, nothing done              → grey
-    const curWb = getWeekBounds(now);
-    const today0 = new Date(now); today0.setHours(0, 0, 0, 0);
-    const weekDays = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(curWb.monday); d.setDate(curWb.monday.getDate() + i); d.setHours(0, 0, 0, 0);
-      const ds = d.toDateString();
-      const done = activities.some((a) => actDate(a).toDateString() === ds);
-      const planned = plannedWorkouts.some((p) => planDate(p).toDateString() === ds);
-      const isPast = d.getTime() < today0.getTime();
-      let status;
-      if (planned && done) status = 'done';
-      else if (planned && !done && isPast) status = 'missed';
-      else if (planned && !done) status = 'pending';
-      else if (!planned && done) status = 'extra';
-      else status = 'rest';
-      return status;
-    });
-    let streak = 0;
-    for (let w = 0; w < 260; w++) {
-      const r = new Date(now); r.setDate(now.getDate() - w * 7);
-      const b = getWeekBounds(r);
-      const has = activities.some((a) => { const t = actDate(a).getTime(); return t >= b.monday.getTime() && t <= b.sunday.getTime(); });
-      if (has) streak++; else break;
-    }
-
     return {
       label: weekLabel(weekOffset, wb.monday, wb.sunday),
       act: {
@@ -257,8 +217,6 @@ export default function WeeklySummaryCarousel({
         tss: prevTssTotal,
       },
       bySport,
-      weekDays,
-      streak,
       curActs,
       range: `${wb.monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${wb.sunday.toLocaleDateString('en', { month: 'short', day: 'numeric' })}`,
     };
@@ -280,7 +238,7 @@ export default function WeeklySummaryCarousel({
   // Re-keyed + re-animated whenever the week changes, so the figures slide in.
   const contentAnim = { animation: `${dir >= 0 ? 'ndWkInR' : 'ndWkInL'} .3s cubic-bezier(.22,1,.36,1) both` };
 
-  const PAGES = 5;
+  const PAGES = 4;
 
   // Build the shareable weekly-summary payload (IG-story card) from the
   // currently-selected week. KPIs (Fitness/Form/Fatigue) come from the parent.
@@ -305,7 +263,6 @@ export default function WeeklySummaryCarousel({
       sparklineData,
       tests,
       allTests: tests,
-      streak: data.streak,
     };
   }, [data, kpis, weekOffset, activities, sparklineData, tests]);
 
@@ -348,12 +305,11 @@ export default function WeeklySummaryCarousel({
         }}
       >
         {/* ── Card 0: Performance Insights (Fitness / Form / Fatigue) ─── */}
-        <div style={SLIDE}>
+        <div style={{ ...SLIDE, alignSelf: 'flex-start' }}>
           <PerformanceInsightsSlide
             todayMetrics={todayMetrics}
             sparklineData={sparklineData}
             loading={loading}
-            onReadinessPress={onReadinessPress}
           />
         </div>
 
@@ -401,46 +357,6 @@ export default function WeeklySummaryCarousel({
               <Stat label="Sessions" value={data.act.count}
                 delta={<Delta value={data.act.count - data.prev.count} />} />
               <Stat label="Avg/day" value={Math.round(data.act.tss / 7)} sub="TSS" />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Card 4: Streak (always current) ───────────────────────────── */}
-        <div style={SLIDE}>
-          <div style={CARD}>
-            <div className="flex items-center justify-between mb-2 min-h-[28px] gap-1">
-              <span className="text-[13px] font-bold text-gray-900 truncate flex-1 min-w-0">Streak</span>
-              <div className="flex items-center gap-2 shrink-0">
-                {shareBtn}
-                <div className="hidden sm:flex items-center gap-2 text-[9px] text-gray-400 font-semibold">
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />done</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#f59e0b' }} />to&nbsp;do</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ef4444' }} />missed</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Flame className="w-5 h-5 text-orange-500" fill="#fb923c" strokeWidth={1.8} />
-                <div className="leading-none">
-                  <span className="text-lg font-black text-gray-900 tabular-nums">{data.streak}</span>
-                  <span className="text-[9px] text-gray-400 font-semibold uppercase ml-1">wks</span>
-                </div>
-              </div>
-              <div className="flex-1 flex items-center justify-between">
-                {data.weekDays.map((st, i) => {
-                  const c = DAY_STATUS[st] || DAY_STATUS.rest;
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-0.5">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
-                        style={{ background: c.bg, color: c.fg, border: c.ring }}>
-                        {c.mark}
-                      </div>
-                      <span className="text-[9px] text-gray-400 font-semibold">{DOW[i]}</span>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </div>
         </div>

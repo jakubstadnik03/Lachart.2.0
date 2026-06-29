@@ -21,6 +21,7 @@ import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
 import { useAuth } from '../context/AuthProvider';
+import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
@@ -1588,8 +1589,47 @@ export default function DashboardPage() {
   }, [selectedAthleteId, user?.role]);
 
   // ── Native dashboard: fitness/form metrics (only fetched when native) ─────
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  const plannedWorkoutsRef = useRef([]);
+  useEffect(() => { plannedWorkoutsRef.current = plannedWorkouts; }, [plannedWorkouts]);
+
+  const calendarDataRef = useRef([]);
+  useEffect(() => { calendarDataRef.current = calendarData; }, [calendarData]);
+
+  const pushFormFitnessWidget = useCallback((tm, raw) => {
+    if (!tm || !isCapacitorNative()) return;
+    const tsb14 = (raw || [])
+      .slice(-14)
+      .map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
+    writeFormFitnessToWidget({
+      fitness:   tm.fitness,
+      fatigue:   tm.fatigue,
+      form:      tm.form,
+      formDelta: tm.formChange,
+      sparkline: tsb14,
+      todayCompleted: pickTodaysCompleted(calendarDataRef.current, plannedWorkoutsRef.current),
+      todayPlanned:    pickTodaysPlanned(plannedWorkoutsRef.current, calendarDataRef.current),
+      tomorrowPlanned: pickTomorrowPlanned(plannedWorkoutsRef.current),
+    });
+  }, []);
+
+  const applyCalendarFormFitness = useCallback(() => {
+    const acts = calendarDataRef.current;
+    const profile = userRef.current;
+    if (!acts?.length || !profile) return false;
+    const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile);
+    if (!tm) return false;
+    setTodayMetrics(tm);
+    if (series.length) setSparklineData(series);
+    pushFormFitnessWidget(tm, series);
+    return true;
+  }, [pushFormFitnessWidget]);
+
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
+    if (applyCalendarFormFitness()) return;
     try {
       const [todayRes, sparkRes] = await Promise.all([
         getTodayMetrics(targetId).catch(() => ({ data: {} })),
@@ -1601,41 +1641,17 @@ export default function DashboardPage() {
         : [];
       if (raw.length > 0) setSparklineData(raw);
 
-      // iOS home-screen widget: write the same numbers the dashboard just
-      // rendered into the shared App Group cache so the widget refreshes
-      // on its next paint. No-op on web / Android.
       if (todayRes?.data) {
-        const tm = todayRes.data;
-        const tsb14 = raw
-          .slice(-14)
-          .map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
-
-        // Push today's DONE + PLANNED lists into the widget so the home-screen
-        // tile matches what the dashboard shows. Both lists come from refs so
-        // this callback can stay [] deps without going stale.
-        writeFormFitnessToWidget({
-          fitness:   tm.fitness,
-          fatigue:   tm.fatigue,
-          form:      tm.form,
-          formDelta: tm.formChange,
-          sparkline: tsb14,
-          todayCompleted: pickTodaysCompleted(calendarDataRef.current, plannedWorkoutsRef.current),
-          todayPlanned:    pickTodaysPlanned(plannedWorkoutsRef.current, calendarDataRef.current),
-          tomorrowPlanned: pickTomorrowPlanned(plannedWorkoutsRef.current),
-        });
+        pushFormFitnessWidget(todayRes.data, raw);
       }
     } catch (_) {}
-  }, []);
+  }, [applyCalendarFormFitness, pushFormFitnessWidget]);
 
-  // Mirror plannedWorkouts into a ref so loadFormFitness (which has [] deps
-  // to avoid re-running on every plan change) can still read fresh values.
-  const plannedWorkoutsRef = useRef([]);
-  useEffect(() => { plannedWorkoutsRef.current = plannedWorkouts; }, [plannedWorkouts]);
-
-  // Same trick for completed activities — loadFormFitness reads through the
-  // ref so the DONE list is fresh without re-creating the callback.
-  const calendarDataRef = useRef([]);
-  useEffect(() => { calendarDataRef.current = calendarData; }, [calendarData]);
+  // Recompute CTL/ATL/TSB from the same activities + TSS shown in the calendar.
+  useEffect(() => {
+    if (!isCapacitorNative() || !dashboardDataAthleteId) return;
+    if (calendarData?.length) applyCalendarFormFitness();
+  }, [calendarData, dashboardDataAthleteId, user, applyCalendarFormFitness]);
 
   // When the planned workout list itself changes (athlete plans a new
   // session today, drag-drops one onto today, etc.) re-push the widget

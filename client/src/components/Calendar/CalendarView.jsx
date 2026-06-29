@@ -42,7 +42,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity } from '../../utils/calendarDayOrdering';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -93,11 +93,28 @@ function planStepTotalSecs(steps) {
 }
 
 /** Prefer explicit plannedDuration (simple editor) over structured step sum. */
-function plannedWorkoutDurationSecs(pw) {
+function healLegacyPlannedDurationSecs(stored, completedSecs = 0) {
+  const s = Number(stored) || 0;
+  // Legacy bug: "1:20" (1h20m) was saved as h*60+m seconds (80s).
+  if (s < 60 || s >= 3600) return s;
+  const h = Math.floor(s / 60);
+  const m = s % 60;
+  if (h <= 0 || m >= 60) return s;
+  const healed = h * 3600 + m * 60;
+  if (completedSecs > 0 && completedSecs / s > 4 && completedSecs / healed <= 1.5) return healed;
+  return s;
+}
+
+function plannedWorkoutDurationSecs(pw, completedSecs = 0) {
   if (!pw) return 0;
   const explicit = Number(pw.plannedDuration || 0);
-  if (explicit > 0) return explicit;
-  return planStepTotalSecs(pw.steps) || 0;
+  const fromSteps = planStepTotalSecs(pw.steps) || 0;
+  if (explicit > 0) {
+    const healed = healLegacyPlannedDurationSecs(explicit, completedSecs);
+    if (fromSteps > healed) return fromSteps;
+    return healed;
+  }
+  return fromSteps;
 }
 
 function fmtPlanDuration(s) {
@@ -340,17 +357,6 @@ function sportColor(sport) {
 }
 
 // ─── Compliance helpers ────────────────────────────────────────────────────────
-function sportMatches(pwSport, actSport) {
-  const p = (pwSport || '').toLowerCase();
-  const a = (actSport || '').toLowerCase();
-  if (p === 'bike' && (a.includes('ride') || a.includes('bike') || a.includes('cycle') || a.includes('virtual'))) return true;
-  if (p === 'run'  && a.includes('run')) return true;
-  if (p === 'swim' && a.includes('swim')) return true;
-  if (p === 'walk' && a.includes('walk')) return true;
-  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
-  return p === a;
-}
-
 function getCompliance(plannedSecs, actualSecs) {
   if (!plannedSecs || !actualSecs) return null;
   const r = actualSecs / plannedSecs;
@@ -364,7 +370,7 @@ function findCompliance(pw, acts) {
   if (!acts || acts.length === 0) return null;
   const plannedSecs = plannedWorkoutDurationSecs(pw);
   if (!plannedSecs) return null;
-  const match = acts.find(a => sportMatches(pw.sport, a.sport || a.type || ''));
+  const match = acts.find(a => planSportMatchesActivity(pw.sport, a.sport || a.type || ''));
   if (!match) return null;
   const actualSecs = Number(
     match.duration || match.moving_time || match.elapsed_time ||
@@ -381,37 +387,12 @@ function findCompliance(pw, acts) {
 function pairingStateFor(pw, acts, todayDateStr) {
   if (!pw) return null;
   if (pw.status === 'completed') return 'completed';
-  const matched = (acts || []).some(a => sportMatches(pw.sport, a.sport || a.type || ''));
+  const matched = (acts || []).some(a => planSportMatchesActivity(pw.sport, a.sport || a.type || ''));
   if (matched) return 'completed';
   const pwDateStr = String(pw.date || '').slice(0, 10);
   if (!pwDateStr) return null;
   if (pwDateStr < todayDateStr) return 'missed';
   return null;
-}
-
-/** Pair planned workouts with same-sport activities for a single day.
- *  TrainingPeaks-style: each planned workout claims the first unclaimed
- *  matching activity, so the calendar shows ONE merged card instead of
- *  two stacked entries. Returns:
- *    pwToAct: Map<pw_id, activity>
- *    claimed: Set<activityKey> — activity ids that should be hidden
- */
-function pairPlannedWithActivities(plannedForDay, acts) {
-  const pwToAct = new Map();
-  const claimed = new Set();
-  if (!plannedForDay?.length || !acts?.length) return { pwToAct, claimed };
-  const actKey = (a) => String(a?.id ?? a?._id ?? '');
-  for (const pw of plannedForDay) {
-    if (!pw?._id) continue;
-    const claimedAlready = pw.completedTrainingId ? acts.find(a => actKey(a) === String(pw.completedTrainingId)) : null;
-    const candidate = claimedAlready
-      || acts.find(a => !claimed.has(actKey(a)) && sportMatches(pw.sport, a.sport || a.type || ''));
-    if (candidate) {
-      pwToAct.set(String(pw._id), candidate);
-      claimed.add(actKey(candidate));
-    }
-  }
-  return { pwToAct, claimed };
 }
 
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
@@ -3229,7 +3210,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   };
 
   // Planned workout data
-  const plannedDur  = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout) : 0;
+  const plannedDur  = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout, dur) : 0;
   const plannedTss  = plannedWorkout ? Number(plannedWorkout.targetTss || 0) : 0;
   // Treat plannedDistance as metres, but heal legacy km-stored values
   // (< 100 means it's km from the old buggy build).
@@ -3248,7 +3229,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const { createPlannedWorkout, updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
       const dateForPlan = actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
       const sportForPlan = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
-      const durSecsFromForm = parseDurationToSeconds(planForm.durationDisplay);
+      const durSecsFromForm = parseDurationToSeconds(planForm.durationDisplay, 'hm');
       const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
       // Fall back to re-parsing the display (e.g. user typed "3000" and hit
       // Save before the field blurred) so swim metres still convert to km.
@@ -3426,19 +3407,23 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [merged, plannedWorkout, athleteId, onPlannedSaved]);
 
   // Accept "1:30:00", "1:30", "90", "90m", "1h30", "1h 30m" → seconds.
-  // Whatever the user typed in the Duration field, we always end up with an
-  // integer number of seconds for the API. Returns null on parse failure
-  // so we can fall back to "don't change it" instead of sending NaN.
-  const parseDurationToSeconds = (raw) => {
+  // style 'hm' → H:MM (planned editor). style 'ms' → M:SS (completed under 1h).
+  const parseDurationToSeconds = (raw, style = 'auto') => {
     if (raw == null) return null;
     const s = String(raw).trim();
     if (!s) return null;
-    // Classic HH:MM:SS / MM:SS form.
     if (s.includes(':')) {
       const parts = s.split(':').map(p => Number(p.trim()));
       if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
       if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 2) {
+        if (style === 'hm') return parts[0] * 3600 + parts[1] * 60;
+        if (style === 'ms') return parts[0] * 60 + parts[1];
+        // auto: 45:30 → M:SS; 1:20 / 0:45 → H:MM
+        if (parts[0] >= 10) return parts[0] * 60 + parts[1];
+        if (parts[0] === 0) return parts[1] * 60;
+        return parts[0] * 3600 + parts[1] * 60;
+      }
       if (parts.length === 1) return parts[0] * 60;
       return null;
     }
@@ -3488,7 +3473,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
 
       if (String(completedForm.durationDisplay || '').trim()) {
-        const secs = parseDurationToSeconds(completedForm.durationDisplay);
+        const secs = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
         if (secs == null) throw new Error('Invalid duration — use 1:30:00, 1:30, 90m or 2h30m');
         extraFields.movingTime = secs;
         extraFields.duration = secs;
@@ -3668,13 +3653,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const labelCol = mobile ? '56px' : '78px';
 
     const plannedDurationSecs = () => {
-      const parsed = parseDurationToSeconds(planForm.durationDisplay);
+      const parsed = parseDurationToSeconds(planForm.durationDisplay, 'hm');
       if (parsed != null && parsed >= 0) return parsed;
       if (planForm.durationMins > 0) return Math.round(planForm.durationMins * 60);
       return 0;
     };
     const completedDurationSecs = () => {
-      const parsed = parseDurationToSeconds(completedForm.durationDisplay);
+      const parsed = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
       return (parsed != null && parsed >= 0) ? parsed : 0;
     };
     const applyPlannedDurationSecs = (secs) => {
@@ -3796,7 +3781,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 value={completedForm.durationDisplay}
                 onChange={(e) => setCompletedForm((p) => ({ ...p, durationDisplay: e.target.value }))}
                 onBlur={() => {
-                  const secs = parseDurationToSeconds(completedForm.durationDisplay);
+                  const secs = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
                   if (secs != null && secs > 0) {
                     setCompletedForm((p) => ({ ...p, durationDisplay: fmtDur(secs) }));
                   }
@@ -4438,6 +4423,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   highlightMetric={highlightMetric}
                   radarWatts={radarWatts}
                   focusTimeSec={peaksFocus?.focusTimeSec ?? null}
+                  focusWindowSec={peaksFocus?.focusWindowSec ?? null}
+                  focusLabel={peaksFocus?.label ?? null}
                   focusMetric={peaksFocus?.metric ?? null}
                 />
               </div>
@@ -4539,13 +4526,28 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             sport={merged?.sport || sport}
             authUser={authUser}
             durationSec={dur}
-            onNavigateToGraph={(sel) => {
+            onPeakFocus={(sel) => {
               if (sel?.type === 'peak' && sel.focusTimeSec != null) {
-                setPeaksFocus({ focusTimeSec: sel.focusTimeSec, metric: sel.metric, label: sel.label });
+                setPeaksFocus({
+                  focusTimeSec: sel.focusTimeSec,
+                  focusWindowSec: sel.seconds,
+                  metric: sel.metric,
+                  label: sel.label,
+                });
               } else {
                 setPeaksFocus(null);
               }
-              setMobileView('mapgraph');
+            }}
+            onNavigateToGraph={(sel) => {
+              if (sel?.type === 'peak' && sel.focusTimeSec != null) {
+                setPeaksFocus({
+                  focusTimeSec: sel.focusTimeSec,
+                  focusWindowSec: sel.seconds,
+                  metric: sel.metric,
+                  label: sel.label,
+                });
+                setMobileView('mapgraph');
+              }
             }}
           />
         )}
@@ -5146,6 +5148,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 onHover={() => {}}
                 onLeave={() => {}}
                 focusTimeSec={peaksFocus?.focusTimeSec ?? null}
+                focusWindowSec={peaksFocus?.focusWindowSec ?? null}
+                focusLabel={peaksFocus?.label ?? null}
                 focusMetric={peaksFocus?.metric ?? null}
               />
             </div>
@@ -5523,8 +5527,14 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
     return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
   }, [onClose]);
 
+  // Duration first — plannedDur heal needs completed seconds.
+  const dur = Number(
+    a.duration || a.elapsed_time || a.movingTime || a.moving_time ||
+    a.totalTimerTime || a.totalElapsedTime || a.elapsedTime || 0
+  );
+
   // Planned vs completed — computed early so POPUP_W/H can depend on hasPlanned
-  const plannedDur = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout) : 0;
+  const plannedDur = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout, dur) : 0;
   const plannedDist = plannedWorkout
     ? (() => { const n = Number(plannedWorkout.plannedDistance || 0); return n > 0 && n < 100 ? n * 1000 : n; })()
     : 0;
@@ -5563,11 +5573,6 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   const isSwim = sport.includes('swim');
   const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike');
 
-  // Duration — cover all field name variations from Strava, FIT files, internal
-  const dur = Number(
-    a.duration || a.elapsed_time || a.movingTime || a.moving_time ||
-    a.totalTimerTime || a.totalElapsedTime || a.elapsedTime || 0
-  );
   const fmtDur = (s) => s > 0
     ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(Math.floor(s%60)).padStart(2,'0')}`
     : '-';
@@ -7675,7 +7680,7 @@ export default function CalendarView({
       const actDate = a.date || a.timestamp || a.startDate || a.start_time;
       const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
       const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
-      const matchPw = dayPws.find(pw => sportMatches(pw.sport, a.sport || a.type || '')) || null;
+      const matchPw = dayPws.find(pw => planSportMatchesActivity(pw.sport, a.sport || a.type || '')) || null;
       setActivityModal({ activity: a, plannedWorkout: matchPw });
     }
   };
@@ -7782,7 +7787,7 @@ export default function CalendarView({
     const actDate = match.date || match.timestamp || match.startDate || match.start_time;
     const dayKey  = actDate ? getLocalDateString(new Date(actDate)) : null;
     const dayPws  = dayKey ? (plannedByDay.get(dayKey) || []) : [];
-    const matchPw = dayPws.find(pw => sportMatches(pw.sport, match.sport || match.type || '')) || null;
+    const matchPw = dayPws.find(pw => planSportMatchesActivity(pw.sport, match.sport || match.type || '')) || null;
     setActivityModal({ activity: match, plannedWorkout: matchPw });
     autoOpenedIdRef.current = effectiveSelectedId;
   }, [autoOpenSelectedActivity, effectiveSelectedId, activities, plannedByDay]);

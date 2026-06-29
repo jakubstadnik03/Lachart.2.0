@@ -71,7 +71,7 @@ const formatPace = (seconds, unitSystem, isSwim = false) => {
 };
 
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null, focusTimeSec = null, focusMetric = null }) => {
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null, focusTimeSec = null, focusWindowSec = null, focusLabel = null, focusMetric = null }) => {
   const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
@@ -555,27 +555,52 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     : fmtClock((distKm || 0) * 3600));
   const xAxisName = hasDistanceAxis ? 'Distance' : 'Time';
 
-  // Seek chart to a peak effort selected from the Peaks tab.
+  // Seek chart to a peak effort selected from the Peaks tab — highlight window + averages.
   useEffect(() => {
     if (focusTimeSec == null || !processedData?.points?.length) return;
     if (focusMetric === 'power') setShowPower(true);
     if (focusMetric === 'hr') setShowHeartRate(true);
+
     const pts = processedData.points;
-    let best = pts[0];
+    let startIdx = 0;
     let minD = Math.abs((pts[0].time || 0) - focusTimeSec);
-    for (const p of pts) {
-      const d = Math.abs((p.time || 0) - focusTimeSec);
-      if (d < minD) { minD = d; best = p; }
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.abs((pts[i].time || 0) - focusTimeSec);
+      if (d < minD) { minD = d; startIdx = i; }
     }
-    const px = xScale(best.distance);
-    if (px == null || Number.isNaN(px)) return;
-    setHoveredPoint(best);
-    setCursorX(px);
-    setClickedPoint(best);
-    setClickedCursorX(px);
-    setTouchActive(true);
-    if (onHover) onHover(best);
-  }, [focusTimeSec, focusMetric, processedData, xScale, onHover]);
+
+    const windowSec = focusWindowSec > 0 ? focusWindowSec : 60;
+    const targetEnd = (pts[startIdx].time || 0) + windowSec;
+    let endIdx = startIdx;
+    for (let i = startIdx; i < pts.length; i++) {
+      if ((pts[i].time || 0) <= targetEnd) endIdx = i;
+      else break;
+    }
+    if (endIdx <= startIdx) endIdx = Math.min(pts.length - 1, startIdx + 1);
+
+    const startPoint = pts[startIdx];
+    const endPoint = pts[endIdx];
+    const maxDistance = processedData.maxDistance || endPoint.distance || 0;
+    if (maxDistance > 0) {
+      const startRatio = Math.max(0, (startPoint.distance / maxDistance) - 0.05);
+      const endRatio = Math.min(1, (endPoint.distance / maxDistance) + 0.05);
+      if (endRatio > startRatio) setZoomRange({ min: startRatio, max: endRatio });
+    }
+
+    const label = focusLabel ? `Best ${focusLabel} peak` : 'Peak effort';
+    summarizeWindow(pts, startIdx, endIdx, label);
+
+    const midPoint = pts[Math.round((startIdx + endIdx) / 2)] || endPoint;
+    setHoveredPoint(midPoint);
+    const px = xScale(midPoint.distance);
+    if (px != null && !Number.isNaN(px)) {
+      setCursorX(px);
+      setClickedPoint(midPoint);
+      setClickedCursorX(px);
+      setTouchActive(true);
+      if (onHover) onHover(midPoint);
+    }
+  }, [focusTimeSec, focusWindowSec, focusLabel, focusMetric, processedData, xScale, summarizeWindow, onHover]);
 
   // Add top padding (10% of graph height) so max values don't touch the top
   const topPaddingRatio = 0.1; // 10% padding at top

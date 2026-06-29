@@ -119,8 +119,7 @@ export function sportMatchesPlanner(pwSport, actSport) {
   if (p === 'bike' && a === 'bike') return true;
   if (p === 'run' && a === 'run') return true;
   if (p === 'swim' && a === 'swim') return true;
-  if (p === 'walk' && a === 'walk') return true;
-  if (p === 'hike' && (a === 'hike' || a === 'walk')) return true;
+  if ((p === 'walk' || p === 'hike') && (a === 'walk' || a === 'hike')) return true;
   if (p === 'ski' && a === 'ski') return true;
   if (p === 'strength' && a === 'strength') return true;
   if (p === 'mtbike' && (a === 'mtbike' || a === 'bike')) return true;

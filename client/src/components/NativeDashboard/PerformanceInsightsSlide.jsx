@@ -1,11 +1,8 @@
 /**
- * First slide of the native dashboard carousel — Fitness / Form / Fatigue KPIs
- * plus today's training-readiness bar (Overloading ↔ Recharging).
+ * First slide of the native dashboard carousel — Fitness / Form / Fatigue KPIs.
  */
 import React, { useMemo } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { NativeSkeleton } from '../native/shared/Tiles';
-import { getTsbStatus } from '../../utils/formFitnessMetrics';
 
 const CARD = {
   background: 'rgba(255,255,255,.65)',
@@ -14,9 +11,8 @@ const CARD = {
   border: '1px solid rgba(255,255,255,.7)',
   boxShadow: '0 1px 0 rgba(255,255,255,.7) inset, 0 8px 24px -10px rgba(10,14,26,.08)',
   borderRadius: 18,
-  padding: '12px 14px 16px',
+  padding: '12px 14px 14px',
   width: '100%',
-  height: '100%',
   boxSizing: 'border-box',
 };
 
@@ -37,22 +33,6 @@ function DeltaArrow({ value }) {
       {up ? '▲' : '▼'}
     </span>
   );
-}
-
-/** Dashboard-friendly readiness label (matches design mock). */
-function readinessHeadline(tsb) {
-  const n = Number(tsb);
-  if (n > 10) return 'Recharging';
-  if (n > -5) return 'Balanced';
-  if (n > -25) return 'Loading';
-  return 'Overloading';
-}
-
-/** 0 = overloading (left), 100 = recharging (right). */
-function readinessMarkerPct(tsb) {
-  const n = Number(tsb);
-  const clamped = Math.min(25, Math.max(-45, n));
-  return Math.min(96, Math.max(4, ((clamped + 45) / 70) * 100));
 }
 
 function MetricTile({ label, value, color, delta, highlight = false }) {
@@ -105,7 +85,6 @@ export default function PerformanceInsightsSlide({
   todayMetrics = {},
   sparklineData = [],
   loading = false,
-  onReadinessPress = null,
 }) {
   const { fitness, fatigue, form, fitnessDelta, fatigueDelta, formDelta } = useMemo(() => {
     const lastPt = sparklineData.length > 0 ? sparklineData[sparklineData.length - 1] : null;
@@ -138,10 +117,6 @@ export default function PerformanceInsightsSlide({
     };
   }, [todayMetrics, sparklineData]);
 
-  const status = getTsbStatus(form);
-  const readiness = readinessHeadline(form);
-  const markerLeft = readinessMarkerPct(form);
-
   if (loading) {
     return (
       <div style={CARD}>
@@ -149,19 +124,17 @@ export default function PerformanceInsightsSlide({
           <NativeSkeleton width={22} height={22} radius={6} />
           <NativeSkeleton width={140} height={14} />
         </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <NativeSkeleton height={72} radius={12} style={{ flex: 1 }} />
           <NativeSkeleton height={72} radius={12} style={{ flex: 1 }} />
           <NativeSkeleton height={72} radius={12} style={{ flex: 1 }} />
         </div>
-        <NativeSkeleton width="100%" height={88} radius={12} />
       </div>
     );
   }
 
   return (
     <div style={CARD}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
           <rect x="3" y="12" width="4" height="9" rx="1" fill="#599FD0" />
@@ -173,69 +146,11 @@ export default function PerformanceInsightsSlide({
         </span>
       </div>
 
-      {/* Fitness · Form · Fatigue */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         <MetricTile label="Fitness" value={fitness} color="#3b82f6" delta={fitnessDelta} />
         <MetricTile label="Form" value={form} color="#f97316" delta={formDelta} highlight />
         <MetricTile label="Fatigue" value={fatigue} color="#ec4899" delta={fatigueDelta} />
       </div>
-
-      {/* Today's training readiness */}
-      <button
-        type="button"
-        onClick={onReadinessPress || undefined}
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          border: '1px solid rgba(118,126,181,.14)',
-          borderRadius: 14,
-          padding: '10px 12px 12px',
-          background: 'rgba(255,255,255,.5)',
-          cursor: onReadinessPress ? 'pointer' : 'default',
-          fontFamily: 'inherit',
-          WebkitTapHighlightColor: 'transparent',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#92400e' }}>Today&apos;s Training Readiness</span>
-          {onReadinessPress && <ChevronRight size={16} color="#9ca3af" strokeWidth={2.2} />}
-        </div>
-        <div style={{ fontSize: 20, fontWeight: 900, color: '#78350f', marginBottom: 10, letterSpacing: '-0.02em' }}>
-          {readiness}
-        </div>
-        <div style={{ position: 'relative', paddingTop: 8 }}>
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: `${markerLeft}%`,
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '5px solid transparent',
-              borderRight: '5px solid transparent',
-              borderTop: `7px solid ${status.color}`,
-            }}
-          />
-          <div style={{ display: 'flex', gap: 3, height: 8 }}>
-            {['#f97316', '#fdba74', '#fde68a', '#fef3c7', '#fff7ed'].map((bg, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  borderRadius: i === 0 ? '4px 0 0 4px' : i === 4 ? '0 4px 4px 0' : 2,
-                  background: bg,
-                  opacity: markerLeft < (i + 1) * 20 ? 0.35 + i * 0.12 : 1,
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#9a3412' }}>Overloading</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af' }}>Recharging</span>
-          </div>
-        </div>
-      </button>
     </div>
   );
 }

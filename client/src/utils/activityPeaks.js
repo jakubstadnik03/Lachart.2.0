@@ -295,3 +295,51 @@ export function formatHms(seconds) {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
+
+/** Averages for the best rolling window at `startIndex` (from bestRolling). */
+export function computeSegmentAverages(records, startIndex, windowSec) {
+  if (!Array.isArray(records) || records.length < 2 || startIndex == null || startIndex < 0) return null;
+
+  const dtSec = estimateDtSec(records);
+  const windowSamples = Math.max(1, Math.round(windowSec / dtSec));
+  const endIndex = Math.min(records.length - 1, startIndex + windowSamples - 1);
+  if (endIndex <= startIndex) return null;
+
+  let sumP = 0; let cntP = 0;
+  let sumHr = 0; let cntHr = 0;
+  let sumCad = 0; let cntCad = 0;
+  let sumSpd = 0; let cntSpd = 0;
+
+  for (let i = startIndex; i <= endIndex; i++) {
+    const p = recordPower(records[i]);
+    const h = recordHr(records[i]);
+    const cad = pickValue(records[i], ['cadence']);
+    const spd = pickValue(records[i], ['speed', 'enhanced_speed']);
+    if (p != null) { sumP += p; cntP++; }
+    if (h != null) { sumHr += h; cntHr++; }
+    if (cad != null) { sumCad += cad; cntCad++; }
+    if (spd != null) { sumSpd += spd; cntSpd++; }
+  }
+
+  const t0 = records[0]?.timestamp ? new Date(records[0].timestamp).getTime() : null;
+  const startRec = records[startIndex];
+  const endRec = records[endIndex];
+  let startTimeSec = startIndex * dtSec;
+  let endTimeSec = endIndex * dtSec;
+  if (t0 != null && startRec?.timestamp && endRec?.timestamp) {
+    startTimeSec = (new Date(startRec.timestamp).getTime() - t0) / 1000;
+    endTimeSec = (new Date(endRec.timestamp).getTime() - t0) / 1000;
+  }
+
+  return {
+    startIndex,
+    endIndex,
+    startTimeSec,
+    endTimeSec,
+    durationSec: Math.max(1, endTimeSec - startTimeSec),
+    avgPower: cntP > 0 ? sumP / cntP : null,
+    avgHr: cntHr > 0 ? sumHr / cntHr : null,
+    avgCadence: cntCad > 0 ? sumCad / cntCad : null,
+    avgSpeedMps: cntSpd > 0 ? sumSpd / cntSpd : null,
+  };
+}

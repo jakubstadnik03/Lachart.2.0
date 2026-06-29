@@ -75,18 +75,6 @@ function SportIcon({ sport, size = 22 }) {
   return <SharedSportIcon sport={sport} className={cls} />;
 }
 
-// Mirror of CalendarView's sportMatches — kept for pairing only.
-function sportMatches(pwSport, actSport) {
-  const p = (pwSport  || '').toLowerCase();
-  const a = (actSport || '').toLowerCase();
-  if (p === 'bike' && (a.includes('ride') || a.includes('bike') || a.includes('cycle') || a.includes('virtual'))) return true;
-  if (p === 'run'  && a.includes('run'))  return true;
-  if (p === 'swim' && a.includes('swim')) return true;
-  if (p === 'walk' && a.includes('walk')) return true;
-  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
-  return p === a;
-}
-
 // ─── Planned workout mini step-chart (mirrors WeeklyCalendar PlanMiniChart) ───
 function PlanMiniChart({ steps, color, width = 88, height = 16 }) {
   if (!steps?.length) return null;
@@ -199,7 +187,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
   const { items: dayItems } = buildChronologicalDayItems(
     dayPlanned,
     dayActs,
-    (planned, acts) => pairPlannedWithActivities(planned, acts, sportMatches),
+    pairPlannedWithActivities,
   );
 
   const hasContent = dayActs.length > 0 || dayPlanned.length > 0;
@@ -1075,9 +1063,6 @@ export default function NativeDashboardPage({
               todayMetrics={todayMetrics}
               loading={loading}
               kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
-              onReadinessPress={() => {
-                statusHeroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
             />
           </div>
 

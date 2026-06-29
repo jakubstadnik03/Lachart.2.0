@@ -194,6 +194,15 @@ function normalizeSportBucket(sport) {
   return 'other';
 }
 
+function localDateKey(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function activityDurationSec(activity) {
   return Number(
     activity.movingTime || activity.moving_time || activity.totalElapsedTime
@@ -208,11 +217,12 @@ function activityDurationSec(activity) {
 function dedupeActivitiesForLoad(activities) {
   const kept = [];
   for (const act of activities) {
-    const actDay = new Date(act.date).toISOString().slice(0, 10);
+    const actDay = localDateKey(act.date);
+    if (!actDay) continue;
     const sport = normalizeSportBucket(act.sport);
     const dur = activityDurationSec(act);
     const idx = kept.findIndex((k) => {
-      const kDay = new Date(k.date).toISOString().slice(0, 10);
+      const kDay = localDateKey(k.date);
       if (kDay !== actDay) return false;
       if (normalizeSportBucket(k.sport) !== sport) return false;
       const kDur = activityDurationSec(k);
@@ -226,7 +236,7 @@ function dedupeActivitiesForLoad(activities) {
     const existing = kept[idx];
     const tssA = Number(act.tss) || 0;
     const tssB = Number(existing.tss) || 0;
-    const mergedTss = (tssA > 0 && tssB > 0) ? Math.min(tssA, tssB) : Math.max(tssA, tssB);
+    const mergedTss = Math.max(tssA, tssB);
     kept[idx] = { ...existing, tss: mergedTss };
   }
   return kept;

@@ -1,9 +1,20 @@
 const FitTraining = require('../models/fitTraining');
 const StravaActivity = require('../models/StravaActivity');
+const GarminActivity = require('../models/GarminActivity');
+const AppleHealthActivity = require('../models/AppleHealthActivity');
 const Training = require('../models/training');
 const User = require('../models/UserModel');
 const mongoose = require('mongoose');
-const { buildUserProfile, resolveActivityTss, dedupeActivitiesForLoad, effectiveDailyTss } = require('../utils/activityTss');
+const { buildUserProfile, resolveActivityTss, dedupeActivitiesForLoad } = require('../utils/activityTss');
+
+function localDateKey(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 /**
  * Calculate Fitness, Fatigue, and Form over time
@@ -17,7 +28,8 @@ function matchesSportFilter(sport, filter) {
     return sportLower === 'cycling' || sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycle');
   }
   if (filter === 'run') {
-    return sportLower === 'running' || sportLower.includes('run') || sportLower === 'run';
+    return sportLower === 'running' || sportLower.includes('run') || sportLower === 'run'
+      || sportLower.includes('walk') || sportLower.includes('hike');
   }
   if (filter === 'swim') {
     return sportLower === 'swimming' || sportLower.includes('swim');
@@ -30,9 +42,91 @@ function calculateActivityTSS(activity, userProfile = null) {
   return resolveActivityTss(activity, userProfile);
 }
 
-// Helper function to calculate TSS for Strava activity (alias for consistency)
-function calculateStravaTSS(activity, userProfile = null) {
-  return resolveActivityTss(activity, userProfile);
+const FIT_LOAD_SELECT = 'timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate distance tssDisplayMode';
+const STRAVA_LOAD_SELECT = 'startDate movingTime elapsedTime distance averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss tssDisplayMode';
+const GARMIN_LOAD_SELECT = 'startDate movingTime elapsedTime distance averageSpeed sport averageHeartRate averagePower manualTss tssDisplayMode';
+
+async function findByUserIdBothFormats(Model, athleteIdStr, athleteIdObj, filter, select, sortField) {
+  let rows = await Model.find({ userId: athleteIdStr, ...filter }).select(select).sort({ [sortField]: 1 }).lean();
+  if (!rows.length && athleteIdObj) {
+    rows = await Model.find({ userId: athleteIdObj, ...filter }).select(select).sort({ [sortField]: 1 }).lean();
+  }
+  return rows;
+}
+
+function mapFitToLoad(t, userProfile) {
+  return {
+    date: t.timestamp,
+    tss: resolveActivityTss({
+      sport: t.sport,
+      totalElapsedTime: t.totalElapsedTime,
+      movingTime: t.totalElapsedTime,
+      distance: t.distance,
+      avgPower: t.avgPower,
+      normalizedPower: t.normalizedPower,
+      averageHeartRate: t.avgHeartRate,
+      avgHeartRate: t.avgHeartRate,
+      maxHeartRate: t.maxHeartRate,
+      avgSpeed: t.avgSpeed,
+      tss: t.trainingStressScore,
+      trainingStressScore: t.trainingStressScore,
+      tssDisplayMode: t.tssDisplayMode,
+    }, userProfile),
+    sport: t.sport || 'generic',
+  };
+}
+
+function mapStravaToLoad(a, userProfile) {
+  return {
+    date: a.startDate,
+    tss: resolveActivityTss({
+      sport: a.sport,
+      movingTime: a.movingTime,
+      elapsedTime: a.elapsedTime,
+      distance: a.distance,
+      averagePower: a.averagePower,
+      weighted_average_watts: a.weighted_average_watts,
+      averageSpeed: a.averageSpeed,
+      average_heartrate: a.average_heartrate,
+      max_heartrate: a.max_heartrate,
+      manualTss: a.manualTss,
+      tssDisplayMode: a.tssDisplayMode,
+    }, userProfile),
+    sport: a.sport || 'generic',
+  };
+}
+
+function mapGarminToLoad(a, userProfile) {
+  return {
+    date: a.startDate,
+    tss: resolveActivityTss({
+      sport: a.sport,
+      movingTime: a.movingTime,
+      elapsedTime: a.elapsedTime,
+      distance: a.distance,
+      averageSpeed: a.averageSpeed,
+      averagePower: a.averagePower,
+      average_heartrate: a.averageHeartRate,
+      avgHeartRate: a.averageHeartRate,
+      manualTss: a.manualTss,
+      tssDisplayMode: a.tssDisplayMode,
+    }, userProfile),
+    sport: a.sport || 'generic',
+  };
+}
+
+function mapAppleHealthToLoad(a, userProfile) {
+  return {
+    date: a.startDate,
+    tss: resolveActivityTss({
+      sport: a.sport || a.type,
+      movingTime: a.durationSeconds,
+      distance: a.distanceMeters,
+      average_heartrate: a.avgHeartRate,
+      avgHeartRate: a.avgHeartRate,
+    }, userProfile),
+    sport: a.sport || a.type || 'generic',
+  };
 }
 
 async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all') {
@@ -82,97 +176,56 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       // Not a valid ObjectId, use string
     }
 
-    // Get activities with TSS - only from queryStartDate onwards to reduce memory usage
-    const fitTrainings = await FitTraining.find({ 
-      athleteId: athleteIdStr,
-      timestamp: { $gte: queryStartDate }
-    })
-      .select('timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate')
-      .sort({ timestamp: 1 })
-      .lean();
+    // Load every source the calendar uses so CTL/ATL match displayed TSS.
+    const dateFilter = { $gte: queryStartDate };
+    const [
+      fitTrainings,
+      stravaActivities,
+      garminActivities,
+      appleHealthActivities,
+      trainings,
+    ] = await Promise.all([
+      FitTraining.find({ athleteId: athleteIdStr, timestamp: dateFilter })
+        .select(FIT_LOAD_SELECT)
+        .sort({ timestamp: 1 })
+        .lean(),
+      findByUserIdBothFormats(StravaActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, STRAVA_LOAD_SELECT, 'startDate'),
+      findByUserIdBothFormats(GarminActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, GARMIN_LOAD_SELECT, 'startDate'),
+      findByUserIdBothFormats(AppleHealthActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, 'startDate durationSeconds distanceMeters sport type avgHeartRate', 'startDate'),
+      Training.find({ athleteId: athleteIdStr, date: dateFilter })
+        .select('date sport')
+        .sort({ date: 1 })
+        .lean(),
+    ]);
 
-    // StravaActivity uses userId, try both formats - limit by date
-    let stravaActivities = await StravaActivity.find({ 
-      userId: athleteIdStr,
-      startDate: { $gte: queryStartDate }
-    })
-      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
-      .sort({ startDate: 1 })
-      .lean();
-
-    // If no results and athleteId is ObjectId, try with ObjectId format
-    if (stravaActivities.length === 0 && athleteIdObj) {
-      stravaActivities = await StravaActivity.find({ 
-        userId: athleteIdObj,
-        startDate: { $gte: queryStartDate }
-      })
-        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
-        .sort({ startDate: 1 })
-        .lean();
-    }
-
-    const trainings = await Training.find({ 
-      athleteId: athleteIdStr,
-      date: { $gte: queryStartDate }
-    })
-      .select('date sport')
-      .sort({ date: 1 })
-      .lean();
-
-    // Combine all activities with TSS and sport info
-    // Use stored TSS if available, otherwise calculate it (same logic as CalendarView.jsx)
     const allActivities = [
       ...fitTrainings
-        .filter(t => matchesSportFilter(t.sport, sportFilter))
-        .map(t => ({
-          date: t.timestamp,
-          tss: resolveActivityTss({
-            sport: t.sport,
-            totalElapsedTime: t.totalElapsedTime,
-            movingTime: t.totalElapsedTime,
-            avgPower: t.avgPower,
-            normalizedPower: t.normalizedPower,
-            averageHeartRate: t.avgHeartRate,
-            avgHeartRate: t.avgHeartRate,
-            maxHeartRate: t.maxHeartRate,
-            avgSpeed: t.avgSpeed,
-            tss: t.trainingStressScore,
-            trainingStressScore: t.trainingStressScore,
-          }, userProfile),
-          sport: t.sport || 'generic'
-        })),
+        .filter((t) => matchesSportFilter(t.sport, sportFilter))
+        .map((t) => mapFitToLoad(t, userProfile)),
       ...stravaActivities
-        .filter(a => matchesSportFilter(a.sport, sportFilter))
-        .map(a => ({
-          date: a.startDate,
-          tss: resolveActivityTss({
-            sport: a.sport,
-            movingTime: a.movingTime,
-            averagePower: a.averagePower,
-            weighted_average_watts: a.weighted_average_watts,
-            averageSpeed: a.averageSpeed,
-            average_heartrate: a.average_heartrate,
-            max_heartrate: a.max_heartrate,
-            manualTss: a.manualTss,
-          }, userProfile),
-          sport: a.sport || 'generic'
-        })),
+        .filter((a) => matchesSportFilter(a.sport, sportFilter))
+        .map((a) => mapStravaToLoad(a, userProfile)),
+      ...garminActivities
+        .filter((a) => matchesSportFilter(a.sport, sportFilter))
+        .map((a) => mapGarminToLoad(a, userProfile)),
+      ...appleHealthActivities
+        .filter((a) => matchesSportFilter(a.sport || a.type, sportFilter))
+        .map((a) => mapAppleHealthToLoad(a, userProfile)),
       ...trainings
-        .filter(t => {
-          // Map Training sport format (run/bike/swim) to filter
+        .filter((t) => {
           if (sportFilter === 'all') return true;
           const trainingSport = t.sport || '';
           if (sportFilter === 'bike') return trainingSport === 'bike';
-          if (sportFilter === 'run') return trainingSport === 'run';
+          if (sportFilter === 'run') return trainingSport === 'run' || trainingSport === 'walk';
           if (sportFilter === 'swim') return trainingSport === 'swim';
           return true;
         })
-        .map(t => ({
+        .map((t) => ({
           date: t.date,
-          tss: 0, // Training model doesn't have TSS, would need to calculate from results
-          sport: t.sport || 'generic'
-        }))
-    ].filter(a => a.date).sort((a, b) => new Date(a.date) - new Date(b.date));
+          tss: 0,
+          sport: t.sport || 'generic',
+        })),
+    ].filter((a) => a.date).sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const dedupedActivities = dedupeActivitiesForLoad(allActivities);
     if (dedupedActivities.length < allActivities.length) {
@@ -206,17 +259,13 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     // Group activities by date for easier lookup
     const dailyTSS = {};
     dedupedActivities.forEach(activity => {
-      const activityDate = new Date(activity.date);
-      const dateStr = activityDate.toISOString().split('T')[0];
+      const dateStr = localDateKey(activity.date);
+      if (!dateStr) return;
       if (!dailyTSS[dateStr]) {
         dailyTSS[dateStr] = 0;
       }
       dailyTSS[dateStr] += activity.tss || 0;
     });
-
-    for (const key of Object.keys(dailyTSS)) {
-      dailyTSS[key] = effectiveDailyTss(dailyTSS[key]);
-    }
 
     const data = [];
 
@@ -241,7 +290,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       // Force garbage collection every 100 days if available
       let gcCounter = 0;
       for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = localDateKey(d);
         const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
 
         // Form for this day is yesterday's balance (before updating today)
@@ -252,7 +301,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         atl = atl + alphaATL * (tssToday - atl);
 
         // Debug logging for today's values
-        if (dateStr === today.toISOString().split('T')[0]) {
+        if (dateStr === localDateKey(today)) {
           console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
           console.log(`  TSS: ${tssToday}`);
           console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);
@@ -280,7 +329,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     } else {
       // Normal calculation for smaller date ranges
       for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = localDateKey(d);
         const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
 
         // Form for this day is yesterday's balance (before updating today)
@@ -291,7 +340,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         atl = atl + alphaATL * (tssToday - atl);
 
         // Debug logging for today's values
-        if (dateStr === today.toISOString().split('T')[0]) {
+        if (dateStr === localDateKey(today)) {
           console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
           console.log(`  TSS: ${tssToday}`);
           console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);

@@ -2,14 +2,19 @@
  * ActivityPeaksTab — TrainingPeaks-style peaks view:
  *   · Power / HR by zones (bar chart + table)
  *   · Peak power / HR curve (area chart + two-column table)
- * Tap any bar or row → jumps to Map/Graph at that effort.
+ * Tap a peak row → highlights the effort on the ride + shows averages.
+ * Optional Map/Graph opens the full chart at the same window.
  */
 
 import React, { useMemo, useState } from 'react';
 import {
   computePeakEfforts,
   computeZonesBreakdown,
+  computeSegmentAverages,
   formatHms,
+  formatPeakDuration,
+  recordPower,
+  recordHr,
 } from '../../utils/activityPeaks';
 
 const POWER_COLOR = '#7c3aed';
@@ -98,8 +103,109 @@ function ZonesSection({
   );
 }
 
+function PeakSegmentChart({ records, startIndex, endIndex, metric, color }) {
+  if (!records?.length || startIndex == null || endIndex == null) return null;
+  const getter = metric === 'power' ? recordPower : recordHr;
+  const vals = records.map(getter).map((v) => v || 0);
+  const maxV = Math.max(...vals.filter((v) => v > 0), 1);
+
+  const W = 320;
+  const H = 96;
+  const pad = { l: 6, r: 6, t: 10, b: 14 };
+  const innerW = W - pad.l - pad.r;
+  const innerH = H - pad.t - pad.b;
+  const n = records.length;
+  const idxToX = (i) => pad.l + (i / Math.max(1, n - 1)) * innerW;
+  const valToY = (v) => pad.t + innerH - (v / maxV) * innerH;
+
+  const step = Math.max(1, Math.floor(n / 180));
+  const linePts = [];
+  for (let i = 0; i < n; i += step) {
+    linePts.push(`${idxToX(i)},${valToY(vals[i])}`);
+  }
+
+  const segPts = [];
+  for (let i = startIndex; i <= endIndex; i += Math.max(1, Math.floor((endIndex - startIndex) / 80))) {
+    segPts.push(`${idxToX(i)},${valToY(vals[i])}`);
+  }
+
+  const x0 = idxToX(startIndex);
+  const x1 = idxToX(endIndex);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-2 overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md mx-auto block" style={{ minWidth: 260 }}>
+        <rect x={x0} y={pad.t} width={Math.max(2, x1 - x0)} height={innerH} fill={color} fillOpacity="0.18" rx={2} />
+        <polyline points={linePts.join(' ')} fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+        {segPts.length > 1 && (
+          <polyline points={segPts.join(' ')} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+        )}
+        <line x1={x0} y1={pad.t} x2={x0} y2={pad.t + innerH} stroke={color} strokeWidth="1.5" strokeDasharray="3 2" opacity="0.7" />
+        <line x1={x1} y1={pad.t} x2={x1} y2={pad.t + innerH} stroke={color} strokeWidth="1.5" strokeDasharray="3 2" opacity="0.7" />
+      </svg>
+    </div>
+  );
+}
+
+function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph }) {
+  const d = peak?.[metric];
+  const stats = d?.startIndex != null ? computeSegmentAverages(records, d.startIndex, peak.s) : null;
+  if (!d || !stats) return null;
+
+  const avgSpeedKmh = stats.avgSpeedMps > 0 ? stats.avgSpeedMps * 3.6 : null;
+
+  return (
+    <div className="mb-3 rounded-xl border px-3 py-2.5" style={{ borderColor: `${color}40`, background: `${color}0d` }}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <div className="text-[13px] font-bold text-gray-900">{peak.label} peak</div>
+          <div className="text-[11px] text-gray-500 mt-0.5">
+            at {formatPeakDuration(stats.startTimeSec)} · {formatPeakDuration(stats.durationSec)} long
+          </div>
+        </div>
+        {onOpenGraph && (
+          <button
+            type="button"
+            onClick={() => onOpenGraph(peak, metric)}
+            className="text-[11px] font-semibold px-2 py-1 rounded-lg shrink-0"
+            style={{ color, background: `${color}18` }}
+          >
+            Map/Graph
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-700">
+        <span>
+          Peak avg: <strong className="tabular-nums">{Math.round(d.value)}</strong> {unit}
+        </span>
+        {stats.avgPower > 0 && metric === 'power' && (
+          <span>Avg power: <strong className="tabular-nums">{Math.round(stats.avgPower)} W</strong></span>
+        )}
+        {stats.avgHr > 0 && (
+          <span>Avg HR: <strong className="tabular-nums text-red-600">{Math.round(stats.avgHr)} bpm</strong></span>
+        )}
+        {stats.avgCadence > 0 && (
+          <span>Cadence: <strong className="tabular-nums">{Math.round(stats.avgCadence)} rpm</strong></span>
+        )}
+        {avgSpeedKmh > 0 && (
+          <span>Speed: <strong className="tabular-nums">{avgSpeedKmh.toFixed(1)} km/h</strong></span>
+        )}
+      </div>
+      <div className="mt-2">
+        <PeakSegmentChart
+          records={records}
+          startIndex={stats.startIndex}
+          endIndex={stats.endIndex}
+          metric={metric}
+          color={color}
+        />
+      </div>
+    </div>
+  );
+}
+
 function PeakCurveSection({
-  title, yLabel, color, peaks, metric, unit, selectedSec, onSelectPeak,
+  title, yLabel, color, peaks, metric, unit, selectedSec, records, onSelectPeak, onOpenGraph,
 }) {
   const rows = peaks.filter((p) => p[metric]?.value > 0);
   if (rows.length === 0) return null;
@@ -149,9 +255,22 @@ function PeakCurveSection({
   const col1 = rows.slice(0, half);
   const col2 = rows.slice(half);
 
+  const selectedPeak = selectedSec != null ? rows.find((p) => p.s === selectedSec) : null;
+
   return (
     <section className="mb-8">
       <h3 className="text-[15px] font-bold text-gray-900 mb-3">{title}</h3>
+
+      {selectedPeak && records?.length > 0 && (
+        <PeakSelectionSummary
+          peak={selectedPeak}
+          metric={metric}
+          unit={unit}
+          color={color}
+          records={records}
+          onOpenGraph={onOpenGraph}
+        />
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white p-3 mb-3 overflow-x-auto">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md mx-auto block" style={{ minWidth: 280 }}>
@@ -248,6 +367,7 @@ export default function ActivityPeaksTab({
   sport = '',
   authUser = null,
   durationSec = 0,
+  onPeakFocus = null,
   onNavigateToGraph = null,
 }) {
   const [selected, setSelected] = useState(null);
@@ -269,11 +389,33 @@ export default function ActivityPeaksTab({
   const hasPower = peaks.some((p) => p.power?.value > 0);
   const hasHr = peaks.some((p) => p.hr?.value > 0);
 
-  const handlePeakSelect = (p, metric) => {
+  const buildPeakSelection = (p, metric) => {
     const d = p[metric];
-    if (!d) return;
-    const sel = { type: 'peak', metric, seconds: p.s, label: p.label, ...d };
+    if (!d) return null;
+    return {
+      type: 'peak',
+      metric,
+      seconds: p.s,
+      label: p.label,
+      focusTimeSec: d.focusTimeSec,
+      startIndex: d.startIndex,
+      value: d.value,
+      stats: d.startIndex != null ? computeSegmentAverages(records, d.startIndex, p.s) : null,
+    };
+  };
+
+  const handlePeakSelect = (p, metric) => {
+    const sel = buildPeakSelection(p, metric);
+    if (!sel) return;
     setSelected(sel);
+    onPeakFocus?.(sel);
+  };
+
+  const handleOpenGraph = (p, metric) => {
+    const sel = buildPeakSelection(p, metric);
+    if (!sel) return;
+    setSelected(sel);
+    onPeakFocus?.(sel);
     onNavigateToGraph?.(sel);
   };
 
@@ -298,7 +440,7 @@ export default function ActivityPeaksTab({
         {selected && (
           <button
             type="button"
-            onClick={() => setSelected(null)}
+            onClick={() => { setSelected(null); onPeakFocus?.(null); }}
             className="text-[11px] font-semibold text-gray-400 px-2 py-1 rounded-lg hover:bg-gray-100"
           >
             Clear
@@ -307,8 +449,17 @@ export default function ActivityPeaksTab({
       </div>
 
       {selected?.type === 'peak' && (
-        <div className="mb-4 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-[12px] text-blue-800">
-          Showing <strong>{selected.label}</strong> peak on Map/Graph
+        <div className="mb-4 px-3 py-2 rounded-xl bg-violet-50 border border-violet-100 text-[12px] text-violet-800">
+          Best <strong>{selected.label}</strong> effort highlighted below
+          {onNavigateToGraph && (
+            <button
+              type="button"
+              onClick={() => onNavigateToGraph(selected)}
+              className="ml-2 text-[11px] font-semibold text-violet-600 underline"
+            >
+              Open Map/Graph
+            </button>
+          )}
         </div>
       )}
 
@@ -330,8 +481,10 @@ export default function ActivityPeaksTab({
           peaks={peaks}
           metric="power"
           unit="watts"
+          records={records}
           selectedSec={selected?.type === 'peak' && selected.metric === 'power' ? selected.seconds : null}
           onSelectPeak={(p) => handlePeakSelect(p, 'power')}
+          onOpenGraph={onNavigateToGraph ? (p) => handleOpenGraph(p, 'power') : null}
         />
       )}
 
@@ -353,8 +506,10 @@ export default function ActivityPeaksTab({
           peaks={peaks}
           metric="hr"
           unit="bpm"
+          records={records}
           selectedSec={selected?.type === 'peak' && selected.metric === 'hr' ? selected.seconds : null}
           onSelectPeak={(p) => handlePeakSelect(p, 'hr')}
+          onOpenGraph={onNavigateToGraph ? (p) => handleOpenGraph(p, 'hr') : null}
         />
       )}
     </div>

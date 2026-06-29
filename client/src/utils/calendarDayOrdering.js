@@ -178,14 +178,25 @@ export function dedupeCalendarActivities(acts) {
 
 /** TrainingPeaks-style plan ↔ activity pairing for one calendar day. */
 export function planSportMatchesActivity(pwSport, actSport) {
-  const p = String(pwSport || '').toLowerCase();
-  const a = String(actSport || '').toLowerCase();
-  if (p === 'bike' && (a.includes('ride') || a.includes('bike') || a.includes('cycle') || a.includes('virtual'))) return true;
-  if (p === 'run' && a.includes('run')) return true;
-  if (p === 'swim' && a.includes('swim')) return true;
-  if (p === 'walk' && a.includes('walk')) return true;
-  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
-  return p === a;
+  const p = resolveSportKey(pwSport);
+  const a = resolveSportKey(actSport);
+  if (p === 'bike' && a === 'bike') return true;
+  if (p === 'swim' && a === 'swim') return true;
+  if (p === 'run' && a === 'run') return true;
+  // Planner stores hikes as walk (normalizePlannedSportForApi); Strava/Garmin use Hike.
+  if ((p === 'walk' || p === 'hike') && (a === 'walk' || a === 'hike')) return true;
+  if (p === 'gym' && a === 'gym') return true;
+  if (p === 'ski' && a === 'ski') return true;
+  if (p === 'elliptical' && a === 'elliptical') return true;
+
+  const pr = String(pwSport || '').toLowerCase();
+  const ar = String(actSport || '').toLowerCase();
+  if (pr === 'brick' && (a === 'bike' || a === 'run')) return true;
+  if ((pr === 'mtbike' || pr === 'mtb') && (a === 'bike' || ar.includes('mtb'))) return true;
+  if (pr === 'strength' && a === 'gym') return true;
+  if (pr === 'crosstrain' && (a === 'elliptical' || a === 'gym')) return true;
+
+  return p === a && p !== 'other';
 }
 
 export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = planSportMatchesActivity) {
