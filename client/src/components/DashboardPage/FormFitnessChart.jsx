@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
 import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
+import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -39,8 +40,9 @@ const estimatePlannedTss = (pw) => {
   return 0;
 };
 
-const FormFitnessChart = ({ athleteId }) => {
+const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) => {
   const { user } = useAuth();
+  const profile = userProfile || user;
   const isCoachView = !!user?._id && athleteId && String(athleteId) !== String(user._id);
   const [wellness, setWellness] = useState([]);
   const [showRecovery, setShowRecovery] = useState(() => {
@@ -177,6 +179,20 @@ const FormFitnessChart = ({ athleteId }) => {
                    timeRange === '180 days' ? 180 :
                    timeRange === '365 days' ? 365 : 60;
 
+      // Prefer calendar activities — same TSS as weekly summary in Training Calendar.
+      if (Array.isArray(activities) && activities.length > 0 && profile) {
+        const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
+          displayDays: days,
+          sportFilter,
+        });
+        if (series.length) {
+          setChartData(series);
+          if (tm) setTodayMetrics(tm);
+          setLoading(false);
+          return;
+        }
+      }
+
       const cacheKeySeries = `formFitness_series_${athleteId}_${days}_${sportFilter}`;
       const cacheKeyToday = `formFitness_today_${athleteId}`;
       const tsSeries = `${cacheKeySeries}_ts`;
@@ -269,7 +285,7 @@ const FormFitnessChart = ({ athleteId }) => {
     };
 
     loadData();
-  }, [athleteId, timeRange, sportFilter, tssModeTick]);
+  }, [athleteId, timeRange, sportFilter, tssModeTick, activities, profile]);
 
   // Next race with a CTL target → draw it as a horizontal reference line so the
   // athlete sees the fitness they're building toward (TrainingPeaks-style).

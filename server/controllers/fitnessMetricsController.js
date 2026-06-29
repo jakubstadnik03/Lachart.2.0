@@ -42,7 +42,7 @@ function calculateActivityTSS(activity, userProfile = null) {
   return resolveActivityTss(activity, userProfile);
 }
 
-const FIT_LOAD_SELECT = 'timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate distance tssDisplayMode';
+const FIT_LOAD_SELECT = 'timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate distance tssDisplayMode manualTss';
 const STRAVA_LOAD_SELECT = 'startDate movingTime elapsedTime distance averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss tssDisplayMode';
 const GARMIN_LOAD_SELECT = 'startDate movingTime elapsedTime distance averageSpeed sport averageHeartRate averagePower manualTss tssDisplayMode';
 
@@ -70,6 +70,7 @@ function mapFitToLoad(t, userProfile) {
       avgSpeed: t.avgSpeed,
       tss: t.trainingStressScore,
       trainingStressScore: t.trainingStressScore,
+      manualTss: t.manualTss,
       tssDisplayMode: t.tssDisplayMode,
     }, userProfile),
     sport: t.sport || 'generic',

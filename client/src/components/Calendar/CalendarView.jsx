@@ -8060,7 +8060,7 @@ export default function CalendarView({
       const tssVal = resolveActivityTss(act, userProfile, { user: userProfile });
 
       entry.totalSeconds += duration;
-      if (sport.includes('run')) {
+      if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
         entry.runSeconds += duration;
         entry.distanceRun += distance;
         if (!isNaN(tssVal) && tssVal > 0) {
@@ -8096,6 +8096,8 @@ export default function CalendarView({
           entry.tssStrength += tssVal;
           entry.totalTSS += tssVal;
         }
+      } else if (!isNaN(tssVal) && tssVal > 0) {
+        entry.totalTSS += tssVal;
       }
       if (!isNaN(tssVal) && tssVal > 0) {
         entry.hasTss = true;

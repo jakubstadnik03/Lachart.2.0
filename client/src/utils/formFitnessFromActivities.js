@@ -3,6 +3,7 @@
  * Keeps Fitness in sync with weekly TSS totals (resolveActivityTss).
  */
 import { resolveActivityTss } from './computeTss';
+import { matchesCalendarSportFilter } from './calendarDayOrdering';
 
 export function localCalendarDateKey(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -20,13 +21,14 @@ function activityTss(act, profile) {
 /**
  * @returns {{ series: Array, todayMetrics: object|null }}
  */
-export function computePmcFromActivities(activities, profile, { displayDays = 90, warmupDays = 252 } = {}) {
+export function computePmcFromActivities(activities, profile, { displayDays = 90, warmupDays = 252, sportFilter = 'all' } = {}) {
   if (!Array.isArray(activities) || !activities.length || !profile) {
     return { series: [], todayMetrics: null };
   }
 
   const dailyTss = new Map();
   for (const act of activities) {
+    if (sportFilter !== 'all' && !matchesCalendarSportFilter(act, sportFilter)) continue;
     const raw = act.date || act.timestamp || act.startDate || act.start_time;
     const dk = localCalendarDateKey(raw);
     if (!dk) continue;

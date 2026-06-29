@@ -1,7 +1,9 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
-import { getFormFitnessData, getMonthlyPowerAnalysis } from '../../services/api';
+import { resolveActivityTss } from '../../utils/computeTss';
+import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import { getMonthlyPowerAnalysis } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
@@ -368,65 +370,8 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
 }
 
 function computeTssForAct(act, profile) {
-  const seconds = actDurationSec(act);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-
-  const existing =
-    Number(act.tss ?? act.TSS ?? act.totalTSS ?? act.totalTss ?? act.totalTssValue ?? 0);
-  if (Number.isFinite(existing) && existing > 0) return existing;
-
   if (!profile) return 0;
-
-  const ps = profileSportFromActivity(act.sport);
-  if (!ps) return 0;
-
-  if (ps === 'cycling') {
-    const ftp =
-      parseZoneNumber(profile?.powerZones?.cycling?.lt2) ||
-      parseZoneNumber(profile?.powerZones?.cycling?.zone5?.min) ||
-      null;
-    const avgPower = Number(
-      act.normalizedPower ??
-        act.NP ??
-        act.avgPower ??
-        act.averagePower ??
-        act.average_watts ??
-        act.avg_power ??
-        0
-    );
-    if (!ftp || ftp <= 0 || !Number.isFinite(avgPower) || avgPower <= 0) return 0;
-    return Math.round((seconds * Math.pow(avgPower, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
-  }
-
-  if (ps === 'running') {
-    const speedMps = Number(act.avgSpeed ?? act.averageSpeed ?? act.average_speed ?? 0);
-    if (!Number.isFinite(speedMps) || speedMps <= 0) return 0;
-    const avgPaceSeconds = Math.round(1000 / speedMps);
-    const thresholdPace =
-      parseZoneNumber(profile?.powerZones?.running?.lt2) ||
-      parseZoneNumber(profile?.runningZones?.lt2) ||
-      null;
-    const referencePace = thresholdPace && thresholdPace > 0 ? thresholdPace : avgPaceSeconds;
-    if (!referencePace || referencePace <= 0) return 0;
-    const intensityRatio = referencePace / avgPaceSeconds;
-    return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-  }
-
-  if (ps === 'swimming') {
-    const speedMps = Number(act.avgSpeed ?? act.averageSpeed ?? act.average_speed ?? 0);
-    if (!Number.isFinite(speedMps) || speedMps <= 0) return 0;
-    const avgPaceSeconds = Math.round(100 / speedMps);
-    const thresholdSwimPace =
-      parseZoneNumber(profile?.powerZones?.swimming?.lt2) ||
-      parseZoneNumber(profile?.swimmingZones?.lt2) ||
-      null;
-    const referencePace = thresholdSwimPace && thresholdSwimPace > 0 ? thresholdSwimPace : avgPaceSeconds;
-    if (!referencePace || referencePace <= 0) return 0;
-    const intensityRatio = referencePace / avgPaceSeconds;
-    return Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
-  }
-
-  return 0;
+  return resolveActivityTss(act, profile, { user: profile }) || 0;
 }
 
 /** Return ISO week number (Monday-based) and year as a string key "YYYY-WW" */
@@ -579,30 +524,7 @@ export default function CalendarPeriodStats({
   // Charts tab match what the user sees on the Dashboard. Falls back to a
   // client-side recompute if the fetch fails (offline / coach-without-access).
   const effectiveAthleteId = athleteId || user?._id || user?.id || null;
-  const [serverPmc, setServerPmc] = useState(null);
   const [ffHelpOpen, setFfHelpOpen] = useState(false);
-  useEffect(() => {
-    if (!effectiveAthleteId) return;
-    let cancelled = false;
-    getFormFitnessData(effectiveAthleteId, 180, 'all')
-      .then((res) => {
-        if (cancelled) return;
-        const data = Array.isArray(res?.data) ? res.data : (res?.data?.data || []);
-        // Normalize to the same shape pmc uses: { date, ctl, atl, tsb, tss }.
-        const norm = (data || [])
-          .filter(d => d && d.date)
-          .map(d => ({
-            date: d.date,
-            ctl: Number(d.Fitness ?? d.fitness ?? d.ctl ?? 0),
-            atl: Number(d.Fatigue ?? d.fatigue ?? d.atl ?? 0),
-            tsb: Number(d.Form ?? d.form ?? d.tsb ?? 0),
-            tss: Number(d.TSS ?? d.tss ?? 0),
-          }));
-        setServerPmc(norm.length ? norm : null);
-      })
-      .catch(() => setServerPmc(null));
-    return () => { cancelled = true; };
-  }, [effectiveAthleteId]);
   const periodView = period?.view === 'week' ? 'week' : 'month';
 
   // ── Server zone data ─────────────────────────────────────────────────────────
@@ -1020,46 +942,19 @@ export default function CalendarPeriodStats({
   }), [filtered, filteredPrevPeriod, userProfile, prevPeriodBounds?.label]);
 
   // Performance Management Chart (CTL / ATL / TSB).
-  // Prefer the SERVER's authoritative series so the numbers match the
-  // Dashboard (which calls the same endpoint via getTodayMetrics +
-  // calculateFormFitnessData with a 252-day warmup, individualized TSS,
-  // and unified sport filter). When the server fetch hasn't returned yet —
-  // or the user isn't allowed to read this athlete's data — fall back to
-  // a client-side EMA from the activities prop. Both representations are
-  // shaped { date, ctl, atl, tsb, tss }, so downstream code is unchanged.
+  // CTL/ATL/TSB from the same activities + resolveActivityTss as the calendar weekly summary.
   const pmc = useMemo(() => {
-    if (Array.isArray(serverPmc) && serverPmc.length > 0) {
-      return serverPmc;
-    }
-    const dailyTssMap = new Map();
-    activities.forEach(act => {
-      const raw = act.date || act.timestamp || act.startDate || act.start_time;
-      const dk = getLocalDateString(raw);
-      if (!dk) return;
-      const tss = computeTssForAct(act, userProfile);
-      if (tss > 0) dailyTssMap.set(dk, (dailyTssMap.get(dk) || 0) + tss);
-    });
-    if (!dailyTssMap.size) return null;
-
-    const allDays = Array.from(dailyTssMap.keys()).sort();
-    const ctl_k = 1 - Math.exp(-1 / 42);
-    const atl_k = 1 - Math.exp(-1 / 7);
-    let ctl = 0, atl = 0;
-    const results = [];
-    const startDate = new Date(allDays[0]);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const cur = new Date(startDate);
-    while (cur <= today) {
-      const dk = getLocalDateString(cur);
-      const tss = dailyTssMap.get(dk) || 0;
-      ctl = ctl + ctl_k * (tss - ctl);
-      atl = atl + atl_k * (tss - atl);
-      results.push({ date: dk, ctl: +ctl.toFixed(1), atl: +atl.toFixed(1), tsb: +(ctl - atl).toFixed(1), tss });
-      cur.setDate(cur.getDate() + 1);
-    }
-    return results;
-  }, [serverPmc, activities, userProfile]);
+    if (!activities?.length || !userProfile) return null;
+    const { series } = computePmcFromActivities(activities, userProfile, { displayDays: 180 });
+    if (!series.length) return null;
+    return series.map((d) => ({
+      date: d.date,
+      ctl: d.Fitness,
+      atl: d.Fatigue,
+      tsb: d.Form,
+      tss: d.TSS,
+    }));
+  }, [activities, userProfile]);
 
   const pmcOption = useMemo(() => {
     if (!pmc || pmc.length === 0) return null;

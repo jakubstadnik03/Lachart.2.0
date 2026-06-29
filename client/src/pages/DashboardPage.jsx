@@ -2449,6 +2449,8 @@ export default function DashboardPage() {
             <FormFitnessChart
               key={`ffc-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
+              activities={calendarData}
+              userProfile={user}
             />
           ) : (
             <PremiumLockedCard
