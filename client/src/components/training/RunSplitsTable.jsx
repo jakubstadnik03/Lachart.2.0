@@ -52,7 +52,7 @@ export default function RunSplitsTable({
           <div className="text-[10px] font-medium text-gray-400 text-right">Elev</div>
           <div className="text-[10px] font-medium text-gray-400 text-right">HR</div>
           {hasCadence && (
-            <div className="text-[10px] font-medium text-gray-400 text-right">Cad</div>
+            <div className="text-[10px] font-medium text-gray-400 text-right">spm</div>
           )}
         </div>
 

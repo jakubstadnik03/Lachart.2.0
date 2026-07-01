@@ -211,6 +211,10 @@ const { startWeeklyReportsScheduler } = require('./services/weeklyReportSchedule
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
+const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
+const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
+const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
+const { startCoachFridayReviewScheduler } = require('./services/coachFridayReviewScheduler');
 const { bootstrapStravaWebhook } = require('./services/stravaWebhookBootstrap');
 
 // Routes
@@ -260,6 +264,14 @@ setTimeout(() => {
 }, 8000);
 
 startLactateTestFollowUpScheduler();
+
+// Race countdown / taper / post-race reminders
+startRaceReminderScheduler();
+
+// Training load / recovery alerts + Sunday push digest
+startTrainingAlertScheduler();
+startWeeklyDigestScheduler();
+startCoachFridayReviewScheduler();
 
 // Retention & lifecycle emails (weekly progress, monthly reports, milestones, re-engagement)
 startRetentionScheduler();

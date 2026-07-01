@@ -3,6 +3,7 @@ import {
   lapDurationSecondsForChart,
   lapSpeedMpsForChart,
 } from './fitAnalysisUtils';
+import { stravaHalfCadenceToSpm } from './cadenceDisplay';
 
 const MOVING_SPEED_THRESHOLD_MPS = 0.14;
 
@@ -174,11 +175,14 @@ function lapsToSplitRows(laps, records, lapTimeSource) {
     const cadRaw = Number(
       lap.average_cadence ?? lap.avgCadence ?? lap.avg_cadence ?? lap.averageCadence ?? 0
     );
+    const cadence = cadRaw > 0
+      ? (lapTimeSource === 'strava' ? (stravaHalfCadenceToSpm(cadRaw, 'run') ?? Math.round(cadRaw)) : Math.round(cadRaw))
+      : null;
     return {
       km: lap.lapNumber ?? lap.lap_number ?? (i + 1),
       paceSecPerKm,
       hr: hrRaw > 0 ? Math.round(hrRaw) : null,
-      cadence: cadRaw > 0 ? Math.round(cadRaw) : null,
+      cadence,
       elev: elevationFromLap(lap),
       distM,
     };

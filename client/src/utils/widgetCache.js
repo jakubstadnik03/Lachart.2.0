@@ -14,7 +14,7 @@
  *   • the call succeeded             → `[widgetCache] wrote N bytes`
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { getTodayMetrics, getFormFitnessData } from '../services/api';
+import { getTodayMetrics, getFormFitnessData, getRaceEvents } from '../services/api';
 
 // Single shared plugin proxy — re-exported so other modules don't call
 // registerPlugin('LaChartShared') again (Capacitor warns "registered twice").
@@ -56,6 +56,8 @@ export async function writeFormFitnessToWidget(metrics) {
     todayCompleted:  sanitiseWorkouts(metrics.todayCompleted),
     todayPlanned:    sanitiseWorkouts(metrics.todayPlanned),
     tomorrowPlanned: sanitiseWorkouts(metrics.tomorrowPlanned),
+    raceDaysUntil: metrics.raceDaysUntil != null ? Math.round(Number(metrics.raceDaysUntil)) : null,
+    raceName: metrics.raceName ? String(metrics.raceName).slice(0, 40) : null,
   };
   console.log('[widgetCache] writing →', {
     fitness: payload.fitness,
@@ -105,21 +107,32 @@ function sanitiseWorkouts(arr) {
 export async function syncWidgetFromApi(athleteId) {
   if (Capacitor.getPlatform() !== 'ios' || !athleteId) return;
   try {
-    const [todayRes, sparkRes] = await Promise.all([
+    const [todayRes, sparkRes, raceRes] = await Promise.all([
       getTodayMetrics(athleteId).catch(() => ({ data: {} })),
       getFormFitnessData(athleteId, 90, 'all').catch(() => ({ data: [] })),
+      getRaceEvents(athleteId, { from: new Date(new Date().setHours(0, 0, 0, 0)).toISOString() }).catch(() => ({ data: [] })),
     ]);
     const tm = todayRes?.data || {};
-    // Nothing meaningful to write — don't clobber a richer cache with zeros.
     if (tm.fitness == null && tm.fatigue == null && tm.form == null) return;
     const raw = Array.isArray(sparkRes?.data) ? sparkRes.data : (sparkRes?.data?.data || []);
     const sparkline = raw.slice(-14).map(d => Number(d?.Form ?? d?.form ?? d?.tsb ?? 0));
+    const nextRace = Array.isArray(raceRes?.data) && raceRes.data[0] ? raceRes.data[0] : null;
+    let raceDaysUntil = null;
+    if (nextRace?.date) {
+      const d = new Date(nextRace.date);
+      const t = new Date();
+      d.setHours(0, 0, 0, 0);
+      t.setHours(0, 0, 0, 0);
+      raceDaysUntil = Math.max(0, Math.round((d - t) / 86400000));
+    }
     await writeFormFitnessToWidget({
       fitness:   tm.fitness,
       fatigue:   tm.fatigue,
       form:      tm.form,
       formDelta: tm.formChange,
       sparkline,
+      raceDaysUntil,
+      raceName: nextRace?.name || null,
       // Workout lists are filled by the dashboard's richer write; keep empty
       // here so this insurance path stays cheap (no calendar/plan fetch).
       todayCompleted: [],

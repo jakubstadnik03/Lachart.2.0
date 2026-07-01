@@ -323,7 +323,12 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
           fromName: authorName,
           sport: notifSport,
           // commentId lets the app scroll to / highlight the specific comment
-          pushData: { trainingId, trainingType, commentId: String(comment._id) },
+          pushData: {
+            trainingId,
+            trainingType,
+            commentId: String(comment._id),
+            openActivity: `${trainingType === 'strava' ? 'strava' : trainingType === 'fit' ? 'fit' : 'regular'}-${trainingId}`,
+          },
         });
 
         // ── Send email notifications ────────────────────────────────────────

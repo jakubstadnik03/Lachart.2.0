@@ -15,6 +15,18 @@ const raceEventSchema = new mongoose.Schema({
   targetCTL: { type: Number, default: null },    // desired fitness (CTL) on race day
   notes:     { type: String, default: null },
   createdBy: { type: String, default: null },    // user id who created it (coach or athlete)
+  /** Post-race debrief from athlete (RPE, feeling, notes). */
+  postRaceFeedback: {
+    rpe: { type: Number, default: null },
+    feeling: { type: String, default: null },
+    notes: { type: String, default: null },
+    submittedAt: { type: Date, default: null },
+  },
+  /** Idempotent race reminder tracking (d14, d7, d3, d1, taper10, postRace, ctlGapN). */
+  remindersSent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({}),
+  },
 }, { timestamps: true });
 
 raceEventSchema.index({ athleteId: 1, date: 1 });

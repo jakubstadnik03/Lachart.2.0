@@ -29,6 +29,7 @@ import SimilarWorkoutsPanel from '../components/FitAnalysis/SimilarWorkoutsPanel
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw, lapSpeedMpsForChart } from '../utils/fitAnalysisUtils';
+import { stravaHalfCadenceToSpm } from '../utils/cadenceDisplay';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -6413,6 +6414,8 @@ const FitAnalysisPage = () => {
                 const parsedStartTime = activityStartDate ? new Date(activityStartDate).getTime() : NaN;
                 const activityStartTime = Number.isFinite(parsedStartTime) ? parsedStartTime : Date.now();
                 
+                const stravaSport = selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || 'run';
+                
                 // Convert streams to records
                 const records = timeArray.map((time, index) => {
                   const timestamp = new Date(activityStartTime + (time * 1000));
@@ -6425,7 +6428,7 @@ const FitAnalysisPage = () => {
                     speed: speedArray[index] || null,
                     heartRate: hrArray[index] || null,
                     power: powerArray[index] || null,
-                    cadence: cadenceArray[index] || null,
+                    cadence: stravaHalfCadenceToSpm(cadenceArray[index], stravaSport) || null,
                     altitude: altitudeArray[index] || null
                   };
                 });
@@ -6578,6 +6581,8 @@ const FitAnalysisPage = () => {
                   const parsedStartTime = activityStartDate ? new Date(activityStartDate).getTime() : NaN;
                   const activityStartTime = Number.isFinite(parsedStartTime) ? parsedStartTime : Date.now();
                   
+                  const stravaSport = selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || 'run';
+                  
                   trainingRecords = timeArray.map((time, index) => {
                     const timestamp = new Date(activityStartTime + (time * 1000));
                     const distance = distanceArray[index] || (index > 0 ? distanceArray[index - 1] : 0);
@@ -6590,7 +6595,7 @@ const FitAnalysisPage = () => {
                       speed: speedArray[index] != null && speedArray[index] !== '' ? Number(speedArray[index]) : null,
                       heartRate: hrArray[index] || null,
                       power: powerArray[index] || null,
-                      cadence: cadenceArray[index] || null
+                      cadence: stravaHalfCadenceToSpm(cadenceArray[index], stravaSport) || null
                     };
                   });
                 }

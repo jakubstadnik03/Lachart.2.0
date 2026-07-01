@@ -10,6 +10,9 @@ import WeeklySummaryCarousel from '../components/NativeDashboard/WeeklySummaryCa
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
+import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
+import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
+import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
@@ -21,6 +24,7 @@ import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityE
 import { resolveActivityTss } from '../utils/computeTss';
 import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
+import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -343,33 +347,32 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         const pw = item.pw;
         const linkedAct = item.act;
         const isPaired  = !!linkedAct;
-        // "Missed" = unpaired AND the planned date is *strictly before today*.
-        // Compare by calendar day only — otherwise a workout planned for today
-        // shows as missed the moment it's past midnight, because `new Date()`
-        // carries the current time-of-day.
         const todayMidnight = new Date();
         todayMidnight.setHours(0, 0, 0, 0);
         const pwDay = new Date(pw.date);
         pwDay.setHours(0, 0, 0, 0);
         const isMissed  = !isPaired && pwDay < todayMidnight;
 
+        const pwSportKey = (pw.sport || linkedAct?.sport || 'bike').toLowerCase();
+        const planColor = SPORT_PLAN_COLORS[pwSportKey] || planSportColor(pwSportKey);
         const sport     = pw.sport || linkedAct?.sport || '';
         const color     = getSportColor(sport);
         const pwTitle   = pw.title || pw.name || 'Planned workout';
+
+        const compliance = linkedAct ? findCompliance(pw, [linkedAct]) : null;
+        const cc = compliance || (isPaired ? { color: '#22c55e', bg: '#f0fdf4', label: 'Done' } : null);
 
         const pwSecs = pw.plannedDuration || 0;
         const actSecs = linkedAct
           ? Number(linkedAct.totalTime || linkedAct.duration || linkedAct.movingTime || linkedAct.elapsed_time || linkedAct.elapsedTime || linkedAct.totalTimerTime || 0)
           : 0;
 
-        // Style by state — mirrors PlannedMiniCard in WeeklyCalendar
         const isPurelyPlanned = !isPaired && !isMissed;
-        const bg         = isPaired ? '#f0fdf4' : isMissed ? '#fef2f2' : color + '0d';
-        const borderColor= isPaired ? '#bbf7d0' : isMissed ? '#fecaca' : color + '55';
-        const borderStyle= isPurelyPlanned ? 'dashed' : 'solid';
-        const leftC      = isPaired ? '#22c55e' : isMissed ? '#ef4444' : color;
-        const titleC     = isPaired ? '#14532d' : isMissed ? '#991b1b' : color;
-        const hasSteps   = isPurelyPlanned && Array.isArray(pw.steps) && pw.steps.length > 0;
+        const bg = isPaired && cc ? cc.bg : isMissed ? '#fef2f2' : color + '0d';
+        const borderColor = isPaired && cc ? cc.color : isMissed ? '#fecaca' : color + '55';
+        const borderStyle = isPurelyPlanned ? 'dashed' : 'solid';
+        const titleC = isPaired ? planColor : isMissed ? '#991b1b' : color;
+        const hasSteps = isPurelyPlanned && Array.isArray(pw.steps) && pw.steps.length > 0;
 
         const dur     = fmtDuration(pwSecs);
         const actDur  = linkedAct ? fmtDuration(actSecs) : null;
@@ -377,6 +380,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
         const actTssVal = linkedAct ? resolveActivityTss(linkedAct, user, { user }) : 0;
         const actTssStr = actTssVal > 0 ? `${Math.round(actTssVal)} TSS` : null;
+        const avgSpeed = linkedAct ? Number(linkedAct.avgSpeed || linkedAct.average_speed || 0) : 0;
+        let paceStr = null;
+        if (linkedAct && avgSpeed > 0) {
+          const sp = String(linkedAct.sport || '').toLowerCase();
+          if (sp.includes('swim')) {
+            const s = 100 / avgSpeed;
+            paceStr = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/100m`;
+          } else if (sp.includes('run') || sp.includes('walk') || sp.includes('hike')) {
+            const s = 1000 / avgSpeed;
+            paceStr = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/km`;
+          }
+        }
+        const pairedStats = isPaired
+          ? [actDur, distStr, paceStr, actTssStr].filter(Boolean).join(' · ')
+          : null;
 
         return (
           <button
@@ -389,14 +407,18 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
             onTouchEnd={(e)  => { e.currentTarget.style.transform = 'scale(1)'; }}
             style={{
               display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10,
+              flexDirection: 'column',
+              gap: 6,
               width: '100%',
               padding: '10px 11px',
               borderRadius: 13,
               background: bg,
-              border: `1px ${borderStyle} ${borderColor}`,
-              borderLeft: `3px solid ${leftC}`,
+              ...(isPaired && cc
+                ? outlineBorder({ color: cc.color, leftColor: planColor, leftWidth: 3 })
+                : {
+                    border: `1px ${borderStyle} ${borderColor}`,
+                    borderLeft: `3px solid ${isMissed ? '#ef4444' : color}`,
+                  }),
               marginBottom: pi < dayItems.length - 1 ? 6 : 0,
               cursor: linkedAct ? 'pointer' : 'default',
               textAlign: 'left',
@@ -406,21 +428,54 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               position: 'relative',
             }}
           >
-            {/* Sport icon */}
-            <SportIcon sport={sport} size={22} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              {isPaired && cc ? (
+                <>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: cc.color }} />
+                  <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {pwTitle}
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: cc.color, flexShrink: 0 }}>
+                    {cc.label}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <SportIcon sport={sport} size={22} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {pwTitle}
+                      </div>
+                      {hasSteps && (
+                        <PlanMiniChart steps={pw.steps} color={color} width={72} height={14} />
+                      )}
+                      {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && !hasSteps && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                          letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                          flexShrink: 0, whiteSpace: 'nowrap',
+                          ...catStyle(linkedAct?.category || pw.category),
+                        }}>
+                          {catLabel(linkedAct?.category || pw.category)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+              {linkedAct && isPaired && cc && (
+                <span style={{ fontSize: 13, color: '#9CA3AF', flexShrink: 0 }}>›</span>
+              )}
+            </div>
 
-            {/* Info column */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Title row + mini step chart for planned workouts */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: titleC, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {pwTitle}
+            {isPaired && pairedStats && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, paddingLeft: 0 }}>
+                <SportIcon sport={sport} size={18} />
+                <div style={{ fontSize: 12, color: '#4B5563', fontWeight: 600, fontVariantNumeric: 'tabular-nums', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pairedStats}
                 </div>
-                {/* Mini step chart — only for purely planned workouts with structured steps */}
-                {hasSteps && (
-                  <PlanMiniChart steps={pw.steps} color={color} width={72} height={14} />
-                )}
-                {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && !hasSteps && (
+                {(linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
                   <span style={{
                     fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
                     letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
@@ -431,74 +486,51 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                   </span>
                 )}
               </div>
+            )}
 
-              {/* Category badge below title (when mini chart is shown there's no room next to title) */}
-              {hasSteps && (linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
-                <div style={{ marginTop: 2 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
-                    ...catStyle(linkedAct?.category || pw.category),
-                  }}>
-                    {catLabel(linkedAct?.category || pw.category)}
-                  </span>
-                </div>
-              )}
-
-              {/* Stats row */}
-              <div style={{ fontSize: 11, color: isPurelyPlanned ? color + 'cc' : '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 6px' }}>
-                {isPaired && actDur && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                    {/* Check SVG — replaces ✓ char */}
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    {actDur}
-                  </span>
+            {!isPaired && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%' }}>
+                {!isPaired && (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {hasSteps && (linkedAct?.category || pw.category) && catStyle(linkedAct?.category || pw.category) && (
+                      <div style={{ marginTop: 2 }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                          letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6,
+                          ...catStyle(linkedAct?.category || pw.category),
+                        }}>
+                          {catLabel(linkedAct?.category || pw.category)}
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, color: isPurelyPlanned ? color + 'cc' : '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 6px' }}>
+                      {!isPaired && dur && <span>{isPurelyPlanned ? dur : `Plan: ${dur}`}</span>}
+                      {!isPaired && pw.targetTss > 0 && <span>{pw.targetTss} TSS</span>}
+                    </div>
+                  </div>
                 )}
-                {isPaired && distStr && <span>{distStr}</span>}
-                {!isPaired && dur   && <span>{isPurelyPlanned ? dur : `Plan: ${dur}`}</span>}
-                {isPaired && actTssStr && <span>{actTssStr}</span>}
-                {!isPaired && pw.targetTss > 0 && <span>{pw.targetTss} TSS</span>}
+                <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                  {isPurelyPlanned && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 9999,
+                      background: color + '18', color,
+                    }}>
+                      Plan
+                    </span>
+                  )}
+                  {isMissed && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      padding: '2px 7px', borderRadius: 9999,
+                      background: '#fee2e2', color: '#dc2626',
+                    }}>
+                      Missed
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-
-            {/* Right side: status */}
-            <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-              {isPaired && (
-                <span style={{
-                  fontSize: 9.5, fontWeight: 700,
-                  padding: '2px 7px', borderRadius: 9999,
-                  background: '#dcfce7', color: '#16a34a',
-                  display: 'inline-flex', alignItems: 'center', gap: 3,
-                }}>
-                  Done
-                  {/* Check SVG — replaces ✓ */}
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </span>
-              )}
-              {isPurelyPlanned && (
-                <span style={{
-                  fontSize: 9.5, fontWeight: 700,
-                  padding: '2px 7px', borderRadius: 9999,
-                  background: color + '18', color,
-                }}>
-                  Plan
-                </span>
-              )}
-              {isMissed && (
-                <span style={{
-                  fontSize: 9.5, fontWeight: 700,
-                  padding: '2px 7px', borderRadius: 9999,
-                  background: '#fee2e2', color: '#dc2626',
-                }}>
-                  Missed
-                </span>
-              )}
-              {linkedAct && <span style={{ fontSize: 13, color: '#9CA3AF' }}>›</span>}
-            </div>
+            )}
           </button>
         );
       })}
@@ -528,6 +560,7 @@ export default function NativeDashboardPage({
   todayMetrics    = {},
   sparklineData   = [],
   loading         = false,
+  metricsLoading  = false,
   user            = null,
   onPlannedWorkoutChanged,        // (updatedOrDeletedId) => void — for parent to refresh
   athleteId       = null,         // selected athlete id (coach view) or own id
@@ -540,6 +573,7 @@ export default function NativeDashboardPage({
   periods = [],                   // [{ _id, startDate, endDate, type, color, notes }]
   onPeriodSave = null,            // (payload) => Promise — upsert a period
   onPeriodDelete = null,          // (periodId) => Promise — remove a period
+  onTaperApplied = null,          // () => void — refresh plans after taper apply
 }) {
   const navigate      = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -753,6 +787,16 @@ export default function NativeDashboardPage({
     }
     // Re-runs when plannedWorkouts arrive (cold-start after a widget tap).
   }, [searchParams, plannedWorkouts, setSearchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [raceFeedbackFocusId, setRaceFeedbackFocusId] = useState(null);
+  useEffect(() => {
+    const param = searchParams.get('openRaceFeedback');
+    if (!param) return;
+    setRaceFeedbackFocusId(param);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openRaceFeedback');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // ── + Lactate from activity modal: open TrainingForm prefilled with laps ──
   const [lactateModal, setLactateModal] = useState({ isOpen: false, initialData: null });
@@ -1060,8 +1104,23 @@ export default function NativeDashboardPage({
               sparklineData={sparklineData}
               tests={tests}
               todayMetrics={todayMetrics}
-              loading={loading}
+              loading={metricsLoading}
               kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
+            />
+          </div>
+
+          {/* 0b · Daily training insight */}
+          <div style={{ ...cardEntry(0), ...snapStyle, marginTop: -4 }}>
+            <TrainingInsightsCard
+              athleteId={athleteId || user?._id || user?.id}
+              todayMetrics={todayMetrics}
+              plannedWorkouts={plannedWorkouts}
+              activities={activities}
+              tests={tests}
+              sparklineData={sparklineData}
+              userProfile={user}
+              loading={metricsLoading}
+              compact
             />
           </div>
 
@@ -1106,9 +1165,32 @@ export default function NativeDashboardPage({
           {/* 3 · Status hero */}
           <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
             <StatusHeroCard
+              activities={activities}
+              userProfile={user}
               todayMetrics={todayMetrics}
               sparklineData={sparklineData}
-              loading={loading}
+              loading={metricsLoading}
+            />
+          </div>
+
+          {/* 3b · Race countdown */}
+          <div style={{ ...cardEntry(3), ...snapStyle }}>
+            <RaceCountdownCard
+              athleteId={athleteId || user?._id || user?.id}
+              currentCTL={todayMetrics?.fitness}
+              currentForm={todayMetrics?.form}
+              plannedWorkouts={plannedWorkouts}
+              onTaperApplied={onTaperApplied}
+            />
+          </div>
+
+          {/* 3c · Post-race feedback */}
+          <div style={{ ...cardEntry(3), ...snapStyle }}>
+            <PostRaceFeedbackCard
+              athleteId={athleteId || user?._id || user?.id}
+              focusRaceId={raceFeedbackFocusId}
+              compact
+              onSubmitted={() => setRaceFeedbackFocusId(null)}
             />
           </div>
 

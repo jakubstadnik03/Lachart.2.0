@@ -33,6 +33,7 @@ export const PERIOD_TYPES = [
   { type: 'Work trip',     color: '#f59e0b', label: 'Work trip' },     // amber
   { type: 'Illness',       color: '#dc2626', label: 'Illness' },       // red
   { type: 'Race week',     color: '#d97706', label: 'Race week' },     // gold
+  { type: 'Taper',         color: '#eab308', label: 'Taper' },         // yellow
 ];
 
 const PERIOD_COLOR_BY_TYPE = PERIOD_TYPES.reduce((acc, p) => { acc[p.type] = p.color; return acc; }, {});

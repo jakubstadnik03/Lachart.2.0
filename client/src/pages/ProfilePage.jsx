@@ -1,10 +1,19 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import ReactDOM from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import WeeklyCalendar from '../components/DashboardPage/WeeklyCalendar';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
+import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
+import TrainingForm from '../components/TrainingForm';
+import UpgradeModal from '../components/UpgradeModal';
 import { getZoneHistory, updateUserProfile } from '../services/api';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods } from '../services/workoutPlannerApi';
+import { upsertPlannedWorkoutList } from '../utils/activityEventPatches';
+import { usePremium } from '../hooks/usePremium';
+import { useAuth } from '../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { 
   PencilIcon, 
@@ -18,15 +27,37 @@ import {
   AcademicCapIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import api, { getFitTrainings, listExternalActivities } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, addTraining } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import NativeProfilePage from './NativeProfilePage';
 
+const MAX_PROFILE_CALENDAR_ACTIVITIES = 2000;
+
+function sortAndLimitCalendarActivities(combined) {
+  const tMs = (act) => {
+    const d = new Date(act?.date ?? act?.timestamp ?? act?.startDate ?? 0);
+    const x = d.getTime();
+    return Number.isNaN(x) ? 0 : x;
+  };
+  return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_PROFILE_CALENDAR_ACTIVITIES);
+}
+
 const ProfilePage = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
-  const [calendarData, setCalendarData] = useState([]); // FIT trainings and Strava activities
+  const trainingsRef = useRef(trainings);
+  useEffect(() => { trainingsRef.current = trainings; }, [trainings]);
+  const [calendarData, setCalendarData] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [plannedWorkouts, setPlannedWorkouts] = useState([]);
+  const [dayPlans, setDayPlans] = useState([]);
+  const [periods, setPeriods] = useState([]);
+  const [planModal, setPlanModal] = useState(null);
+  const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
   const [selectedSport] = useState('bike');
 const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -271,44 +302,43 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     return `${sign}${formatPace(Math.abs(delta))}`;
   };
 
-  // Load training calendar data (FIT files and Strava activities) with localStorage caching
-  const loadCalendarData = useCallback(async (targetId) => {
+  // Load training calendar data (FIT, regular trainings, Strava) — same merge as Dashboard
+  const loadCalendarData = useCallback(async (targetId, regularTrainingsParam) => {
+    const regTrainings = regularTrainingsParam ?? trainingsRef.current;
     try {
-      // Check localStorage cache first
       const cacheKey = `calendarData_${targetId}`;
       const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
-      const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-      
+      const CACHE_DURATION = 24 * 60 * 60 * 1000;
+
       const cachedData = localStorage.getItem(cacheKey);
       const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
       const now = Date.now();
-      
-      // Use cache if it exists and is less than 24 hours old
+
       if (cachedData) {
         try {
           const parsed = JSON.parse(cachedData);
           const isCacheValid = cacheTimestamp && (now - parseInt(cacheTimestamp)) < CACHE_DURATION;
-          
-          if (isCacheValid) {
+          if (isCacheValid && parsed.length > 0) {
             setCalendarData(parsed);
-            console.log('[ProfilePage] Using valid cached calendar data:', parsed.length, 'activities');
           } else if (parsed.length > 0) {
-            // Cache is expired but has data, use it as fallback while loading
             setCalendarData(parsed);
-            console.log('[ProfilePage] Using expired cache as fallback:', parsed.length, 'activities');
           }
         } catch (e) {
           console.error('Error parsing cached calendar data:', e);
         }
       }
-      
+
+      setCalendarLoading(true);
       const [fitData, stravaData] = await Promise.all([
         getFitTrainings(targetId).catch(err => {
           console.error('Error loading FIT trainings:', err);
           return [];
         }),
-        listExternalActivities({ athleteId: targetId }).catch(err => {
-          // Silently handle 429 (Too Many Requests) and network errors
+        listExternalActivities({
+          athleteId: targetId,
+          summaryOnly: true,
+          limit: MAX_PROFILE_CALENDAR_ACTIVITIES,
+        }).catch(err => {
           if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
             console.error('Error loading Strava activities:', err);
           }
@@ -316,7 +346,12 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         })
       ]);
 
-      // Combine and format data for calendar
+      const trainingByStravaId = new Map();
+      (regTrainings || []).forEach(t => {
+        const sid = t?.sourceStravaActivityId;
+        if (sid) trainingByStravaId.set(String(sid), t);
+      });
+
       const combined = [
         ...(fitData || []).map(t => ({
           ...t,
@@ -329,39 +364,70 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           avgHeartRate: t.avgHeartRate,
           maxHeartRate: t.maxHeartRate,
           totalTime: t.totalElapsedTime || t.totalTimerTime,
-          distance: t.totalDistance
+          distance: t.totalDistance,
+          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
+          tssDisplayMode: t.tssDisplayMode ?? null,
         })),
-        ...(stravaData || []).map(a => ({
-          ...a,
-          type: 'strava',
-          date: a.startDate,
-          title: a.titleManual || a.name || 'Untitled Activity',
-          sport: a.sport,
-          stravaId: a.stravaId || a.id,
-          id: a.stravaId || a.id,
-          avgPower: a.averagePower || a.average_watts,
-          maxPower: a.maxPower || a.max_watts,
-          avgHeartRate: a.averageHeartRate || a.average_heartrate,
-          maxHeartRate: a.maxHeartRate || a.max_heartrate,
-          totalTime: a.movingTime || a.elapsedTime,
-          distance: a.distance
-        }))
+        ...(regTrainings || [])
+          .filter(t => !t?.sourceStravaActivityId)
+          .map(t => ({
+            ...t,
+            id: `regular-${t._id}`,
+            type: 'regular',
+            date: t.date || t.timestamp,
+            title: t.title || 'Untitled Training',
+            sport: t.sport,
+            category: t.category || null,
+            distance: t.totalDistance || t.distance,
+            totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+            tss: t.tss || t.totalTSS,
+            tssDisplayMode: t.tssDisplayMode ?? null,
+            avgPower: t.avgPower || t.averagePower || null,
+            avgSpeed: t.avgSpeed || t.averageSpeed || null,
+          })),
+        ...(stravaData || []).map(a => {
+          const stravaId = a.stravaId || a.id;
+          const linkedTraining = trainingByStravaId.get(String(stravaId));
+          return {
+            ...a,
+            type: 'strava',
+            date: a.startDate,
+            title: linkedTraining?.title || a.titleManual || a.name || 'Untitled Activity',
+            linkedTrainingTitle: linkedTraining?.title || null,
+            sport: a.sport,
+            stravaId,
+            id: `strava-${stravaId}`,
+            avgPower: a.averagePower || a.average_watts,
+            weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,
+            avgSpeed: a.averageSpeed || a.average_speed,
+            maxPower: a.maxPower || a.max_watts,
+            avgHeartRate: a.averageHeartRate || a.average_heartrate,
+            maxHeartRate: a.maxHeartRate || a.max_heartrate,
+            totalTime: a.movingTime || a.elapsedTime,
+            distance: a.distance,
+            tss:
+              a.manualTss ??
+              (linkedTraining?.tss ||
+                linkedTraining?.totalTSS ||
+                a.tss ||
+                a.totalTSS ||
+                a.total_tss ||
+                null),
+            tssDisplayMode: a.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
+            kilojoules: a.kilojoules ?? a.raw?.kilojoules,
+          };
+        }),
       ];
 
-      const tMs = (act) => {
-        const d = new Date(act?.date ?? act?.timestamp ?? act?.startDate ?? 0);
-        const x = d.getTime();
-        return Number.isNaN(x) ? 0 : x;
-      };
-      const limitedForView = [...combined]
-        .sort((a, b) => tMs(b) - tMs(a))
-        .slice(0, 2000);
+      const limitedForView = sortAndLimitCalendarActivities(combined);
 
       try {
-        const dataToCache = JSON.stringify(limitedForView);
-        if (dataToCache.length < 450000) {
-          localStorage.setItem(cacheKey, dataToCache);
-          localStorage.setItem(cacheTimestampKey, now.toString());
+        if (limitedForView.length > 0) {
+          const dataToCache = JSON.stringify(limitedForView);
+          if (dataToCache.length < 450000) {
+            localStorage.setItem(cacheKey, dataToCache);
+            localStorage.setItem(cacheTimestampKey, now.toString());
+          }
         }
       } catch (e) {
         if (e.name === 'QuotaExceededError' || e.code === 22) {
@@ -370,11 +436,85 @@ const [selectedTitle, setSelectedTitle] = useState(null);
       }
 
       setCalendarData(limitedForView);
-      console.log('[ProfilePage] Loaded calendar data:', limitedForView.length, 'activities');
     } catch (error) {
       console.error('Error loading calendar data:', error);
+    } finally {
+      setCalendarLoading(false);
     }
   }, []);
+
+  const loadProfilePlannedWorkouts = useCallback(async (athleteId) => {
+    if (!athleteId) return;
+    try {
+      const [pw, dp, ps] = await Promise.all([
+        getPlannedWorkouts({}),
+        getDayPlans({}).catch(() => []),
+        getPeriods({}).catch(() => []),
+      ]);
+      setPlannedWorkouts(Array.isArray(pw) ? pw : []);
+      setDayPlans(Array.isArray(dp) ? dp : []);
+      setPeriods(Array.isArray(ps) ? ps : []);
+    } catch (_) {}
+  }, []);
+
+  const handleDayPlanSave = useCallback(async (dateStr, payload) => {
+    const result = await apiSetDayPlan(dateStr, payload || {}, null);
+    setDayPlans(prev => {
+      const without = prev.filter(p => p.date !== dateStr);
+      if (result?.deleted) return without;
+      return [...without, result];
+    });
+    return result;
+  }, []);
+
+  const handleDayPlanDelete = useCallback(async (dateStr) => {
+    await apiDeleteDayPlan(dateStr, null);
+    setDayPlans(prev => prev.filter(p => p.date !== dateStr));
+  }, []);
+
+  const handleProfilePlanSave = useCallback(async (data) => {
+    try {
+      if (planModal?.workout?._id) {
+        const updated = await updatePlannedWorkout(planModal.workout._id, data);
+        setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
+      } else {
+        const created = await createPlannedWorkout(data);
+        setPlannedWorkouts(prev => [...prev, created]);
+      }
+      setPlanModal(null);
+    } catch (_) {}
+  }, [planModal]);
+
+  const handleProfilePlanDelete = useCallback(async (pw) => {
+    if (!window.confirm('Delete this planned workout?')) return;
+    try {
+      await deletePlannedWorkout(pw._id);
+      setPlannedWorkouts(prev => prev.filter(p => p._id !== pw._id));
+      setPlanModal(null);
+    } catch (_) {}
+  }, []);
+
+  const handleProfileCopyPlan = useCallback(async (pw, newDateStr) => {
+    try {
+      const { _id, status, executionData, ...rest } = pw;
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' });
+      setPlannedWorkouts(prev => [...prev, created]);
+    } catch (_) {}
+  }, []);
+
+  const profileAthleteId = userInfo?._id || user?._id || null;
+  const hasCalendarData = Array.isArray(calendarData) && calendarData.length > 0;
+
+  const handleProfileAddTraining = useCallback(async (formData) => {
+    if (!profileAthleteId || !user?._id) return;
+    const trainingData = { ...formData, athleteId: profileAthleteId, coachId: user._id };
+    await addTraining(trainingData);
+    setIsTrainingFormOpen(false);
+    const trainingsResponse = await api.get(`/user/athlete/${profileAthleteId}/trainings`).catch(() => ({ data: trainings }));
+    const trainingsData = Array.isArray(trainingsResponse.data) ? trainingsResponse.data : trainings;
+    setTrainings(trainingsData);
+    loadCalendarData(profileAthleteId, trainingsData);
+  }, [profileAthleteId, user?._id, trainings, loadCalendarData]);
 
   const loadProfileData = useCallback(async () => {
     try {
@@ -417,9 +557,11 @@ const [selectedTitle, setSelectedTitle] = useState(null);
 
       // Vlastní FIT / Strava / tréninky v kalendáři — i pro trenéra (propojená Strava patří jeho účtu)
       const athleteKey = String(profileData._id);
+      let trainingsData = [];
       try {
         const trainingsResponse = await api.get(`/user/athlete/${athleteKey}/trainings`);
-        setTrainings(Array.isArray(trainingsResponse.data) ? trainingsResponse.data : []);
+        trainingsData = Array.isArray(trainingsResponse.data) ? trainingsResponse.data : [];
+        setTrainings(trainingsData);
       } catch (loadErr) {
         const status = loadErr?.response?.status;
         if (status === 403 || status === 404) {
@@ -430,7 +572,8 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         setTrainings([]);
       }
 
-      loadCalendarData(profileData._id);
+      loadCalendarData(profileData._id, trainingsData);
+      loadProfilePlannedWorkouts(profileData._id);
 
     } catch (error) {
       console.error('Error loading profile data:', error);
@@ -438,7 +581,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     } finally {
       setLoading(false);
     }
-  }, [loadCalendarData]);
+  }, [loadCalendarData, loadProfilePlannedWorkouts]);
 
   useEffect(() => {
     loadProfileData();
@@ -462,30 +605,23 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     }
   }, [effectiveTrainingGraphSport, trainings, selectedTitle, normalizeSportName]);
 
-  // Convert trainings to calendar activities format and combine with FIT/Strava activities
-  const calendarActivities = useMemo(() => {
-    const manualTrainings = trainings.map(t => ({
-      ...t,
-      type: 'training', // Mark as manual training (not FIT or Strava)
-      _id: t._id,
-      date: t.date || t.createdAt,
-      title: t.title || 'Untitled Training',
-      sport: t.sport,
-      category: t.intensity || null
-    }));
-    
-    // Combine manual trainings with FIT trainings and Strava activities
-    // Remove duplicates (FIT trainings that are also in manual trainings)
-    const fitAndStrava = (calendarData || []).filter(act => {
-      if (act.type === 'fit') {
-        // Skip if this FIT training is already in manual trainings
-        return !trainings.some(t => t.sourceFitTrainingId === act._id);
-      }
-      return true;
-    });
-    
-    return [...manualTrainings, ...fitAndStrava];
-  }, [trainings, calendarData]);
+  const handleProfileActivitySelect = useCallback((activity) => {
+    if (!activity) return;
+    let kind = 'regular';
+    let id = String(activity._id || activity.id || '');
+    if (activity.type === 'fit' || activity.source === 'fit' || id.startsWith('fit-')) {
+      kind = 'fit';
+      id = id.replace(/^fit-/, '');
+    } else if (activity.type === 'strava' || activity.source === 'strava' || activity.stravaId || id.startsWith('strava-')) {
+      kind = 'strava';
+      id = String(activity.stravaId || id.replace(/^strava-/, ''));
+    } else if (activity.type === 'regular') {
+      kind = 'regular';
+      id = id.replace(/^regular-/, '');
+    }
+    if (!id) return;
+    navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}`);
+  }, [navigate]);
 
   const handleProfileUpdate = async (updatedData) => {
     try {
@@ -966,18 +1102,74 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         </motion.div>
       </div>
 
-      {/* ── WEEKLY CALENDAR ── */}
+      {/* ── WEEKLY CALENDAR (same as Dashboard) ── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100"
+        className="min-w-0"
       >
         <WeeklyCalendar
-          activities={calendarActivities}
-          onSelectActivity={(activity) => {
-            console.log('Selected activity:', activity);
+          selectedAthleteId={profileAthleteId}
+          activities={calendarData || []}
+          activitiesLoading={calendarLoading && !hasCalendarData}
+          onSelectActivity={handleProfileActivitySelect}
+          onActivityUpdate={(updatedActivity) => {
+            setCalendarData(prev => prev.map(act => {
+              if (updatedActivity.type === 'fit' && act.type === 'fit' && act._id === updatedActivity._id) {
+                return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || act.title };
+              }
+              if (updatedActivity.type === 'strava' && act.type === 'strava' &&
+                  (act.id === updatedActivity.id || act.stravaId === updatedActivity.stravaId || act.stravaId === updatedActivity.id)) {
+                return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || updatedActivity.name || act.title };
+              }
+              return act;
+            }));
+            if (profileAthleteId) {
+              localStorage.removeItem(`calendarData_${profileAthleteId}`);
+              localStorage.removeItem(`calendarData_timestamp_${profileAthleteId}`);
+            }
           }}
+          onActivityDeleted={({ type, id }) => {
+            setCalendarData(prev => prev.filter(act => {
+              if (type === 'strava') {
+                const matchById = String(act.id || '').replace(/^strava-/, '') === String(id);
+                const matchByStravaId = String(act.stravaId || '') === String(id);
+                return !(act.type === 'strava' && (matchById || matchByStravaId));
+              }
+              return true;
+            }));
+            if (profileAthleteId) {
+              localStorage.removeItem(`calendarData_${profileAthleteId}`);
+              localStorage.removeItem(`calendarData_timestamp_${profileAthleteId}`);
+            }
+          }}
+          onAddCompletedWorkout={() => {
+            if (profileAthleteId) {
+              localStorage.removeItem(`calendarData_${profileAthleteId}`);
+              localStorage.removeItem(`calendarData_timestamp_${profileAthleteId}`);
+            }
+          }}
+          plannedWorkouts={plannedWorkouts}
+          dayPlans={dayPlans}
+          onDayPlanSave={handleDayPlanSave}
+          onDayPlanDelete={handleDayPlanDelete}
+          periods={periods}
+          onPlanWorkout={(date) => {
+            if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+            setPlanModal({ date, workout: null });
+          }}
+          onSelectPlannedWorkout={(pw) => {
+            if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+            const dateOnly = String(pw.date || '').slice(0, 10);
+            const d = dateOnly ? new Date(`${dateOnly}T12:00:00`) : new Date();
+            setPlanModal({ date: isNaN(d.getTime()) ? new Date() : d, workout: pw });
+          }}
+          onStartWorkout={(pw) => navigate(`/workout-execution/${pw._id}`)}
+          onCopyPlannedWorkout={handleProfileCopyPlan}
+          onDeletePlannedWorkout={handleProfilePlanDelete}
+          onAddTraining={() => setIsTrainingFormOpen(true)}
+          onPlannedSaved={(saved) => setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved))}
         />
       </motion.div>
 
@@ -1006,6 +1198,30 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           />
         )}
       </AnimatePresence>
+
+      <UpgradeModal {...UpgradeModalProps} />
+
+      {planModal && (
+        <WorkoutPlanModal
+          date={planModal.date}
+          workout={planModal.workout}
+          onClose={() => setPlanModal(null)}
+          onSave={handleProfilePlanSave}
+          onDelete={handleProfilePlanDelete}
+        />
+      )}
+
+      {isTrainingFormOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+            <TrainingForm
+              onClose={() => setIsTrainingFormOpen(false)}
+              onSubmit={handleProfileAddTraining}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
     </motion.div>
   );
 };

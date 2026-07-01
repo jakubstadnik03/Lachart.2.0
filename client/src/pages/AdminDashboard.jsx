@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026 } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -2778,9 +2778,7 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4 sm:space-y-6"
           >
-            {/* One-off "What's new — May 2026" re-engagement campaign card.
-                Lives at the top of the Marketing tab because it's the
-                active campaign the admin will be operating right now. */}
+            <IosLaunchJun2026Card />
             <WhatsNewMay2026Card />
 
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
@@ -4386,11 +4384,17 @@ const AdminDashboard = () => {
   );
 };
 
-// ─── "What's new — May 2026" admin campaign card ───────────────────────────
-// Self-contained: queries its own status, owns its own form state, blocks
-// the page while a run is in progress. Conservative defaults are picked
-// for Zoho Mail FREE — 1 email every 5 minutes, hard cap of 20 per run.
-function WhatsNewMay2026Card() {
+// ─── Paced mass-email campaign card (Zoho-safe batching) ───────────────────
+function PacedEmailCampaignCard({
+  title,
+  description,
+  borderAccentClass = 'border-primary',
+  badgeLabel = 'Active campaign',
+  fetchStatusApi,
+  sendPreviewApi,
+  runCampaignApi,
+  resetCampaignApi,
+}) {
   const [status, setStatus] = useState(null);          // { pending, sent, totalEligible }
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -4406,7 +4410,7 @@ function WhatsNewMay2026Card() {
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
     try {
-      const data = await fetchWhatsNewMay2026Status();
+      const data = await fetchStatusApi();
       setStatus(data);
       setError(null);
     } catch (e) {
@@ -4414,7 +4418,7 @@ function WhatsNewMay2026Card() {
     } finally {
       setLoadingStatus(false);
     }
-  }, []);
+  }, [fetchStatusApi]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
@@ -4422,7 +4426,7 @@ function WhatsNewMay2026Card() {
     setPreviewing(true);
     setError(null);
     try {
-      const r = await sendWhatsNewMay2026Preview(previewEmail ? { email: previewEmail.trim() } : {});
+      const r = await sendPreviewApi(previewEmail ? { email: previewEmail.trim() } : {});
       // Build a detailed diagnostic so it's obvious whether the relay
       // actually accepted the recipient. nodemailer can return 250 OK
       // from the local connector even when the upstream (Zoho, Gmail)
@@ -4469,7 +4473,7 @@ function WhatsNewMay2026Card() {
     setRunStats(null);
     setError(null);
     try {
-      const r = await runWhatsNewMay2026Campaign({
+      const r = await runCampaignApi({
         batchSize,
         batchIntervalMs: intervalMin * 60 * 1000,
         maxEmailsPerRun: maxThisRun,
@@ -4487,7 +4491,7 @@ function WhatsNewMay2026Card() {
   const handleReset = async () => {
     if (!window.confirm('Clear the "sent" marker for EVERYONE so they can receive the email again on the next run?\n\nUse only if you re-sent the wrong content.')) return;
     try {
-      const r = await resetWhatsNewMay2026();
+      const r = await resetCampaignApi();
       alert(`Reset: ${r.modified} of ${r.matched} users cleared.`);
       await loadStatus();
     } catch (e) {
@@ -4500,16 +4504,15 @@ function WhatsNewMay2026Card() {
     : 0;
 
   return (
-    <div className="bg-white rounded-lg shadow p-4 sm:p-6 border-l-4 border-primary">
+    <div className={`bg-white rounded-lg shadow p-4 sm:p-6 border-l-4 ${borderAccentClass}`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs uppercase tracking-wider font-bold text-primary bg-primary/10 rounded-full px-2 py-0.5">Active campaign</span>
+            <span className="text-xs uppercase tracking-wider font-bold text-primary bg-primary/10 rounded-full px-2 py-0.5">{badgeLabel}</span>
           </div>
-          <h3 className="mt-1 text-base sm:text-lg font-semibold text-gray-900">What's new — May 2026</h3>
+          <h3 className="mt-1 text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
           <p className="text-xs sm:text-sm text-gray-600 mt-1">
-            Re-engagement email announcing lactate-test, training-log, calendar improvements + coming-soon mobile app.
-            Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends).
+            {description}
           </p>
         </div>
         <button
@@ -4664,6 +4667,34 @@ function WhatsNewMay2026Card() {
         </button>
       </div>
     </div>
+  );
+}
+
+function IosLaunchJun2026Card() {
+  return (
+    <PacedEmailCampaignCard
+      title="iOS App Store launch — June 2026"
+      description="App-download email with App Store CTA, home-screen widget and Apple Health highlights. Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends). Use this instead of clicking Send app download per user."
+      borderAccentClass="border-emerald-600"
+      badgeLabel="App download"
+      fetchStatusApi={fetchIosLaunchJun2026Status}
+      sendPreviewApi={sendIosLaunchJun2026Preview}
+      runCampaignApi={runIosLaunchJun2026Campaign}
+      resetCampaignApi={resetIosLaunchJun2026}
+    />
+  );
+}
+
+function WhatsNewMay2026Card() {
+  return (
+    <PacedEmailCampaignCard
+      title="What's new — May 2026"
+      description="Re-engagement email announcing lactate-test, training-log, calendar improvements + coming-soon mobile app. Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends)."
+      fetchStatusApi={fetchWhatsNewMay2026Status}
+      sendPreviewApi={sendWhatsNewMay2026Preview}
+      runCampaignApi={runWhatsNewMay2026Campaign}
+      resetCampaignApi={resetWhatsNewMay2026}
+    />
   );
 }
 

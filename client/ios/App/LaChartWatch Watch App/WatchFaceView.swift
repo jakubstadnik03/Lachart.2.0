@@ -15,8 +15,9 @@ struct WatchFaceView: View {
 
     // Complication data from WatchConnectivity (fallback to placeholder)
     @State private var lt2Pace:   String = "4:12"
-    @State private var formScore: String = "82"
-    @State private var load:      String = "347"
+    @State private var formScore: String = "—"
+    @State private var load:      String = "—"
+    @State private var raceLabel: String? = nil
 
     var body: some View {
         ZStack {
@@ -50,7 +51,11 @@ struct WatchFaceView: View {
                 HStack(spacing: LC.s6) {
                     ComplicationPill(label: "LT2", value: lt2Pace, color: .lcZ4)
                     ComplicationPill(label: "Form", value: formScore, color: .lcPrimary)
-                    ComplicationPill(label: "Load", value: load, color: .lcAccent)
+                    if let race = raceLabel {
+                        ComplicationPill(label: "Race", value: race, color: .lcAccent)
+                    } else {
+                        ComplicationPill(label: "Load", value: load, color: .lcAccent)
+                    }
                 }
                 .padding(.bottom, LC.s12)
             }
@@ -81,11 +86,16 @@ struct WatchFaceView: View {
         if let lt2 = defaults?.double(forKey: "lt2Pace"), lt2 > 0 {
             lt2Pace = TimeInterval(lt2).paceString
         }
-        if let fs = defaults?.integer(forKey: "formScore"), fs > 0 {
-            formScore = "\(fs)"
+        if let fs = defaults?.integer(forKey: "formScore"), fs != 0 {
+            formScore = fs >= 0 ? "+\(fs)" : "\(fs)"
         }
         if let ld = defaults?.integer(forKey: "weeklyLoad"), ld > 0 {
             load = "\(ld)"
+        }
+        if let rd = defaults?.object(forKey: "raceDaysUntil") as? Int, rd >= 0 {
+            raceLabel = rd == 0 ? "today" : "\(rd)d"
+        } else {
+            raceLabel = nil
         }
     }
 }

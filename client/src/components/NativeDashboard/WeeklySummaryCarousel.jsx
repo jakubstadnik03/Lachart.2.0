@@ -15,6 +15,7 @@ import { RotateCcw, Share2 } from 'lucide-react';
 import SportIcon from '../shared/SportIcon';
 import PerformanceInsightsSlide from './PerformanceInsightsSlide';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 const ActivityShareSheet = lazy(() => import('../sharing/ActivityShareSheet'));
@@ -48,7 +49,7 @@ const actDist = (a) => Number(a?.distance || a?.totalDistance || 0);
 // Planned-workout accessors
 const planDate = (p) => { const s = String(p?.date || ''); return new Date(s.length === 10 ? `${s}T12:00:00` : (s || 0)); };
 const planSecs = (p) => Number(p?.plannedDuration || 0);
-const planDist = (p) => Number(p?.plannedDistance || 0);
+const planDist = (p) => plannedDistanceMetres(p);
 const planTss  = (p) => Number(p?.targetTss || 0);
 function normSport(s) {
   const v = String(s || '').toLowerCase();
@@ -157,10 +158,14 @@ export default function WeeklySummaryCarousel({
   const [metricsTick, setMetricsTick] = useState(0);
   useEffect(() => {
     const bump = () => setMetricsTick((t) => t + 1);
-    window.addEventListener('activityMetricsUpdated', bump);
+    const onMetricsUpdated = (e) => {
+      if (!e?.detail?.id) return;
+      bump();
+    };
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
     window.addEventListener(TSS_DISPLAY_MODE_EVENT, bump);
     return () => {
-      window.removeEventListener('activityMetricsUpdated', bump);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
       window.removeEventListener(TSS_DISPLAY_MODE_EVENT, bump);
     };
   }, []);
@@ -307,8 +312,11 @@ export default function WeeklySummaryCarousel({
         {/* ── Card 0: Performance Insights (Fitness / Form / Fatigue) ─── */}
         <div style={{ ...SLIDE, alignSelf: 'flex-start' }}>
           <PerformanceInsightsSlide
+            activities={activities}
+            userProfile={user}
             todayMetrics={todayMetrics}
             sparklineData={sparklineData}
+            plannedWorkouts={plannedWorkouts}
             loading={loading}
           />
         </div>

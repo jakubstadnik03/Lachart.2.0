@@ -126,6 +126,7 @@ async function sendOne(user, { dryRun = false } = {}) {
   if (!user || !user.email) return { sent: false, reason: 'no_email' };
   if (user.isActive === false) return { sent: false, reason: 'inactive' };
   if (user.notifications?.emailNotifications === false) return { sent: false, reason: 'opted_out' };
+  if (user.notifications?.marketingEmails === false) return { sent: false, reason: 'marketing_opted_out' };
   if (user.retentionEmails && user.retentionEmails[CAMPAIGN_KEY]) return { sent: false, reason: 'already_sent' };
 
   const lang = pickLanguage(user);
@@ -224,6 +225,7 @@ async function findPendingUsers(limit) {
     email: { $exists: true, $ne: null, $ne: '' },
     isActive: { $ne: false },
     'notifications.emailNotifications': { $ne: false },
+    'notifications.marketingEmails': { $ne: false },
     $or: [
       { [`retentionEmails.${CAMPAIGN_KEY}`]: { $exists: false } },
       { [`retentionEmails.${CAMPAIGN_KEY}`]: null },
@@ -241,6 +243,7 @@ async function getPendingCount() {
     email: { $exists: true, $ne: null, $ne: '' },
     isActive: { $ne: false },
     'notifications.emailNotifications': { $ne: false },
+    'notifications.marketingEmails': { $ne: false },
     $or: [
       { [`retentionEmails.${CAMPAIGN_KEY}`]: { $exists: false } },
       { [`retentionEmails.${CAMPAIGN_KEY}`]: null },

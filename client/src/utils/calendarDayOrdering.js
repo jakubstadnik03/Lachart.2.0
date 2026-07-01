@@ -47,11 +47,28 @@ export function activitySortTime(act) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function plannedItemSortTime(pw, act, fallbackIndex = 0) {
+function plannedStackSortTime(pw, fallbackIndex = 0) {
   const order = Number(pw?.dayOrder);
-  if (Number.isFinite(order)) return order * 1e10;
-  if (act) return 5e10 + activitySortTime(act);
-  return 5e9 + fallbackIndex;
+  const stack = Number.isFinite(order) ? order : fallbackIndex;
+  return 1e15 + stack;
+}
+
+/**
+ * Display order within a calendar day: earliest completed activity first.
+ * Unpaired plans sort after all activities, by manual dayOrder.
+ */
+export function dayItemDisplaySortTime(item, fallbackIndex = 0) {
+  if (item?.act) return activitySortTime(item.act);
+  if (item?.pw) return plannedStackSortTime(item.pw, fallbackIndex);
+  return 1e15 + fallbackIndex;
+}
+
+export function compareDayItemsChronologically(a, b) {
+  const ta = dayItemDisplaySortTime(a, a._sortIdx ?? 0);
+  const tb = dayItemDisplaySortTime(b, b._sortIdx ?? 0);
+  if (ta !== tb) return ta - tb;
+  const rank = { pair: 0, planned: 1, activity: 2 };
+  return (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
 }
 
 /** Sort planned workouts for one calendar day (manual stack order). */
@@ -226,7 +243,7 @@ export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = 
  */
 export function buildChronologicalDayItems(plannedForDay, acts, pairFn) {
   const sortedPlanned = sortPlannedWorkoutsForDay(plannedForDay);
-  const dedupedActs = dedupeCalendarActivities(acts);
+  const dedupedActs = sortActivitiesChronologically(dedupeCalendarActivities(acts));
   const pairing = pairFn(sortedPlanned, dedupedActs);
   const pwToAct = pairing.pwToAct;
   const claimed = pairing.claimed || pairing.claimedKeys || new Set();
@@ -239,25 +256,22 @@ export function buildChronologicalDayItems(plannedForDay, acts, pairFn) {
       kind: act ? 'pair' : 'planned',
       pw,
       act,
-      sortTime: plannedItemSortTime(pw, act, idx),
+      _sortIdx: idx,
     });
   });
 
-  dedupedActs.forEach((act) => {
+  dedupedActs.forEach((act, idx) => {
     if (isActivityClaimed(claimed, act)) return;
     items.push({
       kind: 'activity',
       pw: null,
       act,
-      sortTime: 1e11 + activitySortTime(act),
+      _sortIdx: idx,
     });
   });
 
-  items.sort((a, b) => {
-    if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
-    const rank = { pair: 0, planned: 1, activity: 2 };
-    return (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
-  });
+  items.sort(compareDayItemsChronologically);
+  items.forEach((item) => { delete item._sortIdx; });
 
   return { items, pwToAct, claimed };
 }

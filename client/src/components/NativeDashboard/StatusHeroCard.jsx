@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import useElementWidth from '../../hooks/useElementWidth';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
+import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import { useAuth } from '../../context/AuthProvider';
 
 function DeltaPill({ value }) {
   if (value === undefined || value === null) return null;
@@ -50,7 +52,32 @@ function readField(d, ...keys) {
   return 0;
 }
 
-export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], loading = false }) {
+export default function StatusHeroCard({
+  activities = [],
+  userProfile = null,
+  todayMetrics = {},
+  sparklineData = [],
+  loading = false,
+}) {
+  const { user } = useAuth() || {};
+  const profile = userProfile || user;
+
+  const derived = useMemo(() => {
+    if (!activities?.length || !profile) return null;
+    return computePmcFromActivities(activities, profile);
+  }, [activities, profile]);
+
+  const effTodayMetrics = useMemo(() => {
+    if (todayMetrics.fitness != null || todayMetrics.form != null || todayMetrics.fatigue != null) {
+      return todayMetrics;
+    }
+    return derived?.todayMetrics || todayMetrics;
+  }, [todayMetrics, derived]);
+
+  const effSparkline = useMemo(
+    () => (sparklineData?.length ? sparklineData : (derived?.series || [])),
+    [sparklineData, derived],
+  );
   const [heroView, setHeroView] = useState('status');
   const [helpOpen, setHelpOpen] = useState(false);
   const [formRange, setFormRange] = useState('3m');
@@ -86,12 +113,12 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // Build a date → sparkline-point lookup so we can resolve metrics for any day.
   const sparkByDate = React.useMemo(() => {
     const map = {};
-    (sparklineData || []).forEach(d => {
+    (effSparkline || []).forEach(d => {
       const key = d?.date ? String(d.date).slice(0, 10) : null;
       if (key) map[key] = d;
     });
     return map;
-  }, [sparklineData]);
+  }, [effSparkline]);
 
   const today = new Date();
   const selectedDate = new Date(today);
@@ -103,27 +130,24 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // Cap forward navigation at today — we don't have future data points yet.
   const canGoForward = dayOffset < 0;
   // Cap backward navigation at the oldest sparkline point we have.
-  const oldestKey = sparklineData.length > 0 ? String(sparklineData[0].date || '').slice(0, 10) : null;
-  const canGoBack = !!sparklineData.length && selectedKey > oldestKey;
+  const oldestKey = effSparkline.length > 0 ? String(effSparkline[0].date || '').slice(0, 10) : null;
+  const canGoBack = !!effSparkline.length && selectedKey > oldestKey;
 
-  // Last data point from sparkline as fallback when todayMetrics is empty
-  const lastPt = sparklineData.length > 0 ? sparklineData[sparklineData.length - 1] : null;
+  const lastPt = effSparkline.length > 0 ? effSparkline[effSparkline.length - 1] : null;
 
-  // For today: prefer authoritative todayMetrics (server-computed). For other
-  // days: read from sparkline. Falls back to last sparkline point if neither exists.
   const fitness = Math.round(
     isToday
-      ? (todayMetrics.fitness ?? (lastPt ? readField(lastPt, 'Fitness', 'fitness', 'ctl') : 0))
+      ? (effTodayMetrics.fitness ?? (lastPt ? readField(lastPt, 'Fitness', 'fitness', 'ctl') : 0))
       : (selectedPt ? readField(selectedPt, 'Fitness', 'fitness', 'ctl') : 0)
   );
   const fatigue = Math.round(
     isToday
-      ? (todayMetrics.fatigue ?? (lastPt ? readField(lastPt, 'Fatigue', 'fatigue', 'atl') : 0))
+      ? (effTodayMetrics.fatigue ?? (lastPt ? readField(lastPt, 'Fatigue', 'fatigue', 'atl') : 0))
       : (selectedPt ? readField(selectedPt, 'Fatigue', 'fatigue', 'atl') : 0)
   );
   const form = Math.round(
     isToday
-      ? (todayMetrics.form != null ? todayMetrics.form : lastPt ? readField(lastPt, 'Form', 'form', 'tsb') : 0)
+      ? (effTodayMetrics.form != null ? effTodayMetrics.form : lastPt ? readField(lastPt, 'Form', 'form', 'tsb') : 0)
       : (selectedPt ? readField(selectedPt, 'Form', 'form', 'tsb') : 0)
   );
 
@@ -132,7 +156,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   prev.setDate(selectedDate.getDate() - 1);
   const prevPt = sparkByDate[dateKey(prev)];
   const computeDelta = (curr, todayKey, prevKey) => {
-    if (isToday && todayMetrics[todayKey] != null) return todayMetrics[todayKey];
+    if (isToday && effTodayMetrics[todayKey] != null) return effTodayMetrics[todayKey];
     if (!prevPt) return null;
     const prevVal = readField(prevPt, prevKey[0], prevKey[1], prevKey[2]);
     return Math.round(curr - prevVal);
@@ -146,7 +170,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   // Build sparkline arrays from chartData
   // API returns: { Fitness, Fatigue, Form, dateLabel, date }
   const rangeMap = { '14d': 14, '6w': 42, '3m': 90 };
-  const pts = sparklineData.slice(-rangeMap[formRange]);
+  const pts = effSparkline.slice(-rangeMap[formRange]);
   const tsbSeries = pts.map(d => readField(d, 'Form',    'form',    'tsb'));
   const ctlSeries = pts.map(d => readField(d, 'Fitness', 'fitness', 'ctl'));
   const atlSeries = pts.map(d => readField(d, 'Fatigue', 'fatigue', 'atl'));
@@ -181,7 +205,7 @@ export default function StatusHeroCard({ todayMetrics = {}, sparklineData = [], 
   const firstLabel = pts.length > 0 ? (pts[0].dateLabel || '') : '';
   const lastLabel  = pts.length > 0 ? (pts[pts.length - 1].dateLabel || '') : '';
 
-  if (loading) {
+  if (loading && !activities?.length) {
     return (
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>

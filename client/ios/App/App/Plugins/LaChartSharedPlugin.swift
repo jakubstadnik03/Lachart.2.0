@@ -46,6 +46,13 @@ public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
             "lastUpdated": ISO8601DateFormatter().string(from: Date()),
         ]
 
+        if let raceDays = call.getInt("raceDaysUntil") {
+            payload["raceDaysUntil"] = raceDays
+        }
+        if let raceName = call.getString("raceName"), !raceName.isEmpty {
+            payload["raceName"] = raceName
+        }
+
         // Today's completed + planned workouts — each is an array of dicts
         // matching the WidgetWorkout Codable shape on the Swift side.
         payload["todayCompleted"]  = normaliseWorkouts(call.getArray("todayCompleted")  ?? [])
@@ -55,6 +62,21 @@ public class LaChartSharedPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let data = try JSONSerialization.data(withJSONObject: payload, options: [])
             defaults.set(data, forKey: "lachart_form_fitness_cache_v1")
+            // Watch face complications (App Group keys read by LaChartWatch).
+            let form = call.getInt("form") ?? 0
+            defaults.set(form, forKey: "formScore")
+            let fatigue = call.getInt("fatigue") ?? 0
+            defaults.set(fatigue, forKey: "weeklyLoad")
+            if let raceDays = call.getInt("raceDaysUntil") {
+                defaults.set(raceDays, forKey: "raceDaysUntil")
+            } else {
+                defaults.removeObject(forKey: "raceDaysUntil")
+            }
+            if let raceName = call.getString("raceName"), !raceName.isEmpty {
+                defaults.set(raceName, forKey: "raceName")
+            } else {
+                defaults.removeObject(forKey: "raceName")
+            }
             if #available(iOS 14.0, *) {
                 WidgetCenter.shared.reloadAllTimelines()
             }

@@ -4,7 +4,10 @@ import { Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, C
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getWeeklyTrainingLoad } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
+import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
+import { computeWeeklyTrainingLoadFromActivities } from '../../utils/formFitnessFromActivities';
+import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -45,9 +48,13 @@ const weekKeyFor = (date) => {
 const weekLabelFor = (weekKey) =>
   new Date(weekKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-const WeeklyTrainingLoad = ({ athleteId }) => {
+const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false }) => {
+  const { user } = useAuth();
+  const profile = userProfile || user;
+  const calendarDriven = activities != null;
   const [showGlossary, setShowGlossary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [tssModeTick, setTssModeTick] = useState(0);
   
   // Load time range from localStorage or default to '3 months'
   const getStoredTimeRange = () => {
@@ -88,6 +95,23 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
     try { localStorage.setItem('weeklyTrainingLoadProjection', String(showProjection)); } catch { /* ignore */ }
   }, [showProjection]);
 
+  useEffect(() => {
+    const onTssModeChange = () => {
+      clearFormFitnessCache();
+      setTssModeTick((t) => t + 1);
+    };
+    const onMetricsUpdated = () => {
+      clearFormFitnessCache();
+      setTssModeTick((t) => t + 1);
+    };
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
+    return () => {
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+      window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
+    };
+  }, []);
+
   // Save time range to localStorage when it changes
   const handleTimeRangeChange = (newTimeRange) => {
     setTimeRange(newTimeRange);
@@ -109,10 +133,14 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadData = async () => {
       if (!athleteId) {
-        setChartData([]);
-        setLoading(false);
+        if (!cancelled) {
+          setChartData([]);
+          setLoading(false);
+        }
         return;
       }
 
@@ -120,6 +148,36 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
         timeRange === '3 months' ? 3 :
         timeRange === '6 months' ? 6 :
         12;
+
+      if (calendarDriven) {
+        if (activitiesLoading) {
+          if (!cancelled) setLoading(true);
+          return;
+        }
+        if (Array.isArray(activities) && activities.length > 0 && profile) {
+          const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter });
+          if (!cancelled) {
+            setChartData(data);
+            setLoading(false);
+          }
+          return;
+        }
+        if (!cancelled) {
+          setChartData([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Prefer calendar activities — same TSS as Training Calendar weekly summary.
+      if (Array.isArray(activities) && activities.length > 0 && profile) {
+        const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter });
+        if (!cancelled) {
+          setChartData(data);
+          setLoading(false);
+        }
+        return;
+      }
 
       // Per-athlete/time-range/sport cache shared across pages
       const cacheKey = `weeklyTrainingLoad_${athleteId}_${months}_${sportFilter}`;
@@ -152,6 +210,7 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
           setLoading(true);
         }
         const response = await getWeeklyTrainingLoad(athleteId, months, sportFilter);
+        if (cancelled) return;
         if (response && response.data) {
           const data = Array.isArray(response.data) ? response.data : (response.data.data || []);
           setChartData(data);
@@ -170,15 +229,18 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
           setChartData([]);
         }
       } catch (error) {
-        console.error('Error loading weekly training load:', error);
-        setChartData([]);
+        if (!cancelled) {
+          console.error('Error loading weekly training load:', error);
+          setChartData([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadData();
-  }, [athleteId, timeRange, sportFilter]);
+    return () => { cancelled = true; };
+  }, [athleteId, timeRange, sportFilter, activities, profile, tssModeTick, activitiesLoading, calendarDriven]);
 
   // Load FUTURE planned workouts → weekly planned TSS for projection.
   useEffect(() => {

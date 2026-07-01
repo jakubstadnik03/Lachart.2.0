@@ -320,11 +320,38 @@ const userSchema = new mongoose.Schema({
     pushStravaImport: { type: Boolean, default: true },
     /** Mobile push + scheduled local reminders around lactate tests (Expo / Capacitor) */
     pushLactateTest: { type: Boolean, default: true },
+    /** Race countdown, taper and race-day reminders (push + in-app) */
+    pushRaceReminders: { type: Boolean, default: true },
+    /** High-severity overreaching alerts (push) — phase 2 */
+    pushOvertraining: { type: Boolean, default: true },
+    /** Daily training reminder at 8:00 (local notification) */
+    dailyTrainingReminder: { type: Boolean, default: true },
+    /** Sunday evening weekly digest (push / email) */
+    weeklyDigest: { type: Boolean, default: true },
+    /** Sunday evening weekly digest by email (same summary as push) */
+    weeklyDigestEmail: { type: Boolean, default: true },
+    /** Coach plan changes, weekly review requests, comment push */
+    pushCoachUpdates: { type: Boolean, default: true },
+    /** Product news and feature updates (email) */
+    marketingEmails: { type: Boolean, default: true },
+    /** Product news and feature updates (push) */
+    pushProductUpdates: { type: Boolean, default: true },
     /** Email when coach or athlete comments on a training */
     trainingComments: { type: Boolean, default: true },
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },
+  /** Last-sent timestamps per training alert type (acute_fatigue, hrv_load, …). */
+  trainingAlertsLastSent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({}),
+  },
+  /** ISO week-start key (YYYY-MM-DD) for last Sunday push digest. */
+  weeklyDigestPushLastWeekStart: { type: String, default: null },
+  /** ISO week-start key for last Sunday email digest. */
+  weeklyDigestEmailLastWeekStart: { type: String, default: null },
+  /** Friday ISO week key for coach weekly-review request. */
+  fridayReviewLastSentWeekStart: { type: String, default: null },
   // Retention email tracking (sent dates prevent duplicates)
   retentionEmails: {
     weeklyProgressLastSent:  { type: Date, default: null },

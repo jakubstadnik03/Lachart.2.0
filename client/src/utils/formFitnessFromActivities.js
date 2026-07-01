@@ -14,6 +14,17 @@ export function localCalendarDateKey(date) {
   return `${y}-${m}-${day}`;
 }
 
+/** Monday of the activity's local calendar week (YYYY-MM-DD). */
+export function localWeekStartKey(date) {
+  const d = date instanceof Date ? new Date(date) : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return localCalendarDateKey(d);
+}
+
 function activityTss(act, profile) {
   return resolveActivityTss(act, profile, { user: profile }) || 0;
 }
@@ -96,4 +107,157 @@ export function computePmcFromActivities(activities, profile, { displayDays = 90
       formChange: last.Form - prev.Form,
     },
   };
+}
+
+/** Total planned duration in seconds (respects interval-group repeats). */
+export function planStepTotalSecs(steps) {
+  if (!Array.isArray(steps)) return 0;
+  const visited = new Set();
+  let total = 0;
+  steps.forEach((s) => {
+    if (!s.groupId) { total += s.durationSeconds || 0; return; }
+    if (visited.has(s.groupId)) return;
+    visited.add(s.groupId);
+    const group = steps.filter((x) => x.groupId === s.groupId);
+    const reps = (group.find((x) => x.isGroupHeader)?.groupRepeat) || 1;
+    group.forEach((gs) => { total += (gs.durationSeconds || 0) * reps; });
+  });
+  return total;
+}
+
+/** Estimate planned TSS when targetTss is not set (~50 TSS/h endurance). */
+export function estimatePlannedTss(pw) {
+  const explicit = Number(pw?.targetTss || 0);
+  if (explicit > 0) return explicit;
+  let secs = Number(pw?.plannedDuration || 0);
+  if (!secs && Array.isArray(pw?.steps)) secs = planStepTotalSecs(pw.steps) || 0;
+  if (secs > 0 && secs < 24 * 3600) return (secs / 3600) * 50;
+  return 0;
+}
+
+/** Future planned TSS keyed by YYYY-MM-DD (open workouts only). */
+export function buildPlannedTssByDate(plannedWorkouts = [], { fromDate = new Date(), maxDays = 56 } = {}) {
+  const today = fromDate instanceof Date ? new Date(fromDate) : new Date(fromDate);
+  today.setHours(0, 0, 0, 0);
+  const todayKey = localCalendarDateKey(today);
+  const end = new Date(today);
+  end.setDate(end.getDate() + maxDays);
+
+  const map = {};
+  for (const pw of plannedWorkouts) {
+    if (pw?.status === 'completed' || pw?.status === 'skipped') continue;
+    const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : '';
+    if (!day || day <= todayKey) continue;
+    const d = new Date(`${day}T12:00:00`);
+    if (Number.isNaN(d.getTime()) || d > end) continue;
+    map[day] = (map[day] || 0) + estimatePlannedTss(pw);
+  }
+  return map;
+}
+
+/**
+ * Project CTL/ATL/TSB forward from the last actual series point using planned daily TSS.
+ * @returns {Array<{ date, dateLabel, Fitness, Form, Fatigue, projected: true, PlannedTSS }>}
+ */
+export function computePmcProjection(series, plannedTssByDate, { maxDays = 56 } = {}) {
+  if (!Array.isArray(series) || !series.length) return [];
+  const days = Object.keys(plannedTssByDate || {});
+  if (!days.length) return [];
+
+  const last = series[series.length - 1];
+  let ctl = Number(last.Fitness || 0);
+  let atl = Number(last.Fatigue || 0);
+  const lastDate = new Date(`${String(last.date).slice(0, 10)}T12:00:00`);
+  lastDate.setHours(0, 0, 0, 0);
+  const maxDay = days.reduce((m, d) => (d > m ? d : m), days[0]);
+  const end = new Date(`${maxDay}T12:00:00`);
+  end.setHours(0, 0, 0, 0);
+
+  const alphaCTL = 1 / 42;
+  const alphaATL = 1 / 7;
+  const out = [];
+  const d = new Date(lastDate);
+  d.setDate(d.getDate() + 1);
+  let guard = 0;
+
+  while (d <= end && guard < maxDays) {
+    guard += 1;
+    const key = localCalendarDateKey(d);
+    const tss = plannedTssByDate[key] || 0;
+    const form = ctl - atl;
+    ctl += alphaCTL * (tss - ctl);
+    atl += alphaATL * (tss - atl);
+    out.push({
+      date: key,
+      dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      Fitness: Math.round(ctl),
+      Fatigue: Math.round(atl),
+      Form: Math.round(form),
+      projected: true,
+      PlannedTSS: Math.round(tss),
+    });
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+/** Historical PMC series plus projected tail from planned workouts. */
+export function buildExtendedPmcSeries(series, plannedWorkouts, options = {}) {
+  if (!Array.isArray(series) || !series.length) return [];
+  const plannedTssByDate = buildPlannedTssByDate(plannedWorkouts, options);
+  const projection = computePmcProjection(series, plannedTssByDate, options);
+  return projection.length ? [...series, ...projection] : series;
+}
+
+/**
+ * Weekly TSS bars — same activities + resolveActivityTss as the training calendar.
+ * @returns {Array<{ weekStart, weekLabel, trainingLoad, optimalLoad }>}
+ */
+export function computeWeeklyTrainingLoadFromActivities(activities, profile, { months = 3, sportFilter = 'all' } = {}) {
+  if (!Array.isArray(activities) || !activities.length || !profile) return [];
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const startDate = new Date(today);
+  startDate.setMonth(startDate.getMonth() - months);
+  startDate.setHours(0, 0, 0, 0);
+
+  const weeklyData = new Map();
+
+  for (const act of activities) {
+    if (sportFilter !== 'all' && !matchesCalendarSportFilter(act, sportFilter)) continue;
+    const raw = act.date || act.timestamp || act.startDate || act.start_time;
+    const actDate = raw != null ? new Date(raw) : null;
+    if (!actDate || Number.isNaN(actDate.getTime()) || actDate < startDate) continue;
+
+    const weekKey = localWeekStartKey(actDate);
+    if (!weekKey) continue;
+
+    const tss = activityTss(act, profile);
+    if (!weeklyData.has(weekKey)) {
+      const ws = new Date(`${weekKey}T12:00:00`);
+      weeklyData.set(weekKey, {
+        weekStart: weekKey,
+        weekLabel: ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        tss: 0,
+      });
+    }
+    weeklyData.get(weekKey).tss += tss || 0;
+  }
+
+  const data = Array.from(weeklyData.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
+  const optimalForIndex = (index) => {
+    if (index < 3) return Math.round(data[index]?.tss || 0);
+    const last4 = data.slice(Math.max(0, index - 3), index + 1);
+    const avg = last4.reduce((sum, w) => sum + (w.tss || 0), 0) / last4.length;
+    return Math.round(avg || 0);
+  };
+
+  return data.map((week, index) => ({
+    weekStart: week.weekStart,
+    weekLabel: week.weekLabel,
+    trainingLoad: Math.round(week.tss || 0),
+    optimalLoad: optimalForIndex(index),
+  }));
 }

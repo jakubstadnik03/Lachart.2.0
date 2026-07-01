@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 
@@ -78,7 +79,7 @@ function pwSecs(p) {
 }
 
 function pwDist(p) {
-  return Number(p.plannedDistance || 0) * 1000; // km → m
+  return plannedDistanceMetres(p);
 }
 
 function pwTss(p) {

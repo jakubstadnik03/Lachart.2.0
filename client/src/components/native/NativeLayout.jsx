@@ -20,6 +20,7 @@ import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { normalizeNotificationActivityId, requestOpenActivity } from '../../utils/activityEventPatches';
+import { resolveNotificationTarget } from '../../utils/notificationNavigation';
 import { syncWidgetFromApi } from '../../utils/widgetCache';
 import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
@@ -845,14 +846,26 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       setNotifs(prev => prev.map(x => x._id === n._id ? { ...x, read: true } : x));
     }
     setShowNotifs(false);
-    const target = normalizeNotificationActivityId(n.resourceType, n.resourceId);
-    if (!target) return;
-    // Open on the native dashboard (modal) — works from any tab.
-    if (location.pathname.startsWith('/dashboard')) {
-      requestOpenActivity(target);
+    const target = resolveNotificationTarget(n);
+    const path = target.path || '/dashboard';
+    if (path.includes('openActivity=')) {
+      const m = path.match(/openActivity=([^&]+)/);
+      const id = m ? decodeURIComponent(m[1]) : null;
+      if (id) {
+        if (location.pathname.startsWith('/dashboard')) {
+          requestOpenActivity(id);
+          return;
+        }
+        navigate(path);
+        return;
+      }
+    }
+    if (path.includes('openPlanned=') || path.includes('openRaceFeedback=') || path.includes('openRace=')) {
+      navigate(path);
       return;
     }
-    navigate(`/dashboard?openActivity=${encodeURIComponent(target)}`);
+    if (location.pathname.startsWith('/dashboard') && path === '/dashboard') return;
+    navigate(path);
   };
 
   const handleNotifDelete = async (id) => {

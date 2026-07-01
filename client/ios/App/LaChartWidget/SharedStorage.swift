@@ -44,6 +44,9 @@ struct FormFitnessSnapshot: Codable {
 
     let sparkline: [Int]
 
+    let raceDaysUntil: Int?
+    let raceName: String?
+
     /// Synthetic placeholder shown when the App Group cache is empty — i.e.
     /// the user has installed the widget but hasn't opened the app yet (so
     /// JS hasn't had a chance to write). The view layer detects this via
@@ -55,7 +58,9 @@ struct FormFitnessSnapshot: Codable {
         todayCompleted: [],
         todayPlanned: [],
         tomorrowPlanned: [],
-        sparkline: []
+        sparkline: [],
+        raceDaysUntil: nil,
+        raceName: nil
     )
 
     /// For Xcode previews only — never used at runtime when the cache is empty.
@@ -74,7 +79,9 @@ struct FormFitnessSnapshot: Codable {
         tomorrowPlanned: [
             WidgetWorkout(title: "Long Ride", sport: "bike", durationSec: 10800, category: "endurance", subtitle: "90 km · 180 TSS", targetId: nil, planned: true)
         ],
-        sparkline: []
+        sparkline: [],
+        raceDaysUntil: 5,
+        raceName: "Livigno Trail"
     )
 
     var isEmptyState: Bool {
@@ -90,6 +97,7 @@ extension FormFitnessSnapshot {
     enum CodingKeys: String, CodingKey {
         case fitness, fatigue, form, formDelta, lastUpdated
         case todayCompleted, todayPlanned, tomorrowPlanned, sparkline
+        case raceDaysUntil, raceName
     }
 
     init(from decoder: Decoder) throws {
@@ -103,6 +111,8 @@ extension FormFitnessSnapshot {
         todayPlanned    = try c.decode([WidgetWorkout].self, forKey: .todayPlanned)
         sparkline       = try c.decode([Int].self, forKey: .sparkline)
         tomorrowPlanned = try c.decodeIfPresent([WidgetWorkout].self, forKey: .tomorrowPlanned) ?? []
+        raceDaysUntil   = try c.decodeIfPresent(Int.self, forKey: .raceDaysUntil)
+        raceName        = try c.decodeIfPresent(String.self, forKey: .raceName)
     }
 }
 

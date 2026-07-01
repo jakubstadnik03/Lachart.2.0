@@ -61,10 +61,32 @@ async function sendNotification(recipientIds, opts = {}) {
       const prefs = recipient.notifications || {};
       if (type === 'strava_import' && prefs.pushStravaImport === false) continue;
       if ((type === 'garmin_import' || type === 'apple_health_sync') && prefs.pushStravaImport === false) continue;
-      if ((type === 'training_comment' || type === 'test_comment') && prefs.trainingComments === false) continue;
+      if (type === 'training_comment' || type === 'test_comment') {
+        if (prefs.pushCoachUpdates === false) continue;
+        if (prefs.pushCoachUpdates !== true && prefs.trainingComments === false) continue;
+      }
+      if (
+        type === 'coach_plan_changed' ||
+        type === 'coach_plan_added' ||
+        type === 'weekly_review_request'
+      ) {
+        if (prefs.pushCoachUpdates === false) continue;
+      }
       if (type === 'lactate_test_complete' || type === 'lactate_test_followup') {
         if (prefs.pushLactateTest === false) continue;
       }
+      if (
+        type === 'race_reminder' ||
+        type === 'race_taper' ||
+        type === 'race_post' ||
+        type === 'race_ctl_gap' ||
+        type === 'race_added'
+      ) {
+        if (prefs.pushRaceReminders === false) continue;
+      }
+      if (type === 'overtraining_alert' && prefs.pushOvertraining === false) continue;
+      if (type === 'weekly_digest' && prefs.weeklyDigest === false) continue;
+      if (type === 'product_update' && prefs.pushProductUpdates === false) continue;
 
       await sendExpoPushToTokens(tokens, {
         title,

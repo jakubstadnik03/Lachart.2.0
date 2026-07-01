@@ -580,14 +580,23 @@ async function calculateTrainingStatus(athleteId) {
   }
 }
 
+function localWeekStartKey(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return localDateKey(d);
+}
+
 /**
  * Calculate weekly training load
  */
 async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 'all') {
   try {
     console.log('calculateWeeklyTrainingLoad called with athleteId:', athleteId, 'months:', months, 'sportFilter:', sportFilter);
-    
-    // Get user profile for TSS calculation
+
     let user = null;
     try {
       if (mongoose.Types.ObjectId.isValid(athleteId)) {
@@ -598,12 +607,14 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
     } catch (userError) {
       console.error('Error fetching user:', userError);
     }
-    
+
     const userProfile = buildUserProfile(user);
 
     const today = new Date();
+    today.setHours(23, 59, 59, 999);
     const startDate = new Date(today);
     startDate.setMonth(startDate.getMonth() - months);
+    startDate.setHours(0, 0, 0, 0);
 
     const athleteIdStr = String(athleteId);
     let athleteIdObj = null;
@@ -613,109 +624,85 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       // Not a valid ObjectId, use string
     }
 
-    // Get all activities
-    const fitTrainings = await FitTraining.find({ 
-      athleteId: athleteIdStr,
-      timestamp: { $gte: startDate }
-    })
-      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate')
-      .lean();
-
-    // StravaActivity uses userId
-    let stravaActivities = await StravaActivity.find({ 
-      userId: athleteIdStr,
-      startDate: { $gte: startDate }
-    })
-      .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
-      .lean();
-
-    if (stravaActivities.length === 0 && athleteIdObj) {
-      stravaActivities = await StravaActivity.find({ 
-        userId: athleteIdObj,
-        startDate: { $gte: startDate }
-      })
-        .select('startDate movingTime averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss')
-        .lean();
-    }
-
-    const mapFitTss = (t) => resolveActivityTss({
-      sport: t.sport,
-      totalElapsedTime: t.totalElapsedTime,
-      movingTime: t.totalElapsedTime,
-      avgPower: t.avgPower,
-      normalizedPower: t.normalizedPower,
-      averageHeartRate: t.avgHeartRate,
-      avgHeartRate: t.avgHeartRate,
-      maxHeartRate: t.maxHeartRate,
-      avgSpeed: t.avgSpeed,
-      tss: t.trainingStressScore,
-      trainingStressScore: t.trainingStressScore,
-    }, userProfile);
-
-    const mapStravaTss = (a) => resolveActivityTss({
-      sport: a.sport,
-      movingTime: a.movingTime,
-      averagePower: a.averagePower,
-      weighted_average_watts: a.weighted_average_watts,
-      averageSpeed: a.averageSpeed,
-      average_heartrate: a.average_heartrate,
-      max_heartrate: a.max_heartrate,
-      manualTss: a.manualTss,
-    }, userProfile);
+    const dateFilter = { $gte: startDate };
+    const [
+      fitTrainings,
+      stravaActivities,
+      garminActivities,
+      appleHealthActivities,
+      trainings,
+    ] = await Promise.all([
+      FitTraining.find({ athleteId: athleteIdStr, timestamp: dateFilter })
+        .select(FIT_LOAD_SELECT)
+        .sort({ timestamp: 1 })
+        .lean(),
+      findByUserIdBothFormats(StravaActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, STRAVA_LOAD_SELECT, 'startDate'),
+      findByUserIdBothFormats(GarminActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, GARMIN_LOAD_SELECT, 'startDate'),
+      findByUserIdBothFormats(AppleHealthActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, 'startDate durationSeconds distanceMeters sport type avgHeartRate', 'startDate'),
+      Training.find({ athleteId: athleteIdStr, date: dateFilter })
+        .select('date sport')
+        .sort({ date: 1 })
+        .lean(),
+    ]);
 
     const allActivities = [
       ...fitTrainings
-        .filter(t => matchesSportFilter(t.sport, sportFilter))
-        .map(t => ({
-          date: t.timestamp,
-          tss: mapFitTss(t)
-        })),
+        .filter((t) => matchesSportFilter(t.sport, sportFilter))
+        .map((t) => mapFitToLoad(t, userProfile)),
       ...stravaActivities
-        .filter(a => matchesSportFilter(a.sport, sportFilter))
-        .map(a => ({
-          date: a.startDate,
-          tss: mapStravaTss(a)
-        }))
-    ].filter(a => a.date);
+        .filter((a) => matchesSportFilter(a.sport, sportFilter))
+        .map((a) => mapStravaToLoad(a, userProfile)),
+      ...garminActivities
+        .filter((a) => matchesSportFilter(a.sport, sportFilter))
+        .map((a) => mapGarminToLoad(a, userProfile)),
+      ...appleHealthActivities
+        .filter((a) => matchesSportFilter(a.sport || a.type, sportFilter))
+        .map((a) => mapAppleHealthToLoad(a, userProfile)),
+      ...trainings
+        .filter((t) => {
+          if (sportFilter === 'all') return true;
+          const trainingSport = t.sport || '';
+          if (sportFilter === 'bike') return trainingSport === 'bike';
+          if (sportFilter === 'run') return trainingSport === 'run' || trainingSport === 'walk';
+          if (sportFilter === 'swim') return trainingSport === 'swim';
+          return true;
+        })
+        .map((t) => ({
+          date: t.date,
+          tss: 0,
+          sport: t.sport || 'generic',
+        })),
+    ].filter((a) => a.date);
 
     const dedupedActivities = dedupeActivitiesForLoad(allActivities);
 
-    // Group activities by week
     const weeklyData = {};
-    
-    dedupedActivities.forEach(activity => {
+
+    dedupedActivities.forEach((activity) => {
       const activityDate = new Date(activity.date);
-      if (activityDate < startDate) return;
+      if (Number.isNaN(activityDate.getTime()) || activityDate < startDate) return;
 
-      // Get week start (Monday)
-      const weekStart = new Date(activityDate);
-      const day = weekStart.getDay();
-      const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
-      weekStart.setDate(diff);
-      weekStart.setHours(0, 0, 0, 0);
+      const weekKey = localWeekStartKey(activityDate);
+      if (!weekKey) return;
 
-      const weekKey = weekStart.toISOString().split('T')[0];
-      
       if (!weeklyData[weekKey]) {
+        const ws = new Date(`${weekKey}T12:00:00`);
         weeklyData[weekKey] = {
           weekStart: weekKey,
-          weekLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          tss: 0
+          weekLabel: ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          tss: 0,
         };
       }
-      
+
       weeklyData[weekKey].tss += activity.tss || 0;
     });
 
-    // Convert to array and sort by date
-    const data = Object.values(weeklyData).sort((a, b) => 
-      new Date(a.weekStart) - new Date(b.weekStart)
+    const data = Object.values(weeklyData).sort(
+      (a, b) => a.weekStart.localeCompare(b.weekStart),
     );
 
-    // Calculate optimal load (average of last 4 weeks, with some variation)
     const calculateOptimalLoad = (index) => {
-      if (index < 3) return data[index]?.tss || 0;
-      
+      if (index < 3) return Math.round(data[index]?.tss || 0);
       const last4Weeks = data.slice(Math.max(0, index - 3), index + 1);
       const avgTSS = last4Weeks.reduce((sum, w) => sum + (w.tss || 0), 0) / last4Weeks.length;
       return Math.round(avgTSS || 0);
@@ -726,8 +713,8 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
         ...week,
         weekLabel: week.weekLabel || '',
         trainingLoad: Math.round(week.tss || 0),
-        optimalLoad: calculateOptimalLoad(index)
-      }))
+        optimalLoad: calculateOptimalLoad(index),
+      })),
     };
   } catch (error) {
     console.error('Error calculating weekly training load:', error);

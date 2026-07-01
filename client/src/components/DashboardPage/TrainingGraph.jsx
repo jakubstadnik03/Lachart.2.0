@@ -509,7 +509,7 @@ const TrainingGraph = ({
 
   // ── Loading / no data states ────────────────────────────────────────────
   if (!trainingList) return (
-    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <h3 className="text-sm font-bold text-slate-900">Training Graph</h3>
       </div>
@@ -518,7 +518,7 @@ const TrainingGraph = ({
   );
 
   if (loading) return (
-    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <h3 className="text-sm font-bold text-slate-900">Training Graph</h3>
       </div>
@@ -532,7 +532,7 @@ const TrainingGraph = ({
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   if (trainingList.length === 0 || sportTrainings.length === 0) return (
-    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-slate-900 leading-tight">Training Graph</h3>
@@ -585,7 +585,7 @@ const TrainingGraph = ({
   ];
 
   if (!effectiveResults.length) return (
-    <div className="flex flex-col h-full rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-slate-900 leading-tight">Training Graph</h3>
@@ -640,7 +640,7 @@ const TrainingGraph = ({
           usePointStyle: true,
           pointStyle: "circle",
           boxWidth: 8,
-          padding: 16,
+          padding: 10,
           font: { size: 11, family: 'inherit' },
           color: '#64748b',
         }
@@ -699,10 +699,10 @@ const TrainingGraph = ({
   const hasComment = selectedTrainingData.comments || selectedTrainingData.description;
 
   return (
-    <div className="flex flex-col h-full min-h-[420px] sm:min-h-[460px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
       {/* ── Header — single row ── */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 shrink-0">
         {/* Title select — searchable dropdown */}
         <SearchableSelect
           value={selectedTitle || ''}
@@ -751,7 +751,7 @@ const TrainingGraph = ({
       </div>
 
       {/* ── Chart — fills remaining height ── */}
-      <div className="flex-1 min-h-0 relative px-3 pt-2 pb-1">
+      <div className="flex-1 min-h-0 relative px-3 pt-1 pb-1">
         <Line
           data={{
             labels: effectiveResults.map((r, i) =>

@@ -286,6 +286,11 @@ struct SmallTodayView: View {
                 Spacer(minLength: 0)
             } else {
                 KPIRow(snapshot: entry.snapshot, compact: true)
+                if let days = entry.snapshot.raceDaysUntil, days >= 0 {
+                    Text(days == 0 ? "Race day" : "Race in \(days)d")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(LaChartColor.warning)
+                }
                 Divider().opacity(LaChartColor.dividerOpacity(colorScheme))
                 content
             }

@@ -714,7 +714,8 @@ module.exports = {
   getIsoWeekStartUTC,
   getLastWeekRangeUTC,
   sendWeeklyReportsForWeek,
-  sendWeeklyReportEmailToUser
+  sendWeeklyReportEmailToUser,
+  buildWeeklyReportSummary,
 };
 
 

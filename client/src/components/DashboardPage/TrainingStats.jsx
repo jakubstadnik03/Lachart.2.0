@@ -31,7 +31,7 @@ function workOnly(results) {
   return filtered.length > 0 ? filtered : results;
 }
 
-const GRAPH_H = 200;
+const GRAPH_H = 120;
 
 /* ── tiny helpers ──────────────────────────────────────────────────────────── */
 function axisTickY(i, n, h = GRAPH_H) {
@@ -310,9 +310,9 @@ function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, he
 }
 
 /* ── Y-axis scale ──────────────────────────────────────────────────────────── */
-function Scale({ values, formatValue }) {
+function Scale({ values, formatValue, height = GRAPH_H }) {
   return (
-    <div className="relative shrink-0 w-8 sm:w-10 text-right" style={{ height: GRAPH_H }}>
+    <div className="relative shrink-0 w-8 sm:w-10 text-right" style={{ height }}>
       {values.map((v, i) => (
         <div
           key={i}
@@ -452,7 +452,9 @@ export function TrainingStats({
 
   const settingsRef  = useRef(null);
   const containerRef = useRef(null);
+  const chartBarsRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [chartHeight, setChartHeight] = useState(GRAPH_H);
 
   /* close settings on outside click */
   useEffect(() => {
@@ -656,15 +658,26 @@ export function TrainingStats({
     [filteredTrainings, visibleTrainingIndex, displayCount]
   );
 
-  /* measure container width */
+  /* measure chart container */
   useEffect(() => {
-    const upd = () => { if (containerRef.current) setContainerWidth(containerRef.current.clientWidth); };
+    const upd = () => {
+      if (containerRef.current) setContainerWidth(containerRef.current.clientWidth);
+      if (chartBarsRef.current) {
+        const h = chartBarsRef.current.clientHeight;
+        if (h > 0) setChartHeight(Math.max(GRAPH_H, h));
+      }
+    };
     upd();
-    const el = containerRef.current;
-    const ro = typeof ResizeObserver !== "undefined" && el ? new ResizeObserver(upd) : null;
-    ro?.observe(el);
+    const els = [containerRef.current, chartBarsRef.current].filter(Boolean);
+    const ro = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(upd)
+      : null;
+    els.forEach((el) => ro?.observe(el));
     window.addEventListener("resize", upd);
-    return () => { window.removeEventListener("resize", upd); ro?.unobserve(el); };
+    return () => {
+      window.removeEventListener("resize", upd);
+      els.forEach((el) => ro?.unobserve(el));
+    };
   }, [visibleTrainings.length, filteredTrainings.length, visibleTrainingIndex, displayCount]);
 
   /* navigation */
@@ -742,10 +755,10 @@ export function TrainingStats({
 
   /* ── render ── */
   return (
-    <div className="flex flex-col p-4 sm:p-5 bg-white rounded-2xl shadow-sm border border-gray-100 h-full gap-4">
+    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] p-4 sm:p-4 bg-white rounded-2xl shadow-sm border border-gray-100 gap-3">
 
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-base sm:text-lg font-semibold text-gray-900 leading-none">
             Training History
@@ -820,28 +833,30 @@ export function TrainingStats({
       </div>
 
       {/* Chart */}
-      <div className="flex gap-1 sm:gap-2 items-stretch w-full min-w-0" style={{ minHeight: `${GRAPH_H + 24}px` }}>
+      <div className="flex flex-1 min-h-0 gap-1 sm:gap-2 items-stretch w-full min-w-0">
         <Scale
           values={isPaceSport ? paceValues : powerValues}
           formatValue={isPaceSport ? formatPaceVal : null}
+          height={chartHeight}
         />
 
-        <div ref={containerRef} className="relative flex flex-1 min-w-0 flex-col" style={{ overflow: "visible" }}>
+        <div ref={containerRef} className="relative flex flex-1 min-w-0 min-h-0 flex-col" style={{ overflow: "visible" }}>
           {/* grid lines */}
-          <div className="pointer-events-none absolute left-0 right-0 top-0 z-0" style={{ height: GRAPH_H }}>
+          <div ref={chartBarsRef} className="relative flex-1 min-h-[100px] min-w-0">
+          <div className="pointer-events-none absolute left-0 right-0 top-0 bottom-0 z-0">
             {(isPaceSport ? paceValues : powerValues).map((_, i, arr) => (
               <div
                 key={i}
                 className="absolute left-0 right-0 border-t border-gray-100"
-                style={{ top: `${axisTickY(i, arr.length)}px` }}
+                style={{ top: `${axisTickY(i, arr.length, chartHeight)}px`, transform: "translateY(-50%)" }}
               />
             ))}
           </div>
 
           {/* bar columns */}
           <div
-            className="relative z-10 flex w-full items-stretch gap-1 sm:gap-1.5"
-            style={{ minHeight: `${GRAPH_H}px`, overflow: "visible" }}
+            className="relative z-10 flex h-full w-full items-stretch gap-1 sm:gap-1.5"
+            style={{ overflow: "visible" }}
           >
             {visibleTrainings.map((training, tIdx) => {
               const results = getResults(training);
@@ -881,19 +896,19 @@ export function TrainingStats({
               const colorMap = new Map(powerPaceVals.map((x, rank) => [x.i, rank]));
 
               return (
-                <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 flex-col items-stretch overflow-visible">
+                <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 h-full flex-col items-stretch overflow-visible">
                   <div
-                    className="relative flex w-full min-w-0 items-end overflow-visible"
-                    style={{ height: GRAPH_H, minHeight: GRAPH_H, gap: `${gapPx}px` }}
+                    className="relative flex flex-1 min-h-0 w-full min-w-0 items-end overflow-visible"
+                    style={{ gap: `${gapPx}px` }}
                   >
                     {results.map((r, rIdx) => {
                       let height = 0;
                       if (isPaceSport) {
                         const pace = parsePaceSecs(r.power);
-                        if (pace && pace > 0) height = ((maxPace - pace) / (maxPace - minPace)) * GRAPH_H;
+                        if (pace && pace > 0) height = ((maxPace - pace) / (maxPace - minPace)) * chartHeight;
                       } else {
                         const pow = Number(r.power);
-                        if (!isNaN(pow) && pow > 0) height = ((pow - minPower) / (maxPower - minPower)) * GRAPH_H;
+                        if (!isNaN(pow) && pow > 0) height = ((pow - minPower) / (maxPower - minPower)) * chartHeight;
                       }
 
                       return (
@@ -926,12 +941,13 @@ export function TrainingStats({
               );
             })}
           </div>
+          </div>
         </div>
       </div>
 
       {/* Training Progress */}
       {filteredTrainings.length > 0 && (
-        <div>
+        <div className="mt-auto shrink-0">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-semibold text-gray-700">
               Progress

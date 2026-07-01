@@ -40,9 +40,10 @@ const estimatePlannedTss = (pw) => {
   return 0;
 };
 
-const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) => {
+const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false }) => {
   const { user } = useAuth();
   const profile = userProfile || user;
+  const calendarDriven = activities != null;
   const isCoachView = !!user?._id && athleteId && String(athleteId) !== String(user._id);
   const [wellness, setWellness] = useState([]);
   const [showRecovery, setShowRecovery] = useState(() => {
@@ -157,8 +158,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadData = async () => {
       if (!athleteId) {
+        if (cancelled) return;
         setChartData([]);
         setTodayMetrics({
           fitness: 0,
@@ -179,12 +183,37 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
                    timeRange === '180 days' ? 180 :
                    timeRange === '365 days' ? 365 : 60;
 
-      // Prefer calendar activities — same TSS as weekly summary in Training Calendar.
+      // Dashboard: wait for calendar — never paint stale API/cache while loading.
+      if (calendarDriven) {
+        if (activitiesLoading) {
+          if (!cancelled) setLoading(true);
+          return;
+        }
+        if (Array.isArray(activities) && activities.length > 0 && profile) {
+          const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
+            displayDays: days,
+            sportFilter,
+          });
+          if (cancelled) return;
+          setChartData(series.length ? series : []);
+          if (tm) setTodayMetrics(tm);
+          setLoading(false);
+          return;
+        }
+        if (!cancelled) {
+          setChartData([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Prefer calendar activities when passed without explicit calendar-driven flag.
       if (Array.isArray(activities) && activities.length > 0 && profile) {
         const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
           displayDays: days,
           sportFilter,
         });
+        if (cancelled) return;
         if (series.length) {
           setChartData(series);
           if (tm) setTodayMetrics(tm);
@@ -248,6 +277,8 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
           getTodayMetrics(athleteId)
         ]);
 
+        if (cancelled) return;
+
         if (ffResponse && ffResponse.data) {
           setChartData(ffResponse.data);
           // cache time series
@@ -277,15 +308,18 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
           }
         }
       } catch (error) {
-        console.error('Error loading form fitness data:', error);
-        setChartData([]);
+        if (!cancelled) {
+          console.error('Error loading form fitness data:', error);
+          setChartData([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadData();
-  }, [athleteId, timeRange, sportFilter, tssModeTick, activities, profile]);
+    return () => { cancelled = true; };
+  }, [athleteId, timeRange, sportFilter, tssModeTick, activities, profile, activitiesLoading, calendarDriven]);
 
   // Next race with a CTL target → draw it as a horizontal reference line so the
   // athlete sees the fitness they're building toward (TrainingPeaks-style).
@@ -639,8 +673,8 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
   };
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full">
-      <div className="flex items-center justify-between gap-3 mb-4">
+    <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg w-full">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Form & Fitness</h3>
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
@@ -662,7 +696,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
         </div>
       </div>
 
-      <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+      <p className="text-xs text-gray-500 mb-2 leading-relaxed line-clamp-2">
         {FORM_FITNESS_INTRO}
         {' '}
         <button
@@ -675,7 +709,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
       </p>
 
       {loading ? (
-        <div className="h-64 sm:h-80 flex items-center justify-center">
+        <div className="h-48 sm:h-56 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       ) : (
@@ -815,7 +849,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
 
         {/* Performance Insights cards (TrainingPeaks-like) */}
         {insights && (
-          <div className={isMobile ? "mb-4" : "grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4"}>
+          <div className={isMobile ? "mb-3" : "grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2"}>
             {isMobile && (
               <div className="-mx-4 px-4 overflow-x-auto snap-x snap-mandatory flex gap-3">
                 {/* Fitness */}
@@ -837,7 +871,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
                     </div>
                     <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
                     <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={36}>
+                      <ResponsiveContainer width="100%" height={24}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -867,7 +901,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
                     </div>
                     <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
                     <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={36}>
+                      <ResponsiveContainer width="100%" height={24}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -898,7 +932,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
                     </div>
                     <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
                     <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={36}>
+                      <ResponsiveContainer width="100%" height={24}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -931,7 +965,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
               </div>
               <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
               <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={36}>
+                <ResponsiveContainer width="100%" height={24}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -971,7 +1005,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
               </div>
               <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
               <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={36}>
+                <ResponsiveContainer width="100%" height={24}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -1012,7 +1046,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
               </div>
               <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
               <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={36}>
+                <ResponsiveContainer width="100%" height={24}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -1038,7 +1072,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null }) 
           </div>
         )}
 
-        <div className="h-44 sm:h-64 select-none relative">
+        <div className="h-32 sm:h-40 select-none relative">
           {zoomRange && (
             <button
               onClick={handleZoomReset}

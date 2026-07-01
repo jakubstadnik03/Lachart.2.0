@@ -59,7 +59,7 @@ export function clearFormFitnessCache() {
     const keys = [];
     for (let i = 0; i < localStorage.length; i += 1) {
       const k = localStorage.key(i);
-      if (k && (k.startsWith('formFitness_') || k.startsWith('widget_formFitness'))) keys.push(k);
+      if (k && (k.startsWith('formFitness_') || k.startsWith('widget_formFitness') || k.startsWith('weeklyTrainingLoad_'))) keys.push(k);
     }
     keys.forEach((k) => localStorage.removeItem(k));
   } catch {

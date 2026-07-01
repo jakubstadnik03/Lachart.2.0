@@ -127,15 +127,21 @@ export async function initCapacitorShell() {
   // on the imported activity with the ActivityFullModal open.
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications');
-    await LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+    await LocalNotifications.addListener('localNotificationActionPerformed', async (event) => {
       const extra = event?.notification?.extra || {};
-      const type = extra.type;
-      const latestActivityId = extra.latestActivityId;
-      let path = '/';
-      if (type === 'strava_import' && latestActivityId) {
-        path = `/?openActivity=${encodeURIComponent(`strava-${latestActivityId}`)}`;
+      try {
+        const { resolveNotificationTarget, applyNotificationNavigation } = await import('../utils/notificationNavigation');
+        const target = resolveNotificationTarget(extra);
+        applyNotificationNavigation(target, { replace: true });
+      } catch (e) {
+        const type = extra.type;
+        const latestActivityId = extra.latestActivityId;
+        let path = '/';
+        if (type === 'strava_import' && latestActivityId) {
+          path = `/?openActivity=${encodeURIComponent(`strava-${latestActivityId}`)}`;
+        }
+        window.location.replace(`${window.location.origin}${path}`);
       }
-      window.location.replace(`${window.location.origin}${path}`);
     });
   } catch (err) {
     console.warn('[LocalNotifications] init failed:', err?.message || err);

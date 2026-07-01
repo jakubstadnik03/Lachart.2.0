@@ -22,7 +22,7 @@ const calendarPeriodSchema = new mongoose.Schema({
   // Period type — drives the default color and label.
   type: {
     type: String,
-    enum: ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week'],
+    enum: ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week', 'Taper'],
     required: true,
   },
   // Hex color override (defaults handled client-side from `type`).

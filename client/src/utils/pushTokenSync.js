@@ -1,6 +1,8 @@
 /**
  * APNs device token: cache locally, upload after login / on foreground.
  */
+import { resolveNotificationTarget, applyNotificationNavigation } from './notificationNavigation';
+
 const PENDING_KEY = 'lachart_pending_push_token';
 let listenersAttached = false;
 
@@ -30,30 +32,8 @@ export async function syncPushTokenToServer(token) {
 }
 
 function navigateFromPushData(data = {}) {
-  const resourceId = data.resourceId || data.resource_id;
-  const resourceType = data.resourceType || data.resource_type || 'training';
-  const pushType = data.type;
-  const activityId = data.activityId || data.activity_id;
-  const activityType = data.activityType || data.activity_type;
-
-  const isActivityDeepLink =
-    (activityId && activityType) ||
-    (pushType === 'strava_import' && (activityId || resourceId)) ||
-    (pushType === 'garmin_import' && (activityId || resourceId));
-
-  let path;
-  if (isActivityDeepLink) {
-    const id = activityId || resourceId;
-    const prefix = activityType || (pushType === 'garmin_import' ? 'garmin' : pushType === 'strava_import' ? 'strava' : resourceType);
-    path = `/?openActivity=${encodeURIComponent(`${prefix}-${id}`)}`;
-  } else if (resourceId) {
-    path = resourceType === 'training'
-      ? `/training-calendar/training-${resourceId}`
-      : `/training-calendar/${resourceId}`;
-  } else {
-    path = '/';
-  }
-  window.location.replace(`${window.location.origin}${path}`);
+  const target = resolveNotificationTarget(data);
+  applyNotificationNavigation(target, { replace: true });
 }
 
 async function showForegroundBanner(notification) {

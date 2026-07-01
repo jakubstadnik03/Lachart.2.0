@@ -13,6 +13,7 @@ const DayPlan         = require('../models/DayPlan');
 const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
+const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications');
 
 /**
  * Workout planning is a Pro-tier feature. Free users can READ what's been
@@ -260,6 +261,16 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
       category: category || undefined,
       status: 'planned',
     });
+
+    if (String(req.user.userId) !== String(athleteId)) {
+      maybeNotifyCoachPlanUpdate({
+        athleteId,
+        coachUserId: req.user.userId,
+        plannedWorkout: pw,
+        isNew: true,
+      }).catch(() => {});
+    }
+
     res.status(201).json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] POST /planned error:', e);
@@ -278,6 +289,9 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
     const pw = await PlannedWorkout.findById(req.params.id);
     if (!pw) return res.status(404).json({ error: 'Not found' });
     if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
+
+    const previousDate = pw.date ? new Date(pw.date) : null;
+    const coachEditing = String(req.user.userId) !== String(athleteId);
 
     const fields = ['date','sport','title','description','steps','status',
                     'completedTrainingId','coachNotes','comment','targetTss',
@@ -310,6 +324,17 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
     }
 
     await pw.save();
+
+    if (coachEditing) {
+      maybeNotifyCoachPlanUpdate({
+        athleteId,
+        coachUserId: req.user.userId,
+        plannedWorkout: pw,
+        isNew: false,
+        previousDate,
+      }).catch(() => {});
+    }
+
     res.json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] PUT /planned/:id error:', e);
@@ -749,7 +774,7 @@ router.delete('/day-plans/:date', verifyToken, requirePlanWorkouts, async (req, 
 // Multi-day spans (Vacation, Training camp, Work trip, Illness, Race week)
 // rendered as colored bands across the calendar.
 
-const PERIOD_TYPES = ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week'];
+const PERIOD_TYPES = ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week', 'Taper'];
 
 /** GET /api/workout-planner/periods?from=YYYY-MM-DD&to=YYYY-MM-DD&athleteId=
  *  Returns any period that OVERLAPS the [from,to] window. */

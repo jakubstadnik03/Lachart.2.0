@@ -20,6 +20,8 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { IntroSlides, INTRO_SEEN_KEY } from '../components/Onboarding/OnboardingFlow';
 import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLocalNotifications';
+import { cancelRaceLocalNotifications } from '../utils/raceLocalNotifications';
+import { cancelDailyTrainingReminder } from '../utils/dailyTrainingReminder';
 import { clearFormFitnessCache, notifyTssDisplayModeChanged } from '../utils/uiPrefs';
 
 const DEFAULT_NOTIFICATION_PREFS = {
@@ -29,7 +31,15 @@ const DEFAULT_NOTIFICATION_PREFS = {
   achievementAlerts: true,
   trainingComments: true,
   pushStravaImport: true,
-  pushLactateTest: true
+  pushLactateTest: true,
+  pushRaceReminders: true,
+  pushOvertraining: true,
+  dailyTrainingReminder: true,
+  weeklyDigest: true,
+  weeklyDigestEmail: true,
+  pushCoachUpdates: true,
+  marketingEmails: true,
+  pushProductUpdates: true,
 };
 
 const SIGNUP_METHOD_LABELS = {
@@ -1051,6 +1061,12 @@ const SettingsPage = () => {
     try {
       if (newNotifications.pushLactateTest === false && notifications.pushLactateTest !== false) {
         cancelScheduledLactateTestNotifications().catch(() => {});
+      }
+      if (newNotifications.pushRaceReminders === false && notifications.pushRaceReminders !== false) {
+        cancelRaceLocalNotifications().catch(() => {});
+      }
+      if (newNotifications.dailyTrainingReminder === false && notifications.dailyTrainingReminder !== false) {
+        cancelDailyTrainingReminder().catch(() => {});
       }
       setNotifications(newNotifications);
       // Save to backend
@@ -2723,6 +2739,27 @@ const SettingsPage = () => {
                   }`}></div>
                 </label>
               </div>
+
+              <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-t`}>
+                <div className="flex-1 min-w-0 pr-2">
+                  <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Marketing & news</label>
+                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>Product updates and tips by email</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notifications.marketingEmails !== false}
+                    onChange={(e) => saveNotifications({ ...notifications, marketingEmails: e.target.checked })}
+                    disabled={!notifications.emailNotifications}
+                    className="sr-only peer"
+                  />
+                  <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
+                    !notifications.emailNotifications
+                      ? 'bg-gray-100 cursor-not-allowed'
+                      : 'bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 peer-checked:bg-primary'
+                  }`}></div>
+                </label>
+              </div>
             </div>
 
             <div className={`${isMobile ? 'mt-4' : 'mt-8'} border-t ${isMobile ? 'pt-3' : 'pt-6'}`}>
@@ -2752,15 +2789,17 @@ const SettingsPage = () => {
                 </div>
                 <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
                   <div className="flex-1 min-w-0 pr-2">
-                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Coach & athlete comments</label>
-                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>When someone comments on your training</p>
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Coach updates</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Plan changes for tomorrow, weekly review, comment push
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={notifications.trainingComments !== false}
+                      checked={notifications.pushCoachUpdates !== false}
                       onChange={(e) =>
-                        saveNotifications({ ...notifications, trainingComments: e.target.checked })
+                        saveNotifications({ ...notifications, pushCoachUpdates: e.target.checked })
                       }
                       className="sr-only peer"
                     />
@@ -2778,6 +2817,123 @@ const SettingsPage = () => {
                       checked={notifications.trainingComments !== false}
                       onChange={(e) =>
                         saveNotifications({ ...notifications, trainingComments: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Overreaching (serious only)</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Push when Form &lt; −35 and HRV is suppressed
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.pushOvertraining !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, pushOvertraining: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Daily training reminder</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Local notification at 8:00 when a workout is planned
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.dailyTrainingReminder !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, dailyTrainingReminder: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Weekly digest (Sunday)</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Push summary: TSS, Form, training status
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.weeklyDigest !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, weeklyDigest: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Weekly digest email</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Same Sunday summary by email
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.weeklyDigestEmail !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, weeklyDigestEmail: e.target.checked })
+                      }
+                      disabled={!notifications.emailNotifications}
+                      className="sr-only peer"
+                    />
+                    <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
+                      !notifications.emailNotifications
+                        ? 'bg-gray-100 cursor-not-allowed'
+                        : 'bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 peer-checked:bg-primary'
+                    }`} />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Product updates (push)</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>New features and app news</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.pushProductUpdates !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, pushProductUpdates: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Race reminders</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                      Countdown, taper hints, race-day and checklist (A/B/C priority)
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.pushRaceReminders !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, pushRaceReminders: e.target.checked })
                       }
                       className="sr-only peer"
                     />

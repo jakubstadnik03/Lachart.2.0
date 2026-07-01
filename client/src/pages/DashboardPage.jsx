@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { writeFormFitnessToWidget } from '../utils/widgetCache';
+import { compareActivitiesChronologically } from '../utils/calendarDayOrdering';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
@@ -20,6 +21,9 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
+import TrainingInsightsCard from "../components/DashboardPage/TrainingInsightsCard";
+import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
+import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
@@ -34,6 +38,8 @@ import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWel
 import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
+import { syncDailyTrainingReminder } from '../utils/dailyTrainingReminder';
+import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
@@ -78,7 +84,7 @@ function normaliseSportForWidget(raw) {
 }
 
 /** Build the array the widget renders under "DONE" — completed activities
- *  done today. Sorted newest-first, max 4 entries. */
+ *  done today. Earliest-first (first completed at top), max 4 entries. */
 function pickTodaysCompleted(activities, plannedWorkouts) {
   if (!Array.isArray(activities)) return [];
   const today = new Date();
@@ -88,7 +94,7 @@ function pickTodaysCompleted(activities, plannedWorkouts) {
     .filter(p => isSameLocalDay(p?.date, today));
   return activities
     .filter(a => isSameLocalDay(a?.date || a?.startDate || a?.timestamp, today))
-    .sort((a, b) => new Date(b?.date || b?.startDate || 0) - new Date(a?.date || a?.startDate || 0))
+    .sort(compareActivitiesChronologically)
     .slice(0, 4)
     .map(a => {
       const aid = String(a.id || a._id || '');
@@ -154,12 +160,8 @@ function pickTodaysPlanned(plannedWorkouts, activities) {
     .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
     .slice(0, 4)
     .map(p => {
-      // plannedDistance is metres on the server; legacy builds wrote km, so a
-      // value < 100 is almost certainly km (heal it to metres). 3000 → 3.0 km.
-      const distRaw = Number(p.plannedDistance || 0);
-      const distM = distRaw > 0 && distRaw < 100 ? distRaw * 1000 : distRaw;
-      const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
-                    : distM > 0      ? `${Math.round(distM)} m` : null;
+      const distM = plannedDistanceMetres(p);
+      const fmtDist = formatPlannedDistanceMetres(distM, p.sport);
       const tss = Number(p.targetTss || 0);
       const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
       return {
@@ -184,12 +186,8 @@ function pickTomorrowPlanned(plannedWorkouts) {
     .sort((a, b) => Number(b?.plannedDuration || 0) - Number(a?.plannedDuration || 0))
     .slice(0, 4)
     .map(p => {
-      // plannedDistance is metres on the server; legacy builds wrote km, so a
-      // value < 100 is almost certainly km (heal it to metres). 3000 → 3.0 km.
-      const distRaw = Number(p.plannedDistance || 0);
-      const distM = distRaw > 0 && distRaw < 100 ? distRaw * 1000 : distRaw;
-      const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
-                    : distM > 0      ? `${Math.round(distM)} m` : null;
+      const distM = plannedDistanceMetres(p);
+      const fmtDist = formatPlannedDistanceMetres(distM, p.sport);
       const tss = Number(p.targetTss || 0);
       const sub = [fmtDist, tss > 0 ? `${tss} TSS` : null].filter(Boolean).join(' · ');
       return {
@@ -249,6 +247,8 @@ function PremiumLockedCard({ title, description, onUpgrade }) {
 
 export default function DashboardPage() {
   const { athleteId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [raceFeedbackFocusId, setRaceFeedbackFocusId] = useState(null);
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
   const isTestingRole = role === 'testing' || role === 'tester';
@@ -283,6 +283,15 @@ export default function DashboardPage() {
   const [activeModal, setActiveModal] = useState(null);
   // Ref so timer callbacks always see the latest queue without stale closure
   const modalQueueRef = useRef([]);
+
+  useEffect(() => {
+    const param = searchParams.get('openRaceFeedback');
+    if (!param) return;
+    setRaceFeedbackFocusId(param);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openRaceFeedback');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Build & schedule the queue once when the user is known.
   useEffect(() => {
@@ -394,6 +403,8 @@ export default function DashboardPage() {
   const dashboardDataAthleteId = selectedAthleteId || user?._id || null;
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
+  const regularTrainingsRef = useRef(regularTrainings);
+  useEffect(() => { regularTrainingsRef.current = regularTrainings; }, [regularTrainings]);
   // eslint-disable-next-line no-unused-vars
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -615,6 +626,8 @@ export default function DashboardPage() {
   // Native mobile dashboard — fitness metrics
   const [todayMetrics, setTodayMetrics] = useState({});
   const [sparklineData, setSparklineData] = useState([]);
+  const [formMetricsLoading, setFormMetricsLoading] = useState(true);
+  const formFitnessRequestGen = useRef(0);
   const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
@@ -836,7 +849,7 @@ export default function DashboardPage() {
   // Accepts optional regularTrainingsParam so the main loader can pass data directly
   // without waiting for a state update cycle.
   const loadCalendarData = useCallback(async (targetId, regularTrainingsParam) => {
-    const regTrainings = regularTrainingsParam || regularTrainings;
+    const regTrainings = regularTrainingsParam ?? regularTrainingsRef.current;
     setCalendarError(null);
     try {
       // Check localStorage cache first
@@ -850,7 +863,6 @@ export default function DashboardPage() {
       
       // Use cache if it exists and is less than 24 hours old
       // Also use cache if it exists but is expired (as fallback while loading)
-      let paintedFromCache = false;
       if (cachedData) {
         try {
           const parsed = JSON.parse(cachedData);
@@ -862,8 +874,6 @@ export default function DashboardPage() {
           // otherwise the calendar stays blank even after activities arrive.
           if (isCacheValid && parsed.length > 0) {
             setCalendarData(parsed);
-            paintedFromCache = true;
-            setCalendarLoading(false);
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
           } else if (parsed.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
@@ -881,7 +891,7 @@ export default function DashboardPage() {
       const inFlightCalendar = calendarRequestRef.current.get(targetId);
       if (inFlightCalendar) return inFlightCalendar;
 
-      if (!paintedFromCache) setCalendarLoading(true);
+      setCalendarLoading(true);
       const request = (async () => {
       let externalActivitiesError = null;
       const [fitData, stravaData] = await Promise.all([
@@ -1066,7 +1076,7 @@ export default function DashboardPage() {
       
       return [];
     }
-  }, [regularTrainings]);
+  }, []);
 
   // Listen for activity updates from other pages (e.g., FitAnalysisPage)
   useEffect(() => {
@@ -1345,16 +1355,17 @@ export default function DashboardPage() {
         // so we no longer need a separate loadRegularTrainings call for that endpoint.
         const trainingsResult = await loadTrainings(targetAthleteId);
 
-        // Load the remaining data in parallel, passing regularTrainings directly to
-        // loadCalendarData so it doesn't need to wait for state to propagate.
-        const [athleteData] = await Promise.all([
+        const [, , calendarActs] = await Promise.all([
           loadAthlete(targetAthleteId),
           loadTests(targetAthleteId),
-          loadCalendarData(targetAthleteId, trainingsResult?.regularTrainings)
+          loadCalendarData(targetAthleteId, trainingsResult?.regularTrainings),
         ]);
 
-        if (athleteData && athleteData._id !== selectedAthleteId) {
-          // Keep current selection stable to avoid effect loops.
+        if (isCapacitorNative()) {
+          recomputeFormFitness(
+            calendarActs || calendarDataRef.current,
+            userRef.current || user,
+          );
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -1562,6 +1573,40 @@ export default function DashboardPage() {
   const calendarDataRef = useRef([]);
   useEffect(() => { calendarDataRef.current = calendarData; }, [calendarData]);
 
+  const profileTssFingerprint = useMemo(() => {
+    const p = user;
+    if (!p) return '';
+    const cz = p.powerZones?.cycling || {};
+    const rz = p.runZones || {};
+    const sz = p.swimZones || {};
+    const hz = p.heartRateZones || {};
+    return [
+      cz.lt2, cz.ftp, p.ftp,
+      rz.lt2, sz.lt2,
+      hz.lt2, hz.lt2Hr, p.maxHr,
+      p.tssDisplayMode,
+    ].join('|');
+  }, [user]);
+
+  useEffect(() => {
+    setTodayMetrics({});
+    setSparklineData([]);
+    setFormMetricsLoading(true);
+    formFitnessRequestGen.current += 1;
+    // Paint cached calendar immediately so native PMC can compute without waiting for network.
+    if (dashboardDataAthleteId) {
+      try {
+        const cached = localStorage.getItem(`calendarData_${dashboardDataAthleteId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCalendarData(parsed);
+          }
+        }
+      } catch (_) { /* ignore */ }
+    }
+  }, [dashboardDataAthleteId]);
+
   const pushFormFitnessWidget = useCallback((tm, raw) => {
     if (!tm || !isCapacitorNative()) return;
     const tsb14 = (raw || [])
@@ -1580,12 +1625,20 @@ export default function DashboardPage() {
   }, []);
 
   const recomputeFormFitness = useCallback((acts, profile) => {
-    if (!acts?.length || !profile) return false;
+    if (!acts?.length || !profile) {
+      setFormMetricsLoading(false);
+      return false;
+    }
     const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile);
-    if (!tm) return false;
+    if (!tm) {
+      setFormMetricsLoading(false);
+      return false;
+    }
+    formFitnessRequestGen.current += 1;
     setTodayMetrics(tm);
     if (series.length) setSparklineData(series);
     pushFormFitnessWidget(tm, series);
+    setFormMetricsLoading(false);
     return true;
   }, [pushFormFitnessWidget]);
 
@@ -1596,11 +1649,18 @@ export default function DashboardPage() {
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
     if (applyCalendarFormFitness()) return;
+    // Native always derives CTL/ATL/TSB from calendar TSS — server API can lag behind.
+    if (isCapacitorNative()) {
+      setFormMetricsLoading(false);
+      return;
+    }
+    const gen = ++formFitnessRequestGen.current;
     try {
       const [todayRes, sparkRes] = await Promise.all([
         getTodayMetrics(targetId).catch(() => ({ data: {} })),
         getFormFitnessData(targetId, 90, 'all').catch(() => ({ data: [] })),
       ]);
+      if (gen !== formFitnessRequestGen.current) return;
       if (todayRes?.data) setTodayMetrics(todayRes.data);
       const raw = sparkRes?.data
         ? (Array.isArray(sparkRes.data) ? sparkRes.data : (sparkRes.data?.data || []))
@@ -1610,7 +1670,11 @@ export default function DashboardPage() {
       if (todayRes?.data) {
         pushFormFitnessWidget(todayRes.data, raw);
       }
-    } catch (_) {}
+    } catch (_) {
+      // ignore
+    } finally {
+      if (gen === formFitnessRequestGen.current) setFormMetricsLoading(false);
+    }
   }, [applyCalendarFormFitness, pushFormFitnessWidget]);
 
   /** Native pull-to-refresh: reload activities + recompute CTL/ATL/TSB from calendar TSS. */
@@ -1619,6 +1683,7 @@ export default function DashboardPage() {
     if (!targetId) return null;
 
     clearFormFitnessCache();
+    setFormMetricsLoading(true);
     try {
       localStorage.removeItem(`calendarData_${targetId}`);
       localStorage.removeItem(`calendarData_timestamp_${targetId}`);
@@ -1646,10 +1711,9 @@ export default function DashboardPage() {
     await loadDashboardPlannedWorkouts();
 
     if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
-      await loadFormFitness(targetId);
+      setFormMetricsLoading(false);
     }
 
-    window.dispatchEvent(new CustomEvent('activityMetricsUpdated'));
     return acts;
   }, [
     dashboardDataAthleteId,
@@ -1659,7 +1723,6 @@ export default function DashboardPage() {
     loadCalendarData,
     loadDashboardPlannedWorkouts,
     recomputeFormFitness,
-    loadFormFitness,
   ]);
 
   const performManualStravaSync = useCallback(async () => {
@@ -1676,11 +1739,38 @@ export default function DashboardPage() {
     }
   }, [user?.strava?.accessToken, refreshNativeDashboard, addNotification]);
 
-  // Recompute CTL/ATL/TSB from the same activities + TSS shown in the calendar.
   useEffect(() => {
-    if (!isCapacitorNative() || !dashboardDataAthleteId) return;
-    if (calendarData?.length) applyCalendarFormFitness();
-  }, [calendarData, dashboardDataAthleteId, user, applyCalendarFormFitness]);
+    syncDailyTrainingReminder(plannedWorkouts, user?.notifications).catch(() => {});
+  }, [plannedWorkouts, user?.notifications]);
+
+  // Native: derive CTL/ATL/TSB from calendar activities (never the server API).
+  useEffect(() => {
+    if (!isCapacitorNative()) {
+      setFormMetricsLoading(false);
+      return;
+    }
+    if (!dashboardDataAthleteId || !user?._id) {
+      setFormMetricsLoading(false);
+      return;
+    }
+    if (calendarLoading && !calendarData?.length) {
+      setFormMetricsLoading(true);
+      return;
+    }
+    if (!calendarData?.length) {
+      setFormMetricsLoading(false);
+      return;
+    }
+    const ok = recomputeFormFitness(calendarData, userRef.current || user);
+    if (!ok) setFormMetricsLoading(false);
+  }, [
+    calendarData,
+    calendarLoading,
+    dashboardDataAthleteId,
+    user,
+    profileTssFingerprint,
+    recomputeFormFitness,
+  ]);
 
   // When the planned workout list itself changes (athlete plans a new
   // session today, drag-drops one onto today, etc.) re-push the widget
@@ -1704,19 +1794,17 @@ export default function DashboardPage() {
     });
   }, [plannedWorkouts, calendarData, todayMetrics, sparklineData]);
 
-  useEffect(() => {
-    if (!isCapacitorNative()) return;
-    loadFormFitness(dashboardDataAthleteId);
-  }, [dashboardDataAthleteId, loadFormFitness]);
-
   // Re-fetch CTL/ATL/TSB when a workout's TSS, duration or display mode changes.
   useEffect(() => {
     if (!isCapacitorNative() || !dashboardDataAthleteId) return;
-    const refresh = () => {
+    const refresh = (e) => {
+      // Metric-patch events carry detail.id; TSS mode toggle does not.
+      if (e?.type === 'activityMetricsUpdated' && !e?.detail?.id) return;
       clearFormFitnessCache();
+      setFormMetricsLoading(true);
       window.setTimeout(() => {
-        if (!applyCalendarFormFitness()) {
-          loadFormFitness(dashboardDataAthleteId);
+        if (!recomputeFormFitness(calendarDataRef.current, userRef.current)) {
+          setFormMetricsLoading(false);
         }
       }, 0);
     };
@@ -1726,7 +1814,7 @@ export default function DashboardPage() {
       window.removeEventListener('activityMetricsUpdated', refresh);
       window.removeEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
     };
-  }, [dashboardDataAthleteId, loadFormFitness, applyCalendarFormFitness]);
+  }, [dashboardDataAthleteId, recomputeFormFitness]);
 
   // ── Strava webhook → live dashboard refresh ───────────────────────────────
   // When the server receives a Strava webhook and saves a new activity it:
@@ -1737,6 +1825,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!dashboardDataAthleteId) return;
     const onSync = async () => {
+      setFormMetricsLoading(true);
       try {
         // Bust the 24-hour localStorage cache so loadCalendarData fetches fresh
         // data from the API instead of returning stale cached activities.
@@ -2074,7 +2163,8 @@ export default function DashboardPage() {
         tests={tests}
         todayMetrics={todayMetrics}
         sparklineData={sparklineData}
-        loading={loading}
+        loading={calendarLoading && !hasCalendarData}
+        metricsLoading={formMetricsLoading && !hasCalendarData}
         user={user}
         athleteId={dashboardDataAthleteId}
         onPlannedWorkoutChanged={({ type, planned, id }) => {
@@ -2096,6 +2186,7 @@ export default function DashboardPage() {
         periods={periods}
         onPeriodSave={handlePeriodSave}
         onPeriodDelete={handlePeriodDelete}
+        onTaperApplied={loadDashboardPlannedWorkouts}
       />
       {/* WorkoutPlanModal must render in the native branch too — the early
           return above used to skip it, so tapping "+ Plan" on the iOS
@@ -2471,6 +2562,58 @@ export default function DashboardPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.23 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <TrainingInsightsCard
+              athleteId={dashboardDataAthleteId}
+              todayMetrics={todayMetrics}
+              plannedWorkouts={plannedWorkouts}
+              activities={calendarData}
+              tests={tests}
+              sparklineData={sparklineData}
+              userProfile={user}
+              loading={formMetricsLoading}
+            />
+          </motion.div>
+        )}
+
+        {dashboardDataAthleteId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.235 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <RaceCountdownCard
+              athleteId={dashboardDataAthleteId}
+              currentCTL={todayMetrics?.fitness}
+              currentForm={todayMetrics?.form}
+              plannedWorkouts={plannedWorkouts}
+              onTaperApplied={loadDashboardPlannedWorkouts}
+            />
+          </motion.div>
+        )}
+
+        {dashboardDataAthleteId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <PostRaceFeedbackCard
+              athleteId={dashboardDataAthleteId}
+              focusRaceId={raceFeedbackFocusId}
+              onSubmitted={() => setRaceFeedbackFocusId(null)}
+            />
+          </motion.div>
+        )}
+
+        {dashboardDataAthleteId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.24 }}
             className="lg:col-span-5 md:col-span-2"
           >
@@ -2478,12 +2621,12 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Form & Fitness Chart + Weekly Training Load — side by side, equal height */}
+        {/* Form & Fitness Chart + Weekly Training Load — side by side */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="lg:col-span-3 md:col-span-2 flex flex-col"
+          className="lg:col-span-3 md:col-span-2 flex flex-col self-start"
         >
           {isPremium ? (
             <FormFitnessChart
@@ -2491,6 +2634,7 @@ export default function DashboardPage() {
               athleteId={dashboardDataAthleteId}
               activities={calendarData}
               userProfile={user}
+              activitiesLoading={calendarLoading && !hasCalendarData}
             />
           ) : (
             <PremiumLockedCard
@@ -2512,6 +2656,9 @@ export default function DashboardPage() {
             <WeeklyTrainingLoad
               key={`wtl-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
+              activities={calendarData}
+              userProfile={user}
+              activitiesLoading={calendarLoading && !hasCalendarData}
             />
           ) : (
             <PremiumLockedCard
@@ -2605,7 +2752,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="lg:col-span-3 md:col-span-2"
+          className="lg:col-span-3 md:col-span-2 flex flex-col h-full"
         >
           <TrainingStats
             trainings={exportedTrainings}
@@ -2623,7 +2770,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="lg:col-span-2 md:col-span-2"
+          className="lg:col-span-2 md:col-span-2 flex flex-col h-full"
         >
           {isPremium ? (
             <TrainingGraph

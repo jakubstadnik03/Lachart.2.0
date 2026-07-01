@@ -1108,7 +1108,20 @@ export const updateRaceEvent = (id, payload) =>
 export const deleteRaceEvent = (id) =>
   api.delete(`/api/race-events/${id}`);
 
-export const getTrainingStatus = (athleteId) => 
+export const getRaceTaperPreview = (raceId, athleteId) =>
+  api.get(`/api/race-events/${raceId}/taper-preview`, {
+    params: { ...(athleteId ? { athleteId } : {}) },
+  });
+
+export const applyRaceTaper = (raceId, athleteId, opts = {}) =>
+  api.post(`/api/race-events/${raceId}/apply-taper`, opts, {
+    params: { ...(athleteId ? { athleteId } : {}) },
+  });
+
+export const submitRaceFeedback = (raceId, payload) =>
+  api.post(`/api/race-events/${raceId}/feedback`, payload);
+
+export const getTrainingStatus = (athleteId) =>
   api.get(`/user/athlete/${athleteId}/training-status`, {
     cacheTtlMs: 60000,
   });
@@ -1364,6 +1377,36 @@ export const runWhatsNewMay2026Campaign = async ({
 export const resetWhatsNewMay2026 = async ({ email } = {}) => {
   const { data } = await api.post('/api/email/campaigns/whats-new-2026-05/reset', email ? { email } : {});
   return data; // { matched, modified }
+};
+
+// ─── "iOS App Store launch — June 2026" mass email campaign ────────────────
+export const fetchIosLaunchJun2026Status = async () => {
+  const { data } = await api.get('/api/email/campaigns/ios-launch-2026-06/status');
+  return data;
+};
+
+export const sendIosLaunchJun2026Preview = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/ios-launch-2026-06/preview', email ? { email } : {});
+  return data;
+};
+
+export const runIosLaunchJun2026Campaign = async ({
+  batchSize = 1,
+  batchIntervalMs = 5 * 60 * 1000,
+  maxEmailsPerRun = 20,
+  dryRun = false,
+} = {}) => {
+  const { data } = await api.post(
+    '/api/email/campaigns/ios-launch-2026-06/run',
+    { batchSize, batchIntervalMs, maxEmailsPerRun, dryRun },
+    { timeout: 6 * 60 * 60 * 1000 }
+  );
+  return data;
+};
+
+export const resetIosLaunchJun2026 = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/ios-launch-2026-06/reset', email ? { email } : {});
+  return data;
 };
 
 export const fetchStravaStatus = async () => {

@@ -16,6 +16,7 @@ const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { notifyCoachesOfAthlete, notifyAthlete, sendNotification } = require('../utils/notificationHelper');
 const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
+const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -3241,8 +3242,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       dateFilter.$lte = requestedTo;
     }
     const stravaSelect = summaryOnly
-      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss tssDisplayMode calories rpe'
-      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower lactate manualTss tssDisplayMode calories rpe laps.lactate';
+      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode calories rpe'
+      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode calories rpe laps.lactate';
     const garminSelect = summaryOnly
       ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode'
       : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode laps.lactate';
@@ -4545,6 +4546,7 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     const maxPower = powers.length > 0 ? Math.max(...powers) : null;
     const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : null;
     const maxCadence = cadences.length > 0 ? Math.max(...cadences) : null;
+    const activitySport = activity.sport || activity.type || '';
 
     // Calculate distance (approximate from speed)
     const totalDistance = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) * (endTime - startTime) / selectedIndices.length : null;
@@ -4586,8 +4588,8 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
       max_heartrate: maxHeartRate,
       average_watts: avgPower,
       max_watts: maxPower,
-      average_cadence: avgCadence,
-      max_cadence: maxCadence
+      average_cadence: stravaHalfCadenceToSpm(avgCadence, activitySport) ?? avgCadence,
+      max_cadence: stravaHalfCadenceToSpm(maxCadence, activitySport) ?? maxCadence
     };
 
     // Initialize laps array if it doesn't exist
@@ -4671,6 +4673,8 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
       return res.status(400).json({ error: 'No time stream data available' });
     }
 
+    const activitySport = activity.sport || activity.type || '';
+
     const buildLapKey = (lap) => {
       const startTime = lap.startTime || lap.start_date;
       if (startTime) {
@@ -4727,6 +4731,7 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
       const avgHeartRate = heartRates.length ? Math.round(avg(heartRates)) : null;
       const avgPower = powers.length ? Math.round(avg(powers)) : null;
       const avgCadence = cadences.length ? Math.round(avg(cadences)) : null;
+      const maxCadenceVal = max(cadences);
 
       const duration = endTime - startTime;
       const totalDistance = avgSpeed ? avgSpeed * duration : 0;
@@ -4741,8 +4746,8 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
         max_heartrate: max(heartRates) || null,
         average_watts: avgPower,
         max_watts: max(powers) || null,
-        average_cadence: avgCadence,
-        max_cadence: max(cadences) || null
+        average_cadence: stravaHalfCadenceToSpm(avgCadence, activitySport) ?? avgCadence,
+        max_cadence: stravaHalfCadenceToSpm(maxCadenceVal, activitySport) ?? maxCadenceVal
       };
     };
 

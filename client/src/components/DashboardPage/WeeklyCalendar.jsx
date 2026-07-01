@@ -37,6 +37,14 @@ import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
+import { stravaHalfCadenceToSpm } from '../../utils/cadenceDisplay';
+import { findCompliance, outlineBorder } from '../../utils/planCompliance';
+
+function mapStravaStreamCadence(cadenceArray, index, sport) {
+  const raw = cadenceArray[index];
+  if (!raw) return null;
+  return stravaHalfCadenceToSpm(raw, sport) ?? raw;
+}
 
 // ─── Planned workout helpers (mirrors CalendarView) ──────────────────────────
 
@@ -677,15 +685,21 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   // Sport-tinted color for ghost (purely planned) style
   const planColor = planSportColor(displaySport);
 
-  // Card appearance — mirrors CalendarView PlannedWorkoutCard logic
-  let cardBg, cardBorderColor, cardBorderStyle;
-  if (isCompletedPair) {
-    cardBg = '#f0fdf4'; cardBorderColor = '#bbf7d0'; cardBorderStyle = 'solid';
+  const compliance = linkedActivity ? findCompliance(pw, [linkedActivity]) : null;
+  const complianceStyle = compliance || (isCompletedPair ? { color: '#22c55e', bg: '#f0fdf4', label: 'Done' } : null);
+
+  // Card appearance — mirrors CalendarView mobile day list (Good / On target / …)
+  let cardBg, cardBorderColor, cardBorderStyle, useComplianceBorder = false;
+  if (isCompletedPair && complianceStyle) {
+    cardBg = complianceStyle.bg;
+    cardBorderColor = complianceStyle.color;
+    cardBorderStyle = 'solid';
+    useComplianceBorder = true;
   } else if (isMissedPair) {
     cardBg = '#fef2f2'; cardBorderColor = '#fecaca'; cardBorderStyle = 'solid';
   } else if (isPurelyPlanned) {
-    cardBg = planColor + '10';        // ~6% opacity tint
-    cardBorderColor = planColor + '55'; // ~33% opacity
+    cardBg = planColor + '10';
+    cardBorderColor = planColor + '55';
     cardBorderStyle = 'dashed';
   } else {
     cardBg = '#ffffff'; cardBorderColor = '#e5e7eb'; cardBorderStyle = 'solid';
@@ -797,36 +811,70 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         className="w-full text-left rounded-xl border transition-colors p-2 flex flex-col gap-1"
         style={{
           backgroundColor: cardBg,
-          borderColor: cardBorderColor,
-          borderStyle: cardBorderStyle,
-          borderLeftColor: planColor,
-          borderLeftWidth: 3,
-          borderLeftStyle: 'solid',
+          ...(useComplianceBorder
+            ? outlineBorder({ color: cardBorderColor, leftColor: planColor, leftWidth: 3 })
+            : {
+                borderColor: cardBorderColor,
+                borderStyle: cardBorderStyle,
+                borderLeftColor: planColor,
+                borderLeftWidth: 3,
+                borderLeftStyle: 'solid',
+              }),
           WebkitTouchCallout: 'none',
         }}
         title={pw.title}
       >
-        {/* Title row — sport icon (with tiny check overlay when completed) + chart */}
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="relative flex-shrink-0">
-            <SportIcon sport={displaySport} className="w-3.5 h-3.5" style={{ color: isPurelyPlanned ? planColor : undefined }} />
-            {isCompletedPair && (
-              <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
-            )}
-          </span>
-          <span
-            className="text-[13px] font-bold truncate flex-1"
-            style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
-          >
-            {pw.title || 'Planned workout'}
-          </span>
-          {/* Mini step chart — right-aligned in title row */}
-          {isPurelyPlanned && pw.steps?.length > 0 && (
-            <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
+          {isCompletedPair && complianceStyle ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: complianceStyle.color }} />
+              <span className="text-[13px] font-bold truncate flex-1" style={{ color: planColor }}>
+                {pw.title || 'Planned workout'}
+              </span>
+              <span className="text-[10px] font-bold flex-shrink-0" style={{ color: complianceStyle.color }}>
+                {complianceStyle.label}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="relative flex-shrink-0">
+                <SportIcon sport={displaySport} className="w-3.5 h-3.5" style={{ color: isPurelyPlanned ? planColor : undefined }} />
+                {isCompletedPair && (
+                  <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
+                )}
+              </span>
+              <span
+                className="text-[13px] font-bold truncate flex-1"
+                style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
+              >
+                {pw.title || 'Planned workout'}
+              </span>
+              {isPurelyPlanned && pw.steps?.length > 0 && (
+                <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
+              )}
+            </>
           )}
         </div>
-        {/* Category + stats row */}
-        {(effectiveCategory || displayDurStr || displayDistStr) && (
+        {isCompletedPair && complianceStyle && (displayDurStr || displayDistStr || effectiveCategory) && (
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-600 font-semibold min-w-0 flex-wrap">
+            <SportIcon sport={displaySport} className="w-3.5 h-3.5 flex-shrink-0" />
+            {(displayDurStr || displayDistStr) && (
+              <span className="truncate tabular-nums flex-1 min-w-0">
+                {[displayDurStr, displayDistStr].filter(Boolean).join(' · ')}
+              </span>
+            )}
+            {effectiveCategory && getCategory(effectiveCategory) && (
+              <span
+                className="text-[10px] uppercase tracking-wide px-1.5 py-[1px] rounded-md font-bold border leading-tight flex-shrink-0 max-w-full truncate"
+                style={getCatStyle(effectiveCategory)}
+                title={getCategory(effectiveCategory)?.label}
+              >
+                {getCategory(effectiveCategory)?.label}
+              </span>
+            )}
+          </div>
+        )}
+        {!(isCompletedPair && complianceStyle) && (effectiveCategory || displayDurStr || displayDistStr) && (
           <div className="flex items-center gap-1.5 text-xs flex-wrap" style={{ color: isPurelyPlanned ? planColor + 'cc' : '#6b7280' }}>
             {effectiveCategory && getCategory(effectiveCategory) && (
               <span
@@ -1598,7 +1646,7 @@ const WeeklyCalendar = ({
             power: wattsArray[i] || null,
             heartRate: heartrateArray[i] || null,
             speed: velocityArray[i] || null,
-            cadence: cadenceArray[i] || null,
+            cadence: mapStravaStreamCadence(cadenceArray, i, String(activity?.sport || detail?.detail?.type || '')),
             distance: distanceArray[i] || null
           }));
 
@@ -1978,7 +2026,7 @@ const WeeklyCalendar = ({
                                     power: wattsArray[i] || null,
                                     heartRate: heartrateArray[i] || null,
                                     speed: velocityArray[i] || null,
-                                    cadence: cadenceArray[i] || null,
+                                    cadence: mapStravaStreamCadence(cadenceArray, i, String(trainingDetail?.sport || detail?.detail?.type || '')),
                                     distance: distanceArray[i] || null
                                   }));
                                 
@@ -2137,7 +2185,7 @@ const WeeklyCalendar = ({
                                       power: wattsArray[i] || null,
                                       heartRate: heartrateArray[i] || null,
                                       speed: velocityArray[i] || null,
-                                      cadence: cadenceArray[i] || null,
+                                      cadence: mapStravaStreamCadence(cadenceArray, i, String(trainingDetail?.sport || detail?.detail?.type || '')),
                                       distance: distanceArray[i] || null
                                     }));
 
@@ -2292,7 +2340,7 @@ const WeeklyCalendar = ({
                                 power: wattsArray[i] || null,
                                 heartRate: heartrateArray[i] || null,
                                 speed: velocityArray[i] || null,
-                                cadence: cadenceArray[i] || null,
+                                cadence: mapStravaStreamCadence(cadenceArray, i, String(trainingDetail?.sport || detail?.detail?.type || '')),
                                 distance: distanceArray[i] || null
                               }));
 
@@ -2370,7 +2418,7 @@ const WeeklyCalendar = ({
                                         power: wattsArray[i] || null,
                                         heartRate: heartrateArray[i] || null,
                                         speed: velocityArray[i] || null,
-                                        cadence: cadenceArray[i] || null,
+                                        cadence: mapStravaStreamCadence(cadenceArray, i, String(trainingDetail?.sport || detail?.detail?.type || '')),
                                         distance: distanceArray[i] || null
                                       }));
 

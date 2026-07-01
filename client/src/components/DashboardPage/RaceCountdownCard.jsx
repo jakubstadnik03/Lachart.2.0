@@ -1,116 +1,276 @@
 /**
  * RaceCountdownCard — TrainingPeaks-style race planning on the dashboard.
  * Shows the countdown to the next race, its fitness (CTL) target vs the
- * athlete's current fitness, and a list of upcoming races. Coaches can plan
- * races for an athlete by passing that athlete's id.
- *
- * Used on both the web dashboard and the native dashboard.
+ * athlete's current fitness, taper hints, and a list of upcoming races.
  */
-import React, { useEffect, useState, useCallback } from 'react';
-import { getRaceEvents, createRaceEvent, deleteRaceEvent } from '../../services/api';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { getRaceEvents, createRaceEvent, deleteRaceEvent, getRaceTaperPreview, applyRaceTaper } from '../../services/api';
+import { useAuth } from '../../context/AuthProvider';
+import { syncRaceLocalNotifications } from '../../utils/raceLocalNotifications';
+import { daysUntilRace, recommendedTaperTss, sumWeekPlannedTss } from '../../utils/trainingInsights';
 
 const SPORTS = ['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'];
 const PRIORITY_COLOR = { A: '#E05347', B: '#F59E0B', C: '#599FD0' };
 
 function daysUntil(dateStr) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  d.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d - today) / 86400000);
+  return daysUntilRace(dateStr);
 }
 
 function fmtDate(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function RaceCountdownCard({ athleteId, currentCTL = null, editable = true }) {
+function formatForm(tsb) {
+  if (tsb == null || Number.isNaN(Number(tsb))) return null;
+  const n = Math.round(Number(tsb));
+  return n >= 0 ? `+${n}` : `${n}`;
+}
+
+export default function RaceCountdownCard({
+  athleteId,
+  currentCTL = null,
+  currentForm = null,
+  plannedWorkouts = [],
+  editable = true,
+  onTaperApplied = null,
+}) {
+  const { user } = useAuth();
   const [races, setRaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', date: '', sport: 'run', priority: 'A', targetCTL: '' });
   const [saving, setSaving] = useState(false);
+  const [taperPreview, setTaperPreview] = useState(null);
+  const [taperOpen, setTaperOpen] = useState(false);
+  const [taperLoading, setTaperLoading] = useState(false);
+  const [taperApplying, setTaperApplying] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const todayIso = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
       const { data } = await getRaceEvents(athleteId, { from: todayIso });
-      setRaces(Array.isArray(data) ? data : []);
-    } catch { setRaces([]); }
-    finally { setLoading(false); }
-  }, [athleteId]);
+      const list = Array.isArray(data) ? data : [];
+      setRaces(list);
+      syncRaceLocalNotifications(list, user?.notifications).catch(() => {});
+    } catch {
+      setRaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [athleteId, user?.notifications]);
 
-  useEffect(() => { setLoading(true); load(); }, [load]);
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [load]);
 
   const next = races[0] || null;
   const rest = races.slice(1, 5);
+  const days = next ? daysUntil(next.date) : null;
+
+  const hints = useMemo(() => {
+    if (!next) return [];
+    const out = [];
+    const formStr = formatForm(currentForm);
+    if (formStr) {
+      out.push({ kind: 'form', text: `Form ${formStr}` });
+    }
+    if (next.targetCTL != null && currentCTL != null) {
+      const gap = Math.round(Number(next.targetCTL) - Number(currentCTL));
+      if (gap > 3) out.push({ kind: 'ctl', text: `Do cílového CTL +${gap}` });
+      else if (gap < -3) out.push({ kind: 'ctl', text: `CTL ${Math.round(currentCTL)} (cíl ${Math.round(next.targetCTL)})` });
+    }
+    if (next.priority === 'A' && days != null && days <= 14 && days >= 0) {
+      const weekTss = sumWeekPlannedTss(plannedWorkouts);
+      if (weekTss > 0) {
+        const rec = recommendedTaperTss(weekTss);
+        if (weekTss > rec * 1.1) {
+          out.push({ kind: 'taper', text: `Týden ${Math.round(weekTss)} TSS → taper ~${rec}` });
+        }
+      }
+    }
+    return out;
+  }, [next, currentCTL, currentForm, days, plannedWorkouts]);
+
+  const showTaperCta = next?.priority === 'A' && days != null && days > 0 && days <= 21;
+
+  const openTaperPreview = async () => {
+    if (!next?._id) return;
+    setTaperOpen(true);
+    setTaperLoading(true);
+    try {
+      const { data } = await getRaceTaperPreview(next._id, athleteId);
+      setTaperPreview(data);
+    } catch {
+      setTaperPreview(null);
+    } finally {
+      setTaperLoading(false);
+    }
+  };
+
+  const applyTaper = async () => {
+    if (!next?._id) return;
+    setTaperApplying(true);
+    try {
+      await applyRaceTaper(next._id, athleteId, { createPeriod: true });
+      setTaperOpen(false);
+      setTaperPreview(null);
+      onTaperApplied && onTaperApplied();
+    } catch {
+      /* ignore */
+    } finally {
+      setTaperApplying(false);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.date) return;
     setSaving(true);
     try {
-      await createRaceEvent({
-        name: form.name.trim(),
-        date: form.date,
-        sport: form.sport,
-        priority: form.priority,
-        targetCTL: form.targetCTL ? Number(form.targetCTL) : null,
-      }, athleteId);
+      await createRaceEvent(
+        {
+          name: form.name.trim(),
+          date: form.date,
+          sport: form.sport,
+          priority: form.priority,
+          targetCTL: form.targetCTL ? Number(form.targetCTL) : null,
+        },
+        athleteId
+      );
       setForm({ name: '', date: '', sport: 'run', priority: 'A', targetCTL: '' });
       setAdding(false);
       await load();
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false);
+    }
   };
 
   const remove = async (id) => {
-    try { await deleteRaceEvent(id); await load(); } catch { /* ignore */ }
+    try {
+      await deleteRaceEvent(id);
+      await load();
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
-    <div style={{
-      background: '#fff', border: '1px solid #E5E7EB', borderRadius: 16,
-      padding: '16px 16px 14px', boxShadow: '0 1px 2px rgba(15,23,42,.04)',
-    }}>
+    <div
+      style={{
+        background: '#fff',
+        border: '1px solid #E5E7EB',
+        borderRadius: 16,
+        padding: '16px 16px 14px',
+        boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: '#0A0E1A', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 800,
+            color: '#0A0E1A',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
           Upcoming races
         </span>
         {editable && (
-          <button onClick={() => setAdding(a => !a)}
-            style={{ fontSize: 12, fontWeight: 700, color: '#767EB5', background: 'transparent',
-              border: '1px solid #767EB555', borderRadius: 999, padding: '3px 10px', cursor: 'pointer' }}>
+          <button
+            onClick={() => setAdding((a) => !a)}
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#767EB5',
+              background: 'transparent',
+              border: '1px solid #767EB555',
+              borderRadius: 999,
+              padding: '3px 10px',
+              cursor: 'pointer',
+            }}
+          >
             {adding ? 'Cancel' : '+ Add race'}
           </button>
         )}
       </div>
 
       {adding && (
-        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12,
-          padding: 12, background: '#F8F9FC', borderRadius: 12 }}>
-          <input required placeholder="Race name" value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            style={inputStyle} />
+        <form
+          onSubmit={submit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            marginBottom: 12,
+            padding: 12,
+            background: '#F8F9FC',
+            borderRadius: 12,
+          }}
+        >
+          <input
+            required
+            placeholder="Race name"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            style={inputStyle}
+          />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input required type="date" value={form.date}
-              onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ ...inputStyle, flex: 1 }} />
-            <select value={form.sport} onChange={e => setForm(f => ({ ...f, sport: e.target.value }))} style={{ ...inputStyle, flex: 1 }}>
-              {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+            <input
+              required
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <select
+              value={form.sport}
+              onChange={(e) => setForm((f) => ({ ...f, sport: e.target.value }))}
+              style={{ ...inputStyle, flex: 1 }}
+            >
+              {SPORTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={{ ...inputStyle, flex: 1 }}>
+            <select
+              value={form.priority}
+              onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+              style={{ ...inputStyle, flex: 1 }}
+            >
               <option value="A">A — goal race</option>
               <option value="B">B race</option>
               <option value="C">C race</option>
             </select>
-            <input type="number" placeholder="Target CTL" value={form.targetCTL}
-              onChange={e => setForm(f => ({ ...f, targetCTL: e.target.value }))} style={{ ...inputStyle, flex: 1 }} />
+            <input
+              type="number"
+              placeholder="Target CTL"
+              value={form.targetCTL}
+              onChange={(e) => setForm((f) => ({ ...f, targetCTL: e.target.value }))}
+              style={{ ...inputStyle, flex: 1 }}
+            />
           </div>
-          <button type="submit" disabled={saving}
-            style={{ fontSize: 13, fontWeight: 700, color: '#fff', background: '#767EB5', border: 'none',
-              borderRadius: 10, padding: '8px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+          <button
+            type="submit"
+            disabled={saving}
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#fff',
+              background: '#767EB5',
+              border: 'none',
+              borderRadius: 10,
+              padding: '8px',
+              cursor: 'pointer',
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
             {saving ? 'Saving…' : 'Add race'}
           </button>
         </form>
@@ -124,25 +284,35 @@ export default function RaceCountdownCard({ athleteId, currentCTL = null, editab
         </div>
       ) : (
         <>
-          {/* Hero: next race countdown */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
             <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
-              {Math.max(0, daysUntil(next.date))}
+              {Math.max(0, days)}
             </span>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
-              {daysUntil(next.date) === 0 ? 'race day' : `days until`}
+              {days === 0 ? 'race day' : 'days until'}
             </span>
-            <span style={{
-              marginLeft: 'auto', fontSize: 10, fontWeight: 800, color: '#fff',
-              background: PRIORITY_COLOR[next.priority] || '#767EB5', borderRadius: 6, padding: '2px 7px',
-            }}>{next.priority}</span>
+            <span
+              style={{
+                marginLeft: 'auto',
+                fontSize: 10,
+                fontWeight: 800,
+                color: '#fff',
+                background: PRIORITY_COLOR[next.priority] || '#767EB5',
+                borderRadius: 6,
+                padding: '2px 7px',
+              }}
+            >
+              {next.priority}
+            </span>
           </div>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#0A0E1A' }}>{next.name}</div>
           <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 1 }}>
-            {fmtDate(next.date)}{next.sport ? ` · ${next.sport}` : ''}{next.location ? ` · ${next.location}` : ''}
+            {fmtDate(next.date)}
+            {next.sport ? ` · ${next.sport}` : ''}
+            {next.location ? ` · ${next.location}` : ''}
           </div>
           {next.targetCTL != null && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               {currentCTL != null && (
                 <span style={{ fontSize: 12, color: '#6B7280' }}>
                   Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
@@ -154,18 +324,169 @@ export default function RaceCountdownCard({ athleteId, currentCTL = null, editab
               </span>
             </div>
           )}
+          {hints.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {hints.map((h) => (
+                <span
+                  key={h.kind + h.text}
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: h.kind === 'taper' ? '#B45309' : '#374151',
+                    background: h.kind === 'taper' ? '#FFFBEB' : '#F3F4F6',
+                    borderRadius: 999,
+                    padding: '3px 9px',
+                    border: h.kind === 'taper' ? '1px solid #FDE68A' : '1px solid #E5E7EB',
+                  }}
+                >
+                  {h.text}
+                </span>
+              ))}
+            </div>
+          )}
 
-          {/* Upcoming list */}
+          {showTaperCta && editable && (
+            <div style={{ marginTop: 12 }}>
+              {!taperOpen ? (
+                <button
+                  type="button"
+                  onClick={openTaperPreview}
+                  style={{
+                    width: '100%',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#92400E',
+                    background: '#FFFBEB',
+                    border: '1px solid #FDE68A',
+                    borderRadius: 10,
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Aplikovat taper na plán
+                </button>
+              ) : (
+                <div style={{ padding: 10, background: '#FFFBEB', borderRadius: 10, border: '1px solid #FDE68A' }}>
+                  {taperLoading ? (
+                    <div style={{ fontSize: 12, color: '#92400E' }}>Počítám návrh…</div>
+                  ) : taperPreview?.changes?.length ? (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400E', marginBottom: 6 }}>
+                        {taperPreview.summary.workouts} tréninků · {taperPreview.summary.tssBefore} → {taperPreview.summary.tssAfter} TSS
+                      </div>
+                      <ul style={{ margin: '0 0 8px', paddingLeft: 16, fontSize: 11, color: '#78350F' }}>
+                        {taperPreview.changes.slice(0, 4).map((c) => (
+                          <li key={c.id}>
+                            {c.date}: {c.title} ({c.before.targetTss || '—'} → {c.after.targetTss || '—'} TSS)
+                          </li>
+                        ))}
+                      </ul>
+                      {taperPreview.suggestedPeriod && (
+                        <div style={{ fontSize: 10.5, color: '#A16207', marginBottom: 8 }}>
+                          + perioda Taper ({taperPreview.suggestedPeriod.startDate} – {taperPreview.suggestedPeriod.endDate})
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          disabled={taperApplying}
+                          onClick={applyTaper}
+                          style={{
+                            flex: 1,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: '#fff',
+                            background: '#D97706',
+                            border: 'none',
+                            borderRadius: 8,
+                            padding: '7px',
+                            cursor: 'pointer',
+                            opacity: taperApplying ? 0.6 : 1,
+                          }}
+                        >
+                          {taperApplying ? 'Ukládám…' : 'Přeplánovat'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setTaperOpen(false); setTaperPreview(null); }}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#92400E',
+                            background: 'transparent',
+                            border: '1px solid #FDE68A',
+                            borderRadius: 8,
+                            padding: '7px 12px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Zrušit
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#92400E' }}>
+                      Žádné budoucí plány k úpravě — přidej tréninky do kalendáře.
+                      <button type="button" onClick={() => setTaperOpen(false)} style={{ marginLeft: 8, fontWeight: 700, background: 'none', border: 'none', color: '#B45309', cursor: 'pointer' }}>OK</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {rest.length > 0 && (
-            <div style={{ marginTop: 12, borderTop: '1px solid #F3F4F6', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {rest.map(r => (
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: '1px solid #F3F4F6',
+                paddingTop: 8,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              {rest.map((r) => (
                 <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: PRIORITY_COLOR[r.priority] || '#767EB5', flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 'auto', flexShrink: 0 }}>{Math.max(0, daysUntil(r.date))}d</span>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: PRIORITY_COLOR[r.priority] || '#767EB5',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#0A0E1A',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {r.name}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 'auto', flexShrink: 0 }}>
+                    {Math.max(0, daysUntil(r.date))}d
+                  </span>
                   {editable && (
-                    <button onClick={() => remove(r._id)} aria-label="Delete"
-                      style={{ background: 'transparent', border: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 13, padding: 2 }}>×</button>
+                    <button
+                      onClick={() => remove(r._id)}
+                      aria-label="Delete"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#D1D5DB',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        padding: 2,
+                      }}
+                    >
+                      ×
+                    </button>
                   )}
                 </div>
               ))}
@@ -178,6 +499,12 @@ export default function RaceCountdownCard({ athleteId, currentCTL = null, editab
 }
 
 const inputStyle = {
-  fontSize: 13, padding: '7px 9px', borderRadius: 8, border: '1px solid #E5E7EB',
-  background: '#fff', color: '#0A0E1A', fontFamily: 'inherit', outline: 'none',
+  fontSize: 13,
+  padding: '7px 9px',
+  borderRadius: 8,
+  border: '1px solid #E5E7EB',
+  background: '#fff',
+  color: '#0A0E1A',
+  fontFamily: 'inherit',
+  outline: 'none',
 };

@@ -27,8 +27,9 @@ export function notifTypeKey(type) {
   if (type.includes('fit'))      return 'upload';
   if (type.includes('training')) return 'upload'; // generic activity fallback
   if (type.includes('test'))     return 'test';
-  if (type.includes('plan'))     return 'plan';
-  if (type.includes('coach'))    return 'coach';
+  if (type.includes('race'))     return 'plan';
+  if (type.includes('review'))   return 'coach';
+  if (type.includes('digest'))   return 'plan';
   return 'bell';
 }
 

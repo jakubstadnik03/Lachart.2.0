@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { prepareTrainingChartData, formatDuration } from '../../utils/fitAnalysisUtils';
+import { cadenceDisplayUnit, isRunLikeSport } from '../../utils/cadenceDisplay';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, formatElevation } from '../../utils/unitsConverter';
 
@@ -119,8 +120,9 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   // Get zones from user profile based on sport type
   const sportType = training?.sport?.toLowerCase() || 'cycling';
   const isCycling = sportType.includes('ride') || sportType.includes('cycle') || sportType.includes('bike');
-  const isRunning = sportType.includes('run');
+  const isRunning = isRunLikeSport(sportType);
   const isSwimming = sportType.includes('swim');
+  const cadenceUnit = cadenceDisplayUnit(sportType);
   
   const powerZones = isCycling 
     ? (userProfile?.powerZones?.cycling || null)
@@ -382,24 +384,46 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     onFocusDismiss?.();
   }, [clearPeakFocusOverlay, onFocusDismiss]);
 
-  // Summarise the segment between two in-graph x-pixels (no zoom) — used by the
-  // mobile drag-to-select gesture so you can mark a part of the ride and read
-  // its averages without losing the full chart.
-  const summarizeFromRelativeX = useCallback((relA, relB) => {
-    if (!processedData || relA == null || relB == null) return;
+  // Mark a segment between two in-graph x-pixels and zoom the X-axis to it.
+  const applySegmentFromRelativeX = useCallback((relA, relB, { minWidthRatio = 0.05 } = {}) => {
+    if (!processedData || relA == null || relB == null) return false;
     const startX = Math.min(relA, relB);
     const endX = Math.max(relA, relB);
-    if (endX - startX < graphWidth * 0.03) return; // too small a swipe — treat as a tap
-    const zoomedMin = processedData.maxDistance * zoomRange.min;
-    const zoomedMax = processedData.maxDistance * zoomRange.max;
-    const zr = (zoomedMax - zoomedMin) || 1;
-    const startDistance = zoomedMin + (startX / graphWidth) * zr;
-    const endDistance = zoomedMin + (endX / graphWidth) * zr;
-    let si = 0, ei = processedData.points.length - 1;
-    for (let i = 0; i < processedData.points.length; i++) { if (processedData.points[i].distance >= startDistance) { si = i; break; } }
-    for (let i = processedData.points.length - 1; i >= 0; i--) { if (processedData.points[i].distance <= endDistance) { ei = i; break; } }
-    summarizeWindow(processedData.points, si, ei, 'Selected segment');
+    const selectionWidth = endX - startX;
+    if (selectionWidth < graphWidth * minWidthRatio) return false;
+
+    const zoomedMinDistance = processedData.maxDistance * zoomRange.min;
+    const zoomedMaxDistance = processedData.maxDistance * zoomRange.max;
+    const zoomedSpan = zoomedMaxDistance - zoomedMinDistance;
+
+    const startDistance = zoomedMinDistance + (startX / graphWidth) * zoomedSpan;
+    const endDistance = zoomedMinDistance + (endX / graphWidth) * zoomedSpan;
+
+    const newMin = startDistance / processedData.maxDistance;
+    const newMax = endDistance / processedData.maxDistance;
+    setZoomRange({ min: Math.max(0, newMin), max: Math.min(1, newMax) });
+
+    let startIndex = 0;
+    let endIndex = processedData.points.length - 1;
+    for (let i = 0; i < processedData.points.length; i++) {
+      if (processedData.points[i].distance >= startDistance) {
+        startIndex = i;
+        break;
+      }
+    }
+    for (let i = processedData.points.length - 1; i >= 0; i--) {
+      if (processedData.points[i].distance <= endDistance) {
+        endIndex = i;
+        break;
+      }
+    }
+    summarizeWindow(processedData.points, startIndex, endIndex, 'Selected segment');
+    return true;
   }, [processedData, graphWidth, zoomRange, summarizeWindow]);
+
+  const summarizeFromRelativeX = useCallback((relA, relB) => {
+    applySegmentFromRelativeX(relA, relB, { minWidthRatio: 0.03 });
+  }, [applySegmentFromRelativeX]);
 
   // When coming from Power Radar (highlightMetric), auto-zoom to the best window and keep tooltip there
   useEffect(() => {
@@ -1148,54 +1172,20 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   }, [processedData, graphWidth, padding.left, onHover, onLeave, isDragging, dragStart, zoomRange, xScale, svgWidth]);
 
   // Handle mouse up for zoom
-  const handleMouseUp = useCallback((e) => {
+  const handleMouseUp = useCallback(() => {
     if (!isDragging || !dragStart || !dragEnd || !processedData) {
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
       return;
     }
-    
-    const startX = Math.min(dragStart.relativeX, dragEnd.relativeX);
-    const endX = Math.max(dragStart.relativeX, dragEnd.relativeX);
-    const selectionWidth = endX - startX;
-    
-    // Only zoom if selection is meaningful (at least 5% of graph width)
-    if (selectionWidth > graphWidth * 0.05) {
-      // Convert X positions to distance ratios
-      const zoomedMinDistance = processedData.maxDistance * zoomRange.min;
-      const zoomedMaxDistance = processedData.maxDistance * zoomRange.max;
-      const zoomedRange = zoomedMaxDistance - zoomedMinDistance;
-      
-      const startDistance = zoomedMinDistance + (startX / graphWidth) * zoomedRange;
-      const endDistance = zoomedMinDistance + (endX / graphWidth) * zoomedRange;
-      
-      const newMin = startDistance / processedData.maxDistance;
-      const newMax = endDistance / processedData.maxDistance;
-      
-      setZoomRange({ min: Math.max(0, newMin), max: Math.min(1, newMax) });
 
-      let startIndex = 0;
-      let endIndex = processedData.points.length - 1;
-      for (let i = 0; i < processedData.points.length; i++) {
-        if (processedData.points[i].distance >= startDistance) {
-          startIndex = i;
-          break;
-        }
-      }
-      for (let i = processedData.points.length - 1; i >= 0; i--) {
-        if (processedData.points[i].distance <= endDistance) {
-          endIndex = i;
-          break;
-        }
-      }
-      summarizeWindow(processedData.points, startIndex, endIndex, 'Selected segment');
-    }
-    
+    applySegmentFromRelativeX(dragStart.relativeX, dragEnd.relativeX);
+
     setIsDragging(false);
     setDragStart(null);
     setDragEnd(null);
-  }, [isDragging, dragStart, dragEnd, processedData, graphWidth, zoomRange, summarizeWindow]);
+  }, [isDragging, dragStart, dragEnd, processedData, applySegmentFromRelativeX]);
 
   const handleMouseLeave = useCallback(() => {
     // On mobile, don't clear clicked point on mouse leave
@@ -1341,7 +1331,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       {/* Discovery hint — only until the user has a selection */}
       {!highlightSummary && (
         <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mb-1`}>
-          {isMobile ? 'Drag across the chart to measure a segment' : 'Drag across the chart to zoom & measure a segment'}
+          Drag across the chart to zoom & measure a segment
         </div>
       )}
 
@@ -1399,7 +1389,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
               <span>
                 Avg Cadence:{' '}
                 <span className="font-medium">
-                  {Math.round(highlightSummary.avgCadence)} rpm
+                  {Math.round(highlightSummary.avgCadence)} {cadenceUnit}
                 </span>
               </span>
             )}
@@ -1755,7 +1745,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             )}
             {clickedPoint.cadence > 0 && (
               <span className="text-[10px] text-gray-500">
-                {Math.round(clickedPoint.cadence)} rpm
+                {Math.round(clickedPoint.cadence)} {cadenceUnit}
               </span>
             )}
             {clickedPoint.altitude != null && clickedPoint.altitude > 0 && (
@@ -1821,7 +1811,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
                 )}
                 {activePoint.cadence > 0 && (
                   <div className="text-gray-600">
-                    Cadence: {Math.round(activePoint.cadence)} rpm
+                    Cadence: {Math.round(activePoint.cadence)} {cadenceUnit}
                   </div>
                 )}
                 {activePoint.altitude > 0 && (

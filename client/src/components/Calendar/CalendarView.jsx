@@ -43,6 +43,7 @@ import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity } from '../../utils/calendarDayOrdering';
+import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -2592,6 +2593,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Fallback 3: synthesise a step-function time-series from laps so every
   // sport shows the Training Overview curves even without per-second streams.
   const chartTraining = useMemo(() => {
+    const fromStrava = String(merged?.id || merged?._id || a?.id || a?._id || '').startsWith('strava-');
+    const normCad = (v) => {
+      const n = Number(v);
+      if (!(n > 0)) return null;
+      return fromStrava ? (stravaHalfCadenceToSpm(n, sport) ?? n) : n;
+    };
+
     // Priority 1 — FIT file has per-second records already
     if (merged?.records?.length > 0) return merged;
 
@@ -2677,7 +2685,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           let lapOffset = 0;
           rawLapsForHr.forEach(lap => {
             const dur = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-            const cad = Number(lap.average_cadence || lap.avgCadence || 0);
+            const cad = normCad(Number(lap.average_cadence || lap.avgCadence || 0));
             if (dur > 0 && cad > 0) {
               const lapStart = lapOffset;
               const lapEnd = lapOffset + dur;
@@ -2696,7 +2704,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           heartRate: heartrate[i] > 0 ? heartrate[i]
                     : (lapHrBySecond && lapHrBySecond[i] > 0 ? lapHrBySecond[i] : null),
       speed:     velocity[i] > 0 ? velocity[i] : null,
-      cadence:   cadence[i] > 0 ? cadence[i]
+      cadence:   cadence[i] > 0 ? normCad(cadence[i])
                 : (lapCadBySecond && lapCadBySecond[i] > 0 ? lapCadBySecond[i] : null),
       altitude:  altitude[i] != null ? altitude[i] : null,
     }));
@@ -2731,7 +2739,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const power     = Number(lap.average_watts || lap.avgPower || 0) || null;
       const hr        = Number(lap.average_heartrate || lap.avgHeartRate || 0) || null;
       const speedMs   = Number(lap.average_speed || lap.avgSpeed || 0) || null; // m/s
-      const cad       = Number(lap.average_cadence || lap.avgCadence || 0) || null;
+      const cad       = normCad(Number(lap.average_cadence || lap.avgCadence || 0));
       const lapDist   = Number(lap.distance || 0);
       // total_elevation_gain is always ≥0 (Strava doesn't expose per-lap descent)
       // We linearly add it across the lap to give a rough altitude profile.
@@ -2758,7 +2766,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
     if (records.length === 0) return null;
     return { ...merged, records };
-  }, [merged, streams]);
+  }, [merged, streams, sport, a]);
 
   // Detect when we're showing synthetic (lap-average step-function) data
   // instead of real per-second Strava streams so we can offer a reload button.
@@ -3106,6 +3114,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   const tssProfile = profileProp || loadedProfile || authUser;
   const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
+  const displayTitle = (() => {
+    const fromPlan = String(plannedWorkout?.title || '').trim();
+    if (fromPlan) return fromPlan;
+    const linked = String(merged.linkedTrainingTitle || '').trim();
+    if (linked) return linked;
+    return String(title || 'Activity').trim() || 'Activity';
+  })();
   // Prefer *moving* time (excludes pauses / auto-stop) over elapsed time so
   // a Strava ride with 30 min of coffee-stop pauses reports the actual saddle
   // time. Falls back to elapsed only when moving is missing (very old uploads,
@@ -3337,8 +3352,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   useEffect(() => {
     const distKm = dist > 0 ? (dist >= 1000 ? (dist / 1000).toFixed(2) : (dist / 1000).toFixed(3)) : '';
     const durDisplay = dur > 0 ? fmtDur(dur) : '';
+    const formTitle = String(plannedWorkout?.title || '').trim() || title || '';
     setCompletedForm({
-      title: title || '',
+      title: formTitle,
       description: notes || '',
       distanceKm: distKm,
       durationDisplay: durDisplay,
@@ -3347,7 +3363,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       rpe: rpe > 0 ? String(rpe) : '',
       lactate: sessionLactate != null ? String(sessionLactate) : '',
     });
-  }, [activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activityKey, plannedWorkout?.title, plannedWorkout?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Strava detail (kilojoules, saved calories, rpe) loads after the modal opens —
   // back-fill completed fields when they arrive without clobbering user edits.
@@ -3991,7 +4007,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
+            <div className="font-bold text-gray-900 text-base truncate">{displayTitle}</div>
             <div className="text-xs text-gray-400">{dateStr}</div>
           </div>
           {detailLoading && (
@@ -4011,9 +4027,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {/* Edit — opens the Planned | Completed editor (Edit tab; not on tab bar) */}
           <button
             type="button"
-            onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
+            onClick={() => {
+              if (mobileView === 'edit') {
+                setDurationPickerField(null);
+                setMobileView('summary');
+                setEditingPlanned(false);
+              } else {
+                setEditingPlanned(true);
+                setMobileView('edit');
+              }
+            }}
             title="Edit activity"
-            className="p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 text-gray-500 touch-manipulation"
+            className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 touch-manipulation ${
+              mobileView === 'edit' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'
+            }`}
             style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             <PencilIcon className="w-4 h-4" />
@@ -4049,11 +4076,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </button>
         </div>
 
-        {/* Tab bar — TrainingPeaks-style: Summary · Map/Graph · Laps · Peaks */}
+        {/* Tab bar — Summary · Map/Graph · Laps · Peaks (edit via pencil only) */}
         <div className="flex border-b border-gray-100 flex-shrink-0">
           {[
             { id: 'summary', label: 'Summary' },
-            { id: 'edit', label: 'Edit' },
             ...((gpsData.length > 0 || chartTraining?.records?.length > 0) ? [{ id: 'mapgraph', label: 'Map/Graph' }] : []),
             ...(hasLaps ? [{ id: 'laps', label: 'Laps' }] : []),
             ...((chartTraining?.records?.length > 10) ? [{ id: 'peaks', label: 'Peaks' }] : []),
@@ -4097,9 +4123,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 const compliancePct = (plDur > 0 && dur > 0) ? Math.round(dur / plDur * 100) : null;
                 const durCompliant = ratioColor(dur, plDur) === '#059669';
 
+                const paceTable = paceStr
+                  ? {
+                      co: paceStr.replace(/\s*\/\s*\S+$/, '').trim(),
+                      unit: (paceStr.match(/(\/\S+)\s*$/) || [])[1] || '',
+                    }
+                  : { co: null, unit: '' };
+
                 const speedRow = isBike
                   ? { label: 'Avg Speed', co: avgSpeed > 0 ? (avgSpeed * 3.6).toFixed(1) : null, plRaw: null, coRaw: avgSpeed > 0 ? avgSpeed * 3.6 : null, unit: 'km/h' }
-                  : { label: 'Avg Pace', co: paceStr, plRaw: null, coRaw: null, unit: '' };
+                  : { label: 'Avg Pace', co: paceTable.co, plRaw: null, coRaw: null, unit: paceTable.unit };
 
                 const rows = [
                   { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: ratioColor(dur, plDur), delta: deltaPct(dur, plDur) },
@@ -4126,7 +4159,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
                   { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
                   isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
-                  { label: 'Cadence', unit: isSwim ? 'spm' : 'rpm', d: mam('cadence'), dec: 0 },
+                  { label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: mam('cadence'), dec: 0 },
                 ].filter(Boolean).filter(r => r.d);
 
                 const hasPlanned = rows.some(r => r.pl != null);
@@ -4459,7 +4492,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               const mamRows = [
                 isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
                 { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
-                { label: 'Cadence', unit: isSwim ? 'spm' : 'rpm', d: mam('cadence'), dec: 0 },
+                { label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: mam('cadence'), dec: 0 },
                 { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
                 { label: 'Elevation', unit: 'm', d: mam('altitude'), dec: 0 },
               ].filter(Boolean).filter(r => r.d);
@@ -4677,7 +4710,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         <span className="text-right">Dist</span>
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
-                        {hasCadence && <span className="text-right">{isSwim ? 'SPM' : 'Cad'}</span>}
+                        {hasCadence && <span className="text-right">{isSwim ? 'SPM' : cadenceDisplayUnit(sport)}</span>}
                         {showLactate && <span className="text-right">La</span>}
                       </div>
                       <div className="divide-y divide-gray-50">
@@ -4689,7 +4722,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                           const lapHr = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
                           const lapPower = Number(lap.average_watts || lap.avgPower || lap.avg_power || 0);
-                          const lapCad = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
+                          const lapCadRaw = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
+                          const lapCad = lapCadRaw > 0
+                            ? (isStravaActivity ? (stravaHalfCadenceToSpm(lapCadRaw, sport) ?? Math.round(lapCadRaw)) : Math.round(lapCadRaw))
+                            : 0;
                           const lapLa = lap.lactate ?? lap.lactateValue;
                           const lapNum = lap.lapNumber ?? (i + 1);
                           // Detect lap type for color-coding
@@ -4879,7 +4915,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-gray-900 text-base truncate">{title}</div>
+            <div className="font-bold text-gray-900 text-base truncate">{displayTitle}</div>
             <div className="text-xs text-gray-400">{dateStr}</div>
           </div>
           {detailLoading && (
@@ -7273,6 +7309,24 @@ export default function CalendarView({
     }
     const scrollTarget = (scrollEl && scrollEl !== document.documentElement) ? scrollEl : window;
 
+    const restoreScrollToDay = (dayKey) => {
+      const el = dayRefs.current[dayKey];
+      if (!el) return;
+      const headerEl = mobileStickyHeaderRef.current;
+      const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 0;
+      const offset = el.getBoundingClientRect().top - headerBottom - 12;
+      let s = el.parentElement;
+      while (s && s !== document.documentElement) {
+        const cs = getComputedStyle(s);
+        if (cs.overflowY === 'auto' || cs.overflowY === 'scroll') {
+          s.scrollBy({ top: offset, behavior: 'auto' });
+          return;
+        }
+        s = s.parentElement;
+      }
+      window.scrollBy({ top: offset, behavior: 'auto' });
+    };
+
     const onScroll = () => {
       if (isAutoScrollingRef.current) return;
       // Use the sticky header's bottom as a viewport-fixed reference point.
@@ -7292,12 +7346,29 @@ export default function CalendarView({
       });
       if (best && best !== selectedMobileDayRef.current) {
         setSelectedMobileDay(best);
+        const bestD = new Date(`${best}T12:00:00`);
+        if (!Number.isNaN(bestD.getTime())) {
+          const anchorMonthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+          const bestMonthStart = new Date(bestD.getFullYear(), bestD.getMonth(), 1);
+          const nextMonthStart = addMonths(anchorMonthStart, 1);
+          if (
+            bestMonthStart.getTime() === nextMonthStart.getTime()
+            && bestMonthStart.getTime() !== anchorMonthStart.getTime()
+          ) {
+            isAutoScrollingRef.current = true;
+            setAnchorDate(bestMonthStart);
+            requestAnimationFrame(() => {
+              restoreScrollToDay(best);
+              setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
+            });
+          }
+        }
       }
     };
 
     scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     return () => scrollTarget.removeEventListener('scroll', onScroll);
-  }, [isMobile, mobileTab]);
+  }, [isMobile, mobileTab, anchorDate]);
 
   // Scroll-to-bottom/top → advance to next/prev month using IntersectionObserver
   useEffect(() => {
@@ -7847,6 +7918,23 @@ export default function CalendarView({
     return getCompactMonthDays(anchorDate);
   }, [view, anchorDate, isMobile]);
 
+  // Mobile day list: current month + full next month so the user can keep
+  // scrolling into July while June is still the header month (header syncs via scroll spy).
+  const mobileCalendarListDays = useMemo(() => {
+    if (!isMobile) {
+      return days.filter((d) => d.getMonth() === anchorDate.getMonth());
+    }
+    const start = startOfMonth(anchorDate);
+    const end = endOfMonth(addMonths(anchorDate, 1));
+    const result = [];
+    let d = new Date(start);
+    while (d <= end) {
+      result.push(new Date(d));
+      d = addDays(d, 1);
+    }
+    return result;
+  }, [anchorDate, isMobile, days]);
+
   // Fullscreen: 16 weeks starting 2 weeks before anchor
   const fullscreenWeeks = useMemo(() => {
     if (isMobile) return [];
@@ -7999,6 +8087,9 @@ export default function CalendarView({
       visibleWeekKeys = new Set(days.map(d => startOfWeek(d).toISOString().slice(0,10)));
       fullscreenWeeks.forEach(wk => visibleWeekKeys.add(startOfWeek(wk[0]).toISOString().slice(0,10)));
       mobileWeeks.forEach(wk => visibleWeekKeys.add(startOfWeek(wk[0]).toISOString().slice(0,10)));
+      if (isMobile) {
+        mobileCalendarListDays.forEach((d) => visibleWeekKeys.add(startOfWeek(d).toISOString().slice(0, 10)));
+      }
     }
 
     // Get FTP and threshold pace from user profile — used by resolveActivityTss
@@ -8140,11 +8231,13 @@ export default function CalendarView({
     filteredActivities,
     filteredPlannedWorkouts,
     days,
+    mobileCalendarListDays,
     fullscreenWeeks,
     mobileWeeks,
     userProfile,
     view,
     anchorDate,
+    isMobile,
     tssRecalcTick,
   ]);
 
@@ -8341,8 +8434,8 @@ export default function CalendarView({
                     className="overflow-y-auto overscroll-contain touch-pan-y"
                     style={{
                       maxHeight: miniCalPanelHeight > 0
-                        ? `${miniCalPanelHeight}px`
-                        : `${miniCalViewportRows * 38 + 4}px`,
+                        ? `${miniCalPanelHeight + 38}px`
+                        : `${(miniCalViewportRows + 1) * 38 + 4}px`,
                       scrollSnapType: 'y mandatory',
                       WebkitOverflowScrolling: 'touch',
                     }}
@@ -8406,8 +8499,8 @@ export default function CalendarView({
                     className="overflow-y-auto overscroll-contain touch-pan-y"
                     style={{
                       maxHeight: miniCalPanelHeight > 0
-                        ? `${miniCalPanelHeight}px`
-                        : `${miniCalViewportRows * 38 + 4}px`,
+                        ? `${miniCalPanelHeight + 38}px`
+                        : `${(miniCalViewportRows + 1) * 38 + 4}px`,
                       scrollSnapType: 'y mandatory',
                       WebkitOverflowScrolling: 'touch',
                     }}
@@ -8470,22 +8563,34 @@ export default function CalendarView({
               onTouchStart={handleCalSwipeStart}
               onTouchEnd={handleCalSwipeEnd}
             >
-              {days.filter(d => d.getMonth() === anchorDate.getMonth()).map(dayDate => {
+              {mobileCalendarListDays.map((dayDate, dayIdx) => {
                 const key = getLocalDateString(dayDate);
                 const acts = activitiesByDay.get(key) || [];
                 const planned = plannedByDay.get(key) || [];
                 const isToday = isSameDay(dayDate, new Date());
                 const isSelected = key === selectedMobileDay;
+                const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth() && dayDate.getFullYear() === anchorDate.getFullYear();
                 const hasItems = acts.length > 0 || planned.length > 0;
                 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                 const isSunday = dayDate.getDay() === 0;
                 const weekKey = startOfWeek(dayDate).toISOString().slice(0, 10);
                 const wkSummary = isSunday ? weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === weekKey) : null;
+                const showMonthHeader = dayIdx === 0
+                  || dayDate.getMonth() !== mobileCalendarListDays[dayIdx - 1].getMonth()
+                  || dayDate.getFullYear() !== mobileCalendarListDays[dayIdx - 1].getFullYear();
                 return (
                   <React.Fragment key={key}>
+                  {showMonthHeader && (
+                    <div className="flex items-center gap-2 py-2 mt-1 mb-0.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                        {dayDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200" />
+                    </div>
+                  )}
                   <div
                     ref={el => { dayRefs.current[key] = el; }}
-                    className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : 'border-gray-100'}`}
+                    className={`mb-1.5 rounded-xl border overflow-hidden ${isSelected ? 'border-primary/40 shadow-sm' : isToday ? 'border-primary/20' : isCurrentMonth ? 'border-gray-100' : 'border-gray-100/80'}`}
                     style={mobileScrollMargin ? { scrollMarginTop: mobileScrollMargin } : undefined}
                     onClick={() => setSelectedMobileDay(key)}
                   >
@@ -8501,8 +8606,8 @@ export default function CalendarView({
                     {(() => { const _dayPlan = dayPlanByDate.get(key); return (
                     <div className={`flex items-center justify-between px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-gray-400'}`}>{dayNames[dayDate.getDay()]}</span>
-                        <span className={`text-base font-extrabold ${isToday ? 'text-primary' : 'text-gray-800'}`}>{dayDate.getDate()}</span>
+                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-400' : 'text-gray-300'}`}>{dayNames[dayDate.getDay()]}</span>
+                        <span className={`text-base font-extrabold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'}`}>{dayDate.getDate()}</span>
                         {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
                         {renderDayThemeChip(key, { big: true })}
                         {!_dayPlan && onDayPlanSave && (
