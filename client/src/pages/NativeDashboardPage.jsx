@@ -25,6 +25,7 @@ import { resolveActivityTss } from '../utils/computeTss';
 import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
+import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -376,6 +377,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
 
         const dur     = fmtDuration(pwSecs);
         const actDur  = linkedAct ? fmtDuration(actSecs) : null;
+        const pwDistStr = formatPlannedDistanceMetres(plannedDistanceMetres(pw), sport);
         const dist    = linkedAct ? Number(linkedAct.distance || linkedAct.totalDistance || 0) : 0;
         const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
         const actTssVal = linkedAct ? resolveActivityTss(linkedAct, user, { user }) : 0;
@@ -503,9 +505,12 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                         </span>
                       </div>
                     )}
-                    <div style={{ fontSize: 11, color: isPurelyPlanned ? color + 'cc' : '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 6px' }}>
-                      {!isPaired && dur && <span>{isPurelyPlanned ? dur : `Plan: ${dur}`}</span>}
-                      {!isPaired && pw.targetTss > 0 && <span>{pw.targetTss} TSS</span>}
+                    <div style={{ fontSize: 11, color: isPurelyPlanned ? color + 'cc' : '#6B7280', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                      {[
+                        !isPaired && dur ? (isPurelyPlanned ? dur : `Plan: ${dur}`) : null,
+                        !isPaired && pwDistStr ? pwDistStr : null,
+                        !isPaired && pw.targetTss > 0 ? `${pw.targetTss} TSS` : null,
+                      ].filter(Boolean).join(' · ') || null}
                     </div>
                   </div>
                 )}

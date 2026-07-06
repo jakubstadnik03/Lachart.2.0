@@ -6,6 +6,7 @@ const Training = require('../models/training');
 const User = require('../models/UserModel');
 const mongoose = require('mongoose');
 const { buildUserProfile, resolveActivityTss, dedupeActivitiesForLoad } = require('../utils/activityTss');
+const { enrichProfileForTss } = require('../utils/inferThresholdsFromActivities');
 
 function localDateKey(date) {
   const d = new Date(date);
@@ -199,19 +200,22 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
         .lean(),
     ]);
 
+    const rawForInference = [...fitTrainings, ...stravaActivities, ...garminActivities, ...appleHealthActivities];
+    const effectiveProfile = enrichProfileForTss(userProfile, rawForInference);
+
     const allActivities = [
       ...fitTrainings
         .filter((t) => matchesSportFilter(t.sport, sportFilter))
-        .map((t) => mapFitToLoad(t, userProfile)),
+        .map((t) => mapFitToLoad(t, effectiveProfile)),
       ...stravaActivities
         .filter((a) => matchesSportFilter(a.sport, sportFilter))
-        .map((a) => mapStravaToLoad(a, userProfile)),
+        .map((a) => mapStravaToLoad(a, effectiveProfile)),
       ...garminActivities
         .filter((a) => matchesSportFilter(a.sport, sportFilter))
-        .map((a) => mapGarminToLoad(a, userProfile)),
+        .map((a) => mapGarminToLoad(a, effectiveProfile)),
       ...appleHealthActivities
         .filter((a) => matchesSportFilter(a.sport || a.type, sportFilter))
-        .map((a) => mapAppleHealthToLoad(a, userProfile)),
+        .map((a) => mapAppleHealthToLoad(a, effectiveProfile)),
       ...trainings
         .filter((t) => {
           if (sportFilter === 'all') return true;
@@ -645,19 +649,22 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
         .lean(),
     ]);
 
+    const rawForInference = [...fitTrainings, ...stravaActivities, ...garminActivities, ...appleHealthActivities];
+    const effectiveProfile = enrichProfileForTss(userProfile, rawForInference);
+
     const allActivities = [
       ...fitTrainings
         .filter((t) => matchesSportFilter(t.sport, sportFilter))
-        .map((t) => mapFitToLoad(t, userProfile)),
+        .map((t) => mapFitToLoad(t, effectiveProfile)),
       ...stravaActivities
         .filter((a) => matchesSportFilter(a.sport, sportFilter))
-        .map((a) => mapStravaToLoad(a, userProfile)),
+        .map((a) => mapStravaToLoad(a, effectiveProfile)),
       ...garminActivities
         .filter((a) => matchesSportFilter(a.sport, sportFilter))
-        .map((a) => mapGarminToLoad(a, userProfile)),
+        .map((a) => mapGarminToLoad(a, effectiveProfile)),
       ...appleHealthActivities
         .filter((a) => matchesSportFilter(a.sport || a.type, sportFilter))
-        .map((a) => mapAppleHealthToLoad(a, userProfile)),
+        .map((a) => mapAppleHealthToLoad(a, effectiveProfile)),
       ...trainings
         .filter((t) => {
           if (sportFilter === 'all') return true;

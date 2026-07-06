@@ -26,6 +26,7 @@ import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
+import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
@@ -1771,6 +1772,18 @@ export default function DashboardPage() {
     profileTssFingerprint,
     recomputeFormFitness,
   ]);
+
+  // Prompt zones setup when dashboard has workouts but no thresholds (web + native).
+  useEffect(() => {
+    if (!user?._id || !dashboardDataAthleteId) return;
+    if (String(dashboardDataAthleteId) !== String(user._id)) return;
+    if (calendarLoading) return;
+    if (!calendarData?.length) return;
+    const t = window.setTimeout(() => {
+      maybePromptTrainingZonesSetup(user, calendarData);
+    }, 2000);
+    return () => window.clearTimeout(t);
+  }, [user, dashboardDataAthleteId, calendarLoading, calendarData]);
 
   // When the planned workout list itself changes (athlete plans a new
   // session today, drag-drops one onto today, etc.) re-push the widget

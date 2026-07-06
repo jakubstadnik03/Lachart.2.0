@@ -352,6 +352,19 @@ export function resolveActivityTss(activity, profile, options = {}) {
   if (mode === 'power' && powerTss > 0) return powerTss;
   if (mode === 'hr' && hrTss > 0) return hrTss;
   if (manualVal > 0) return manualVal;
+
+  // Duration-only fallback for users without saved zones (endurance sessions ≥ 20 min).
+  if (profile?._thresholdsInferredFromActivities) {
+    const sport = activitySport(activity);
+    const dur = activityDuration(activity);
+    const endurance = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')
+      || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
+      || sport.includes('swim');
+    if (endurance && dur >= 1200) {
+      return Math.round((dur / 3600) * 40);
+    }
+  }
+
   return 0;
 }
 

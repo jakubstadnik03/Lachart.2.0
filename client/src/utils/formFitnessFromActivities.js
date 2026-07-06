@@ -3,6 +3,7 @@
  * Keeps Fitness in sync with weekly TSS totals (resolveActivityTss).
  */
 import { resolveActivityTss } from './computeTss';
+import { enrichProfileForTss } from './inferThresholdsFromActivities';
 import { matchesCalendarSportFilter } from './calendarDayOrdering';
 
 export function localCalendarDateKey(date) {
@@ -37,13 +38,14 @@ export function computePmcFromActivities(activities, profile, { displayDays = 90
     return { series: [], todayMetrics: null };
   }
 
+  const effectiveProfile = enrichProfileForTss(profile, activities);
   const dailyTss = new Map();
   for (const act of activities) {
     if (sportFilter !== 'all' && !matchesCalendarSportFilter(act, sportFilter)) continue;
     const raw = act.date || act.timestamp || act.startDate || act.start_time;
     const dk = localCalendarDateKey(raw);
     if (!dk) continue;
-    const tss = activityTss(act, profile);
+    const tss = activityTss(act, effectiveProfile);
     if (tss > 0) dailyTss.set(dk, (dailyTss.get(dk) || 0) + tss);
   }
   if (!dailyTss.size) return { series: [], todayMetrics: null };
@@ -216,6 +218,8 @@ export function buildExtendedPmcSeries(series, plannedWorkouts, options = {}) {
 export function computeWeeklyTrainingLoadFromActivities(activities, profile, { months = 3, sportFilter = 'all' } = {}) {
   if (!Array.isArray(activities) || !activities.length || !profile) return [];
 
+  const effectiveProfile = enrichProfileForTss(profile, activities);
+
   const today = new Date();
   today.setHours(23, 59, 59, 999);
   const startDate = new Date(today);
@@ -233,7 +237,7 @@ export function computeWeeklyTrainingLoadFromActivities(activities, profile, { m
     const weekKey = localWeekStartKey(actDate);
     if (!weekKey) continue;
 
-    const tss = activityTss(act, profile);
+    const tss = activityTss(act, effectiveProfile);
     if (!weeklyData.has(weekKey)) {
       const ws = new Date(`${weekKey}T12:00:00`);
       weeklyData.set(weekKey, {

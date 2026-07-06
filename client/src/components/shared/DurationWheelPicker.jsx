@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 
 const ITEM_HEIGHT = 40;
 const PAD_ROWS = 2;
+/** How many times the value cycle is repeated for infinite scroll. */
+const WHEEL_REPEATS = 31;
 
 /** Format total seconds as H:MM:SS or M:SS (matches activity modal). */
 export function formatDurationHMS(totalSeconds) {
@@ -15,41 +17,74 @@ export function formatDurationHMS(totalSeconds) {
 }
 
 function WheelColumn({ min, max, value, onChange, formatLabel }) {
-  const values = useMemo(() => {
-    const arr = [];
-    for (let i = min; i <= max; i += 1) arr.push(i);
-    return arr;
+  const count = max - min + 1;
+  const middleRepeat = Math.floor(WHEEL_REPEATS / 2);
+
+  const items = useMemo(() => {
+    const cycle = [];
+    for (let i = min; i <= max; i += 1) cycle.push(i);
+    const out = [];
+    for (let r = 0; r < WHEEL_REPEATS; r += 1) {
+      for (const v of cycle) out.push({ v, key: `${r}-${v}` });
+    }
+    return out;
   }, [min, max]);
 
   const scrollerRef = useRef(null);
   const scrollEndTimer = useRef(null);
   const syncingRef = useRef(false);
 
+  const indexForValue = useCallback((v) => {
+    const offset = Math.max(0, Math.min(count - 1, v - min));
+    return middleRepeat * count + offset;
+  }, [count, min, middleRepeat]);
+
+  const valueAtIndex = useCallback((idx) => {
+    return min + (((idx % count) + count) % count);
+  }, [count, min]);
+
   const scrollToValue = useCallback((v, smooth = false) => {
     const el = scrollerRef.current;
     if (!el) return;
-    const idx = Math.max(0, Math.min(values.length - 1, v - min));
+    const idx = indexForValue(v);
     el.scrollTo({ top: idx * ITEM_HEIGHT, behavior: smooth ? 'smooth' : 'auto' });
-  }, [min, values.length]);
+  }, [indexForValue]);
 
-  useEffect(() => {
+  /** Jump back to the middle band so the list never hits a hard end. */
+  const rebalanceScroll = useCallback((el) => {
+    const idx = Math.round(el.scrollTop / ITEM_HEIGHT);
+    const lower = count * 2;
+    const upper = count * (WHEEL_REPEATS - 2);
+    if (idx < lower) {
+      el.scrollTop += count * middleRepeat;
+    } else if (idx > upper) {
+      el.scrollTop -= count * middleRepeat;
+    }
+  }, [count, middleRepeat]);
+
+  useLayoutEffect(() => {
     if (syncingRef.current) return;
-    scrollToValue(value);
+    scrollToValue(value, false);
   }, [value, scrollToValue]);
 
   const handleScroll = () => {
+    const el = scrollerRef.current;
+    if (!el || syncingRef.current) return;
+    rebalanceScroll(el);
+
     clearTimeout(scrollEndTimer.current);
     scrollEndTimer.current = setTimeout(() => {
-      const el = scrollerRef.current;
-      if (!el) return;
-      const idx = Math.round(el.scrollTop / ITEM_HEIGHT);
-      const clamped = Math.max(0, Math.min(values.length - 1, idx));
-      const newVal = values[clamped];
-      if (el.scrollTop !== clamped * ITEM_HEIGHT) {
-        syncingRef.current = true;
-        el.scrollTo({ top: clamped * ITEM_HEIGHT, behavior: 'smooth' });
-        requestAnimationFrame(() => { syncingRef.current = false; });
+      const node = scrollerRef.current;
+      if (!node) return;
+      rebalanceScroll(node);
+      const idx = Math.round(node.scrollTop / ITEM_HEIGHT);
+      const newVal = valueAtIndex(idx);
+      const normalizedIdx = indexForValue(newVal);
+      syncingRef.current = true;
+      if (node.scrollTop !== normalizedIdx * ITEM_HEIGHT) {
+        node.scrollTo({ top: normalizedIdx * ITEM_HEIGHT, behavior: 'smooth' });
       }
+      requestAnimationFrame(() => { syncingRef.current = false; });
       if (newVal !== value) onChange(newVal);
     }, 60);
   };
@@ -69,9 +104,9 @@ function WheelColumn({ min, max, value, onChange, formatLabel }) {
           paddingBottom: ITEM_HEIGHT * PAD_ROWS,
         }}
       >
-        {values.map((v) => (
+        {items.map(({ v, key }) => (
           <div
-            key={v}
+            key={key}
             style={{ height: ITEM_HEIGHT, scrollSnapAlign: 'center' }}
             className="flex items-center justify-center text-[17px] tabular-nums text-gray-900 select-none"
           >

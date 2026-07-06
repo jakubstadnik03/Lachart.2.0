@@ -6,6 +6,8 @@ import React, { useMemo, useState } from 'react';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import { buildExtendedPmcSeries, localCalendarDateKey, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { enrichProfileForTss } from '../../utils/inferThresholdsFromActivities';
+import { requestTrainingZonesModal, profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
 import { useAuth } from '../../context/AuthProvider';
 
 const CARD = {
@@ -121,11 +123,15 @@ export default function PerformanceInsightsSlide({
 }) {
   const { user } = useAuth() || {};
   const profile = userProfile || user;
+  const effectiveProfile = useMemo(
+    () => enrichProfileForTss(profile, activities),
+    [profile, activities],
+  );
 
   const derived = useMemo(() => {
-    if (!activities?.length || !profile) return null;
-    return computePmcFromActivities(activities, profile);
-  }, [activities, profile]);
+    if (!activities?.length || !effectiveProfile) return null;
+    return computePmcFromActivities(activities, effectiveProfile);
+  }, [activities, effectiveProfile]);
 
   const effTodayMetrics = useMemo(() => {
     if (todayMetrics.fitness != null || todayMetrics.form != null || todayMetrics.fatigue != null) {
@@ -188,9 +194,9 @@ export default function PerformanceInsightsSlide({
   const lastPt = effSparkline.length > 0 ? effSparkline[effSparkline.length - 1] : null;
 
   const canResolveAnyTss = useMemo(() => {
-    if (!activities?.length || !profile) return false;
-    return activities.some((a) => resolveActivityTss(a, profile, { user: profile }) > 0);
-  }, [activities, profile]);
+    if (!activities?.length || !effectiveProfile) return false;
+    return activities.some((a) => resolveActivityTss(a, effectiveProfile, { user: effectiveProfile }) > 0);
+  }, [activities, effectiveProfile]);
 
   const { fitness, fatigue, form, fitnessDelta, fatigueDelta, formDelta, noData } = useMemo(() => {
     const fit = Math.round(
@@ -366,10 +372,28 @@ export default function PerformanceInsightsSlide({
         </p>
       )}
 
-      {noData && (
-        <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.4, color: '#6b7280', textAlign: 'center' }}>
-          Set FTP / LT2 and heart-rate zones in Profile so LaChart can compute TSS from your activities. Open Profile → zones to fix this.
-        </p>
+      {noData && profileNeedsTrainingZones(profile) && (
+        <div style={{ margin: '10px 0 0', textAlign: 'center' }}>
+          <p style={{ margin: 0, fontSize: 11, lineHeight: 1.4, color: '#6b7280' }}>
+            Set FTP / LT2 and heart-rate zones to unlock Form &amp; Fitness from your workouts.
+          </p>
+          <button
+            type="button"
+            onClick={() => requestTrainingZonesModal({ force: true, source: 'performance-insights' })}
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#5E6590',
+              background: 'rgba(118,126,181,.12)',
+              border: 'none',
+              borderRadius: 999,
+              padding: '6px 14px',
+            }}
+          >
+            Set up zones
+          </button>
+        </div>
       )}
     </div>
   );

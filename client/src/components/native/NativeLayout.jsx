@@ -12,12 +12,14 @@
  *   └─ NativeBottomTabBar   (shrink-0, paddingBottom = safe-area-bottom)
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import { BRAND_LOGO_SRC } from '../../constants/brandLogo';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
+import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { normalizeNotificationActivityId, requestOpenActivity } from '../../utils/activityEventPatches';
 import { resolveNotificationTarget } from '../../utils/notificationNavigation';
@@ -26,6 +28,13 @@ import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 import { Skeleton } from '../common/Skeleton';
+import {
+  OPEN_TRAINING_ZONES_MODAL_EVENT,
+  profileNeedsTrainingZones,
+  markZonesDashboardPromptDismissed,
+} from '../../utils/trainingZonesSetup';
+
+const TrainingZonesModal = lazy(() => import('../Profile/TrainingZonesModal'));
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -323,7 +332,7 @@ function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
       <div className="flex items-center justify-between px-4 h-11">
         {/* Logo */}
         <div className="flex items-center gap-1.5">
-          <img src="/images/LaChart.png" alt="LaChart" className="h-6 w-6 object-contain" />
+          <img src={BRAND_LOGO_SRC} alt="LaChart" className="h-6 w-6 object-contain" />
           <span className="text-base font-bold text-primary tracking-tight">LaChart</span>
         </div>
 
@@ -746,10 +755,22 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const isImmersiveRoute = /^\/workout-execution(\/|$)/.test(location.pathname);
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [notifs, setNotifs]     = useState([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
 
   const unreadCount = notifs.filter(n => !n.read).length;
+
+  useEffect(() => {
+    const onOpenZones = (e) => {
+      if (!user?._id || isCoachRole(user)) return;
+      const { force } = e?.detail || {};
+      if (!force && !profileNeedsTrainingZones(user)) return;
+      setShowTrainingZonesModal(true);
+    };
+    window.addEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
+    return () => window.removeEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
+  }, [user]);
 
   // Fetch notifications
   // Track the IDs of strava_import notifications we've already acted on so
@@ -1080,6 +1101,40 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         onMarkAllRead={handleMarkAllRead}
         onClearAll={handleClearAllNotifs}
       />
+
+      {user && (
+        <Suspense fallback={null}>
+          <TrainingZonesModal
+            isOpen={showTrainingZonesModal}
+            onClose={() => {
+              if (user?._id) {
+                markZonesDashboardPromptDismissed(user._id);
+                localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
+                api.put('/user/edit-profile', { onboarding: { trainingZonesDone: true } })
+                  .then((res) => res.data && window.dispatchEvent(new CustomEvent('userUpdated', { detail: res.data })))
+                  .catch(() => {});
+              }
+              setShowTrainingZonesModal(false);
+            }}
+            onSubmit={async (formData) => {
+              try {
+                const response = await api.put('/user/edit-profile', {
+                  ...formData,
+                  onboarding: { trainingZonesDone: true },
+                });
+                if (response.data) {
+                  window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                  setShowTrainingZonesModal(false);
+                  addNotification('Training zones updated', 'success');
+                }
+              } catch {
+                addNotification('Error updating training zones', 'error');
+              }
+            }}
+            userData={user}
+          />
+        </Suspense>
+      )}
 
     </div>
   );

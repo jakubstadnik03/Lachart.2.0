@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { BRAND_LOGO_SRC } from "../constants/brandLogo";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -295,7 +296,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         <div 
           className="flex items-center justify-center h-14 border-b border-gray-200 flex-shrink-0"
         >
-          <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 w-auto mr-2 object-contain" />
+          <img src={BRAND_LOGO_SRC} alt="LaChart Logo" className="h-8 w-auto mr-2 object-contain" />
           <h1 className="text-xl font-bold text-primary">LaChart</h1>
         </div>
 

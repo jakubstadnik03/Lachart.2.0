@@ -6,6 +6,7 @@ const Training = require('../models/training');
 const fitnessMetricsController = require('../controllers/fitnessMetricsController');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { buildUserProfile, resolveActivityTss, mapActivityForTss } = require('../utils/activityTss');
+const { enrichProfileForTss } = require('../utils/inferThresholdsFromActivities');
 
 const calculateActivityTSS = (activity, userProfile) =>
   resolveActivityTss(mapActivityForTss(activity), userProfile);
@@ -234,6 +235,21 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
   return sessions;
 }
 
+/** Recent activities for threshold inference (not full session metadata). */
+async function loadInferenceActivities(userId, beforeDate) {
+  const since = new Date(beforeDate);
+  since.setUTCDate(since.getUTCDate() - 120);
+  const [strava, fits] = await Promise.all([
+    StravaActivity.find({ userId, startDate: { $gte: since, $lt: beforeDate } })
+      .select('sport startDate movingTime elapsedTime distance averageHeartRate averagePower weightedAveragePower averageSpeed manualTss tssDisplayMode')
+      .lean(),
+    FitTraining.find({ athleteId: String(userId), timestamp: { $gte: since, $lt: beforeDate } })
+      .select('sport timestamp totalElapsedTime totalDistance avgHeartRate maxHeartRate avgPower normalizedPower avgSpeed trainingStressScore manualTss tssDisplayMode')
+      .lean(),
+  ]);
+  return [...strava, ...fits];
+}
+
 function aggregateSessions(sessions) {
   const totals = {
     totalSeconds: 0,
@@ -380,14 +396,16 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
 
 async function buildWeeklyReportSummary(user, weekStart, weekEnd) {
   const userProfile = buildUserProfile(user);
+  const inferenceActivities = await loadInferenceActivities(user._id, weekEnd);
+  const effectiveProfile = enrichProfileForTss(userProfile, inferenceActivities);
 
   const [currentSessions, prevSessions] = await Promise.all([
-    loadWeekSessions(user._id, weekStart, weekEnd, userProfile),
+    loadWeekSessions(user._id, weekStart, weekEnd, effectiveProfile),
     (() => {
       const prevStart = new Date(weekStart);
       prevStart.setUTCDate(prevStart.getUTCDate() - 7);
       const prevEnd = new Date(weekStart);
-      return loadWeekSessions(user._id, prevStart, prevEnd, userProfile);
+      return loadWeekSessions(user._id, prevStart, prevEnd, effectiveProfile);
     })()
   ]);
 
@@ -407,7 +425,7 @@ async function buildWeeklyReportSummary(user, weekStart, weekEnd) {
     // ignore
   }
 
-  const trainingStatus = await calculateWeeklyTrainingStatusForRange(user._id, weekStart, weekEnd, userProfile);
+  const trainingStatus = await calculateWeeklyTrainingStatusForRange(user._id, weekStart, weekEnd, effectiveProfile);
 
   return {
     trainingStatus,

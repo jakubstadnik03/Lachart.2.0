@@ -9,6 +9,8 @@ import TrainingGlossary from './TrainingGlossary';
 import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import { enrichProfileForTss, hasInferredThresholds } from '../../utils/inferThresholdsFromActivities';
+import { requestTrainingZonesModal, profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -53,6 +55,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
   const [selectedTerm, setSelectedTerm] = useState('Form & Fitness');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [showSettings, setShowSettings] = useState(false);
+  const [usingInferredZones, setUsingInferredZones] = useState(false);
 
   const [todayMetrics, setTodayMetrics] = useState({
     fitness: 0,
@@ -190,6 +193,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           return;
         }
         if (Array.isArray(activities) && activities.length > 0 && profile) {
+          setUsingInferredZones(hasInferredThresholds(enrichProfileForTss(profile, activities)));
           const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
             displayDays: days,
             sportFilter,
@@ -209,6 +213,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
       // Prefer calendar activities when passed without explicit calendar-driven flag.
       if (Array.isArray(activities) && activities.length > 0 && profile) {
+        setUsingInferredZones(hasInferredThresholds(enrichProfileForTss(profile, activities)));
         const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
           displayDays: days,
           sportFilter,
@@ -707,6 +712,23 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           Full glossary
         </button>
       </p>
+
+      {profileNeedsTrainingZones(profile) && Array.isArray(activities) && activities.length > 0 && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>
+            {usingInferredZones
+              ? 'Zones estimated from your workouts — set FTP/LT2 for accurate TSS.'
+              : 'Set training zones to unlock Form & Fitness from your workouts.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => requestTrainingZonesModal({ force: true, source: 'form-fitness' })}
+            className="font-semibold text-primary hover:underline shrink-0"
+          >
+            Set up zones
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="h-48 sm:h-56 flex items-center justify-center">

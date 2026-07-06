@@ -1,6 +1,19 @@
 import { Capacitor } from '@capacitor/core';
 
 let backListenerHandle;
+let splashHidden = false;
+
+/** Hide the native launch splash once the React shell is ready to paint. */
+export async function hideAppSplash() {
+  if (splashHidden || !Capacitor.isNativePlatform()) return;
+  try {
+    const { SplashScreen } = await import('@capacitor/splash-screen');
+    await SplashScreen.hide({ fadeOutDuration: 200 });
+    splashHidden = true;
+  } catch {
+    // plugin missing or already hidden
+  }
+}
 
 /**
  * One-time setup for Capacitor iOS/Android WebView: splash, status bar, hardware back, push notifications.
@@ -17,13 +30,6 @@ export async function initCapacitorShell() {
     await initWatchWorkoutSync();
   } catch (err) {
     console.warn('[Init] watch sync setup failed:', err?.message || err);
-  }
-
-  try {
-    const { SplashScreen } = await import('@capacitor/splash-screen');
-    await SplashScreen.hide({ fadeOutDuration: 200 });
-  } catch {
-    // plugin missing or already hidden
   }
 
   try {

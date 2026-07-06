@@ -13,6 +13,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import { isCapacitorNative } from './utils/isNativeApp';
+import { BRAND_LOGO_SRC } from './constants/brandLogo';
 import './App.css';
 
 /** Nativní Capacitor (iOS/Android) — `/` = login. Ve webovém prohlížeči zůstává About. */
@@ -61,10 +62,11 @@ const Privacy = lazy(() => import('./pages/Privacy'));
 const Terms = lazy(() => import('./pages/Terms'));
 // Loading component for Suspense fallback
 const PageLoader = () => (
-  <div className="flex items-center justify-center min-h-screen bg-gray-100">
+  <div className="flex items-center justify-center min-h-screen bg-white">
     <div className="text-center">
-      <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      <p className="mt-4 text-gray-600">Loading...</p>
+      <img src={BRAND_LOGO_SRC} alt="LaChart" className="h-16 w-auto mx-auto mb-6 object-contain" />
+      <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+      {isCapacitorNative() ? null : <p className="mt-4 text-gray-600">Loading...</p>}
     </div>
   </div>
 );
@@ -150,6 +152,19 @@ function DeferredBuyMeACoffeeWidget() {
 // even when signed in. This guards it: while the session is still hydrating we
 // show the loader, when signed in we go straight to the dashboard (preserving
 // any ?openActivity deep-link), and only show the login when truly logged out.
+function NativeSplashGate() {
+  const { loading } = useAuth();
+
+  useEffect(() => {
+    if (!isCapacitorNative() || loading) return;
+    import('./native/initCapacitorShell')
+      .then((m) => m.hideAppSplash?.())
+      .catch(() => {});
+  }, [loading]);
+
+  return null;
+}
+
 function RootRoute() {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
@@ -432,6 +447,7 @@ function App() {
     <CategoryProvider>
       <NotificationProvider>
         <AuthProvider>
+          <NativeSplashGate />
           <AthleteSelectionProvider>
           <TrainingProvider>
             <WorkoutSessionProvider>

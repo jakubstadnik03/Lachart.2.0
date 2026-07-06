@@ -12,6 +12,11 @@ import { isCapacitorNative } from "../utils/isNativeApp";
 import { useAthleteSelection } from "../context/AthleteSelectionContext";
 import NativeLayout from "./native/NativeLayout";
 import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
+import {
+  OPEN_TRAINING_ZONES_MODAL_EVENT,
+  profileNeedsTrainingZones,
+  markZonesDashboardPromptDismissed,
+} from "../utils/trainingZonesSetup";
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -303,6 +308,18 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       return () => clearTimeout(timeoutId);
     }
   }, [user, hasCheckedProfile, location.pathname]);
+
+  // Dashboard / charts can request the zones setup modal at any time.
+  useEffect(() => {
+    const onOpenZones = (e) => {
+      if (!user?._id || isCoachRole(user)) return;
+      const { force } = e?.detail || {};
+      if (!force && !profileNeedsTrainingZones(user)) return;
+      setShowTrainingZonesModal(true);
+    };
+    window.addEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
+    return () => window.removeEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
+  }, [user]);
 
   // ── Strava: webhook-only sync ─────────────────────────────────────────────
   // Strava delivers new activities to /api/integrations/strava/webhook the
@@ -782,6 +799,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           onClose={() => {
             if (user?._id) {
               localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
+              markZonesDashboardPromptDismissed(user._id);
               api.put('/user/edit-profile', { onboarding: { trainingZonesDone: true } })
                 .then((res) => res.data && window.dispatchEvent(new CustomEvent('userUpdated', { detail: res.data })))
                 .catch(() => {});
