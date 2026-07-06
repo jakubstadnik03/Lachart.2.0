@@ -657,6 +657,7 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
     const preferTestZones = zonesFromLatestTest && (!hasUserPrimary || testDate > zonesUpdated);
 
     const packFromTest = () => {
+      if (!zonesFromLatestTest) return null;
       const primaryRaw = sport === 'bike' ? zonesFromLatestTest.power : zonesFromLatestTest.pace;
       if (!primaryRaw) return null;
       return {

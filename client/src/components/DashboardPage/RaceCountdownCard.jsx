@@ -165,6 +165,8 @@ export default function RaceCountdownCard({
         borderRadius: 16,
         padding: '16px 16px 14px',
         boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+        overflow: 'hidden',
+        minWidth: 0,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -224,12 +226,12 @@ export default function RaceCountdownCard({
               type="date"
               value={form.date}
               onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-              style={{ ...inputStyle, flex: 1 }}
+              style={{ ...inputStyle, flex: '1 1 140px', minWidth: 0 }}
             />
             <select
               value={form.sport}
               onChange={(e) => setForm((f) => ({ ...f, sport: e.target.value }))}
-              style={{ ...inputStyle, flex: 1 }}
+              style={{ ...inputStyle, flex: '1 1 120px', minWidth: 0 }}
             >
               {SPORTS.map((s) => (
                 <option key={s} value={s}>
@@ -238,11 +240,11 @@ export default function RaceCountdownCard({
               ))}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <select
               value={form.priority}
               onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-              style={{ ...inputStyle, flex: 1 }}
+              style={inputStyle}
             >
               <option value="A">A — goal race</option>
               <option value="B">B race</option>
@@ -250,10 +252,10 @@ export default function RaceCountdownCard({
             </select>
             <input
               type="number"
-              placeholder="Target CTL"
+              placeholder="Target CTL (optional)"
               value={form.targetCTL}
               onChange={(e) => setForm((f) => ({ ...f, targetCTL: e.target.value }))}
-              style={{ ...inputStyle, flex: 1 }}
+              style={inputStyle}
             />
           </div>
           <button
@@ -312,14 +314,24 @@ export default function RaceCountdownCard({
             {next.location ? ` · ${next.location}` : ''}
           </div>
           {next.targetCTL != null && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 8,
+                flexWrap: 'wrap',
+                minWidth: 0,
+                fontSize: 12,
+              }}
+            >
               {currentCTL != null && (
-                <span style={{ fontSize: 12, color: '#6B7280' }}>
+                <span style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>
                   Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
-                  <span style={{ margin: '0 4px' }}>→</span>
+                  <span style={{ margin: '0 3px' }}>→</span>
                 </span>
               )}
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#767EB5' }}>
+              <span style={{ fontWeight: 700, color: '#767EB5', whiteSpace: 'nowrap' }}>
                 Target {Math.round(next.targetCTL)} CTL
               </span>
             </div>
@@ -447,7 +459,7 @@ export default function RaceCountdownCard({
               }}
             >
               {rest.map((r) => (
-                <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <span
                     style={{
                       width: 6,
@@ -465,11 +477,13 @@ export default function RaceCountdownCard({
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      minWidth: 0,
+                      flex: 1,
                     }}
                   >
                     {r.name}
                   </span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 'auto', flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0, whiteSpace: 'nowrap' }}>
                     {Math.max(0, daysUntil(r.date))}d
                   </span>
                   {editable && (
@@ -507,4 +521,7 @@ const inputStyle = {
   color: '#0A0E1A',
   fontFamily: 'inherit',
   outline: 'none',
+  boxSizing: 'border-box',
+  width: '100%',
+  maxWidth: '100%',
 };

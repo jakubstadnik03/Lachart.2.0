@@ -216,8 +216,8 @@ export function computeAllInsights({
 
   if (acuteFatigueFromSeries(sparklineData)) {
     insights.push({
-      headline: 'Akutní únava',
-      detail: 'Form pod −30 tři dny po sobě — zvaž recovery den.',
+      headline: 'Acute fatigue',
+      detail: 'Form below −30 for three days — consider a recovery day.',
       severity: 'warning',
     });
   }
@@ -225,18 +225,18 @@ export function computeAllInsights({
   const atlGrowth = atlSpikeFromSeries(sparklineData);
   if (atlGrowth != null) {
     insights.push({
-      headline: 'Náhlý skok zátěže',
-      detail: `ATL +${Math.round(atlGrowth * 100)} % za 7 dní — pozor na zranění.`,
+      headline: 'Load spike',
+      detail: `ATL up ${Math.round(atlGrowth * 100)}% in 7 days — watch injury risk.`,
       severity: 'watch',
     });
   }
 
   if (readiness?.level === 'high') {
     insights.push({
-      headline: 'Tělo signalizuje přetížení',
+      headline: 'Body signals overload',
       detail: readiness.reasons?.length
         ? readiness.reasons.join(' · ')
-        : 'HRV/RHR mimo normu nebo velmi negativní Form.',
+        : 'HRV/RHR off baseline or very negative Form.',
       severity: 'warning',
     });
   }
@@ -247,8 +247,8 @@ export function computeAllInsights({
     const delta = (latestWell.hrvMs - hrvBase) / hrvBase;
     if (delta < -0.15) {
       insights.push({
-        headline: 'HRV + zátěž',
-        detail: `HRV ${Math.round(Math.abs(delta) * 100)} % pod baseline — dnes spíš Z1/Z2.`,
+        headline: 'HRV + load',
+        detail: `HRV ${Math.round(Math.abs(delta) * 100)}% below baseline — keep it Z1/Z2 today.`,
         severity: 'watch',
       });
     }
@@ -257,22 +257,22 @@ export function computeAllInsights({
   const yTss = yesterdayTss(activities, userProfile);
   if (yTss > 120 && hardToday.length > 0) {
     insights.push({
-      headline: 'Včera těžký den',
-      detail: `Včera ${Math.round(yTss)} TSS a dnes intervaly — zvaž posun nebo Z2.`,
+      headline: 'Hard day yesterday',
+      detail: `${Math.round(yTss)} TSS yesterday with intervals today — consider Z2 or a shift.`,
       severity: 'warning',
     });
   }
 
   if (form != null && form <= -28 && hardToday.length > 0) {
     insights.push({
-      headline: `Form ${Math.round(form)} — dnes opatrně`,
-      detail: `„${hardToday[0]?.title || 'náročný trénink'}" na plánu → Z2 nebo posun.`,
+      headline: `Form ${Math.round(form)} — go easy`,
+      detail: `"${hardToday[0]?.title || 'hard session'}" on plan → Z2 or reschedule.`,
       severity: 'warning',
     });
   } else if (form != null && form <= -15) {
     insights.push({
       headline: `Form ${Math.round(form)}`,
-      detail: 'Tělo nejspíš nestíhá — lehčí objem nebo recovery.',
+      detail: 'Body may not be keeping up — lighter volume or recovery.',
       severity: 'watch',
     });
   }
@@ -280,8 +280,8 @@ export function computeAllInsights({
   const mono = detectMonotony(activities);
   if (mono) {
     insights.push({
-      headline: 'Chybí variace',
-      detail: '14 dní bez volna / stejný sport — riziko přetížení.',
+      headline: 'Low variety',
+      detail: '14 days without rest / same sport — overreach risk.',
       severity: 'watch',
     });
   }
@@ -289,16 +289,16 @@ export function computeAllInsights({
   const streak = complianceStreak(plannedWorkouts, activities);
   if (streak >= 3) {
     insights.push({
-      headline: 'Plán vs. realita',
-      detail: `${streak}× Short/Missed — uprav TSS nebo ambici plánu.`,
+      headline: 'Plan vs. reality',
+      detail: `${streak}× short or missed — adjust TSS or plan ambition.`,
       severity: 'watch',
     });
   }
 
   if (nextRace?.priority === 'A' && daysUntilRace(nextRace.date) > 0 && daysUntilRace(nextRace.date) <= 21) {
     insights.push({
-      headline: 'Taper období',
-      detail: `Do ${nextRace.name} ${daysUntilRace(nextRace.date)} dní — zvaž periodu „Taper" v kalendáři.`,
+      headline: 'Taper window',
+      detail: `${daysUntilRace(nextRace.date)} days to ${nextRace.name} — add a Taper period on the calendar.`,
       severity: 'ok',
     });
   }
@@ -308,8 +308,8 @@ export function computeAllInsights({
     if (weekTss > 0) {
       const rec = recommendedTaperTss(weekTss);
       insights.push({
-        headline: 'Taper týden',
-        detail: `Plán ${Math.round(weekTss)} TSS, doporučeno ~${rec}.`,
+        headline: 'Taper week',
+        detail: `Plan ${Math.round(weekTss)} TSS; target ~${rec}.`,
         severity: weekTss > rec * 1.15 ? 'watch' : 'ok',
       });
     }
@@ -319,11 +319,11 @@ export function computeAllInsights({
     const gap = Math.round(Number(nextRace.targetCTL) - fitness);
     if (Math.abs(gap) >= 3) {
       insights.push({
-        headline: gap > 0 ? `CTL gap +${gap}` : `CTL nad cílem`,
+        headline: gap > 0 ? `CTL gap +${gap}` : 'CTL above target',
         detail:
           gap > 0
-            ? `Zbývá ${daysUntilRace(nextRace.date)} dní — přidej objem nebo sniž cíl CTL.`
-            : `Fitness ${Math.round(fitness)} vs. cíl ${Math.round(nextRace.targetCTL)}.`,
+            ? `${daysUntilRace(nextRace.date)} days left — add volume or lower CTL target.`
+            : `Fitness ${Math.round(fitness)} vs. target ${Math.round(nextRace.targetCTL)}.`,
         severity: gap > 8 ? 'watch' : 'ok',
       });
     }
@@ -331,16 +331,16 @@ export function computeAllInsights({
 
   if (daysSinceTest(tests) >= 28 && risingVolume(activities)) {
     insights.push({
-      headline: 'Čas na kontrolu zón',
-      detail: '4+ týdny bez testu a rostoucí objem — zvaž laktát nebo FTP check.',
+      headline: 'Zone check due',
+      detail: '4+ weeks without a test and rising volume — lactate or FTP check.',
       severity: 'watch',
     });
   }
 
   if (form != null && form >= 5 && hardToday.length > 0) {
     insights.push({
-      headline: `Form +${Math.round(form)} — dobrý den`,
-      detail: 'Prostor na kvalitní trénink podle plánu.',
+      headline: `Form +${Math.round(form)} — good day`,
+      detail: 'Room for a quality session as planned.',
       severity: 'ok',
     });
   }
@@ -349,7 +349,7 @@ export function computeAllInsights({
     const sign = form >= 0 ? '+' : '';
     insights.push({
       headline: `Form ${sign}${Math.round(form)}`,
-      detail: todayPlans.length ? 'Drž se dnešního plánu.' : 'Volno nebo lehká aktivita.',
+      detail: todayPlans.length ? 'Stick to today\'s plan.' : 'Rest or easy activity.',
       severity: form < -10 ? 'watch' : 'ok',
     });
   }
@@ -362,7 +362,7 @@ export function computeAllInsights({
 export function computeDailyInsight(opts = {}) {
   const all = computeAllInsights(opts);
   const top = all[0] || {
-    headline: 'Dnešní doporučení',
+    headline: 'Today\'s insight',
     detail: null,
     severity: 'ok',
     form: null,
@@ -370,4 +370,67 @@ export function computeDailyInsight(opts = {}) {
   return { ...top, moreCount: Math.max(0, all.length - 1), all };
 }
 
-export { sumWeekPlannedTss, recommendedTaperTss, daysUntilRace };
+function sumWeekActualTss(activities, userProfile, ref = new Date()) {
+  const dow = (ref.getDay() + 6) % 7;
+  const mon = new Date(ref);
+  mon.setDate(ref.getDate() - dow);
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+
+  return (activities || []).reduce((s, a) => {
+    const raw = a?.date || a?.startDate || a?.timestamp;
+    if (!raw) return s;
+    const d = new Date(raw);
+    if (d < mon || d > sun) return s;
+    return s + (resolveActivityTss(a, userProfile) || 0);
+  }, 0);
+}
+
+/** Weekly stats + secondary insights for the expanded sheet. */
+export function computeWeeklyOverview({
+  todayMetrics = {},
+  plannedWorkouts = [],
+  activities = [],
+  tests = [],
+  sparklineData = [],
+  nextRace = null,
+  userProfile = null,
+  wellnessDays = [],
+} = {}) {
+  const weekPlanned = sumWeekPlannedTss(plannedWorkouts);
+  const weekActual = sumWeekActualTss(activities, userProfile);
+  const form = todayMetrics.form != null ? Number(todayMetrics.form) : null;
+  const fitness = todayMetrics.fitness != null ? Number(todayMetrics.fitness) : null;
+  const fatigue = todayMetrics.fatigue != null ? Number(todayMetrics.fatigue) : null;
+  const streak = complianceStreak(plannedWorkouts, activities);
+  const all = computeAllInsights({
+    todayMetrics,
+    plannedWorkouts,
+    wellnessDays,
+    activities,
+    tests,
+    sparklineData,
+    nextRace,
+    userProfile,
+  });
+
+  const stats = [];
+  if (weekActual > 0) stats.push({ label: 'Logged', value: `${Math.round(weekActual)} TSS` });
+  if (weekPlanned > 0) stats.push({ label: 'Planned', value: `${Math.round(weekPlanned)} TSS` });
+  if (fitness != null) stats.push({ label: 'CTL', value: String(Math.round(fitness)) });
+  if (form != null) stats.push({ label: 'Form', value: `${form >= 0 ? '+' : ''}${Math.round(form)}` });
+  if (fatigue != null) stats.push({ label: 'ATL', value: String(Math.round(fatigue)) });
+  if (streak >= 2) stats.push({ label: 'Compliance', value: `${streak} short/missed` });
+
+  return {
+    stats,
+    weekActual,
+    weekPlanned,
+    insights: all.slice(0, 6),
+    insightCount: all.length,
+  };
+}
+
+export { sumWeekPlannedTss, recommendedTaperTss, daysUntilRace, toLocalDateStr };

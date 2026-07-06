@@ -37,14 +37,14 @@ async function maybeNotifyCoachPlanUpdate({
   if (!isTomorrow(pwDate)) return;
 
   const coachUser = await User.findById(coach).select('name').lean();
-  const coachName = coachUser?.name || 'Trenér';
-  const title = plannedWorkout?.title || 'Trénink';
-  const dateLabel = new Date(pwDate).toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'short' });
+  const coachName = coachUser?.name || 'Coach';
+  const title = plannedWorkout?.title || 'Workout';
+  const dateLabel = new Date(pwDate).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
 
-  const notifTitle = isNew ? 'Nový plán od trenéra' : 'Trenér změnil plán';
+  const notifTitle = isNew ? 'New plan from coach' : 'Coach updated your plan';
   const body = isNew
-    ? `${coachName} přidal na zítra: ${title}`
-    : `${coachName} upravil zítřejší plán: ${title} (${dateLabel})`;
+    ? `${coachName} added for tomorrow: ${title}`
+    : `${coachName} updated tomorrow's plan: ${title} (${dateLabel})`;
 
   notifyAthlete(athlete, {
     type: isNew ? 'coach_plan_added' : 'coach_plan_changed',

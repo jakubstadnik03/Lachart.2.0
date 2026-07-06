@@ -367,6 +367,28 @@ function getCompliance(plannedSecs, actualSecs) {
   return           { color: '#ef4444', bg: '#fef2f2', label: 'Missed',       ring: '#ef4444' };
 }
 
+/** Table cell colour — aligned with the duration compliance gauge (rounded %). */
+function getMetricComparisonColor(planned, actual, { durationCompliancePct = null, isDuration = false } = {}) {
+  if (!(planned > 0) || !(actual > 0)) return null;
+  if (isDuration && durationCompliancePct != null && durationCompliancePct >= 90) {
+    return '#059669';
+  }
+  const tier = getCompliance(planned, actual);
+  if (!tier) return null;
+  const TIER_TEXT = {
+    '#22c55e': '#059669',
+    '#eab308': '#ca8a04',
+    '#f97316': '#ea580c',
+    '#ef4444': '#dc2626',
+  };
+  // Gauge shows rounded duration % — when it's in the green band, don't flag rows red.
+  if (durationCompliancePct != null && durationCompliancePct >= 90) {
+    if (tier.color === '#ef4444' || tier.color === '#f97316') return '#6b7280';
+    return TIER_TEXT[tier.color] || tier.color;
+  }
+  return TIER_TEXT[tier.color] || tier.color;
+}
+
 function findCompliance(pw, acts) {
   if (!acts || acts.length === 0) return null;
   const plannedSecs = plannedWorkoutDurationSecs(pw);
@@ -4110,18 +4132,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 const plIf   = (plTss > 0 && plHrs > 0) ? Math.sqrt(plTss / (100 * plHrs)) : 0;
                 const workKj = Number(merged.kilojoules || merged.work || 0) || (power > 0 && dur > 0 ? (power * dur / 1000) : 0);
 
-                // Compliance colour for completed vs planned (green on/over, red under).
-                const ratioColor = (c, p) => {
-                  if (!(c > 0) || !(p > 0)) return null;
-                  const r = c / p;
-                  if (r < 0.9) return '#dc2626';
-                  if (r > 1.25) return '#d97706';
-                  return '#059669';
-                };
-
                 const deltaPct = (c, p) => (c > 0 && p > 0) ? Math.round((c / p - 1) * 100) : null;
                 const compliancePct = (plDur > 0 && dur > 0) ? Math.round(dur / plDur * 100) : null;
-                const durCompliant = ratioColor(dur, plDur) === '#059669';
+                const durCompliant = compliancePct != null && compliancePct >= 90;
+                const rowColor = (c, p, isDuration = false) => getMetricComparisonColor(p, c, { durationCompliancePct: compliancePct, isDuration });
 
                 const paceTable = paceStr
                   ? {
@@ -4135,14 +4149,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   : { label: 'Avg Pace', co: paceTable.co, plRaw: null, coRaw: null, unit: paceTable.unit };
 
                 const rows = [
-                  { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: ratioColor(dur, plDur), delta: deltaPct(dur, plDur) },
+                  { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: rowColor(dur, plDur, true), delta: deltaPct(dur, plDur) },
                   (elapsedTime > 0 && Math.abs(elapsedTime - dur) > 1) ? { label: 'Total Time', pl: null, co: fmtDur(elapsedTime), unit: 'h:m:s' } : null,
-                  { label: 'Distance', pl: plDist > 0 ? (plDist / 1000).toFixed(1) : null, co: dist > 0 ? (dist / 1000).toFixed(1) : null, unit: 'km', color: ratioColor(dist, plDist), delta: deltaPct(dist, plDist) },
+                  { label: 'Distance', pl: plDist > 0 ? (plDist / 1000).toFixed(1) : null, co: dist > 0 ? (dist / 1000).toFixed(1) : null, unit: 'km', color: rowColor(dist, plDist), delta: deltaPct(dist, plDist) },
                   speedRow.co ? { label: speedRow.label, pl: null, co: speedRow.co, unit: speedRow.unit } : null,
                   calories > 0 ? { label: 'Calories', pl: null, co: Math.round(calories), unit: 'kcal' } : null,
                   elevation > 0 ? { label: 'El. Gain', pl: null, co: Math.round(elevation).toLocaleString(), unit: 'm' } : null,
-                  { label: tssLabel, pl: plTss > 0 ? Math.round(plTss) : null, co: tss > 0 ? Math.round(tss) : null, unit: 'TSS', color: ratioColor(tss, plTss), delta: deltaPct(tss, plTss), tssToggle: true },
-                  (ifVal > 0 || plIf > 0) ? { label: 'IF', pl: plIf > 0 ? plIf.toFixed(2) : null, co: ifVal > 0 ? ifVal.toFixed(2) : null, unit: '', color: ratioColor(ifVal, plIf), delta: deltaPct(ifVal, plIf) } : null,
+                  { label: tssLabel, pl: plTss > 0 ? Math.round(plTss) : null, co: tss > 0 ? Math.round(tss) : null, unit: 'TSS', color: rowColor(tss, plTss), delta: deltaPct(tss, plTss), tssToggle: true },
+                  (ifVal > 0 || plIf > 0) ? { label: 'IF', pl: plIf > 0 ? plIf.toFixed(2) : null, co: ifVal > 0 ? ifVal.toFixed(2) : null, unit: '', color: rowColor(ifVal, plIf), delta: deltaPct(ifVal, plIf) } : null,
                   (isBike && np > 0) ? { label: 'N. Power', pl: null, co: Math.round(np), unit: 'W' } : null,
                   (isBike && power > 0) ? { label: 'Avg Power', pl: null, co: Math.round(power), unit: 'W' } : null,
                   (isBike && workKj > 0) ? { label: 'Work', pl: null, co: Math.round(workKj).toLocaleString(), unit: 'kJ' } : null,
@@ -4244,7 +4258,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               <div className="text-[13px] font-medium text-gray-400 tabular-nums text-right">{r.pl != null ? r.pl : '—'}</div>
                               <div className="text-[13px] font-bold tabular-nums text-right" style={{ color: r.color || '#1f2937' }}>{r.co != null ? r.co : '—'}</div>
                               <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
-                              <div className="text-[11px] font-bold tabular-nums text-right" style={{ color: r.delta == null ? 'transparent' : r.delta >= 0 ? '#059669' : '#9ca3af' }}>
+                              <div className="text-[11px] font-bold tabular-nums text-right" style={{
+                                color: r.delta == null ? 'transparent'
+                                  : r.delta >= 0 ? (r.color || '#059669')
+                                  : (r.color === '#dc2626' ? '#dc2626' : (r.color || '#9ca3af')),
+                              }}>
                                 {r.delta != null ? `${r.delta >= 0 ? '+' : ''}${r.delta}%` : ''}
                               </div>
                             </div>

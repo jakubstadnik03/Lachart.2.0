@@ -34,8 +34,8 @@ function evaluateTrainingAlerts(series = [], wellness = [], { complianceStreak =
     alerts.push({
       id: 'acute_fatigue',
       severity: 'warning',
-      title: 'Form velmi nízká',
-      body: 'TSB pod −30 tři dny po sobě — zvaž recovery den.',
+      title: 'Form very low',
+      body: 'TSB below −30 three days in a row — consider a recovery day.',
       push: false,
     });
   }
@@ -47,8 +47,8 @@ function evaluateTrainingAlerts(series = [], wellness = [], { complianceStreak =
       alerts.push({
         id: 'atl_spike',
         severity: 'watch',
-        title: 'Náhlý skok zátěže',
-        body: `ATL narost o ${Math.round(growth * 100)} % za 7 dní — pozor na zranění.`,
+        title: 'Sudden load spike',
+        body: `ATL up ${Math.round(growth * 100)}% in 7 days — watch for injury risk.`,
         push: false,
       });
     }
@@ -65,8 +65,8 @@ function evaluateTrainingAlerts(series = [], wellness = [], { complianceStreak =
       alerts.push({
         id: 'hrv_load',
         severity: 'watch',
-        title: 'HRV + zátěž',
-        body: `HRV ${Math.round(Math.abs(delta) * 100)} % pod baseline a Form ${Math.round(form)} — dnes spíš Z1/Z2.`,
+        title: 'HRV + load',
+        body: `HRV ${Math.round(Math.abs(delta) * 100)}% below baseline and Form ${Math.round(form)} — keep today easy (Z1/Z2).`,
         push: false,
       });
     }
@@ -76,8 +76,8 @@ function evaluateTrainingAlerts(series = [], wellness = [], { complianceStreak =
     alerts.push({
       id: 'compliance',
       severity: 'watch',
-      title: 'Plán vs. realita',
-      body: `${complianceStreak}× po sobě Short/Missed — plán je možná moc ambiciózní.`,
+      title: 'Plan vs. reality',
+      body: `${complianceStreak} Short/Missed in a row — your plan may be too ambitious.`,
       push: false,
     });
   }
@@ -87,8 +87,8 @@ function evaluateTrainingAlerts(series = [], wellness = [], { complianceStreak =
     alerts.push({
       id: 'high_overreach',
       severity: 'warning',
-      title: 'Vysoké riziko přetížení',
-      body: `Form ${Math.round(form)} a potlačené HRV — prioritizuj regeneraci.`,
+      title: 'High overreach risk',
+      body: `Form ${Math.round(form)} with suppressed HRV — prioritize recovery.`,
       push: true,
     });
   }

@@ -44,7 +44,7 @@ async function processRace(race, today) {
   if (daysLeft === -1 && !sent.postRace) {
     await sendNotification(race.athleteId, {
       type: 'race_post',
-      title: 'Jak dopadl závod?',
+      title: 'How did the race go?',
       body: buildPostRaceBody(race),
       resourceId: String(race._id),
       resourceType: 'race',
@@ -70,7 +70,7 @@ async function processRace(race, today) {
     if (daysLeft === d && !sent[key]) {
       await sendNotification(race.athleteId, {
         type: 'race_reminder',
-        title: daysLeft === 1 ? 'Zítra závod!' : `Závod za ${daysLeft} dní`,
+        title: daysLeft === 1 ? 'Race tomorrow!' : `Race in ${daysLeft} days`,
         body: buildCountdownBody(race, daysLeft, metrics),
         resourceId: String(race._id),
         resourceType: 'race',
@@ -86,7 +86,7 @@ async function processRace(race, today) {
     if (weekTss > 0) {
       await sendNotification(race.athleteId, {
         type: 'race_taper',
-        title: 'Taper — sniž objem',
+        title: 'Taper — reduce volume',
         body: buildTaperBody(race, weekTss),
         resourceId: String(race._id),
         resourceType: 'race',
@@ -109,7 +109,7 @@ async function processRace(race, today) {
     if (gapBody && Math.abs(gap) >= 3) {
       await sendNotification(race.athleteId, {
         type: 'race_ctl_gap',
-        title: 'Fitness vs. cíl závodu',
+        title: 'Fitness vs. race target',
         body: gapBody,
         resourceId: String(race._id),
         resourceType: 'race',

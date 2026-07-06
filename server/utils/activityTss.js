@@ -8,7 +8,8 @@ const TSS_DISPLAY_MODES = ['manual', 'power', 'hr'];
 function activityDuration(activity) {
   return Number(
     activity.movingTime || activity.moving_time || activity.totalElapsedTime
-    || activity.elapsedTime || activity.duration || activity.totalTimerTime || 0,
+    || activity.elapsedTime || activity.totalTime || activity.duration
+    || activity.totalTimerTime || 0,
   );
 }
 
@@ -20,6 +21,7 @@ function ftpFromProfile(profile) {
   return Number(
     profile?.powerZones?.cycling?.lt2
     || profile?.powerZones?.cycling?.ftp
+    || profile?.powerZones?.cycling?.zone4?.min
     || profile?.ftp
     || 0,
   );
@@ -49,6 +51,31 @@ function lthrFromProfile(profile, sport) {
     : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
   const hz = profile?.heartRateZones?.[key];
   return Number(hz?.lt2 || hz?.lt2Hr || hz?.threshold || hz?.zone4?.max || 0);
+}
+
+function maxHrFromProfile(profile, sport) {
+  const key = sport.includes('swim') ? 'swimming'
+    : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
+  const hz = profile?.heartRateZones?.[key];
+  return Number(
+    profile?.maxHr
+    || profile?.maxHeartRate
+    || hz?.maxHeartRate
+    || hz?.zone5?.max
+    || hz?.zone4?.max
+    || 0,
+  );
+}
+
+function restingHrFromProfile(profile) {
+  return Number(
+    profile?.restingHr
+    || profile?.restingHeartRate
+    || profile?.heartRateZones?.cycling?.restingHeartRate
+    || profile?.heartRateZones?.running?.restingHeartRate
+    || profile?.heartRateZones?.swimming?.restingHeartRate
+    || 60,
+  );
 }
 
 function computePowerTss(activity, profile) {
@@ -112,8 +139,13 @@ function computeHrTss(activity, profile) {
     return Math.round((duration * ratio * ratio) / 3600 * 100);
   }
 
-  const maxHr = Number(profile?.maxHr || profile?.maxHeartRate || activity.maxHeartRate || activity.max_heartrate || 0);
-  const restHr = Number(profile?.restingHr || profile?.restingHeartRate || 60);
+  const maxHr = Number(
+    maxHrFromProfile(profile, sport)
+    || activity.maxHeartRate
+    || activity.max_heartrate
+    || 0,
+  );
+  const restHr = restingHrFromProfile(profile);
   if (maxHr > restHr) {
     const hrr = (avgHr - restHr) / (maxHr - restHr);
     if (hrr > 0) {
@@ -276,11 +308,43 @@ function resolveActivityTss(activity, profile) {
   let mode = TSS_DISPLAY_MODES.includes(activity.tssDisplayMode) ? activity.tssDisplayMode : null;
   if (!mode) mode = getActivityTssDisplayMode(activity, profile);
 
+  if (mode === 'power' && powerTss <= 0) mode = null;
+  if (mode === 'hr' && hrTss <= 0) mode = null;
+  if (!mode) mode = defaultTssMode(powerTss, hrTss, manualVal);
+
   if (mode === 'manual' && manualVal > 0) return manualVal;
   if (mode === 'power' && powerTss > 0) return powerTss;
   if (mode === 'hr' && hrTss > 0) return hrTss;
   if (manualVal > 0) return manualVal;
   return 0;
+}
+
+/** Map Strava / FIT documents to the shape expected by resolveActivityTss. */
+function mapActivityForTss(doc) {
+  if (!doc) return null;
+  return {
+    sport: doc.sport,
+    movingTime: doc.movingTime,
+    elapsedTime: doc.elapsedTime,
+    totalElapsedTime: doc.totalElapsedTime,
+    distance: doc.distance || doc.totalDistance,
+    averagePower: doc.averagePower || doc.avgPower,
+    avgPower: doc.avgPower || doc.averagePower,
+    normalizedPower: doc.normalizedPower,
+    weightedAveragePower: doc.weightedAveragePower,
+    weighted_average_watts: doc.weighted_average_watts || doc.weightedAveragePower,
+    averageSpeed: doc.averageSpeed || doc.avgSpeed,
+    avgSpeed: doc.avgSpeed || doc.averageSpeed,
+    averageHeartRate: doc.averageHeartRate || doc.avgHeartRate,
+    average_heartrate: doc.average_heartrate || doc.averageHeartRate || doc.avgHeartRate,
+    avgHeartRate: doc.avgHeartRate || doc.averageHeartRate,
+    maxHeartRate: doc.maxHeartRate,
+    max_heartrate: doc.max_heartrate || doc.maxHeartRate,
+    tss: doc.trainingStressScore || doc.tss,
+    trainingStressScore: doc.trainingStressScore,
+    manualTss: doc.manualTss,
+    tssDisplayMode: doc.tssDisplayMode,
+  };
 }
 
 /** @deprecated use resolveActivityTss */
@@ -296,4 +360,5 @@ module.exports = {
   computeHrTss,
   dedupeActivitiesForLoad,
   effectiveDailyTss,
+  mapActivityForTss,
 };

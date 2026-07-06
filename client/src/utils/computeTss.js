@@ -23,7 +23,8 @@ import { getTssDisplayMode } from './uiPrefs';
 function activityDuration(activity) {
   return Number(
     activity.totalTimerTime || activity.moving_time || activity.movingTime ||
-    activity.totalElapsedTime || activity.elapsedTime || activity.duration || 0,
+    activity.totalElapsedTime || activity.elapsedTime || activity.totalTime ||
+    activity.duration || 0,
   );
 }
 
@@ -35,6 +36,7 @@ function ftpFromProfile(profile) {
   return Number(
     profile?.powerZones?.cycling?.lt2
     || profile?.powerZones?.cycling?.ftp
+    || profile?.powerZones?.cycling?.zone4?.min
     || profile?.ftp
     || 0,
   );
@@ -66,6 +68,30 @@ function lthrFromProfile(profile, sport) {
   const key = sport.includes('swim') ? 'swimming' : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
   const hz = profile?.heartRateZones?.[key];
   return Number(hz?.lt2 || hz?.lt2Hr || hz?.threshold || hz?.zone4?.max || 0);
+}
+
+function maxHrFromProfile(profile, sport) {
+  const key = sport.includes('swim') ? 'swimming' : (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) ? 'running' : 'cycling';
+  const hz = profile?.heartRateZones?.[key];
+  return Number(
+    profile?.maxHr
+    || profile?.maxHeartRate
+    || hz?.maxHeartRate
+    || hz?.zone5?.max
+    || hz?.zone4?.max
+    || 0,
+  );
+}
+
+function restingHrFromProfile(profile) {
+  return Number(
+    profile?.restingHr
+    || profile?.restingHeartRate
+    || profile?.heartRateZones?.cycling?.restingHeartRate
+    || profile?.heartRateZones?.running?.restingHeartRate
+    || profile?.heartRateZones?.swimming?.restingHeartRate
+    || 60,
+  );
 }
 
 /** Power- or pace-based TSS only (no HR fallback). */
@@ -130,8 +156,13 @@ export function computeHrTss(activity, profile) {
     return Math.round((duration * ratio * ratio) / 3600 * 100);
   }
 
-  const maxHr = Number(profile?.maxHr || profile?.maxHeartRate || activity.maxHeartRate || activity.max_heartrate || 0);
-  const restHr = Number(profile?.restingHr || profile?.restingHeartRate || 60);
+  const maxHr = Number(
+    maxHrFromProfile(profile, sport)
+    || activity.maxHeartRate
+    || activity.max_heartrate
+    || 0,
+  );
+  const restHr = restingHrFromProfile(profile);
   if (maxHr > restHr) {
     const hrr = (avgHr - restHr) / (maxHr - restHr);
     if (hrr > 0) {
@@ -251,7 +282,7 @@ export function tssToggleDisabledReason(activity, profile) {
       activity.averageHeartRate || activity.average_heartrate || activity.avgHR || activity.avgHeartRate || 0,
     );
     if (!avgHr) missing.push('missing heart-rate data');
-    else if (!lthrFromProfile(profile, sport) && !profile?.maxHr) missing.push('set HR zones in profile');
+    else if (!lthrFromProfile(profile, sport) && !maxHrFromProfile(profile, sport)) missing.push('set HR zones in profile');
   }
   if (!missing.length) return 'Only one TSS value available for this workout';
   return `To switch TSS: ${missing.join(', ')}`;

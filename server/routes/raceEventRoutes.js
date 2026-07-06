@@ -68,8 +68,8 @@ router.post('/', verifyToken, async (req, res) => {
       const dateLabel = new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       notifyAthlete(r.athleteId, {
         type: 'race_added',
-        title: 'Nový závod od trenéra',
-        body: `${coach?.name || 'Trenér'} přidal ${name} (${dateLabel})`,
+        title: 'New race from coach',
+        body: `${coach?.name || 'Coach'} added ${name} (${dateLabel})`,
         resourceId: String(ev._id),
         resourceType: 'race',
         fromName: coach?.name || null,

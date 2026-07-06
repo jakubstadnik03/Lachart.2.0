@@ -30,18 +30,18 @@ function formatForm(tsb) {
 }
 
 /**
- * Countdown message: „Za 7 dní: Livigno Trail — Form +12, cíl CTL 165 (máš 167)“
+ * Countdown message: "In 7 days: Livigno Trail — Form +12, target CTL 165 (yours 167)"
  */
 function buildCountdownBody(race, daysLeft, metrics = {}) {
   const form = formatForm(metrics.form);
   const fitness = metrics.fitness != null ? Math.round(metrics.fitness) : null;
-  const dayWord = daysLeft === 1 ? 'den' : 'dní';
-  let body = `Za ${daysLeft} ${dayWord}: ${race.name}`;
+  const dayWord = daysLeft === 1 ? 'day' : 'days';
+  let body = `In ${daysLeft} ${dayWord}: ${race.name}`;
   if (form) body += ` — Form ${form}`;
   if (race.targetCTL != null && fitness != null) {
-    body += `, cíl CTL ${Math.round(race.targetCTL)} (máš ${fitness})`;
+    body += `, target CTL ${Math.round(race.targetCTL)} (yours ${fitness})`;
   } else if (race.targetCTL != null) {
-    body += `, cíl CTL ${Math.round(race.targetCTL)}`;
+    body += `, target CTL ${Math.round(race.targetCTL)}`;
   }
   return body;
 }
@@ -55,7 +55,7 @@ function recommendedTaperTss(plannedWeekTss) {
 
 function buildTaperBody(race, plannedWeekTss) {
   const rec = recommendedTaperTss(plannedWeekTss);
-  return `Za 10 dní ${race.name} — tento týden máš v plánu ${Math.round(plannedWeekTss)} TSS, doporučený taper ~${rec}`;
+  return `${race.name} in 10 days — ${Math.round(plannedWeekTss)} TSS planned this week, recommended taper ~${rec}`;
 }
 
 function buildCtlGapBody(race, daysLeft, currentCtl) {
@@ -63,13 +63,13 @@ function buildCtlGapBody(race, daysLeft, currentCtl) {
   const ctl = Number(currentCtl);
   if (!target || Number.isNaN(ctl)) return null;
   const gap = Math.round(target - ctl);
-  if (gap === 0) return `Do ${race.name} zbývá ${daysLeft} dní — jsi na cílovém CTL ${target}`;
+  if (gap === 0) return `${daysLeft} days to ${race.name} — you're at target CTL ${target}`;
   const dir = gap > 0 ? `+${gap}` : `${gap}`;
-  return `Do cílového CTL zbývá ${dir} za ${daysLeft} dní — buď přidej objem, nebo sniž cíl`;
+  return `${dir} CTL to target in ${daysLeft} days — add volume or lower the goal`;
 }
 
 function buildPostRaceBody(race) {
-  return `Jak dopadl ${race.name}? Přidej pocit, RPE nebo poznámku k závodu.`;
+  return `How did ${race.name} go? Add how you felt, RPE, or a race note.`;
 }
 
 module.exports = {

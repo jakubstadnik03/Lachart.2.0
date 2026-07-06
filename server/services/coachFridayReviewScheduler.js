@@ -51,12 +51,12 @@ function startCoachFridayReviewScheduler() {
       if (!coachIds.length) continue;
 
       const coach = await User.findById(coachIds[0]).select('name').lean();
-      const coachName = coach?.name || 'Trenér';
+      const coachName = coach?.name || 'Coach';
 
       await sendNotification(String(athlete._id), {
         type: 'weekly_review_request',
-        title: 'Týdenní review',
-        body: `${coachName} čeká na tvůj týden — přidej poznámku nebo shrnutí.`,
+        title: 'Weekly review',
+        body: `${coachName} is waiting for your week — add a note or summary.`,
         resourceType: 'dashboard',
         pushData: { screen: 'dashboard' },
       });

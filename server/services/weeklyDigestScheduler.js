@@ -20,23 +20,23 @@ async function sendWeeklyDigestEmail(user, weekStart, weekEnd, weekKey) {
 
   const transporter = createEmailTransporter();
   const clientUrl = getClientUrl();
-  const weekStartFmt = weekStart.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'short' });
-  const weekEndFmt = weekEnd.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'short' });
+  const weekStartFmt = weekStart.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+  const weekEndFmt = weekEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
 
   await transporter.sendMail({
     from: { name: 'LaChart', address: process.env.EMAIL_USER },
     to: user.email,
-    subject: `Týdenní souhrn — ${weekStartFmt} → ${weekEndFmt}`,
+    subject: `Weekly summary — ${weekStartFmt} → ${weekEndFmt}`,
     html: generateEmailTemplate({
-      title: 'Týdenní souhrn',
+      title: 'Weekly summary',
       content: `
-        <p>Ahoj ${user.name || ''},</p>
-        <p>Tento týden: <strong>${tss} TSS</strong>${formPart}. Stav: <strong>${status}</strong>${overreach}.</p>
-        <p>Krátký přehled přímo z tvého tréninkového plánu — stejný souhrn jako nedělní push.</p>
+        <p>Hi ${user.name || ''},</p>
+        <p>This week: <strong>${tss} TSS</strong>${formPart}. Status: <strong>${status}</strong>${overreach}.</p>
+        <p>A quick snapshot from your training — same numbers as the Sunday push notification.</p>
       `.trim(),
-      buttonText: 'Otevřít dashboard',
+      buttonText: 'Open dashboard',
       buttonUrl: `${clientUrl}/dashboard`,
-      footerText: 'Vypnout e-mailový digest? Settings → Notifications → Weekly digest email.',
+      footerText: 'Turn off email digest? Settings → Notifications → Weekly digest email.',
     }),
   });
 
@@ -81,7 +81,7 @@ function startWeeklyDigestScheduler() {
         { 'notifications.weeklyDigestEmail': { $ne: false }, email: { $ne: null } },
       ],
     })
-      .select('_id name email ftp powerZones restingHr maxHr weight notifications weeklyDigestPushLastWeekStart weeklyDigestEmailLastWeekStart expoPushTokens')
+      .select('_id name email ftp powerZones heartRateZones restingHr maxHr weight trainingPreferences notifications weeklyDigestPushLastWeekStart weeklyDigestEmailLastWeekStart expoPushTokens')
       .limit(2000)
       .lean();
 
@@ -99,8 +99,8 @@ function startWeeklyDigestScheduler() {
         if (user.expoPushTokens?.length && user.notifications?.weeklyDigest !== false && user.weeklyDigestPushLastWeekStart !== weekKey) {
           await sendNotification(String(user._id), {
             type: 'weekly_digest',
-            title: 'Týdenní souhrn',
-            body: `Tento týden: ${tss} TSS${formPart}${overreach}.`,
+            title: 'Weekly summary',
+            body: `This week: ${tss} TSS${formPart}${overreach}.`,
             resourceType: 'dashboard',
             pushData: { screen: 'dashboard' },
           });

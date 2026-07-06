@@ -5,6 +5,10 @@ const FitTraining = require('../models/fitTraining');
 const Training = require('../models/training');
 const fitnessMetricsController = require('../controllers/fitnessMetricsController');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+const { buildUserProfile, resolveActivityTss, mapActivityForTss } = require('../utils/activityTss');
+
+const calculateActivityTSS = (activity, userProfile) =>
+  resolveActivityTss(mapActivityForTss(activity), userProfile);
 
 function getIsoWeekStartUTC(date) {
   const d = new Date(date);
@@ -126,10 +130,10 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
   const [strava, fits, trainings] = await Promise.all([
     StravaActivity.find({ userId, startDate: { $gte: weekStart, $lt: weekEnd } })
       .sort({ startDate: 1 })
-      .select('stravaId name titleManual category sport startDate movingTime distance averageHeartRate averagePower averageSpeed'),
+      .select('stravaId name titleManual category sport startDate movingTime elapsedTime distance averageHeartRate averagePower weightedAveragePower averageSpeed manualTss tssDisplayMode'),
     FitTraining.find({ athleteId: String(userId), timestamp: { $gte: weekStart, $lt: weekEnd } })
       .sort({ timestamp: 1 })
-      .select('_id titleManual titleAuto category sport timestamp totalElapsedTime totalDistance avgHeartRate maxHeartRate avgPower normalizedPower avgSpeed trainingStressScore'),
+      .select('_id titleManual titleAuto category sport timestamp totalElapsedTime totalDistance avgHeartRate maxHeartRate avgPower normalizedPower avgSpeed trainingStressScore manualTss tssDisplayMode'),
     Training.find({ athleteId: String(userId), date: { $gte: weekStart, $lt: weekEnd } })
       .sort({ date: 1 })
       .select('_id title sport date duration results sourceFitTrainingId sourceStravaActivityId')
@@ -146,7 +150,7 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
     const coreSport = normalizeSportToCore(a.sport);
     const name = (a.titleManual && a.titleManual.trim()) ? a.titleManual : (a.name || 'Untitled');
     const linkUrl = `${clientUrl}/training-calendar?stravaId=${encodeURIComponent(String(a.stravaId))}`;
-    const tss = calculateActivityTSS(a, userProfile);
+    const tss = resolveActivityTss(mapActivityForTss(a), userProfile);
     sessions.push({
       source: 'strava',
       sourceLabel: 'STRAVA',
@@ -173,20 +177,7 @@ async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
     const name = (f.titleManual && f.titleManual.trim()) ? f.titleManual : (f.titleAuto || f.originalFileName || 'Untitled');
     const linkUrl = `${clientUrl}/training-calendar?fitTrainingId=${encodeURIComponent(String(f._id))}`;
     // Reuse TSS logic with a Strava-like object
-    const tss = resolveActivityTss({
-      sport: f.sport,
-      totalElapsedTime: seconds,
-      movingTime: seconds,
-      averagePower: f.avgPower,
-      normalizedPower: f.normalizedPower,
-      averageHeartRate: f.avgHeartRate,
-      avgHeartRate: f.avgHeartRate,
-      maxHeartRate: f.maxHeartRate,
-      averageSpeed: f.avgSpeed,
-      avgSpeed: f.avgSpeed,
-      tss: f.trainingStressScore,
-      trainingStressScore: f.trainingStressScore,
-    }, userProfile);
+    const tss = resolveActivityTss(mapActivityForTss(f), userProfile);
     sessions.push({
       source: 'fit',
       sourceLabel: 'FIT',
@@ -292,10 +283,6 @@ function aggregateSessions(sessions) {
   return totals;
 }
 
-const { buildUserProfile, resolveActivityTss } = require('../utils/activityTss');
-
-const calculateActivityTSS = resolveActivityTss;
-
 function computeTrainingStatusFromWeeklyTSS(currentWeekTSS, pastWeeksAvgTSS) {
   const averageTSS = Number(pastWeeksAvgTSS) || 0;
   const current = Number(currentWeekTSS) || 0;
@@ -340,11 +327,11 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
     StravaActivity.find({
     userId,
     startDate: { $gte: fourWeeksAgo, $lt: end }
-    }).select('startDate movingTime averagePower averageSpeed sport'),
+    }).select('startDate movingTime elapsedTime distance averagePower weightedAveragePower averageSpeed sport averageHeartRate manualTss tssDisplayMode'),
     FitTraining.find({
       athleteId: String(userId),
       timestamp: { $gte: fourWeeksAgo, $lt: end }
-    }).select('timestamp totalElapsedTime avgPower avgSpeed sport')
+    }).select('timestamp totalElapsedTime avgPower normalizedPower avgSpeed sport avgHeartRate maxHeartRate trainingStressScore manualTss tssDisplayMode')
   ]);
 
   const all = [];
@@ -354,12 +341,7 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
   for (const f of fitTrainings) {
     all.push({
       date: f.timestamp,
-      tss: calculateActivityTSS({
-        sport: f.sport,
-        totalElapsedTime: f.totalElapsedTime,
-        averagePower: f.avgPower,
-        averageSpeed: f.avgSpeed
-      }, userProfile)
+      tss: calculateActivityTSS(f, userProfile),
     });
   }
 
@@ -682,7 +664,7 @@ async function sendWeeklyReportsForWeek({ weekStart, weekEnd, force = false } = 
       { 'strava.athleteId': { $ne: null } },
       { 'strava.accessToken': { $ne: null } }
     ]
-  }).select('name email strava powerZones ftp notifications isActive');
+  }).select('name email strava powerZones heartRateZones ftp trainingPreferences notifications isActive');
 
   const results = {
     totalEligible: eligibleUsers.length,

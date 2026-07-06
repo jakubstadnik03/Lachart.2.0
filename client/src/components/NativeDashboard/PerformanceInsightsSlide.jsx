@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import { buildExtendedPmcSeries, localCalendarDateKey, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import { resolveActivityTss } from '../../utils/computeTss';
 import { useAuth } from '../../context/AuthProvider';
 
 const CARD = {
@@ -186,6 +187,11 @@ export default function PerformanceInsightsSlide({
 
   const lastPt = effSparkline.length > 0 ? effSparkline[effSparkline.length - 1] : null;
 
+  const canResolveAnyTss = useMemo(() => {
+    if (!activities?.length || !profile) return false;
+    return activities.some((a) => resolveActivityTss(a, profile, { user: profile }) > 0);
+  }, [activities, profile]);
+
   const { fitness, fatigue, form, fitnessDelta, fatigueDelta, formDelta, noData } = useMemo(() => {
     const fit = Math.round(
       isToday
@@ -219,8 +225,12 @@ export default function PerformanceInsightsSlide({
       return Math.round(curr - prevVal);
     };
 
-    const metricsUnset = fit === 0 && fat === 0 && frm === 0 && !effSparkline.length
-      && effTodayMetrics.fitness == null && effTodayMetrics.fatigue == null && effTodayMetrics.form == null;
+    const metricsUnset = !canResolveAnyTss
+      && (activities?.length > 0)
+      && !effSparkline.length
+      && effTodayMetrics.fitness == null
+      && effTodayMetrics.fatigue == null
+      && effTodayMetrics.form == null;
 
     return {
       fitness: fit,
@@ -231,7 +241,7 @@ export default function PerformanceInsightsSlide({
       formDelta: computeDelta(frm, 'formChange', ['Form', 'form', 'tsb']),
       noData: metricsUnset,
     };
-  }, [isToday, effTodayMetrics, lastPt, selectedPt, selectedDate, sparkByDate, effSparkline.length]);
+  }, [isToday, effTodayMetrics, lastPt, selectedPt, selectedDate, sparkByDate, effSparkline.length, canResolveAnyTss, activities?.length]);
 
   const shiftDay = (delta) => {
     setDayOffset((o) => {
@@ -358,7 +368,7 @@ export default function PerformanceInsightsSlide({
 
       {noData && (
         <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.4, color: '#6b7280', textAlign: 'center' }}>
-          Set FTP / LT2 and heart-rate zones in Profile so LaChart can compute TSS from your activities.
+          Set FTP / LT2 and heart-rate zones in Profile so LaChart can compute TSS from your activities. Open Profile → zones to fix this.
         </p>
       )}
     </div>

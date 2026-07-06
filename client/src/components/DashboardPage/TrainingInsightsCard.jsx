@@ -1,16 +1,25 @@
 /**
- * TrainingInsightsCard — dashboard coach hints (Form + rule-based alerts).
+ * TrainingInsightsCard — compact daily hint; tap for full + weekly overview.
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { getRaceEvents } from '../../services/api';
 import { fetchWellness } from '../../services/wellnessData';
-import { computeDailyInsight } from '../../utils/trainingInsights';
+import {
+  computeDailyInsight,
+  computeWeeklyOverview,
+  toLocalDateStr,
+} from '../../utils/trainingInsights';
 
 const SEVERITY = {
-  ok: { bg: '#ECFDF5', border: '#A7F3D0', accent: '#047857', label: 'OK' },
-  watch: { bg: '#FFFBEB', border: '#FDE68A', accent: '#B45309', label: 'Pozor' },
-  warning: { bg: '#FEF2F2', border: '#FECACA', accent: '#B91C1C', label: 'Recovery' },
+  ok: { bg: '#F8FAFC', border: '#E2E8F0', accent: '#047857', dot: '#22c55e', label: 'OK' },
+  watch: { bg: '#FFFBEB', border: '#FDE68A', accent: '#B45309', dot: '#f59e0b', label: 'Watch' },
+  warning: { bg: '#FEF2F2', border: '#FECACA', accent: '#B91C1C', dot: '#ef4444', label: 'Recovery' },
 };
+
+function dismissKey(athleteId) {
+  return `trainingInsightDismissed_${athleteId || 'self'}_${toLocalDateStr()}`;
+}
 
 export default function TrainingInsightsCard({
   athleteId = null,
@@ -27,6 +36,16 @@ export default function TrainingInsightsCard({
 }) {
   const [fetchedRace, setFetchedRace] = useState(null);
   const [wellnessDays, setWellnessDays] = useState(wellnessProp || []);
+  const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setDismissed(localStorage.getItem(dismissKey(athleteId)) === '1');
+    } catch {
+      setDismissed(false);
+    }
+  }, [athleteId]);
 
   useEffect(() => {
     if (wellnessProp !== undefined) {
@@ -57,88 +76,233 @@ export default function TrainingInsightsCard({
 
   const nextRace = nextRaceProp !== undefined ? nextRaceProp : fetchedRace;
 
-  const insight = useMemo(
-    () =>
-      computeDailyInsight({
-        todayMetrics,
-        plannedWorkouts,
-        wellnessDays,
-        activities,
-        tests,
-        sparklineData,
-        nextRace,
-        userProfile,
-      }),
+  const insightOpts = useMemo(
+    () => ({
+      todayMetrics,
+      plannedWorkouts,
+      wellnessDays,
+      activities,
+      tests,
+      sparklineData,
+      nextRace,
+      userProfile,
+    }),
     [todayMetrics, plannedWorkouts, wellnessDays, activities, tests, sparklineData, nextRace, userProfile]
   );
 
+  const insight = useMemo(() => computeDailyInsight(insightOpts), [insightOpts]);
+  const weekly = useMemo(() => computeWeeklyOverview(insightOpts), [insightOpts]);
   const style = SEVERITY[insight.severity] || SEVERITY.ok;
-  const extras = insight.all?.slice(1, compact ? 2 : 3) || [];
+
+  const handleDismiss = (e) => {
+    e?.stopPropagation?.();
+    setDismissed(true);
+    setExpanded(false);
+    try {
+      localStorage.setItem(dismissKey(athleteId), '1');
+    } catch { /* ignore */ }
+  };
 
   if (loading) {
     return (
-      <div style={cardShell(compact)}>
-        <div style={{ fontSize: 12, color: '#9CA3AF' }}>Načítám doporučení…</div>
+      <div style={teaserShell(compact)}>
+        <span style={{ fontSize: 11, color: '#9CA3AF' }}>Loading insight…</span>
       </div>
     );
   }
 
-  return (
+  if (dismissed) return null;
+
+  const teaser = (
     <div
       style={{
-        ...cardShell(compact),
+        ...teaserShell(compact),
         background: style.bg,
         borderColor: style.border,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          Dnešní insight
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="flex-1 min-w-0 flex items-center gap-2 text-left active:opacity-80"
+      >
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: style.dot }}
+          aria-hidden
+        />
+        <span className="flex-shrink-0 text-[9px] font-bold uppercase tracking-wide text-gray-400">
+          Today
+        </span>
+        <span className="flex-1 min-w-0 text-[12px] font-semibold text-gray-800 truncate leading-tight">
+          {insight.headline}
         </span>
         <span
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            color: style.accent,
-            background: '#fff',
-            borderRadius: 999,
-            padding: '2px 8px',
-            border: `1px solid ${style.border}`,
-          }}
+          className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          style={{ color: style.accent, background: '#fff', border: `1px solid ${style.border}` }}
         >
           {style.label}
         </span>
+        <svg className="flex-shrink-0 text-gray-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={handleDismiss}
+        className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-white/80"
+        aria-label="Dismiss insight"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+
+  const sheet = expanded && typeof document !== 'undefined'
+    ? ReactDOM.createPortal(
+        <InsightSheet
+          insight={insight}
+          weekly={weekly}
+          style={style}
+          onClose={() => setExpanded(false)}
+          onDismiss={handleDismiss}
+        />,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      {teaser}
+      {sheet}
+    </>
+  );
+}
+
+function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-[10050] flex flex-col justify-end"
+      style={{ background: 'rgba(15,23,42,0.45)' }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-white rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col"
+        style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="insight-sheet-title"
+      >
+        <div className="flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 rounded-full bg-gray-200" />
+        </div>
+
+        <div className="flex items-center justify-between px-4 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: style.dot }} />
+            <h2 id="insight-sheet-title" className="text-sm font-bold text-gray-900">
+              Today&apos;s insight
+            </h2>
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ color: style.accent, background: style.bg, border: `1px solid ${style.border}` }}
+            >
+              {style.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="text-[11px] font-medium text-gray-400 px-2 py-1 rounded-lg hover:bg-gray-100"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-4 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <p className="text-base font-bold text-gray-900 leading-snug">{insight.headline}</p>
+          {insight.detail && (
+            <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{insight.detail}</p>
+          )}
+
+          {weekly.stats.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-2">
+                This week
+              </h3>
+              <div className="grid grid-cols-3 gap-2">
+                {weekly.stats.map((s) => (
+                  <div
+                    key={s.label}
+                    className="rounded-xl bg-gray-50 border border-gray-100 px-2.5 py-2 text-center"
+                  >
+                    <div className="text-[9px] font-semibold text-gray-400 uppercase">{s.label}</div>
+                    <div className="text-sm font-bold text-gray-900 tabular-nums mt-0.5">{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {weekly.insights.length > 1 && (
+            <div className="mt-4">
+              <h3 className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-2">
+                Weekly signals
+              </h3>
+              <ul className="space-y-2">
+                {weekly.insights.map((item) => {
+                  const sev = SEVERITY[item.severity] || SEVERITY.ok;
+                  return (
+                    <li
+                      key={`${item.headline}-${item.detail}`}
+                      className="rounded-xl border px-3 py-2"
+                      style={{ borderColor: sev.border, background: sev.bg }}
+                    >
+                      <div className="text-[13px] font-semibold text-gray-900">{item.headline}</div>
+                      {item.detail && (
+                        <div className="text-[12px] text-gray-600 mt-0.5 leading-snug">{item.detail}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
-      <div style={{ fontSize: compact ? 15 : 17, fontWeight: 800, color: '#0A0E1A', lineHeight: 1.25 }}>
-        {insight.headline}
-      </div>
-      {insight.detail && (
-        <p style={{ margin: '6px 0 0', fontSize: compact ? 12 : 13, color: '#374151', lineHeight: 1.45 }}>
-          {insight.detail}
-        </p>
-      )}
-      {extras.length > 0 && (
-        <ul style={{ margin: '10px 0 0', padding: '0 0 0 16px', fontSize: compact ? 11 : 12, color: '#4B5563' }}>
-          {extras.map((x) => (
-            <li key={x.headline} style={{ marginBottom: 4 }}>{x.headline}{x.detail ? ` — ${x.detail}` : ''}</li>
-          ))}
-        </ul>
-      )}
-      {insight.moreCount > extras.length && (
-        <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9CA3AF' }}>
-          +{insight.moreCount - extras.length} dalších signálů
-        </p>
-      )}
     </div>
   );
 }
 
-function cardShell(compact) {
+function teaserShell(compact) {
   return {
-    background: '#fff',
     border: '1px solid #E5E7EB',
-    borderRadius: compact ? 18 : 16,
-    padding: compact ? '12px 14px' : '16px',
-    boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+    borderRadius: compact ? 14 : 12,
+    padding: compact ? '8px 10px' : '10px 12px',
+    boxShadow: '0 1px 2px rgba(15,23,42,.03)',
   };
 }
