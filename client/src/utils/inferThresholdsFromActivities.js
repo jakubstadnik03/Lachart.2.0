@@ -3,6 +3,8 @@
  * Used only for TSS / CTL / ATL — never written to the profile unless the user saves them.
  */
 
+import { profileNeedsTrainingZones } from './trainingZonesSetup';
+
 const MIN_INFER_SEC = 20 * 60;
 
 function actDuration(a) {
@@ -53,25 +55,6 @@ function avgWatts(a) {
     a?.normalizedPower || a?.weightedAveragePower || a?.weighted_average_watts
     || a?.avgPower || a?.averagePower || a?.average_watts || 0,
   );
-}
-
-function profileHasPowerZones(profile) {
-  const cz = profile?.powerZones?.cycling;
-  const rz = profile?.powerZones?.running || profile?.runningZones;
-  const sz = profile?.powerZones?.swimming || profile?.swimmingZones;
-  return !!(
-    Number(cz?.lt2 || cz?.ftp || profile?.ftp)
-    || Number(rz?.lt2 || rz?.zone4?.min || profile?.thresholdPace)
-    || Number(sz?.lt2 || sz?.zone4?.min || profile?.thresholdSwimPace)
-  );
-}
-
-function profileHasHrZones(profile) {
-  const hz = profile?.heartRateZones || {};
-  return ['cycling', 'running', 'swimming'].some((key) => {
-    const z = hz[key];
-    return Number(z?.lt2 || z?.lt2Hr || z?.threshold || z?.zone4?.max || z?.maxHeartRate) > 0;
-  }) || Number(profile?.maxHr || profile?.maxHeartRate) > 0;
 }
 
 /** @returns {{ cyclingFtp, runningLt2Pace, swimmingLt2Pace, lthr: { cycling, running, swimming }, maxHr: { cycling, running, swimming } }} */
@@ -136,7 +119,8 @@ export function inferThresholdsFromActivities(activities = []) {
  */
 export function enrichProfileForTss(profile, activities = []) {
   if (!profile || !Array.isArray(activities) || !activities.length) return profile;
-  if (profileHasPowerZones(profile) && profileHasHrZones(profile)) return profile;
+  // Saved zones always win — same rule as mobile Performance Insights.
+  if (!profileNeedsTrainingZones(profile)) return profile;
 
   const inferred = inferThresholdsFromActivities(activities);
   const hasInferred = inferred.cyclingFtp > 0
@@ -196,4 +180,22 @@ export function enrichProfileForTss(profile, activities = []) {
 
 export function hasInferredThresholds(profile) {
   return !!profile?._thresholdsInferredFromActivities;
+}
+
+/** Merge saved zones from auth profile when a loaded athlete doc omitted them. */
+export function mergeProfileZones(base, zonesSource) {
+  if (!base) return zonesSource || null;
+  if (!zonesSource) return base;
+  if (!profileNeedsTrainingZones(base) || profileNeedsTrainingZones(zonesSource)) return base;
+  return {
+    ...base,
+    powerZones: zonesSource.powerZones || base.powerZones,
+    heartRateZones: zonesSource.heartRateZones || base.heartRateZones,
+    units: base.units || zonesSource.units,
+    ftp: base.ftp || zonesSource.ftp,
+    thresholdPace: base.thresholdPace || zonesSource.thresholdPace,
+    thresholdSwimPace: base.thresholdSwimPace || zonesSource.thresholdSwimPace,
+    maxHr: base.maxHr || zonesSource.maxHr,
+    maxHeartRate: base.maxHeartRate || zonesSource.maxHeartRate,
+  };
 }

@@ -9,7 +9,7 @@ import TrainingGlossary from './TrainingGlossary';
 import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
-import { enrichProfileForTss, hasInferredThresholds } from '../../utils/inferThresholdsFromActivities';
+import { enrichProfileForTss, hasInferredThresholds, mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { requestTrainingZonesModal, profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
 
 // Total planned duration in seconds (respects interval-group repeats).
@@ -44,7 +44,10 @@ const estimatePlannedTss = (pw) => {
 
 const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false, headlineMetrics = null }) => {
   const { user } = useAuth();
-  const profile = userProfile || user;
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
   const calendarDriven = activities != null;
   const isCoachView = !!user?._id && athleteId && String(athleteId) !== String(user._id);
   const [wellness, setWellness] = useState([]);
@@ -193,7 +196,10 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           return;
         }
         if (Array.isArray(activities) && activities.length > 0 && profile) {
-          setUsingInferredZones(hasInferredThresholds(enrichProfileForTss(profile, activities)));
+          setUsingInferredZones(
+            profileNeedsTrainingZones(profile)
+            && hasInferredThresholds(enrichProfileForTss(profile, activities)),
+          );
           const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
             displayDays: days,
             sportFilter,
@@ -209,7 +215,10 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
       // Prefer calendar activities when passed without explicit calendar-driven flag.
       if (Array.isArray(activities) && activities.length > 0 && profile) {
-        setUsingInferredZones(hasInferredThresholds(enrichProfileForTss(profile, activities)));
+        setUsingInferredZones(
+          profileNeedsTrainingZones(profile)
+          && hasInferredThresholds(enrichProfileForTss(profile, activities)),
+        );
         const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
           displayDays: days,
           sportFilter,
@@ -410,6 +419,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
   // Headline CTL/ATL/TSB — always all sports, same source as native Performance Insights.
   const headlinePmc = useMemo(() => {
+    // Calendar-driven: always derive KPIs locally with the user's zones (matches mobile app).
+    if (calendarDriven && Array.isArray(activities) && activities.length && profile) {
+      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all' });
+      if (tm) return tm;
+    }
     if (headlineMetrics && (
       headlineMetrics.fitness != null
       || headlineMetrics.form != null
@@ -422,7 +436,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
       if (tm) return tm;
     }
     return todayMetrics;
-  }, [headlineMetrics, activities, profile, todayMetrics]);
+  }, [calendarDriven, headlineMetrics, activities, profile, todayMetrics]);
 
   const insights = useMemo(() => {
     const fitness = Math.round(Number(headlinePmc?.fitness ?? 0));

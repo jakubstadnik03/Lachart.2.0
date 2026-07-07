@@ -7,6 +7,7 @@ import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
 import { computeWeeklyTrainingLoadFromActivities } from '../../utils/formFitnessFromActivities';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 
 // Total planned duration in seconds (respects interval-group repeats).
@@ -50,7 +51,10 @@ const weekLabelFor = (weekKey) =>
 
 const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false }) => {
   const { user } = useAuth();
-  const profile = userProfile || user;
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
   const calendarDriven = activities != null;
   const [showGlossary, setShowGlossary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);

@@ -26,6 +26,7 @@ import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
+import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -988,7 +989,7 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`/user/athlete/${targetId}`);
+      const response = await api.get(`/user/athlete/${targetId}/profile`);
       if (response && response.data) {
         if (String(targetId) === String(activeDataAthleteRef.current)) {
           setViewedAthleteProfile(response.data);
@@ -1779,6 +1780,18 @@ export default function DashboardPage() {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  const fitnessProfile = useMemo(
+    () => mergeProfileZones(viewedAthleteProfile, user),
+    [viewedAthleteProfile, user],
+  );
+  const fitnessProfileRef = useRef(fitnessProfile);
+  useEffect(() => { fitnessProfileRef.current = fitnessProfile; }, [fitnessProfile]);
+
+  const getFitnessProfile = useCallback(
+    () => fitnessProfileRef.current,
+    [],
+  );
+
   const plannedWorkoutsRef = useRef([]);
   useEffect(() => { plannedWorkoutsRef.current = plannedWorkouts; }, [plannedWorkouts]);
 
@@ -1786,19 +1799,22 @@ export default function DashboardPage() {
   useEffect(() => { calendarDataRef.current = calendarData; }, [calendarData]);
 
   const profileTssFingerprint = useMemo(() => {
-    const p = user;
+    const p = fitnessProfile;
     if (!p) return '';
     const cz = p.powerZones?.cycling || {};
-    const rz = p.runZones || {};
-    const sz = p.swimZones || {};
+    const rz = p.powerZones?.running || p.runningZones || {};
+    const sz = p.powerZones?.swimming || p.swimmingZones || {};
     const hz = p.heartRateZones || {};
     return [
-      cz.lt2, cz.ftp, p.ftp,
-      rz.lt2, sz.lt2,
-      hz.lt2, hz.lt2Hr, p.maxHr,
+      cz.lt1, cz.lt2, cz.ftp, cz.zone4?.min, p.ftp,
+      rz.lt1, rz.lt2, rz.zone4?.min, p.thresholdPace,
+      sz.lt1, sz.lt2, sz.zone4?.min,
+      hz.cycling?.lt2, hz.running?.lt2, hz.swimming?.lt2,
+      hz.cycling?.maxHeartRate, hz.running?.maxHeartRate, p.maxHr,
       p.tssDisplayMode,
+      p.units?.tssDisplayMode,
     ].join('|');
-  }, [user]);
+  }, [fitnessProfile]);
 
   useEffect(() => {
     setTodayMetrics({});
@@ -1855,13 +1871,17 @@ export default function DashboardPage() {
   }, [pushFormFitnessWidget]);
 
   const applyCalendarFormFitness = useCallback(() => {
-    return recomputeFormFitness(calendarDataRef.current, userRef.current);
-  }, [recomputeFormFitness]);
+    return recomputeFormFitness(calendarDataRef.current, getFitnessProfile());
+  }, [recomputeFormFitness, getFitnessProfile]);
 
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
     if (applyCalendarFormFitness()) return;
-    // Native always derives CTL/ATL/TSB from calendar TSS — server API can lag behind.
+    // Prefer calendar-derived PMC on web too — server API can use different TSS logic.
+    if (calendarDataRef.current?.length) {
+      setFormMetricsLoading(false);
+      return;
+    }
     if (isCapacitorNative()) {
       setFormMetricsLoading(false);
       return;
@@ -1922,7 +1942,7 @@ export default function DashboardPage() {
     const acts = await loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
     await loadDashboardPlannedWorkouts();
 
-    if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
+    if (!recomputeFormFitness(acts || calendarDataRef.current, getFitnessProfile())) {
       setFormMetricsLoading(false);
     }
 
@@ -1935,6 +1955,7 @@ export default function DashboardPage() {
     loadCalendarData,
     loadDashboardPlannedWorkouts,
     recomputeFormFitness,
+    getFitnessProfile,
   ]);
 
   const performManualStravaSync = useCallback(async () => {
@@ -1955,12 +1976,8 @@ export default function DashboardPage() {
     syncDailyTrainingReminder(plannedWorkouts, user?.notifications).catch(() => {});
   }, [plannedWorkouts, user?.notifications]);
 
-  // Native: derive CTL/ATL/TSB from calendar activities (never the server API).
+  // Derive CTL/ATL/TSB from calendar activities (same as native — never stale server API).
   useEffect(() => {
-    if (!isCapacitorNative()) {
-      setFormMetricsLoading(false);
-      return;
-    }
     if (!dashboardDataAthleteId || !user?._id) {
       setFormMetricsLoading(false);
       return;
@@ -1973,19 +1990,16 @@ export default function DashboardPage() {
       setFormMetricsLoading(false);
       return;
     }
-    const ok = recomputeFormFitness(
-      calendarData,
-      viewedAthleteProfile || userRef.current || user,
-    );
+    const ok = recomputeFormFitness(calendarData, getFitnessProfile());
     if (!ok) setFormMetricsLoading(false);
   }, [
     calendarData,
     calendarLoading,
     dashboardDataAthleteId,
-    user,
-    viewedAthleteProfile,
+    user?._id,
     profileTssFingerprint,
     recomputeFormFitness,
+    getFitnessProfile,
   ]);
 
   // Prompt zones setup when dashboard has workouts but no thresholds (web + native).
@@ -2031,7 +2045,7 @@ export default function DashboardPage() {
       clearFormFitnessCache();
       setFormMetricsLoading(true);
       window.setTimeout(() => {
-        if (!recomputeFormFitness(calendarDataRef.current, userRef.current)) {
+        if (!recomputeFormFitness(calendarDataRef.current, getFitnessProfile())) {
           setFormMetricsLoading(false);
         }
       }, 0);
@@ -2042,7 +2056,7 @@ export default function DashboardPage() {
       window.removeEventListener('activityMetricsUpdated', refresh);
       window.removeEventListener(TSS_DISPLAY_MODE_EVENT, refresh);
     };
-  }, [dashboardDataAthleteId, recomputeFormFitness]);
+  }, [dashboardDataAthleteId, recomputeFormFitness, getFitnessProfile]);
 
   // ── Strava webhook → live dashboard refresh ───────────────────────────────
   // When the server receives a Strava webhook and saves a new activity it:
@@ -2062,7 +2076,7 @@ export default function DashboardPage() {
         const trainingsResult = await loadTrainings(dashboardDataAthleteId);
         const acts = await loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
         clearFormFitnessCache();
-        if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
+        if (!recomputeFormFitness(acts || calendarDataRef.current, getFitnessProfile())) {
           await loadFormFitness(dashboardDataAthleteId);
         }
         window.dispatchEvent(new CustomEvent('activityMetricsUpdated'));
@@ -2070,7 +2084,7 @@ export default function DashboardPage() {
     };
     window.addEventListener('stravaSyncComplete', onSync);
     return () => window.removeEventListener('stravaSyncComplete', onSync);
-  }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness, recomputeFormFitness]);
+  }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness, recomputeFormFitness, getFitnessProfile]);
 
   const handleDashboardPlanSave = useCallback(async (data) => {
     try {
@@ -2824,7 +2838,7 @@ export default function DashboardPage() {
               activities={calendarData}
               tests={tests}
               sparklineData={sparklineData}
-              userProfile={viewedAthleteProfile || user}
+              userProfile={fitnessProfile}
               loading={dashboardFitnessLoading || formMetricsLoading}
             />
             <RaceCountdownCard
@@ -2857,7 +2871,7 @@ export default function DashboardPage() {
                 key={`ffc-${dashboardDataAthleteId}`}
                 athleteId={dashboardDataAthleteId}
                 activities={calendarData}
-                userProfile={viewedAthleteProfile || user}
+                userProfile={fitnessProfile}
                 activitiesLoading={dashboardFitnessLoading}
                 headlineMetrics={todayMetrics}
               />
@@ -2875,7 +2889,7 @@ export default function DashboardPage() {
                 key={`wtl-${dashboardDataAthleteId}`}
                 athleteId={dashboardDataAthleteId}
                 activities={calendarData}
-                userProfile={viewedAthleteProfile || user}
+                userProfile={fitnessProfile}
                 activitiesLoading={dashboardFitnessLoading}
               />
             ) : (
