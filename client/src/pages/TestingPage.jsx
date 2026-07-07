@@ -1465,13 +1465,14 @@ const TestingPage = () => {
                   )}
                 >
                   <PreviousTestingComponent
-                    key={selectedAthleteId || user?._id}
+                    key={effectiveTargetAthleteId || user?._id}
                     selectedSport={selectedSport}
                     tests={tests}
                     setTests={setTests}
                     selectedTestId={testIdFromUrl}
                     onSelectTestId={handleUrlTestSelection}
                     externalActivities={externalActivities}
+                    athleteId={effectiveTargetAthleteId}
                   />
                 </ErrorBoundary>
               </div>

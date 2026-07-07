@@ -69,7 +69,8 @@
     "cap:sync:no-build": "npx cap sync && node scripts/patch-ios-health-plugin.mjs",
     "cap:sync:ios": "npm run build && npx cap sync ios && node scripts/patch-ios-health-plugin.mjs && cd ios/App && pod install",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "whats-new:videos": "node scripts/check-whats-new-videos.js"
   },
   "eslintConfig": {
     "extends": [

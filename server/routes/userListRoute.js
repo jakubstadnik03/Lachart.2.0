@@ -74,6 +74,46 @@ function hasPendingInviteFromCoach(athlete, coachUser) {
     return false;
 }
 
+/** Coach/tester/admin access check for fitness metrics endpoints (uses coachId/coachIds, not legacy user.athletes). */
+async function assertCanViewAthleteFitnessData(requester, athleteId) {
+    const uid = String(requester._id);
+    const aid = String(athleteId);
+    if (uid === aid) return;
+
+    const roleLower = String(requester.role || "").toLowerCase();
+    if (roleLower === "admin" || requester.admin === true) return;
+
+    if (["coach", "tester", "testing"].includes(roleLower)) {
+        const athlete = await User.findById(athleteId);
+        if (!athlete) {
+            const err = new Error("Athlete not found");
+            err.status = 404;
+            throw err;
+        }
+        if (hasPendingInviteFromCoach(athlete, requester)) {
+            const err = new Error("Athlete invitation is pending confirmation");
+            err.status = 403;
+            throw err;
+        }
+        if (!athleteHasCoachUser(athlete, requester._id)) {
+            const err = new Error("This athlete does not belong to your team");
+            err.status = 403;
+            throw err;
+        }
+        return;
+    }
+
+    if (roleLower === "athlete") {
+        const err = new Error("Access denied");
+        err.status = 403;
+        throw err;
+    }
+
+    const err = new Error("Access denied");
+    err.status = 403;
+    throw err;
+}
+
 /** Load linked coaches for an athlete (legacy coachId + coachIds). */
 async function getAthleteCoachesPayload(athleteId) {
     const athlete = await userDao.findById(athleteId);
@@ -5351,25 +5391,15 @@ router.get("/athlete/:athleteId/form-fitness", verifyToken, async (req, res) => 
         const days = parseInt(req.query.days) || 60;
         const sportFilter = req.query.sport || 'all'; // 'all', 'bike', 'run', 'swim'
         
-        // Check if user has access to this athlete
         const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
-
-        if (user.role === 'coach') {
-            // Coach can access their athletes
-            const hasAccess = user.athletes && user.athletes.some(a => 
-                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
-            );
-            if (!hasAccess && String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
-        } else {
-            // Regular user can only access their own data
-            if (String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        try {
+            await assertCanViewAthleteFitnessData(user, athleteId);
+        } catch (authErr) {
+            const status = authErr.status || 403;
+            return res.status(status).json({ error: authErr.message || "Access denied" });
         }
 
         const data = await fitnessMetricsController.calculateFormFitnessData(athleteId, days, sportFilter);
@@ -5386,23 +5416,15 @@ router.get("/athlete/:athleteId/today-metrics", verifyToken, async (req, res) =>
     try {
         const { athleteId } = req.params;
         
-        // Check if user has access to this athlete
         const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
-
-        if (user.role === 'coach') {
-            const hasAccess = user.athletes && user.athletes.some(a => 
-                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
-            );
-            if (!hasAccess && String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
-        } else {
-            if (String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        try {
+            await assertCanViewAthleteFitnessData(user, athleteId);
+        } catch (authErr) {
+            const status = authErr.status || 403;
+            return res.status(status).json({ error: authErr.message || "Access denied" });
         }
 
         const metrics = await fitnessMetricsController.calculateTodayMetrics(athleteId);
@@ -5418,23 +5440,15 @@ router.get("/athlete/:athleteId/training-status", verifyToken, async (req, res) 
     try {
         const { athleteId } = req.params;
         
-        // Check if user has access to this athlete
         const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
-
-        if (user.role === 'coach') {
-            const hasAccess = user.athletes && user.athletes.some(a => 
-                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
-            );
-            if (!hasAccess && String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
-        } else {
-            if (String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        try {
+            await assertCanViewAthleteFitnessData(user, athleteId);
+        } catch (authErr) {
+            const status = authErr.status || 403;
+            return res.status(status).json({ error: authErr.message || "Access denied" });
         }
 
         const status = await fitnessMetricsController.calculateTrainingStatus(athleteId);
@@ -5452,23 +5466,15 @@ router.get("/athlete/:athleteId/weekly-training-load", verifyToken, async (req, 
         const months = parseInt(req.query.months) || 3;
         const sportFilter = req.query.sport || 'all'; // 'all', 'bike', 'run', 'swim'
         
-        // Check if user has access to this athlete
         const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
-
-        if (user.role === 'coach') {
-            const hasAccess = user.athletes && user.athletes.some(a => 
-                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
-            );
-            if (!hasAccess && String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
-        } else {
-            if (String(user._id) !== String(athleteId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        try {
+            await assertCanViewAthleteFitnessData(user, athleteId);
+        } catch (authErr) {
+            const status = authErr.status || 403;
+            return res.status(status).json({ error: authErr.message || "Access denied" });
         }
 
         const result = await fitnessMetricsController.calculateWeeklyTrainingLoad(athleteId, months, sportFilter);

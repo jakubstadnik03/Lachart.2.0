@@ -86,10 +86,12 @@ async function syncStravaForUser(user, opts = {}) {
       const overlapMs = 48 * 60 * 60 * 1000; // 48 hours
       since = new Date(new Date(user.strava.lastSyncDate).getTime() - overlapMs);
     } else {
-      // First time sync - only get last 7 days to avoid long sync
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      since = sevenDaysAgo;
+      // First time sync — recent window only; full history is handled by the
+      // progressive backfill kicked off in the OAuth callback.
+      const lookbackDays = source === 'connect' ? 30 : 7;
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - lookbackDays);
+      since = sinceDate;
     }
     
     const per_page = 100;
@@ -102,7 +104,7 @@ async function syncStravaForUser(user, opts = {}) {
     // 48h overlap window can still contain >300 activities for active athletes
     // (multi-sport, indoor + outdoor). Background ticks stay conservative.
     const maxPages = isFirstSync
-      ? 10
+      ? (source === 'connect' ? 15 : 10)
       : (force
         ? 10
         : (source === 'scheduler'

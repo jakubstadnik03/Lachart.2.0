@@ -4,7 +4,7 @@ const stravaSyncLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true, default: null },
   source: {
     type: String,
-    enum: ['webhook', 'manual', 'auto-sync', 'scheduler', 'backfill', 'unknown'],
+    enum: ['webhook', 'manual', 'auto-sync', 'scheduler', 'backfill', 'connect', 'unknown'],
     default: 'unknown',
     index: true,
   },

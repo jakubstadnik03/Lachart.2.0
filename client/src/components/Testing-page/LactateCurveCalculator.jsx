@@ -802,8 +802,9 @@ const lactateZoneLtpOverlayPlugin = {
 
 ChartJS.register(lactateZoneLtpOverlayPlugin);
 
-const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
+const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, demoMode = false }) => {
   const { user } = useAuth();
+  const effectiveAthleteId = athleteIdProp || mockData?.athleteId || user?._id || user?.id || null;
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
@@ -877,21 +878,20 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   
   // Fetch athlete profile for PDF report
   useEffect(() => {
-    const athleteId = mockData?.athleteId;
-    if (!athleteId) {
+    if (!effectiveAthleteId) {
       setAthleteProfile(user || null);
       return;
     }
     let cancelled = false;
-    api.get(`/user/athlete/${athleteId}/profile`)
+    api.get(`/user/athlete/${effectiveAthleteId}/profile`)
       .then(res => { if (!cancelled) setAthleteProfile(res.data); })
       .catch(() => { if (!cancelled) setAthleteProfile(user || null); });
     return () => { cancelled = true; };
-  }, [mockData?.athleteId, user]);
+  }, [effectiveAthleteId, user]);
 
   // Fetch all previous tests (same sport, before current) for PDF comparison selector
   useEffect(() => {
-    const athleteId = mockData?.athleteId || user?._id || user?.id;
+    const athleteId = effectiveAthleteId;
     const currentId   = mockData?._id;
     const currentDate = mockData?.date;
     const currentSport = mockData?.sport;
@@ -927,7 +927,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         }
       });
     return () => { cancelled = true; };
-  }, [mockData?._id, mockData?.athleteId, mockData?.date, mockData?.sport, user]);
+  }, [mockData?._id, effectiveAthleteId, mockData?.date, mockData?.sport, user]);
 
   const serverOverrideLt1         = mockData?.thresholdOverrides?.LTP1         ?? null;
   const serverOverrideLt2         = mockData?.thresholdOverrides?.LTP2         ?? null;
@@ -3000,7 +3000,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               <div className={`grid gap-3 ${showPreTest && showCoach ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
                 {showPreTest && (
                   <PreTestTrainingSummary
-                    athleteId={mockData?.athleteId || user?._id || user?.id}
+                    athleteId={effectiveAthleteId}
                     testDate={mockData?.date}
                     sport={sportKey}
                     onData={setPreTestSummaryData}
@@ -3008,7 +3008,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 )}
                 {showCoach && (
                   <AiTestCoach
-                    athleteId={mockData?.athleteId || user?._id || user?.id}
+                    athleteId={effectiveAthleteId}
                     testId={mockData?._id}
                     testDate={mockData?.date}
                     sport={mockData?.sport}

@@ -84,6 +84,98 @@ function normaliseSportForWidget(raw) {
   return 'other';
 }
 
+/** Reuse merged trainings from loadTrainings() as calendar feed — avoids a second Strava/FIT round-trip. */
+function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
+  if (!Array.isArray(allTrainings) || allTrainings.length === 0) return [];
+
+  const trainingByStravaId = new Map();
+  (regTrainings || []).forEach((t) => {
+    const sid = t?.sourceStravaActivityId;
+    if (sid) trainingByStravaId.set(String(sid), t);
+  });
+
+  const linkedStravaIds = new Set(
+    (regTrainings || [])
+      .map((t) => t?.sourceStravaActivityId)
+      .filter(Boolean)
+      .map(String),
+  );
+
+  return allTrainings
+    .filter((t) => t && !t.sourceStravaActivityId)
+    .map((t) => {
+      const idStr = String(t.id || '');
+      const isFit = Boolean(
+        t.type === 'fit' || t.source === 'fit' || idStr.startsWith('fit-')
+        || (t.timestamp && (t.originalFileName || t.titleAuto)),
+      );
+      const stravaId = t.stravaId || (idStr.startsWith('strava-') ? idStr.replace(/^strava-/, '') : null);
+      const isStrava = Boolean(t.type === 'strava' || t.source === 'strava' || stravaId || t.startDate);
+
+      if (isFit && !isStrava) {
+        return {
+          ...t,
+          type: 'fit',
+          date: t.timestamp || t.date,
+          title: t.titleManual || t.titleAuto || t.originalFileName || t.title || 'Untitled Training',
+          sport: t.sport,
+          avgPower: t.avgPower,
+          maxPower: t.maxPower,
+          avgHeartRate: t.avgHeartRate,
+          maxHeartRate: t.maxHeartRate,
+          totalTime: t.totalElapsedTime || t.totalTimerTime,
+          distance: t.totalDistance,
+          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
+          tssDisplayMode: t.tssDisplayMode ?? null,
+        };
+      }
+
+      if (isStrava && stravaId) {
+        const linkedTraining = trainingByStravaId.get(String(stravaId));
+        return {
+          ...t,
+          type: 'strava',
+          date: t.startDate || t.date || t.timestamp,
+          title: linkedTraining?.title || t.titleManual || t.name || t.title || 'Untitled Activity',
+          linkedTrainingTitle: linkedTraining?.title || null,
+          sport: t.sport,
+          stravaId,
+          id: idStr.startsWith('strava-') ? idStr : `strava-${stravaId}`,
+          avgPower: t.averagePower || t.average_watts || t.avgPower,
+          weightedAveragePower: t.weightedAveragePower ?? t.weighted_average_watts ?? null,
+          avgSpeed: t.averageSpeed || t.average_speed || t.avgSpeed,
+          maxPower: t.maxPower || t.max_watts,
+          avgHeartRate: t.averageHeartRate || t.average_heartrate || t.avgHeartRate,
+          maxHeartRate: t.maxHeartRate || t.max_heartrate,
+          totalTime: t.movingTime || t.elapsedTime || t.totalTime,
+          distance: t.distance,
+          tss: t.manualTss ?? (linkedTraining?.tss || linkedTraining?.totalTSS || t.tss || t.totalTSS || t.total_tss || null),
+          tssDisplayMode: t.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
+          kilojoules: t.kilojoules ?? t.raw?.kilojoules,
+        };
+      }
+
+      if (linkedStravaIds.has(String(t._id))) return null;
+
+      return {
+        ...t,
+        id: idStr || `regular-${t._id}`,
+        type: 'regular',
+        date: t.date || t.timestamp,
+        title: t.title || t.titleManual || 'Untitled Training',
+        sport: t.sport,
+        category: t.category || null,
+        distance: t.totalDistance || t.distance,
+        totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+        tss: t.tss || t.totalTSS,
+        tssDisplayMode: t.tssDisplayMode ?? null,
+        avgPower: t.avgPower || t.averagePower || null,
+        avgSpeed: t.avgSpeed || t.averageSpeed || null,
+      };
+    })
+    .filter(Boolean);
+}
+
 /** Build the array the widget renders under "DONE" — completed activities
  *  done today. Earliest-first (first completed at top), max 4 entries. */
 function pickTodaysCompleted(activities, plannedWorkouts) {
@@ -397,13 +489,32 @@ export default function DashboardPage() {
   }, [isAuthenticated, user?._id]);
   // ── Single source of truth for athlete selection ─────────────────────────────
   const { selectedAthleteId: _globalAthleteId, setSelectedAthleteId: _setGlobalAthleteId } = useAthleteSelection();
-  // For non-coach roles use own ID; for coach/tester roles use global selection.
-  const selectedAthleteId = isCoachLikeRole ? (_globalAthleteId || user?._id || null) : (user?._id || null);
+  // URL :athleteId wins on coach routes so /dashboard/<id> and the bar stay in sync immediately.
+  const selectedAthleteId = isCoachLikeRole
+    ? (athleteId || _globalAthleteId || user?._id || null)
+    : (user?._id || null);
   const setSelectedAthleteId = _setGlobalAthleteId;
   /** Atletes never had `selectedAthleteId` set (it stayed null); charts used `athleteId` and bailed out. Coaches use selection. */
   const dashboardDataAthleteId = selectedAthleteId || user?._id || null;
+  /** Guards async loaders — ignore responses that belong to a previous athlete selection. */
+  const activeDataAthleteRef = useRef(dashboardDataAthleteId);
+  const dataLoadGenRef = useRef(0);
+  /** Coach viewing a linked athlete (not their own dashboard). */
+  const isCoachViewingOtherAthlete = Boolean(
+    isCoachLikeRole &&
+    dashboardDataAthleteId &&
+    user?._id &&
+    String(dashboardDataAthleteId) !== String(user._id)
+  );
+  const prevDashboardAthleteRef = useRef(null);
+  const lastLoadedAthleteIdRef = React.useRef(null);
+  const lastLoadTimeRef = React.useRef(null);
+  const hasLoadedOnceRef = React.useRef(false);
+  const emptyRetryRef = React.useRef(0);
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
+  const [viewedAthleteProfile, setViewedAthleteProfile] = useState(null);
+  const [athleteProfileLoaded, setAthleteProfileLoaded] = useState(false);
   const regularTrainingsRef = useRef(regularTrainings);
   useEffect(() => { regularTrainingsRef.current = regularTrainings; }, [regularTrainings]);
   // eslint-disable-next-line no-unused-vars
@@ -689,6 +800,12 @@ export default function DashboardPage() {
   // Also sets regularTrainings state so loadCalendarData can be called without
   // a separate /user/athlete/:id/trainings round-trip.
   const loadTrainings = useCallback(async (targetId) => {
+    const applyIfCurrent = (fn) => {
+      if (String(targetId) !== String(activeDataAthleteRef.current)) return false;
+      fn();
+      return true;
+    };
+
     // v3 — titleManual now wins over .title/.name in the merged mapping.
     const cacheKey = `athleteTrainings_v3_${targetId}`;
     const tsKey = `${cacheKey}_ts`;
@@ -705,10 +822,12 @@ export default function DashboardPage() {
         if (!Number.isNaN(age) && age < CACHE_TTL) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
-            setTrainings(parsed);
-            setTrainingsInitialized(true);
+            applyIfCurrent(() => {
+              setTrainings(parsed);
+              setTrainingsInitialized(true);
+              setLoading(false);
+            });
             usedCache = true;
-            setLoading(false);
           }
         }
       }
@@ -734,7 +853,7 @@ export default function DashboardPage() {
       // Extract and store regular trainings before merging with FIT/Strava data.
       // This avoids a second fetch of the same endpoint by loadRegularTrainings.
       const regularTrainingsData = normalizeApiList(response.data);
-      setRegularTrainings(regularTrainingsData);
+      applyIfCurrent(() => setRegularTrainings(regularTrainingsData));
 
       // Optionally enrich with FIT trainings and Strava activities (same as TrainingPage)
       const [fitResponse, stravaResponse] = await Promise.all([
@@ -778,8 +897,10 @@ export default function DashboardPage() {
         }))
       ];
 
-      setTrainings(allTrainings);
-      setTrainingsInitialized(true);
+      applyIfCurrent(() => {
+        setTrainings(allTrainings);
+        setTrainingsInitialized(true);
+      });
 
       // 3) Save to localStorage so next dashboard/TrainingPage open is instant
       try {
@@ -811,24 +932,57 @@ export default function DashboardPage() {
   }, [setLoading]);
 
   const loadTests = useCallback(async (targetId) => {
+    const applyIfCurrent = (fn) => {
+      if (String(targetId) !== String(activeDataAthleteRef.current)) return false;
+      fn();
+      return true;
+    };
+
+    const cacheKey = `athleteTests_v1_${targetId}`;
+    const tsKey = `${cacheKey}_ts`;
+    const CACHE_TTL = 10 * 60 * 1000;
+
+    // Fast path: show cached tests immediately (same pattern as loadTrainings)
     try {
-      setLoading(true);
-      setError(null);
-      // Coach-like roles must load only selected athlete tests.
-      const testId = targetId;
-      const response = await api.get(`/test/list/${testId}`);
-      if (response && response.data) {
-        setTests(response.data);
-        return response.data;
+      const cached = localStorage.getItem(cacheKey);
+      const ts = localStorage.getItem(tsKey);
+      if (cached && ts) {
+        const age = Date.now() - parseInt(ts, 10);
+        if (!Number.isNaN(age) && age < CACHE_TTL) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            applyIfCurrent(() => setTests(parsed));
+          }
+        }
       }
+    } catch (e) {
+      console.warn('Error reading tests cache (dashboard):', e);
+    }
+
+    try {
+      setError(null);
+      const response = await api.get(`/test/list/${targetId}`, { cacheTtlMs: 60000 });
+      const raw = response?.data;
+      const testsData = Array.isArray(raw)
+        ? raw
+        : (Array.isArray(raw?.tests) ? raw.tests : []);
+      applyIfCurrent(() => setTests(testsData));
+      try {
+        const payload = JSON.stringify(testsData);
+        if (payload.length < 300000) {
+          localStorage.setItem(cacheKey, payload);
+          localStorage.setItem(tsKey, Date.now().toString());
+        }
+      } catch (e) {
+        console.warn('Error saving tests cache (dashboard):', e);
+      }
+      return testsData;
     } catch (error) {
       console.error('Error loading tests:', error);
       setError('Failed to load tests');
       return null;
-    } finally {
-      setLoading(false);
     }
-  }, [setLoading]);
+  }, []);
 
   const loadAthlete = useCallback(async (targetId) => {
     try {
@@ -836,12 +990,18 @@ export default function DashboardPage() {
       setError(null);
       const response = await api.get(`/user/athlete/${targetId}`);
       if (response && response.data) {
+        if (String(targetId) === String(activeDataAthleteRef.current)) {
+          setViewedAthleteProfile(response.data);
+        }
         return response.data;
       }
     } catch (error) {
       console.error('Error loading athlete:', error);
     //  setError(error.message);
     } finally {
+      if (String(targetId) === String(activeDataAthleteRef.current)) {
+        setAthleteProfileLoaded(true);
+      }
       setLoading(false);
     }
   }, [setLoading]);
@@ -849,9 +1009,46 @@ export default function DashboardPage() {
   // Load training calendar data (FIT files and Strava activities) with localStorage caching.
   // Accepts optional regularTrainingsParam so the main loader can pass data directly
   // without waiting for a state update cycle.
-  const loadCalendarData = useCallback(async (targetId, regularTrainingsParam) => {
+  const loadCalendarData = useCallback(async (targetId, regularTrainingsParam, prefetchedAllTrainings = null) => {
     const regTrainings = regularTrainingsParam ?? regularTrainingsRef.current;
-    setCalendarError(null);
+    const applyIfCurrent = (fn) => {
+      if (String(targetId) !== String(activeDataAthleteRef.current)) return false;
+      fn();
+      return true;
+    };
+    applyIfCurrent(() => setCalendarError(null));
+
+    const finalizeCalendar = (combined, externalActivitiesError = null) => {
+      const limitedForView = sortAndLimitCalendarActivities(combined);
+      const cacheKey = `calendarData_${targetId}`;
+      const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
+      const now = Date.now();
+
+      if (externalActivitiesError) {
+        applyIfCurrent(() => {
+          const status = externalActivitiesError.response?.status;
+          if (status === 429) {
+            setCalendarError('Server is busy — showing cached activities. Try again in a moment.');
+          } else {
+            setCalendarError('Some activities could not be loaded. Calendar may be incomplete.');
+          }
+        });
+      }
+
+      try {
+        if (limitedForView.length > 0) {
+          const dataToCache = JSON.stringify(limitedForView);
+          if (dataToCache.length < 450000) {
+            localStorage.setItem(cacheKey, dataToCache);
+            localStorage.setItem(cacheTimestampKey, now.toString());
+          }
+        }
+      } catch (_) { /* ignore quota */ }
+
+      applyIfCurrent(() => setCalendarData(limitedForView));
+      console.log('[DashboardPage] Calendar data loaded and set:', limitedForView.length, 'activities');
+      return limitedForView;
+    };
     try {
       // Check localStorage cache first
       const cacheKey = `calendarData_${targetId}`;
@@ -874,11 +1071,11 @@ export default function DashboardPage() {
           // had synced) must NOT be served for 24h — fall through and refetch,
           // otherwise the calendar stays blank even after activities arrive.
           if (isCacheValid && parsed.length > 0) {
-            setCalendarData(parsed);
+            applyIfCurrent(() => setCalendarData(parsed));
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
           } else if (parsed.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
-            setCalendarData(parsed);
+            applyIfCurrent(() => setCalendarData(parsed));
             console.log('[DashboardPage] Using expired cache as fallback:', parsed.length, 'activities');
           }
         } catch (e) {
@@ -892,7 +1089,25 @@ export default function DashboardPage() {
       const inFlightCalendar = calendarRequestRef.current.get(targetId);
       if (inFlightCalendar) return inFlightCalendar;
 
-      setCalendarLoading(true);
+      applyIfCurrent(() => setCalendarLoading(true));
+
+      // Reuse trainings already fetched by loadTrainings() — cuts duplicate Strava/FIT calls in half.
+      if (Array.isArray(prefetchedAllTrainings) && prefetchedAllTrainings.length > 0) {
+        const request = (async () => {
+          const combined = buildCalendarActivitiesFromTrainings(prefetchedAllTrainings, regTrainings);
+          return finalizeCalendar(combined);
+        })();
+        calendarRequestRef.current.set(targetId, request);
+        try {
+          return await request;
+        } finally {
+          calendarRequestRef.current.delete(targetId);
+          if (String(targetId) === String(activeDataAthleteRef.current)) {
+            setCalendarLoading(false);
+          }
+        }
+      }
+
       const request = (async () => {
       let externalActivitiesError = null;
       const [fitData, stravaData] = await Promise.all([
@@ -988,66 +1203,7 @@ export default function DashboardPage() {
         })
       ];
 
-      const limitedForView = sortAndLimitCalendarActivities(combined);
-      if (externalActivitiesError) {
-        const status = externalActivitiesError.response?.status;
-        if (status === 429) {
-          setCalendarError('Strava API rate limit is active. Calendar is showing cached/local activities; try again in a few minutes.');
-        } else {
-          setCalendarError('Strava activities could not be loaded. Calendar may be incomplete.');
-        }
-      }
-
-      // Cache the combined data — but NEVER cache an empty result. Caching []
-      // (e.g. activities haven't synced yet, or the Strava fetch came back
-      // empty after a cold-start blip) would make the dashboard serve a blank
-      // calendar for the next 24h even once the activities exist.
-      try {
-        if (limitedForView.length > 0) {
-          const dataToCache = JSON.stringify(limitedForView);
-          if (dataToCache.length < 450000) {
-            localStorage.setItem(cacheKey, dataToCache);
-            localStorage.setItem(cacheTimestampKey, now.toString());
-          }
-        }
-      } catch (e) {
-        if (e.name === 'QuotaExceededError' || e.code === 22) {
-          // Try to clear old calendar cache entries
-          try {
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key && key.startsWith('calendarData_')) {
-                keysToRemove.push(key);
-              }
-            }
-            // Remove oldest entries first (keep only the most recent 3)
-            keysToRemove.sort().slice(0, Math.max(0, keysToRemove.length - 3)).forEach(key => {
-              localStorage.removeItem(key);
-              localStorage.removeItem(key.replace('calendarData_', 'calendarTimestamp_'));
-            });
-            // Retry caching with limited data
-            try {
-              const smaller = limitedForView.slice(0, 400);
-              localStorage.setItem(cacheKey, JSON.stringify(smaller));
-              localStorage.setItem(cacheTimestampKey, now.toString());
-            } catch (retryError) {
-              console.error('Error caching calendar data after cleanup:', retryError);
-            }
-          } catch (cleanupError) {
-            console.error('Error during localStorage cleanup:', cleanupError);
-          }
-        } else {
-          console.error('Error caching calendar data:', e);
-        }
-      }
-
-      setCalendarData(limitedForView);
-      console.log('[DashboardPage] Calendar data loaded and set:', limitedForView.length, 'activities');
-      if (limitedForView.length > 0) {
-        console.log('[DashboardPage] Sample activity:', limitedForView[0]);
-      }
-      return limitedForView;
+      return finalizeCalendar(combined, externalActivitiesError);
       })();
 
       calendarRequestRef.current.set(targetId, request);
@@ -1055,12 +1211,16 @@ export default function DashboardPage() {
         return await request;
       } finally {
         calendarRequestRef.current.delete(targetId);
-        setCalendarLoading(false);
+        if (String(targetId) === String(activeDataAthleteRef.current)) {
+          setCalendarLoading(false);
+        }
       }
     } catch (error) {
       console.error('Error loading calendar data:', error);
-      setCalendarError('Calendar activities could not be loaded. Please retry.');
-      setCalendarLoading(false);
+      applyIfCurrent(() => {
+        setCalendarError('Calendar activities could not be loaded. Please retry.');
+        setCalendarLoading(false);
+      });
       
       // Try to use cached data even if expired on error
       try {
@@ -1068,7 +1228,7 @@ export default function DashboardPage() {
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
           const parsed = JSON.parse(cachedData);
-          setCalendarData(parsed);
+          applyIfCurrent(() => setCalendarData(parsed));
           return parsed;
         }
       } catch (e) {
@@ -1194,7 +1354,7 @@ export default function DashboardPage() {
       console.log('[DashboardPage] garminSyncComplete event, reloading calendar', e.detail);
       try {
         const trainingsResult = await loadTrainings(targetId);
-        loadCalendarData(targetId, trainingsResult?.regularTrainings);
+        loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
       } catch (_) {}
     };
     window.addEventListener('garminSyncComplete', onGarminSync);
@@ -1228,7 +1388,7 @@ export default function DashboardPage() {
       console.log('[DashboardPage] app foreground — refreshing calendar data');
       try {
         const trainingsResult = await loadTrainings(targetId);
-        loadCalendarData(targetId, trainingsResult?.regularTrainings);
+        loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
       } catch (_) {}
     };
 
@@ -1255,11 +1415,48 @@ export default function DashboardPage() {
   // NOTE: Do NOT reset to coach-self when URL has no athlete — that wipes the selection
   // that was stored in localStorage when the coach navigated via menu.
   useEffect(() => {
-    if (athleteId && athleteId !== selectedAthleteId) {
+    if (isCoachLikeRole && athleteId && athleteId !== _globalAthleteId) {
       setSelectedAthleteId(athleteId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId]);
+  }, [athleteId, isCoachLikeRole]);
+
+  // When coach switches athletes, drop stale dashboard state immediately so the
+  // weekly calendar / charts never flash the previous athlete's data.
+  useEffect(() => {
+    const nextId = dashboardDataAthleteId;
+    if (!nextId) return;
+
+    activeDataAthleteRef.current = nextId;
+    dataLoadGenRef.current += 1;
+
+    if (prevDashboardAthleteRef.current && String(prevDashboardAthleteRef.current) !== String(nextId)) {
+      setCalendarData([]);
+      setTrainings([]);
+      setRegularTrainings([]);
+      setTests([]);
+      setPlannedWorkouts([]);
+      setDayPlans([]);
+      setPeriods([]);
+      setViewedAthleteProfile(null);
+      setAthleteProfileLoaded(false);
+      setCalendarError(null);
+      setCalendarLoading(true);
+      calendarRequestRef.current.clear();
+      lastLoadedAthleteIdRef.current = null;
+      hasLoadedOnceRef.current = false;
+      lastLoadTimeRef.current = 0;
+      // Legacy WeeklyCalendar cache (global key) — caused stale workouts on coach "Me".
+      try {
+        localStorage.removeItem('weeklyCalendar_activities');
+        localStorage.removeItem('weeklyCalendar_cacheTime');
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith('athleteTests_v1_')) localStorage.removeItem(k);
+        });
+      } catch { /* ignore */ }
+    }
+    prevDashboardAthleteRef.current = nextId;
+  }, [dashboardDataAthleteId]);
 
   // Load calendar data from cache on mount
   useEffect(() => {
@@ -1273,7 +1470,7 @@ export default function DashboardPage() {
       const cachedData = localStorage.getItem(cacheKey);
       if (cachedData) {
         const parsed = JSON.parse(cachedData);
-        if (parsed && parsed.length > 0) {
+        if (parsed && parsed.length > 0 && String(targetId) === String(activeDataAthleteRef.current)) {
           setCalendarData(parsed);
           console.log('[DashboardPage] Loaded calendar data from cache on mount:', parsed.length, 'activities');
         }
@@ -1285,20 +1482,15 @@ export default function DashboardPage() {
 
   // Athlete change events are now handled centrally by AthleteSelectionContext.
 
-  // Track last loaded athleteId to prevent duplicate loads
-  const lastLoadedAthleteIdRef = React.useRef(null);
-  const lastLoadTimeRef = React.useRef(null);
-  const hasLoadedOnceRef = React.useRef(false);
-  const emptyRetryRef = React.useRef(0); // backoff counter for "empty after failed load" auto-retry
-
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', { replace: true });
       return;
     }
 
-    // Determine target athlete ID
-    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user?._id;
+    // Determine target athlete ID — always use dashboardDataAthleteId so admin/coach
+    // fallbacks match the widgets (trainings, calendar) on the same page.
+    const targetAthleteId = dashboardDataAthleteId;
     
     if (!targetAthleteId) {
       return;
@@ -1329,45 +1521,62 @@ export default function DashboardPage() {
     const shouldSkip = lastLoadedAthleteIdRef.current === targetAthleteId && 
                       lastLoadTimeRef.current && 
                       (now - lastLoadTimeRef.current) < MIN_LOAD_INTERVAL &&
-                      hasLoadedOnceRef.current;
+                      hasLoadedOnceRef.current &&
+                      (calendarDataRef.current?.length ?? 0) > 0;
     
     if (shouldSkip) {
       return;
     }
 
+    const loadGen = dataLoadGenRef.current;
+
     const loadData = async () => {
       try {
-        lastLoadedAthleteIdRef.current = targetAthleteId;
-        lastLoadTimeRef.current = now;
-        hasLoadedOnceRef.current = true;
+        if (loadGen !== dataLoadGenRef.current) return;
+        setCalendarLoading(true);
         
         // Testing role: dashboard is focused on tests only (no training widgets/calendar).
         if (isTestingRole) {
           const athleteData = await loadAthlete(targetAthleteId);
           await loadTests(targetAthleteId);
+          if (loadGen !== dataLoadGenRef.current) return;
           if (athleteData && athleteData._id !== selectedAthleteId) {
             // Keep current selection stable to avoid effect loops.
           }
-
+          setCalendarLoading(false);
+          lastLoadedAthleteIdRef.current = targetAthleteId;
+          lastLoadTimeRef.current = Date.now();
+          hasLoadedOnceRef.current = true;
           return;
         }
 
         // loadTrainings fetches /user/athlete/:id/trainings AND sets regularTrainings state,
         // so we no longer need a separate loadRegularTrainings call for that endpoint.
         const trainingsResult = await loadTrainings(targetAthleteId);
+        if (loadGen !== dataLoadGenRef.current) return;
 
-        const [, , calendarActs] = await Promise.all([
+        const [athleteProfile, , calendarActs] = await Promise.all([
           loadAthlete(targetAthleteId),
           loadTests(targetAthleteId),
-          loadCalendarData(targetAthleteId, trainingsResult?.regularTrainings),
+          loadCalendarData(targetAthleteId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings),
         ]);
+        if (loadGen !== dataLoadGenRef.current) return;
 
         if (isCapacitorNative()) {
           recomputeFormFitness(
             calendarActs || calendarDataRef.current,
-            userRef.current || user,
+            athleteProfile || userRef.current || user,
+          );
+        } else if (calendarActs?.length) {
+          recomputeFormFitness(
+            calendarActs || calendarDataRef.current,
+            athleteProfile || userRef.current || user,
           );
         }
+
+        lastLoadedAthleteIdRef.current = targetAthleteId;
+        lastLoadTimeRef.current = Date.now();
+        hasLoadedOnceRef.current = true;
       } catch (error) {
         console.error('Error loading data:', error);
         // A failed cold-start load must NOT lock the 5-minute skip guard —
@@ -1381,7 +1590,7 @@ export default function DashboardPage() {
     loadData();
   // selectedSport intentionally excluded — sport is a client-side filter, not a data-load trigger.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId, user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
+  }, [athleteId, user?._id, user?.role, dashboardDataAthleteId, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
   // ── Self-heal: auto-retry when the dashboard loaded empty due to a failure ──
   // The #1 cause of "open the app and everything is blank until I restart" is a
@@ -1409,7 +1618,7 @@ export default function DashboardPage() {
       setCalendarError(null);
       try {
         const r = await loadTrainings(targetId);
-        await loadCalendarData(targetId, r?.regularTrainings);
+        await loadCalendarData(targetId, r?.regularTrainings, r?.allTrainings);
       } catch (_) { /* the effect re-runs if it fails again */ }
     }, delay);
     return () => clearTimeout(t);
@@ -1452,7 +1661,7 @@ export default function DashboardPage() {
           // Reload all data after sync — loadTrainings sets regularTrainings state internally,
           // so one call replaces the old loadRegularTrainings + loadTrainings pair.
           const trainingsResult = await loadTrainings(user._id);
-          loadCalendarData(user._id, trainingsResult?.regularTrainings);
+          loadCalendarData(user._id, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
 
           // Auto-open the newest imported activity on first sight. We dedupe
           // via localStorage so the same activity doesn't pop up repeatedly
@@ -1478,7 +1687,7 @@ export default function DashboardPage() {
           // power averages re-processed). No toast, but reload data so the
           // user sees the latest numbers on next render.
           const trainingsResult = await loadTrainings(user._id);
-          loadCalendarData(user._id, trainingsResult?.regularTrainings);
+          loadCalendarData(user._id, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
         }
       } catch (error) {
         // 429 errors are already handled in autoSyncStravaActivities
@@ -1507,17 +1716,19 @@ export default function DashboardPage() {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+      const loadFor = isCoachLike && selectedAthleteId ? selectedAthleteId : user?._id;
       const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
       const [pw, dp, ps] = await Promise.all([
         getPlannedWorkouts(opts),
         getDayPlans(opts).catch(() => []),
         getPeriods(opts).catch(() => []),
       ]);
+      if (String(loadFor) !== String(activeDataAthleteRef.current)) return;
       setPlannedWorkouts(Array.isArray(pw) ? pw : []);
       setDayPlans(Array.isArray(dp) ? dp : []);
       setPeriods(Array.isArray(ps) ? ps : []);
     } catch (_) {}
-  }, [selectedAthleteId, user?.role]);
+  }, [selectedAthleteId, user?.role, user?._id]);
 
   useEffect(() => { loadDashboardPlannedWorkouts(); }, [loadDashboardPlannedWorkouts]);
 
@@ -1708,7 +1919,7 @@ export default function DashboardPage() {
     }
 
     const trainingsResult = await loadTrainings(targetId);
-    const acts = await loadCalendarData(targetId, trainingsResult?.regularTrainings);
+    const acts = await loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
     await loadDashboardPlannedWorkouts();
 
     if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
@@ -1762,13 +1973,17 @@ export default function DashboardPage() {
       setFormMetricsLoading(false);
       return;
     }
-    const ok = recomputeFormFitness(calendarData, userRef.current || user);
+    const ok = recomputeFormFitness(
+      calendarData,
+      viewedAthleteProfile || userRef.current || user,
+    );
     if (!ok) setFormMetricsLoading(false);
   }, [
     calendarData,
     calendarLoading,
     dashboardDataAthleteId,
     user,
+    viewedAthleteProfile,
     profileTssFingerprint,
     recomputeFormFitness,
   ]);
@@ -1845,7 +2060,7 @@ export default function DashboardPage() {
         localStorage.removeItem(`calendarData_${dashboardDataAthleteId}`);
         localStorage.removeItem(`calendarData_timestamp_${dashboardDataAthleteId}`);
         const trainingsResult = await loadTrainings(dashboardDataAthleteId);
-        const acts = await loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
+        const acts = await loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
         clearFormFitnessCache();
         if (!recomputeFormFitness(acts || calendarDataRef.current, userRef.current)) {
           await loadFormFitness(dashboardDataAthleteId);
@@ -1962,39 +2177,55 @@ export default function DashboardPage() {
   const hasCalendarData = (calendarData?.length ?? 0) > 0;
   const showCalendarSkeleton = calendarLoading && !hasCalendarData;
   const showCalendarEmpty = trainingsInitialized && !calendarLoading && !calendarError && !hasCalendarData;
+  // Charts must wait for a finished calendar refresh + full athlete profile.
+  // Using cached calendar while fetch is in-flight caused CTL/ATL to jump on refresh.
+  const dashboardFitnessLoading = calendarLoading || !athleteProfileLoaded;
 
-  // Filter tests based on selected sport
-  const filteredTests = selectedSport === 'all' 
-    ? tests 
-    : tests.filter(test => test.sport === selectedSport);
+  // Lactate tests on the dashboard are independent of the training sport filter
+  // (selectedSport drives TrainingStats/SpiderChart — mixing the two hid valid tests).
+  const dashboardTests = useMemo(
+    () => (Array.isArray(tests) ? tests.filter((t) => t && t._id) : []),
+    [tests]
+  );
 
-  // Update currentTest when filteredTests or selectedSport changes
+  // Update currentTest when tests list changes
   useEffect(() => {
-    if (filteredTests.length === 0) {
+    if (dashboardTests.length === 0) {
       setCurrentTest(null);
       return;
     }
-    // If current test is not in filtered tests, select the most recent one
-    if (currentTest && !filteredTests.find(t => t._id === currentTest._id)) {
-      const mostRecent = filteredTests.reduce((latest, cur) =>
+    if (currentTest && !dashboardTests.find(t => t._id === currentTest._id)) {
+      const mostRecent = dashboardTests.reduce((latest, cur) =>
         new Date(cur.date) > new Date(latest.date) ? cur : latest
       );
       setCurrentTest(mostRecent);
     } else if (!currentTest) {
-      // If no current test, select the most recent one
-      const mostRecent = filteredTests.reduce((latest, cur) =>
+      const mostRecent = dashboardTests.reduce((latest, cur) =>
         new Date(cur.date) > new Date(latest.date) ? cur : latest
       );
       setCurrentTest(mostRecent);
     }
-  }, [filteredTests, selectedSport]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dashboardTests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDateSelectorTestSelect = (testId) => {
-    const selectedTest = filteredTests.find(test => test._id === testId);
+    const selectedTest = dashboardTests.find(test => test._id === testId);
     if (selectedTest) {
       setCurrentTest(selectedTest);
     }
   };
+
+  // Self-heal: if trainings loaded but tests stayed empty, retry once (stale cache / race).
+  useEffect(() => {
+    if (!dashboardDataAthleteId || isTestingRole) return;
+    if (dashboardTests.length > 0) return;
+    if (!trainingsInitialized) return;
+    const hasTrainings = (trainings?.length ?? 0) > 0 || (calendarData?.length ?? 0) > 0;
+    if (!hasTrainings) return;
+    const t = window.setTimeout(() => {
+      loadTests(dashboardDataAthleteId);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [dashboardDataAthleteId, dashboardTests.length, trainingsInitialized, trainings?.length, calendarData?.length, isTestingRole, loadTests]);
 
   const handleDashboardAddTraining = async (formData) => {
     if (!user?._id) return;
@@ -2152,7 +2383,7 @@ export default function DashboardPage() {
       // Refresh dashboard data so the new training appears in the calendar
       try {
         const trainingsResult = await loadTrainings(targetId);
-        loadCalendarData(targetId, trainingsResult?.regularTrainings);
+        loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
       } catch (_) {}
       closeLactateForm();
     } catch (err) {
@@ -2324,7 +2555,7 @@ export default function DashboardPage() {
       )}
 
       {/* Strava Connection Banner */}
-      {!isTestingRole && showStravaBanner && !stravaConnected && (user?.role === 'athlete' || user?.role === 'coach') && !showAthleteEmptyWelcome && (
+      {!isTestingRole && showStravaBanner && !stravaConnected && !isCoachViewingOtherAthlete && (user?.role === 'athlete' || user?.role === 'coach') && !showAthleteEmptyWelcome && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -2444,9 +2675,15 @@ export default function DashboardPage() {
                       {calendarError ? 'Calendar sync needs attention' : 'No calendar activities yet'}
                     </div>
                     <div className="text-xs mt-0.5">
-                      {calendarError || (stravaConnected
-                        ? 'Strava is connected. Try refreshing the calendar or syncing new activities.'
-                        : 'Connect Strava or upload a FIT file to fill the dashboard calendar.')}
+                      {calendarError || (
+                        isCoachViewingOtherAthlete
+                          ? 'This athlete has no synced activities yet. They can connect Strava or upload FIT files from their account.'
+                          : isCoachLikeRole
+                            ? 'Select an athlete above to view their training calendar, or connect Strava to sync your own activities.'
+                            : stravaConnected
+                              ? 'Strava is connected. Try refreshing the calendar or syncing new activities.'
+                              : 'Connect Strava or upload a FIT file to fill the dashboard calendar.'
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2456,14 +2693,14 @@ export default function DashboardPage() {
                       type="button"
                       onClick={async () => {
                         const trainingsResult = await loadTrainings(dashboardDataAthleteId);
-                        loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings);
+                        loadCalendarData(dashboardDataAthleteId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
                       }}
                       className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
                     >
                       Retry
                     </button>
                   )}
-                  {!stravaConnected && (
+                  {!stravaConnected && !isCoachViewingOtherAthlete && (
                     <button
                       type="button"
                       onClick={handleConnectStrava}
@@ -2478,6 +2715,7 @@ export default function DashboardPage() {
           )}
           {!showCalendarSkeleton && (
           <WeeklyCalendar
+            key={`wc-${dashboardDataAthleteId}`}
             selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}
             activitiesLoading={calendarLoading && !hasCalendarData}
@@ -2570,116 +2808,84 @@ export default function DashboardPage() {
           )}
         </motion.div>
 
-        {/* Recovery & readiness — own Apple Health data or coach viewing athlete */}
+        {/* Optional insight / race / wellness cards — single row so empty sections don't add grid gaps */}
         {dashboardDataAthleteId && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.23 }}
-            className="lg:col-span-5 md:col-span-2"
+            className="lg:col-span-5 md:col-span-2 flex flex-col gap-4"
           >
             <TrainingInsightsCard
+              key={`tic-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
               todayMetrics={todayMetrics}
               plannedWorkouts={plannedWorkouts}
               activities={calendarData}
               tests={tests}
               sparklineData={sparklineData}
-              userProfile={user}
-              loading={formMetricsLoading}
+              userProfile={viewedAthleteProfile || user}
+              loading={dashboardFitnessLoading || formMetricsLoading}
             />
-          </motion.div>
-        )}
-
-        {dashboardDataAthleteId && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.235 }}
-            className="lg:col-span-5 md:col-span-2"
-          >
             <RaceCountdownCard
+              key={`rcc-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
               currentCTL={todayMetrics?.fitness}
               currentForm={todayMetrics?.form}
               plannedWorkouts={plannedWorkouts}
               onTaperApplied={loadDashboardPlannedWorkouts}
             />
-          </motion.div>
-        )}
-
-        {dashboardDataAthleteId && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.24 }}
-            className="lg:col-span-5 md:col-span-2"
-          >
             <PostRaceFeedbackCard
               athleteId={dashboardDataAthleteId}
               focusRaceId={raceFeedbackFocusId}
               onSubmitted={() => setRaceFeedbackFocusId(null)}
             />
-          </motion.div>
-        )}
-
-        {dashboardDataAthleteId && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.24 }}
-            className="lg:col-span-5 md:col-span-2"
-          >
             <WellnessCard athleteId={dashboardDataAthleteId} />
           </motion.div>
         )}
 
-        {/* Form & Fitness Chart + Weekly Training Load — side by side */}
+        {/* Form & Fitness Chart + Weekly Training Load — side by side, equal height */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="lg:col-span-3 md:col-span-2 flex flex-col self-start"
+          className="lg:col-span-5 md:col-span-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch"
         >
-          {isPremium ? (
-            <FormFitnessChart
-              key={`ffc-${dashboardDataAthleteId}`}
-              athleteId={dashboardDataAthleteId}
-              activities={calendarData}
-              userProfile={user}
-              activitiesLoading={calendarLoading && !hasCalendarData}
-            />
-          ) : (
-            <PremiumLockedCard
-              title="Form & Fitness"
-              description="Track your fitness, fatigue and form trends over time."
-              onUpgrade={() => gate('Form & Fitness', 'pro')}
-            />
-          )}
-        </motion.div>
-
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.27 }}
-          className="lg:col-span-2 md:col-span-2 flex flex-col"
-        >
-          {isPremium ? (
-            <WeeklyTrainingLoad
-              key={`wtl-${dashboardDataAthleteId}`}
-              athleteId={dashboardDataAthleteId}
-              activities={calendarData}
-              userProfile={user}
-              activitiesLoading={calendarLoading && !hasCalendarData}
-            />
-          ) : (
-            <PremiumLockedCard
-              title="Weekly Training Load"
-              description="See your weekly TSS trend and training consistency."
-              onUpgrade={() => gate('Weekly Training Load', 'pro')}
-            />
-          )}
+          <div className="lg:col-span-3 md:col-span-2 flex flex-col min-h-0">
+            {isPremium ? (
+              <FormFitnessChart
+                key={`ffc-${dashboardDataAthleteId}`}
+                athleteId={dashboardDataAthleteId}
+                activities={calendarData}
+                userProfile={viewedAthleteProfile || user}
+                activitiesLoading={dashboardFitnessLoading}
+                headlineMetrics={todayMetrics}
+              />
+            ) : (
+              <PremiumLockedCard
+                title="Form & Fitness"
+                description="Track your fitness, fatigue and form trends over time."
+                onUpgrade={() => gate('Form & Fitness', 'pro')}
+              />
+            )}
+          </div>
+          <div className="lg:col-span-2 md:col-span-2 flex flex-col min-h-0">
+            {isPremium ? (
+              <WeeklyTrainingLoad
+                key={`wtl-${dashboardDataAthleteId}`}
+                athleteId={dashboardDataAthleteId}
+                activities={calendarData}
+                userProfile={viewedAthleteProfile || user}
+                activitiesLoading={dashboardFitnessLoading}
+              />
+            ) : (
+              <PremiumLockedCard
+                title="Weekly Training Load"
+                description="See your weekly TSS trend and training consistency."
+                onUpgrade={() => gate('Weekly Training Load', 'pro')}
+              />
+            )}
+          </div>
         </motion.div>
 
         {/* Intensity distribution */}
@@ -2687,7 +2893,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.29 }}
-          className="lg:col-span-3 md:col-span-2 flex flex-col"
+          className="lg:col-span-3 md:col-span-2 flex flex-col self-start"
         >
           {isPremium ? (
             <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
@@ -2705,10 +2911,10 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.32 }}
-          className="lg:col-span-2 md:col-span-2 flex flex-col"
+          className="lg:col-span-2 md:col-span-2 flex flex-col self-start"
         >
           {isPremium ? (
-            <ZoneDistributionChart key={`zdc-${selectedAthleteId}`} selectedAthleteId={selectedAthleteId} />
+            <ZoneDistributionChart key={`zdc-${dashboardDataAthleteId}`} selectedAthleteId={dashboardDataAthleteId} />
           ) : (
             <PremiumLockedCard
               title="Zone Distribution"
@@ -2746,11 +2952,12 @@ export default function DashboardPage() {
         >
           {isPremium ? (
             <SpiderChart
+              key={`spider-${dashboardDataAthleteId}`}
               trainings={recentTrainings}
               selectedSport={selectedSport}
               setSelectedSport={setSelectedSport}
               calendarData={calendarData}
-              athleteId={selectedAthleteId}
+              athleteId={dashboardDataAthleteId}
             />
           ) : (
             <PremiumLockedCard
@@ -2768,6 +2975,7 @@ export default function DashboardPage() {
           className="lg:col-span-3 md:col-span-2 flex flex-col h-full"
         >
           <TrainingStats
+            key={`ts-${dashboardDataAthleteId}`}
             trainings={exportedTrainings}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
@@ -2787,6 +2995,7 @@ export default function DashboardPage() {
         >
           {isPremium ? (
             <TrainingGraph
+              key={`tg-${dashboardDataAthleteId}`}
               trainingList={exportedTrainings}
               selectedSport={selectedSport}
               setSelectedSport={setSelectedSport}
@@ -2827,16 +3036,16 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2 overflow-visible min-h-0"
         >
           <div className="space-y-6 overflow-visible">
-            {filteredTests && filteredTests.length > 0 ? (
+            {dashboardTests.length > 0 ? (
               <>
                 <DateSelector
-                  tests={filteredTests}
+                  tests={dashboardTests}
                   onSelectTest={handleDateSelectorTestSelect}
                   selectedTestId={currentTest?._id}
                 />
                 {currentTest && currentTest.results && (
                   <>
-                    <LactateCurveCalculator mockData={currentTest} />
+                    <LactateCurveCalculator mockData={currentTest} athleteId={dashboardDataAthleteId} />
                   </>
                 )}
               </>
@@ -2846,7 +3055,7 @@ export default function DashboardPage() {
                 <p className="mt-1 text-sm text-lighterText">
                   {showAthleteEmptyWelcome
                     ? 'When you log a test under Testing, charts and comparisons show up here.'
-                    : `No tests available${selectedSport !== 'all' ? ` for ${selectedSport}` : ''}.`}
+                    : 'No tests available for this athlete.'}
                 </p>
                 {showAthleteEmptyWelcome && (
                   <button

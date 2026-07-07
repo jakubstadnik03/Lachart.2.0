@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const Notification = require('../models/Notification');
+const { normalizeNotificationCopy } = require('../utils/notificationCopy');
 
 // GET /api/notifications - get recent notifications for current user (last 30)
 router.get('/', verifyToken, async (req, res) => {
@@ -9,8 +10,9 @@ router.get('/', verifyToken, async (req, res) => {
     const userId = req.user.userId;
     const notifications = await Notification.find({ recipientId: userId })
       .sort({ createdAt: -1 })
-      .limit(30);
-    return res.status(200).json(notifications);
+      .limit(30)
+      .lean();
+    return res.status(200).json(notifications.map(normalizeNotificationCopy));
   } catch (err) {
     console.error('GET /api/notifications error:', err);
     return res.status(500).json({ error: err.message });

@@ -196,7 +196,8 @@ const SettingsPage = () => {
   }, [stravaRetryUntil, stravaSecondsLeft]);
   const [garminLogoError, setGarminLogoError] = useState(false);
   // Strava backfill progress — polled every 10s while backfill is running
-  const [stravaBackfill, setStravaBackfill] = useState(null); // { state, startedAt, cursorDate }
+  const [stravaBackfill, setStravaBackfill] = useState(null); // { state, startedAt, cursorDate, lastError }
+  const [isStartingBackfill, setIsStartingBackfill] = useState(false);
   const [polarConnected] = useState(false);
   const [corosConnected] = useState(false);
   const [files, setFiles] = useState([]);
@@ -495,136 +496,20 @@ const SettingsPage = () => {
     checkIntegrationStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, refreshStravaWebhookStatus]);
-  
-  // Check for Strava callback in URL and reload user profile
+
+  // Strava OAuth return is handled globally in Layout (any route + iOS deep link).
+  // Refresh integration card when that flow completes.
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const isStravaConnected = urlParams.get('strava') === 'connected' ||
-                               hashParams.get('strava') === 'connected' ||
-                               window.location.search.includes('strava=connected');
-
-    // Reload user profile + integration status after a successful Strava
-    // OAuth — used by both the web path (?strava=connected query string
-    // when the user lands back from the callback redirect) and the iOS
-    // deep-link path (com.lachart.app://strava-connected handled in
-    // initCapacitorShell, which dispatches the `strava:connected` window
-    // event we listen for below).
-    const reloadUserProfile = async () => {
-        try {
-          console.log('Strava connection detected, reloading user profile...');
-          
-          // Wait a bit for backend to process
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
-          
-          if (profileResponse.ok) {
-            const updatedUser = await profileResponse.json();
-            console.log('Reloaded user profile after Strava connection:', {
-              hasStrava: !!updatedUser.strava,
-              autoSync: updatedUser.strava?.autoSync,
-              athleteId: updatedUser.strava?.athleteId
-            });
-            
-            saveUserToStorage(updatedUser);
-            window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-            
-            // Update integration status
-            try {
-              const status = await getIntegrationStatus();
-              setStravaConnected(Boolean(status.stravaConnected));
-              console.log('Integration status updated:', status.stravaConnected);
-            } catch (e) {
-              console.error('Error checking integration status:', e);
-            }
-            
-            // Clean up URL
-            const cleanPath = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanPath);
-            
-            addNotification('Strava account connected successfully', 'success');
-            
-            // Automatically sync Strava activities after connection
-            try {
-              // 1) Enable auto-sync for new activities
-              try {
-                await fetch(`${API_BASE_URL}/api/integrations/strava/auto-sync`, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                  },
-                  body: JSON.stringify({ autoSync: true })
-                });
-              } catch (e) {
-                console.error('Failed to enable Strava auto-sync (ignored):', e);
-              }
-
-              // 2) Sync now (download trainings/activities)
-              console.log('Starting automatic Strava sync (sync now) after connection...');
-              const syncResult = await syncStravaActivities();
-              console.log('Automatic sync (sync now) completed:', syncResult);
-
-              // 3) Update profile picture from Strava
-              try {
-                const avatarRes = await updateAvatarFromStrava();
-                console.log('Avatar updated from Strava:', avatarRes);
-              } catch (e) {
-                console.error('Failed to update avatar from Strava (ignored):', e);
-              }
-
-              if (syncResult.imported > 0 || syncResult.updated > 0) {
-                addNotification(`Strava sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
-              }
-              if (syncResult.imported > 0) {
-                maybeNotifyStravaActivitiesImported(syncResult.imported, user?.notifications, syncResult.latestActivityId);
-              }
-
-              // Reload user profile to reflect autoSync + avatar updates
-              try {
-                const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-                  headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                  }
-                });
-                if (profileResponse.ok) {
-                  const refreshedUser = await profileResponse.json();
-                  saveUserToStorage(refreshedUser);
-                  window.dispatchEvent(new CustomEvent('userUpdated', { detail: refreshedUser }));
-                }
-              } catch (e) {
-                console.error('Failed to reload user profile after Strava connect actions (ignored):', e);
-              }
-            } catch (syncError) {
-              console.error('Error during automatic Strava sync:', syncError);
-              // Don't show error to user - sync can be done manually later
-            }
-          } else {
-            console.error('Failed to reload user profile:', profileResponse.status);
-          }
-        } catch (e) {
-          console.error('Error reloading user profile after Strava callback:', e);
-        }
-      };
-
-    // Trigger the reload for the web path (query string set on callback redirect).
-    if (isStravaConnected) reloadUserProfile();
-
-    // iOS deep-link path: initCapacitorShell.js fires this event when
-    // Safari hands control back via com.lachart.app://strava-connected.
-    const onStravaDeepLink = () => {
-      console.log('[Strava] deep-link signal received from iOS shell');
-      reloadUserProfile();
+    const refresh = async () => {
+      try {
+        const status = await getIntegrationStatus();
+        setStravaConnected(Boolean(status.stravaConnected));
+        if (status.stravaConnected) refreshStravaWebhookStatus(true).catch(() => {});
+      } catch (_) { /* ignore */ }
     };
-    window.addEventListener('strava:connected', onStravaDeepLink);
-    return () => window.removeEventListener('strava:connected', onStravaDeepLink);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    window.addEventListener('strava:integration-refreshed', refresh);
+    return () => window.removeEventListener('strava:integration-refreshed', refresh);
+  }, [refreshStravaWebhookStatus]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -709,7 +594,12 @@ const SettingsPage = () => {
         const cursorDate = s.backfillCursorBefore
           ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('cs', { year: 'numeric', month: 'short' })
           : null;
-        setStravaBackfill(state ? { state, startedAt: s.backfillStartedAt, cursorDate } : null);
+        setStravaBackfill(state ? {
+          state,
+          startedAt: s.backfillStartedAt,
+          cursorDate,
+          lastError: s.backfillLastError || null,
+        } : null);
         // Keep polling while running
         if (state === 'running') {
           timer = setTimeout(poll, 10000);
@@ -3519,12 +3409,18 @@ const SettingsPage = () => {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                       </svg>
                       <span>
-                        <span className="font-semibold">Importing history from Strava…</span>
+                        <span className="font-semibold">Importing last year of Strava history…</span>
                         {stravaBackfill.cursorDate && (
                           <span className="ml-1 text-orange-500">reached {stravaBackfill.cursorDate}</span>
                         )}
                         <span className="block text-orange-400 mt-0.5">Running in background — new activities appear automatically.</span>
                       </span>
+                    </div>
+                  )}
+                  {stravaBackfill?.state === 'error' && (
+                    <div className={`${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-xs'} flex flex-col gap-1 px-3 py-2 bg-red-50 border border-red-200 rounded-xl text-red-700`}>
+                      <span className="font-medium">History import stopped{stravaBackfill.lastError ? `: ${stravaBackfill.lastError}` : ''}</span>
+                      <span className="text-red-600">Tap <strong>Import history</strong> to try again.</span>
                     </div>
                   )}
                   {stravaBackfill?.state === 'done' && (
@@ -3535,8 +3431,9 @@ const SettingsPage = () => {
                   )}
 
                   <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-500`}>
-                    <strong>Sync now</strong> = only recent activities (last sync + 7 days).
-                    <strong> Import history</strong> = full archive going back years (runs in background, may take hours).
+                    On connect, LaChart automatically imports your last year of Strava history in the background.
+                    <strong> Sync now</strong> = only recent activities.
+                    <strong> Import history</strong> = resume or restart the background import.
                   </p>
 
                   <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
@@ -3560,13 +3457,17 @@ const SettingsPage = () => {
                     </button>
                     <button
                       onClick={async () => {
+                        if (isStartingBackfill) return;
+                        setIsStartingBackfill(true);
                         try {
-                          const r = await backfillStravaHistory();
-                          setStravaBackfill({ state: 'running', cursorDate: null });
+                          const r = await backfillStravaHistory({ fromNow: true, force: true });
+                          setStravaBackfill({ state: 'running', cursorDate: null, lastError: null });
                           addNotification(
                             r?.alreadyRunning
                               ? 'History import already running — see progress above.'
-                              : 'Importing your full Strava history in the background…',
+                              : r?.restarted
+                                ? 'Restarting Strava history import from today…'
+                                : 'Importing your last year of Strava history in the background…',
                             'success'
                           );
                         } catch (e) {
@@ -3576,13 +3477,19 @@ const SettingsPage = () => {
                           } else {
                             addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
                           }
+                        } finally {
+                          setIsStartingBackfill(false);
                         }
                       }}
-                      disabled={stravaBackfill?.state === 'running'}
-                      title="Download your entire Strava history (runs in the background)"
+                      disabled={isStartingBackfill}
+                      title="Download your last year of Strava history (runs in the background)"
                       className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
-                      {stravaBackfill?.state === 'running' ? 'Importing…' : 'Import history'}
+                      {isStartingBackfill
+                        ? 'Starting…'
+                        : stravaBackfill?.state === 'running'
+                          ? 'Restart import'
+                          : 'Import history'}
                     </button>
                     <button
                       onClick={async () => {

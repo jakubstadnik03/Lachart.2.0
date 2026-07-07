@@ -59,12 +59,34 @@ export const deleteWorkoutTemplate = async (id) => {
 
 // ── Planned Workouts ───────────────────────────────────────────────────────
 
+const _plannedInflight = new Map();
+const _plannedCache = new Map();
+const PLANNED_CACHE_MS = 60 * 1000;
+
 /**
  * @param {{ from?: string, to?: string, athleteId?: string }} opts
  */
 export const getPlannedWorkouts = async (opts = {}) => {
-  const { data } = await api.get(`${BASE}/planned`, { params: opts });
-  return data;
+  const key = JSON.stringify(opts || {});
+  const hit = _plannedCache.get(key);
+  if (hit && Date.now() - hit.ts < PLANNED_CACHE_MS) {
+    return hit.data;
+  }
+  if (_plannedInflight.has(key)) return _plannedInflight.get(key);
+
+  const req = api.get(`${BASE}/planned`, { params: opts, cacheTtlMs: 60000 })
+    .then(({ data }) => {
+      _plannedCache.set(key, { data, ts: Date.now() });
+      _plannedInflight.delete(key);
+      return data;
+    })
+    .catch((err) => {
+      _plannedInflight.delete(key);
+      throw err;
+    });
+
+  _plannedInflight.set(key, req);
+  return req;
 };
 
 export const getPlannedWorkout = async (id) => {

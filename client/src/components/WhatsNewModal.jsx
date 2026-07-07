@@ -1,183 +1,112 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   XMarkIcon,
   SparklesIcon,
   ArrowRightIcon,
   ArrowLeftIcon,
-  CalendarDaysIcon,
   PlayCircleIcon,
-  BeakerIcon,
-  PaintBrushIcon,
-  BoltIcon,
-  ArrowTrendingUpIcon,
-  ChartBarSquareIcon,
-  HeartIcon,
-  CloudArrowDownIcon,
-  PresentationChartLineIcon,
-  SignalIcon,
-  AdjustmentsHorizontalIcon,
-  UsersIcon,
-  DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
 import { getIntegrationStatus } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
+import { WHATS_NEW_SLIDES, RELEASE_TAG } from '../content/whatsNewSlides';
 
 /**
- * WhatsNewModal
- *
- * Step-through announcement that pops up on the Dashboard for users who
- * signed up BEFORE a given feature release. Each feature gets its own
- * "slide" with a large hero, body copy, deep-link CTA, and prev/next
- * navigation — same shape as the onboarding intro slides so the look is
- * familiar.
- *
- * Visibility gated by `localStorage.whatsNew_v<RELEASE_TAG>_seen_<userId>`
- * — each user sees a given announcement at most once. Bump RELEASE_TAG
- * when shipping the next round of features and the modal re-shows
- * everywhere.
+ * What's New — step-through tour. Screenshots as fallback until you upload
+ * MP4s to public/videos/whats-new/ and flip WHATS_NEW_VIDEOS_READY.
+ * Recording guide: public/videos/whats-new/NATOČENÍ.md
  */
 
-const RELEASE_TAG = '2026-06';
+/** Screenshot or muted loop video inside a 16:10 frame. */
+function SlideMedia({ item }) {
+  const videoRef = useRef(null);
+  const [videoFailed, setVideoFailed] = useState(false);
 
-// Slide content — each item carries a React component for its hero icon
-// (we render it via createElement with an `accent` colour) instead of an
-// emoji glyph. Emojis used to render inconsistently across OS / browser
-// (colourful on macOS, flat / outline on Windows / Linux, missing on
-// some Linux distros entirely) which made the modal look amateurish on
-// non-Apple devices. Heroicons stays crisp and matches the accent palette.
-// `stravaOnly: true` slides are only shown to users whose Strava is NOT yet
-// connected — they're a soft prompt to wire it up. Filtered in-component
-// once we know the integration status. Items without the flag always show.
-const ITEMS = [
-  {
-    icon: CloudArrowDownIcon,
-    title: 'Connect Strava in one click',
-    body: 'Auto-import every ride, run and swim — with power, HR, pace and laps — straight into LaChart. Your training history fills itself in.',
-    cta: 'Connect Strava',
-    href: '/settings?tab=integrations',
-    accent: '#fc4c02', // strava orange
-    stravaOnly: true,
-  },
-  {
-    icon: BoltIcon,
-    title: 'Import & auto-categorize activities',
-    body: 'Sync from Strava or drop in a FIT file and LaChart sorts every session — endurance, threshold, VO₂max, recovery — from its interval structure, zones and title.',
-    cta: 'Set up sync',
-    href: '/settings?tab=integrations',
-    accent: '#6366f1', // indigo
-  },
-  {
-    icon: PresentationChartLineIcon,
-    title: 'Analyze every workout in depth',
-    body: 'Open any session for synced power, heart-rate, pace, cadence and elevation graphs. Drag across the chart to select a segment and read its averages instantly.',
-    cta: 'Open training',
-    href: '/training',
-    accent: '#06b6d4', // cyan
-  },
-  {
-    icon: SignalIcon,
-    title: 'See your power profile & best efforts',
-    body: 'LaChart finds your best 5s sprint, 1-min attack, 5-min VO₂max, 20-min threshold and 60-min endurance power — then jumps you straight to where you hit them.',
-    cta: 'View my profile',
-    href: '/training',
-    accent: '#7c3aed', // violet
-  },
-  {
-    icon: ArrowTrendingUpIcon,
-    title: 'Watch your lactate curve evolve',
-    body: 'Every new test rebuilds your curve with LT1, LT2, IAT and OBLA thresholds — and overlays previous tests so your progress is impossible to miss.',
-    cta: 'View my tests',
-    href: '/testing',
-    accent: '#10b981', // emerald
-  },
-  {
-    icon: AdjustmentsHorizontalIcon,
-    title: 'Training zones from your lactate',
-    body: 'Forget generic HR formulas. Your power, pace and heart-rate zones are built directly from your own LT1 and LT2 — and update with every test.',
-    cta: 'Check my zones',
-    href: '/settings',
-    accent: '#0d9488', // teal
-  },
-  {
-    icon: CalendarDaysIcon,
-    title: 'Plan workouts in the calendar',
-    body: 'Build structured sessions — warm-up, intervals with target zones, recoveries, cooldown — and drop them onto any day. See planned vs actual side-by-side.',
-    cta: 'Open the planner',
-    href: '/workout-planner',
-    accent: '#8b5cf6', // violet
-    coachOnly: true,
-  },
-  {
-    icon: PlayCircleIcon,
-    title: 'Run workouts live, step-by-step',
-    body: 'Open a planned session and execute it with live prompts, target zones and lap timers — on your phone or in the browser.',
-    cta: "See today's plan",
-    href: '/training-calendar',
-    accent: '#0ea5e9', // sky
-  },
-  {
-    icon: BeakerIcon,
-    title: 'Add lactate values to any interval',
-    body: 'Tag any interval of an existing workout with a blood-lactate sample. Each sample feeds straight back into your curve and zones.',
-    cta: 'Try it',
-    href: '/training-calendar',
-    accent: '#ef4444', // red
-  },
-  {
-    icon: HeartIcon,
-    title: 'Track form, fitness & fatigue',
-    body: 'CTL, ATL and TSB charted over weeks so you can see when you peak, when you overreach, and when to back off — built from every workout you log.',
-    cta: 'See my form',
-    href: '/dashboard',
-    accent: '#ec4899', // pink
-  },
-  {
-    icon: ChartBarSquareIcon,
-    title: 'Compare sessions & tests side-by-side',
-    body: 'Stack any two workouts or lactate tests on one chart — pace, power, HR, lactate — and watch how you look fresh vs fatigued, base vs race-fit.',
-    cta: 'Open compare',
-    href: '/training',
-    accent: '#0891b2', // cyan-dark
-  },
-  {
-    icon: PaintBrushIcon,
-    title: 'Brand your PDF reports',
-    body: 'Upload your logo, set your studio name, address and colour, and every test PDF goes out as your own branded handout for athletes.',
-    cta: 'Set up branding',
-    href: '/settings?tab=branding',
-    accent: '#f59e0b', // amber
-    coachOnly: true,
-  },
-  {
-    icon: UsersIcon,
-    title: 'Manage your whole squad',
-    body: 'Invite athletes by email, switch between them in one tap, and track each one’s tests, zones and form from a single coach dashboard.',
-    cta: 'Open athletes',
-    href: '/athletes',
-    accent: '#d946ef', // fuchsia
-    coachOnly: true,
-  },
-  {
-    icon: DevicePhoneMobileIcon,
-    title: 'LaChart on iPhone & Apple Watch',
-    body: 'Take your zones, plans and live workouts anywhere. Start a session on your wrist and it syncs back to LaChart automatically.',
-    cta: 'Get the app',
-    href: 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs',
-    accent: '#111827', // near-black
-  },
-];
+  useEffect(() => {
+    setVideoFailed(false);
+    const v = videoRef.current;
+    if (!v || !item.video || videoFailed) return undefined;
+    v.load();
+    const play = () => { v.play().catch(() => {}); };
+    play();
+    return () => { v.pause(); };
+  }, [item.video, item.title, videoFailed]);
+
+  const showVideo = item.video && !videoFailed;
+  const poster = item.image || item.poster;
+
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-xl border border-gray-200/80 bg-gray-950 shadow-lg"
+      style={{ aspectRatio: '16 / 10' }}
+    >
+      <div
+        className="absolute inset-0 opacity-30"
+        style={{
+          background: `radial-gradient(circle at 20% 20%, ${item.accent}55, transparent 55%), radial-gradient(circle at 80% 80%, ${item.accent}33, transparent 50%)`,
+        }}
+      />
+
+      {showVideo ? (
+        <video
+          ref={videoRef}
+          key={item.video}
+          className="relative z-[1] w-full h-full object-cover object-top"
+          src={item.video}
+          poster={poster}
+          muted
+          loop
+          playsInline
+          autoPlay
+          preload="metadata"
+          onError={() => setVideoFailed(true)}
+        />
+      ) : poster ? (
+        <img
+          src={poster}
+          alt=""
+          className="relative z-[1] w-full h-full object-cover object-top"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div
+          className="relative z-[1] flex h-full w-full items-center justify-center"
+          style={{ backgroundColor: `${item.accent}18` }}
+        >
+          <item.icon className="h-16 w-16 opacity-80" style={{ color: item.accent }} strokeWidth={1.4} />
+        </div>
+      )}
+
+      {item.video && !videoFailed && (
+        <div className="pointer-events-none absolute bottom-2.5 right-2.5 z-[2] flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+          <PlayCircleIcon className="h-3.5 w-3.5" />
+          Demo
+        </div>
+      )}
+
+      {!item.video && item.videoId && (
+        <div className="pointer-events-none absolute top-2.5 right-2.5 z-[2] rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+          Screenshot
+        </div>
+      )}
+
+      {item.mediaCaption && (
+        <div className="absolute bottom-0 left-0 right-0 z-[2] bg-gradient-to-t from-black/70 to-transparent px-3 pb-2.5 pt-8">
+          <p className="text-[11px] font-medium text-white/90">{item.mediaCaption}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function WhatsNewModal({ open, onClose, userName }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isCoach = ['coach', 'tester', 'testing'].includes(user?.role);
   const [step, setStep] = useState(0);
+  const touchStart = useRef(null);
 
-  // `null` while we haven't checked yet → assume connected (i.e. hide the
-  // Strava-only prompt slide) so it doesn't flash-in then disappear. Flip
-  // to `false` only after the status call confirms the user has NOT linked
-  // Strava — then the conditional slides appear.
   const [stravaConnected, setStravaConnected] = useState(null);
   useEffect(() => {
     if (!open) return;
@@ -187,31 +116,19 @@ export default function WhatsNewModal({ open, onClose, userName }) {
         const status = await getIntegrationStatus({ timeout: 6000 });
         if (!cancelled) setStravaConnected(Boolean(status?.stravaConnected));
       } catch {
-        // Treat any failure as "connected" so we don't nag people whose
-        // status call just timed out / was rate-limited.
         if (!cancelled) setStravaConnected(true);
       }
     })();
     return () => { cancelled = true; };
   }, [open]);
 
-  // Filter slides by audience:
-  //   • `stravaOnly` — only shown to users whose Strava is NOT yet linked.
-  //     Hidden while the status call is in-flight to avoid a flash.
-  //   • `coachOnly`  — only shown to coach-tier roles (coach / tester /
-  //     testing). Athletes don't have the Branding tab in Settings, so the
-  //     PDF-branding pitch would dead-end for them.
-  const visibleItems = ITEMS.filter((it) => {
+  const visibleItems = WHATS_NEW_SLIDES.filter((it) => {
     if (it.stravaOnly && stravaConnected !== false) return false;
     if (it.coachOnly && !isCoach) return false;
     return true;
   });
   const total = visibleItems.length;
 
-  // Reset to the first slide whenever the modal is (re-)opened — otherwise
-  // a user who closed it midway through last time would re-open on slide 4
-  // with no context. Also reset if the filtered slide count changes under
-  // us (e.g. status resolves and adds a slide) to avoid an out-of-range step.
   useEffect(() => {
     if (open) setStep(0);
   }, [open]);
@@ -219,14 +136,12 @@ export default function WhatsNewModal({ open, onClose, userName }) {
     if (step >= total) setStep(0);
   }, [total, step]);
 
-  // Keyboard navigation — ← → for prev/next, Esc to close. Wired only
-  // while the modal is open so we don't trap arrow keys elsewhere.
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
       if (e.key === 'Escape') onClose?.();
       else if (e.key === 'ArrowRight') setStep((s) => Math.min(total - 1, s + 1));
-      else if (e.key === 'ArrowLeft')  setStep((s) => Math.max(0, s - 1));
+      else if (e.key === 'ArrowLeft') setStep((s) => Math.max(0, s - 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -237,7 +152,7 @@ export default function WhatsNewModal({ open, onClose, userName }) {
 
   const current = visibleItems[step];
   const isFirst = step === 0;
-  const isLast  = step === total - 1;
+  const isLast = step === total - 1;
 
   const goNext = () => {
     if (isLast) onClose?.();
@@ -255,98 +170,118 @@ export default function WhatsNewModal({ open, onClose, userName }) {
     }
   };
 
+  const onTouchStart = (e) => { touchStart.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchStart.current === null) return;
+    const diff = touchStart.current - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 48) {
+      if (diff > 0) goNext();
+      else if (!isFirst) goPrev();
+    }
+    touchStart.current = null;
+  };
+
   return (
     <div
-      // Anchor near the top of the viewport (≈64 px from top) so the modal
-      // sits beneath any global app header / topbar without obscuring the
-      // dashboard content underneath. Falls back to center on very small
-      // screens via the items-center sm: variant. Backdrop click still
-      // dismisses.
-      className="fixed inset-0 z-[11500] flex items-start sm:items-start justify-center pt-[64px] sm:pt-[80px] px-4 pb-4 overflow-y-auto"
+      className="fixed inset-0 z-[11500] flex items-start sm:items-start justify-center pt-[56px] sm:pt-[72px] px-3 sm:px-4 pb-4 overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" />
 
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-          aria-label="Close"
-        >
-          <XMarkIcon className="w-4 h-4 text-gray-600" />
-        </button>
-
-        {/* Header — small, persistent across slides so the user always
-            knows they're in 'What's new', not random product copy. */}
+      <div className="relative flex w-full max-w-xl sm:max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[min(92vh,820px)]">
         <div
-          className="px-6 sm:px-8 pt-8 pb-4 text-center transition-colors duration-300"
-          style={{
-            background: `linear-gradient(to bottom right, ${current.accent}15, ${current.accent}05)`,
-          }}
+          className="flex-shrink-0 border-b border-gray-100 px-5 py-4 sm:px-6"
+          style={{ background: `linear-gradient(135deg, ${current.accent}12, ${current.accent}04)` }}
         >
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-white shadow-sm mb-2">
-            <SparklesIcon className="w-5 h-5" style={{ color: current.accent }} />
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="mb-1 flex items-center gap-2">
+                <SparklesIcon className="h-4 w-4 flex-shrink-0" style={{ color: current.accent }} />
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  What's new{userName ? ` · ${userName}` : ''}
+                </p>
+              </div>
+              <p className="text-xs text-gray-400">{step + 1} of {total}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex-shrink-0 rounded-full bg-white/80 p-1.5 shadow-sm transition-colors hover:bg-white"
+              aria-label="Close"
+            >
+              <XMarkIcon className="h-4 w-4 text-gray-600" />
+            </button>
           </div>
-          <p
-            className="text-[11px] font-semibold uppercase tracking-wide mb-1"
-            style={{ color: current.accent }}
-          >
-            What's new{userName ? ` · ${userName}` : ''}
-          </p>
-          <p className="text-xs text-gray-500">
-            {step + 1} of {total}
-          </p>
         </div>
 
-        {/* Slide body — keyed on `step` so React mounts a fresh node every
-            time and the CSS transition replays. */}
-        <div key={step} className="px-6 sm:px-10 py-8 text-center animate-[fadeInUp_.35s_ease]">
-          <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-4"
-            style={{ backgroundColor: `${current.accent}12` }}
-            aria-hidden
-          >
-            {/* Stroke colour = slide accent so the icon visually matches the
-                rest of the slide chrome (header gradient, CTA, dot, etc.). */}
-            <current.icon className="w-10 h-10" style={{ color: current.accent }} strokeWidth={1.6} />
+        <div
+          key={step}
+          className="flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6 animate-[fadeInUp_.35s_ease]"
+        >
+          <SlideMedia item={current} />
+
+          <div className="mt-5">
+            <span
+              className="inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                color: current.accent,
+                borderColor: `${current.accent}35`,
+                backgroundColor: `${current.accent}10`,
+              }}
+            >
+              {current.label}
+            </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+
+          <h2 className="mt-3 text-xl sm:text-2xl font-bold text-gray-900 leading-tight">
             {current.title}
           </h2>
-          <p className="text-sm text-gray-600 max-w-md mx-auto leading-relaxed">
+
+          <p className="mt-2 text-sm text-gray-600 leading-relaxed">
             {current.body}
           </p>
 
+          {Array.isArray(current.bullets) && current.bullets.length > 0 && (
+            <ul className="mt-4 space-y-2">
+              {current.bullets.map((point) => (
+                <li key={point} className="flex items-start gap-2.5 text-sm text-gray-700">
+                  <span
+                    className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: current.accent }}
+                  />
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
           <button
             onClick={handleCtaClick}
-            className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
             style={{ backgroundColor: current.accent }}
           >
             {current.cta}
-            <ArrowRightIcon className="w-4 h-4" />
+            <ArrowRightIcon className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Footer — dot indicators + prev/next. Last slide swaps Next for
-            'Got it' so the modal has a clear terminus. */}
-        <div className="px-5 sm:px-8 py-4 border-t border-gray-100 flex items-center gap-3">
-          {/* Prev */}
+        <div className="flex-shrink-0 flex items-center gap-3 border-t border-gray-100 px-5 py-4 sm:px-7">
           <button
             onClick={goPrev}
             disabled={isFirst}
-            className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-0 disabled:pointer-events-none"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 transition-colors hover:bg-gray-200 disabled:pointer-events-none disabled:opacity-0"
             aria-label="Previous"
           >
-            <ArrowLeftIcon className="w-4 h-4 text-gray-500" />
+            <ArrowLeftIcon className="h-4 w-4 text-gray-500" />
           </button>
 
-          {/* Dot indicators */}
-          <div className="flex-1 flex items-center justify-center gap-1.5">
+          <div className="flex flex-1 flex-wrap items-center justify-center gap-1.5">
             {visibleItems.map((it, i) => {
               const active = i === step;
               return (
                 <button
-                  key={it.title}
+                  key={it.id}
                   onClick={() => setStep(i)}
                   aria-label={`Go to step ${i + 1}`}
                   className="rounded-full transition-all duration-300"
@@ -360,24 +295,21 @@ export default function WhatsNewModal({ open, onClose, userName }) {
             })}
           </div>
 
-          {/* Next / Got it */}
           <button
             onClick={goNext}
-            className="px-3.5 h-9 rounded-full text-sm font-semibold text-white flex items-center gap-1.5 transition-opacity hover:opacity-90"
+            className="flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: current.accent }}
           >
             {isLast ? 'Got it' : (
               <>
                 Next
-                <ArrowRightIcon className="w-4 h-4" />
+                <ArrowRightIcon className="h-4 w-4" />
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* Slide-in animation — defined here so we don't need a separate
-          CSS file just for one keyframe set. */}
       <style>{`
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(8px); }
@@ -388,10 +320,6 @@ export default function WhatsNewModal({ open, onClose, userName }) {
   );
 }
 
-/**
- * localStorage key for a user's seen flag. Exported so DashboardPage can read
- * and write it without duplicating the convention.
- */
 export function whatsNewSeenKey(userId) {
   return `whatsNew_v${RELEASE_TAG}_seen_${userId}`;
 }

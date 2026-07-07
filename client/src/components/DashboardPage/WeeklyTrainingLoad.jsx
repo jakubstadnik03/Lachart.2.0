@@ -162,11 +162,7 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
           }
           return;
         }
-        if (!cancelled) {
-          setChartData([]);
-          setLoading(false);
-        }
-        return;
+        // Calendar finished loading but has no activities — fall through to server API.
       }
 
       // Prefer calendar activities — same TSS as Training Calendar weekly summary.
@@ -186,6 +182,8 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
 
       let usedCache = false;
 
+      // Dashboard calendar-driven mode: skip stale localStorage — wait for live calendar or API.
+      if (!calendarDriven) {
       // 1) Try to paint from cache immediately
       try {
         const cached = localStorage.getItem(cacheKey);
@@ -203,6 +201,7 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
         }
       } catch (e) {
         console.warn('Error reading weekly training load cache:', e);
+      }
       }
 
       try {
@@ -302,7 +301,7 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
   const projectionBandX2 = projectedWeeks.length > 0 ? projectedWeeks[projectedWeeks.length - 1].weekLabel : null;
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full flex flex-col">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Weekly Training Load</h3>
         <div className="flex items-center gap-2">
@@ -419,11 +418,11 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
       )}
 
       {loading ? (
-        <div className="h-72 sm:h-96 flex items-center justify-center">
+        <div className="flex-1 min-h-72 sm:min-h-96 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       ) : (
-        <div className="h-72 sm:h-96">
+        <div className="flex-1 min-h-72 sm:min-h-96">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={displayData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

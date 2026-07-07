@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2, Lock } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
@@ -56,52 +56,82 @@ const PROTOCOL_TIPS = [
 
 const FieldHint = ({ children, wide = false }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const triggerRef = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+
+  const recalc = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const width = wide ? 288 : 240;
+    setCoords({
+      top: rect.top - 8,
+      left: Math.min(
+        Math.max(8, rect.left + rect.width / 2 - width / 2),
+        window.innerWidth - width - 8,
+      ),
+    });
+  }, [wide]);
 
   useEffect(() => {
     if (!open) return undefined;
+    recalc();
     const close = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (triggerRef.current?.contains(e.target)) return;
+      if (e.target.closest?.('[data-field-hint-popover]')) return;
+      setOpen(false);
     };
+    window.addEventListener('scroll', recalc, true);
+    window.addEventListener('resize', recalc);
     document.addEventListener('mousedown', close);
-    document.addEventListener('touchstart', close);
+    document.addEventListener('touchstart', close, { passive: true });
     return () => {
+      window.removeEventListener('scroll', recalc, true);
+      window.removeEventListener('resize', recalc);
       document.removeEventListener('mousedown', close);
       document.removeEventListener('touchstart', close);
     };
-  }, [open]);
+  }, [open, recalc]);
+
+  const popover = open
+    ? ReactDOM.createPortal(
+        <div
+          data-field-hint-popover
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            width: wide ? 288 : 240,
+            transform: 'translateY(-100%)',
+            zIndex: 10050,
+          }}
+          className="rounded-xl bg-gray-900 px-3 py-2 text-white text-[10px] sm:text-[11px] leading-snug shadow-xl font-normal normal-case text-left"
+        >
+          {children}
+          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+        </div>,
+        document.body,
+      )
+    : null;
 
   return (
-    <span
-      ref={ref}
-      className="relative group inline-flex items-center justify-center w-3.5 h-3.5 ml-0.5 align-middle rounded-full bg-gray-200/90 text-gray-500 cursor-help flex-shrink-0"
-      tabIndex={0}
-      role="button"
-      aria-label="More info"
-      aria-expanded={open}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setOpen((v) => !v);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+    <>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="inline-flex items-center justify-center w-4 h-4 ml-0.5 align-middle rounded-full bg-primary/10 text-primary cursor-pointer flex-shrink-0 touch-manipulation"
+        aria-label="More info"
+        aria-expanded={open}
+        onClick={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setOpen((v) => !v);
-        }
-        if (e.key === 'Escape') setOpen(false);
-      }}
-    >
-      <HelpCircle size={11} strokeWidth={2.5} />
-      <span
-        className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 rounded-xl bg-gray-900 px-3 py-2 text-white text-[10px] sm:text-[11px] leading-snug transition-opacity z-[60] shadow-xl font-normal normal-case text-left ${
-          wide ? 'w-64 sm:w-72' : 'w-52 sm:w-60'
-        } ${open ? 'opacity-100 visible' : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible'}`}
+        }}
       >
-        {children}
-        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-      </span>
-    </span>
+        <HelpCircle size={12} strokeWidth={2.5} />
+      </button>
+      {popover}
+    </>
   );
 };
 
@@ -560,12 +590,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   }, [hasVO2Data]);
 
-  // Auto-show running-power column when any row has data
+  // Auto-show running-power column when any row has data; hide when empty in view mode
   useEffect(() => {
     if (hasRunPowerData) {
       setShowRunPower(true);
+    } else if (!isNewTest && !isEditMode) {
+      setShowRunPower(false);
     }
-  }, [hasRunPowerData]);
+  }, [hasRunPowerData, isNewTest, isEditMode]);
 
   // Notify parent component when glucose column visibility changes
   useEffect(() => {
@@ -2140,7 +2172,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             // Show if user explicitly enabled it OR data already exists
             const shouldShowStageCol = showStageCol || hasStageData;
             // Running power (watts) — run tests only, when toggled on or data exists
-            const shouldShowRunPower = formData.sport === 'run' && (showRunPower || hasRunPowerData);
+            const shouldShowRunPower = formData.sport === 'run' && (
+              hasRunPowerData || ((isNewTest || isEditMode) && showRunPower)
+            );
 
             // Calculate columns: Int + Dur + Pace + [Pwr?] + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly

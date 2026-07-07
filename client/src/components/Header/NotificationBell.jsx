@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import NotifIcon from '../Notifications/NotifIcon';
 import { applyNotificationNavigation, resolveNotificationTarget } from '../../utils/notificationNavigation';
+import { normalizeNotificationCopy } from '../../utils/notificationCopy';
 
 export default function NotificationBell() {
   const { isAuthenticated } = useAuth();
@@ -24,7 +25,7 @@ export default function NotificationBell() {
     setLoading(true);
     try {
       const r = await getNotifications();
-      const fresh = r.data || [];
+      const fresh = (r.data || []).map(normalizeNotificationCopy);
       setNotifs(fresh);
 
       if (!notifsInitialized.current) {

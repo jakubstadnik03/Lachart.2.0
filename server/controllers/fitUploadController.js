@@ -1935,17 +1935,31 @@ async function analyzeTrainingsByMonth(req, res) {
         .lean();
 
 
-      // If no results, try with ObjectId format
-      if (stravaActivities.length === 0 && userId && userId.toString && userId.toString() !== targetAthleteIdStr) {
+      // If no results, try alternate userId format for the athlete (not the requester)
+      if (stravaActivities.length === 0 && userIdObj) {
         try {
-          const userIdObj2 = new mongoose.Types.ObjectId(userId.toString());
-          stravaActivities = await StravaActivity.find({ 
-            userId: userIdObj2,
-            sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] }
+          stravaActivities = await StravaActivity.find({
+            userId: targetAthleteIdStr,
+            sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] },
+            ...stravaDateFilter,
           })
-          .select('startDate stravaId averagePower')
+          .select('startDate stravaId averagePower averageHeartRate averageSpeed average_speed movingTime elapsedTime distance sport name raw')
           .lean();
-          console.log(`Found ${stravaActivities.length} Strava activities with userId ObjectId`);
+          console.log(`Found ${stravaActivities.length} Strava activities with string userId`);
+        } catch (e) {
+          console.log('Strava: Error with string userId format:', e.message);
+        }
+      } else if (stravaActivities.length === 0 && !userIdObj) {
+        try {
+          const athleteObjId = new mongoose.Types.ObjectId(targetAthleteIdStr);
+          stravaActivities = await StravaActivity.find({
+            userId: athleteObjId,
+            sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] },
+            ...stravaDateFilter,
+          })
+          .select('startDate stravaId averagePower averageHeartRate averageSpeed average_speed movingTime elapsedTime distance sport name raw')
+          .lean();
+          console.log(`Found ${stravaActivities.length} Strava activities with ObjectId userId`);
         } catch (e) {
           console.log('Strava: Error with ObjectId format:', e.message);
         }
@@ -2001,21 +2015,21 @@ async function analyzeTrainingsByMonth(req, res) {
         const getValidStravaToken = integrationsRoutes.getValidStravaToken;
         const User = require('../models/UserModel');
         const StravaStream = require('../models/StravaStream');
-        const user = await User.findById(userId);
+        const athleteUser = await User.findById(targetAthleteIdStr);
 
-        if (!user || !getValidStravaToken || !activity.stravaId) {
+        if (!athleteUser || !getValidStravaToken || !activity.stravaId) {
           stravaSkipped++;
           continue;
         }
 
         const cached = await StravaStream.findOne({
-          userId: user._id,
+          userId: athleteUser._id,
           stravaId: activity.stravaId,
         }).lean();
         if (cached?.streams && Object.keys(cached.streams).length > 0) {
           streams = cached.streams;
         } else {
-          const token = await getValidStravaToken(user);
+          const token = await getValidStravaToken(athleteUser);
           if (!token) {
             stravaSkipped++;
             continue;
@@ -2043,7 +2057,7 @@ async function analyzeTrainingsByMonth(req, res) {
           streams = streamsResp.data;
           if (streams && Object.keys(streams).length > 0) {
             StravaStream.updateOne(
-              { userId: user._id, stravaId: activity.stravaId },
+              { userId: athleteUser._id, stravaId: activity.stravaId },
               { $set: { streams, fetchedAt: new Date() } },
               { upsert: true }
             ).catch(() => {});

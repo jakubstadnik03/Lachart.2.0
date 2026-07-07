@@ -17,6 +17,7 @@ import {
   profileNeedsTrainingZones,
   markZonesDashboardPromptDismissed,
 } from "../utils/trainingZonesSetup";
+import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -459,6 +460,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?.strava?.autoSync,
     user?.strava?.accessToken,
   ]);
+
+  // Strava OAuth return — works from any route (training-calendar redirect, Settings, iOS deep link).
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    return setupStravaOAuthReturnListener({ onNotify: addNotification });
+  }, [user?._id, addNotification]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)
   useEffect(() => {

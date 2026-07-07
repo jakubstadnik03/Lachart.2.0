@@ -61,9 +61,9 @@ router.post('/create-checkout-session', verifyToken, subscriptionController.crea
 
 /**
  * POST /api/subscription/webhook
- * Stripe webhook endpoint (no auth required)
+ * Registered in server/index.js BEFORE express.json() so Stripe signature
+ * verification receives the raw request body.
  */
-router.post('/webhook', express.raw({ type: 'application/json' }), subscriptionController.handleWebhook);
 
 /**
  * POST /api/subscription/sync

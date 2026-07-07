@@ -104,6 +104,17 @@ function parseZoneNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatZoneRangeLabel(defs, zk, unit) {
+  if (!defs || !defs[zk]) return '';
+  const mn = parseZoneNumber(defs[zk]?.min);
+  const mxRaw = defs[zk]?.max;
+  const mx = (mxRaw === undefined || mxRaw === null || mxRaw === '') ? null : parseZoneNumber(mxRaw);
+  if (mn == null && mx == null) return '';
+  if (mn != null && mx != null) return `${Math.round(mn)}–${Math.round(mx)} ${unit}`;
+  if (mn != null) return `${Math.round(mn)}+ ${unit}`;
+  return `≤${Math.round(mx)} ${unit}`;
+}
+
 function findZoneKeyForValue(value, zonesObj) {
   const val = Number(value);
   if (!Number.isFinite(val)) return null;
@@ -257,10 +268,10 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
   if (!cur) return null;
 
   const deltaColor = (pct) => {
-    if (pct == null) return 'text-white/60';
-    if (pct > 2) return 'text-green-300';
-    if (pct < -2) return 'text-red-300';
-    return 'text-white/60';
+    if (pct == null) return 'text-gray-500';
+    if (pct > 2) return 'text-green-600';
+    if (pct < -2) return 'text-red-600';
+    return 'text-gray-500';
   };
 
   const metricRows = [];
@@ -333,33 +344,33 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
   if (metricRows.length === 0 && cmpRows.length === 0) return null;
 
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-full z-50 mb-1.5 w-60 rounded-xl bg-gray-900 text-white text-[11px] shadow-xl p-3 pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150">
-      <div className="font-semibold text-white mb-1.5">{SPORT_LABELS[bucket] || bucket}</div>
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-full z-50 mb-1.5 w-60 rounded-xl bg-white border border-gray-200 text-gray-900 text-[11px] shadow-lg p-3 pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150">
+      <div className="font-semibold text-gray-900 mb-1.5">{SPORT_LABELS[bucket] || bucket}</div>
       {metricRows.length > 0 && (
         <div className="space-y-0.5">
           {metricRows.map((row) => (
             <div key={row.label} className="flex items-baseline justify-between gap-2">
-              <span className="text-white/55">{row.label}</span>
-              <span className="font-semibold tabular-nums text-right">{row.value}</span>
+              <span className="text-gray-500">{row.label}</span>
+              <span className="font-semibold tabular-nums text-right text-gray-900">{row.value}</span>
             </div>
           ))}
         </div>
       )}
       {cmpRows.length > 0 && (
-        <div className={metricRows.length > 0 ? 'border-t border-white/10 mt-2 pt-2' : ''}>
-          <div className="text-[10px] uppercase tracking-wide text-white/45 mb-1.5">vs {prevLabel}</div>
+        <div className={metricRows.length > 0 ? 'border-t border-gray-100 mt-2 pt-2' : ''}>
+          <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1.5">vs {prevLabel}</div>
           <div className="space-y-1">
             {cmpRows.map((row) => (
               <div key={row.label}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-white/55">{row.label}</span>
+                  <span className="text-gray-500">{row.label}</span>
                   {row.pct != null && (
                     <span className={`font-semibold tabular-nums ${deltaColor(row.pct)}`}>
                       {fmtSignedPct(row.pct)}
                     </span>
                   )}
                 </div>
-                <div className="text-white/80 tabular-nums">{row.value}</div>
+                <div className="text-gray-700 tabular-nums">{row.value}</div>
               </div>
             ))}
           </div>
@@ -956,10 +967,42 @@ export default function CalendarPeriodStats({
     }));
   }, [activities, userProfile]);
 
+  const pmcChartData = useMemo(
+    () => (pmc?.length ? pmc.slice(-90) : []),
+    [pmc],
+  );
+
+  const [pmcHoverIndex, setPmcHoverIndex] = useState(0);
+  useEffect(() => {
+    setPmcHoverIndex(Math.max(0, pmcChartData.length - 1));
+  }, [pmcChartData]);
+
+  const pmcDisplayEntry = pmcChartData[pmcHoverIndex] || pmcChartData[pmcChartData.length - 1] || null;
+  const pmcTodayKey = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const pmcChartEvents = useMemo(() => ({
+    updateAxisPointer: (event) => {
+      const xInfo = event?.axesInfo?.find((a) => a.axisDim === 'x');
+      if (xInfo == null) return;
+      let idx = -1;
+      if (typeof xInfo.value === 'number' && Number.isFinite(xInfo.value)) {
+        idx = xInfo.value;
+      } else if (typeof xInfo.value === 'string') {
+        idx = pmcChartData.findIndex((d) => d.date === xInfo.value);
+      }
+      if (idx >= 0 && idx < pmcChartData.length) setPmcHoverIndex(idx);
+    },
+    globalout: () => {
+      setPmcHoverIndex(Math.max(0, pmcChartData.length - 1));
+    },
+  }), [pmcChartData]);
+
   const pmcOption = useMemo(() => {
-    if (!pmc || pmc.length === 0) return null;
-    const last90 = pmc.slice(-90);
-    const labels = last90.map(d => {
+    if (!pmcChartData.length) return null;
+    const labels = pmcChartData.map((d) => {
       const [, m, day] = d.date.split('-');
       return `${day}.${m}.`;
     });
@@ -967,12 +1010,14 @@ export default function CalendarPeriodStats({
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: '#94a3b8', width: 1 } },
         formatter(params) {
           if (!Array.isArray(params) || !params[0]) return '';
           const idx = params[0].dataIndex;
-          const d = last90[idx];
+          const d = pmcChartData[idx];
+          if (!d) return '';
           let html = `<div style="font-size:11px"><b>${d.date}</b>`;
-          params.forEach(p => {
+          params.forEach((p) => {
             html += `<br/>${p.marker}${p.seriesName}: ${p.value}`;
           });
           if (d.tss > 0) html += `<br/>Daily TSS: ${d.tss}`;
@@ -1003,7 +1048,7 @@ export default function CalendarPeriodStats({
           symbol: 'none',
           lineStyle: { color: '#3b82f6', width: 2 },
           itemStyle: { color: '#3b82f6' },
-          data: last90.map(d => d.ctl),
+          data: pmcChartData.map((d) => d.ctl),
         },
         {
           name: 'ATL (Fatigue)',
@@ -1012,7 +1057,7 @@ export default function CalendarPeriodStats({
           symbol: 'none',
           lineStyle: { color: '#f97316', width: 2 },
           itemStyle: { color: '#f97316' },
-          data: last90.map(d => d.atl),
+          data: pmcChartData.map((d) => d.atl),
         },
         {
           name: 'TSB (Form)',
@@ -1028,11 +1073,11 @@ export default function CalendarPeriodStats({
             label: { show: false },
             symbol: 'none',
           },
-          data: last90.map(d => d.tsb),
+          data: pmcChartData.map((d) => d.tsb),
         },
       ],
     };
-  }, [pmc]);
+  }, [pmcChartData]);
 
   const byCategory = useMemo(() => {
     const m = new Map();
@@ -1250,6 +1295,14 @@ export default function CalendarPeriodStats({
     const hasPower = ZONE_KEYS.some((k) => (powerSec[k] || 0) > 0);
     const secMap = hasPower ? powerSec : hrSec;
     const names = hasPower ? POWER_ZONE_NAMES : HR_ZONE_NAMES;
+    const unit = hasPower ? 'W' : 'bpm';
+    const zoneDefs = hasPower
+      ? (userProfile?.powerZones?.cycling || null)
+      : (userProfile?.heartRateZones?.cycling
+        || userProfile?.heartRateZones?.running
+        || userProfile?.heartRateZones?.swimming
+        || null);
+    const sourceLabel = hasPower ? 'Power zones' : 'Heart rate zones';
     const fills = hasPower
       ? ['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444']  // green→red gradient by zone
       : ['#86efac', '#4ade80', '#f97316', '#dc2626', '#991b1b'];
@@ -1258,18 +1311,32 @@ export default function CalendarPeriodStats({
     const pieData = ZONE_KEYS.map((zk, i) => ({
       value: secMap[zk] || 0,
       name: `Z${i + 1} ${names[i]}`,
+      zoneKey: zk,
       itemStyle: { color: fills[i] },
     })).filter((d) => d.value > 0);
     if (!pieData.length) return null;
     return {
       backgroundColor: 'transparent',
       tooltip: {
+        backgroundColor: '#ffffff',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        padding: [10, 12],
+        textStyle: { color: '#111827', fontSize: 11 },
+        extraCssText: 'box-shadow: 0 4px 12px rgba(15,23,42,.08); border-radius: 12px;',
         formatter(params) {
           const sec = params.value;
-          const h = Math.floor(sec / 3600);
-          const m = Math.floor((sec % 3600) / 60);
-          const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
-          return `<div style="font-size:11px"><b>${params.name}</b><br/>${params.percent}% · ${timeStr}</div>`;
+          const zk = params.data?.zoneKey;
+          const pct = params.percent != null ? Number(params.percent).toFixed(1) : '0.0';
+          const timeStr = fmtZoneTotal(sec);
+          const totalStr = fmtZoneTotal(total);
+          const range = formatZoneRangeLabel(zoneDefs, zk, unit);
+          let html = `<div style="font-weight:600;margin-bottom:4px;color:#111827">${params.name}</div>`;
+          html += `<div style="color:#6b7280;font-size:10px">${sourceLabel}${range ? ` · ${range}` : ''}</div>`;
+          html += `<div style="margin-top:6px"><span style="font-weight:600;color:#111827">${timeStr}</span>`;
+          html += `<span style="color:#6b7280"> · ${pct}% of zone time</span></div>`;
+          html += `<div style="color:#9ca3af;font-size:10px;margin-top:4px">${totalStr} total across Z1–Z5</div>`;
+          return html;
         },
       },
       series: [
@@ -1283,7 +1350,7 @@ export default function CalendarPeriodStats({
         },
       ],
     };
-  }, [aggregates, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [aggregates, serverZoneSecAll, userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {
@@ -1787,10 +1854,19 @@ export default function CalendarPeriodStats({
             </div>
 
             {/* Performance Management Chart */}
-            {Chart && pmcOption && pmc && pmc.length > 0 && (() => {
-              const lastEntry = pmc[pmc.length - 1];
-              const tsbStatus = getTsbStatus(lastEntry.tsb);
-              const tsbColor = lastEntry.tsb >= -10 ? 'text-green-600' : lastEntry.tsb >= -25 ? 'text-yellow-600' : 'text-red-600';
+            {Chart && pmcOption && pmcDisplayEntry && (() => {
+              const tsbStatus = getTsbStatus(pmcDisplayEntry.tsb);
+              const tsbColor = pmcDisplayEntry.tsb >= -10 ? 'text-green-600' : pmcDisplayEntry.tsb >= -25 ? 'text-yellow-600' : 'text-red-600';
+              const isToday = pmcDisplayEntry.date === pmcTodayKey;
+              const dateLabel = (() => {
+                try {
+                  const d = new Date(`${pmcDisplayEntry.date}T12:00:00`);
+                  const short = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                  return isToday ? `${short} · Today` : short;
+                } catch {
+                  return pmcDisplayEntry.date;
+                }
+              })();
               return (
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
@@ -1810,19 +1886,24 @@ export default function CalendarPeriodStats({
                       option={pmcOption}
                       style={{ height: isMobile ? 140 : 180, width: '100%' }}
                       notMerge
+                      onEvents={pmcChartEvents}
                     />
+                    <p className="mt-2 text-[10px] text-gray-400 text-center">
+                      {dateLabel}
+                      {pmcDisplayEntry.tss > 0 ? ` · Daily TSS ${pmcDisplayEntry.tss}` : ''}
+                    </p>
                     <div className="grid grid-cols-3 gap-2 mt-2">
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
                         <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
-                        <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{lastEntry.ctl}</div>
+                        <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{pmcDisplayEntry.ctl}</div>
                       </div>
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
                         <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
-                        <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{lastEntry.atl}</div>
+                        <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{pmcDisplayEntry.atl}</div>
                       </div>
                       <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
                         <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
-                        <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{lastEntry.tsb}</div>
+                        <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{pmcDisplayEntry.tsb}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{tsbStatus.label}</div>
                       </div>
                     </div>

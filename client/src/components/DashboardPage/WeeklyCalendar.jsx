@@ -825,39 +825,24 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
         title={pw.title}
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          {isCompletedPair && complianceStyle ? (
-            <>
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: complianceStyle.color }} />
-              <span className="text-[13px] font-bold truncate flex-1" style={{ color: planColor }}>
-                {pw.title || 'Planned workout'}
-              </span>
-              <span className="text-[10px] font-bold flex-shrink-0" style={{ color: complianceStyle.color }}>
-                {complianceStyle.label}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="relative flex-shrink-0">
-                <SportIcon sport={displaySport} className="w-3.5 h-3.5" style={{ color: isPurelyPlanned ? planColor : undefined }} />
-                {isCompletedPair && (
-                  <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
-                )}
-              </span>
-              <span
-                className="text-[13px] font-bold truncate flex-1"
-                style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
-              >
-                {pw.title || 'Planned workout'}
-              </span>
-              {isPurelyPlanned && pw.steps?.length > 0 && (
-                <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
-              )}
-            </>
+          <span className="relative flex-shrink-0">
+            <SportIcon sport={displaySport} className="w-3.5 h-3.5" style={{ color: isPurelyPlanned ? planColor : undefined }} />
+            {isCompletedPair && (
+              <CheckCircleIcon className="absolute -bottom-1 -right-1 w-2.5 h-2.5 text-green-600 bg-white rounded-full" />
+            )}
+          </span>
+          <span
+            className="text-[13px] font-bold truncate flex-1"
+            style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isPurelyPlanned ? planColor : '#1e293b' }}
+          >
+            {pw.title || 'Planned workout'}
+          </span>
+          {isPurelyPlanned && pw.steps?.length > 0 && (
+            <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
           )}
         </div>
         {isCompletedPair && complianceStyle && (displayDurStr || displayDistStr || effectiveCategory) && (
           <div className="flex items-center gap-1.5 text-[11px] text-gray-600 font-semibold min-w-0 flex-wrap">
-            <SportIcon sport={displaySport} className="w-3.5 h-3.5 flex-shrink-0" />
             {(displayDurStr || displayDistStr) && (
               <span className="truncate tabular-nums flex-1 min-w-0">
                 {[displayDurStr, displayDistStr].filter(Boolean).join(' · ')}
@@ -1003,7 +988,6 @@ const WeeklyCalendar = ({
     return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
   }, []);
   const [wellnessDays, setWellnessDays] = useState([]);
-  const [cachedActivities, setCachedActivities] = useState([]);
 
   // Apple Health recovery for per-day badges (own data or coach viewing athlete).
   const wellnessAthleteId = selectedAthleteId || user?._id || null;
@@ -1279,49 +1263,12 @@ const WeeklyCalendar = ({
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }, [currentWeek]);
 
-  // Load activities from localStorage on mount
-  useEffect(() => {
-    const loadCachedActivities = () => {
-      try {
-        const cached = localStorage.getItem('weeklyCalendar_activities');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          // Check if cache is not too old (e.g., 1 hour)
-          const cacheTime = localStorage.getItem('weeklyCalendar_cacheTime');
-          if (cacheTime && Date.now() - parseInt(cacheTime) < 3600000) {
-            setCachedActivities(parsed);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading cached activities:', error);
-      }
-    };
-    loadCachedActivities();
-  }, []);
-
-  // Save activities to localStorage when they change
-  useEffect(() => {
-    if (activities && activities.length > 0) {
-      try {
-        // Match dashboard calendar cap so week navigation into history still has data offline
-        const limited = activities.slice(0, 2000);
-        localStorage.setItem('weeklyCalendar_activities', JSON.stringify(limited));
-        localStorage.setItem('weeklyCalendar_cacheTime', Date.now().toString());
-        setCachedActivities(limited);
-      } catch (error) {
-        console.error('Error saving activities to cache:', error);
-      }
-    }
-  }, [activities]);
-
-  // Use activities from parent. Only fall back to local cache when the parent
-  // has finished loading and still has nothing (avoids stale calendar flashing
-  // under the dashboard skeleton / "No activities" banner).
+  // Parent (DashboardPage) owns calendar data + per-athlete localStorage cache.
+  // Do NOT keep a separate fallback cache here — it caused coach "Me" view to
+  // show the previous athlete's workouts while the empty-state banner was visible.
   const effectiveActivities = useMemo(() => (
-    activitiesLoading
-      ? (activities || [])
-      : ((activities && activities.length > 0) ? activities : cachedActivities)
-  ), [activities, activitiesLoading, cachedActivities]);
+    activitiesLoading ? [] : (activities || [])
+  ), [activities, activitiesLoading]);
 
   // Debug logging removed to keep console clean in dev
 

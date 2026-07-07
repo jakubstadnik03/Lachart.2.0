@@ -566,8 +566,8 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
   const xAxisLabel = sportMode === 'bike' ? 'Power (W)' : 'Pace (min/km), slow to fast';
   const noLtHint =
     sportMode === 'bike'
-      ? 'Add cycling LT1 and LT2 (watts) in Profile → training zones to show dashed reference lines and labels.'
-      : 'Add running LT1 and LT2 (pace as seconds per km in your zones) in Profile → training zones to show dashed lines.';
+      ? 'Set LT1/LT2 (W) in Profile → Zones for reference lines.'
+      : 'Set LT1/LT2 (pace) in Profile → Zones for reference lines.';
   const emptyTitle = sportMode === 'bike' ? 'No power data yet' : 'No pace data yet';
   const emptyBody =
     sportMode === 'bike'
@@ -580,98 +580,63 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.4, delay: 0.05 }}
-      className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
+      className="flex w-full flex-col self-start rounded-2xl border border-gray-100 bg-white p-3 shadow-sm"
     >
-      <div className="mb-3 flex flex-shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Training volume</p>
-          <h3 className="text-sm font-semibold text-gray-800">
-            Intensity distribution ({sportMode === 'bike' ? 'power' : 'pace'})
+      <div className="mb-1.5 flex flex-shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold leading-tight text-gray-800">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">Training volume</span>
+            {' · '}
+            Intensity ({sportMode === 'bike' ? 'power' : 'pace'})
+            <span className="ml-1.5 text-[10px] font-normal text-gray-400">{activePreset.desc}</span>
           </h3>
-          <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-gray-500">
-            {sportMode === 'bike' ? (
-              <>
-                Share of time at each power level (cycling with a power meter), three periods. Computed from{' '}
-                <span className="font-medium text-gray-700">second-by-second power streams</span> (FIT + Strava), so the
-                curve shows how long you actually spent at each wattage. Dashed lines:{' '}
-                <span className="font-medium text-[#4BA87D]">LT1</span> and{' '}
-                <span className="font-medium text-[#E05347]">LT2</span> (watts from profile).
-              </>
-            ) : (
-              <>
-                Share of time at each pace (running / walk / hike), three periods. Computed from{' '}
-                <span className="font-medium text-gray-700">second-by-second pace streams</span> (FIT + Strava). Dashed
-                lines use the exact LT1 / LT2 values from this athlete profile:{' '}
-                <span className="font-medium text-[#4BA87D]">LT1</span> and{' '}
-                <span className="font-medium text-[#E05347]">LT2</span> (seconds per km).
-              </>
-            )}
-          </p>
-          <p className="mt-1 text-[10px] text-gray-400">{activePreset.desc}</p>
         </div>
-        <div className="flex flex-shrink-0 flex-col items-stretch gap-2 sm:items-end">
-          <div className="flex flex-col items-stretch gap-1 sm:items-end">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Sport</span>
-            <div className="flex flex-wrap justify-end gap-0.5 rounded-lg bg-gray-50 p-0.5">
+        <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <div className="flex items-center gap-0.5 rounded-lg bg-gray-50 p-0.5">
+            {(['bike', 'run']).map((s) => (
               <button
+                key={s}
                 type="button"
-                onClick={() => setSport('bike')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  sportMode === 'bike' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                onClick={() => setSport(s)}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
+                  sportMode === s ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Bike
+                {s}
               </button>
-              <button
-                type="button"
-                onClick={() => setSport('run')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  sportMode === 'run' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Run
-              </button>
-            </div>
+            ))}
           </div>
-          <div className="flex flex-col items-stretch gap-1 sm:items-end">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Windows</span>
-            <div className="flex flex-wrap justify-end gap-0.5 rounded-lg bg-gray-50 p-0.5">
-              {WINDOW_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPreset(p.id)}
-                  className={`rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
-                    presetId === p.id ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title={p.desc}
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center gap-0.5 rounded-lg bg-gray-50 p-0.5">
+            {WINDOW_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPreset(p.id)}
+                className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+                  presetId === p.id ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+                title={p.desc}
+              >
+                {p.name}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
       {(toFinitePositive(ltProfile.lt1) == null && toFinitePositive(ltProfile.lt2) == null) ? (
-        <div className="mb-3 rounded-lg border border-amber-100 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-900">
-          <span className="font-medium">LT1 / LT2 not set.</span> {noLtHint}
+        <div className="mb-1.5 rounded-md border border-amber-100 bg-amber-50/80 px-2 py-1 text-[10px] text-amber-900">
+          <span className="font-medium">LT1/LT2 not set.</span> {noLtHint}
         </div>
       ) : null}
 
-      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px]">
+      <div className="mb-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] leading-tight">
         {meta.map((m) => (
-          <div key={m.key} className="flex min-w-0 items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
-            <span className="min-w-0 text-gray-700">
-              <span className="font-medium" style={{ color: m.color }}>
-                {m.rangeLabel}
-              </span>
-              <span className="text-gray-400">
-                {' '}
-                ({m.count} {m.count === 1 ? 'activity' : 'activities'})
-              </span>
+          <div key={m.key} className="flex min-w-0 items-center gap-1" title={m.rangeLabel}>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: m.color }} />
+            <span className="truncate text-gray-600">
+              <span className="font-medium" style={{ color: m.color }}>{m.count}</span>
+              <span className="text-gray-400"> act</span>
             </span>
           </div>
         ))}
@@ -693,9 +658,9 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
         </div>
       ) : (
         <>
-          <div className="min-h-[240px] w-full flex-1">
-            <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={chartData} margin={{ top: 36, right: 14, left: 6, bottom: 6 }}>
+          <div className="w-full">
+            <ResponsiveContainer width="100%" height={165}>
+              <ComposedChart data={chartData} margin={{ top: 22, right: 8, left: 2, bottom: 2 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
                 <XAxis
                   type="number"
@@ -778,17 +743,16 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
             </ResponsiveContainer>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
             {meta.map((m) => (
               <div
                 key={m.key}
-                className="rounded-xl border border-gray-100 bg-custom-gray px-3 py-2 text-[11px]"
-                style={{ borderLeftWidth: 3, borderLeftColor: m.color }}
+                className="rounded-md border border-gray-100 bg-custom-gray px-2 py-1 text-[10px] leading-tight"
+                style={{ borderLeftWidth: 2, borderLeftColor: m.color }}
+                title={m.rangeLabel}
               >
-                <div className="font-semibold text-gray-800">{formatHoursPerWeek(m.totalSec, m.windowDays)}</div>
-                <div className="mt-0.5 text-gray-500">
-                  {m.count} activities · {m.windowDays}-day window
-                </div>
+                <span className="font-semibold text-gray-800">{formatHoursPerWeek(m.totalSec, m.windowDays)}</span>
+                <span className="text-gray-500"> · {m.count} · {m.windowDays}d</span>
               </div>
             ))}
           </div>

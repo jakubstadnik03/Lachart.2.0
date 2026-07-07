@@ -157,6 +157,9 @@ export default function RaceCountdownCard({
     }
   };
 
+  // Hide the whole card when there are no races (users can add from Calendar).
+  if (races.length === 0 && !adding) return null;
+
   return (
     <div
       style={{

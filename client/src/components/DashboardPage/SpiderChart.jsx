@@ -207,7 +207,21 @@ export default function SpiderChart({
   const isCoachLike =
     ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
     (user?.admin === true && user?.role !== 'athlete');
-  const targetAthleteId = isCoachLike && athleteId ? athleteId : null;
+  // Only pass athleteId when a coach/tester views someone else's dashboard.
+  const targetAthleteId = (
+    isCoachLike &&
+    athleteId &&
+    user?._id &&
+    String(athleteId) !== String(user._id)
+  ) ? athleteId : null;
+
+  const emptyBikeMetrics = () => ({
+    allTime: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: 0 }), {}),
+    compare: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: { value: 0, trainingId: null, trainingType: null, stravaId: null } }), {}),
+    personalRecords: {},
+    improvements: {},
+    monthlyMetrics: {},
+  });
 
   // ── Local state ─────────────────────────────────────────────────────────────
   const [sport, setSport] = useState(() => {
@@ -222,13 +236,7 @@ export default function SpiderChart({
   const [isTableExpanded, setIsTableExpanded] = useState(false);
 
   // Bike API state
-  const [bikeMetrics, setBikeMetrics] = useState({
-    allTime: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: 0 }), {}),
-    compare: BIKE_KEYS.reduce((o, k) => ({ ...o, [k]: { value: 0, trainingId: null, trainingType: null, stravaId: null } }), {}),
-    personalRecords: {},
-    improvements: {},
-    monthlyMetrics: {},
-  });
+  const [bikeMetrics, setBikeMetrics] = useState(emptyBikeMetrics);
   const [bikeAllTimeRef, setBikeAllTimeRef] = useState(null);
   // bikeReady: true once we've received real bike data (cache or API).
   // Prevents the chart from flashing with all-zero data on first render.
@@ -251,6 +259,8 @@ export default function SpiderChart({
   const [serverRunMetrics, setServerRunMetrics] = useState(null);
   const [runReady, setRunReady] = useState(false);
   const runReqRef = useRef(0);
+  const allTimeReqRef = useRef(0);
+  const metricsReqRef = useRef(0);
   useEffect(() => {
     if (sport !== 'run') return;
     const load = async () => {
@@ -287,8 +297,13 @@ export default function SpiderChart({
             localStorage.setItem(cacheKey, JSON.stringify(data));
             localStorage.setItem(cacheTsKey, String(Date.now()));
           } catch {}
+        } else {
+          setServerRunMetrics(null);
+          setRunReady(true);
         }
-      } catch {}
+      } catch {
+        setRunReady(true);
+      }
     };
     load();
   }, [sport, comparePeriod, selectedMonths, targetAthleteId, refreshKey]);
@@ -332,16 +347,23 @@ export default function SpiderChart({
     return merged;
   }, [serverRunMetrics, manualRunMetrics, comparePeriod]);
 
-  // Reset bikeReady when athlete changes so we don't flash stale data
+  // Reset all radar state when the viewed athlete changes.
   useEffect(() => {
     setBikeReady(false);
+    setRunReady(false);
+    setBikeAllTimeRef(null);
+    setBikeMetrics(emptyBikeMetrics());
+    setServerRunMetrics(null);
+    setLoadError(null);
+    allTimeReqRef.current += 1;
+    metricsReqRef.current += 1;
+    runReqRef.current += 1;
   }, [targetAthleteId]);
 
   // ── Bike: all-time reference load ─────────────────────────────────────────
   // NOTE: do NOT call setBikeAllTimeRef(null) at the top — that would briefly
   // use bikeMetrics as the normalization fallback, which could have a different
   // allTime value and make the radar flash with wrong maxima.
-  const allTimeReqRef = useRef(0);
   useEffect(() => {
     if (sport !== 'bike') return;
     const load = async () => {
@@ -375,14 +397,18 @@ export default function SpiderChart({
             localStorage.setItem(cacheKey, JSON.stringify(resp.data));
             localStorage.setItem(cacheTsKey, String(Date.now()));
           } catch {}
+        } else {
+          setBikeAllTimeRef(null);
+          setBikeReady(true);
         }
-      } catch {}
+      } catch {
+        setBikeReady(true);
+      }
     };
     load();
   }, [sport, targetAthleteId, refreshKey]);
 
   // ── Bike: compare metrics load ────────────────────────────────────────────
-  const metricsReqRef = useRef(0);
   useEffect(() => {
     if (sport !== 'bike') return;
     const load = async () => {
@@ -426,7 +452,9 @@ export default function SpiderChart({
           return;
         }
         if (!isBikePayload(metrics)) {
-          setLoadError('Could not load power metrics.');
+          setBikeMetrics(emptyBikeMetrics());
+          setLoadError(null);
+          setBikeReady(true);
           setLoading(false); setRefreshing(false);
           return;
         }
@@ -447,6 +475,7 @@ export default function SpiderChart({
         if (status === 404 || status === 403) {
           setLoadError(err.response?.data?.error || (status === 404 ? 'Athlete not found' : 'Access denied'));
         }
+        setBikeReady(true);
       } finally {
         setLoading(false); setRefreshing(false);
       }

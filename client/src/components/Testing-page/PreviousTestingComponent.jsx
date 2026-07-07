@@ -131,6 +131,7 @@ const PreviousTestingComponent = ({
   selectedTestId = null,
   onSelectTestId,
   externalActivities = [],
+  athleteId = null,
 }) => {
   const { user } = useAuth();
   // usePremium already force-unlocks on native iOS for App Store 3.1.1 —
@@ -526,7 +527,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        <LactateCurveCalculator mockData={currentTest} isPremium={isPremium} />
+        <LactateCurveCalculator mockData={currentTest} athleteId={athleteId} isPremium={isPremium} />
           </motion.div>
         )}
       </AnimatePresence>

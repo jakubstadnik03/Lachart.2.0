@@ -508,28 +508,40 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.4, delay: 0.05 }}
-      className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm flex flex-col h-full"
+      className="flex w-full flex-col self-start rounded-2xl border border-gray-100 bg-white p-3 shadow-sm"
     >
       <ZoneTooltip data={tooltip} />
 
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-800 shrink-0">Zone Distribution</h3>
+      {/* ── Header + controls ── */}
+      <div className="mb-1.5 flex flex-shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-gray-800">Zone Distribution</h3>
           {distLabel && (
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${distLabel.cls}`}>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${distLabel.cls}`}>
               {distLabel.label}
             </span>
           )}
+          {hasData && (
+            <>
+              <span className="text-[10px] text-gray-500">
+                <span className="font-semibold text-gray-700">{fmtDur(totalSecs)}</span> · {sessions} sess
+              </span>
+              <span className="text-[10px] text-green-700">
+                {Math.round(aerobicPct)}% Z1+Z2
+              </span>
+              <span className="text-[10px] text-orange-700">
+                {Math.round(highIntPct)}% Z4+Z5
+              </span>
+            </>
+          )}
         </div>
 
-        {/* Period selector */}
-        <div className="flex items-center rounded-lg bg-gray-50 p-0.5 gap-0.5 flex-shrink-0 ml-2">
+        <div className="flex flex-shrink-0 items-center gap-1 rounded-lg bg-gray-50 p-0.5">
           {PERIODS.map(p => (
             <button
               key={p.label}
               onClick={() => setPeriod(p.label)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
                 period === p.label
                   ? 'bg-white text-gray-800 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -541,20 +553,15 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         </div>
       </div>
 
-      {/* ── Sport tabs ── */}
-      <div className="flex gap-1.5 mb-2 flex-shrink-0 flex-wrap">
+      {/* ── Sport + metric tabs (one row) ── */}
+      <div className="mb-1.5 flex flex-shrink-0 flex-wrap items-center gap-1">
         {sportCount > 1 && (
           <button
             onClick={() => setSport('all')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
               sport === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            {/* All sports — 2×2 grid */}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/>
-              <rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>
-            </svg>
             All
           </button>
         )}
@@ -566,106 +573,70 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
             <button
               key={key}
               onClick={() => setSport(key)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                 active ? `${bgActive} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              <SportGlyph sport={key} size={14} color={active ? '#fff' : tint} />
+              <SportGlyph sport={key} size={12} color={active ? '#fff' : tint} />
               {SPORT_LABELS[key] || key}
             </button>
           );
         })}
+        {sport !== 'all' && (
+          <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
+            {sport === 'bike' && (
+              <button
+                onClick={() => setMetric('power')}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  metric === 'power' ? 'bg-purple-100 text-purple-700' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Power
+              </button>
+            )}
+            {(sport === 'run' || sport === 'swim') && (
+              <button
+                onClick={() => setMetric('pace')}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  metric === 'pace' ? 'bg-green-100 text-green-700' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Pace
+              </button>
+            )}
+            <button
+              onClick={() => setMetric('hr')}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                metric === 'hr' ? 'bg-red-100 text-red-700' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              HR
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Metric sub-tabs ── */}
-      {sport !== 'all' && (
-        <div className="flex gap-1 mb-3 flex-shrink-0">
-          {sport === 'bike' && (
-            <button
-              onClick={() => setMetric('power')}
-              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
-                metric === 'power'
-                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                  : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Power
-            </button>
-          )}
-          {(sport === 'run' || sport === 'swim') && (
-            <button
-              onClick={() => setMetric('pace')}
-              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
-                metric === 'pace'
-                  ? 'bg-green-100 text-green-700 border border-green-200'
-                  : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Pace
-            </button>
-          )}
-          <button
-            onClick={() => setMetric('hr')}
-            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
-              metric === 'hr'
-                ? 'bg-red-100 text-red-700 border border-red-200'
-                : 'text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            HR
-          </button>
-        </div>
-      )}
-
-      {/* ── Summary chips ── */}
-      {hasData && (
-        <div className="flex flex-wrap gap-1.5 mb-3 flex-shrink-0">
-          <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-xs text-gray-600">
-            <span className="font-semibold text-gray-800">{fmtDur(totalSecs)}</span> total
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-xs text-gray-600">
-            <span className="font-semibold text-gray-800">{sessions}</span> sessions
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs text-green-700">
-            <span className="font-semibold">{Math.round(aerobicPct)}%</span> Z1+Z2
-          </span>
-          {highIntPct > 4 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-xs text-orange-700">
-              <span className="font-semibold">{Math.round(highIntPct)}%</span> Z4+Z5
-            </span>
-          )}
-        </div>
-      )}
-
       {/* ── Zone bars / empty state ── */}
-      <div className="flex flex-col flex-1 justify-center min-h-0">
+      <div className="flex flex-col">
         {loading && !hasData ? (
-          /* Loading spinner */
-          <div className="flex items-center justify-center py-10">
-            <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+          <div className="flex items-center justify-center py-6">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-blue-400" />
           </div>
 
         ) : !hasData ? (
-          /* Empty state */
-          <div className="flex flex-col items-center justify-center py-6 text-center">
-            <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center mb-3">
-              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M7 16l4-5 4 4 4-6" />
-              </svg>
-            </div>
-            <p className="text-xs font-medium text-gray-600 mb-1">No zone data for this period</p>
-            <p className="text-xs text-gray-400 max-w-[200px]">
+          <div className="flex flex-col items-center justify-center py-4 text-center">
+            <p className="text-[11px] font-medium text-gray-600">No zone data for this period</p>
+            <p className="mt-0.5 max-w-[200px] text-[10px] text-gray-400">
               {!allLoaded
                 ? 'Loading…'
                 : sport === 'bike'
-                  ? 'Upload FIT files with power data to see bike zones.'
-                  : 'Record sessions with HR data to see zone distribution.'}
+                  ? 'Upload FIT files with power data.'
+                  : 'Record sessions with HR data.'}
             </p>
           </div>
 
         ) : (
-          /* Zone bars */
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {ZONES.map(zone => {
               const t          = zoneTimes[zone.zone] || 0;
               const pct        = zonePcts[zone.zone]  || 0;
@@ -676,18 +647,17 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
               return (
                 <div key={zone.zone}>
                   <div
-                    className={`flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors ${
+                    className={`flex items-center gap-1.5 rounded-md px-0.5 py-0.5 transition-colors ${
                       t > 0 ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'
                     } ${isExpanded ? 'bg-gray-50' : ''}`}
                     onClick={() => t > 0 && setExpandedZone(isExpanded ? null : zone.zone)}
                   >
-                    {/* Label + range */}
-                    <div className="w-[88px] flex-shrink-0">
-                      <div className="text-[13px] font-semibold text-gray-700 leading-tight flex items-center gap-1">
-                        {zone.label} · {zone.name}
+                    <div className="w-[72px] flex-shrink-0">
+                      <div className="flex items-center gap-0.5 text-[11px] font-semibold leading-tight text-gray-700">
+                        {zone.label}
                         {t > 0 && (
                           <svg
-                            className={`w-2.5 h-2.5 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                            className={`h-2 w-2 flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                             fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
                           >
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
@@ -695,13 +665,12 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
                         )}
                       </div>
                       {rng && (
-                        <div className="text-xs text-gray-400 truncate leading-tight">{rng}</div>
+                        <div className="truncate text-[9px] leading-tight text-gray-400">{rng}</div>
                       )}
                     </div>
 
-                    {/* Progress bar */}
                     <div
-                      className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden"
+                      className="h-3.5 flex-1 overflow-hidden rounded-full bg-gray-100"
                       onMouseEnter={e => onHover(e, zone)}
                       onMouseMove={e  => onMove(e, zone)}
                       onMouseLeave={onLeave}
@@ -712,20 +681,15 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
                       />
                     </div>
 
-                    {/* Time + percentage */}
-                    <div className="w-[52px] text-right flex-shrink-0">
-                      <div className="text-[13px] font-semibold text-gray-800 leading-tight">{fmtDur(t)}</div>
-                      <div className="text-xs text-gray-400 leading-tight">{Math.round(pct)}%</div>
+                    <div className="w-[44px] flex-shrink-0 text-right">
+                      <div className="text-[11px] font-semibold leading-tight text-gray-800">{fmtDur(t)}</div>
+                      <div className="text-[9px] leading-tight text-gray-400">{Math.round(pct)}%</div>
                     </div>
                   </div>
 
-                  {/* Expanded average row */}
                   {isExpanded && (
-                    <div className="ml-[96px] mr-[60px] mb-1 flex items-center gap-2 text-[13px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm">
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ background: zone.color }}
-                      />
+                    <div className="mb-0.5 ml-[78px] mr-[48px] flex items-center gap-1.5 rounded-md border border-gray-100 bg-white px-2 py-1 text-[10px] text-gray-600 shadow-sm">
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: zone.color }} />
                       <span className="text-gray-500">Avg {metricLabel}:</span>
                       <span className="font-semibold text-gray-800">
                         {hasAvg ? formatAvg(avg) : '—'}
@@ -739,9 +703,8 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         )}
       </div>
 
-      {/* Subtle updating indicator */}
       {loading && hasData && (
-        <div className="mt-2 text-center text-xs text-gray-400">Updating…</div>
+        <div className="mt-1 text-center text-[10px] text-gray-400">Updating…</div>
       )}
     </motion.div>
   );

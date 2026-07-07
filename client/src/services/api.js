@@ -398,12 +398,17 @@ api.interceptors.response.use(
     const _isTimeout = error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '');
     const _isNetErr = error.code === 'ERR_NETWORK' || error.message === 'Network Error';
     const _isColdStart = _status === 502 || _status === 503 || _status === 504;
+    const _isRateLimited = _status === 429;
     const _method = String(_cfg?.method || 'get').toLowerCase();
-    if (_cfg && _method === 'get' && !_isCanceled && !_cfg.noRetry && (_isTimeout || _isNetErr || _isColdStart)) {
+    if (_cfg && _method === 'get' && !_isCanceled && !_cfg.noRetry && (_isTimeout || _isNetErr || _isColdStart || _isRateLimited)) {
+      const MAX_RETRIES = _isRateLimited ? 3 : 4;
       _cfg.__retryCount = (_cfg.__retryCount || 0) + 1;
-      const MAX_RETRIES = 4;
       if (_cfg.__retryCount <= MAX_RETRIES) {
-        const wait = Math.min(2000 * _cfg.__retryCount, 8000); // 2s, 4s, 6s, 8s
+        const retryAfterHdr = error.response?.headers?.['retry-after'];
+        const retryAfterSec = retryAfterHdr ? parseInt(retryAfterHdr, 10) : NaN;
+        const wait = _isRateLimited
+          ? (Number.isFinite(retryAfterSec) ? retryAfterSec * 1000 : Math.min(3000 * _cfg.__retryCount, 12000))
+          : Math.min(2000 * _cfg.__retryCount, 8000);
         return new Promise((resolve) => setTimeout(resolve, wait)).then(() => api(_cfg));
       }
     }
@@ -452,9 +457,10 @@ api.interceptors.response.use(
       }
     }
 
+    const premiumGateCodes = ['PREMIUM_REQUIRED', 'FEATURE_REQUIRES_UPGRADE', 'QUOTA_EXCEEDED'];
     if (
       error.response?.status === 403 &&
-      error.response?.data?.code === 'PREMIUM_REQUIRED' &&
+      premiumGateCodes.includes(error.response?.data?.code) &&
       typeof window !== 'undefined' &&
       window.dispatchEvent
     ) {
@@ -1096,8 +1102,33 @@ export const getTodayMetrics = (athleteId) =>
   });
 
 // ── Race / goal events (TrainingPeaks-style race planning) ───────────────────
-export const getRaceEvents = (athleteId, params = {}) =>
-  api.get('/api/race-events', { params: { ...(athleteId ? { athleteId } : {}), ...params } });
+const _raceEventsInflight = new Map();
+const _raceEventsCache = new Map();
+const RACE_EVENTS_CACHE_MS = 90 * 1000;
+
+export const getRaceEvents = (athleteId, params = {}) => {
+  const key = `${athleteId || 'self'}:${JSON.stringify(params)}`;
+  const hit = _raceEventsCache.get(key);
+  if (hit && Date.now() - hit.ts < RACE_EVENTS_CACHE_MS) {
+    return Promise.resolve({ data: hit.data });
+  }
+  if (_raceEventsInflight.has(key)) return _raceEventsInflight.get(key);
+
+  const req = api.get('/api/race-events', {
+    params: { ...(athleteId ? { athleteId } : {}), ...params },
+    cacheTtlMs: 60000,
+  }).then((res) => {
+    _raceEventsCache.set(key, { data: res.data, ts: Date.now() });
+    _raceEventsInflight.delete(key);
+    return res;
+  }).catch((err) => {
+    _raceEventsInflight.delete(key);
+    throw err;
+  });
+
+  _raceEventsInflight.set(key, req);
+  return req;
+};
 
 export const createRaceEvent = (payload, athleteId) =>
   api.post('/api/race-events', { ...payload, ...(athleteId ? { athleteId } : {}) });
@@ -1331,9 +1362,9 @@ export const syncStravaActivities = async (since=null) => {
 
 // Manually (re)start the full historical import of all Strava activities.
 // Runs in the background on the server; progress shows via /strava/status.
-export const backfillStravaHistory = async () => {
-  const { data } = await api.post('/api/integrations/strava/backfill', {});
-  return data; // { started, alreadyRunning? }
+export const backfillStravaHistory = async ({ fromNow = true, force = true } = {}) => {
+  const { data } = await api.post('/api/integrations/strava/backfill', { fromNow, force });
+  return data; // { started, alreadyRunning?, restarted? }
 };
 
 // Track in-flight auto-sync to prevent multiple simultaneous syncs

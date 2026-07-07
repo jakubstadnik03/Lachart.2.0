@@ -50,6 +50,14 @@ const DEFAULT_SLIDES = [
     accent: 'from-blue-500/30 to-primary/20',
   },
   {
+    src: '/images/lachart5.jpeg',
+    tag: 'Dashboard',
+    title: 'Form, fitness & load',
+    subtitle: 'CTL / ATL / TSB, weekly TSS, zone distribution and training insights on one screen.',
+    accent: 'from-emerald-500/25 to-secondary/20',
+    stat: { label: 'Form (TSB)', value: '+12' },
+  },
+  {
     src: '/images/lactate_curve_calculator_lachart.jpg',
     tag: 'Lactate Testing',
     title: 'Progress, not guesswork',

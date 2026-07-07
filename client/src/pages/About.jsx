@@ -36,6 +36,8 @@ import { createCheckoutSession } from '../services/api';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 const IOSGalleryCarousel = React.lazy(() => import('../components/About/IOSGalleryCarousel'));
+const FeaturesShowcase = React.lazy(() => import('../components/About/FeaturesShowcase'));
+const FeatureCategoryStrip = React.lazy(() => import('../components/About/FeatureCategoryStrip'));
 
 /* ─── design-handoff palette mapped to short JS constants ─────────────── */
 const LC = {
@@ -509,8 +511,6 @@ export default function About() {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileNavOpen]);
 
-  // Feature filter
-  const [featCat, setFeatCat] = useState('All');
   // Roles tab
   const [role, setRole] = useState('athlete');
 
@@ -530,7 +530,7 @@ export default function About() {
   // Scroll-spy — highlight the nav link whose section is currently in view.
   const [activeSection, setActiveSection] = useState('hero');
   useEffect(() => {
-    const ids = ['hero', 'solutions', 'workspaces', 'headline-features', 'anatomy', 'features', 'methodology', 'connect', 'voices', 'download', 'ios-gallery', 'try-it-now', 'pricing', 'faq'];
+    const ids = ['hero', 'feature-map', 'solutions', 'workspaces', 'headline-features', 'anatomy', 'features', 'methodology', 'connect', 'voices', 'download', 'ios-gallery', 'try-it-now', 'pricing', 'faq'];
     const sections = ids
       .map(id => document.getElementById(id))
       .filter(Boolean);
@@ -886,8 +886,9 @@ export default function About() {
             {[
               'Cycling · Running · Triathlon · Swimming',
               'LT1, LT2, OBLA, IAT, D-max, Log-log',
-              'Strava & FIT file sync',
-              'PDF reports in seconds',
+              'Garmin · Strava · FIT · Apple Health',
+              'Form & Fitness · TSS · Zone distribution',
+              'Race planning · Live workouts · iOS app',
               'Coach & athlete workspace',
             ].map(t => (
               <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -897,6 +898,10 @@ export default function About() {
             ))}
           </div>
         </div>
+
+        <Suspense fallback={null}>
+          <FeatureCategoryStrip />
+        </Suspense>
 
         {/* ── 5. Audiences ─────────────────────────────────────────────── */}
         <section id="solutions">
@@ -1243,43 +1248,9 @@ export default function About() {
         </section>
 
         {/* ── 6. Features grid w/ filter chips ─────────────────────────── */}
-        <section id="features">
-          <div className="lc-sectpad">
-            <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 30px' }}>
-              <Eyebrow>Platform features</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Lactate testing, <em>threshold analysis &amp; zone builder</em></h2>
-              <p className="lc-lead" style={{ margin: '0 auto' }}>Everything for lactate-based training — blood lactate curve generation, LT1/LT2 detection, zone builder, FIT upload, and coaching tools in one place.</p>
-            </div>
-            <div ref={pushRef} className="lc-reveal d1" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 30 }}>
-              {['All','Testing','Analysis','Training','Progress','Integration','Tools'].map(cat => (
-                <button key={cat} onClick={() => setFeatCat(cat)} style={{
-                  padding: '7px 16px', borderRadius: 9999, cursor: 'pointer',
-                  background: featCat === cat ? LC.primaryDark : '#fff',
-                  color: featCat === cat ? '#fff' : LC.muted,
-                  fontSize: 13, fontWeight: 700,
-                  border: featCat === cat ? 'none' : '1px solid ' + LC.border,
-                  transition: 'all .2s',
-                }}>{cat}</button>
-              ))}
-            </div>
-            <div ref={pushRef} className="lc-reveal d2 lc-feat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-              {FEATURES.filter(f => featCat === 'All' || f.cat === featCat).map((f) => (
-                <article key={f.title + featCat} className="lc-card lc-feat-card" style={{ padding: 22 }}>
-                  <div className="lc-feat-icon" style={{ width: 40, height: 40, borderRadius: 12, background: LC.primaryTint, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LC.primary, marginBottom: 12 }}>
-                    {f.icon}
-                  </div>
-                  <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{f.cat}</span>
-                  <h4 style={{ fontSize: 15, fontWeight: 700, color: LC.ink, margin: '6px 0 8px' }}>{f.title}</h4>
-                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{f.body}</p>
-                </article>
-              ))}
-            </div>
-            <style>{`
-              @media (max-width: 900px) { .lc-feat-grid { grid-template-columns: repeat(2, 1fr) !important; } }
-              @media (max-width: 540px) { .lc-feat-grid { grid-template-columns: 1fr !important; } }
-            `}</style>
-          </div>
-        </section>
+        <Suspense fallback={null}>
+          <FeaturesShowcase revealRef={pushRef} pushRef={pushRef} />
+        </Suspense>
 
         {/* ── 6.5 Anatomy of a lactate test (2026-05) ──────────────────
             Step-by-step flowchart explaining what LaChart actually does with
@@ -2691,38 +2662,6 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 }
 
 /* ─── Data tables ─────────────────────────────────────────────────────── */
-const FeatIcon = ({ d }) => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>);
-
-const FEATURES = [
-  // === Testing & analysis ===
-  { cat: 'Testing',     title: 'Lactate Curve Generation',  body: 'Enter test values and auto-generate your curve. Calculates LT1, LT2, LTP1, LTP2, IAT, log-log, OBLA (2.0–3.5) and baseline.', icon: <FeatIcon d="M3 20h18M5 16l3-6 4 4 5-9" /> },
-  { cat: 'Testing',     title: 'Training Zone Calculation', body: 'Auto-calculate 5 training zones with precise power / pace ranges. Customised for cycling, running, swimming.', icon: <FeatIcon d="M13 10V3L4 14h7v7l9-11h-7z" /> },
-  { cat: 'Analysis',    title: 'Historical Test Comparison',body: 'Store every test and compare curves over time. Overlay multiple tests to see how thresholds shift and improve.', icon: <FeatIcon d="M12 7v5l3 2" /> },
-  { cat: 'Training',    title: 'Lactate Recording to Intervals', body: 'Tag any interval of an existing workout with a blood lactate sample. Each sample feeds straight back into your curve and zones.', icon: <FeatIcon d="M12 3s7 8 7 13a7 7 0 1 1-14 0c0-5 7-13 7-13z" /> },
-  { cat: 'Progress',    title: 'Training Progress Tracking', body: 'Compare the same workout type over time. Track how your pace / power improves at the same lactate level.', icon: <FeatIcon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /> },
-
-  // === Planning & execution ===
-  { cat: 'Planning',    title: 'Workout Planner',           body: 'Build structured workouts step-by-step — warm-up, intervals with target power / pace / HR, recoveries, cooldown. Drop them onto the calendar in seconds.', icon: <FeatIcon d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /> },
-  { cat: 'Planning',    title: 'Training Calendar',          body: 'Plan, execute and review — drag planned sessions across the week, see Strava/FIT/manual workouts side-by-side with what was scheduled.', icon: <FeatIcon d="M3 10h18M8 3v4M16 3v4" /> },
-  { cat: 'Execution',   title: 'Start Trainings from the App', body: 'Open a planned workout and run it live — step-by-step prompts, target zones, lap timers and target adherence right in the browser.', icon: <FeatIcon d="M5 3l14 9-14 9V3z" /> },
-  { cat: 'Execution',   title: 'Smart Trainer Connection',   body: 'Pair your indoor smart trainer over Bluetooth (FTMS) and execute structured workouts with automatic resistance control. No third-party app needed.', icon: <FeatIcon d="M12 18h.01M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0" /> },
-
-  // === Integrations ===
-  { cat: 'Integration', title: 'Strava & FIT File Sync',     body: 'Sync workouts from Strava or upload FIT files from Garmin, Wahoo, Polar. Full interval detection.', icon: <FeatIcon d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 15.9 6M16 16a4 4 0 1 0 0-8M12 22V10M15 13l-3-3-3 3" /> },
-  { cat: 'Integration', title: 'Apple Health Sync',          body: 'Pull workouts and HR streams from Apple Health on iPhone. Works in the background — your test data and your training stay in one place.', icon: <FeatIcon d="M21 8.5c0-3-2-5.5-5-5.5-2.5 0-4 1.5-4 1.5S10.5 3 8 3c-3 0-5 2.5-5 5.5C3 14 12 21 12 21s9-7 9-12.5z" /> },
-  { cat: 'Training',    title: 'Training Categorization',    body: 'Auto-categorize sessions by intensity: threshold, VO₂max, endurance, tempo or recovery — based on your actual zones.', icon: <FeatIcon d="M7 7h.01M3 7v5a2 2 0 0 0 .6 1.4l7 7a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8l-7-7A2 2 0 0 0 12 3H7a4 4 0 0 0-4 4z" /> },
-  { cat: 'Analysis',    title: 'TSS & Performance Analytics',body: 'Calculate Training Stress Score per workout. Analyze CTL / ATL / TSB to plan peaks and rest.', icon: <FeatIcon d="M9 19v-6H5v6M14 19v-9h-4M21 19V5h-3v14" /> },
-
-  // === Coach features ===
-  { cat: 'Coach',       title: 'Athlete Management',         body: 'Add unlimited athletes, plan their week, review their tests and trainings. Status dots, athlete switcher and bulk actions in one dashboard.', icon: <FeatIcon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /> },
-  { cat: 'Coach',       title: 'Plan Workouts for Athletes', body: 'Build structured sessions once and push them to any athlete\'s calendar. They execute in their own app — you see what they actually did vs what you planned.', icon: <FeatIcon d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 4h6v4H9zM9 14l2 2 4-4" /> },
-  { cat: 'Coach',       title: 'Branded PDF Reports',         body: 'Upload your logo and add your studio name, address and trademark — every test report comes out as your branded handout. Custom primary colour included.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13l3 3 5-6" /> },
-
-  // === Tools (always free) ===
-  { cat: 'Tools',       title: 'Free Lactate Calculator',    body: 'No registration required. Instantly generate a lactate curve with all threshold calculations and PDF export.', icon: <FeatIcon d="M8 7h8M8 11h2M12 11h2M16 11h.01M8 15h2M12 15h2M16 15h.01M8 19h8" /> },
-  { cat: 'Tools',       title: 'PDF Report Generation',      body: 'Branded PDF — lactate curve, HR overlay, color-coded zones, stage table and personalised recommendations. Unlimited on Coach plans.', icon: <FeatIcon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M9 13h6M9 17h6" /> },
-];
-
 const DEEPDIVES = [
   { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: 'lactate-testing.png', url: 'lachart.net — Lactate Curve · Power vs Lactate' },
   { eb: 'Zones',         title: 'Train <em>inside your zones</em>, not someone else\'s', lead: 'Your zones are derived from your last lactate test — power, pace and heart rate side by side. Update the test, zones update everywhere.', bullets: ['5-zone or Seiler 3-zone models', 'Power, pace and HR per sport', 'Auto-updates when a new test is recorded'], img: 'zones-generator.png', url: 'lachart.net — Training Zones' },

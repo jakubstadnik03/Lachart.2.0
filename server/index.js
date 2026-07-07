@@ -112,6 +112,16 @@ app.use((req, res, next) => {
 
 app.use(compression()); // Compress responses
 
+// Stripe webhook must receive the raw body for signature verification.
+// Mount BEFORE express.json() — the global JSON parser would otherwise
+// consume the body and constructEvent() would fail in production.
+const subscriptionController = require('./controllers/subscriptionController');
+app.post(
+  '/api/subscription/webhook',
+  express.raw({ type: 'application/json' }),
+  subscriptionController.handleWebhook
+);
+
 // Základní middleware
 // Increase JSON body size limit to 50MB for large FIT file data
 app.use(express.json({ limit: '50mb' }));
@@ -144,16 +154,31 @@ mongoose
 // Initialize cache
 const cache = new NodeCache({ stdTTL: 60 }); // Cache for 1 minute (reduced from 10 minutes for better data freshness)
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  skip: (req) => req.method === 'OPTIONS' // don't limit preflight
+// Rate limiting — strict for anonymous traffic; authenticated SPA users get
+// much higher headroom (dashboard + coach athlete switch can fire 20–40 GETs).
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 4000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 // Apply global limiter only in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(limiter);
+  app.use((req, res, next) => {
+    const hasBearer = typeof req.headers.authorization === 'string'
+      && req.headers.authorization.startsWith('Bearer ');
+    return (hasBearer ? authLimiter : publicLimiter)(req, res, next);
+  });
 }
 
 // Dedicated limiter for login — 5 attempts per 15 minutes per IP (M6)

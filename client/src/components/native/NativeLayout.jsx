@@ -23,6 +23,7 @@ import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { normalizeNotificationActivityId, requestOpenActivity } from '../../utils/activityEventPatches';
 import { resolveNotificationTarget } from '../../utils/notificationNavigation';
+import { normalizeNotificationCopy } from '../../utils/notificationCopy';
 import { syncWidgetFromApi } from '../../utils/widgetCache';
 import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
@@ -785,7 +786,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     setNotifsLoading(true);
     try {
       const r = await getNotifications();
-      const fresh = r.data || [];
+      const fresh = (r.data || []).map(normalizeNotificationCopy);
       setNotifs(fresh);
 
       if (!notifsInitialized.current) {

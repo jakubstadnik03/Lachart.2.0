@@ -581,17 +581,23 @@ router.post('/:testId/ai-coach', verifyToken, async (req, res) => {
 
     const athleteId = test.athleteId || test.userId || requester._id;
 
-    // Coach-scope check
+    // Coach-scope check — same rules as GET /test/:id
+    const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
     const role = String(requester.role || '').toLowerCase();
     const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
       (requester.admin === true && role !== 'athlete');
+    const isTestingRole = role === 'testing';
     let authorised = String(requester._id) === String(athleteId);
+    if (!authorised && isTestingRole) {
+      authorised = true;
+    }
     if (!authorised && isCoachLike) {
-      const athlete = await User.findById(athleteId).select('coaches').lean();
-      if (athlete && Array.isArray(athlete.coaches) &&
-          athlete.coaches.some((c) => String(c) === String(requester._id))) {
+      const athlete = await User.findById(athleteId).select('coachId coachIds pendingCoachId').lean();
+      if (athlete && athleteHasCoachUser(athlete, requester._id)) {
         authorised = true;
-      } else if (role === 'admin') {
+      } else if (athlete && String(athlete.pendingCoachId || '') === String(requester._id)) {
+        authorised = true;
+      } else if (role === 'admin' || requester.admin === true) {
         authorised = true;
       }
     }

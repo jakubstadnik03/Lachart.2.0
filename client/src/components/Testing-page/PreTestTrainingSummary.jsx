@@ -27,8 +27,8 @@ function fmtDur(secs) {
   return `${h}h ${m}m`;
 }
 
-/** Returns 2 month keys ending with the month that contains testDate. */
-function monthKeysBefore(testDate, count = 2) {
+/** Returns month keys ending with the month that contains testDate (3 ≈ 8+ weeks). */
+function monthKeysBefore(testDate, count = 3) {
   const d = testDate ? new Date(testDate) : new Date();
   const keys = [];
   for (let i = 0; i < count; i++) {
@@ -271,7 +271,7 @@ export default function PreTestTrainingSummary({ athleteId = null, testDate = nu
   const [showDescriptions, setShowDescriptions] = useState(false);
   const fetchedKeys = useRef(new Set());
 
-  const monthKeys = monthKeysBefore(testDate, 2); // 2 months ≈ 8 weeks
+  const monthKeys = monthKeysBefore(testDate, 3); // 3 months ≈ 8+ weeks before test
 
   // Reset cached keys + data whenever the athlete or test changes so the next
   // effect always fetches fresh data for the new athlete.  Must be declared

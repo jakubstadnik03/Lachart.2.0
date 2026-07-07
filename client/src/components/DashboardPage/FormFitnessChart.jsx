@@ -42,7 +42,7 @@ const estimatePlannedTss = (pw) => {
   return 0;
 };
 
-const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false }) => {
+const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, activitiesLoading = false, headlineMetrics = null }) => {
   const { user } = useAuth();
   const profile = userProfile || user;
   const calendarDriven = activities != null;
@@ -109,9 +109,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
   const [deltaMode, setDeltaMode] = useState(() => {
     try {
-      return localStorage.getItem('formFitnessDeltaMode') || 'timeframe';
+      return localStorage.getItem('formFitnessDeltaMode') || 'yesterday';
     } catch (e) {
-      return 'timeframe';
+      return 'yesterday';
     }
   });
 
@@ -204,11 +204,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           setLoading(false);
           return;
         }
-        if (!cancelled) {
-          setChartData([]);
-          setLoading(false);
-        }
-        return;
+        // Calendar finished loading but has no activities — fall through to server API.
       }
 
       // Prefer calendar activities when passed without explicit calendar-driven flag.
@@ -236,6 +232,8 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
       let usedCache = false;
 
+      // Dashboard calendar-driven mode: skip stale localStorage — wait for live calendar or API.
+      if (!calendarDriven) {
       // 1) Try to paint from cache first
       try {
         const now = Date.now();
@@ -270,6 +268,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
         }
       } catch (e) {
         console.warn('Error reading form & fitness cache:', e);
+      }
       }
 
       try {
@@ -409,19 +408,35 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
     return `${days} days`;
   }, [timeRange]);
 
+  // Headline CTL/ATL/TSB — always all sports, same source as native Performance Insights.
+  const headlinePmc = useMemo(() => {
+    if (headlineMetrics && (
+      headlineMetrics.fitness != null
+      || headlineMetrics.form != null
+      || headlineMetrics.fatigue != null
+    )) {
+      return headlineMetrics;
+    }
+    if (Array.isArray(activities) && activities.length && profile) {
+      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all' });
+      if (tm) return tm;
+    }
+    return todayMetrics;
+  }, [headlineMetrics, activities, profile, todayMetrics]);
+
   const insights = useMemo(() => {
-    if (!chartData || chartData.length === 0) return null;
-    const first = chartData[0];
-    const last = chartData[chartData.length - 1];
+    const fitness = Math.round(Number(headlinePmc?.fitness ?? 0));
+    const fatigue = Math.round(Number(headlinePmc?.fatigue ?? 0));
+    const form = Math.round(Number(headlinePmc?.form ?? 0));
 
-    const fitness = Number(last.Fitness || 0);
-    const fatigue = Number(last.Fatigue || 0);
-    const form = Number(last.Form || 0);
+    const hasHeadline = headlinePmc && (
+      headlinePmc.fitness != null || headlinePmc.fatigue != null || headlinePmc.form != null
+    );
+    if (!hasHeadline && (!chartData || chartData.length === 0)) return null;
 
-    const getIdxFromEnd = (daysBack) => {
-      const idx = Math.max(0, chartData.length - 1 - daysBack);
-      return idx;
-    };
+    const first = chartData?.[0];
+
+    const getIdxFromEnd = (daysBack) => Math.max(0, (chartData?.length || 1) - 1 - daysBack);
 
     let fitnessDelta = 0;
     let fatigueDelta = 0;
@@ -429,27 +444,32 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
     let deltaLabel = '';
 
     if (deltaMode === 'yesterday') {
-      fitnessDelta = Number(todayMetrics.fitnessChange || 0);
-      fatigueDelta = Number(todayMetrics.fatigueChange || 0);
-      formDelta = Number(todayMetrics.formChange || 0);
+      fitnessDelta = Number(headlinePmc?.fitnessChange ?? 0);
+      fatigueDelta = Number(headlinePmc?.fatigueChange ?? 0);
+      formDelta = Number(headlinePmc?.formChange ?? 0);
       deltaLabel = 'from yesterday';
-    } else if (deltaMode === '7d') {
+    } else if (deltaMode === '7d' && chartData?.length) {
       const base = chartData[getIdxFromEnd(7)] || first;
-      fitnessDelta = fitness - Number(base.Fitness || 0);
-      fatigueDelta = fatigue - Number(base.Fatigue || 0);
-      formDelta = form - Number(base.Form || 0);
+      fitnessDelta = fitness - Number(base?.Fitness || 0);
+      fatigueDelta = fatigue - Number(base?.Fatigue || 0);
+      formDelta = form - Number(base?.Form || 0);
       deltaLabel = 'over 7 days';
-    } else if (deltaMode === '28d') {
+    } else if (deltaMode === '28d' && chartData?.length) {
       const base = chartData[getIdxFromEnd(28)] || first;
-      fitnessDelta = fitness - Number(base.Fitness || 0);
-      fatigueDelta = fatigue - Number(base.Fatigue || 0);
-      formDelta = form - Number(base.Form || 0);
+      fitnessDelta = fitness - Number(base?.Fitness || 0);
+      fatigueDelta = fatigue - Number(base?.Fatigue || 0);
+      formDelta = form - Number(base?.Form || 0);
       deltaLabel = 'over 28 days';
-    } else {
-      fitnessDelta = fitness - Number(first.Fitness || 0);
-      fatigueDelta = fatigue - Number(first.Fatigue || 0);
-      formDelta = form - Number(first.Form || 0);
+    } else if (chartData?.length) {
+      fitnessDelta = fitness - Number(first?.Fitness || 0);
+      fatigueDelta = fatigue - Number(first?.Fatigue || 0);
+      formDelta = form - Number(first?.Form || 0);
       deltaLabel = `over ${timeframeLabel}`;
+    } else {
+      fitnessDelta = Number(headlinePmc?.fitnessChange ?? 0);
+      fatigueDelta = Number(headlinePmc?.fatigueChange ?? 0);
+      formDelta = Number(headlinePmc?.formChange ?? 0);
+      deltaLabel = 'from yesterday';
     }
 
     const fitnessStatus =
@@ -474,7 +494,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
       fitnessStatus, fatigueStatus, formStatus,
       deltaLabel
     };
-  }, [chartData, deltaMode, timeframeLabel, todayMetrics]);
+  }, [chartData, deltaMode, timeframeLabel, headlinePmc]);
 
   // ── Future projection from planned workouts (TrainingPeaks-style PMC) ──
   // Continues the CTL/ATL/TSB recurrence forward using planned TSS so coaches
@@ -678,7 +698,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
   };
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg w-full">
+    <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg w-full h-full flex flex-col">
       <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Form & Fitness</h3>
         <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -918,7 +938,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
                       </button>
                     </div>
                     <div className="mt-0.5 flex items-baseline gap-2">
-                      <div className={`text-xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
+                      <div className={`text-xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>
+                        {insights.form > 0 ? `+${insights.form}` : insights.form}
+                      </div>
                       <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
                     </div>
                     <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
@@ -1022,7 +1044,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
                 </button>
               </div>
               <div className="mt-0.5 flex items-baseline gap-2">
-                <div className={`text-xl sm:text-2xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
+                <div className={`text-xl sm:text-2xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>
+                  {insights.form > 0 ? `+${insights.form}` : insights.form}
+                </div>
                 <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
               </div>
               <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
@@ -1094,7 +1118,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           </div>
         )}
 
-        <div className="h-32 sm:h-40 select-none relative">
+        <div className="flex-1 min-h-32 sm:min-h-40 select-none relative">
           {zoomRange && (
             <button
               onClick={handleZoomReset}

@@ -48,6 +48,9 @@ const STRAVA_AUTO_SYNC_STALE_QUEUE_MS = 12 * 60 * 1000;
 /** Force at least one stale user per tick even when budget is tight. */
 const STRAVA_AUTO_SYNC_STALE_FORCE_MS = 2 * 60 * 60 * 1000;
 
+/** How far back the automatic first-connect backfill pulls (days). */
+const STRAVA_BACKFILL_LOOKBACK_DAYS = 365;
+
 module.exports = {
   STRAVA_AUTO_SYNC_INTERVAL_MS,
   STRAVA_AUTO_SYNC_BATCH_SIZE,
@@ -64,4 +67,5 @@ module.exports = {
   STRAVA_AUTO_SYNC_STALE_USER_MS,
   STRAVA_AUTO_SYNC_STALE_QUEUE_MS,
   STRAVA_AUTO_SYNC_STALE_FORCE_MS,
+  STRAVA_BACKFILL_LOOKBACK_DAYS,
 };
