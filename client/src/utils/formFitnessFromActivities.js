@@ -15,6 +15,20 @@ export function localCalendarDateKey(date) {
   return `${y}-${m}-${day}`;
 }
 
+/** Local calendar day for an activity — same field order everywhere (dashboard, calendar, period stats, native app). */
+export function activityCalendarDateKey(act) {
+  const raw = act?.date ?? act?.timestamp ?? act?.startDate ?? act?.start_time;
+  if (raw == null) return null;
+  return localCalendarDateKey(raw);
+}
+
+/** True when the activity falls on the given local calendar day. */
+export function activityOnLocalDay(act, date) {
+  const dk = activityCalendarDateKey(act);
+  if (!dk) return false;
+  return dk === localCalendarDateKey(date);
+}
+
 /** Monday of the activity's local calendar week (YYYY-MM-DD). */
 export function localWeekStartKey(date) {
   const d = date instanceof Date ? new Date(date) : new Date(date);
@@ -26,26 +40,26 @@ export function localWeekStartKey(date) {
   return localCalendarDateKey(d);
 }
 
-function activityTss(act, profile) {
-  return resolveActivityTss(act, profile, { user: profile }) || 0;
+function activityTss(act, profile, tssUser) {
+  return resolveActivityTss(act, profile, { user: tssUser || profile }) || 0;
 }
 
 /**
  * @returns {{ series: Array, todayMetrics: object|null }}
  */
-export function computePmcFromActivities(activities, profile, { displayDays = 90, warmupDays = 252, sportFilter = 'all' } = {}) {
+export function computePmcFromActivities(activities, profile, { displayDays = 90, warmupDays = 252, sportFilter = 'all', tssUser = null } = {}) {
   if (!Array.isArray(activities) || !activities.length || !profile) {
     return { series: [], todayMetrics: null };
   }
 
   const effectiveProfile = enrichProfileForTss(profile, activities);
+  const prefsUser = tssUser || profile;
   const dailyTss = new Map();
   for (const act of activities) {
     if (sportFilter !== 'all' && !matchesCalendarSportFilter(act, sportFilter)) continue;
-    const raw = act.date || act.timestamp || act.startDate || act.start_time;
-    const dk = localCalendarDateKey(raw);
+    const dk = activityCalendarDateKey(act);
     if (!dk) continue;
-    const tss = activityTss(act, effectiveProfile);
+    const tss = activityTss(act, effectiveProfile, prefsUser);
     if (tss > 0) dailyTss.set(dk, (dailyTss.get(dk) || 0) + tss);
   }
   if (!dailyTss.size) return { series: [], todayMetrics: null };
@@ -215,10 +229,11 @@ export function buildExtendedPmcSeries(series, plannedWorkouts, options = {}) {
  * Weekly TSS bars — same activities + resolveActivityTss as the training calendar.
  * @returns {Array<{ weekStart, weekLabel, trainingLoad, optimalLoad }>}
  */
-export function computeWeeklyTrainingLoadFromActivities(activities, profile, { months = 3, sportFilter = 'all' } = {}) {
+export function computeWeeklyTrainingLoadFromActivities(activities, profile, { months = 3, sportFilter = 'all', tssUser = null } = {}) {
   if (!Array.isArray(activities) || !activities.length || !profile) return [];
 
   const effectiveProfile = enrichProfileForTss(profile, activities);
+  const prefsUser = tssUser || profile;
 
   const today = new Date();
   today.setHours(23, 59, 59, 999);
@@ -230,14 +245,15 @@ export function computeWeeklyTrainingLoadFromActivities(activities, profile, { m
 
   for (const act of activities) {
     if (sportFilter !== 'all' && !matchesCalendarSportFilter(act, sportFilter)) continue;
-    const raw = act.date || act.timestamp || act.startDate || act.start_time;
-    const actDate = raw != null ? new Date(raw) : null;
-    if (!actDate || Number.isNaN(actDate.getTime()) || actDate < startDate) continue;
+    const dk = activityCalendarDateKey(act);
+    if (!dk) continue;
+    const actDate = new Date(`${dk}T12:00:00`);
+    if (Number.isNaN(actDate.getTime()) || actDate < startDate) continue;
 
     const weekKey = localWeekStartKey(actDate);
     if (!weekKey) continue;
 
-    const tss = activityTss(act, effectiveProfile);
+    const tss = activityTss(act, effectiveProfile, prefsUser);
     if (!weeklyData.has(weekKey)) {
       const ws = new Date(`${weekKey}T12:00:00`);
       weeklyData.set(weekKey, {

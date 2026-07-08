@@ -4,6 +4,7 @@ import { NativeSkeleton } from '../native/shared/Tiles';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
 import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { useAuth } from '../../context/AuthProvider';
 
 function DeltaPill({ value }) {
@@ -60,24 +61,28 @@ export default function StatusHeroCard({
   loading = false,
 }) {
   const { user } = useAuth() || {};
-  const profile = userProfile || user;
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
 
   const derived = useMemo(() => {
     if (!activities?.length || !profile) return null;
-    return computePmcFromActivities(activities, profile);
-  }, [activities, profile]);
+    return computePmcFromActivities(activities, profile, { tssUser: user });
+  }, [activities, profile, user]);
 
   const effTodayMetrics = useMemo(() => {
+    if (derived?.todayMetrics && activities?.length) return derived.todayMetrics;
     if (todayMetrics.fitness != null || todayMetrics.form != null || todayMetrics.fatigue != null) {
       return todayMetrics;
     }
     return derived?.todayMetrics || todayMetrics;
-  }, [todayMetrics, derived]);
+  }, [todayMetrics, derived, activities]);
 
-  const effSparkline = useMemo(
-    () => (sparklineData?.length ? sparklineData : (derived?.series || [])),
-    [sparklineData, derived],
-  );
+  const effSparkline = useMemo(() => {
+    if (derived?.series?.length && activities?.length) return derived.series;
+    return sparklineData?.length ? sparklineData : (derived?.series || []);
+  }, [sparklineData, derived, activities]);
   const [heroView, setHeroView] = useState('status');
   const [helpOpen, setHelpOpen] = useState(false);
   const [formRange, setFormRange] = useState('3m');

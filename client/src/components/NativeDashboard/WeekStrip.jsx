@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { resolveSportKey, SportGlyph, SPORT_ICON_COLORS } from '../shared/SportIcon';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { activityOnLocalDay } from '../../utils/formFitnessFromActivities';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
@@ -44,8 +46,7 @@ function isSameDay(a, b) {
 function getDaySports(activities, date) {
   const seen = new Set();
   activities.forEach(a => {
-    const d = new Date(a.date || a.startDate || a.timestamp || 0);
-    if (isSameDay(d, date)) seen.add(normaliseSport(a.sport || ''));
+    if (activityOnLocalDay(a, date)) seen.add(normaliseSport(a.sport || ''));
   });
   return [...seen];
 }
@@ -53,7 +54,7 @@ function getDaySports(activities, date) {
 // Planned-only day (no completed activities)
 function hasPlannedOnly(activities, plannedWorkouts, date) {
   const dateStr = toLocalDateStr(date);
-  const hasDone = activities.some(a => isSameDay(new Date(a.date || a.startDate || a.timestamp || 0), date));
+  const hasDone = activities.some(a => activityOnLocalDay(a, date));
   const hasPlan = (plannedWorkouts || []).some(p => String(p.date || '').slice(0, 10) === dateStr);
   return !hasDone && hasPlan;
 }
@@ -61,29 +62,26 @@ function hasPlannedOnly(activities, plannedWorkouts, date) {
 // Has both planned and at least one completed activity
 function hasPairedDay(activities, plannedWorkouts, date) {
   const dateStr = toLocalDateStr(date);
-  const hasDone = activities.some(a => isSameDay(new Date(a.date || a.startDate || a.timestamp || 0), date));
+  const hasDone = activities.some(a => activityOnLocalDay(a, date));
   const hasPlan = (plannedWorkouts || []).some(p => String(p.date || '').slice(0, 10) === dateStr);
   return hasDone && hasPlan;
 }
 
 function hasLactate(activities, date) {
-  return activities.some(a => {
-    const d = new Date(a.date || a.startDate || a.timestamp || 0);
-    return isSameDay(d, date) &&
+  return activities.some(a => activityOnLocalDay(a, date) &&
       Array.isArray(a.results) &&
-      a.results.some(r => r.lactate != null || r.mmol != null || r.lac != null);
-  });
+      a.results.some(r => r.lactate != null || r.mmol != null || r.lac != null));
 }
 
 // ── Daily totals (TSS + duration) ──────────────────────────────────────────
 // Aggregates completed activities for the day. Falls back to planned totals
 // for future days where nothing's been done yet — gives the user a feel for
 // the workload on each cell at a glance, TrainingPeaks-style.
-function dailyTotals(activities, plannedWorkouts, date, userProfile) {
-  const acts = activities.filter(a => isSameDay(new Date(a.date || a.startDate || a.timestamp || 0), date));
+function dailyTotals(activities, plannedWorkouts, date, userProfile, tssUser) {
+  const acts = activities.filter(a => activityOnLocalDay(a, date));
   let tss = 0, secs = 0;
   for (const a of acts) {
-    tss  += resolveActivityTss(a, userProfile, { user: userProfile }) || 0;
+    tss  += resolveActivityTss(a, userProfile, { user: tssUser || userProfile }) || 0;
     secs += Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0) || 0;
   }
   if (acts.length === 0) {
@@ -108,8 +106,9 @@ function fmtDur(secs) {
   return `${h}h${m}`;
 }
 
-export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], selectedDate, onSelectDate, onPlanWorkout = null }) {
+export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], selectedDate, onSelectDate, onPlanWorkout = null, userProfile = null }) {
   const { user } = useAuth() || {};
+  const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const [tssModeTick, setTssModeTick] = React.useState(0);
   React.useEffect(() => {
     const onTssModeChange = () => setTssModeTick((t) => t + 1);
@@ -400,7 +399,7 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
                 the "3 sessions" count in the TODAY card below, which is a
                 bigger, unambiguous tap target and reads more naturally. */}
             {(() => {
-              const tot = dailyTotals(activities, plannedWorkouts, d, user);
+              const tot = dailyTotals(activities, plannedWorkouts, d, profile, user);
               const durStr = fmtDur(tot.secs);
               if (!tot.tss && !durStr) return null;
 

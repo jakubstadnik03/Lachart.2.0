@@ -32,6 +32,8 @@ import { compareActivitiesChronologically, buildChronologicalDayItems } from '..
 import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { activityCalendarDateKey } from '../../utils/formFitnessFromActivities';
 import { fetchWellness } from '../../services/wellnessData';
 import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
@@ -179,15 +181,6 @@ function RecoveryDot({ status, size = 7 }) {
   );
 }
 
-
-/** Local calendar day key — must match grouping in `activitiesByDay`. */
-function activityCalendarDateKey(act) {
-  const raw = act?.date ?? act?.timestamp ?? act?.startDate;
-  if (raw == null) return null;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return getLocalDateString(d);
-}
 
 function activityDurationSec(act) {
   const v = act?.totalTime ?? act?.totalElapsedTime ?? act?.totalTimerTime ?? act?.movingTime ?? act?.elapsedTime;
@@ -927,6 +920,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false 
 
 const WeeklyCalendar = ({
   activities = [],
+  userProfile: userProfileProp = null,
   onSelectActivity,
   selectedActivityId,
   selectedAthleteId = null,
@@ -980,6 +974,10 @@ const WeeklyCalendar = ({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const effectiveUserProfile = useMemo(
+    () => mergeProfileZones(userProfileProp || userProfile, user) || userProfileProp || userProfile || user,
+    [userProfileProp, userProfile, user],
+  );
   const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
 
   useEffect(() => {
@@ -1277,12 +1275,8 @@ const WeeklyCalendar = ({
     if (effectiveActivities && Array.isArray(effectiveActivities)) {
       effectiveActivities.forEach(act => {
         try {
-          const d = new Date(act.date || act.timestamp || act.startDate || Date.now());
-          if (isNaN(d.getTime())) {
-            console.warn('[WeeklyCalendar] Invalid date for activity:', act);
-            return;
-          }
-          const key = getLocalDateString(d);
+          const key = activityCalendarDateKey(act);
+          if (!key) return;
           if (!map.has(key)) map.set(key, []);
           map.get(key).push(act);
         } catch (e) {
@@ -1364,7 +1358,7 @@ const WeeklyCalendar = ({
       const inPrev = prevWeekKeys.has(key);
       if (!inCurrent && !inPrev) return;
 
-      const tss = (resolveActivityTss(act, userProfile, { user: userProfile }) || 0) + tssDisplayMode * 0;
+      const tss = (resolveActivityTss(act, effectiveUserProfile, { user }) || 0) + tssDisplayMode * 0;
       const sec = activityDurationSec(act);
       const dist = activityDistanceMeters(act);
 
@@ -1395,7 +1389,7 @@ const WeeklyCalendar = ({
       weekSummary: { sessions, totalTss, totalSec, totalDist, bySport },
       prevWeekSummary: { totalTss: prevTotalTss }
     };
-  }, [effectiveActivities, weekDays, userProfile, tssDisplayMode]);
+  }, [effectiveActivities, weekDays, effectiveUserProfile, user, tssDisplayMode]);
 
   // Store handleActivityClick in ref whenever it changes
   useEffect(() => {
@@ -1477,8 +1471,9 @@ const WeeklyCalendar = ({
     return () => window.removeEventListener('selectCalendarActivity', handleSelectActivity);
   }, []); // Only set up listener once
 
-  // Load user profile (zones, units) for training detail / stats when coach views an athlete
+  // Load user profile when parent did not supply zones (coach athlete view, etc.)
   useEffect(() => {
+    if (userProfileProp) return;
     const loadProfile = async () => {
       try {
         // If coach is viewing an athlete's trainings, load athlete's profile (with zones)
@@ -1499,7 +1494,7 @@ const WeeklyCalendar = ({
       }
     };
     loadProfile();
-  }, [user, selectedAthleteId]);
+  }, [user, selectedAthleteId, userProfileProp]);
 
   // Sync editing values with trainingDetail
   useEffect(() => {

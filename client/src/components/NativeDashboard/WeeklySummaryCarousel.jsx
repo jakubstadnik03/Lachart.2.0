@@ -15,6 +15,8 @@ import { RotateCcw, Share2 } from 'lucide-react';
 import SportIcon from '../shared/SportIcon';
 import PerformanceInsightsSlide from './PerformanceInsightsSlide';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { activityCalendarDateKey } from '../../utils/formFitnessFromActivities';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
@@ -43,7 +45,10 @@ function getWeekBounds(ref) {
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23, 59, 59, 999);
   return { monday, sunday };
 }
-const actDate = (a) => new Date(a?.date || a?.startDate || a?.timestamp || 0);
+const actDate = (a) => {
+  const k = activityCalendarDateKey(a);
+  return k ? new Date(`${k}T12:00:00`) : new Date(0);
+};
 const actSecs = (a) => Number(a?.totalTime || a?.duration || a?.movingTime || a?.moving_time || a?.elapsedTime || a?.elapsed_time || a?.totalTimerTime || 0);
 const actDist = (a) => Number(a?.distance || a?.totalDistance || 0);
 // Planned-workout accessors
@@ -148,6 +153,7 @@ export default function WeeklySummaryCarousel({
   tests = [],
   todayMetrics = {},
   loading = false,
+  userProfile = null,
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -155,6 +161,10 @@ export default function WeeklySummaryCarousel({
   const [weekOffset, setWeekOffset] = useState(0);
   const [dir, setDir] = useState(1); // 1 = moved forward, -1 = back (drives the slide-in direction)
   const { user } = useAuth() || {};
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
   const [metricsTick, setMetricsTick] = useState(0);
   useEffect(() => {
     const bump = () => setMetricsTick((t) => t + 1);
@@ -170,7 +180,7 @@ export default function WeeklySummaryCarousel({
     };
   }, []);
   const data = useMemo(() => {
-    const actTss = (a) => (resolveActivityTss(a, user, { user }) || 0) + metricsTick * 0;
+    const actTss = (a) => (resolveActivityTss(a, profile, { user }) || 0) + metricsTick * 0;
     const now = new Date();
     const ref = new Date(now); ref.setDate(now.getDate() + weekOffset * 7);
     const wb = getWeekBounds(ref);
@@ -225,7 +235,7 @@ export default function WeeklySummaryCarousel({
       curActs,
       range: `${wb.monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${wb.sunday.toLocaleDateString('en', { month: 'short', day: 'numeric' })}`,
     };
-  }, [activities, plannedWorkouts, weekOffset, user, metricsTick]);
+  }, [activities, plannedWorkouts, weekOffset, profile, user, metricsTick]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -313,7 +323,7 @@ export default function WeeklySummaryCarousel({
         <div style={{ ...SLIDE, alignSelf: 'flex-start' }}>
           <PerformanceInsightsSlide
             activities={activities}
-            userProfile={user}
+            userProfile={profile}
             todayMetrics={todayMetrics}
             sparklineData={sparklineData}
             plannedWorkouts={plannedWorkouts}

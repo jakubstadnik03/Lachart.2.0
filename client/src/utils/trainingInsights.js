@@ -4,6 +4,7 @@
 import { assessReadiness, baseline } from './recovery';
 import { findCompliance, getCompliance, plannedWorkoutDurationSecs } from './planCompliance';
 import { resolveActivityTss } from './computeTss';
+import { activityCalendarDateKey } from './formFitnessFromActivities';
 
 const HARD_TSS = 80;
 const HARD_CATEGORIES = /vo2|threshold|interval|tempo|race|hard/i;
@@ -62,9 +63,7 @@ function normSport(sport) {
 }
 
 function activityDateStr(a) {
-  const raw = a?.date || a?.startDate || a?.timestamp;
-  if (!raw) return '';
-  return String(raw).slice(0, 10);
+  return activityCalendarDateKey(a) || '';
 }
 
 function yesterdayTss(activities, userProfile) {

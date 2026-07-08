@@ -191,11 +191,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
       // Dashboard: wait for calendar — never paint stale API/cache while loading.
       if (calendarDriven) {
-        if (activitiesLoading) {
+        if (activitiesLoading || !profile) {
           if (!cancelled) setLoading(true);
           return;
         }
-        if (Array.isArray(activities) && activities.length > 0 && profile) {
+        if (Array.isArray(activities) && activities.length > 0) {
           setUsingInferredZones(
             profileNeedsTrainingZones(profile)
             && hasInferredThresholds(enrichProfileForTss(profile, activities)),
@@ -203,6 +203,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
             displayDays: days,
             sportFilter,
+            tssUser: user,
           });
           if (cancelled) return;
           setChartData(series.length ? series : []);
@@ -210,7 +211,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           setLoading(false);
           return;
         }
-        // Calendar finished loading but has no activities — fall through to server API.
+        if (!cancelled) {
+          setChartData([]);
+          setLoading(false);
+        }
+        return;
       }
 
       // Prefer calendar activities when passed without explicit calendar-driven flag.
@@ -222,6 +227,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
         const { series, todayMetrics: tm } = computePmcFromActivities(activities, profile, {
           displayDays: days,
           sportFilter,
+          tssUser: user,
         });
         if (cancelled) return;
         if (series.length) {
@@ -332,7 +338,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
 
     loadData();
     return () => { cancelled = true; };
-  }, [athleteId, timeRange, sportFilter, tssModeTick, activities, profile, activitiesLoading, calendarDriven]);
+  }, [athleteId, timeRange, sportFilter, tssModeTick, activities, profile, activitiesLoading, calendarDriven, user]);
 
   // Next race with a CTL target → draw it as a horizontal reference line so the
   // athlete sees the fitness they're building toward (TrainingPeaks-style).
@@ -421,10 +427,10 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
   const headlinePmc = useMemo(() => {
     // Calendar-driven: always derive KPIs locally with the user's zones (matches mobile app).
     if (calendarDriven && Array.isArray(activities) && activities.length && profile) {
-      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all' });
+      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all', tssUser: user });
       if (tm) return tm;
     }
-    if (headlineMetrics && (
+    if (!calendarDriven && headlineMetrics && (
       headlineMetrics.fitness != null
       || headlineMetrics.form != null
       || headlineMetrics.fatigue != null
@@ -432,11 +438,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
       return headlineMetrics;
     }
     if (Array.isArray(activities) && activities.length && profile) {
-      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all' });
+      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all', tssUser: user });
       if (tm) return tm;
     }
     return todayMetrics;
-  }, [calendarDriven, headlineMetrics, activities, profile, todayMetrics]);
+  }, [calendarDriven, headlineMetrics, activities, profile, todayMetrics, user]);
 
   const insights = useMemo(() => {
     const fitness = Math.round(Number(headlinePmc?.fitness ?? 0));

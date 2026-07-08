@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import SharedSportIcon, { resolveSportKey, SPORT_ICON_COLORS } from '../components/shared/SportIcon';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,7 +21,9 @@ import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLacta
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
+import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { resolveActivityTss } from '../utils/computeTss';
+import { activityOnLocalDay } from '../utils/formFitnessFromActivities';
 import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
@@ -156,8 +158,9 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, userProfile = null }) {
   const { user } = useAuth() || {};
+  const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
   const today   = new Date();
   const isToday = isSameLocalDay(date, today);
@@ -183,7 +186,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
   // first) so the pairing always claims the FIRST activity of the day for
   // that sport, not whichever happened to arrive first from the API.
   const dayActs = dedupeCalendarActivities(
-    activities.filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), date)),
+    activities.filter(a => activityOnLocalDay(a, date)),
   ).sort(compareActivitiesChronologically);
   const dayPlanned = plannedWorkouts.filter(p =>
     String(p.date || '').slice(0, 10) === dateStr
@@ -293,7 +296,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           const dist = Number(act.distance || act.totalDistance || 0);
           const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
           const pwr = Number(act.avgPower || act.average_watts || 0);
-          const tssVal = resolveActivityTss(act, user, { user });
+          const tssVal = resolveActivityTss(act, profile, { user });
           const tssStr = tssVal > 0 ? `${Math.round(tssVal)} TSS` : null;
 
           return (
@@ -380,7 +383,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
         const pwDistStr = formatPlannedDistanceMetres(plannedDistanceMetres(pw), sport);
         const dist    = linkedAct ? Number(linkedAct.distance || linkedAct.totalDistance || 0) : 0;
         const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
-        const actTssVal = linkedAct ? resolveActivityTss(linkedAct, user, { user }) : 0;
+        const actTssVal = linkedAct ? resolveActivityTss(linkedAct, profile, { user }) : 0;
         const actTssStr = actTssVal > 0 ? `${Math.round(actTssVal)} TSS` : null;
         const avgSpeed = linkedAct ? Number(linkedAct.avgSpeed || linkedAct.average_speed || 0) : 0;
         let paceStr = null;
@@ -567,6 +570,7 @@ export default function NativeDashboardPage({
   loading         = false,
   metricsLoading  = false,
   user            = null,
+  userProfile     = null,
   onPlannedWorkoutChanged,        // (updatedOrDeletedId) => void — for parent to refresh
   athleteId       = null,         // selected athlete id (coach view) or own id
   stravaConnected = false,        // gates the manual-sync refresh button
@@ -581,6 +585,10 @@ export default function NativeDashboardPage({
   onTaperApplied = null,          // () => void — refresh plans after taper apply
 }) {
   const navigate      = useNavigate();
+  const fitnessProfile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const today         = new Date();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -1110,6 +1118,7 @@ export default function NativeDashboardPage({
               tests={tests}
               todayMetrics={todayMetrics}
               loading={metricsLoading}
+              userProfile={fitnessProfile}
               kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
             />
           </div>
@@ -1123,7 +1132,7 @@ export default function NativeDashboardPage({
               activities={activities}
               tests={tests}
               sparklineData={sparklineData}
-              userProfile={user}
+              userProfile={fitnessProfile}
               loading={metricsLoading}
               compact
             />
@@ -1139,6 +1148,7 @@ export default function NativeDashboardPage({
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               onPlanWorkout={onPlanWorkout}
+              userProfile={fitnessProfile}
             />
           </div>
 
@@ -1152,6 +1162,7 @@ export default function NativeDashboardPage({
                 plannedWorkouts={plannedWorkouts}
                 dayPlans={dayPlans}
                 periods={periods}
+                userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}
                 onEditPeriod={onPeriodSave ? (arg) => setPeriodEdit(arg) : null}
                 onPlanWorkout={onPlanWorkout}
@@ -1171,7 +1182,7 @@ export default function NativeDashboardPage({
           <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
             <StatusHeroCard
               activities={activities}
-              userProfile={user}
+              userProfile={fitnessProfile}
               todayMetrics={todayMetrics}
               sparklineData={sparklineData}
               loading={metricsLoading}
@@ -1211,6 +1222,7 @@ export default function NativeDashboardPage({
               plannedWorkouts={plannedWorkouts}
               sparklineData={sparklineData}
               tests={tests}
+              userProfile={fitnessProfile}
             />
           </div>
 

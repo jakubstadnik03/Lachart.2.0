@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { resolveActivityTss } from '../../utils/computeTss';
+import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { activityCalendarDateKey, activityOnLocalDay, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
-import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
+import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -60,9 +62,9 @@ function actTss(a) {
   return Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0);
 }
 
-// TSS for an activity: respects power vs hrTSS preference
-function tssOrCompute(a, userProfile, mode) {
-  return resolveActivityTss(a, userProfile, { user: userProfile, mode });
+// TSS for an activity: same resolveActivityTss path as web dashboard / calendar.
+function tssOrCompute(a, profile, tssUser) {
+  return resolveActivityTss(a, profile, { user: tssUser || profile }) || 0;
 }
 
 // Planned workout accessors
@@ -117,14 +119,22 @@ const navBtnStyle = {
   WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
 };
 
-export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [] }) {
+export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], userProfile = null }) {
   const { user } = useAuth() || {};
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
   const [metric, setMetric] = useState('TSS');
-  const [tssDisplayMode, setTssDisplayMode] = useState(() => getTssDisplayMode());
+  const [metricsTick, setMetricsTick] = useState(0);
   React.useEffect(() => {
-    const onTssModeChange = () => setTssDisplayMode(getTssDisplayMode());
-    window.addEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
-    return () => window.removeEventListener(TSS_DISPLAY_MODE_EVENT, onTssModeChange);
+    const bump = () => setMetricsTick((t) => t + 1);
+    window.addEventListener(TSS_DISPLAY_MODE_EVENT, bump);
+    window.addEventListener('activityMetricsUpdated', bump);
+    return () => {
+      window.removeEventListener(TSS_DISPLAY_MODE_EVENT, bump);
+      window.removeEventListener('activityMetricsUpdated', bump);
+    };
   }, []);
   const [ffHelpOpen, setFfHelpOpen] = useState(false);
   // Week offset: 0 = current, +1 = next, -1 = previous, etc. Lets the user
@@ -154,8 +164,10 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const isCurrentWeek = weekOffset === 0;
 
   // ── filter this week ───────────────────────────────────────────────────────
-  const weekActs = activities.filter(a => {
-    const d = new Date(a.date || a.startDate || a.timestamp || 0);
+  const weekActs = activities.filter((a) => {
+    const k = activityCalendarDateKey(a);
+    if (!k) return false;
+    const d = new Date(`${k}T12:00:00`);
     return inWeek(d, monday, sunday);
   });
 
@@ -164,34 +176,15 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     return inWeek(d, monday, sunday);
   });
 
-  // ── TSS from sparklineData (backend-computed, authoritative) ───────────────
-  // sparklineData points have { date: 'YYYY-MM-DD', TSS: number }
-  // Build a map: dateStr → TSS for fast lookup
-  const sparkleTssMap = {};
-  for (const pt of sparklineData) {
-    if (pt.date && pt.TSS != null) {
-      sparkleTssMap[pt.date.slice(0, 10)] = Number(pt.TSS);
-    }
-  }
+  // PMC series — same calendar activities + TSS as web dashboard.
+  const pmcSeries = useMemo(() => {
+    if (!activities?.length || !profile) return sparklineData || [];
+    const { series } = computePmcFromActivities(activities, profile, { tssUser: user });
+    return series?.length ? series : (sparklineData || []);
+  }, [activities, profile, user, sparklineData]);
 
-  // Sum TSS for each day in this week from sparklineData
-  const weekSparkTss = weekDays.reduce((sum, d) => {
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    return sum + (sparkleTssMap[key] || 0);
-  }, 0);
-
-  // Per-day TSS from sparkline (for bars)
-  const daySparkTss = weekDays.map(d => {
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    return sparkleTssMap[key] || 0;
-  });
-
-  // ── Form / Fitness / Fatigue snapshot for the selected week ────────────────
-  // Use the *last* day of the week that has data (capped at today for the
-  // current week — future days have no data yet). Delta is vs the day before
-  // the week started, so users can see how the week shifted things.
   const sparkByDate = {};
-  for (const pt of sparklineData) {
+  for (const pt of pmcSeries) {
     if (pt?.date) sparkByDate[pt.date.slice(0, 10)] = pt;
   }
   const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -226,10 +219,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   // ── totals ─────────────────────────────────────────────────────────────────
   const totalSecs    = weekActs.reduce((s, a) => s + actSecs(a), 0);
   const totalDist    = weekActs.reduce((s, a) => s + actDist(a), 0);
-  // Use sparkline TSS when available (has Strava TSS, FIT TSS, all computed server-side)
-  // Fall back to activity-level tss field, then client-side computed TSS using lactate-test thresholds
-  const activityTss  = weekActs.reduce((s, a) => s + tssOrCompute(a, user, tssDisplayMode), 0);
-  const totalTss     = weekSparkTss > 0 ? weekSparkTss : activityTss;
+  const totalTss     = Math.round(weekActs.reduce((s, a) => s + tssOrCompute(a, profile, user), 0)) + metricsTick * 0;
   const sessions     = weekActs.length;
 
   const plannedTotalTss  = weekPlanned.reduce((s, p) => s + pwTss(p), 0);
@@ -240,17 +230,14 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const getVal = (a) => metric === 'TSS' ? actTss(a) : metric === 'Time' ? actSecs(a) : actDist(a);
   const getPw  = (p) => metric === 'TSS' ? pwTss(p)  : metric === 'Time' ? pwSecs(p)  : pwDist(p);
 
-  const dayCompleted = weekDays.map((d, i) => {
+  const dayCompleted = weekDays.map((d) => {
     if (metric === 'TSS') {
-      // Use sparkline TSS when available (more accurate — includes server-computed values)
-      if (daySparkTss[i] > 0) return daySparkTss[i];
-      // Fall back to stored or client-computed activity TSS
       return weekActs
-        .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
-        .reduce((s, a) => s + tssOrCompute(a, user, tssDisplayMode), 0);
+        .filter((a) => activityOnLocalDay(a, d))
+        .reduce((s, a) => s + tssOrCompute(a, profile, user), 0);
     }
     return weekActs
-      .filter(a => isSameLocalDay(new Date(a.date || a.startDate || a.timestamp || 0), d))
+      .filter((a) => activityOnLocalDay(a, d))
       .reduce((s, a) => s + getVal(a), 0);
   });
   const dayPlanned = weekDays.map(d =>

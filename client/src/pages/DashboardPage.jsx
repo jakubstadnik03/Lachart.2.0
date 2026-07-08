@@ -890,7 +890,7 @@ export default function DashboardPage() {
           ...a,
           category: a.category || null,
           // Strava uses startDate; all rendering/sorting code reads .date
-          date: a.date || a.startDate || a.timestamp || null,
+          date: a.date || a.startDate || a.timestamp || a.start_time || null,
           // titleManual (user rename) takes precedence over the original
           // Strava name — otherwise the rename done from CalendarView never
           // shows up in TrainingHistory / TrainingStats / TrainingGraph.
@@ -1857,7 +1857,7 @@ export default function DashboardPage() {
       setFormMetricsLoading(false);
       return false;
     }
-    const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile);
+    const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile, { tssUser: userRef.current });
     if (!tm) {
       setFormMetricsLoading(false);
       return false;
@@ -1877,7 +1877,7 @@ export default function DashboardPage() {
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
     if (applyCalendarFormFitness()) return;
-    // Prefer calendar-derived PMC on web too — server API can use different TSS logic.
+    // Calendar-driven: never paint stale server PMC when calendar activities exist.
     if (calendarDataRef.current?.length) {
       setFormMetricsLoading(false);
       return;
@@ -2424,6 +2424,7 @@ export default function DashboardPage() {
         loading={calendarLoading && !hasCalendarData}
         metricsLoading={formMetricsLoading && !hasCalendarData}
         user={user}
+        userProfile={fitnessProfile}
         athleteId={dashboardDataAthleteId}
         onPlannedWorkoutChanged={({ type, planned, id }) => {
           if (type === 'updated' && planned?._id) {
@@ -2731,6 +2732,7 @@ export default function DashboardPage() {
           <WeeklyCalendar
             key={`wc-${dashboardDataAthleteId}`}
             selectedAthleteId={dashboardDataAthleteId}
+            userProfile={fitnessProfile}
             activities={calendarData || []}
             activitiesLoading={calendarLoading && !hasCalendarData}
             onSelectActivity={(activity) => {

@@ -2,7 +2,12 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { resolveActivityTss } from '../../utils/computeTss';
-import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
+import {
+  activityCalendarDateKey,
+  computePmcFromActivities,
+  localWeekStartKey,
+} from '../../utils/formFitnessFromActivities';
+import { mergeProfileZones, enrichProfileForTss } from '../../utils/inferThresholdsFromActivities';
 import { getMonthlyPowerAnalysis } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
@@ -187,7 +192,7 @@ function fmtSportDuration(sec) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function computeSportBucketStats(acts, userProfile) {
+function computeSportBucketStats(acts, profile, tssUser = null) {
   const byBucket = {};
   const empty = () => ({
     sec: 0,
@@ -215,7 +220,7 @@ function computeSportBucketStats(acts, userProfile) {
     st.count += 1;
     const dist = Number(act.distance || 0);
     if (dist > 0) st.dist += dist;
-    const tss = computeTssForAct(act, userProfile);
+    const tss = computeTssForAct(act, profile, tssUser);
     if (tss > 0) st.tss += tss;
 
     const ps = profileSportFromActivity(act.sport);
@@ -380,21 +385,19 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
   );
 }
 
-function computeTssForAct(act, profile) {
+function computeTssForAct(act, profile, tssUser = null) {
   if (!profile) return 0;
-  return resolveActivityTss(act, profile, { user: profile }) || 0;
+  return resolveActivityTss(act, profile, { user: tssUser || profile }) || 0;
 }
 
-/** Return ISO week number (Monday-based) and year as a string key "YYYY-WW" */
-function isoWeekKey(date) {
+/** @deprecated use localWeekStartKey — kept for compare labels that need ISO week number */
+function isoWeekNumber(date) {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  // Set to nearest Thursday: current date + 4 - current day number (Mon=1)
-  const day = d.getDay() || 7; // convert Sunday(0) to 7
+  const day = d.getDay() || 7;
   d.setDate(d.getDate() + 4 - day);
   const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNum = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getFullYear()}-${String(weekNum).padStart(2, '0')}`;
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 // Fallback labels used only when the component has no access to the
@@ -530,6 +533,16 @@ export default function CalendarPeriodStats({
   athleteId = null,
 }) {
   const { getCategory } = useCategories();
+  const effectiveProfile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
+  );
+  const tssProfile = useMemo(
+    () => (effectiveProfile && activities?.length
+      ? enrichProfileForTss(effectiveProfile, activities)
+      : effectiveProfile),
+    [effectiveProfile, activities],
+  );
   // Server-side authoritative CTL/ATL/TSB series. Same data the native
   // dashboard and the Form/Fitness card use, so the numbers on the Calendar
   // Charts tab match what the user sees on the Dashboard. Falls back to a
@@ -659,9 +672,7 @@ export default function CalendarPeriodStats({
     const endK = getLocalDateString(period.periodEnd);
     if (!startK || !endK) return [];
     return activities.filter((act) => {
-      const raw = act.date || act.timestamp || act.startDate || act.start_time;
-      if (!raw) return false;
-      const k = getLocalDateString(raw);
+      const k = activityCalendarDateKey(act);
       return k && k >= startK && k <= endK;
     });
   }, [activities, period]);
@@ -701,7 +712,7 @@ export default function CalendarPeriodStats({
     filtered.forEach((act) => {
       const sec = actDurationSec(act);
       const dist = Number(act.distance || 0);
-      const tssVal = computeTssForAct(act, userProfile);
+      const tssVal = computeTssForAct(act, tssProfile, user);
       totalSec += sec;
       totalDist += dist;
       if (tssVal > 0) totalTss += tssVal;
@@ -724,8 +735,7 @@ export default function CalendarPeriodStats({
         if (sec > 0) maxDurAct = act;
       }
 
-      const raw = act.date || act.timestamp || act.startDate;
-      const dk = getLocalDateString(raw);
+      const dk = activityCalendarDateKey(act);
       if (dk) {
         byDaySec.set(dk, (byDaySec.get(dk) || 0) + sec);
         byDayCount.set(dk, (byDayCount.get(dk) || 0) + 1);
@@ -735,9 +745,9 @@ export default function CalendarPeriodStats({
         byDaySportSec.set(daySportKey, (byDaySportSec.get(daySportKey) || 0) + sec);
       }
 
-      if (userProfile && ps) {
-        const powerZones = userProfile?.powerZones?.[ps] || {};
-        const hrZones = userProfile?.heartRateZones?.[ps] || {};
+      if (effectiveProfile && ps) {
+        const powerZones = effectiveProfile?.powerZones?.[ps] || {};
+        const hrZones = effectiveProfile?.heartRateZones?.[ps] || {};
         const metric = getPowerOrPaceMetric(act, ps);
         if (metric != null && hasZoneDefinitions(powerZones)) {
           const zk = findZoneKeyForValue(metric, powerZones);
@@ -785,11 +795,11 @@ export default function CalendarPeriodStats({
     const dailyHoursSwim = dayKeys.map((k) => +((byDaySportSec.get(`${k}-swim`) || 0) / 3600).toFixed(2));
 
     const zoneSportsWithPower = PROFILE_SPORTS.filter((ps) => {
-      if (!hasZoneDefinitions(userProfile?.powerZones?.[ps])) return false;
+      if (!hasZoneDefinitions(effectiveProfile?.powerZones?.[ps])) return false;
       return ZONE_KEYS.some((zk) => powerZoneSec[ps][zk] > 0);
     });
     const zoneSportsWithHr = PROFILE_SPORTS.filter((ps) => {
-      if (!hasZoneDefinitions(userProfile?.heartRateZones?.[ps])) return false;
+      if (!hasZoneDefinitions(effectiveProfile?.heartRateZones?.[ps])) return false;
       return ZONE_KEYS.some((zk) => hrZoneSec[ps][zk] > 0);
     });
 
@@ -830,27 +840,26 @@ export default function CalendarPeriodStats({
       intensityModSec,
       intensityHardSec,
     };
-  }, [filtered, period?.periodStart, period?.periodEnd, userProfile]);
+  }, [filtered, period?.periodStart, period?.periodEnd, tssProfile, user, effectiveProfile]);
 
   // Weekly trend for the last 12 completed weeks + current week
   const weeklyTrend = useMemo(() => {
     if (!activities.length) return [];
 
-    // Determine current period's week key for highlighting
+    // Determine current period's week key for highlighting (Monday-based, matches dashboard)
     const currentPeriodWeekKey = period?.periodStart
-      ? isoWeekKey(period.periodStart)
+      ? localWeekStartKey(period.periodStart)
       : null;
 
     // Build a map of weekKey -> { tss, hours }
     const weekMap = new Map();
     activities.forEach((act) => {
-      const raw = act.date || act.timestamp || act.startDate || act.start_time;
-      if (!raw) return;
-      const wk = isoWeekKey(raw);
+      const dk = activityCalendarDateKey(act);
+      const wk = dk ? localWeekStartKey(`${dk}T12:00:00`) : null;
       if (!wk) return;
-      if (!weekMap.has(wk)) weekMap.set(wk, { tss: 0, hours: 0, weekNum: 0 });
+      if (!weekMap.has(wk)) weekMap.set(wk, { tss: 0, hours: 0 });
       const entry = weekMap.get(wk);
-      const tssVal = computeTssForAct(act, userProfile);
+      const tssVal = computeTssForAct(act, tssProfile, user);
       if (tssVal > 0) entry.tss += tssVal;
       entry.hours += actDurationSec(act) / 3600;
     });
@@ -863,16 +872,19 @@ export default function CalendarPeriodStats({
 
     return recentKeys.map((wk) => {
       const entry = weekMap.get(wk) || { tss: 0, hours: 0 };
-      const weekNum = Number(wk.split('-')[1]);
+      const ws = new Date(`${wk}T12:00:00`);
+      const label = Number.isNaN(ws.getTime())
+        ? wk
+        : ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       return {
         weekKey: wk,
-        label: `W${weekNum}`,
+        label,
         tss: Math.round(entry.tss),
         hours: +entry.hours.toFixed(1),
         isCurrent: wk === currentPeriodWeekKey,
       };
     });
-  }, [activities, userProfile, period?.periodStart]);
+  }, [activities, tssProfile, user, period?.periodStart]);
 
   const weekComparison = useMemo(() => {
     if (periodView !== 'week') return null;
@@ -902,7 +914,7 @@ export default function CalendarPeriodStats({
       const ps = profileSportFromActivity(act.sport) || 'other';
       if (dist > 0) prevDistByProfileSport[ps] = (prevDistByProfileSport[ps] || 0) + dist;
 
-      const tssVal = computeTssForAct(act, userProfile);
+      const tssVal = computeTssForAct(act, tssProfile, user);
       if (tssVal > 0) prevTss += tssVal;
     });
 
@@ -918,7 +930,7 @@ export default function CalendarPeriodStats({
       overload,
       prevDistByProfileSport,
     };
-  }, [periodView, period?.periodStart, period?.periodEnd, activities, userProfile, aggregates.totalTss]);
+  }, [periodView, period?.periodStart, period?.periodEnd, activities, tssProfile, user, aggregates.totalTss]);
 
   const prevPeriodBounds = useMemo(() => {
     if (!period?.periodStart || !period?.periodEnd) return null;
@@ -941,22 +953,25 @@ export default function CalendarPeriodStats({
     const e = getLocalDateString(prevPeriodBounds.end);
     if (!s || !e) return [];
     return activities.filter((act) => {
-      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      const k = activityCalendarDateKey(act);
       return k && k >= s && k <= e;
     });
   }, [activities, prevPeriodBounds]);
 
   const sportSplitStats = useMemo(() => ({
-    current: computeSportBucketStats(filtered, userProfile),
-    previous: computeSportBucketStats(filteredPrevPeriod, userProfile),
+    current: computeSportBucketStats(filtered, tssProfile, user),
+    previous: computeSportBucketStats(filteredPrevPeriod, tssProfile, user),
     prevLabel: prevPeriodBounds?.label || 'previous period',
-  }), [filtered, filteredPrevPeriod, userProfile, prevPeriodBounds?.label]);
+  }), [filtered, filteredPrevPeriod, tssProfile, user, prevPeriodBounds?.label]);
 
   // Performance Management Chart (CTL / ATL / TSB).
-  // CTL/ATL/TSB from the same activities + resolveActivityTss as the calendar weekly summary.
+  // CTL/ATL/TSB from the same activities + resolveActivityTss as the dashboard.
   const pmc = useMemo(() => {
-    if (!activities?.length || !userProfile) return null;
-    const { series } = computePmcFromActivities(activities, userProfile, { displayDays: 180 });
+    if (!activities?.length || !effectiveProfile) return null;
+    const { series } = computePmcFromActivities(activities, effectiveProfile, {
+      displayDays: 180,
+      tssUser: user,
+    });
     if (!series.length) return null;
     return series.map((d) => ({
       date: d.date,
@@ -965,7 +980,7 @@ export default function CalendarPeriodStats({
       tsb: d.Form,
       tss: d.TSS,
     }));
-  }, [activities, userProfile]);
+  }, [activities, effectiveProfile, user]);
 
   const pmcChartData = useMemo(
     () => (pmc?.length ? pmc.slice(-90) : []),
@@ -1297,10 +1312,10 @@ export default function CalendarPeriodStats({
     const names = hasPower ? POWER_ZONE_NAMES : HR_ZONE_NAMES;
     const unit = hasPower ? 'W' : 'bpm';
     const zoneDefs = hasPower
-      ? (userProfile?.powerZones?.cycling || null)
-      : (userProfile?.heartRateZones?.cycling
-        || userProfile?.heartRateZones?.running
-        || userProfile?.heartRateZones?.swimming
+      ? (effectiveProfile?.powerZones?.cycling || null)
+      : (effectiveProfile?.heartRateZones?.cycling
+        || effectiveProfile?.heartRateZones?.running
+        || effectiveProfile?.heartRateZones?.swimming
         || null);
     const sourceLabel = hasPower ? 'Power zones' : 'Heart rate zones';
     const fills = hasPower
@@ -1350,7 +1365,7 @@ export default function CalendarPeriodStats({
         },
       ],
     };
-  }, [aggregates, serverZoneSecAll, userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [aggregates, serverZoneSecAll, effectiveProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {
@@ -1370,8 +1385,8 @@ export default function CalendarPeriodStats({
     const hrTotal = ZONE_KEYS.reduce((s, k) => s + (hrSec[k] || 0), 0);
 
     // Zone boundary ranges (only meaningful for a single sport).
-    const powerDefs = zoneSport === 'bike' ? (userProfile?.powerZones?.cycling || null) : null;
-    const hrDefs = profSport ? (userProfile?.heartRateZones?.[profSport] || null) : null;
+    const powerDefs = zoneSport === 'bike' ? (effectiveProfile?.powerZones?.cycling || null) : null;
+    const hrDefs = profSport ? (effectiveProfile?.heartRateZones?.[profSport] || null) : null;
     const rangeStr = (defs, zk, unit) => {
       if (!defs || !defs[zk]) return '';
       const mn = parseZoneNumber(defs[zk]?.min);
@@ -1447,7 +1462,7 @@ export default function CalendarPeriodStats({
       powerTotalSec: powerTotal,
       hrTotalSec: hrTotal,
     };
-  }, [zoneSport, periodView, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll, userProfile, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneSport, periodView, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll, effectiveProfile, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity effort scatter / timeline option
   const effortTimelineOption = useMemo(() => {
@@ -1457,7 +1472,7 @@ export default function CalendarPeriodStats({
       const raw = act.date || act.timestamp || act.startDate;
       const d = raw ? new Date(raw) : null;
       if (!d || Number.isNaN(d.getTime())) return null;
-      const tss = computeTssForAct(act, userProfile);
+      const tss = computeTssForAct(act, tssProfile, user);
       const sec = actDurationSec(act);
       const yVal = tss > 0 ? tss : sec > 0 ? +(sec / 3600).toFixed(2) : 0;
       const bucket = sportBucket(act.sport);
@@ -1524,7 +1539,7 @@ export default function CalendarPeriodStats({
         },
       ],
     };
-  }, [filtered, userProfile]);
+  }, [filtered, tssProfile, user]);
 
   // --- Zone polarization computation ---
   const zonePolarization = useMemo(() => {
@@ -1580,7 +1595,7 @@ export default function CalendarPeriodStats({
     const s = getLocalDateString(compareBounds.start);
     const e = getLocalDateString(compareBounds.end);
     return activities.filter((act) => {
-      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      const k = activityCalendarDateKey(act);
       return k && k >= s && k <= e;
     });
   }, [activities, compareBounds]);
@@ -1589,7 +1604,7 @@ export default function CalendarPeriodStats({
     const s = getLocalDateString(compareBoundsLY.start);
     const e = getLocalDateString(compareBoundsLY.end);
     return activities.filter((act) => {
-      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      const k = activityCalendarDateKey(act);
       return k && k >= s && k <= e;
     });
   }, [activities, compareBoundsLY]);
@@ -1602,12 +1617,12 @@ export default function CalendarPeriodStats({
       const sec = actDurationSec(act);
       totalSec += sec;
       totalDist += Number(act.distance || 0);
-      const tss = computeTssForAct(act, userProfile);
+      const tss = computeTssForAct(act, tssProfile, user);
       if (tss > 0) totalTss += tss;
       bySportSec[sportBucket(act.sport)] = (bySportSec[sportBucket(act.sport)] || 0) + sec;
     });
     return { count, totalSec, totalDist, totalTss, bySportSec };
-  }, [filteredCmpThis, userProfile]);
+  }, [filteredCmpThis, tssProfile, user]);
 
   const aggCmpPrev = useMemo(() => {
     let count = 0, totalSec = 0, totalDist = 0, totalTss = 0;
@@ -1617,18 +1632,18 @@ export default function CalendarPeriodStats({
       const sec = actDurationSec(act);
       totalSec += sec;
       totalDist += Number(act.distance || 0);
-      const tss = computeTssForAct(act, userProfile);
+      const tss = computeTssForAct(act, tssProfile, user);
       if (tss > 0) totalTss += tss;
       bySportSec[sportBucket(act.sport)] = (bySportSec[sportBucket(act.sport)] || 0) + sec;
     });
     return { count, totalSec, totalDist, totalTss, bySportSec };
-  }, [filteredCmpPrev, userProfile]);
+  }, [filteredCmpPrev, tssProfile, user]);
 
   const cmpLabel = useMemo(() => {
     const d = compareBounds.start;
     if (compareMode === 'week') {
       const e = compareBounds.end;
-      const wn = isoWeekKey(d)?.split('-')[1];
+      const wn = isoWeekNumber(d);
       return `W${wn} · ${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
     }
     return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -1658,12 +1673,12 @@ export default function CalendarPeriodStats({
       }
       const mapThis = new Map();
       filteredCmpThis.forEach((act) => {
-        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        const k = activityCalendarDateKey(act);
         if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
       });
       const mapLY = new Map();
       filteredCmpPrev.forEach((act) => {
-        const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+        const k = activityCalendarDateKey(act);
         if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
       });
       const curH = dayKeysThis.map((k) => +((mapThis.get(k) || 0) / 3600).toFixed(2));
@@ -1700,12 +1715,12 @@ export default function CalendarPeriodStats({
 
     const mapThis = new Map();
     filteredCmpThis.forEach((act) => {
-      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      const k = activityCalendarDateKey(act);
       if (k) mapThis.set(k, (mapThis.get(k) || 0) + actDurationSec(act));
     });
     const mapLY = new Map();
     filteredCmpPrev.forEach((act) => {
-      const k = getLocalDateString(act.date || act.timestamp || act.startDate || act.start_time);
+      const k = activityCalendarDateKey(act);
       if (k) mapLY.set(k, (mapLY.get(k) || 0) + actDurationSec(act));
     });
     const sumRange = (map, s, e) => {
@@ -2370,7 +2385,7 @@ export default function CalendarPeriodStats({
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {visibleActs.map((act, idx) => {
                       const sec = actDurationSec(act);
-                      const tss = computeTssForAct(act, userProfile);
+                      const tss = computeTssForAct(act, tssProfile, user);
                       const dist = Number(act.distance || 0);
                       const bucket = sportBucket(act.sport);
                       const icon = sportIconSrc(bucket);
@@ -2693,7 +2708,7 @@ export default function CalendarPeriodStats({
                         .sort((a, b) => new Date(b.date || b.timestamp || b.startDate) - new Date(a.date || a.timestamp || a.startDate))
                         .map((act, idx) => {
                           const sec = actDurationSec(act);
-                          const tss = computeTssForAct(act, userProfile);
+                          const tss = computeTssForAct(act, tssProfile, user);
                           const dist = Number(act.distance || 0);
                           const b = sportBucket(act.sport);
                           return (

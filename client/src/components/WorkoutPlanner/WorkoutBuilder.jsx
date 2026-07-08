@@ -268,6 +268,59 @@ export function resolvePaceForSport(target, context) {
   return null;
 }
 
+/** Estimate chart duration from distance + intensity target (run/swim). */
+export function estimateSecondsFromDistance(meters, target, context) {
+  if (!meters || meters <= 0) return 0;
+  const pi = resolvePaceForSport(target, context);
+  if (pi?.pace) {
+    const unitM = context.sport === 'swim' ? 100 : 1000;
+    return Math.round((meters / unitM) * pi.pace);
+  }
+  return Math.round(meters * (context.sport === 'swim' ? 1.2 : 0.36));
+}
+
+/** Estimate distance from duration + e-pace (run/swim time-based steps). */
+export function estimateDistanceFromDuration(durationSeconds, target, context) {
+  if (!durationSeconds || durationSeconds <= 0) return 0;
+  const pi = resolvePaceForSport(target, context);
+  if (!pi?.pace) return 0;
+  const unitM = context.sport === 'swim' ? 100 : 1000;
+  return Math.round((durationSeconds / pi.pace) * unitM);
+}
+
+/** Actual distance on step, or e-pace estimate for time-based run/swim intervals. */
+export function resolveStepDistanceMeters(step, context, durationSeconds = null) {
+  const dur = durationSeconds ?? step?.durationSeconds ?? 0;
+  if (step?.durationType === 'distance' && Number(step.distanceMeters) > 0) {
+    return Number(step.distanceMeters);
+  }
+  if (context?.sport === 'run' || context?.sport === 'swim') {
+    return estimateDistanceFromDuration(dur, step?.powerTarget, context);
+  }
+  return 0;
+}
+
+function isDistancePreviewSport(context) {
+  return context?.sport === 'run' || context?.sport === 'swim';
+}
+
+/** Primary label on preview bars — distance for run/swim, duration for bike. */
+export function formatStepPreviewLabel(step, context, durationSeconds = null) {
+  const dur = durationSeconds ?? step?.durationSeconds ?? 0;
+  if (isDistancePreviewSport(context)) {
+    const meters = resolveStepDistanceMeters(step, context, dur);
+    if (meters > 0) return fmtDistance(meters);
+  }
+  return fmtDuration(dur);
+}
+
+/** Secondary label under bar — elapsed time for run/swim distance preview. */
+export function formatStepPreviewSubLabel(step, context, durationSeconds = null) {
+  const dur = durationSeconds ?? step?.durationSeconds ?? 0;
+  if (!isDistancePreviewSport(context) || dur <= 0) return null;
+  return fmtDuration(dur);
+}
+
 export function formatTargetLabel(target) {
   if (!target || target.type === 'open') return '';
   if (target.type === 'lt1') return 'LT1';
@@ -573,11 +626,34 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
             <g
               key={i}
               style={{ cursor: onStepClick ? 'pointer' : 'default' }}
-              onMouseEnter={() => { if (!dragState) setHoveredInfo({ xPct: (xc/W)*100, s, watts, powerLabel, dur: fmtDuration(dur), barH }); }}
+              onMouseEnter={() => {
+                if (dragState) return;
+                const distM = resolveStepDistanceMeters(s, context, dur);
+                setHoveredInfo({
+                  xPct: (xc / W) * 100,
+                  s,
+                  watts,
+                  powerLabel,
+                  dur: fmtDuration(dur),
+                  distM,
+                  previewLabel: formatStepPreviewLabel(s, context, dur),
+                  barH,
+                });
+              }}
               onTouchStart={(e) => {
                 // Show tooltip on tap (mobile)
                 e.preventDefault();
-                setHoveredInfo({ xPct: (xc/W)*100, s, watts, powerLabel, dur: fmtDuration(dur), barH });
+                const distM = resolveStepDistanceMeters(s, context, dur);
+                setHoveredInfo({
+                  xPct: (xc / W) * 100,
+                  s,
+                  watts,
+                  powerLabel,
+                  dur: fmtDuration(dur),
+                  distM,
+                  previewLabel: formatStepPreviewLabel(s, context, dur),
+                  barH,
+                });
               }}
               onTouchEnd={(e) => {
                 e.preventDefault();
@@ -589,12 +665,23 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
             >
               {shape}
 
-              {/* Duration label above bar */}
-              {w > 32 && (
-                <text x={xc} y={Math.max(H-barH-4, 10)} textAnchor="middle" fontSize={10} fill={isDragging ? '#1e293b' : '#475569'} fontWeight="600" fontFamily="system-ui,sans-serif">
-                  {fmtDuration(dur)}
-                </text>
-              )}
+              {/* Duration / distance label above bar */}
+              {w > 32 && (() => {
+                const primary = formatStepPreviewLabel(s, context, dur);
+                const sub = formatStepPreviewSubLabel(s, context, dur);
+                return (
+                  <>
+                    <text x={xc} y={Math.max(H - barH - (sub ? 12 : 4), 10)} textAnchor="middle" fontSize={10} fill={isDragging ? '#1e293b' : '#475569'} fontWeight="600" fontFamily="system-ui,sans-serif">
+                      {primary}
+                    </text>
+                    {sub && w > 44 && (
+                      <text x={xc} y={Math.max(H - barH - 2, 18)} textAnchor="middle" fontSize={8} fill={isDragging ? '#64748b' : '#94a3b8'} fontWeight="500" fontFamily="system-ui,sans-serif">
+                        {sub}
+                      </text>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Power label inside bar */}
               {w > 28 && barH > 18 && powerLabel && (
@@ -675,16 +762,33 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
-                  <div className="text-center">
-                    <div className="text-[10px] text-slate-400 font-medium">
-                      {hoveredInfo.s.durationType === 'distance' ? 'Distance' : 'Duration'}
-                    </div>
-                    <div className="font-bold text-slate-800 text-sm">
-                      {hoveredInfo.s.durationType === 'distance'
-                        ? fmtDistance(hoveredInfo.s.distanceMeters || 0)
-                        : hoveredInfo.dur}
-                    </div>
-                  </div>
+                  {(() => {
+                    const isDistSport = context.sport === 'run' || context.sport === 'swim';
+                    const distM = hoveredInfo.distM || 0;
+                    const showDist = isDistSport && distM > 0;
+                    return (
+                      <>
+                        {showDist && (
+                          <div className="text-center">
+                            <div className="text-[10px] text-slate-400 font-medium">Distance</div>
+                            <div className="font-bold text-slate-800 text-sm">{fmtDistance(distM)}</div>
+                          </div>
+                        )}
+                        <div className="text-center">
+                          <div className="text-[10px] text-slate-400 font-medium">
+                            {showDist ? 'Duration' : (hoveredInfo.s.durationType === 'distance' ? 'Distance' : 'Duration')}
+                          </div>
+                          <div className="font-bold text-slate-800 text-sm">
+                            {showDist
+                              ? hoveredInfo.dur
+                              : hoveredInfo.s.durationType === 'distance'
+                                ? fmtDistance(hoveredInfo.s.distanceMeters || 0)
+                                : hoveredInfo.dur}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                   {hoveredInfo.powerLabel && (() => {
                     const paceInfo = resolvePaceForSport(hoveredInfo.s.powerTarget, context);
                     const isBike = !paceInfo && (context.sport === 'bike' || !context.sport);
@@ -715,27 +819,34 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
       })()}
 
       {/* Live drag label */}
-      {dragState && dragPreview && (
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 mb-1 bg-violet-700 text-white text-[10px] font-bold rounded px-2 py-0.5 pointer-events-none z-20">
-          {fmtDuration(dragPreview.newDur)}
-        </div>
-      )}
+      {dragState && dragPreview && (() => {
+        const step = expanded.find((x) => x.clientId === dragPreview.clientId);
+        return (
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 mb-1 bg-violet-700 text-white text-[10px] font-bold rounded px-2 py-0.5 pointer-events-none z-20">
+            {step
+              ? formatStepPreviewLabel(step, context, dragPreview.newDur)
+              : fmtDuration(dragPreview.newDur)}
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
 // ─── Workout Summary (duration, TSS, zone time) ──────────────────────────────
 function WorkoutSummary({ steps, context }) {
-  const { ftp = 250, lt1Power, lt2Power, cyclingZones } = context;
+  const { ftp = 250, lt1Power, lt2Power, cyclingZones, sport } = context;
+  const isDistSport = sport === 'run' || sport === 'swim';
   // Prefer profile lt1/lt2, then explicit context values, then calculated fallback
   const lt1 = cyclingZones?.lt1 || lt1Power || ftp * 0.75;
   const lt2 = cyclingZones?.lt2 || lt2Power || ftp;
 
   const stats = useMemo(() => {
     const exp = expandSteps(steps);
-    let totalSecs = 0, tssSum = 0, workSecs = 0, belowLt1 = 0, lt1Zone = 0, lt2Zone = 0, wattsSec = 0;
+    let totalSecs = 0, totalDist = 0, tssSum = 0, workSecs = 0, belowLt1 = 0, lt1Zone = 0, lt2Zone = 0, wattsSec = 0;
     exp.forEach(s => {
       const dur = s.durationSeconds || 0; totalSecs += dur;
+      if (isDistSport) totalDist += resolveStepDistanceMeters(s, context);
       const w   = resolveTargetWatts(s.powerTarget, context);
       tssSum   += (dur / 3600) * (w / (ftp||250)) ** 2 * 100;
       wattsSec += w * dur;
@@ -743,21 +854,30 @@ function WorkoutSummary({ steps, context }) {
       if (w >= lt2) lt2Zone += dur; else if (w >= lt1) lt1Zone += dur; else belowLt1 += dur;
     });
     const avgPower = totalSecs > 0 ? Math.round(wattsSec / totalSecs) : null;
-    return { totalSecs, tss: Math.round(tssSum), workSecs, belowLt1, lt1Zone, lt2Zone, avgPower };
-  }, [steps, ftp, lt1, lt2]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { totalSecs, totalDist, tss: Math.round(tssSum), workSecs, belowLt1, lt1Zone, lt2Zone, avgPower };
+  }, [steps, ftp, lt1, lt2, context, isDistSport]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!stats.totalSecs) return null;
   const T = stats.totalSecs;
 
+  const summaryTiles = isDistSport
+    ? [
+        ['Distance', stats.totalDist > 0 ? fmtDistance(stats.totalDist) : '—'],
+        ['Duration', fmtShort(stats.totalSecs)],
+        ['Est. TSS', `~${stats.tss}`],
+        ['Work time', fmtShort(stats.workSecs)],
+      ]
+    : [
+        ['Duration', fmtShort(stats.totalSecs)],
+        ['Est. TSS', `~${stats.tss}`],
+        ['Work time', fmtShort(stats.workSecs)],
+        ['Avg power', stats.avgPower ? `~${stats.avgPower} W` : '—'],
+      ];
+
   return (
     <div>
-      <div className="grid grid-cols-4 gap-2 text-center mb-2">
-        {[
-          ['Duration',  fmtShort(stats.totalSecs)],
-          ['Est. TSS',  `~${stats.tss}`],
-          ['Work time', fmtShort(stats.workSecs)],
-          ['Avg power', stats.avgPower ? `~${stats.avgPower} W` : '—'],
-        ].map(([label, val]) => (
+      <div className={`grid gap-2 text-center mb-2 ${summaryTiles.length === 4 ? 'grid-cols-4' : 'grid-cols-4'}`}>
+        {summaryTiles.map(([label, val]) => (
           <div key={label}>
             <div className="text-[9px] text-slate-400 uppercase tracking-wide">{label}</div>
             <div className="text-sm font-bold text-slate-700">{val}</div>
@@ -778,6 +898,40 @@ function WorkoutSummary({ steps, context }) {
   );
 }
 
+function buildQuickIntervalStep({ stepType, durMode, durStr, distStr, target, context, groupMeta = {} }) {
+  const base = {
+    clientId: uid(),
+    stepType,
+    powerTarget: { ...target },
+    ...groupMeta,
+  };
+  if (durMode === 'distance') {
+    const meters = parseDistance(distStr);
+    const durationSeconds = estimateSecondsFromDistance(meters, target, context);
+    if (!meters || !durationSeconds) return null;
+    return { ...base, durationType: 'distance', distanceMeters: meters, durationSeconds };
+  }
+  const durationSeconds = parseDuration(durStr);
+  if (!durationSeconds) return null;
+  return { ...base, durationSeconds };
+}
+
+function intervalStepSeconds(durMode, durStr, distStr, target, context) {
+  if (durMode === 'distance') {
+    return estimateSecondsFromDistance(parseDistance(distStr), target, context);
+  }
+  return parseDuration(durStr);
+}
+
+function formatIntervalStepLabel(durMode, durStr, distStr) {
+  if (durMode === 'distance') {
+    const m = parseDistance(distStr);
+    return m > 0 ? fmtDistance(m) : distStr;
+  }
+  const s = parseDuration(durStr);
+  return s > 0 ? fmtDuration(s) : durStr;
+}
+
 // ─── Quick Interval Block Builder ────────────────────────────────────────────
 
 /**
@@ -791,15 +945,37 @@ function WorkoutSummary({ steps, context }) {
  * Hoisting it here keeps the function identity stable across renders, so
  * inputs keep their focus and selection while you type.
  */
-function TargetRow({ context, label, color, dur, setDur, target, setTarget }) {
+function TargetRow({ context, label, color, dur, setDur, dist, setDist, durMode, setDurMode, target, setTarget }) {
+  const canDist = context.sport === 'run' || context.sport === 'swim';
+  const isDistMode = canDist && durMode === 'distance';
   const showOverride = ['lt1', 'lt2', 'zone', 'percent_ftp', 'percent_lt1', 'percent_lt2'].includes(target.type);
   const calcW = showOverride ? Math.round(resolveTargetWatts(target, context)) : null;
+  const paceInfo = showOverride ? resolvePaceForSport(target, context) : null;
   const hasOverride = target.override != null;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className={`text-xs font-semibold w-16 shrink-0 ${color}`}>{label}</span>
-      <input type="text" value={dur} onChange={e=>setDur(e.target.value)}
-        className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="mm:ss"/>
+      <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+        {isDistMode ? (
+          <input type="text" value={dist} onChange={e=>setDist(e.target.value)}
+            className="w-20 text-xs text-center border-0 px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-300 bg-white" placeholder="400m"/>
+        ) : (
+          <input type="text" value={dur} onChange={e=>setDur(e.target.value)}
+            className="w-16 text-xs text-center border-0 px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-300 bg-white" placeholder="mm:ss"/>
+        )}
+      </div>
+      {canDist && (
+        <button
+          type="button"
+          onClick={() => setDurMode(isDistMode ? 'time' : 'distance')}
+          title={isDistMode ? 'Switch to time' : 'Switch to distance'}
+          className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all ${
+            isDistMode ? 'bg-sky-50 border-sky-300 text-sky-600' : 'border-slate-200 text-slate-500'
+          }`}
+        >
+          {isDistMode ? 'dist' : 'time'}
+        </button>
+      )}
       <span className="text-xs text-slate-400">@</span>
       <select value={target.type} onChange={e=>setTarget({type:e.target.value, value:target.value||4, override:undefined})}
         className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
@@ -825,8 +1001,8 @@ function TargetRow({ context, label, color, dur, setDur, target, setTarget }) {
           <span className="text-xs text-slate-400">W</span>
         </div>
       )}
-      {/* Editable exact-watts override for calculated targets */}
-      {showOverride && calcW != null && calcW > 0 && (
+      {/* Editable exact-watts override for calculated targets (bike) or pace override (run/swim) */}
+      {showOverride && calcW != null && calcW > 0 && !paceInfo && (
         <div className="flex items-center gap-1">
           <input
             type="number"
@@ -854,28 +1030,57 @@ function TargetRow({ context, label, color, dur, setDur, target, setTarget }) {
           )}
         </div>
       )}
+      {showOverride && paceInfo && (
+        <span className="text-[10px] text-slate-400">~{paceInfo.label}{paceInfo.unit}</span>
+      )}
     </div>
   );
 }
 
-function QuickIntervalAdder({ context, onAdd }) {
-  const [open, setOpen] = useState(false);
+function QuickIntervalAdder({ context, onAdd, open: openProp, onOpenChange }) {
+  const isDistSport = context.sport === 'run' || context.sport === 'swim';
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = onOpenChange ?? setOpenInternal;
   const [reps, setReps] = useState(5);
   const [workDur, setWorkDur] = useState('5:00');
+  const [workDist, setWorkDist] = useState(context.sport === 'swim' ? '100m' : '1 km');
+  const [workDurMode, setWorkDurMode] = useState(isDistSport ? 'distance' : 'time');
   const [workTarget, setWorkTarget] = useState({ type: 'lt2' });
   const [recDur, setRecDur] = useState('2:00');
+  const [recDist, setRecDist] = useState(context.sport === 'swim' ? '100m' : '400m');
+  const [recDurMode, setRecDurMode] = useState('time');
   const [recTarget, setRecTarget] = useState({ type: 'zone', value: 1 });
 
-  const wSecs = parseDuration(workDur);
-  const rSecs = parseDuration(recDur);
+  const wSecs = intervalStepSeconds(workDurMode, workDur, workDist, workTarget, context);
+  const rSecs = intervalStepSeconds(recDurMode, recDur, recDist, recTarget, context);
 
   const handleAdd = () => {
     if (!wSecs || reps < 1) return;
     const gid = uid();
-    const newSteps = [
-      { clientId:uid(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work', durationSeconds:wSecs, powerTarget:{...workTarget} },
-      ...(rSecs > 0 ? [{ clientId:uid(), groupId:gid, stepType:'recovery', durationSeconds:rSecs, powerTarget:{...recTarget} }] : []),
-    ];
+    const workStep = buildQuickIntervalStep({
+      stepType: 'work',
+      durMode: workDurMode,
+      durStr: workDur,
+      distStr: workDist,
+      target: workTarget,
+      context,
+      groupMeta: { groupId: gid, isGroupHeader: true, groupRepeat: reps },
+    });
+    if (!workStep) return;
+    const newSteps = [workStep];
+    if (rSecs > 0) {
+      const recStep = buildQuickIntervalStep({
+        stepType: 'recovery',
+        durMode: recDurMode,
+        durStr: recDur,
+        distStr: recDist,
+        target: recTarget,
+        context,
+        groupMeta: { groupId: gid },
+      });
+      if (recStep) newSteps.push(recStep);
+    }
     onAdd(newSteps);
     setOpen(false);
   };
@@ -903,19 +1108,24 @@ function QuickIntervalAdder({ context, onAdd }) {
           className="w-14 text-xs text-center border border-violet-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400 bg-white"/>
         <span className="text-xs text-slate-400">x times</span>
       </div>
-      <TargetRow context={context} label="Work" color="text-violet-600" dur={workDur} setDur={setWorkDur} target={workTarget} setTarget={setWorkTarget}/>
-      <TargetRow context={context} label="Recovery" color="text-emerald-600" dur={recDur} setDur={setRecDur} target={recTarget} setTarget={setRecTarget}/>
+      <TargetRow context={context} label="Work" color="text-violet-600" dur={workDur} setDur={setWorkDur} dist={workDist} setDist={setWorkDist} durMode={workDurMode} setDurMode={setWorkDurMode} target={workTarget} setTarget={setWorkTarget}/>
+      <TargetRow context={context} label="Recovery" color="text-emerald-600" dur={recDur} setDur={setRecDur} dist={recDist} setDist={setRecDist} durMode={recDurMode} setDurMode={setRecDurMode} target={recTarget} setTarget={setRecTarget}/>
       {wSecs > 0 && (() => {
         const wW = resolveTargetWatts(workTarget, context);
         const rW = resolveTargetWatts(recTarget, context);
+        const wPace = resolvePaceForSport(workTarget, context);
         const totalSecs = wSecs + (rSecs > 0 ? rSecs : 0);
         const avgW = totalSecs > 0 ? Math.round((wW * wSecs + (rSecs > 0 ? rW * rSecs : 0)) / totalSecs) : null;
+        const workLbl = formatIntervalStepLabel(workDurMode, workDur, workDist);
+        const recLbl = rSecs > 0 ? formatIntervalStepLabel(recDurMode, recDur, recDist) : null;
         return (
           <div className="text-[10px] text-violet-500 bg-violet-50 rounded-lg px-2 py-1.5 flex items-center gap-2 flex-wrap">
-            <span>{reps} x ({fmtDuration(wSecs)} work{rSecs>0?` + ${fmtDuration(rSecs)} recovery`:''}) = <strong>{fmtShort(reps*(wSecs+(rSecs||0)))}</strong> total</span>
-            {avgW != null && avgW > 0 && (
+            <span>{reps} x ({workLbl} work{recLbl ? ` + ${recLbl} recovery` : ''}) = <strong>{fmtShort(reps * totalSecs)}</strong> total</span>
+            {wPace ? (
+              <span className="ml-auto text-violet-600 font-semibold">~{wPace.label}{wPace.unit}</span>
+            ) : avgW != null && avgW > 0 ? (
               <span className="ml-auto text-violet-600 font-semibold">~{avgW} W avg</span>
-            )}
+            ) : null}
           </div>
         );
       })()}
@@ -1446,6 +1656,9 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
 // ═══════════════════════════════════════════════════════════════════════════
 export default function WorkoutBuilder({ initialSteps = [], context = {}, sport = 'bike', onChange, stickyPreview = true }) {
   const [steps, setSteps] = useState(initialSteps.length > 0 ? initialSteps : []);
+  const [quickBlocksOpen, setQuickBlocksOpen] = useState(false);
+  const [quickIntervalOpen, setQuickIntervalOpen] = useState(false);
+  const quickBlocksRef = useRef(null);
   // Merge sport into context so sub-components can detect run/swim/bike
   const ctx = useMemo(() => ({ ...context, sport }), [context, sport]);
 
@@ -1543,7 +1756,15 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
       rest:     { durationSeconds:60,   powerTarget:{type:'open'} },
     };
     const extra = distMode ? { durationType: distMode, ...distDefaults[type] } : {};
-    notify([...steps, { clientId:uid(), stepType:type, ...defaults[type], ...extra }]);
+    const newStep = { clientId: uid(), stepType: type, ...defaults[type], ...extra };
+    if (distMode && newStep.distanceMeters) {
+      newStep.durationSeconds = estimateSecondsFromDistance(
+        newStep.distanceMeters,
+        newStep.powerTarget,
+        ctx,
+      ) || newStep.durationSeconds;
+    }
+    notify([...steps, newStep]);
   };
 
   const updateStep   = (idx, u)  => { const n=[...steps]; n[idx]=u; notify(n); };
@@ -1586,6 +1807,13 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   const updateGroupRepeat = (gid,reps) => notify(steps.map(s=>s.groupId===gid&&s.isGroupHeader?{...s,groupRepeat:reps}:s));
 
   const totalSecs = useMemo(() => totalDuration(steps), [steps]);
+  const previewTotalLabel = useMemo(() => {
+    if (ctx.sport === 'run' || ctx.sport === 'swim') {
+      const dist = expandSteps(steps).reduce((sum, s) => sum + resolveStepDistanceMeters(s, ctx), 0);
+      if (dist > 0) return `${fmtDistance(dist)} · ${fmtDuration(totalSecs)}`;
+    }
+    return `${fmtDuration(totalSecs)} total`;
+  }, [steps, ctx, totalSecs]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -1596,7 +1824,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-xs">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
-            <span className="text-[10px] text-slate-400">{fmtDuration(totalSecs)} total</span>
+            <span className="text-[10px] text-slate-400">{previewTotalLabel}</span>
           </div>
           <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize} onStepClick={handleChartStepClick}/>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
@@ -1622,13 +1850,23 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
       )}
 
       {/* Quick builders — collapsed when steps already exist */}
-      <details className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
+      <details
+        ref={quickBlocksRef}
+        open={quickBlocksOpen}
+        onToggle={(e) => setQuickBlocksOpen(e.currentTarget.open)}
+        className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200"
+      >
         <summary className="px-3 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer list-none flex items-center justify-between">
           <span>Quick add blocks</span>
           <ChevronDownIcon className="w-4 h-4 text-slate-400" />
         </summary>
         <div className="px-3 pb-3 flex flex-col gap-2 border-t border-slate-100">
-          <QuickIntervalAdder context={ctx} onAdd={(ns) => notify([...steps, ...ns])} />
+          <QuickIntervalAdder
+            context={ctx}
+            onAdd={(ns) => notify([...steps, ...ns])}
+            open={quickIntervalOpen}
+            onOpenChange={setQuickIntervalOpen}
+          />
           <QuickProgressiveAdder context={ctx} onAdd={(ns) => notify([...steps, ...ns])} />
         </div>
       </details>
@@ -1768,6 +2006,20 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
               {type.charAt(0).toUpperCase() + type.slice(1)}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setQuickBlocksOpen(true);
+              setQuickIntervalOpen(true);
+              requestAnimationFrame(() => {
+                quickBlocksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              });
+            }}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors bg-white min-h-[44px] border-violet-200 text-violet-600 hover:bg-violet-50"
+          >
+            <ArrowPathIcon className="w-4 h-4" />
+            Interval block
+          </button>
         </div>
       </div>
     </div>

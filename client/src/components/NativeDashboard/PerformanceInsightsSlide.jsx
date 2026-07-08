@@ -6,7 +6,7 @@ import React, { useMemo, useState } from 'react';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import { buildExtendedPmcSeries, localCalendarDateKey, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { resolveActivityTss } from '../../utils/computeTss';
-import { enrichProfileForTss } from '../../utils/inferThresholdsFromActivities';
+import { enrichProfileForTss, mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { requestTrainingZonesModal, profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
 import { useAuth } from '../../context/AuthProvider';
 
@@ -122,28 +122,28 @@ export default function PerformanceInsightsSlide({
   loading = false,
 }) {
   const { user } = useAuth() || {};
-  const profile = userProfile || user;
-  const effectiveProfile = useMemo(
-    () => enrichProfileForTss(profile, activities),
-    [profile, activities],
+  const profile = useMemo(
+    () => mergeProfileZones(userProfile, user) || userProfile || user,
+    [userProfile, user],
   );
 
   const derived = useMemo(() => {
-    if (!activities?.length || !effectiveProfile) return null;
-    return computePmcFromActivities(activities, effectiveProfile);
-  }, [activities, effectiveProfile]);
+    if (!activities?.length || !profile) return null;
+    return computePmcFromActivities(activities, profile, { tssUser: user });
+  }, [activities, profile, user]);
 
   const effTodayMetrics = useMemo(() => {
+    if (derived?.todayMetrics && activities?.length) return derived.todayMetrics;
     if (todayMetrics.fitness != null || todayMetrics.form != null || todayMetrics.fatigue != null) {
       return todayMetrics;
     }
     return derived?.todayMetrics || todayMetrics;
-  }, [todayMetrics, derived]);
+  }, [todayMetrics, derived, activities]);
 
-  const effSparkline = useMemo(
-    () => (sparklineData?.length ? sparklineData : (derived?.series || [])),
-    [sparklineData, derived],
-  );
+  const effSparkline = useMemo(() => {
+    if (derived?.series?.length && activities?.length) return derived.series;
+    return sparklineData?.length ? sparklineData : (derived?.series || []);
+  }, [sparklineData, derived, activities]);
 
   const [dayOffset, setDayOffset] = useState(0);
 
@@ -194,9 +194,10 @@ export default function PerformanceInsightsSlide({
   const lastPt = effSparkline.length > 0 ? effSparkline[effSparkline.length - 1] : null;
 
   const canResolveAnyTss = useMemo(() => {
-    if (!activities?.length || !effectiveProfile) return false;
-    return activities.some((a) => resolveActivityTss(a, effectiveProfile, { user: effectiveProfile }) > 0);
-  }, [activities, effectiveProfile]);
+    if (!activities?.length || !profile) return false;
+    const enriched = enrichProfileForTss(profile, activities);
+    return activities.some((a) => resolveActivityTss(a, enriched, { user }) > 0);
+  }, [activities, profile, user]);
 
   const { fitness, fatigue, form, fitnessDelta, fatigueDelta, formDelta, noData } = useMemo(() => {
     const fit = Math.round(

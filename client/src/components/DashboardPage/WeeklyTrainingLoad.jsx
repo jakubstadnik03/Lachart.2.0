@@ -6,7 +6,7 @@ import { getWeeklyTrainingLoad } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
-import { computeWeeklyTrainingLoadFromActivities } from '../../utils/formFitnessFromActivities';
+import { computeWeeklyTrainingLoadFromActivities, localWeekStartKey } from '../../utils/formFitnessFromActivities';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 
@@ -37,15 +37,6 @@ const estimatePlannedTss = (pw) => {
 };
 
 // Monday-based week key (matches backend bucketing).
-const weekKeyFor = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
 const weekLabelFor = (weekKey) =>
   new Date(weekKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -154,24 +145,28 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
         12;
 
       if (calendarDriven) {
-        if (activitiesLoading) {
+        if (activitiesLoading || !profile) {
           if (!cancelled) setLoading(true);
           return;
         }
-        if (Array.isArray(activities) && activities.length > 0 && profile) {
-          const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter });
+        if (Array.isArray(activities) && activities.length > 0) {
+          const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter, tssUser: user });
           if (!cancelled) {
             setChartData(data);
             setLoading(false);
           }
           return;
         }
-        // Calendar finished loading but has no activities — fall through to server API.
+        if (!cancelled) {
+          setChartData([]);
+          setLoading(false);
+        }
+        return;
       }
 
       // Prefer calendar activities — same TSS as Training Calendar weekly summary.
       if (Array.isArray(activities) && activities.length > 0 && profile) {
-        const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter });
+        const data = computeWeeklyTrainingLoadFromActivities(activities, profile, { months, sportFilter, tssUser: user });
         if (!cancelled) {
           setChartData(data);
           setLoading(false);
@@ -243,7 +238,7 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
 
     loadData();
     return () => { cancelled = true; };
-  }, [athleteId, timeRange, sportFilter, activities, profile, tssModeTick, activitiesLoading, calendarDriven]);
+  }, [athleteId, timeRange, sportFilter, activities, profile, tssModeTick, activitiesLoading, calendarDriven, user]);
 
   // Load FUTURE planned workouts → weekly planned TSS for projection.
   useEffect(() => {
@@ -264,7 +259,7 @@ const WeeklyTrainingLoad = ({ athleteId, activities = null, userProfile = null, 
           if (sportFilter !== 'all' && sport !== sportFilter) return;
           const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : '';
           if (!day || day < iso(today)) return; // only today onwards
-          const wk = weekKeyFor(day);
+          const wk = localWeekStartKey(`${day}T12:00:00`);
           map[wk] = (map[wk] || 0) + estimatePlannedTss(pw);
         });
         if (!cancelled) setPlannedByWeek(map);
