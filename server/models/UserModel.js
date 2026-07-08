@@ -364,6 +364,10 @@ const userSchema = new mongoose.Schema({
     /** One-off product-update campaigns. Each key is the campaign code so
      *  re-running the same campaign is idempotent across server restarts. */
     whatsNewMay2026Sent:     { type: Date, default: null },
+    /** Automated web-only re-engagement drip (app → Strava → planning). */
+    appReengagementStep1Sent: { type: Date, default: null },
+    appReengagementStep2Sent: { type: Date, default: null },
+    appReengagementStep3Sent: { type: Date, default: null },
     milestones: {
       firstTestSent:              { type: Boolean, default: false },
       fiveTestsSent:              { type: Boolean, default: false },

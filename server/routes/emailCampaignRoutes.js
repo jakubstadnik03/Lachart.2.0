@@ -24,6 +24,7 @@ const {
 // re-running the May campaign doesn't double-send to anyone who already
 // got the launch email and vice versa.
 const ios = require('../services/iosLaunchCampaignService');
+const appReeng = require('../services/appReengagementCampaignService');
 
 async function requireAdmin(req, res) {
   const me = await User.findById(req.user.userId).select('admin role').lean();
@@ -214,6 +215,67 @@ router.post('/campaigns/ios-launch-2026-06/reset', verifyToken, async (req, res)
     const filter = targetEmail ? { email: targetEmail } : {};
     const result = await User.updateMany(filter, {
       $set: { [`retentionEmails.${ios.CAMPAIGN_KEY}`]: null },
+    });
+    res.json({ matched: result.matchedCount, modified: result.modifiedCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── App re-engagement drip (automated + admin preview) ─────────────────────
+
+router.get('/campaigns/app-reengagement/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const stats = await appReeng.getCampaignStats();
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/app-reengagement/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const step = Math.max(1, Math.min(3, Number(req.body?.step) || 1));
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const recipient = targetEmail
+      ? await User.findOne({ email: targetEmail }).lean()
+      : await User.findById(req.user.userId).lean();
+    if (!recipient?.email) {
+      return res.status(404).json({ error: 'No matching user with an email address' });
+    }
+    const result = await appReeng.sendStep(recipient, step, { track: false, preview: true });
+    res.json({ to: recipient.email, step, preview: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/app-reengagement/run-tick', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const { tick } = require('../services/appReengagementScheduler');
+    await tick();
+    const stats = await appReeng.getCampaignStats();
+    res.json({ ok: true, stats });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/app-reengagement/reset', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const filter = targetEmail ? { email: targetEmail } : {};
+    const result = await User.updateMany(filter, {
+      $set: {
+        'retentionEmails.appReengagementStep1Sent': null,
+        'retentionEmails.appReengagementStep2Sent': null,
+        'retentionEmails.appReengagementStep3Sent': null,
+      },
     });
     res.json({ matched: result.matchedCount, modified: result.modifiedCount });
   } catch (e) {

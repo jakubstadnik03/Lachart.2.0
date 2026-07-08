@@ -236,6 +236,7 @@ const { startWeeklyReportsScheduler } = require('./services/weeklyReportSchedule
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
+const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
 const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
@@ -300,6 +301,9 @@ startCoachFridayReviewScheduler();
 
 // Retention & lifecycle emails (weekly progress, monthly reports, milestones, re-engagement)
 startRetentionScheduler();
+
+// Web-only 3-step drip: app download → Strava → workout planning (Zoho-safe auto pacing)
+startAppReengagementScheduler();
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);
