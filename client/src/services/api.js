@@ -1367,6 +1367,17 @@ export const backfillStravaHistory = async ({ fromNow = true, force = true } = {
   return data; // { started, alreadyRunning?, restarted? }
 };
 
+/** Continue progressive history import on page load (non-blocking, rate-limited server-side). */
+export const continueStravaHistoryImport = async () => {
+  try {
+    const { data } = await api.post('/api/integrations/strava/backfill/continue', {}, { timeout: 8000 });
+    return data;
+  } catch (e) {
+    console.log('[Strava history continue] failed:', e?.response?.data || e?.message);
+    return null;
+  }
+};
+
 // Track in-flight auto-sync to prevent multiple simultaneous syncs
 let stravaAutoSyncInFlight = false;
 let garminAutoSyncInFlight = false;

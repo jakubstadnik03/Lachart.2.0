@@ -22,6 +22,7 @@ import { getNotifications, markAllNotificationsRead, markNotificationRead, delet
 import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { normalizeNotificationActivityId, requestOpenActivity } from '../../utils/activityEventPatches';
+import { nudgeStravaHistoryImport } from '../../utils/stravaHistoryCatchUp';
 import { resolveNotificationTarget } from '../../utils/notificationNavigation';
 import { normalizeNotificationCopy } from '../../utils/notificationCopy';
 import { syncWidgetFromApi } from '../../utils/widgetCache';
@@ -933,6 +934,19 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       body.style.width = '';
     };
   }, []);
+
+  // Continue progressive Strava history import on app launch.
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.accessToken) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (!cancelled) nudgeStravaHistoryImport();
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [user?._id, user?.strava?.accessToken]);
 
   // ── Strava auto-sync on app open / foreground ──────────────────────────
   // Fires on every new session (login / app launch) using sessionStorage so

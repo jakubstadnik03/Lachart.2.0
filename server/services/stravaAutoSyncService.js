@@ -12,6 +12,8 @@ const {
   STRAVA_AUTO_SYNC_PAGE_DELAY_MS,
   STRAVA_AUTO_SYNC_SCHEDULER_MAX_PAGES,
   STRAVA_AUTO_SYNC_BACKGROUND_MAX_PAGES,
+  STRAVA_CONNECT_SYNC_LOOKBACK_DAYS,
+  STRAVA_CONNECT_SYNC_MAX_PAGES,
 } = require('../config/stravaAutoSyncConfig');
 
 // Helper function to delay execution
@@ -88,7 +90,7 @@ async function syncStravaForUser(user, opts = {}) {
     } else {
       // First time sync — recent window only; full history is handled by the
       // progressive backfill kicked off in the OAuth callback.
-      const lookbackDays = source === 'connect' ? 30 : 7;
+      const lookbackDays = source === 'connect' ? STRAVA_CONNECT_SYNC_LOOKBACK_DAYS : 7;
       const sinceDate = new Date();
       sinceDate.setDate(sinceDate.getDate() - lookbackDays);
       since = sinceDate;
@@ -104,7 +106,7 @@ async function syncStravaForUser(user, opts = {}) {
     // 48h overlap window can still contain >300 activities for active athletes
     // (multi-sport, indoor + outdoor). Background ticks stay conservative.
     const maxPages = isFirstSync
-      ? (source === 'connect' ? 15 : 10)
+      ? (source === 'connect' ? STRAVA_CONNECT_SYNC_MAX_PAGES : 10)
       : (force
         ? 10
         : (source === 'scheduler'

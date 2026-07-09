@@ -604,15 +604,18 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
   }
 
   const perPage = 100;
-  // Aggressive defaults caused the budget to burn ~100 req / 15-min window
-  // per user for the entire duration of a backfill (could be 75+ min for
-  // a multi-year history). Slowed to ~3× — finishes in maybe 3-4 h for a
-  // big history instead of 75 min, but stays at ≤30 req / window so it
-  // can't visibly affect daily Strava budget or other users' real-time
-  // webhook deliveries.
-  const maxPagesPerBatch = Number(process.env.STRAVA_BACKFILL_MAX_PAGES || 4);
-  const delayBetweenPagesMs = Number(process.env.STRAVA_BACKFILL_PAGE_DELAY_MS || 4000);
-  const delayBetweenBatchesMs = Number(process.env.STRAVA_BACKFILL_BATCH_DELAY_MS || 60000);
+  // Steady-state backfill stays conservative on Strava API budget; first
+  // connect uses a faster profile so new users see history within minutes.
+  const connectKickoff = !!immediate;
+  const maxPagesPerBatch = connectKickoff
+    ? Number(process.env.STRAVA_BACKFILL_CONNECT_MAX_PAGES || 10)
+    : Number(process.env.STRAVA_BACKFILL_MAX_PAGES || 4);
+  const delayBetweenPagesMs = connectKickoff
+    ? Number(process.env.STRAVA_BACKFILL_CONNECT_PAGE_DELAY_MS || 2000)
+    : Number(process.env.STRAVA_BACKFILL_PAGE_DELAY_MS || 4000);
+  const delayBetweenBatchesMs = connectKickoff
+    ? Number(process.env.STRAVA_BACKFILL_CONNECT_BATCH_DELAY_MS || 15000)
+    : Number(process.env.STRAVA_BACKFILL_BATCH_DELAY_MS || 60000);
   // Hard ceiling on consecutive batches in one session — defence against
   // a cursor-stuck loop. 120 × 4 pages × 100 activities = 48 000 activities.
   // When hit, we schedule another session instead of stopping forever.
@@ -649,7 +652,13 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
         return;
       }
 
-      const stopBefore = user.strava?.backfillStopBefore || stravaBackfillStopBeforeUnix();
+      const stopBefore = Math.min(
+        user.strava?.backfillStopBefore || stravaBackfillStopBeforeUnix(),
+        stravaBackfillStopBeforeUnix(),
+      );
+      if (user.strava?.backfillStopBefore !== stopBefore) {
+        await User.findByIdAndUpdate(user._id, { 'strava.backfillStopBefore': stopBefore });
+      }
 
       const token = await getValidStravaToken(user);
       if (!token) {
@@ -869,6 +878,105 @@ async function resumeStaleStravaBackfills() {
   }
 }
 
+/** Resume backfills marked done but stopped before the current 2-year lookback. */
+async function resumeShallowStravaBackfills() {
+  const targetStop = stravaBackfillStopBeforeUnix();
+  try {
+    const users = await User.find({
+      'strava.backfillState': 'done',
+      'strava.accessToken': { $exists: true, $ne: null },
+      'strava.backfillStopBefore': { $gt: targetStop },
+    })
+      .select('_id strava.backfillCursorBefore strava.backfillStopBefore')
+      .limit(8)
+      .lean();
+    if (!users.length) return;
+    console.log(`[StravaBackfill] extending ${users.length} shallow completed backfill(s) to ${STRAVA_BACKFILL_LOOKBACK_DAYS}d`);
+    for (const u of users) {
+      const resumeBefore = u.strava?.backfillCursorBefore || u.strava?.backfillStopBefore || Math.floor(Date.now() / 1000);
+      await User.findByIdAndUpdate(u._id, {
+        'strava.backfillState': 'running',
+        'strava.backfillStopBefore': targetStop,
+        'strava.backfillCursorBefore': resumeBefore,
+        'strava.backfillLastProgressAt': new Date(),
+        $unset: { 'strava.backfillFinishedAt': '', 'strava.backfillLastError': '' },
+      });
+      startStravaHistoricalBackfill(u._id, resumeBefore, { force: true });
+    }
+  } catch (e) {
+    console.error('[StravaBackfill] shallow resume failed:', e?.message || e);
+  }
+}
+
+/** Per-user nudge — continue historical import on app/dashboard load (rate-limited). */
+const stravaBackfillNudgePending = new Set();
+const stravaBackfillNudgeLastAt = new Map();
+const STRAVA_BACKFILL_NUDGE_GAP_MS = Number(process.env.STRAVA_BACKFILL_NUDGE_GAP_MS || 90 * 1000);
+
+function maybeContinueStravaBackfillForUser(userId) {
+  if (!userId) return;
+  const id = String(userId);
+  if (stravaBackfillNudgePending.has(id)) return;
+  const now = Date.now();
+  if (now - (stravaBackfillNudgeLastAt.get(id) || 0) < STRAVA_BACKFILL_NUDGE_GAP_MS) return;
+
+  stravaBackfillNudgePending.add(id);
+  stravaBackfillNudgeLastAt.set(id, now);
+
+  setImmediate(async () => {
+    try {
+      const user = await User.findById(id).select(
+        'strava.accessToken strava.backfillState strava.backfillCursorBefore strava.backfillStopBefore strava.backfillLastProgressAt',
+      ).lean();
+      if (!user?.strava?.accessToken) return;
+
+      const s = user.strava;
+      const targetStop = stravaBackfillStopBeforeUnix();
+      const staleMs = Number(process.env.STRAVA_BACKFILL_STALE_MS || 20 * 60 * 1000);
+      const lastProgressMs = s.backfillLastProgressAt
+        ? new Date(s.backfillLastProgressAt).getTime()
+        : 0;
+      const isStaleRunning = s.backfillState === 'running'
+        && (!lastProgressMs || Date.now() - lastProgressMs > staleMs);
+
+      if (s.backfillState === 'running') {
+        startStravaHistoricalBackfill(id, s.backfillCursorBefore || null, { force: isStaleRunning });
+        return;
+      }
+
+      if (s.backfillState === 'done' && s.backfillStopBefore > targetStop) {
+        const resumeBefore = s.backfillCursorBefore || s.backfillStopBefore || Math.floor(Date.now() / 1000);
+        await User.findByIdAndUpdate(id, {
+          'strava.backfillState': 'running',
+          'strava.backfillStopBefore': targetStop,
+          'strava.backfillCursorBefore': resumeBefore,
+          'strava.backfillLastProgressAt': new Date(),
+          $unset: { 'strava.backfillFinishedAt': '', 'strava.backfillLastError': '' },
+        });
+        startStravaHistoricalBackfill(id, resumeBefore, { force: true });
+        return;
+      }
+
+      if (!s.backfillState || s.backfillState === 'error') {
+        const cursor = s.backfillCursorBefore || Math.floor(Date.now() / 1000);
+        await User.findByIdAndUpdate(id, {
+          'strava.backfillState': 'running',
+          'strava.backfillStopBefore': targetStop,
+          'strava.backfillCursorBefore': cursor,
+          'strava.backfillStartedAt': new Date(),
+          'strava.backfillLastProgressAt': new Date(),
+          $unset: { 'strava.backfillFinishedAt': '', 'strava.backfillLastError': '' },
+        });
+        startStravaHistoricalBackfill(id, cursor, { force: true });
+      }
+    } catch (e) {
+      console.warn(`[StravaBackfill] nudge failed for ${id}:`, e?.message || e);
+    } finally {
+      stravaBackfillNudgePending.delete(id);
+    }
+  });
+}
+
 // GET /api/integrations/strava/auth-url
 //
 // `platform` query param:
@@ -1002,7 +1110,7 @@ router.get('/strava/callback', async (req, res) => {
         .catch((e) => console.warn('[Strava callback] immediate sync failed:', e?.message || e));
     }, 800);
 
-    // Start historical import in background (progressive batches, ~1 year lookback).
+    // Start historical import in background (progressive batches, up to 2 years).
     startStravaHistoricalBackfill(user._id, null, { immediate: true });
 
     // iOS flow: send the user back to the native LaChart app via custom
@@ -1066,6 +1174,9 @@ router.get('/strava/status', verifyToken, async (req, res) => {
         maybeQueueStravaAutoSync(req.user.userId);
       }
     }
+    if (connected) {
+      maybeContinueStravaBackfillForUser(req.user.userId);
+    }
 
     res.json({
       connected,
@@ -1122,6 +1233,22 @@ router.post('/strava/budget/reset', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[Strava budget reset] error:', error);
     res.status(500).json({ error: error.message || 'Failed to reset budget' });
+  }
+});
+
+// POST /api/integrations/strava/backfill/continue — lightweight nudge on page load.
+// Continues the progressive 2-year import if still running, stale, shallow, or never started.
+router.post('/strava/backfill/continue', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('strava.accessToken').lean();
+    if (!user?.strava?.accessToken) {
+      return res.status(400).json({ error: 'Strava not connected' });
+    }
+    maybeContinueStravaBackfillForUser(req.user.userId);
+    res.json({ ok: true, queued: true });
+  } catch (error) {
+    console.error('[Strava backfill continue] error:', error);
+    res.status(500).json({ error: error.message || 'Failed to queue history import' });
   }
 });
 
@@ -6467,6 +6594,7 @@ module.exports.getValidStravaToken = getValidStravaToken;
 // Boot-time recovery for backfills interrupted by a restart.
 module.exports.resumeInterruptedStravaBackfills = resumeInterruptedStravaBackfills;
 module.exports.resumeStaleStravaBackfills = resumeStaleStravaBackfills;
+module.exports.resumeShallowStravaBackfills = resumeShallowStravaBackfills;
 // Exported so other ingest paths (FIT upload, Garmin sync, …) can reuse
 // the same title-keyword detection without duplicating the regex table.
 module.exports._acCategorizeByTitle = _acCategorizeByTitle;

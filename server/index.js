@@ -280,9 +280,15 @@ setTimeout(() => bootstrapStravaWebhook().catch(e => console.error('[StravaWebho
 // don't thunder-herd Strava on every redeploy.
 setTimeout(() => {
   try {
-    const { resumeInterruptedStravaBackfills } = require('./routes/integrationsRoutes');
+    const {
+      resumeInterruptedStravaBackfills,
+      resumeShallowStravaBackfills,
+    } = require('./routes/integrationsRoutes');
     if (typeof resumeInterruptedStravaBackfills === 'function') {
       resumeInterruptedStravaBackfills();
+    }
+    if (typeof resumeShallowStravaBackfills === 'function') {
+      resumeShallowStravaBackfills();
     }
   } catch (e) {
     console.error('[StravaBackfill] resume hook failed on boot:', e?.message || e);

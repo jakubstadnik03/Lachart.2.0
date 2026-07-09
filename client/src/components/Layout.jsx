@@ -18,6 +18,7 @@ import {
   markZonesDashboardPromptDismissed,
 } from "../utils/trainingZonesSetup";
 import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
+import { nudgeStravaHistoryImport } from "../utils/stravaHistoryCatchUp";
 import { setupGarminOAuthReturnListener } from "../utils/garminOAuthReturn";
 
 // Admin sees coach UI only when their role is not 'athlete'.
@@ -392,6 +393,20 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?.garmin?.autoSync,
     user?.garmin?.connected,
   ]);
+
+  // Continue progressive Strava history import (2-year backfill) on every session.
+  // Server rate-limits nudges (~90s); safe to call on each app load.
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.accessToken) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (!cancelled) nudgeStravaHistoryImport();
+    }, 2500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [user?._id, user?.strava?.accessToken]);
 
   // ── Strava: frontend polling fallback ────────────────────────────────────
   // Webhooks deliver new activities in real-time, but they can go stale

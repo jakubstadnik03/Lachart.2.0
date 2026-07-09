@@ -48,8 +48,14 @@ const STRAVA_AUTO_SYNC_STALE_QUEUE_MS = 12 * 60 * 1000;
 /** Force at least one stale user per tick even when budget is tight. */
 const STRAVA_AUTO_SYNC_STALE_FORCE_MS = 2 * 60 * 60 * 1000;
 
-/** How far back the automatic first-connect backfill pulls (days). */
-const STRAVA_BACKFILL_LOOKBACK_DAYS = 365;
+/** How far back the automatic first-connect backfill pulls (days). Matches Settings copy: up to 2 years. */
+const STRAVA_BACKFILL_LOOKBACK_DAYS = 730;
+
+/** Recent window for the immediate post-connect sync (before backfill catches up). */
+const STRAVA_CONNECT_SYNC_LOOKBACK_DAYS = 90;
+
+/** Max activity-list pages on first connect sync (100 activities/page). */
+const STRAVA_CONNECT_SYNC_MAX_PAGES = 25;
 
 module.exports = {
   STRAVA_AUTO_SYNC_INTERVAL_MS,
@@ -68,4 +74,6 @@ module.exports = {
   STRAVA_AUTO_SYNC_STALE_QUEUE_MS,
   STRAVA_AUTO_SYNC_STALE_FORCE_MS,
   STRAVA_BACKFILL_LOOKBACK_DAYS,
+  STRAVA_CONNECT_SYNC_LOOKBACK_DAYS,
+  STRAVA_CONNECT_SYNC_MAX_PAGES,
 };

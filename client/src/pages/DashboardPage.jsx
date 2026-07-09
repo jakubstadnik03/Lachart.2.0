@@ -33,6 +33,7 @@ import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
 import { notifyCalendarDataUpdated } from '../utils/calendarActivitiesForPmc';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
+import { startStravaHistoryCatchUpPoll } from '../utils/stravaHistoryCatchUp';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
@@ -1691,6 +1692,21 @@ export default function DashboardPage() {
     
     return () => clearTimeout(timeoutId);
   }, [user?._id, user?.strava?.autoSync, user?.notifications, selectedAthleteId, user?.role, loadCalendarData, loadTrainings, addNotification, isCoachLikeRole, navigate]);
+
+  // Progressive 2-year Strava history import — nudge server on load and poll
+  // while backfill runs so calendar / PMC charts fill in batch by batch.
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.accessToken) return undefined;
+
+    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user._id;
+    if (targetAthleteId !== user._id) return undefined;
+
+    return startStravaHistoryCatchUpPoll(user._id, {
+      onBatchImported: () => {
+        window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: { source: 'backfill' } }));
+      },
+    });
+  }, [user?._id, user?.strava?.accessToken, selectedAthleteId, isCoachLikeRole]);
 
   // ── Manual Strava sync (used by NativeDashboardPage refresh button) ─────
   // Bypasses the auto-sync `user.strava.autoSync` gate and the 5-minute
