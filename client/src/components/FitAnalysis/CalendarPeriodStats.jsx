@@ -4,14 +4,12 @@ import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { resolveActivityTss } from '../../utils/computeTss';
 import {
   activityCalendarDateKey,
-  computePmcFromActivities,
   localWeekStartKey,
 } from '../../utils/formFitnessFromActivities';
 import { mergeProfileZones, enrichProfileForTss } from '../../utils/inferThresholdsFromActivities';
 import { getMonthlyPowerAnalysis } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
-import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
-import { getTsbStatus } from '../../utils/formFitnessMetrics';
+import PmcCombinedChart from '../shared/PmcCombinedChart';
 import {
   resolveSportKey,
   SportGlyph,
@@ -543,12 +541,7 @@ export default function CalendarPeriodStats({
       : effectiveProfile),
     [effectiveProfile, activities],
   );
-  // Server-side authoritative CTL/ATL/TSB series. Same data the native
-  // dashboard and the Form/Fitness card use, so the numbers on the Calendar
-  // Charts tab match what the user sees on the Dashboard. Falls back to a
-  // client-side recompute if the fetch fails (offline / coach-without-access).
   const effectiveAthleteId = athleteId || user?._id || user?.id || null;
-  const [ffHelpOpen, setFfHelpOpen] = useState(false);
   const periodView = period?.view === 'week' ? 'week' : 'month';
 
   // ── Server zone data ─────────────────────────────────────────────────────────
@@ -963,136 +956,6 @@ export default function CalendarPeriodStats({
     previous: computeSportBucketStats(filteredPrevPeriod, tssProfile, user),
     prevLabel: prevPeriodBounds?.label || 'previous period',
   }), [filtered, filteredPrevPeriod, tssProfile, user, prevPeriodBounds?.label]);
-
-  // Performance Management Chart (CTL / ATL / TSB).
-  // CTL/ATL/TSB from the same activities + resolveActivityTss as the dashboard.
-  const pmc = useMemo(() => {
-    if (!activities?.length || !effectiveProfile) return null;
-    const { series } = computePmcFromActivities(activities, effectiveProfile, {
-      displayDays: 180,
-      tssUser: user,
-    });
-    if (!series.length) return null;
-    return series.map((d) => ({
-      date: d.date,
-      ctl: d.Fitness,
-      atl: d.Fatigue,
-      tsb: d.Form,
-      tss: d.TSS,
-    }));
-  }, [activities, effectiveProfile, user]);
-
-  const pmcChartData = useMemo(
-    () => (pmc?.length ? pmc.slice(-90) : []),
-    [pmc],
-  );
-
-  const [pmcHoverIndex, setPmcHoverIndex] = useState(0);
-  useEffect(() => {
-    setPmcHoverIndex(Math.max(0, pmcChartData.length - 1));
-  }, [pmcChartData]);
-
-  const pmcDisplayEntry = pmcChartData[pmcHoverIndex] || pmcChartData[pmcChartData.length - 1] || null;
-  const pmcTodayKey = useMemo(() => {
-    const t = new Date();
-    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-  }, []);
-
-  const pmcChartEvents = useMemo(() => ({
-    updateAxisPointer: (event) => {
-      const xInfo = event?.axesInfo?.find((a) => a.axisDim === 'x');
-      if (xInfo == null) return;
-      let idx = -1;
-      if (typeof xInfo.value === 'number' && Number.isFinite(xInfo.value)) {
-        idx = xInfo.value;
-      } else if (typeof xInfo.value === 'string') {
-        idx = pmcChartData.findIndex((d) => d.date === xInfo.value);
-      }
-      if (idx >= 0 && idx < pmcChartData.length) setPmcHoverIndex(idx);
-    },
-    globalout: () => {
-      setPmcHoverIndex(Math.max(0, pmcChartData.length - 1));
-    },
-  }), [pmcChartData]);
-
-  const pmcOption = useMemo(() => {
-    if (!pmcChartData.length) return null;
-    const labels = pmcChartData.map((d) => {
-      const [, m, day] = d.date.split('-');
-      return `${day}.${m}.`;
-    });
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'line', lineStyle: { color: '#94a3b8', width: 1 } },
-        formatter(params) {
-          if (!Array.isArray(params) || !params[0]) return '';
-          const idx = params[0].dataIndex;
-          const d = pmcChartData[idx];
-          if (!d) return '';
-          let html = `<div style="font-size:11px"><b>${d.date}</b>`;
-          params.forEach((p) => {
-            html += `<br/>${p.marker}${p.seriesName}: ${p.value}`;
-          });
-          if (d.tss > 0) html += `<br/>Daily TSS: ${d.tss}`;
-          html += '</div>';
-          return html;
-        },
-      },
-      grid: { left: 36, right: 8, top: 8, bottom: 24, containLabel: false },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLabel: { fontSize: 9, color: '#9ca3af', interval: 6 },
-        axisLine: { lineStyle: { color: '#f3f4f6' } },
-        axisTick: { show: false },
-      },
-      yAxis: {
-        type: 'value',
-        axisLabel: { fontSize: 9, color: '#9ca3af' },
-        splitLine: { lineStyle: { color: '#f3f4f6' } },
-        axisLine: { show: false },
-        axisTick: { show: false },
-      },
-      series: [
-        {
-          name: 'CTL (Fitness)',
-          type: 'line',
-          smooth: true,
-          symbol: 'none',
-          lineStyle: { color: '#3b82f6', width: 2 },
-          itemStyle: { color: '#3b82f6' },
-          data: pmcChartData.map((d) => d.ctl),
-        },
-        {
-          name: 'ATL (Fatigue)',
-          type: 'line',
-          smooth: true,
-          symbol: 'none',
-          lineStyle: { color: '#f97316', width: 2 },
-          itemStyle: { color: '#f97316' },
-          data: pmcChartData.map((d) => d.atl),
-        },
-        {
-          name: 'TSB (Form)',
-          type: 'line',
-          smooth: true,
-          symbol: 'none',
-          lineStyle: { color: '#10b981', width: 1.5 },
-          areaStyle: { color: '#10b981', opacity: 0.1 },
-          itemStyle: { color: '#10b981' },
-          markLine: {
-            data: [{ yAxis: 0 }],
-            lineStyle: { color: '#e5e7eb', type: 'solid' },
-            label: { show: false },
-            symbol: 'none',
-          },
-          data: pmcChartData.map((d) => d.tsb),
-        },
-      ],
-    };
-  }, [pmcChartData]);
 
   const byCategory = useMemo(() => {
     const m = new Map();
@@ -1868,64 +1731,15 @@ export default function CalendarPeriodStats({
               ))}
             </div>
 
-            {/* Performance Management Chart */}
-            {Chart && pmcOption && pmcDisplayEntry && (() => {
-              const tsbStatus = getTsbStatus(pmcDisplayEntry.tsb);
-              const tsbColor = pmcDisplayEntry.tsb >= -10 ? 'text-green-600' : pmcDisplayEntry.tsb >= -25 ? 'text-yellow-600' : 'text-red-600';
-              const isToday = pmcDisplayEntry.date === pmcTodayKey;
-              const dateLabel = (() => {
-                try {
-                  const d = new Date(`${pmcDisplayEntry.date}T12:00:00`);
-                  const short = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                  return isToday ? `${short} · Today` : short;
-                } catch {
-                  return pmcDisplayEntry.date;
-                }
-              })();
-              return (
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Training Load (CTL / ATL / TSB)
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFfHelpOpen(true)}
-                      className="text-xs font-semibold text-primary hover:underline shrink-0"
-                    >
-                      What is this?
-                    </button>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <Chart
-                      option={pmcOption}
-                      style={{ height: isMobile ? 140 : 180, width: '100%' }}
-                      notMerge
-                      onEvents={pmcChartEvents}
-                    />
-                    <p className="mt-2 text-[10px] text-gray-400 text-center">
-                      {dateLabel}
-                      {pmcDisplayEntry.tss > 0 ? ` · Daily TSS ${pmcDisplayEntry.tss}` : ''}
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">CTL (Fitness)</div>
-                        <div className="text-sm font-bold text-blue-600 tabular-nums mt-0.5">{pmcDisplayEntry.ctl}</div>
-                      </div>
-                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">ATL (Fatigue)</div>
-                        <div className="text-sm font-bold text-orange-500 tabular-nums mt-0.5">{pmcDisplayEntry.atl}</div>
-                      </div>
-                      <div className="bg-white rounded-lg px-2 py-2 border border-gray-100">
-                        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold leading-tight">TSB (Form)</div>
-                        <div className={`text-sm font-bold tabular-nums mt-0.5 ${tsbColor}`}>{pmcDisplayEntry.tsb}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{tsbStatus.label}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            {/* Form & Fitness — combined zoomable chart, same PMC source as dashboard */}
+            {effectiveAthleteId && (
+              <PmcCombinedChart
+                athleteId={effectiveAthleteId}
+                userProfile={effectiveProfile}
+                user={user}
+                isMobile={isMobile}
+              />
+            )}
 
             {/* Weekly comparison */}
             {weekComparison && (
@@ -2741,7 +2555,6 @@ export default function CalendarPeriodStats({
         )}
       </div>
     </div>
-    <FormFitnessHelpSheet open={ffHelpOpen} onClose={() => setFfHelpOpen(false)} />
   </>
   );
 }

@@ -74,8 +74,9 @@ export function computePmcFromActivities(activities, profile, { displayDays = 90
   displayStart.setDate(displayStart.getDate() - displayDays);
   displayStart.setHours(0, 0, 0, 0);
 
+  // Warmup is fixed — chart window (displayDays) must NOT change today's CTL/ATL/TSB.
   const calcStart = new Date(today);
-  calcStart.setDate(calcStart.getDate() - (displayDays + warmupDays));
+  calcStart.setDate(calcStart.getDate() - warmupDays);
   calcStart.setHours(0, 0, 0, 0);
 
   const loopStart = earliest < calcStart ? earliest : calcStart;

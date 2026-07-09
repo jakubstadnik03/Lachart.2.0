@@ -5,6 +5,7 @@ import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
 import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { pmcAxisDomainsFromPoints, PMC_COLORS, PMC_MAX_VIEW_DAYS, tssAxisTicks, tsbAxisTicks, NATIVE_FORM_RANGES, nativeFormRangeDays } from '../../utils/pmcChartAxes';
 import { useAuth } from '../../context/AuthProvider';
 
 function DeltaPill({ value }) {
@@ -68,7 +69,7 @@ export default function StatusHeroCard({
 
   const derived = useMemo(() => {
     if (!activities?.length || !profile) return null;
-    return computePmcFromActivities(activities, profile, { tssUser: user });
+    return computePmcFromActivities(activities, profile, { displayDays: PMC_MAX_VIEW_DAYS, tssUser: user });
   }, [activities, profile, user]);
 
   const effTodayMetrics = useMemo(() => {
@@ -174,8 +175,7 @@ export default function StatusHeroCard({
 
   // Build sparkline arrays from chartData
   // API returns: { Fitness, Fatigue, Form, dateLabel, date }
-  const rangeMap = { '14d': 14, '6w': 42, '3m': 90 };
-  const pts = effSparkline.slice(-rangeMap[formRange]);
+  const pts = effSparkline.slice(-nativeFormRangeDays(formRange));
   const tsbSeries = pts.map(d => readField(d, 'Form',    'form',    'tsb'));
   const ctlSeries = pts.map(d => readField(d, 'Fitness', 'fitness', 'ctl'));
   const atlSeries = pts.map(d => readField(d, 'Fatigue', 'fatigue', 'atl'));
@@ -199,12 +199,24 @@ export default function StatusHeroCard({
   const H_FORM = 128;
   const RING = 72;
   const W = measuredW > 0 ? measuredW : 320;
+  const AXIS_L = 30;
+  const AXIS_R = 26;
+  const chartW = Math.max(W - AXIS_L - AXIS_R, 40);
 
-  // Shared y-domain for form chart: all three series + 0
-  const allFormVals = [...ctlSeries, ...atlSeries, ...tsbSeries, 0];
-  const domMin = Math.min(...allFormVals) - 2;
-  const domMax = Math.max(...allFormVals) + 2;
-  const zeroY  = yForVal(0, H_FORM, domMin, domMax, 8);
+  const axisDomains = useMemo(
+    () => pmcAxisDomainsFromPoints(pts.map((p, i) => ({
+      Fitness: ctlSeries[i],
+      Fatigue: atlSeries[i],
+      Form: tsbSeries[i],
+    }))),
+    [pts, ctlSeries, atlSeries, tsbSeries],
+  );
+  const tssMin = 0;
+  const tssMax = axisDomains.tssMax;
+  const { min: tsbMin, max: tsbMax } = axisDomains;
+  const yTss = (val) => yForVal(val, H_FORM, tssMin, tssMax, 8);
+  const yTsb = (val) => yForVal(val, H_FORM, tsbMin, tsbMax, 8);
+  const tsbZeroY = yTsb(0);
 
   // Date tick labels (first and last)
   const firstLabel = pts.length > 0 ? (pts[0].dateLabel || '') : '';
@@ -368,7 +380,7 @@ export default function StatusHeroCard({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
                 {[
                   { key: 'fitness', label: 'Fitness', val: fitness, delta: fitnessDelta, color: '#3b82f6' },
-                  { key: 'fatigue', label: 'Fatigue', val: fatigue, delta: fatigueDelta, color: '#9333ea' },
+                  { key: 'fatigue', label: 'Fatigue', val: fatigue, delta: fatigueDelta, color: PMC_COLORS.fatigue },
                   { key: 'form', label: 'Form', val: form >= 0 ? `+${form}` : form, delta: formDelta, color: status.color, isForm: true },
                 ].map(({ key, label, val, delta, color, isForm }) => {
                   const on = statusMetric === key;
@@ -414,8 +426,8 @@ export default function StatusHeroCard({
                          : statusMetric === 'fatigue' ? atlSeries
                          : tsbSeries;
             if (!series || series.length < 2) return null;
-            const seriesColor = statusMetric === 'fitness' ? '#3b82f6'
-                              : statusMetric === 'fatigue' ? '#9333ea'
+            const seriesColor = statusMetric === 'fitness' ? PMC_COLORS.fitness
+                              : statusMetric === 'fatigue' ? PMC_COLORS.fatigue
                               : status.color;
             const showZero = statusMetric === 'form';
             const spMin = Math.min(...series, showZero ? 0 : Math.min(...series)) - 2;
@@ -475,9 +487,9 @@ export default function StatusHeroCard({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <div style={{ display: 'flex', gap: 10 }}>
               {[
-                { l: 'CTL', v: fitness, c: '#3b82f6' },
-                { l: 'ATL', v: fatigue, c: '#9333ea' },
-                { l: 'TSB', v: form,    c: '#f97316' },
+                { l: 'CTL', v: fitness, c: PMC_COLORS.fitness },
+                { l: 'ATL', v: fatigue, c: PMC_COLORS.fatigue },
+                { l: 'TSB', v: form,    c: PMC_COLORS.form },
               ].map(({ l, v, c }) => (
                 <div key={l} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   <span style={{ fontSize: 8.5, color: '#6B7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
@@ -488,9 +500,9 @@ export default function StatusHeroCard({
               ))}
             </div>
             <div style={styles.seg}>
-              {['14d', '6w', '3m'].map(r2 => (
-                <button key={r2} style={{ ...styles.segBtnSm, ...(formRange === r2 ? styles.segBtnOn : {}) }}
-                  onClick={() => setFormRange(r2)}>{r2}</button>
+              {NATIVE_FORM_RANGES.map(({ id, label }) => (
+                <button key={id} style={{ ...styles.segBtnSm, ...(formRange === id ? styles.segBtnOn : {}) }}
+                  onClick={() => setFormRange(id)}>{label}</button>
               ))}
             </div>
           </div>
@@ -507,58 +519,62 @@ export default function StatusHeroCard({
                 }}>
                 <defs>
                   <linearGradient id="ndctl-g" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0" stopColor="#3b82f6" stopOpacity=".18" />
-                    <stop offset="1" stopColor="#3b82f6" stopOpacity="0" />
+                    <stop offset="0" stopColor={PMC_COLORS.fitness} stopOpacity=".18" />
+                    <stop offset="1" stopColor={PMC_COLORS.fitness} stopOpacity="0" />
                   </linearGradient>
-                  <linearGradient id="ndtsb-g2" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0" stopColor="#f97316" stopOpacity=".15" />
-                    <stop offset="1" stopColor="#f97316" stopOpacity="0" />
-                  </linearGradient>
-                  <clipPath id="ndAboveZero">
-                    <rect x="0" y="0" width={W} height={zeroY} />
-                  </clipPath>
-                  <clipPath id="ndBelowZero">
-                    <rect x="0" y={zeroY} width={W} height={H_FORM - zeroY} />
-                  </clipPath>
                 </defs>
 
-                {/* Grid lines */}
-                {[0.25, 0.5, 0.75].map(f => (
-                  <line key={f} x1="0" y1={H_FORM * f} x2={W} y2={H_FORM * f}
+                {/* Grid — aligned to TSS axis */}
+                {tssAxisTicks(tssMax).map((tick) => (
+                  <line key={`tss-${tick}`} x1={AXIS_L} y1={yTss(tick)} x2={W - AXIS_R} y2={yTss(tick)}
                     stroke="rgba(10,14,26,.04)" strokeDasharray="2 4" />
                 ))}
 
-                {/* Zero reference line */}
-                <line x1="0" y1={zeroY} x2={W} y2={zeroY}
+                {/* TSB zero reference */}
+                <line x1={AXIS_L} y1={tsbZeroY} x2={W - AXIS_R} y2={tsbZeroY}
                   stroke="rgba(10,14,26,.14)" strokeDasharray="3 4" />
 
-                {/* CTL fill + line — animated draw */}
-                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${H_FORM} L 0 ${H_FORM} Z`}
+                {/* Left axis — TSS/d */}
+                {tssAxisTicks(tssMax).map((tick) => (
+                  <text key={`tss-lbl-${tick}`} x={AXIS_L - 4} y={yTss(tick) + 3}
+                    textAnchor="end" fontSize="8" fill="#9CA3AF" fontWeight="600">
+                    {tick}
+                  </text>
+                ))}
+                <text x={6} y={H_FORM / 2} textAnchor="middle" fontSize="7.5" fill="#9CA3AF" fontWeight="700"
+                  transform={`rotate(-90 6 ${H_FORM / 2})`}>
+                  TSS/d
+                </text>
+
+                {/* Right axis — Form (TSB) */}
+                {tsbAxisTicks(tsbMin, tsbMax).map((tick) => (
+                  <text key={`tsb-lbl-${tick}`} x={W - AXIS_R + 4} y={yTsb(tick) + 3}
+                    textAnchor="start" fontSize="8" fill={PMC_COLORS.form} fontWeight="600">
+                    {tick > 0 ? `+${tick}` : tick}
+                  </text>
+                ))}
+                <text x={W - 6} y={H_FORM / 2} textAnchor="middle" fontSize="7.5" fill={PMC_COLORS.form} fontWeight="700"
+                  transform={`rotate(90 ${W - 6} ${H_FORM / 2})`}>
+                  TSB
+                </text>
+
+                {/* CTL fill + line */}
+                <path d={makePath(ctlSeries, chartW, H_FORM, tssMin, tssMax, AXIS_L, 8) + ` L ${W - AXIS_R} ${H_FORM} L ${AXIS_L} ${H_FORM} Z`}
                   fill="url(#ndctl-g)"
                   style={{ animation: 'ndFadeIn .5s ease both' }}
                 />
-                <path d={makePath(ctlSeries, W, H_FORM, domMin, domMax, 0, 8)}
-                  fill="none" stroke="#3b82f6" strokeWidth="2"
+                <path d={makePath(ctlSeries, chartW, H_FORM, tssMin, tssMax, AXIS_L, 8)}
+                  fill="none" stroke={PMC_COLORS.fitness} strokeWidth="2"
                   style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.1s cubic-bezier(.22,1,.36,1) forwards' }}
                 />
 
-                <path d={makePath(atlSeries, W, H_FORM, domMin, domMax, 0, 8)}
-                  fill="none" stroke="#9333ea" strokeWidth="1.6" strokeDasharray="4 3"
+                <path d={makePath(atlSeries, chartW, H_FORM, tssMin, tssMax, AXIS_L, 8)}
+                  fill="none" stroke={PMC_COLORS.fatigue} strokeWidth="1.8"
                   style={{ animation: 'ndFadeIn .8s .15s ease both' }}
                 />
 
-                <path
-                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
-                  fill="rgba(34,197,94,.15)" clipPath="url(#ndAboveZero)"
-                  style={{ animation: 'ndFadeIn .6s .2s ease both' }}
-                />
-                <path
-                  d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8) + ` L ${W} ${zeroY} L 0 ${zeroY} Z`}
-                  fill="rgba(239,68,68,.12)" clipPath="url(#ndBelowZero)"
-                  style={{ animation: 'ndFadeIn .6s .2s ease both' }}
-                />
-                <path d={makePath(tsbSeries, W, H_FORM, domMin, domMax, 0, 8)}
-                  fill="none" stroke="#f97316" strokeWidth="2.2"
+                <path d={makePath(tsbSeries, chartW, H_FORM, tsbMin, tsbMax, AXIS_L, 8)}
+                  fill="none" stroke={PMC_COLORS.form} strokeWidth="2.2"
                   style={{ strokeDasharray: 2000, strokeDashoffset: 2000, animation: 'ndDrawLine 1.2s .15s cubic-bezier(.22,1,.36,1) forwards' }}
                 />
               </svg>
@@ -580,7 +596,7 @@ export default function StatusHeroCard({
 
           {/* Legend */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6, alignItems: 'center' }}>
-            {[['#3b82f6', 'CTL (Fitness)', false], ['#9333ea', 'ATL (Fatigue)', true], ['#f97316', 'TSB (Form)', false]].map(([c, l, dashed]) => (
+            {[['#2563eb', 'CTL (Fitness)', false], [PMC_COLORS.fatigue, 'ATL (Fatigue)', false], [PMC_COLORS.form, 'TSB (Form)', false]].map(([c, l, dashed]) => (
               <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#6B7280', fontWeight: 600 }}>
                 <span style={{
                   display: 'inline-block', width: 12, height: 2, borderRadius: 1,

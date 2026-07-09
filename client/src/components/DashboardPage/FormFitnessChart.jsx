@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LineChart, Line } from 'recharts';
+import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Line } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { getFormFitnessData, getTodayMetrics, getRaceEvents } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import { fetchWellness } from '../../services/wellnessData';
 import { useAuth } from '../../context/AuthProvider';
 import TrainingGlossary from './TrainingGlossary';
-import { FORM_FITNESS_INTRO } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { enrichProfileForTss, hasInferredThresholds, mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { requestTrainingZonesModal, profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
+import { pmcAxisDomainsFromPoints, PMC_COLORS, FORM_FITNESS_TIME_RANGES, FORM_FITNESS_TIME_RANGE_VALUES, daysFromFormFitnessTimeRange } from '../../utils/pmcChartAxes';
 
 // Total planned duration in seconds (respects interval-group repeats).
 const planStepTotalSecs = (steps) => {
@@ -73,7 +73,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
   const getStoredTimeRange = () => {
     try {
       const stored = localStorage.getItem('formFitnessTimeRange');
-      if (stored && ['30 days', '60 days', '90 days', '180 days', '365 days'].includes(stored)) {
+      if (stored && FORM_FITNESS_TIME_RANGE_VALUES.includes(stored)) {
         return stored;
       }
     } catch (error) {
@@ -183,11 +183,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
       }
 
       // Convert time range to days
-      const days = timeRange === '30 days' ? 30 :
-                   timeRange === '60 days' ? 60 :
-                   timeRange === '90 days' ? 90 :
-                   timeRange === '180 days' ? 180 :
-                   timeRange === '365 days' ? 365 : 60;
+      const days = daysFromFormFitnessTimeRange(timeRange);
 
       // Dashboard: wait for calendar — never paint stale API/cache while loading.
       if (calendarDriven) {
@@ -415,11 +411,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
   }, []);
 
   const timeframeLabel = useMemo(() => {
-    const days = timeRange === '30 days' ? 30 :
-      timeRange === '60 days' ? 60 :
-      timeRange === '90 days' ? 90 :
-      timeRange === '180 days' ? 180 :
-      timeRange === '365 days' ? 365 : 60;
+    const days = daysFromFormFitnessTimeRange(timeRange);
     return `${days} days`;
   }, [timeRange]);
 
@@ -608,6 +600,11 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
     return chartDataExtended.slice(effectiveZoomRange.start, effectiveZoomRange.end + 1);
   }, [chartDataExtended, effectiveZoomRange]);
 
+  const axisDomains = useMemo(
+    () => pmcAxisDomainsFromPoints(zoomedData),
+    [zoomedData],
+  );
+
   // If data length changes (filters/time range), keep zoom in bounds / reset selection
   useEffect(() => {
     setRefAreaLeft(null);
@@ -702,24 +699,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
     selectionStartRef.current = null;
   };
 
-  const miniTooltip = ({ active, payload, label }) => {
-    if (!active || !payload || payload.length === 0) return null;
-    const p = payload[0];
-    const dp = chartDataExtended.find(d => d.dateLabel === label) || null;
-    const dateText = dp?.date ? new Date(dp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : label;
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-        <div className="font-semibold text-gray-900">{dateText}{dp?.projected ? ' · planned' : ''}</div>
-        <div className="text-gray-700">
-          {p.name}: <span className="font-semibold">{p.value}</span>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg w-full h-full flex flex-col">
-      <div className="flex items-center justify-between gap-3 mb-3">
+    <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-lg w-full h-full flex flex-col">
+      <div className="flex items-center justify-between gap-3 mb-2">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Form & Fitness</h3>
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
@@ -740,18 +722,6 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           </button>
         </div>
       </div>
-
-      <p className="text-xs text-gray-500 mb-2 leading-relaxed line-clamp-2">
-        {FORM_FITNESS_INTRO}
-        {' '}
-        <button
-          type="button"
-          onClick={() => handleInfoClick('Form & Fitness')}
-          className="font-semibold text-primary hover:underline"
-        >
-          Full glossary
-        </button>
-      </p>
 
       {profileNeedsTrainingZones(profile) && Array.isArray(activities) && activities.length > 0 && (
         <div className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -823,11 +793,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
                       onChange={(e) => handleTimeRangeChange(e.target.value)}
                       className="appearance-none w-full text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-10 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     >
-                      <option value="30 days">Past 30 days</option>
-                      <option value="60 days">Past 60 days</option>
-                      <option value="90 days">Past 90 days</option>
-                      <option value="180 days">Past 6 months</option>
-                      <option value="365 days">Past year</option>
+                      {FORM_FITNESS_TIME_RANGES.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
                     </select>
                     <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
                   </div>
@@ -909,236 +877,33 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           </div>
         )}
 
-        {/* Performance Insights cards (TrainingPeaks-like) */}
+        {/* Compact headline metrics — no mini sparklines; all curves live on the main chart */}
         {insights && (
-          <div className={isMobile ? "mb-3" : "grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2"}>
-            {isMobile && (
-              <div className="-mx-4 px-4 overflow-x-auto snap-x snap-mandatory flex gap-3">
-                {/* Fitness */}
-                <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-gray-500 uppercase">Fitness</div>
-                      <button
-                        onClick={() => handleInfoClick('Form & Fitness')}
-                        className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                        aria-label="Show explanation"
-                      >
-                        <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
-                    <div className="mt-0.5 flex items-baseline gap-2">
-                      <div className="text-xl font-bold text-blue-600">{insights.fitness}</div>
-                      <div className="text-xs text-gray-600">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
-                    <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={24}>
-                        <LineChart data={zoomedData}>
-                          <XAxis dataKey="dateLabel" hide />
-                          <Tooltip content={miniTooltip} />
-                          <Line type="monotone" dataKey="Fitness" name="Fitness" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Form */}
-                <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-gray-500 uppercase">Form</div>
-                      <button
-                        onClick={() => handleInfoClick('Form & Fitness')}
-                        className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                        aria-label="Show explanation"
-                      >
-                        <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
-                    <div className="mt-0.5 flex items-baseline gap-2">
-                      <div className={`text-xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>
-                        {insights.form > 0 ? `+${insights.form}` : insights.form}
-                      </div>
-                      <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
-                    <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={24}>
-                        <LineChart data={zoomedData}>
-                          <XAxis dataKey="dateLabel" hide />
-                          <Tooltip content={miniTooltip} />
-                          <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
-                          <Line type="monotone" dataKey="Form" name="Form" stroke="#f97316" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Fatigue */}
-                <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-gray-500 uppercase">Fatigue</div>
-                      <button
-                        onClick={() => handleInfoClick('Form & Fitness')}
-                        className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                        aria-label="Show explanation"
-                      >
-                        <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
-                    <div className="mt-0.5 flex items-baseline gap-2">
-                      <div className="text-xl font-bold text-pink-600">{insights.fatigue}</div>
-                      <div className="text-xs text-gray-600">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
-                    <div className="mt-1 select-none">
-                      <ResponsiveContainer width="100%" height={24}>
-                        <LineChart data={zoomedData}>
-                          <XAxis dataKey="dateLabel" hide />
-                          <Tooltip content={miniTooltip} />
-                          <Line type="monotone" dataKey="Fatigue" name="Fatigue" stroke="#db2777" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!isMobile && (
-              <>
-            {/* Fitness */}
-            <div className="rounded-xl border border-gray-200 p-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Fitness</div>
-                <button
-                  onClick={() => handleInfoClick('Form & Fitness')}
-                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                  aria-label="Show explanation"
-                >
-                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <div className="text-xl sm:text-2xl font-bold text-blue-600">{insights.fitness}</div>
-                <div className="text-xs text-gray-600">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
-              </div>
-              <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
-              <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={24}>
-                  <LineChart
-                    data={zoomedData}
-                    onMouseDown={handleZoomMouseDown}
-                    onMouseMove={handleZoomMouseMove}
-                    onMouseUp={handleZoomMouseUp}
-                    onDoubleClick={handleZoomReset}
-                    onTouchStart={handleZoomMouseDown}
-                    onTouchMove={handleZoomMouseMove}
-                    onTouchEnd={handleZoomMouseUp}
-                  >
-                    <XAxis dataKey="dateLabel" hide />
-                    <Tooltip content={miniTooltip} />
-                    {selectionX1 && selectionX2 && (
-                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                    )}
-                    <Line type="monotone" dataKey="Fitness" name="Fitness" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-2">
+            <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Fitness</div>
+              <div className="text-lg sm:text-xl font-bold text-blue-600 tabular-nums leading-tight">{insights.fitness}</div>
+              <div className="text-[10px] text-gray-500 truncate">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
+              <div className="text-[10px] font-semibold text-blue-600 truncate">{insights.fitnessStatus}</div>
             </div>
-
-            {/* Form */}
-            <div className="rounded-xl border border-gray-200 p-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Form</div>
-                <button
-                  onClick={() => handleInfoClick('Form & Fitness')}
-                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                  aria-label="Show explanation"
-                >
-                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                </button>
+            <div className="rounded-lg border border-orange-100 bg-orange-50/60 px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Form</div>
+              <div className={`text-lg sm:text-xl font-bold tabular-nums leading-tight ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>
+                {insights.form > 0 ? `+${insights.form}` : insights.form}
               </div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <div className={`text-xl sm:text-2xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>
-                  {insights.form > 0 ? `+${insights.form}` : insights.form}
-                </div>
-                <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
-              </div>
-              <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
-              <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={24}>
-                  <LineChart
-                    data={zoomedData}
-                    onMouseDown={handleZoomMouseDown}
-                    onMouseMove={handleZoomMouseMove}
-                    onMouseUp={handleZoomMouseUp}
-                    onDoubleClick={handleZoomReset}
-                    onTouchStart={handleZoomMouseDown}
-                    onTouchMove={handleZoomMouseMove}
-                    onTouchEnd={handleZoomMouseUp}
-                  >
-                    <XAxis dataKey="dateLabel" hide />
-                    <Tooltip content={miniTooltip} />
-                    {selectionX1 && selectionX2 && (
-                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                    )}
-                    <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
-                    <Line type="monotone" dataKey="Form" name="Form" stroke="#f97316" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <div className="text-[10px] text-gray-500 truncate">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
+              <div className="text-[10px] font-semibold text-orange-600 truncate">{insights.formStatus}</div>
             </div>
-
-            {/* Fatigue */}
-            <div className="rounded-xl border border-gray-200 p-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Fatigue</div>
-                <button
-                  onClick={() => handleInfoClick('Form & Fitness')}
-                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                  aria-label="Show explanation"
-                >
-                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <div className="text-xl sm:text-2xl font-bold text-pink-600">{insights.fatigue}</div>
-                <div className="text-xs text-gray-600">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
-              </div>
-              <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
-              <div className="mt-1 select-none">
-                <ResponsiveContainer width="100%" height={24}>
-                  <LineChart
-                    data={zoomedData}
-                    onMouseDown={handleZoomMouseDown}
-                    onMouseMove={handleZoomMouseMove}
-                    onMouseUp={handleZoomMouseUp}
-                    onDoubleClick={handleZoomReset}
-                    onTouchStart={handleZoomMouseDown}
-                    onTouchMove={handleZoomMouseMove}
-                    onTouchEnd={handleZoomMouseUp}
-                  >
-                    <XAxis dataKey="dateLabel" hide />
-                    <Tooltip content={miniTooltip} />
-                    {selectionX1 && selectionX2 && (
-                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                    )}
-                    <Line type="monotone" dataKey="Fatigue" name="Fatigue" stroke="#db2777" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="rounded-lg border border-pink-100 bg-pink-50/60 px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Fatigue</div>
+              <div className="text-lg sm:text-xl font-bold text-pink-600 tabular-nums leading-tight">{insights.fatigue}</div>
+              <div className="text-[10px] text-gray-500 truncate">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
+              <div className="text-[10px] font-semibold text-pink-600 truncate">{insights.fatigueStatus}</div>
             </div>
-              </>
-            )}
           </div>
         )}
 
-        <div className="flex-1 min-h-32 sm:min-h-40 select-none relative">
+        <div className="flex-1 min-h-56 sm:min-h-72 lg:min-h-80 select-none relative">
           {zoomRange && (
             <button
               onClick={handleZoomReset}
@@ -1150,9 +915,9 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
             </button>
           )}
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
+            <ComposedChart
               data={zoomedData}
-              margin={{ top: 10, right: 10, left: isMobile ? 0 : 0, bottom: 0 }}
+              margin={{ top: 10, right: isMobile ? 36 : 44, left: isMobile ? 4 : 8, bottom: 0 }}
               onMouseDown={handleZoomMouseDown}
               onMouseMove={handleZoomMouseMove}
               onMouseUp={handleZoomMouseUp}
@@ -1163,28 +928,31 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
             >
             <defs>
               <linearGradient id="colorFitness" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="colorForm" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="colorFatigue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#9333ea" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#9333ea" stopOpacity={0}/>
+                <stop offset="5%" stopColor={PMC_COLORS.fitness} stopOpacity={0.18}/>
+                <stop offset="95%" stopColor={PMC_COLORS.fitness} stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <CartesianGrid yAxisId="tss" strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis 
               dataKey="dateLabel" 
               tick={{ fontSize: isMobile ? 10 : 12, fill: '#6b7280' }}
               interval="preserveStartEnd"
             />
-            <YAxis 
-              width={isMobile ? 28 : 40}
+            <YAxis
+              yAxisId="tss"
+              orientation="left"
+              width={isMobile ? 32 : 40}
+              domain={[0, axisDomains.tssMax]}
               tick={{ fontSize: isMobile ? 10 : 12, fill: '#6b7280' }}
-              domain={['auto', 'auto']}
+              label={{ value: 'TSS/d', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 10, fill: '#9ca3af' } }}
+            />
+            <YAxis
+              yAxisId="tsb"
+              orientation="right"
+              width={isMobile ? 32 : 40}
+              domain={[axisDomains.min, axisDomains.max]}
+              tick={{ fontSize: isMobile ? 10 : 12, fill: PMC_COLORS.form }}
+              label={{ value: 'Form (TSB)', angle: 90, position: 'insideRight', offset: 10, style: { fontSize: 10, fill: PMC_COLORS.form } }}
             />
             {showRecovery && hasWellness && (
               <YAxis yAxisId="recovery" orientation="right" hide domain={['auto', 'auto']} />
@@ -1207,31 +975,37 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
               }}
             />
             {selectionX1 && selectionX2 && (
-              <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
+              <ReferenceArea yAxisId="tss" x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
             )}
-            <Area 
-              type="monotone" 
-              dataKey="Fitness" 
-              stroke="#3b82f6" 
-              fillOpacity={1} 
-              fill="url(#colorFitness)" 
-              strokeWidth={2}
+            <Area
+              yAxisId="tss"
+              type="monotone"
+              dataKey="Fitness"
+              name="Fitness"
+              stroke={PMC_COLORS.fitness}
+              fillOpacity={1}
+              fill="url(#colorFitness)"
+              strokeWidth={2.5}
             />
-            <Area 
-              type="monotone" 
-              dataKey="Form" 
-              stroke="#f97316" 
-              fillOpacity={1} 
-              fill="url(#colorForm)" 
-              strokeWidth={2}
+            <Line
+              yAxisId="tss"
+              type="monotone"
+              dataKey="Fatigue"
+              name="Fatigue"
+              stroke={PMC_COLORS.fatigue}
+              strokeWidth={2.5}
+              dot={false}
+              isAnimationActive={false}
             />
-            <Area 
-              type="monotone" 
-              dataKey="Fatigue" 
-              stroke="#9333ea" 
-              fillOpacity={1} 
-              fill="url(#colorFatigue)" 
-              strokeWidth={2}
+            <Line
+              yAxisId="tsb"
+              type="monotone"
+              dataKey="Form"
+              name="Form"
+              stroke={PMC_COLORS.form}
+              strokeWidth={2.5}
+              dot={false}
+              isAnimationActive={false}
             />
             {/* ── Recovery overlay (Apple Health) — thin lines on a hidden right axis ── */}
             {showRecovery && hasWellness && (
@@ -1243,25 +1017,28 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
             {/* ── Future projection from planned workouts (dashed) ── */}
             {hasProjection && (
               <>
-                <ReferenceArea x1={todayLabel} x2={projection[projection.length - 1].dateLabel} fill="#6366f1" fillOpacity={0.05} />
+                <ReferenceArea yAxisId="tss" x1={todayLabel} x2={projection[projection.length - 1].dateLabel} fill="#6366f1" fillOpacity={0.05} />
                 <ReferenceLine
+                  yAxisId="tss"
                   x={todayLabel}
                   stroke="#94a3b8"
                   strokeDasharray="4 3"
                   label={{ value: 'Today', position: 'insideTopLeft', fontSize: 10, fontWeight: 700, fill: '#64748b' }}
                 />
-                <Area type="monotone" dataKey="FitnessProj" name="Fitness" stroke="#3b82f6" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
-                <Area type="monotone" dataKey="FormProj" name="Form" stroke="#f97316" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
-                <Area type="monotone" dataKey="FatigueProj" name="Fatigue" stroke="#9333ea" strokeDasharray="5 4" strokeWidth={2} fill="none" dot={false} isAnimationActive={false} connectNulls />
+                <Line yAxisId="tss" type="monotone" dataKey="FitnessProj" name="Fitness" stroke={PMC_COLORS.fitness} strokeDasharray="5 4" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
+                <Line yAxisId="tss" type="monotone" dataKey="FatigueProj" name="Fatigue" stroke={PMC_COLORS.fatigue} strokeDasharray="5 4" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
+                <Line yAxisId="tsb" type="monotone" dataKey="FormProj" name="Form" stroke={PMC_COLORS.form} strokeDasharray="5 4" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
               </>
             )}
             <ReferenceLine
+              yAxisId="tsb"
               y={0}
               stroke="#9ca3af"
               strokeDasharray="3 3"
             />
             {raceTarget?.ctl != null && (
               <ReferenceLine
+                yAxisId="tss"
                 y={raceTarget.ctl}
                 stroke="#767EB5"
                 strokeDasharray="6 4"
@@ -1275,29 +1052,29 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
                 }}
               />
             )}
-          </AreaChart>
+          </ComposedChart>
         </ResponsiveContainer>
         </div>
         </>
       )}
 
-      <div className="flex justify-center gap-4 mt-4">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-          <span className="text-sm text-gray-600">Fitness</span>
+      <div className="flex flex-wrap justify-center gap-3 sm:gap-4 mt-2">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+          <span className="text-xs text-gray-600">Fitness</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-          <span className="text-sm text-gray-600">Form</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
+          <span className="text-xs text-gray-600">Form</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-          <span className="text-sm text-gray-600">Fatigue</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PMC_COLORS.fatigue }}></div>
+          <span className="text-xs text-gray-600">Fatigue</span>
         </div>
         {hasProjection && (
-          <div className="flex items-center gap-2">
-            <svg width="20" height="6" aria-hidden><line x1="0" y1="3" x2="20" y2="3" stroke="#64748b" strokeWidth="2" strokeDasharray="5 4" /></svg>
-            <span className="text-sm text-gray-600">Planned (projected)</span>
+          <div className="flex items-center gap-1.5">
+            <svg width="16" height="5" aria-hidden><line x1="0" y1="2.5" x2="16" y2="2.5" stroke="#64748b" strokeWidth="2" strokeDasharray="4 3" /></svg>
+            <span className="text-xs text-gray-600">Planned (projected)</span>
           </div>
         )}
         {showRecovery && hasWellness && (

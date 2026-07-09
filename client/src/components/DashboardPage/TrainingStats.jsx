@@ -35,6 +35,13 @@ const INTERVAL_TYPE_BAR = {
 function axisTickPercent(i, n) {
   return n <= 1 ? 50 : (i / (n - 1)) * 100;
 }
+/** Pin top/bottom ticks to chart edges so 0 aligns with the bar baseline. */
+function axisTickStyle(i, n) {
+  if (n <= 1) return { top: "50%", transform: "translateY(-50%)" };
+  if (i === 0) return { top: "0%", transform: "translateY(0)" };
+  if (i === n - 1) return { top: "100%", transform: "translateY(-100%)" };
+  return { top: `${axisTickPercent(i, n)}%`, transform: "translateY(-50%)" };
+}
 function trainingResultsOf(t) {
   return Array.isArray(t?.results) ? t.results : [];
 }
@@ -310,12 +317,12 @@ function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, dista
 /* ── Y-axis scale ──────────────────────────────────────────────────────────── */
 function Scale({ values, formatValue }) {
   return (
-    <div className="relative shrink-0 w-9 sm:w-11 text-right h-full min-h-[100px] self-stretch">
+    <div className="relative shrink-0 w-9 sm:w-11 text-right h-full min-h-[128px] self-stretch">
       {values.map((v, i) => (
         <div
           key={i}
           className="absolute right-0 left-0 flex items-center justify-end pr-1"
-          style={{ top: `${axisTickPercent(i, values.length)}%`, transform: "translateY(-50%)" }}
+          style={axisTickStyle(i, values.length)}
         >
           <span className="text-[11px] text-gray-400 bg-white pl-0.5 leading-none whitespace-nowrap">
             {formatValue ? formatValue(v) : v}
@@ -985,7 +992,7 @@ export function TrainingStats({
 
   /* ── render ── */
   return (
-    <div className="flex flex-col h-full min-h-[260px] sm:min-h-[280px] p-4 sm:p-4 bg-white rounded-2xl shadow-sm border border-gray-100 gap-3">
+    <div className="flex flex-col h-full min-h-[280px] sm:min-h-[300px] p-4 sm:p-4 bg-white rounded-2xl shadow-sm border border-gray-100 gap-3">
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -1076,26 +1083,26 @@ export function TrainingStats({
           </p>
         </div>
       ) : (
-      <div className="flex flex-1 min-h-0 gap-1 sm:gap-2 items-stretch w-full min-w-0">
+      <div className="flex flex-1 min-h-0 flex-col gap-0 w-full min-w-0">
+        <div className="flex flex-1 min-h-0 gap-1 sm:gap-2 items-stretch w-full min-w-0">
         <Scale
           values={isPaceSport ? paceValues : powerValues}
           formatValue={isPaceSport ? formatPaceVal : null}
         />
 
         <div ref={containerRef} className="relative flex flex-1 min-w-0 min-h-0 flex-col" style={{ overflow: "visible" }}>
-          {/* grid lines */}
-          <div ref={chartBarsRef} className="relative flex-1 min-h-[100px] min-w-0">
+          <div ref={chartBarsRef} className="relative flex-1 min-h-[128px] min-w-0">
           <div className="pointer-events-none absolute left-0 right-0 top-0 bottom-0 z-0">
             {(isPaceSport ? paceValues : powerValues).map((_, i, arr) => (
               <div
                 key={i}
                 className="absolute left-0 right-0 border-t border-gray-100"
-                style={{ top: `${axisTickPercent(i, arr.length)}%`, transform: "translateY(-50%)" }}
+                style={axisTickStyle(i, arr.length)}
               />
             ))}
           </div>
 
-          {/* bar columns */}
+          {/* bar columns — full chart height; dates live in the row below */}
           <div
             className="relative z-10 flex h-full w-full items-stretch gap-1 sm:gap-1.5"
             style={{ overflow: "visible" }}
@@ -1138,9 +1145,9 @@ export function TrainingStats({
               const colorMap = new Map(powerPaceVals.map((x, rank) => [x.i, rank]));
 
               return (
-                <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 h-full flex-col items-stretch overflow-visible">
+                <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 h-full items-end overflow-visible">
                   <div
-                    className="relative flex flex-1 min-h-0 w-full min-w-0 items-end overflow-visible"
+                    className="relative flex h-full w-full min-w-0 items-end overflow-visible"
                     style={{ gap: `${gapPx}px` }}
                   >
                     {results.map((r, rIdx) => {
@@ -1179,14 +1186,24 @@ export function TrainingStats({
                       );
                     })}
                   </div>
-                  <div className="mt-1 w-full shrink-0 text-center text-xs text-gray-400 tabular-nums leading-tight">
-                    {new Date(training.date).toLocaleDateString("en-US", { day:"numeric", month:"numeric", year:"2-digit" })}
-                  </div>
                 </div>
               );
             })}
           </div>
           </div>
+        </div>
+        </div>
+
+        {/* Date labels — below chart so Y-axis 0 lines up with bar baseline */}
+        <div className="flex gap-1 sm:gap-2 w-full min-w-0 pl-9 sm:pl-11 shrink-0">
+          {visibleTrainings.map((training, tIdx) => (
+            <div
+              key={`date-${training._id || tIdx}`}
+              className="flex-1 basis-0 min-w-0 text-center text-xs text-gray-400 tabular-nums leading-tight"
+            >
+              {new Date(training.date).toLocaleDateString("en-US", { day: "numeric", month: "numeric", year: "2-digit" })}
+            </div>
+          ))}
         </div>
       </div>
       )}

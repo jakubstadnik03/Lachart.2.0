@@ -6,6 +6,14 @@ import { mapExternalActivitiesToCalendar } from './mapExternalActivityToCalendar
 
 const MAX_CALENDAR_ACTIVITIES = 2000;
 
+/** Fired when dashboard (or any page) refreshes the shared calendarData_* cache. */
+export const CALENDAR_DATA_EVENT = 'lachart:calendarDataUpdated';
+
+export function notifyCalendarDataUpdated(athleteId) {
+  if (!athleteId || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(CALENDAR_DATA_EVENT, { detail: { athleteId: String(athleteId) } }));
+}
+
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
   if (data?.activities) return data.activities;

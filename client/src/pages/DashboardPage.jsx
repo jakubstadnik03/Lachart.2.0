@@ -27,9 +27,11 @@ import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
+import { PMC_MAX_VIEW_DAYS } from '../utils/pmcChartAxes';
 import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
+import { notifyCalendarDataUpdated } from '../utils/calendarActivitiesForPmc';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
@@ -1061,6 +1063,7 @@ export default function DashboardPage() {
       } catch (_) { /* ignore quota */ }
 
       applyIfCurrent(() => setCalendarData(limitedForView));
+      if (limitedForView.length > 0) notifyCalendarDataUpdated(targetId);
       console.log('[DashboardPage] Calendar data loaded and set:', limitedForView.length, 'activities');
       return limitedForView;
     };
@@ -1087,10 +1090,12 @@ export default function DashboardPage() {
           // otherwise the calendar stays blank even after activities arrive.
           if (isCacheValid && parsed.length > 0) {
             applyIfCurrent(() => setCalendarData(parsed));
+            notifyCalendarDataUpdated(targetId);
             console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
           } else if (parsed.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
             applyIfCurrent(() => setCalendarData(parsed));
+            notifyCalendarDataUpdated(targetId);
             console.log('[DashboardPage] Using expired cache as fallback:', parsed.length, 'activities');
           }
         } catch (e) {
@@ -1841,7 +1846,10 @@ export default function DashboardPage() {
       setFormMetricsLoading(false);
       return false;
     }
-    const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile, { tssUser: userRef.current });
+    const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile, {
+      displayDays: PMC_MAX_VIEW_DAYS,
+      tssUser: userRef.current,
+    });
     if (!tm) {
       setFormMetricsLoading(false);
       return false;

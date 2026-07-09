@@ -514,7 +514,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             if (linkedActivity && onSelectLinked) onSelectLinked(linkedActivity);
             else if (onSelect) onSelect(pw);
           }}
-          className="w-full max-w-full text-left rounded-lg transition-all px-1.5 py-1 flex flex-col gap-0.5 hover:brightness-95"
+          className="w-full max-w-full text-left rounded-lg transition-all px-2 py-1.5 flex flex-col gap-1 hover:brightness-95"
           style={{
             backgroundColor: cardBgColor,
             ...outlineBorder({ color: cardBorderColor, leftColor: color, leftWidth: 2, style: cardBorderStyle }),
@@ -524,16 +524,16 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
           title={pw.title}
         >
           <div className="flex items-center gap-1 min-w-0">
-            <SportIcon sport={sport} className="w-3 h-3 flex-shrink-0" />
+            <SportIcon sport={sport} className="w-3.5 h-3.5 flex-shrink-0" />
             <span
-              className="text-[10px] font-bold truncate flex-1 leading-tight"
+              className="text-[11px] font-bold truncate flex-1 leading-tight"
               style={{ color: isCompletedPair ? '#166534' : isMissedPair ? '#991b1b' : isSkipped ? '#9ca3af' : isPurelyPlanned ? color : '#1e293b' }}
             >
               {pw.title || 'Planned'}
             </span>
             {effectiveCategory && getCategory(effectiveCategory) && (
               <span
-                className="text-[7px] uppercase tracking-wide px-1 py-0 rounded font-bold border leading-none flex-shrink-0 max-w-[56px] truncate"
+                className="text-[8px] uppercase tracking-wide px-1 py-0 rounded font-bold border leading-none flex-shrink-0 max-w-[64px] truncate"
                 style={getCatStyle(effectiveCategory)}
                 title={getCategory(effectiveCategory)?.label}
               >
@@ -542,7 +542,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
             )}
           </div>
           {(completedStats || plannedStats) && (
-            <div className={`text-[9px] leading-tight truncate tabular-nums ${isCompletedPair ? 'text-green-800' : 'text-gray-500'}`}>
+            <div className={`text-[10px] leading-tight truncate tabular-nums ${isCompletedPair ? 'text-green-800' : 'text-gray-500'}`}>
               {completedStats || plannedStats}
             </div>
           )}
@@ -731,7 +731,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
     <div className="relative group/act w-full">
       <button
         onClick={handleClick}
-        className={`w-full text-left rounded-lg transition-all px-1.5 py-1 flex flex-col gap-0.5 ${
+        className={`w-full text-left rounded-lg transition-all px-2 py-1.5 flex flex-col gap-1 ${
           isSelected
             ? 'bg-gradient-to-br from-primary to-primary-dark text-white shadow-md ring-2 ring-primary/20'
             : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
@@ -739,11 +739,11 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         style={outlineBorder({ color: isSelected ? 'transparent' : '#e5e7eb', leftColor: color, leftWidth: 2 })}
       >
         <div className="flex items-center gap-1 min-w-0">
-          <SportIcon sport={a.sport} className="w-3 h-3 flex-shrink-0" />
-          <span className="text-[10px] font-bold truncate flex-1 leading-tight">{title}</span>
+          <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-[11px] font-bold truncate flex-1 leading-tight">{title}</span>
           {a.category && catBadgeStyle && catLabel && (
             <span
-              className="text-[7px] font-bold uppercase tracking-wide px-1 py-0 rounded border flex-shrink-0 leading-none max-w-[56px] truncate"
+              className="text-[8px] font-bold uppercase tracking-wide px-1 py-0 rounded border flex-shrink-0 leading-none max-w-[64px] truncate"
               style={isSelected
                 ? { backgroundColor: 'rgba(255,255,255,.18)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }
                 : catBadgeStyle(a.category)}
@@ -754,7 +754,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
           )}
         </div>
         {statsLine && (
-          <div className={`text-[9px] leading-tight truncate tabular-nums ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+          <div className={`text-[10px] leading-tight truncate tabular-nums ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
             {statsLine}
           </div>
         )}
@@ -763,7 +763,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         <button
           onClick={(e) => { e.stopPropagation(); onAddLactate(a); }}
           title="Add lactate"
-          className="absolute top-0.5 right-0.5 hidden group-hover/act:flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-bold bg-violet-100 text-violet-700 hover:bg-violet-200 border border-violet-200 leading-none z-10"
+          className="absolute top-0.5 right-0.5 hidden group-hover/act:flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 hover:bg-violet-200 border border-violet-200 leading-none z-10"
         >
           + La
         </button>
@@ -1498,7 +1498,7 @@ function CalendarCategoryFilter({ value, onChange, activities }) {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-xs font-semibold border transition-all bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+        className="inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-sm font-semibold border transition-all bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
         style={active ? { ...getCategoryStyle(active.id), borderStyle: 'solid' } : {}}
       >
         {active ? (
@@ -6324,7 +6324,7 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
 const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
 
 function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done', weekPlannedWorkouts = [], large = false }) {
-  if (!weekSummary) return <div className="bg-gray-50 p-2 min-h-[130px] min-w-[140px]" />;
+  if (!weekSummary) return <div className="bg-gray-50 p-2.5 min-h-[145px] min-w-[150px]" />;
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
     distanceRun, distanceBike, distanceSwim, tssRun, tssBike, tssSwim, tssStrength,
@@ -6337,21 +6337,21 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   // Default (false) keeps the compact sizes used in the narrow desktop grid.
   const L = large;
   const cls = {
-    pad:    L ? 'p-4'         : 'p-2',
-    gap:    L ? 'gap-2.5'     : 'gap-1.5',
-    big:    L ? 'text-3xl'    : 'text-base',
-    prefix: L ? 'text-base'   : 'text-[11px]',
-    tss:    L ? 'text-lg'     : 'text-xs',
-    micro:  L ? 'text-xs'     : 'text-[9px]',
-    label:  L ? 'text-sm'     : 'text-[10px]',
-    rowH:   L ? 'text-base'   : 'text-[10px]',
-    rowSub: L ? 'text-sm'     : 'text-[9px]',
-    icon:   L ? 'w-5 h-5'     : 'w-3.5 h-3.5',
-    rows:   L ? 'space-y-2.5' : 'space-y-0.5',
-    bar:    L ? 'h-2.5'       : 'h-1.5',
-    fire:   L ? 'w-4 h-4'     : 'w-3 h-3',
-    arrow:  L ? 'w-6 h-6'     : 'w-4 h-4',
-    sportW: L ? 'w-16'        : 'w-14',
+    pad:    L ? 'p-4'         : 'p-2.5',
+    gap:    L ? 'gap-2.5'     : 'gap-2',
+    big:    L ? 'text-3xl'    : 'text-lg',
+    prefix: L ? 'text-base'   : 'text-xs',
+    tss:    L ? 'text-lg'     : 'text-sm',
+    micro:  L ? 'text-xs'     : 'text-[10px]',
+    label:  L ? 'text-sm'     : 'text-[11px]',
+    rowH:   L ? 'text-base'   : 'text-[11px]',
+    rowSub: L ? 'text-sm'     : 'text-[10px]',
+    icon:   L ? 'w-5 h-5'     : 'w-4 h-4',
+    rows:   L ? 'space-y-2.5' : 'space-y-1',
+    bar:    L ? 'h-2.5'       : 'h-2',
+    fire:   L ? 'w-4 h-4'     : 'w-3.5 h-3.5',
+    arrow:  L ? 'w-6 h-6'     : 'w-5 h-5',
+    sportW: L ? 'w-16'        : 'w-16',
   };
 
   // Plan tab — show planned workouts grouped by sport
@@ -6385,7 +6385,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
     const totalTssP = sportRows.reduce((s, [, v]) => s + v.tss, 0);
 
     return (
-      <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[130px]'} min-w-[140px] flex flex-col ${cls.gap}`}>
+      <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[145px]'} min-w-[150px] flex flex-col ${cls.gap}`}>
         {/* Totals */}
         <div className="flex items-baseline gap-1.5 leading-tight">
           <span className={`${cls.big} font-extrabold text-gray-900`}>{formatHours(totalSecs || plannedSeconds)}</span>
@@ -6428,7 +6428,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
   ].filter(s => s.seconds > 0 || s.dist > 0);
 
   return (
-    <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[130px]'} min-w-[140px] flex flex-col ${cls.gap}`}>
+    <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[145px]'} min-w-[150px] flex flex-col ${cls.gap}`}>
       {/* Total time: actual vs planned */}
       <div className="flex items-start justify-between gap-1">
         <div>
@@ -7148,7 +7148,7 @@ export default function CalendarView({
           <div
             key={`lbl-${p._id}`}
             onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
-            className="mt-0.5 text-[9px] font-bold uppercase tracking-wide leading-none truncate pl-3"
+            className="mt-0.5 text-[10px] font-bold uppercase tracking-wide leading-none truncate pl-3"
             style={{ color: periodColor(p), cursor: onPeriodSave ? 'pointer' : 'default' }}
             title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
           >
@@ -7185,7 +7185,7 @@ export default function CalendarView({
       <button
         onClick={open}
         title={dp.notes || dp.title || catLabel(dp.category)}
-        className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px]"
+        className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px]"
         style={{ background: hexToRgba(color, 0.12), color, borderColor: hexToRgba(color, 0.35), cursor: onDayPlanSave ? 'pointer' : 'default' }}
       >
         {dp.title || catLabel(dp.category)}
@@ -7225,7 +7225,7 @@ export default function CalendarView({
             <div
               key={r._id || i}
               title={`${r.name}${r.priority ? ` (${r.priority} race)` : ''}`}
-              className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full ${big ? 'px-2 py-1 text-[12px]' : 'px-1.5 py-0.5 text-[10px]'}`}
+              className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full ${big ? 'px-2 py-1 text-[13px]' : 'px-1.5 py-0.5 text-[11px]'}`}
               style={{ background: color }}
             >
               <span aria-hidden>🏁</span><span className="truncate">{r.name}</span>
@@ -7242,7 +7242,7 @@ export default function CalendarView({
     return (
       <button
         onClick={(e) => { e.stopPropagation(); setDayPlanEditDate(key); }}
-        className={`text-[9px] font-bold uppercase tracking-wide text-gray-300 hover:text-primary px-1 ${className}`}
+        className={`text-[10px] font-bold uppercase tracking-wide text-gray-300 hover:text-primary px-1 ${className}`}
         title="Add day theme"
       >+ theme</button>
     );
@@ -8325,7 +8325,7 @@ export default function CalendarView({
           </button>
           <button
             onClick={today}
-            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors text-xs md:text-sm"
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors text-sm md:text-base"
           >
             Today
           </button>
@@ -8337,7 +8337,7 @@ export default function CalendarView({
             <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
         </div>
-        <div className="text-sm md:text-base lg:text-lg font-semibold text-gray-900">
+        <div className="text-base md:text-lg lg:text-xl font-semibold text-gray-900">
           {isFullscreen
             ? (() => {
                 const ws = startOfWeek(anchorDate);
@@ -8362,7 +8362,7 @@ export default function CalendarView({
                   key={bucket}
                   type="button"
                   onClick={() => setSportFilter(bucket)}
-                  className={`inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-xs font-semibold border transition-all ${
+                  className={`inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-sm font-semibold border transition-all ${
                     isActive
                       ? 'bg-primary text-white border-primary shadow-sm'
                       : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
@@ -8383,7 +8383,7 @@ export default function CalendarView({
           {!isFullscreen && (
             <button
               onClick={() => setView('week')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
             >
               Week
             </button>
@@ -8391,7 +8391,7 @@ export default function CalendarView({
           {!isFullscreen && (
             <button
               onClick={() => setView('month')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
             >
               Month
             </button>
@@ -9026,9 +9026,9 @@ export default function CalendarView({
         /* ── Fullscreen: stacked week-by-week layout ── */
         <div ref={fullscreenScrollRef} onScroll={handleFullscreenScroll} className="flex-1 overflow-y-auto -mx-4 md:-mx-5 px-0">
           {/* Sticky column headers */}
-          <div className="sticky top-0 z-20 grid gap-px bg-gray-200 shadow-sm" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(130px,170px)' }}>
+          <div className="sticky top-0 z-20 grid gap-px bg-gray-200 shadow-sm" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(145px,185px)' }}>
             {['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Summary'].map(d => (
-              <div key={d} className="bg-gray-50 text-[11px] font-semibold text-center py-2 text-gray-500">{d}</div>
+              <div key={d} className="bg-gray-50 text-xs font-semibold text-center py-2.5 text-gray-500">{d}</div>
             ))}
           </div>
 
@@ -9043,15 +9043,15 @@ export default function CalendarView({
             return (
               <div key={weekKey} className={`border-b border-gray-100 ${isCurrentWeek ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}`}>
                 {/* Week header */}
-                <div className={`flex items-center gap-3 px-4 py-1.5 text-xs ${isCurrentWeek ? 'bg-primary/5' : 'bg-gray-50'}`}>
+                <div className={`flex items-center gap-3 px-4 py-2 text-sm ${isCurrentWeek ? 'bg-primary/5' : 'bg-gray-50'}`}>
                   <span className={`font-bold ${isCurrentWeek ? 'text-primary' : 'text-gray-500'}`}>{weekLabel}</span>
-                  {isCurrentWeek && <span className="bg-primary text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">Now</span>}
+                  {isCurrentWeek && <span className="bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">Now</span>}
                   {wkSummary && wkSummary.totalSeconds > 0 && (
                     <div className="flex items-center gap-2 ml-auto text-gray-500">
                       <span className="font-semibold text-gray-700">{formatHours(wkSummary.totalSeconds)}</span>
                       {wkSummary.totalTSS > 0 && (
                         <span className="flex items-center gap-0.5 text-primary font-bold">
-                          <FireIcon className="w-3 h-3" />{Math.round(wkSummary.totalTSS)} TSS
+                          <FireIcon className="w-3.5 h-3.5" />{Math.round(wkSummary.totalTSS)} TSS
                         </span>
                       )}
                       {wkSummary.volumeChange === 'up' && <ArrowUpIcon className="w-3 h-3 text-green-500" />}
@@ -9061,7 +9061,7 @@ export default function CalendarView({
                 </div>
 
                 {/* Day columns */}
-                <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(130px,170px)' }}>
+                <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(145px,185px)' }}>
                   {weekDays.map((dayDate, dayIdx) => {
                     const key = getLocalDateString(dayDate);
                     const allActs = activitiesByDay.get(key) || [];
@@ -9073,7 +9073,7 @@ export default function CalendarView({
                     return (
                       <div
                         key={key}
-                        className={`bg-white p-2 min-h-[190px] flex flex-col gap-1 group/day ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50/60'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
+                        className={`bg-white p-2.5 min-h-[210px] flex flex-col gap-1.5 group/day ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50/60'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
                         onDragOver={e => { if (!draggedPw) return; e.preventDefault(); setDragOverKey(key); }}
                         onDragLeave={() => { if (dragOverKey === key) setDragOverKey(null); }}
                         onDrop={e => {
@@ -9092,13 +9092,13 @@ export default function CalendarView({
                         {/* Day number */}
                         <div className="flex items-center justify-between mb-0.5">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`text-xs font-bold leading-none ${isToday ? 'w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px]' : 'text-gray-700'}`}>
+                            <span className={`text-sm font-bold leading-none ${isToday ? 'w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-[11px]' : 'text-gray-700'}`}>
                               {dayDate.getDate()}
                             </span>
                             {renderDayThemeChip(key)}
                             {renderAddThemeBtn(key, { className: 'opacity-0 group-hover/day:opacity-100 transition-opacity' })}
                           </div>
-                          {isDragTarget && <span className="text-[9px] font-semibold text-primary/70">{draggedPw?.isCopy ? 'Copy' : 'Move'}</span>}
+                          {isDragTarget && <span className="text-[10px] font-semibold text-primary/70">{draggedPw?.isCopy ? 'Copy' : 'Move'}</span>}
                           {!isDragTarget && onPlanWorkout && (
                             <button
                               onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
@@ -9163,7 +9163,7 @@ export default function CalendarView({
                           {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
                             <button key={tabId}
                               onClick={() => setWeekSummaryTab(tabId)}
-                              className={`px-2 py-0.5 text-[9px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
+                              className={`px-2 py-1 text-[10px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
                             >{lbl}</button>
                           ))}
                         </div>
@@ -9196,10 +9196,10 @@ export default function CalendarView({
           exit={{ opacity: 0, x: direction * -30 }}
           transition={{ duration: 0.22, ease: 'easeInOut' }}
           className="grid gap-px bg-gray-100 rounded-xl overflow-hidden"
-          style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(140px,180px)' }}
+          style={{ gridTemplateColumns: 'repeat(7, 1fr) minmax(155px,195px)' }}
         >
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
-          <div key={d} className="bg-gray-50 text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-600">{d}</div>
+          <div key={d} className="bg-gray-50 text-sm md:text-base font-medium p-1.5 md:p-3 text-center text-gray-600">{d}</div>
         ))}
         {(() => {
           // Group days into weeks
@@ -9255,7 +9255,7 @@ export default function CalendarView({
                       opacity: { duration: 0.18, delay: cellIdx * 0.008 },
                       scale: { duration: 0.18, delay: cellIdx * 0.008 },
                     }}
-                    className={`bg-white p-1 md:p-2.5 ${view === 'week' ? 'min-h-[160px]' : 'min-h-[130px]'} transition-all group ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
+                    className={`bg-white p-1.5 md:p-3 ${view === 'week' ? 'min-h-[175px]' : 'min-h-[150px]'} transition-all group ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'} ${isDragTarget ? 'ring-2 ring-primary/40 bg-primary/5' : ''}`}
                     style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}
                     onDragOver={e => { if (!draggedPw) return; e.preventDefault(); setDragOverKey(key); }}
                     onDragLeave={e => { if (dragOverKey === key) setDragOverKey(null); }}
@@ -9275,22 +9275,22 @@ export default function CalendarView({
                     {renderRaceBadge(key, { big: true })}
                     <div className={`flex items-center justify-between mb-1.5`}>
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={`text-xs md:text-sm font-semibold ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
+                        <span className={`text-sm md:text-base font-semibold ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                           {view === 'week' ? `${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][dayIdx]} ${dayDate.getDate()}` : dayDate.getDate()}
                         </span>
                         {renderDayThemeChip(key)}
                         {renderAddThemeBtn(key, { className: 'opacity-0 group-hover:opacity-100 transition-opacity hidden md:inline-block' })}
                       </div>
                       {isDragTarget && (
-                        <span className="text-[9px] font-semibold text-primary/70 ml-1">{draggedPw?.isCopy ? 'Copy here' : 'Move here'}</span>
+                        <span className="text-[10px] font-semibold text-primary/70 ml-1">{draggedPw?.isCopy ? 'Copy here' : 'Move here'}</span>
                       )}
                       {!isDragTarget && onPlanWorkout && (
                         <button
                           onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
                           title="Plan workout"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-primary hover:bg-primary/10"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-primary hover:bg-primary/10"
                         >
-                          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" d="M8 3v10M3 8h10" />
                           </svg>
                         </button>
@@ -9298,7 +9298,7 @@ export default function CalendarView({
                     </div>
                     <motion.div
                       layout
-                      className="space-y-0.5 w-full"
+                      className="space-y-1 w-full"
                       style={{ maxWidth: '100%', overflow: 'hidden' }}
                       transition={{ layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } }}
                     >
@@ -9357,7 +9357,7 @@ export default function CalendarView({
                           <div key={pi} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
                             <button
                               onClick={(e) => { const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                              className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg transition-all flex flex-col gap-0.5 ${
+                              className={`w-full max-w-full text-left text-[11px] md:text-xs px-2 md:px-2.5 py-2 rounded-lg transition-all flex flex-col gap-1 ${
                                 isSelected
                                   ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
                                   : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
@@ -9377,10 +9377,10 @@ export default function CalendarView({
                             >
                               {/* Title row */}
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
+                                <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
                                 <span className="truncate min-w-0 flex-1 font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
                                 {tssVal > 0 && (
-                                  <span className={`flex-shrink-0 text-[9px] font-bold ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tssVal)}</span>
+                                  <span className={`flex-shrink-0 text-[10px] font-bold ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tssVal)}</span>
                                 )}
                               </div>
                               {/* Category + duration + distance row — category gets its
@@ -9389,7 +9389,7 @@ export default function CalendarView({
                                 <div className="flex items-center gap-1.5 min-w-0">
                                   {a.category && (
                                     <span
-                                      className="text-[9px] uppercase tracking-wide px-1.5 py-[1px] rounded-md flex-shrink-0 font-bold border leading-tight"
+                                      className="text-[10px] uppercase tracking-wide px-1.5 py-[1px] rounded-md flex-shrink-0 font-bold border leading-tight"
                                       style={isSelected
                                         ? { backgroundColor: 'rgba(255,255,255,.20)', color: '#fff', borderColor: 'rgba(255,255,255,.4)' }
                                         : catBadgeStyle(a.category)}
@@ -9399,7 +9399,7 @@ export default function CalendarView({
                                     </span>
                                   )}
                                   {(durStr || distStr) && (
-                                    <span className={`text-[9px] truncate ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>
+                                    <span className={`text-[10px] truncate ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>
                                       {durStr}{durStr && distStr ? ' · ' : ''}{distStr}
                                     </span>
                                   )}
@@ -9410,7 +9410,7 @@ export default function CalendarView({
                               <button
                                 onClick={(e) => { e.stopPropagation(); onAddLactate(a); }}
                                 title="Add lactate"
-                                className="absolute top-0.5 right-0.5 hidden group-hover/act:flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-bold bg-violet-100 text-violet-700 hover:bg-violet-200 border border-violet-200 leading-none z-10"
+                                className="absolute top-0.5 right-0.5 hidden group-hover/act:flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 hover:bg-violet-200 border border-violet-200 leading-none z-10"
                               >
                                 + La
                               </button>
@@ -9421,7 +9421,7 @@ export default function CalendarView({
                       {hasOverflow && (
                         <button
                           onClick={toggleExpand}
-                          className="w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          className="w-full text-left text-[11px] md:text-xs px-2 md:px-2.5 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                           {isExpanded ? (
                             <>
@@ -9448,7 +9448,7 @@ export default function CalendarView({
                       {[['done', 'Done'], ['plan', 'Plan']].map(([tabId, lbl]) => (
                         <button key={tabId}
                           onClick={() => setWeekSummaryTab(tabId)}
-                          className={`px-2 py-0.5 text-[9px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
+                          className={`px-2 py-1 text-[10px] font-semibold rounded-md transition-all ${weekSummaryTab === tabId ? 'bg-primary text-white shadow-sm' : 'text-gray-500'}`}
                         >{lbl}</button>
                       ))}
                     </div>
